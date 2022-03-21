@@ -693,7 +693,7 @@ impl Gles2Renderer {
         Ok(renderer)
     }
 
-    pub(crate) fn make_current(&self) -> Result<(), MakeCurrentError> {
+    pub(crate) fn make_current(&mut self) -> Result<(), MakeCurrentError> {
         unsafe {
             if let Some(&Gles2Target::Surface(ref surface)) = self.target.as_ref() {
                 self.egl.make_current_with_surface(&**surface)?;
@@ -713,11 +713,12 @@ impl Gles2Renderer {
                 }
             }
         }
+        // delayed destruction until the next frame rendering.
+        self.cleanup();
         Ok(())
     }
 
-    fn cleanup(&mut self) -> Result<(), Gles2Error> {
-        self.make_current()?;
+    fn cleanup(&mut self) {
         #[cfg(feature = "wayland_frontend")]
         self.dmabuf_cache.retain(|entry, _tex| entry.upgrade().is_some());
         // Free outdated buffer resources
@@ -759,7 +760,6 @@ impl Gles2Renderer {
                 },
             }
         }
-        Ok(())
     }
 }
 
@@ -1080,10 +1080,9 @@ impl ImportDma for Gles2Renderer {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
+        self.make_current()?;
         self.existing_dmabuf_texture(buffer)?.map(Ok).unwrap_or_else(|| {
             let is_external = !self.egl.dmabuf_render_formats().contains(&buffer.format());
-
-            self.make_current()?;
             let image = self
                 .egl
                 .display
@@ -1133,7 +1132,6 @@ impl Gles2Renderer {
                     if egl_images[0] == ffi_egl::NO_IMAGE_KHR {
                         return Ok(None);
                     }
-                    self.make_current()?;
                     let tex = Some(texture.0.texture);
                     self.import_egl_image(egl_images[0], false, tex)?;
                 }
@@ -1724,8 +1722,6 @@ impl Renderer for Gles2Renderer {
         F: FnOnce(&mut Self, &mut Self::Frame) -> R,
     {
         self.make_current()?;
-        // delayed destruction until the next frame rendering.
-        self.cleanup()?;
 
         unsafe {
             self.gl.Viewport(0, 0, size.w, size.h);
