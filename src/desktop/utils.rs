@@ -6,8 +6,8 @@ use crate::{
     utils::{Logical, Point, Rectangle},
     wayland::{
         compositor::{
-            with_surface_tree_downward, with_surface_tree_upward, Damage, SubsurfaceCachedState,
-            SurfaceAttributes, TraversalAction,
+            with_surface_tree_downward, with_surface_tree_upward, SubsurfaceCachedState, SurfaceAttributes,
+            TraversalAction,
         },
         output::Output,
     },
@@ -94,7 +94,8 @@ where
 /// - `location` can be set to offset the returned bounding box.
 /// - if a `key` is set the damage is only returned on the first call with the given key values.
 ///   Subsequent calls will return an empty vector until the buffer is updated again and new
-///   damage values may be retrieved.
+///   damage values may be retrieved. Additionally damage may be internally accumulated, if
+///   multiple commits occurred between different calls.
 pub fn damage_from_surface_tree<P>(
     surface: &wl_surface::WlSurface,
     location: P,
@@ -116,7 +117,7 @@ where
                 let data = data.borrow();
                 if key
                     .as_ref()
-                    .map(|key| !data.damage_seen.contains(key))
+                    .map(|key| data.space_seen.get(key).copied().unwrap_or(0) < data.commit_count)
                     .unwrap_or(true)
                     && states.role == Some("subsurface")
                 {
@@ -130,33 +131,40 @@ where
             let mut location = *location;
             if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
                 let mut data = data.borrow_mut();
-                let attributes = states.cached_state.current::<SurfaceAttributes>();
-
                 if key
                     .as_ref()
-                    .map(|key| !data.damage_seen.contains(key))
+                    .map(|key| data.space_seen.get(key).copied().unwrap_or(0) < data.commit_count)
                     .unwrap_or(true)
                 {
                     if states.role == Some("subsurface") {
                         let current = states.cached_state.current::<SubsurfaceCachedState>();
                         location += current.location;
                     }
+                    let new_damage = key
+                        .as_ref()
+                        .map(|key| data.damage_since(data.space_seen.get(key).copied()))
+                        .unwrap_or_else(|| {
+                            data.damage.front().cloned().unwrap_or_else(|| {
+                                data.buffer_dimensions
+                                    .as_ref()
+                                    .map(|size| vec![Rectangle::from_loc_and_size((0, 0), *size)])
+                                    .unwrap_or_else(Vec::new)
+                            })
+                        });
 
-                    damage.extend(attributes.damage.iter().map(|dmg| {
-                        let mut rect = match dmg {
-                            Damage::Buffer(rect) => rect.to_logical(
-                                attributes.buffer_scale,
-                                attributes.buffer_transform.into(),
-                                &data.buffer_dimensions.unwrap(),
-                            ),
-                            Damage::Surface(rect) => *rect,
-                        };
+                    damage.extend(new_damage.into_iter().map(|rect| {
+                        let mut rect = rect.to_logical(
+                            data.buffer_scale,
+                            data.buffer_transform,
+                            &data.buffer_dimensions.unwrap(),
+                        );
                         rect.loc += location;
                         rect
                     }));
 
                     if let Some(key) = key {
-                        data.damage_seen.insert(key);
+                        let current_commit = data.commit_count;
+                        data.space_seen.insert(key, current_commit);
                     }
                 }
             }
