@@ -103,7 +103,7 @@ use wayland_server::{
 
 /// Description of a part of a surface that
 /// should be considered damaged and needs to be redrawn
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Damage {
     /// A rectangle containing the damaged zone, in surface coordinates
     Surface(Rectangle<i32, Logical>),
