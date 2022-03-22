@@ -60,6 +60,11 @@ jobs:
           key: ${{ runner.os }}-build-rust_stable-check-${{ hashFiles('**/Cargo.toml') }}
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+      - name: Downgrade log
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+          args: -p log --precise 0.4.14
       - name: Clippy Smithay
         uses: actions-rs/clippy-check@v1
         with:
@@ -183,6 +188,12 @@ jobs:
           ninja -C build
           sudo meson install -C build
 
+      - name: Downgrade log
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+          args: -p log --precise 0.4.14
+      
       - name: Test features
         uses: actions-rs/cargo@v1
         env:
@@ -242,7 +253,13 @@ jobs:
         with:
           path: target
           key: ${{ runner.os }}-build-rust_stable-anvil-feature_${{ matrix.features }}-${{ hashFiles('**/Cargo.toml') }}
-
+      
+      - name: Downgrade log
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+          args: -p log --precise 0.4.14
+      
       - name: Test features
         uses: actions-rs/cargo@v1
         env:
@@ -313,6 +330,12 @@ jobs:
 
       - name: Build WLCS
         run: ./compile_wlcs.sh
+
+      - name: Downgrade log
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+          args: -p log --precise 0.4.14
 
       - name: Build anvil WLCS plugin
         uses: actions-rs/cargo@v1
