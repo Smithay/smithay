@@ -2,14 +2,12 @@
 
 use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, EGLDevice, SwapBuffersError};
 use crate::utils::{Physical, Rectangle};
-#[cfg(feature = "backend_winit")]
 use std::os::raw::c_int;
 use std::os::raw::c_void;
 #[cfg(feature = "backend_gbm")]
 use std::os::unix::io::AsRawFd;
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
-#[cfg(feature = "backend_winit")]
 use wayland_egl as wegl;
 #[cfg(feature = "backend_winit")]
 use winit::{platform::unix::WindowExtUnix, window::Window as WinitWindow};
@@ -58,7 +56,7 @@ macro_rules! egl_platform {
     };
 }
 
-/// Type, Raw handle and attributes used to call [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)  
+/// Type, Raw handle and attributes used to call [`eglGetPlatformDisplayEXT`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_base.txt)
 pub struct EGLPlatform<'a> {
     /// Required extensions to use this platform
     pub required_extensions: &'static [&'static str],
@@ -265,8 +263,7 @@ pub unsafe trait EGLNativeSurface: Send + Sync {
     }
 }
 
-#[cfg(feature = "backend_winit")]
-static WINIT_SURFACE_ATTRIBUTES: [c_int; 3] = [
+static SURFACE_ATTRIBUTES: [c_int; 3] = [
     ffi::egl::RENDER_BUFFER as c_int,
     ffi::egl::BACK_BUFFER as c_int,
     ffi::egl::NONE as c_int,
@@ -290,13 +287,12 @@ unsafe impl EGLNativeSurface for XlibWindow {
                 display.handle,
                 config_id,
                 (&mut id) as *mut std::os::raw::c_ulong as *mut _,
-                WINIT_SURFACE_ATTRIBUTES.as_ptr(),
+                SURFACE_ATTRIBUTES.as_ptr(),
             )
         })
     }
 }
 
-#[cfg(feature = "backend_winit")]
 unsafe impl EGLNativeSurface for wegl::WlEglSurface {
     fn create(
         &self,
@@ -308,7 +304,7 @@ unsafe impl EGLNativeSurface for wegl::WlEglSurface {
                 display.handle,
                 config_id,
                 self.ptr() as *mut _,
-                WINIT_SURFACE_ATTRIBUTES.as_ptr(),
+                SURFACE_ATTRIBUTES.as_ptr(),
             )
         })
     }
