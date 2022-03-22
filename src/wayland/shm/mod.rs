@@ -73,20 +73,23 @@
 //!
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
 
+use std::sync::Arc;
+
 use wayland_server::{
     backend::GlobalId,
     protocol::{
-        wl_buffer::{self},
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
     },
-    Dispatch, Display, GlobalDispatch, Resource,
+    Dispatch, Display, GlobalDispatch,
 };
 
 mod handlers;
 mod pool;
 
-pub use handlers::{ShmBufferUserData, ShmPoolUserData};
+use self::pool::Pool;
+
+use super::buffer::{BufferHandler, ManagedBuffer};
 
 /// State of SHM module
 #[derive(Debug)]
@@ -110,6 +113,7 @@ impl ShmState {
         D: GlobalDispatch<WlShm, GlobalData = ()>
             + Dispatch<WlShm, UserData = ()>
             + Dispatch<WlShmPool, UserData = ShmPoolUserData>
+            + BufferHandler
             + AsRef<ShmState>
             + 'static,
         L: Into<Option<::slog::Logger>>,
@@ -141,6 +145,7 @@ pub enum BufferAccessError {
     /// This buffer is not managed by the SHM handler
     #[error("non-SHM buffer")]
     NotManaged,
+
     /// An error occurred while accessing the memory map
     ///
     /// This can happen if the client advertized a wrong size
@@ -162,12 +167,12 @@ pub enum BufferAccessError {
 /// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
 /// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
 /// EGL buffer for example).
-pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<T, BufferAccessError>
+pub fn with_buffer_contents<F, T>(buffer: &ManagedBuffer, f: F) -> Result<T, BufferAccessError>
 where
     F: FnOnce(&[u8], BufferData) -> T,
 {
     let data = buffer
-        .data::<ShmBufferUserData>()
+        .buffer_data::<ShmBufferUserData>()
         .ok_or(BufferAccessError::NotManaged)?;
 
     match data.pool.with_data_slice(|slice| f(slice, data.data)) {
@@ -196,6 +201,19 @@ pub struct BufferData {
     pub format: wl_shm::Format,
 }
 
+/// User data of WlShmPool
+#[derive(Debug)]
+pub struct ShmPoolUserData {
+    inner: Arc<Pool>,
+}
+
+/// User data of shm WlBuffer
+#[derive(Debug)]
+pub struct ShmBufferUserData {
+    pub(crate) pool: Arc<Pool>,
+    pub(crate) data: BufferData,
+}
+
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_shm {
@@ -206,9 +224,7 @@ macro_rules! delegate_shm {
 
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
             $crate::reexports::wayland_server::protocol::wl_shm::WlShm,
-            $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool,
-            // FIXME: wl_shm should not be the dispatch target for a WlBuffer.
-            $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer
+            $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool
         ] => $crate::wayland::shm::ShmState);
     };
 }

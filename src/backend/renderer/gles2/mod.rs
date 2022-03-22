@@ -42,7 +42,10 @@ use super::{ImportDmaWl, ImportMemWl};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_buffer, wl_shm};
+use wayland_server::{
+    protocol::{wl_buffer, wl_shm},
+    DisplayHandle,
+};
 
 use slog::{debug, error, info, o, trace, warn};
 
@@ -764,13 +767,22 @@ impl Gles2Renderer {
 impl ImportMemWl for Gles2Renderer {
     fn import_shm_buffer(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, Buffer>],
     ) -> Result<Gles2Texture, Gles2Error> {
-        use crate::wayland::shm::with_buffer_contents;
+        use crate::wayland::{
+            buffer::ManagedBuffer,
+            shm::{with_buffer_contents, BufferAccessError},
+        };
 
-        with_buffer_contents(buffer, |slice, data| {
+        let buffer = match ManagedBuffer::from_buffer(buffer, dh) {
+            Ok(buffer) => buffer,
+            Err(_) => return Err(Gles2Error::BufferAccessError(BufferAccessError::NotManaged)),
+        };
+
+        with_buffer_contents(&buffer, |slice, data| {
             self.make_current()?;
 
             let offset = data.offset as i32;
