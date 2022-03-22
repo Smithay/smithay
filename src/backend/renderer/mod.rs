@@ -13,12 +13,12 @@ use std::error::Error;
 use crate::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::SurfaceData;
+use crate::wayland::{buffer::ManagedBuffer, compositor::SurfaceData};
 use cgmath::Matrix3;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{
     protocol::{wl_buffer, wl_shm},
-    Resource,
+    DisplayHandle, Resource,
 };
 
 #[cfg(feature = "renderer_gl")]
@@ -255,6 +255,7 @@ pub trait ImportMemWl: ImportMem {
     /// with an empty list `&[]`, the renderer is allowed to not update the texture at all.
     fn import_shm_buffer(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, Buffer>],
@@ -471,7 +472,7 @@ impl<R: Renderer + ImportMemWl + ImportEgl + ImportDmaWl> ImportAll for R {
         damage: &[Rectangle<i32, Buffer>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(dh, buffer) {
-            Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
+            Some(BufferType::Shm) => Some(self.import_shm_buffer(dh, buffer, surface, damage)),
             Some(BufferType::Egl) => Some(self.import_egl_buffer(dh, buffer, surface, damage)),
             Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer, surface, damage)),
             _ => None,
@@ -492,7 +493,7 @@ impl<R: Renderer + ImportMemWl + ImportDmaWl> ImportAll for R {
         damage: &[Rectangle<i32, Buffer>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
         match buffer_type(dh, buffer) {
-            Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
+            Some(BufferType::Shm) => Some(self.import_shm_buffer(dh, buffer, surface, damage)),
             Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer, surface, damage)),
             _ => None,
         }
@@ -584,28 +585,36 @@ pub enum BufferType {
 /// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
 #[cfg(feature = "wayland_frontend")]
 pub fn buffer_type(
-    // Note: this variable is only used if the inner [cfg()] is triggered
-    _dh: &mut wayland_server::DisplayHandle<'_>,
+    dh: &mut wayland_server::DisplayHandle<'_>,
     buffer: &wl_buffer::WlBuffer,
 ) -> Option<BufferType> {
-    if buffer.data::<Dmabuf>().is_some() {
-        return Some(BufferType::Dma);
-    }
+    #[allow(clippy::single_match)] // TODO: Dma
+    match ManagedBuffer::from_buffer(buffer, dh) {
+        Ok(buffer) => {
+            // TODO: Dma
+            // if buffer.data::<Dmabuf>().is_some() {
+            //     return Some(BufferType::Dma);
+            // }
 
-    #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
-    if BUFFER_READER
-        .lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|x| x.upgrade())
-        .and_then(|x| x.egl_buffer_dimensions(_dh, buffer))
-        .is_some()
-    {
-        return Some(BufferType::Egl);
-    }
+            if crate::wayland::shm::with_buffer_contents(&buffer, |_, _| ()).is_ok() {
+                return Some(BufferType::Shm);
+            }
+        }
 
-    if crate::wayland::shm::with_buffer_contents(buffer, |_, _| ()).is_ok() {
-        return Some(BufferType::Shm);
+        Err(_) => {
+            // Not managed, check if this is an EGLBuffer
+            #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
+            if BUFFER_READER
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|x| x.upgrade())
+                .and_then(|x| x.egl_buffer_dimensions(dh, buffer))
+                .is_some()
+            {
+                return Some(BufferType::Egl);
+            }
+        }
     }
 
     None
@@ -616,26 +625,36 @@ pub fn buffer_type(
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
 #[cfg(feature = "wayland_frontend")]
 pub fn buffer_dimensions(
-    // Note: this variable is only used if the inner [cfg()] is triggered
-    _dh: &mut wayland_server::DisplayHandle<'_>,
+    dh: &mut wayland_server::DisplayHandle<'_>,
     buffer: &wl_buffer::WlBuffer,
 ) -> Option<Size<i32, Buffer>> {
-    use crate::backend::allocator::Buffer;
+    #[allow(unused_imports)] // TODO: Dma
+    use crate::{backend::allocator::Buffer, wayland::shm};
 
-    if let Some(buf) = buffer.data::<Dmabuf>() {
-        return Some((buf.width() as i32, buf.height() as i32).into());
+    match ManagedBuffer::from_buffer(buffer, dh) {
+        Ok(buffer) => {
+            // TODO: Dma
+            // if let Some(buf) = buffer.data::<Dmabuf>() {
+            //     return Some((buf.width() as i32, buf.height() as i32).into());
+            // }
+
+            shm::with_buffer_contents(&buffer, |_, data| (data.width, data.height).into()).ok()
+        }
+
+        Err(_) => {
+            // Not managed, check if this is an EGLBuffer
+            #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
+            if let Some(dim) = BUFFER_READER
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|x| x.upgrade())
+                .and_then(|x| x.egl_buffer_dimensions(dh, buffer))
+            {
+                return Some(dim);
+            }
+
+            None
+        }
     }
-
-    #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
-    if let Some(dim) = BUFFER_READER
-        .lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|x| x.upgrade())
-        .and_then(|x| x.egl_buffer_dimensions(_dh, buffer))
-    {
-        return Some(dim);
-    }
-
-    crate::wayland::shm::with_buffer_contents(buffer, |_, data| (data.width, data.height).into()).ok()
 }
