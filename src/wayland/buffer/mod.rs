@@ -1,13 +1,10 @@
 //! Buffer management utilities.
 //!
-//! This module provides the [`Buffer`] type to represent a [`WlBuffer`] managed by Smithay and data
+//! This module provides the [`ManagedBuffer`] type to represent a [`WlBuffer`] managed by Smithay and data
 //! associated with said buffer. This module has a dual purpose. This module provides a way for the compositor
 //! to be told when a client has destroyed a buffer. The other purpose is to provide a way for specific types
 //! of [`WlBuffer`] to abstractly associate some data with the protocol object without conflicting
 //! [`Dispatch`](crate::reexports::wayland_server::Dispatch) implementations.
-//!
-//! Unlike most delegate types found in other modules of the wayland frontend, this module has no `delegate`
-//! macro by design.
 
 use std::{any::Any, sync::Arc};
 
@@ -25,36 +22,34 @@ use crate::utils::UnmanagedResource;
 ///
 /// # For buffer abstractions
 ///
-/// Buffer abstractions (such as [`shm`](crate::wayland::shm)) should require this trait bound in dispatch
-/// requirements to ensure access to the [`BufferManager`].
+/// Buffer abstractions (such as [`shm`](crate::wayland::shm)) should require this trait to allow notification
+/// when a buffer is destroyed.
 pub trait BufferHandler {
-    /// Returns a reference to the buffer manager.
-    fn buffer_manager(&self) -> &BufferManager;
-
     /// Called when the client has destroyed the buffer.
     ///
     /// At this point the buffer is no longer usable by Smithay.
-    fn buffer_destroyed(&mut self, buffer: &Buffer);
+    fn buffer_destroyed(&mut self, buffer: &ManagedBuffer);
 }
 
-/// The buffer manager.
-///
-/// This type allows a [`WlBuffer`] to have data associated and managed by Smithay.
-#[derive(Debug)]
-pub struct BufferManager(());
+/// A wrapper around a [`WlBuffer`] managed by Smithay.
+#[derive(Debug, Clone)]
+pub struct ManagedBuffer {
+    buffer: ObjectId,
+    data: Arc<BufferData>,
+}
 
-impl BufferManager {
-    /// Initializes the buffer manager.
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> BufferManager {
-        BufferManager(())
+impl PartialEq for ManagedBuffer {
+    fn eq(&self, other: &Self) -> bool {
+        self.buffer == other.buffer
     }
+}
 
+impl ManagedBuffer {
     /// Initializes a buffer, associating some user data with the buffer. This function causes the buffer to
     /// managed by Smithay.
     ///
     /// The data associated with the buffer may obtained using [`BufferManager::buffer_data`].
-    pub fn init_buffer<D, T>(&self, init: &mut DataInit<'_, D>, buffer: New<WlBuffer>, data: T) -> Buffer
+    pub fn init_buffer<D, T>(init: &mut DataInit<'_, D>, buffer: New<WlBuffer>, data: T) -> ManagedBuffer
     where
         D: BufferHandler + 'static,
         T: Send + Sync + 'static,
@@ -62,38 +57,26 @@ impl BufferManager {
         let data = Arc::new(BufferData { data: Box::new(data) });
         let buffer = init.custom_init(buffer, data.clone());
 
-        Buffer {
+        ManagedBuffer {
             buffer: buffer.id(),
             data,
         }
     }
-}
 
-/// A wrapper around a [`WlBuffer`] managed by Smithay.
-#[derive(Debug, Clone)]
-pub struct Buffer {
-    buffer: ObjectId,
-    data: Arc<BufferData>,
-}
-
-impl PartialEq for Buffer {
-    fn eq(&self, other: &Self) -> bool {
-        self.buffer == other.buffer
-    }
-}
-
-impl Buffer {
     /// Creates a [`Buffer`] from a [`WlBuffer`].
     ///
     /// This function returns [`Err`] if the buffer is not managed by Smithay (such as an EGL buffer).
-    pub fn from_buffer(buffer: &WlBuffer, dh: &mut DisplayHandle<'_>) -> Result<Buffer, UnmanagedResource> {
+    pub fn from_buffer(
+        buffer: &WlBuffer,
+        dh: &mut DisplayHandle<'_>,
+    ) -> Result<ManagedBuffer, UnmanagedResource> {
         let data = dh
             .get_object_data(buffer.id())
             .map_err(|_| UnmanagedResource)?
             .downcast::<BufferData>()
             .map_err(|_| UnmanagedResource)?;
 
-        Ok(Buffer {
+        Ok(ManagedBuffer {
             buffer: buffer.id(),
             data,
         })
@@ -142,9 +125,9 @@ where
         msg: Message<ObjectId>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
         // WlBuffer has a single request which is a destructor.
-        assert_eq!(msg.opcode, 0);
+        debug_assert_eq!(msg.opcode, 0);
 
-        data.buffer_destroyed(&Buffer {
+        data.buffer_destroyed(&ManagedBuffer {
             buffer: msg.sender_id,
             data: self,
         });
