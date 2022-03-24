@@ -47,7 +47,7 @@ impl SurfaceState {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
                 self.buffer_dimensions = {
-                    let buffer = Buffer::from_buffer(&buffer, dh);
+                    let buffer = Buffer::from_wl(&buffer, dh);
 
                     buffer_dimensions(dh, &buffer)
                 };
@@ -288,7 +288,7 @@ where
                 let buffer_damage = data.damage_since(last_commit.copied());
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
-                        let buffer = Buffer::from_buffer(buffer, dh);
+                        let buffer = Buffer::from_wl(buffer, dh);
 
                         match renderer.import_buffer(dh, &buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
