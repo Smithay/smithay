@@ -36,19 +36,18 @@ use crate::backend::egl::{
     EGLContext, EGLSurface, MakeCurrentError,
 };
 use crate::backend::SwapBuffersError;
-use crate::utils::{Buffer, Physical, Rectangle, Size, Transform};
+use crate::utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
 #[cfg(feature = "wayland_frontend")]
 use super::{ImportDmaWl, ImportMemWl};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
+use crate::backend::egl::{self, display::EGLBufferReader, EGLError, Format as EGLFormat};
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{
-    protocol::{wl_buffer, wl_shm},
-    DisplayHandle,
-};
+use crate::wayland::buffer::Buffer;
+#[cfg(feature = "wayland_frontend")]
+use wayland_server::protocol::wl_shm;
 
 use slog::{debug, error, info, o, trace, warn};
 
@@ -98,7 +97,7 @@ impl Gles2Texture {
     pub unsafe fn from_raw(
         renderer: &Gles2Renderer,
         tex: ffi::types::GLuint,
-        size: Size<i32, Buffer>,
+        size: Size<i32, BufferCoord>,
     ) -> Gles2Texture {
         Gles2Texture(Rc::new(Gles2TextureInternal {
             texture: tex,
@@ -125,7 +124,7 @@ struct Gles2TextureInternal {
     texture_kind: usize,
     is_external: bool,
     y_inverted: bool,
-    size: Size<i32, Buffer>,
+    size: Size<i32, BufferCoord>,
     egl_images: Option<Vec<EGLImage>>,
     destruction_callback_sender: Sender<CleanupResource>,
 }
@@ -160,7 +159,7 @@ impl Texture for Gles2Texture {
     fn height(&self) -> u32 {
         self.0.size.h as u32
     }
-    fn size(&self) -> Size<i32, Buffer> {
+    fn size(&self) -> Size<i32, BufferCoord> {
         self.0.size
     }
 }
@@ -169,7 +168,7 @@ impl Texture for Gles2Texture {
 #[derive(Debug)]
 pub struct Gles2Mapping {
     pbo: ffi::types::GLuint,
-    size: Size<i32, Buffer>,
+    size: Size<i32, BufferCoord>,
     mapping: AtomicPtr<nix::libc::c_void>,
     destruction_callback_sender: Sender<CleanupResource>,
 }
@@ -181,7 +180,7 @@ impl Texture for Gles2Mapping {
     fn height(&self) -> u32 {
         self.size.h as u32
     }
-    fn size(&self) -> Size<i32, Buffer> {
+    fn size(&self) -> Size<i32, BufferCoord> {
         self.size
     }
 }
@@ -770,26 +769,17 @@ impl Gles2Renderer {
 impl ImportMemWl for Gles2Renderer {
     fn import_shm_buffer(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
-        buffer: &wl_buffer::WlBuffer,
+        buffer: &Buffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
-        damage: &[Rectangle<i32, Buffer>],
+        damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<Gles2Texture, Gles2Error> {
-        use crate::wayland::{
-            buffer::ManagedBuffer,
-            shm::{with_buffer_contents, BufferAccessError},
-        };
+        use crate::wayland::shm::with_buffer_contents;
 
         // why not store a `Gles2Texture`? because the user might do so.
         // this is guaranteed a non-public internal type, so we are good.
         type CacheMap = HashMap<usize, Rc<Gles2TextureInternal>>;
 
-        let buffer = match ManagedBuffer::from_buffer(buffer, dh) {
-            Ok(buffer) => buffer,
-            Err(_) => return Err(Gles2Error::BufferAccessError(BufferAccessError::NotManaged)),
-        };
-
-        with_buffer_contents(&buffer, |slice, data| {
+        with_buffer_contents(buffer, |slice, data| {
             self.make_current()?;
 
             let offset = data.offset as i32;
@@ -922,7 +912,7 @@ impl ImportMem for Gles2Renderer {
     fn import_memory(
         &mut self,
         data: &[u8],
-        size: Size<i32, Buffer>,
+        size: Size<i32, BufferCoord>,
         flipped: bool,
     ) -> Result<Gles2Texture, Gles2Error> {
         self.make_current()?;
@@ -972,7 +962,7 @@ impl ImportMem for Gles2Renderer {
         &mut self,
         texture: &<Self as Renderer>::TextureId,
         data: &[u8],
-        region: Rectangle<i32, Buffer>,
+        region: Rectangle<i32, BufferCoord>,
     ) -> Result<(), <Self as Renderer>::Error> {
         self.make_current()?;
 
@@ -1033,9 +1023,9 @@ impl ImportEgl for Gles2Renderer {
     fn import_egl_buffer(
         &mut self,
         dh: &mut wayland_server::DisplayHandle<'_>,
-        buffer: &wl_buffer::WlBuffer,
+        buffer: &Buffer,
         _surface: Option<&crate::wayland::compositor::SurfaceData>,
-        _damage: &[Rectangle<i32, Buffer>],
+        _damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<Gles2Texture, Gles2Error> {
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
@@ -1054,11 +1044,15 @@ impl ImportEgl for Gles2Renderer {
         // will never be cleaned up.
         self.make_current()?;
 
+        let buffer = buffer.buffer(dh).map_err(|_| {
+            Gles2Error::EGLBufferAccessError(egl::BufferAccessError::NotManaged(EGLError::BadParameter))
+        })?;
+
         let egl = self
             .egl_reader
             .as_ref()
             .unwrap()
-            .egl_buffer_contents(dh, buffer)
+            .egl_buffer_contents(dh, &buffer)
             .map_err(Gles2Error::EGLBufferAccessError)?;
 
         let tex = self.import_egl_image(egl.image(0).unwrap(), egl.format == EGLFormat::External, None)?;
@@ -1086,7 +1080,7 @@ impl ImportDma for Gles2Renderer {
     fn import_dmabuf(
         &mut self,
         buffer: &Dmabuf,
-        _damage: Option<&[Rectangle<i32, Buffer>]>,
+        _damage: Option<&[Rectangle<i32, BufferCoord>]>,
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::backend::allocator::Buffer;
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
@@ -1186,7 +1180,7 @@ impl ExportMem for Gles2Renderer {
 
     fn copy_framebuffer(
         &mut self,
-        region: Rectangle<i32, Buffer>,
+        region: Rectangle<i32, BufferCoord>,
     ) -> Result<Self::TextureMapping, Self::Error> {
         self.make_current()?;
         let mut pbo = 0;
@@ -1220,7 +1214,7 @@ impl ExportMem for Gles2Renderer {
     fn copy_texture(
         &mut self,
         texture: &Self::TextureId,
-        region: Rectangle<i32, Buffer>,
+        region: Rectangle<i32, BufferCoord>,
     ) -> Result<Self::TextureMapping, Self::Error> {
         let mut pbo = 0;
         let old_target = self.target.take();
@@ -1340,7 +1334,7 @@ impl ExportDma for Gles2Renderer {
         res
     }
 
-    fn export_framebuffer(&mut self, size: Size<i32, Buffer>) -> Result<Dmabuf, Gles2Error> {
+    fn export_framebuffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Dmabuf, Gles2Error> {
         self.make_current()?;
 
         if !self
@@ -1559,7 +1553,7 @@ impl Bind<Gles2Texture> for Gles2Renderer {
 }
 
 impl Offscreen<Gles2Texture> for Gles2Renderer {
-    fn create_buffer(&mut self, size: Size<i32, Buffer>) -> Result<Gles2Texture, Gles2Error> {
+    fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Gles2Texture, Gles2Error> {
         self.make_current()?;
         let tex = unsafe {
             let mut tex = 0;
@@ -1620,7 +1614,7 @@ impl Bind<Gles2Renderbuffer> for Gles2Renderer {
 }
 
 impl Offscreen<Gles2Renderbuffer> for Gles2Renderer {
-    fn create_buffer(&mut self, size: Size<i32, Buffer>) -> Result<Gles2Renderbuffer, Gles2Error> {
+    fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Gles2Renderbuffer, Gles2Error> {
         self.make_current()?;
         unsafe {
             let mut rbo = 0;
@@ -1983,7 +1977,7 @@ impl Frame for Gles2Frame {
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,
-        src: Rectangle<i32, Buffer>,
+        src: Rectangle<i32, BufferCoord>,
         dest: Rectangle<f64, Physical>,
         damage: &[Rectangle<f64, Physical>],
         transform: Transform,
