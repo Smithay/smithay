@@ -288,57 +288,64 @@ where
 {
     let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
     let mut result = Ok(());
-    let _ = import_surface_tree_and(dh, renderer, surface, log, location, |_surface, states, location| {
-        let mut location = *location;
-        if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
-            let mut data = data.borrow_mut();
-            let dimensions = data.surface_size();
-            let buffer_scale = data.buffer_scale;
-            let attributes = states.cached_state.current::<SurfaceAttributes>();
-            if let Some(texture) = data
-                .textures
-                .get_mut(&texture_id)
-                .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
-            {
-                let dimensions = dimensions.unwrap();
-                // we need to re-extract the subsurface offset, as the previous closure
-                // only passes it to our children
-                let mut surface_offset = (0, 0).into();
-                if states.role == Some("subsurface") {
-                    let current = states.cached_state.current::<SubsurfaceCachedState>();
-                    surface_offset = current.location;
-                    location += current.location;
-                }
+    let _ = import_surface_tree_and(
+        dh,
+        renderer,
+        surface,
+        log,
+        location,
+        |_surface, states, location| {
+            let mut location = *location;
+            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+                let mut data = data.borrow_mut();
+                let dimensions = data.surface_size();
+                let buffer_scale = data.buffer_scale;
+                let attributes = states.cached_state.current::<SurfaceAttributes>();
+                if let Some(texture) = data
+                    .textures
+                    .get_mut(&texture_id)
+                    .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
+                {
+                    let dimensions = dimensions.unwrap();
+                    // we need to re-extract the subsurface offset, as the previous closure
+                    // only passes it to our children
+                    let mut surface_offset = (0, 0).into();
+                    if states.role == Some("subsurface") {
+                        let current = states.cached_state.current::<SubsurfaceCachedState>();
+                        surface_offset = current.location;
+                        location += current.location;
+                    }
 
-                let damage = damage
-                    .iter()
-                    .cloned()
-                    // first move the damage by the surface offset in logical space
-                    .map(|mut geo| {
-                        // make the damage relative to the surfaec
-                        geo.loc -= surface_offset;
-                        geo
-                    })
-                    // then clamp to surface size again in logical space
-                    .flat_map(|geo| geo.intersection(Rectangle::from_loc_and_size((0, 0), dimensions)))
-                    // lastly transform it into physical space
-                    .map(|geo| geo.to_f64().to_physical(scale))
-                    .collect::<Vec<_>>();
+                    let damage = damage
+                        .iter()
+                        .cloned()
+                        // first move the damage by the surface offset in logical space
+                        .map(|mut geo| {
+                            // make the damage relative to the surfaec
+                            geo.loc -= surface_offset;
+                            geo
+                        })
+                        // then clamp to surface size again in logical space
+                        .flat_map(|geo| geo.intersection(Rectangle::from_loc_and_size((0, 0), dimensions)))
+                        // lastly transform it into physical space
+                        .map(|geo| geo.to_f64().to_physical(scale))
+                        .collect::<Vec<_>>();
 
-                // TODO: Take wp_viewporter into account
-                if let Err(err) = frame.render_texture_at(
-                    texture,
-                    location.to_f64().to_physical(scale),
-                    buffer_scale,
-                    scale,
-                    attributes.buffer_transform.into(),
-                    &damage,
-                    1.0,
-                ) {
-                    result = Err(err);
+                    // TODO: Take wp_viewporter into account
+                    if let Err(err) = frame.render_texture_at(
+                        texture,
+                        location.to_f64().to_physical(scale),
+                        buffer_scale,
+                        scale,
+                        attributes.buffer_transform.into(),
+                        &damage,
+                        1.0,
+                    ) {
+                        result = Err(err);
+                    }
                 }
             }
-        }
-    });
+        },
+    );
     result
 }
