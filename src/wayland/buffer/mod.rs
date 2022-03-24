@@ -55,7 +55,7 @@ impl Buffer {
     }
 
     /// Creates a [`Buffer`] from a [`WlBuffer`].
-    pub fn from_buffer(buffer: &WlBuffer, dh: &mut DisplayHandle<'_>) -> Buffer {
+    pub fn from_wl(buffer: &WlBuffer, dh: &mut DisplayHandle<'_>) -> Buffer {
         match dh.get_object_data(buffer.id()) {
             Ok(data) => {
                 match data.downcast::<BufferData>() {
