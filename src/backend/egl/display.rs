@@ -16,10 +16,13 @@ use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
 use wayland_sys::server::wl_display;
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
+use crate::{
+    backend::egl::{BufferAccessError, EGLBuffer, Format},
+    wayland::buffer::Buffer,
+};
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Buffer, Format as DrmFormat, Fourcc, Modifier},
+        allocator::{dmabuf::Dmabuf, Buffer as _, Format as DrmFormat, Fourcc, Modifier},
         egl::{
             context::{GlAttributes, PixelFormatRequirements},
             ffi,
@@ -924,11 +927,10 @@ impl EGLBufferReader {
     pub fn egl_buffer_dimensions(
         &self,
         dh: &mut wayland_server::DisplayHandle<'_>,
-        buffer: &WlBuffer,
+        buffer: &Buffer,
     ) -> Option<crate::utils::Size<i32, crate::utils::Buffer>> {
-        use wayland_server::Resource;
         if dh.get_object_data(buffer.id()).is_err() {
-            debug!(self.logger, "Suplied buffer is no longer alive");
+            debug!(self.logger, "Supplied buffer is no longer alive");
             return None;
         }
 
