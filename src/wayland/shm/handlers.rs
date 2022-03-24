@@ -1,5 +1,5 @@
 use crate::wayland::{
-    buffer::{BufferHandler, ManagedBuffer},
+    buffer::{Buffer, BufferHandler},
     shm::ShmBufferUserData,
 };
 
@@ -179,7 +179,7 @@ where
                             },
                         };
 
-                        ManagedBuffer::init_buffer(data_init, buffer, data);
+                        Buffer::init_buffer(data_init, buffer, data);
                     }
 
                     WEnum::Unknown(unknown) => {

@@ -87,9 +87,11 @@ use wayland_server::{
 mod handlers;
 mod pool;
 
+use crate::utils::UnmanagedResource;
+
 use self::pool::Pool;
 
-use super::buffer::{BufferHandler, ManagedBuffer};
+use super::buffer::{Buffer, BufferHandler};
 
 /// State of SHM module
 #[derive(Debug)]
@@ -156,6 +158,12 @@ pub enum BufferAccessError {
     BadMap,
 }
 
+impl From<UnmanagedResource> for BufferAccessError {
+    fn from(_: UnmanagedResource) -> Self {
+        Self::NotManaged
+    }
+}
+
 /// Call given closure with the contents of the given buffer
 ///
 /// If the buffer is managed by the provided `ShmGlobal`, its contents are
@@ -167,12 +175,12 @@ pub enum BufferAccessError {
 /// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
 /// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
 /// EGL buffer for example).
-pub fn with_buffer_contents<F, T>(buffer: &ManagedBuffer, f: F) -> Result<T, BufferAccessError>
+pub fn with_buffer_contents<F, T>(buffer: &Buffer, f: F) -> Result<T, BufferAccessError>
 where
     F: FnOnce(&[u8], BufferData) -> T,
 {
     let data = buffer
-        .buffer_data::<ShmBufferUserData>()
+        .buffer_data::<ShmBufferUserData>()?
         .ok_or(BufferAccessError::NotManaged)?;
 
     match data.pool.with_data_slice(|slice| f(slice, data.data)) {

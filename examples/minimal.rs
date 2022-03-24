@@ -13,7 +13,7 @@ use smithay::{
     reexports::wayland_server::Display,
     utils::{Rectangle, Transform},
     wayland::{
-        buffer::{BufferHandler, ManagedBuffer},
+        buffer::{Buffer, BufferHandler},
         compositor::{
             with_surface_tree_downward, CompositorHandler, CompositorState, SurfaceAttributes,
             TraversalAction,
@@ -32,7 +32,7 @@ use wayland_server::{
 };
 
 impl BufferHandler for App {
-    fn buffer_destroyed(&mut self, _buffer: &ManagedBuffer) {}
+    fn buffer_destroyed(&mut self, _buffer: &Buffer) {}
 }
 
 impl XdgShellHandler for App {
