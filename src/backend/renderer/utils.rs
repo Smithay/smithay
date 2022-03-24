@@ -4,10 +4,13 @@
 use crate::utils::Coordinate;
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
-    utils::{Buffer, Logical, Point, Rectangle, Scale, Size, Transform},
-    wayland::compositor::{
-        add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage,
-        SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
+    utils::{Buffer as BufferCoord, Logical, Point, Rectangle, Scale, Size, Transform},
+    wayland::{
+        buffer::Buffer,
+        compositor::{
+            add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage,
+            SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
+        },
     },
 };
 use std::collections::VecDeque;
@@ -24,11 +27,11 @@ use wayland_server::{
 #[derive(Default)]
 pub(crate) struct SurfaceState {
     pub(crate) commit_count: usize,
-    pub(crate) buffer_dimensions: Option<Size<i32, Buffer>>,
+    pub(crate) buffer_dimensions: Option<Size<i32, BufferCoord>>,
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
     pub(crate) buffer: Option<WlBuffer>,
-    pub(crate) damage: VecDeque<Vec<Rectangle<i32, Buffer>>>,
+    pub(crate) damage: VecDeque<Vec<Rectangle<i32, BufferCoord>>>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
@@ -43,7 +46,11 @@ impl SurfaceState {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
-                self.buffer_dimensions = buffer_dimensions(dh, &buffer);
+                self.buffer_dimensions = {
+                    let buffer = Buffer::from_buffer(&buffer, dh);
+
+                    buffer_dimensions(dh, &buffer)
+                };
 
                 // #[cfg(feature = "desktop")]
                 // if self.buffer_scale != attrs.buffer_scale
@@ -83,7 +90,7 @@ impl SurfaceState {
                             self.buffer_dimensions.unwrap(),
                         ))
                     })
-                    .collect::<Vec<Rectangle<i32, Buffer>>>();
+                    .collect::<Vec<Rectangle<i32, BufferCoord>>>();
                 buffer_damage.dedup();
                 self.damage.push_front(buffer_damage);
                 self.damage.truncate(MAX_DAMAGE);
@@ -103,7 +110,7 @@ impl SurfaceState {
         }
     }
 
-    pub(crate) fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, Buffer>> {
+    pub(crate) fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, BufferCoord>> {
         // on overflow the wrapping_sub should end up
         let recent_enough = commit
             // if commit > commit_count we have overflown, in that case the following map might result
@@ -281,7 +288,9 @@ where
                 let buffer_damage = data.damage_since(last_commit.copied());
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
-                        match renderer.import_buffer(dh, buffer, Some(states), &buffer_damage) {
+                        let buffer = Buffer::from_buffer(buffer, dh);
+
+                        match renderer.import_buffer(dh, &buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 e.insert(Box::new(m));
                                 data.renderer_seen.insert(texture_id, data.commit_count);

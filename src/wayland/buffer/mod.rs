@@ -1,6 +1,6 @@
 //! Buffer management utilities.
 //!
-//! This module provides the [`ManagedBuffer`] type to represent a [`WlBuffer`] managed by Smithay and data
+//! This module provides the [`Buffer`] type to represent a [`WlBuffer`] managed by Smithay and data
 //! associated with said buffer. This module has a dual purpose. This module provides a way for the compositor
 //! to be told when a client has destroyed a buffer. The other purpose is to provide a way for specific types
 //! of [`WlBuffer`] to abstractly associate some data with the protocol object without conflicting
@@ -28,28 +28,19 @@ pub trait BufferHandler {
     /// Called when the client has destroyed the buffer.
     ///
     /// At this point the buffer is no longer usable by Smithay.
-    fn buffer_destroyed(&mut self, buffer: &ManagedBuffer);
+    fn buffer_destroyed(&mut self, buffer: &Buffer);
 }
 
 /// A wrapper around a [`WlBuffer`] managed by Smithay.
-#[derive(Debug, Clone)]
-pub struct ManagedBuffer {
-    buffer: ObjectId,
-    data: Arc<BufferData>,
-}
+#[derive(Debug, Clone, PartialEq)]
+pub struct Buffer(BufferInner);
 
-impl PartialEq for ManagedBuffer {
-    fn eq(&self, other: &Self) -> bool {
-        self.buffer == other.buffer
-    }
-}
-
-impl ManagedBuffer {
+impl Buffer {
     /// Initializes a buffer, associating some user data with the buffer. This function causes the buffer to
     /// managed by Smithay.
     ///
-    /// The data associated with the buffer may obtained using [`BufferManager::buffer_data`].
-    pub fn init_buffer<D, T>(init: &mut DataInit<'_, D>, buffer: New<WlBuffer>, data: T) -> ManagedBuffer
+    /// The data associated with the buffer may obtained using [`ManagedBuffer::buffer_data`].
+    pub fn init_buffer<D, T>(init: &mut DataInit<'_, D>, buffer: New<WlBuffer>, data: T) -> Buffer
     where
         D: BufferHandler + 'static,
         T: Send + Sync + 'static,
@@ -57,34 +48,46 @@ impl ManagedBuffer {
         let data = Arc::new(BufferData { data: Box::new(data) });
         let buffer = init.custom_init(buffer, data.clone());
 
-        ManagedBuffer {
-            buffer: buffer.id(),
-            data,
-        }
-    }
-
-    /// Creates a [`Buffer`] from a [`WlBuffer`].
-    ///
-    /// This function returns [`Err`] if the buffer is not managed by Smithay (such as an EGL buffer).
-    pub fn from_buffer(
-        buffer: &WlBuffer,
-        dh: &mut DisplayHandle<'_>,
-    ) -> Result<ManagedBuffer, UnmanagedResource> {
-        let data = dh
-            .get_object_data(buffer.id())
-            .map_err(|_| UnmanagedResource)?
-            .downcast::<BufferData>()
-            .map_err(|_| UnmanagedResource)?;
-
-        Ok(ManagedBuffer {
+        Buffer(BufferInner::Managed {
             buffer: buffer.id(),
             data,
         })
     }
 
+    /// Creates a [`Buffer`] from a [`WlBuffer`].
+    pub fn from_buffer(buffer: &WlBuffer, dh: &mut DisplayHandle<'_>) -> Buffer {
+        match dh.get_object_data(buffer.id()) {
+            Ok(data) => {
+                match data.downcast::<BufferData>() {
+                    Ok(data) => Buffer(BufferInner::Managed {
+                        buffer: buffer.id(),
+                        data,
+                    }),
+
+                    // The buffer has some user data but is not managed by Smithay.
+                    Err(_) => Buffer(BufferInner::Unmanaged(buffer.clone())),
+                }
+            }
+
+            // A completely unmanaged buffer (generally EGL)
+            Err(_) => Buffer(BufferInner::Unmanaged(buffer.clone())),
+        }
+    }
+
+    /// Returns the object id of the underlying [`WlBuffer`].
+    pub fn id(&self) -> ObjectId {
+        match &self.0 {
+            BufferInner::Managed { buffer, .. } => buffer.clone(),
+            BufferInner::Unmanaged(buffer) => buffer.id(),
+        }
+    }
+
     /// Returns a reference to the underlying [`WlBuffer`].
     pub fn buffer(&self, dh: &mut DisplayHandle<'_>) -> Result<WlBuffer, InvalidId> {
-        WlBuffer::from_id(dh, self.buffer.clone())
+        match &self.0 {
+            BufferInner::Managed { buffer, .. } => WlBuffer::from_id(dh, buffer.clone()),
+            BufferInner::Unmanaged(buffer) => Ok(buffer.clone()),
+        }
     }
 
     /// Sends a `release` event, indicating the buffer is no longer in use by the compositor, meaning the
@@ -100,11 +103,52 @@ impl ManagedBuffer {
     /// functions provided by the buffer abstractions to obtain the data. For example, data associated with an
     /// shm buffer should be obtained using [`with_buffer_contents`](crate::wayland::shm::with_buffer_contents)
     /// instead of specifying the type of the data in the `T` generic for this function.
-    pub fn buffer_data<T>(&self) -> Option<&T>
+    pub fn buffer_data<T>(&self) -> Result<Option<&T>, UnmanagedResource>
     where
         T: Send + Sync + 'static,
     {
-        <dyn Any>::downcast_ref::<T>(&*self.data.data)
+        match self.0 {
+            BufferInner::Managed { ref data, .. } => Ok(<dyn Any>::downcast_ref::<T>(&*data.data)),
+            BufferInner::Unmanaged(_) => Err(UnmanagedResource),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum BufferInner {
+    /// The buffer is managed by Smithay.
+    Managed {
+        /// Object id of the [`WlBuffer`].
+        ///
+        /// This cannot be a [`WlBuffer`] or else there will be an Arc cycle.
+        buffer: ObjectId,
+
+        /// Data associated with the managed buffer.
+        data: Arc<BufferData>,
+    },
+
+    /// Buffer not managed by Smithay.
+    ///
+    /// There is no user data that may be taken from the buffer.
+    Unmanaged(WlBuffer),
+}
+
+impl PartialEq for BufferInner {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Managed {
+                    buffer: self_buffer, ..
+                },
+                Self::Managed {
+                    buffer: other_buffer, ..
+                },
+            ) => self_buffer == other_buffer,
+
+            (Self::Unmanaged(self_buffer), Self::Unmanaged(other_buffer)) => self_buffer == other_buffer,
+
+            _ => false,
+        }
     }
 }
 
@@ -127,10 +171,10 @@ where
         // WlBuffer has a single request which is a destructor.
         debug_assert_eq!(msg.opcode, 0);
 
-        data.buffer_destroyed(&ManagedBuffer {
+        data.buffer_destroyed(&Buffer(BufferInner::Managed {
             buffer: msg.sender_id,
             data: self,
-        });
+        }));
 
         None
     }
