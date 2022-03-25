@@ -17,6 +17,9 @@ use std::{
     },
 };
 
+#[cfg(feature = "wayland_frontend")]
+use std::{cell::RefCell, collections::HashMap};
+
 mod shaders;
 mod version;
 
@@ -690,7 +693,7 @@ impl Gles2Renderer {
         Ok(renderer)
     }
 
-    pub(crate) fn make_current(&self) -> Result<(), MakeCurrentError> {
+    pub(crate) fn make_current(&mut self) -> Result<(), MakeCurrentError> {
         unsafe {
             if let Some(&Gles2Target::Surface(ref surface)) = self.target.as_ref() {
                 self.egl.make_current_with_surface(&**surface)?;
@@ -710,11 +713,12 @@ impl Gles2Renderer {
                 }
             }
         }
+        // delayed destruction until the next frame rendering.
+        self.cleanup();
         Ok(())
     }
 
-    fn cleanup(&mut self) -> Result<(), Gles2Error> {
-        self.make_current()?;
+    fn cleanup(&mut self) {
         #[cfg(feature = "wayland_frontend")]
         self.dmabuf_cache.retain(|entry, _tex| entry.upgrade().is_some());
         // Free outdated buffer resources
@@ -756,7 +760,6 @@ impl Gles2Renderer {
                 },
             }
         }
-        Ok(())
     }
 }
 
@@ -769,6 +772,10 @@ impl ImportMemWl for Gles2Renderer {
         damage: &[Rectangle<i32, Buffer>],
     ) -> Result<Gles2Texture, Gles2Error> {
         use crate::wayland::shm::with_buffer_contents;
+
+        // why not store a `Gles2Texture`? because the user might do so.
+        // this is guaranteed a non-public internal type, so we are good.
+        type CacheMap = HashMap<usize, Rc<Gles2TextureInternal>>;
 
         with_buffer_contents(buffer, |slice, data| {
             self.make_current()?;
@@ -795,11 +802,21 @@ impl ImportMemWl for Gles2Renderer {
 
             let mut upload_full = false;
 
+            let id = self.id();
             let texture = Gles2Texture(
-                // why not store a `Gles2Texture`? because the user might do so.
-                // this is guaranteed a non-public internal type, so we are good.
                 surface
-                    .and_then(|surface| surface.data_map.get::<Rc<Gles2TextureInternal>>().cloned())
+                    .and_then(|surface| {
+                        surface
+                            .data_map
+                            .insert_if_missing(|| Rc::new(RefCell::new(CacheMap::new())));
+                        surface
+                            .data_map
+                            .get::<Rc<RefCell<CacheMap>>>()
+                            .unwrap()
+                            .borrow()
+                            .get(&id)
+                            .cloned()
+                    })
                     .filter(|texture| texture.size == (width, height).into())
                     .unwrap_or_else(|| {
                         let mut tex = 0;
@@ -817,7 +834,12 @@ impl ImportMemWl for Gles2Renderer {
                         });
                         if let Some(surface) = surface {
                             let copy = new.clone();
-                            surface.data_map.insert_if_missing(|| copy);
+                            surface
+                                .data_map
+                                .get::<Rc<RefCell<CacheMap>>>()
+                                .unwrap()
+                                .borrow_mut()
+                                .insert(id, copy);
                         }
                         new
                     }),
@@ -1058,10 +1080,9 @@ impl ImportDma for Gles2Renderer {
             return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
+        self.make_current()?;
         self.existing_dmabuf_texture(buffer)?.map(Ok).unwrap_or_else(|| {
             let is_external = !self.egl.dmabuf_render_formats().contains(&buffer.format());
-
-            self.make_current()?;
             let image = self
                 .egl
                 .display
@@ -1111,7 +1132,6 @@ impl Gles2Renderer {
                     if egl_images[0] == ffi_egl::NO_IMAGE_KHR {
                         return Ok(None);
                     }
-                    self.make_current()?;
                     let tex = Some(texture.0.texture);
                     self.import_egl_image(egl_images[0], false, tex)?;
                 }
@@ -1480,6 +1500,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
             })?;
 
         self.target = Some(Gles2Target::Image { buf, dmabuf });
+        self.make_current()?;
         Ok(())
     }
 
@@ -1518,6 +1539,7 @@ impl Bind<Gles2Texture> for Gles2Renderer {
             destruction_callback_sender: self.destruction_callback_sender.clone(),
             fbo,
         });
+        self.make_current()?;
 
         Ok(())
     }
@@ -1578,6 +1600,7 @@ impl Bind<Gles2Renderbuffer> for Gles2Renderer {
             buf: renderbuffer,
             fbo,
         });
+        self.make_current()?;
 
         Ok(())
     }
@@ -1699,8 +1722,6 @@ impl Renderer for Gles2Renderer {
         F: FnOnce(&mut Self, &mut Self::Frame) -> R,
     {
         self.make_current()?;
-        // delayed destruction until the next frame rendering.
-        self.cleanup()?;
 
         unsafe {
             self.gl.Viewport(0, 0, size.w, size.h);
