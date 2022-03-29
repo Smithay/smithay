@@ -280,16 +280,18 @@ impl LayerMap {
                 if let ExclusiveZone::Exclusive(amount) = data.exclusive_zone {
                     match data.anchor {
                         x if x.contains(Anchor::LEFT) && !x.contains(Anchor::RIGHT) => {
-                            zone.loc.x += amount as i32 + data.margin.left + data.margin.right
+                            zone.loc.x += amount as i32 + data.margin.left + data.margin.right;
+                            zone.size.w -= amount as i32 + data.margin.left + data.margin.right;
                         }
                         x if x.contains(Anchor::TOP) && !x.contains(Anchor::BOTTOM) => {
-                            zone.loc.y += amount as i32 + data.margin.top + data.margin.bottom
+                            zone.loc.y += amount as i32 + data.margin.top + data.margin.bottom;
+                            zone.size.h -= amount as i32 + data.margin.top + data.margin.bottom;
                         }
                         x if x.contains(Anchor::RIGHT) && !x.contains(Anchor::LEFT) => {
-                            zone.size.w -= amount as i32 + data.margin.left + data.margin.right
+                            zone.size.w -= amount as i32 + data.margin.left + data.margin.right;
                         }
                         x if x.contains(Anchor::BOTTOM) && !x.contains(Anchor::TOP) => {
-                            zone.size.h -= amount as i32 + data.margin.top + data.margin.top
+                            zone.size.h -= amount as i32 + data.margin.top + data.margin.bottom;
                         }
                         _ => {}
                     }
