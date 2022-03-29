@@ -1,12 +1,16 @@
+use crate::wayland::{
+    buffer::{Buffer, BufferHandler},
+    shm::ShmBufferUserData,
+};
+
 use super::{
     pool::{Pool, ResizeError},
-    BufferData, ShmState,
+    BufferData, ShmPoolUserData, ShmState,
 };
 
 use std::sync::Arc;
 use wayland_server::{
     protocol::{
-        wl_buffer::{self, WlBuffer},
         wl_shm::{self, WlShm},
         wl_shm_pool::{self, WlShmPool},
     },
@@ -96,22 +100,13 @@ where
  * wl_shm_pool
  */
 
-/// User data of WlShmPool
-#[derive(Debug)]
-pub struct ShmPoolUserData {
-    inner: Arc<Pool>,
-}
-
 impl DelegateDispatchBase<WlShmPool> for ShmState {
     type UserData = ShmPoolUserData;
 }
 
 impl<D> DelegateDispatch<WlShmPool, D> for ShmState
 where
-    D: Dispatch<WlShmPool, UserData = ShmPoolUserData>
-        + Dispatch<WlBuffer, UserData = ShmBufferUserData>
-        + AsRef<ShmState>
-        + 'static,
+    D: Dispatch<WlShmPool, UserData = ShmPoolUserData> + BufferHandler + AsRef<ShmState> + 'static,
 {
     fn request(
         state: &mut D,
@@ -184,7 +179,7 @@ where
                             },
                         };
 
-                        data_init.init(buffer, data);
+                        Buffer::init_buffer(data_init, buffer, data);
                     }
 
                     WEnum::Unknown(unknown) => {
@@ -215,37 +210,5 @@ where
 
             _ => unreachable!(),
         }
-    }
-}
-
-/*
- * wl_buffer
- */
-
-/// User data of shm WlBuffer
-#[derive(Debug)]
-pub struct ShmBufferUserData {
-    pub(crate) pool: Arc<Pool>,
-    pub(crate) data: BufferData,
-}
-
-impl DelegateDispatchBase<WlBuffer> for ShmState {
-    type UserData = ShmBufferUserData;
-}
-
-impl<D> DelegateDispatch<WlBuffer, D> for ShmState
-where
-    D: Dispatch<WlBuffer, UserData = ShmBufferUserData>,
-    D: 'static,
-{
-    fn request(
-        _state: &mut D,
-        _client: &wayland_server::Client,
-        _pool: &WlBuffer,
-        _request: wl_buffer::Request,
-        _data: &Self::UserData,
-        _dh: &mut DisplayHandle<'_>,
-        _data_init: &mut DataInit<'_, D>,
-    ) {
     }
 }

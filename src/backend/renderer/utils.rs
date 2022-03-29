@@ -2,10 +2,13 @@
 
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
-    utils::{Buffer, Logical, Point, Rectangle, Size, Transform},
-    wayland::compositor::{
-        is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
-        SurfaceAttributes, SurfaceData, TraversalAction,
+    utils::{Buffer as BufferCoord, Logical, Point, Rectangle, Size, Transform},
+    wayland::{
+        buffer::Buffer,
+        compositor::{
+            is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
+            SurfaceAttributes, SurfaceData, TraversalAction,
+        },
     },
 };
 use std::collections::VecDeque;
@@ -22,11 +25,11 @@ use wayland_server::{
 #[derive(Default)]
 pub(crate) struct SurfaceState {
     pub(crate) commit_count: usize,
-    pub(crate) buffer_dimensions: Option<Size<i32, Buffer>>,
+    pub(crate) buffer_dimensions: Option<Size<i32, BufferCoord>>,
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
     pub(crate) buffer: Option<WlBuffer>,
-    pub(crate) damage: VecDeque<Vec<Rectangle<i32, Buffer>>>,
+    pub(crate) damage: VecDeque<Vec<Rectangle<i32, BufferCoord>>>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     // #[cfg(feature = "desktop")]
@@ -40,7 +43,11 @@ impl SurfaceState {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
-                self.buffer_dimensions = buffer_dimensions(dh, &buffer);
+                self.buffer_dimensions = {
+                    let buffer = Buffer::from_wl(&buffer, dh);
+
+                    buffer_dimensions(dh, &buffer)
+                };
 
                 // #[cfg(feature = "desktop")]
                 // if self.buffer_scale != attrs.buffer_scale
@@ -75,7 +82,7 @@ impl SurfaceState {
                             self.buffer_dimensions.unwrap(),
                         ))
                     })
-                    .collect::<Vec<Rectangle<i32, Buffer>>>();
+                    .collect::<Vec<Rectangle<i32, BufferCoord>>>();
                 buffer_damage.dedup();
                 self.damage.push_front(buffer_damage);
                 self.damage.truncate(MAX_DAMAGE);
@@ -94,7 +101,7 @@ impl SurfaceState {
         }
     }
 
-    pub(crate) fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, Buffer>> {
+    pub(crate) fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, BufferCoord>> {
         // on overflow the wrapping_sub should end up
         let recent_enough = commit
             // if commit > commit_count we have overflown, in that case the following map might result
@@ -215,7 +222,9 @@ where
                 let buffer_damage = data.damage_since(last_commit.copied());
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
-                        match renderer.import_buffer(dh, buffer, Some(states), &buffer_damage) {
+                        let buffer = Buffer::from_wl(buffer, dh);
+
+                        match renderer.import_buffer(dh, &buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 e.insert(Box::new(m));
                                 data.renderer_seen.insert(texture_id, data.commit_count);
@@ -279,57 +288,64 @@ where
 {
     let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
     let mut result = Ok(());
-    let _ = import_surface_tree_and(dh, renderer, surface, log, location, |_surface, states, location| {
-        let mut location = *location;
-        if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
-            let mut data = data.borrow_mut();
-            let dimensions = data.surface_size();
-            let buffer_scale = data.buffer_scale;
-            let attributes = states.cached_state.current::<SurfaceAttributes>();
-            if let Some(texture) = data
-                .textures
-                .get_mut(&texture_id)
-                .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
-            {
-                let dimensions = dimensions.unwrap();
-                // we need to re-extract the subsurface offset, as the previous closure
-                // only passes it to our children
-                let mut surface_offset = (0, 0).into();
-                if states.role == Some("subsurface") {
-                    let current = states.cached_state.current::<SubsurfaceCachedState>();
-                    surface_offset = current.location;
-                    location += current.location;
-                }
+    let _ = import_surface_tree_and(
+        dh,
+        renderer,
+        surface,
+        log,
+        location,
+        |_surface, states, location| {
+            let mut location = *location;
+            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+                let mut data = data.borrow_mut();
+                let dimensions = data.surface_size();
+                let buffer_scale = data.buffer_scale;
+                let attributes = states.cached_state.current::<SurfaceAttributes>();
+                if let Some(texture) = data
+                    .textures
+                    .get_mut(&texture_id)
+                    .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
+                {
+                    let dimensions = dimensions.unwrap();
+                    // we need to re-extract the subsurface offset, as the previous closure
+                    // only passes it to our children
+                    let mut surface_offset = (0, 0).into();
+                    if states.role == Some("subsurface") {
+                        let current = states.cached_state.current::<SubsurfaceCachedState>();
+                        surface_offset = current.location;
+                        location += current.location;
+                    }
 
-                let damage = damage
-                    .iter()
-                    .cloned()
-                    // first move the damage by the surface offset in logical space
-                    .map(|mut geo| {
-                        // make the damage relative to the surfaec
-                        geo.loc -= surface_offset;
-                        geo
-                    })
-                    // then clamp to surface size again in logical space
-                    .flat_map(|geo| geo.intersection(Rectangle::from_loc_and_size((0, 0), dimensions)))
-                    // lastly transform it into physical space
-                    .map(|geo| geo.to_f64().to_physical(scale))
-                    .collect::<Vec<_>>();
+                    let damage = damage
+                        .iter()
+                        .cloned()
+                        // first move the damage by the surface offset in logical space
+                        .map(|mut geo| {
+                            // make the damage relative to the surfaec
+                            geo.loc -= surface_offset;
+                            geo
+                        })
+                        // then clamp to surface size again in logical space
+                        .flat_map(|geo| geo.intersection(Rectangle::from_loc_and_size((0, 0), dimensions)))
+                        // lastly transform it into physical space
+                        .map(|geo| geo.to_f64().to_physical(scale))
+                        .collect::<Vec<_>>();
 
-                // TODO: Take wp_viewporter into account
-                if let Err(err) = frame.render_texture_at(
-                    texture,
-                    location.to_f64().to_physical(scale),
-                    buffer_scale,
-                    scale,
-                    attributes.buffer_transform.into(),
-                    &damage,
-                    1.0,
-                ) {
-                    result = Err(err);
+                    // TODO: Take wp_viewporter into account
+                    if let Err(err) = frame.render_texture_at(
+                        texture,
+                        location.to_f64().to_physical(scale),
+                        buffer_scale,
+                        scale,
+                        attributes.buffer_transform.into(),
+                        &damage,
+                        1.0,
+                    ) {
+                        result = Err(err);
+                    }
                 }
             }
-        }
-    });
+        },
+    );
     result
 }
