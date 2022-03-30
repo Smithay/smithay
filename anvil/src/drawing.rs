@@ -52,7 +52,11 @@ pub fn draw_cursor(
             (0, 0).into()
         }
     };
-    SurfaceTree { surface, position }
+    SurfaceTree {
+        surface,
+        position,
+        z_index: 100, /* Cursor should always be on-top */
+    }
 }
 
 pub fn draw_dnd_icon(
@@ -69,6 +73,7 @@ pub fn draw_dnd_icon(
     SurfaceTree {
         surface,
         position: location.into(),
+        z_index: 100, /* Cursor should always be on-top */
     }
 }
 
