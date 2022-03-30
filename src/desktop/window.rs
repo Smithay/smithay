@@ -86,6 +86,7 @@ pub(super) struct WindowInner {
     pub(super) id: usize,
     toplevel: Kind,
     bbox: Cell<Rectangle<i32, Logical>>,
+    pub(super) z_index: Cell<Option<u8>>,
     user_data: UserDataMap,
 }
 
@@ -138,6 +139,7 @@ impl Window {
             toplevel,
             bbox: Cell::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
             user_data: UserDataMap::new(),
+            z_index: Cell::new(None),
         }))
     }
 
@@ -296,6 +298,18 @@ impl Window {
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
+    }
+
+    /// Overrides the default z-index of this window.
+    /// (Default is [`RenderZindex::Shell`](crate::desktop::space::RenderZindex))
+    pub fn override_z_index(&self, index: u8) {
+        self.0.z_index.set(Some(index));
+    }
+
+    /// Resets a previously overriden z-index to the default of
+    /// [`RenderZindex::Shell`](crate::desktop::space::RenderZindex).
+    pub fn clear_z_index(&self) {
+        self.0.z_index.take();
     }
 }
 
