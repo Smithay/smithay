@@ -94,7 +94,7 @@ enum GrabStatus {
 
 struct KbdInternal {
     known_kbds: Vec<WlKeyboard>,
-    focus: Option<WlSurface>,
+    focus: Option<(WlSurface, Serial)>,
     pending_focus: Option<WlSurface>,
     pressed_keys: Vec<u32>,
     mods_state: ModifiersState,
@@ -219,8 +219,8 @@ impl KbdInternal {
     {
         if let Some(ref surface) = self.focus {
             for kbd in &self.known_kbds {
-                if kbd.as_ref().same_client_as(surface.as_ref()) {
-                    f(kbd, surface);
+                if kbd.as_ref().same_client_as(surface.0.as_ref()) {
+                    f(kbd, &surface.0);
                 }
             }
         }
@@ -547,7 +547,7 @@ impl KeyboardHandle {
             .borrow_mut()
             .focus
             .as_ref()
-            .and_then(|f| f.as_ref().client())
+            .and_then(|f| f.0.as_ref().client())
             .map(|c| c.equals(client))
             .unwrap_or(false)
     }
@@ -589,6 +589,15 @@ impl KeyboardHandle {
         let mut guard = self.arc.internal.borrow_mut();
         if kbd.as_ref().version() >= 4 {
             kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
+        }
+        if let Some((focused, serial)) = guard.focus.as_ref() {
+            if focused.as_ref().same_client_as(kbd.as_ref()) {
+                let (dep, la, lo, gr) = guard.serialize_modifiers();
+                let keys = guard.serialize_pressed_keys();
+                kbd.enter((*serial).into(), focused, keys);
+                // Modifiers must be send after enter event.
+                kbd.modifiers((*serial).into(), dep, la, lo, gr);
+            }
         }
         guard.known_kbds.push(kbd);
     }
@@ -658,7 +667,7 @@ impl<'a> KeyboardInnerHandle<'a> {
 
     /// Access the current focus of this keyboard
     pub fn current_focus(&self) -> Option<&WlSurface> {
-        self.inner.focus.as_ref()
+        self.inner.focus.as_ref().map(|f| &f.0)
     }
 
     /// Send the input to the focused keyboards
@@ -691,7 +700,7 @@ impl<'a> KeyboardInnerHandle<'a> {
             .inner
             .focus
             .as_ref()
-            .and_then(|f| focus.map(|s| s.as_ref().equals(f.as_ref())))
+            .and_then(|f| focus.map(|s| s.as_ref().equals(f.0.as_ref())))
             .unwrap_or(false);
 
         if !same {
@@ -701,7 +710,7 @@ impl<'a> KeyboardInnerHandle<'a> {
             });
 
             // set new focus
-            self.inner.focus = focus.cloned();
+            self.inner.focus = focus.cloned().map(|f| (f, serial));
             let (dep, la, lo, gr) = self.inner.serialize_modifiers();
             let keys = self.inner.serialize_pressed_keys();
             self.inner.with_focused_kbds(|kbd, surface| {
@@ -715,7 +724,7 @@ impl<'a> KeyboardInnerHandle<'a> {
                     ref mut focus_hook,
                     ..
                 } = *self.inner;
-                focus_hook(focus.as_ref());
+                focus_hook(focus.as_ref().map(|f| &f.0));
             }
             if self.inner.focus.is_some() {
                 trace!(self.logger, "Focus set to new surface");
