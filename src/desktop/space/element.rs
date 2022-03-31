@@ -190,6 +190,8 @@ pub struct SurfaceTree {
     pub surface: WlSurface,
     /// Position to draw add
     pub position: Point<i32, Logical>,
+    /// Z-Index to draw at
+    pub z_index: u8,
 }
 
 impl<R> RenderElement<R> for SurfaceTree
@@ -232,6 +234,10 @@ where
             damage,
             log,
         )
+    }
+
+    fn z_index(&self) -> u8 {
+        self.z_index
     }
 }
 

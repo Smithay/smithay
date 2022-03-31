@@ -102,6 +102,6 @@ impl Window {
     }
 
     pub(super) fn elem_z_index(&self) -> u8 {
-        RenderZindex::Shell as u8
+        self.0.z_index.get().unwrap_or(RenderZindex::Shell as u8)
     }
 }
