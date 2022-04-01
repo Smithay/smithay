@@ -87,7 +87,7 @@ pub struct Mode {
 }
 
 /// The physical properties of an output
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PhysicalProperties {
     /// The size of the monitor, in millimeters
     pub size: Size<i32, Raw>,
@@ -282,6 +282,11 @@ impl Output {
     /// Returns the name of the output
     pub fn name(&self) -> String {
         self.inner.0.lock().unwrap().name.clone()
+    }
+
+    /// Returns the physical properties of the output
+    pub fn physical_properties(&self) -> PhysicalProperties {
+        self.inner.0.lock().unwrap().physical.clone()
     }
 
     /// Removes a mode from the list of known modes
