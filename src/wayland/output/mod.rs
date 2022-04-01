@@ -279,6 +279,11 @@ impl Output {
         self.inner.0.lock().unwrap().scale
     }
 
+    /// Returns the currenly advertised location of the output
+    pub fn current_location(&self) -> Point<i32, Logical> {
+        self.inner.0.lock().unwrap().location
+    }
+
     /// Returns the name of the output
     pub fn name(&self) -> String {
         self.inner.0.lock().unwrap().name.clone()
