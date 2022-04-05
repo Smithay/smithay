@@ -56,6 +56,9 @@ pub enum Error {
     /// Failed to initialize a window
     #[error("Failed to initialize a window")]
     InitFailed(#[from] winit::error::OsError),
+    #[error("Failed to create a surface for the window")]
+    /// Surface creation error
+    Surface(Box<dyn std::error::Error>),
     /// Context creation is not supported on the current window system
     #[error("Context creation is not supported on the current window system")]
     NotSupported,
@@ -181,7 +184,8 @@ where
             let size = winit_window.inner_size();
             let surface = unsafe {
                 wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
-            };
+            }
+            .map_err(|err| Error::Surface(err.into()))?;
             (
                 EGLSurface::new(
                     &display,
