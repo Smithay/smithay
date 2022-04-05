@@ -60,6 +60,7 @@ pub mod compositor;
 // pub mod dmabuf;
 // pub mod explicit_synchronization;
 pub mod output;
+pub mod poll;
 pub mod seat;
 pub mod shell;
 pub mod shm;
