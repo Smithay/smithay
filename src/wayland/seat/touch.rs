@@ -198,14 +198,15 @@ pub struct TouchUserData {
     pub(crate) handle: Option<TouchHandle>,
 }
 
-impl<T> DelegateDispatchBase<WlTouch> for SeatState<T> {
+impl<D> DelegateDispatchBase<WlTouch> for SeatState<D> {
     type UserData = TouchUserData;
 }
 
-impl<T, D> DelegateDispatch<WlTouch, D> for SeatState<T>
+impl<D> DelegateDispatch<WlTouch, D> for SeatState<D>
 where
-    D: 'static + Dispatch<WlTouch, UserData = TouchUserData>,
-    D: SeatHandler<T>,
+    D: Dispatch<WlTouch, UserData = TouchUserData>,
+    D: SeatHandler,
+    D: 'static,
 {
     fn request(
         _state: &mut D,
