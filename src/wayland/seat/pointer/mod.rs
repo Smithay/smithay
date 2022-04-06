@@ -29,18 +29,18 @@ pub use cursor_image::{CursorImageAttributes, CursorImageStatus, CURSOR_IMAGE_RO
 mod events;
 pub use events::{AxisFrame, ButtonEvent, MotionEvent};
 
-struct PointerInternal<T> {
+struct PointerInternal<D> {
     known_pointers: Vec<WlPointer>,
     focus: Option<(WlSurface, Point<i32, Logical>)>,
     pending_focus: Option<(WlSurface, Point<i32, Logical>)>,
     location: Point<f64, Logical>,
-    grab: GrabStatus<T>,
+    grab: GrabStatus<D>,
     pressed_buttons: Vec<u32>,
     image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>,
 }
 
 // image_callback does not implement debug, so we have to impl Debug manually
-impl<T> fmt::Debug for PointerInternal<T> {
+impl<D> fmt::Debug for PointerInternal<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerInternal")
             .field("known_pointers", &self.known_pointers)
@@ -54,7 +54,7 @@ impl<T> fmt::Debug for PointerInternal<T> {
     }
 }
 
-impl<T> PointerInternal<T> {
+impl<D> PointerInternal<D> {
     fn new(image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>) -> Self {
         Self {
             known_pointers: Vec::new(),
@@ -67,7 +67,7 @@ impl<T> PointerInternal<T> {
         }
     }
 
-    fn set_grab<G: PointerGrab<T> + 'static>(
+    fn set_grab<G: PointerGrab<D> + 'static>(
         &mut self,
         dh: &mut DisplayHandle<'_>,
         serial: Serial,
@@ -164,7 +164,7 @@ impl<T> PointerInternal<T> {
 
     fn with_grab<F>(&mut self, dh: &mut DisplayHandle<'_>, f: F)
     where
-        F: FnOnce(&mut DisplayHandle<'_>, PointerInnerHandle<'_, T>, &mut dyn PointerGrab<T>),
+        F: FnOnce(&mut DisplayHandle<'_>, PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
     {
         let mut grab = ::std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
         match grab {
@@ -204,11 +204,11 @@ impl<T> PointerInternal<T> {
 /// When sending events using this handle, they will be intercepted by a pointer
 /// grab if any is active. See the [`PointerGrab`] trait for details.
 #[derive(Debug)]
-pub struct PointerHandle<T> {
-    inner: Arc<Mutex<PointerInternal<T>>>,
+pub struct PointerHandle<D> {
+    inner: Arc<Mutex<PointerInternal<D>>>,
 }
 
-impl<T> Clone for PointerHandle<T> {
+impl<D> Clone for PointerHandle<D> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -216,8 +216,8 @@ impl<T> Clone for PointerHandle<T> {
     }
 }
 
-impl<T> PointerHandle<T> {
-    pub(crate) fn new<F>(cb: F) -> PointerHandle<T>
+impl<D> PointerHandle<D> {
+    pub(crate) fn new<F>(cb: F) -> PointerHandle<D>
     where
         F: FnMut(CursorImageStatus) + Send + Sync + 'static,
     {
@@ -234,7 +234,7 @@ impl<T> PointerHandle<T> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<T> + 'static>(
+    pub fn set_grab<G: PointerGrab<D> + 'static>(
         &self,
         dh: &mut DisplayHandle<'_>,
         grab: G,
@@ -284,7 +284,7 @@ impl<T> PointerHandle<T> {
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
-    pub fn motion(&self, data: &mut T, dh: &mut DisplayHandle<'_>, event: &MotionEvent) {
+    pub fn motion(&self, data: &mut D, dh: &mut DisplayHandle<'_>, event: &MotionEvent) {
         let mut inner = self.inner.lock().unwrap();
         inner.pending_focus = event.focus.clone();
         inner.with_grab(dh, move |dh, mut handle, grab| {
@@ -296,7 +296,7 @@ impl<T> PointerHandle<T> {
     ///
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
-    pub fn button(&self, data: &mut T, dh: &mut DisplayHandle<'_>, event: &ButtonEvent) {
+    pub fn button(&self, data: &mut D, dh: &mut DisplayHandle<'_>, event: &ButtonEvent) {
         let mut inner = self.inner.lock().unwrap();
         match event.state {
             ButtonState::Pressed => {
@@ -315,7 +315,7 @@ impl<T> PointerHandle<T> {
     /// Start an axis frame
     ///
     /// A single frame will group multiple scroll events as if they happened in the same instance.
-    pub fn axis(&self, data: &mut T, dh: &mut DisplayHandle<'_>, details: AxisFrame) {
+    pub fn axis(&self, data: &mut D, dh: &mut DisplayHandle<'_>, details: AxisFrame) {
         self.inner.lock().unwrap().with_grab(dh, |dh, mut handle, grab| {
             grab.axis(data, dh, &mut handle, details);
         });
@@ -330,15 +330,15 @@ impl<T> PointerHandle<T> {
 /// This inner handle is accessed from inside a pointer grab logic, and directly
 /// sends event to the client
 #[derive(Debug)]
-pub struct PointerInnerHandle<'a, T> {
-    inner: &'a mut PointerInternal<T>,
+pub struct PointerInnerHandle<'a, D> {
+    inner: &'a mut PointerInternal<D>,
 }
 
-impl<'a, T> PointerInnerHandle<'a, T> {
+impl<'a, D> PointerInnerHandle<'a, D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<T> + 'static>(
+    pub fn set_grab<G: PointerGrab<D> + 'static>(
         &mut self,
         dh: &mut DisplayHandle<'_>,
         serial: Serial,
@@ -460,20 +460,19 @@ impl<'a, T> PointerInnerHandle<'a, T> {
 
 /// User data for pointer
 #[derive(Debug)]
-pub struct PointerUserData<T> {
-    pub(crate) handle: Option<PointerHandle<T>>,
+pub struct PointerUserData<D> {
+    pub(crate) handle: Option<PointerHandle<D>>,
 }
 
-impl<T: 'static> DelegateDispatchBase<WlPointer> for SeatState<T> {
-    type UserData = PointerUserData<T>;
+impl<D: 'static> DelegateDispatchBase<WlPointer> for SeatState<D> {
+    type UserData = PointerUserData<D>;
 }
 
-impl<T, D> DelegateDispatch<WlPointer, D> for SeatState<T>
+impl<D> DelegateDispatch<WlPointer, D> for SeatState<D>
 where
-    D: Dispatch<WlPointer, UserData = PointerUserData<T>>,
-    D: SeatHandler<T>,
+    D: Dispatch<WlPointer, UserData = PointerUserData<D>>,
+    D: SeatHandler,
     D: 'static,
-    T: 'static,
 {
     fn request(
         _state: &mut D,
