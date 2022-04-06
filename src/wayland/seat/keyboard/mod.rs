@@ -569,14 +569,14 @@ pub struct KeyboardUserData {
     pub(crate) handle: Option<KeyboardHandle>,
 }
 
-impl<T> DelegateDispatchBase<WlKeyboard> for SeatState<T> {
+impl<D> DelegateDispatchBase<WlKeyboard> for SeatState<D> {
     type UserData = KeyboardUserData;
 }
 
-impl<T, D> DelegateDispatch<WlKeyboard, D> for SeatState<T>
+impl<D> DelegateDispatch<WlKeyboard, D> for SeatState<D>
 where
     D: 'static + Dispatch<WlKeyboard, UserData = KeyboardUserData>,
-    D: SeatHandler<T>,
+    D: SeatHandler,
 {
     fn request(
         _state: &mut D,

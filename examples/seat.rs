@@ -14,7 +14,7 @@ struct App {
     seat: Seat<Self>,
 }
 
-impl SeatHandler<Self> for App {
+impl SeatHandler for App {
     fn seat_state(&mut self) -> &mut SeatState<Self> {
         &mut self.seat_state
     }
