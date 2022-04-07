@@ -413,6 +413,7 @@ impl EGLDisplay {
     }
 
     /// Exports an [`EGLImage`] as a [`Dmabuf`]
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn create_dmabuf_from_image(
         &self,
         image: EGLImage,
