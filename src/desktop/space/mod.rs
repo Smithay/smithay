@@ -29,6 +29,8 @@ pub use self::element::*;
 use self::output::*;
 use self::window::*;
 
+use super::WindowSurfaceType;
+
 crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
 
 /// Represents two dimensional plane to map windows and outputs upon.
@@ -121,12 +123,44 @@ impl Space {
         self.windows.iter()
     }
 
+    /// Finds the topmost surface under this point if any and returns it
+    /// together with the location of this surface and its window.
+    ///
+    /// This is equivalent to iterating the windows in the space from
+    /// top to bottom and calling [`Window::surface_under`] for each
+    /// window and returning the first matching surface.
+    /// As [`Window::surface_under`] internally uses the surface input regions
+    /// the same applies to this method and it will only return a surface
+    /// where the point is within the surface input regions.
+    pub fn surface_under<P: Into<Point<f64, Logical>>>(
+        &self,
+        point: P,
+        surface_type: WindowSurfaceType,
+    ) -> Option<(Window, WlSurface, Point<i32, Logical>)> {
+        let point = point.into();
+        for window in self.windows.iter().rev() {
+            let loc = window_loc(window, &self.id);
+            let mut geo = window.bbox();
+            geo.loc += loc;
+
+            if !geo.to_f64().contains(point) {
+                continue;
+            }
+
+            if let Some((surface, location)) = window.surface_under(point - loc.to_f64(), surface_type) {
+                return Some((window.clone(), surface, location));
+            }
+        }
+
+        None
+    }
+
     /// Get a reference to the window under a given point, if any
     pub fn window_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<&Window> {
         let point = point.into();
         self.windows.iter().rev().find(|w| {
             let loc = window_loc(w, &self.id);
-            let mut geo = w.geometry();
+            let mut geo = w.bbox();
             geo.loc += loc;
             geo.to_f64().contains(point)
         })
