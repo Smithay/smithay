@@ -120,7 +120,7 @@ pub(super) fn layer_shell_implementation(
             data.shell_state.lock().unwrap().known_layers.push(handle.clone());
 
             let mut user_impl = data.user_impl.borrow_mut();
-            (&mut *user_impl)(
+            (*user_impl)(
                 LayerShellRequest::NewLayerSurface {
                     surface: handle,
                     output,
@@ -265,7 +265,7 @@ fn layer_surface_implementation(
             };
 
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(
+            (*user_impl)(
                 LayerShellRequest::AckConfigure {
                     surface: data.wl_surface.clone(),
                     configure,

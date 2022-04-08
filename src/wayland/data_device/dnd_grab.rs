@@ -212,7 +212,7 @@ impl PointerGrab for DnDGrab {
                     source.cancelled();
                 }
             }
-            (&mut *self.callback.borrow_mut())(super::DataDeviceEvent::DnDDropped {
+            (*self.callback.borrow_mut())(super::DataDeviceEvent::DnDDropped {
                 seat: self.seat.clone(),
             });
             self.icon = None;
@@ -323,7 +323,7 @@ fn implement_dnd_data_offer(
                 let source_actions = with_source_metadata(&source, |meta| meta.dnd_action)
                     .unwrap_or_else(|_| DndAction::empty());
                 let possible_actions = source_actions & dnd_actions;
-                data.chosen_action = (&mut *action_choice.borrow_mut())(possible_actions, preferred_action);
+                data.chosen_action = (*action_choice.borrow_mut())(possible_actions, preferred_action);
                 // check that the user provided callback respects that one precise action should be chosen
                 debug_assert!(
                     [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]

@@ -228,10 +228,7 @@ impl SeatData {
                                 debug!(log, "Denying a wl_data_offer.receive with invalid source.");
                                 let _ = ::nix::unistd::close(fd);
                             } else {
-                                (&mut *callback.borrow_mut())(DataDeviceEvent::SendSelection {
-                                    mime_type,
-                                    fd,
-                                });
+                                (*callback.borrow_mut())(DataDeviceEvent::SendSelection { mime_type, fd });
                             }
                         }
                     });
@@ -448,7 +445,7 @@ where
                         }
                     }
                     // The StartDrag is in response to a pointer implicit grab, all is good
-                    (&mut *callback.borrow_mut())(DataDeviceEvent::DnDStarted {
+                    (*callback.borrow_mut())(DataDeviceEvent::DnDStarted {
                         source: source.clone(),
                         icon: icon.clone(),
                         seat: seat.clone(),
@@ -481,7 +478,7 @@ where
                     .unwrap_or(false)
                 {
                     let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
-                    (&mut *callback.borrow_mut())(DataDeviceEvent::NewSelection(source.clone()));
+                    (*callback.borrow_mut())(DataDeviceEvent::NewSelection(source.clone()));
                     // The client has kbd focus, it can set the selection
                     seat_data
                         .borrow_mut()

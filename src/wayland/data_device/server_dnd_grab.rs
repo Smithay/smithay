@@ -207,9 +207,9 @@ where
                 }
             }
             let mut callback = self.callback.borrow_mut();
-            (&mut *callback)(ServerDndEvent::Dropped);
+            (*callback)(ServerDndEvent::Dropped);
             if !validated {
-                (&mut *callback)(ServerDndEvent::Cancelled);
+                (*callback)(ServerDndEvent::Cancelled);
             }
             // in all cases abandon the drop
             // no more buttons are pressed, release the grab
@@ -258,7 +258,7 @@ where
             Request::Receive { mime_type, fd } => {
                 // check if the source and associated mime type is still valid
                 if metadata.mime_types.contains(&mime_type) && data.active {
-                    (&mut *callback.borrow_mut())(ServerDndEvent::Send { mime_type, fd });
+                    (*callback.borrow_mut())(ServerDndEvent::Send { mime_type, fd });
                 }
             }
             Request::Destroy => {}
@@ -291,7 +291,7 @@ where
                     );
                     return;
                 }
-                (&mut *callback.borrow_mut())(ServerDndEvent::Finished);
+                (*callback.borrow_mut())(ServerDndEvent::Finished);
                 data.active = false;
             }
             Request::SetActions {
@@ -311,14 +311,14 @@ where
                     return;
                 }
                 let possible_actions = metadata.dnd_action & dnd_actions;
-                data.chosen_action = (&mut *action_choice.borrow_mut())(possible_actions, preferred_action);
+                data.chosen_action = (*action_choice.borrow_mut())(possible_actions, preferred_action);
                 // check that the user provided callback respects that one precise action should be chosen
                 debug_assert!(
                     [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]
                         .contains(&data.chosen_action)
                 );
                 offer.action(data.chosen_action);
-                (&mut *callback.borrow_mut())(ServerDndEvent::Action(data.chosen_action));
+                (*callback.borrow_mut())(ServerDndEvent::Action(data.chosen_action));
             }
             _ => unreachable!(),
         }

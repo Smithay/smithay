@@ -100,7 +100,7 @@ where
                                     wl_surface: data.wl_surface.clone(),
                                 };
 
-                                (&mut *cb.borrow_mut())(
+                                (*cb.borrow_mut())(
                                     XdgDecorationRequest::NewToplevelDecoration {
                                         toplevel: toplevel.clone(),
                                     },
@@ -110,7 +110,7 @@ where
                                 let cb = cb.clone();
                                 id.quick_assign(move |_, request, ddata| match request {
                                     zxdg_toplevel_decoration_v1::Request::SetMode { mode } => {
-                                        (&mut *cb.borrow_mut())(
+                                        (*cb.borrow_mut())(
                                             XdgDecorationRequest::SetMode {
                                                 toplevel: toplevel.clone(),
                                                 mode,
@@ -119,7 +119,7 @@ where
                                         );
                                     }
                                     zxdg_toplevel_decoration_v1::Request::UnsetMode => {
-                                        (&mut *cb.borrow_mut())(
+                                        (*cb.borrow_mut())(
                                             XdgDecorationRequest::UnsetMode {
                                                 toplevel: toplevel.clone(),
                                             },
