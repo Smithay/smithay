@@ -240,8 +240,10 @@ impl Window {
         }
     }
 
-    /// Finds the topmost surface under this point if any and returns it together with the location of this
-    /// surface.
+    /// Finds the topmost surface under this point matching the input regions of the surface and returns
+    /// it together with the location of this surface.
+    ///
+    /// In case no surface input region matches the point [`None`] is returned.
     ///
     /// - `point` should be relative to (0,0) of the window.
     pub fn surface_under<P: Into<Point<f64, Logical>>>(
