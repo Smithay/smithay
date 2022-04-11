@@ -510,10 +510,12 @@ impl Space {
             let geo = element.geometry(self.id);
             let old_geo = state.last_state.get(&ToplevelId::from(element)).cloned();
 
-            // window was moved or resized
-            if old_geo.map(|old_geo| old_geo != geo).unwrap_or(false) {
+            // window was moved, resized or just appeared
+            if old_geo.map(|old_geo| old_geo != geo).unwrap_or(true) {
                 // Add damage for the old position of the window
-                damage.push(old_geo.unwrap());
+                if let Some(old_geo) = old_geo {
+                    damage.push(old_geo);
+                }
                 damage.push(geo);
             } else {
                 // window stayed at its place
