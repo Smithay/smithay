@@ -174,7 +174,9 @@ where
     damage
 }
 
-/// Returns the (sub-)surface under a given position given a surface, if any.
+/// Returns the topmost (sub-)surface under a given position matching the input regions of the surface.
+///
+/// In case no surface input region matches the point [`None`] is returned.
 ///
 /// - `point` has to be the position to query, relative to (0, 0) of the given surface + `location`.
 /// - `location` can be used to offset the returned point.

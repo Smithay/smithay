@@ -410,6 +410,7 @@ impl EGLDisplay {
     }
 
     /// Exports an [`EGLImage`] as a [`Dmabuf`]
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn create_dmabuf_from_image(
         &self,
         image: EGLImage,
@@ -435,6 +436,8 @@ impl EGLDisplay {
         let mut num_planes: nix::libc::c_int = 0;
         let mut modifier: ffi::egl::types::EGLuint64KHR = 0;
         if unsafe {
+            // TODO: clippy warns us here that we might dereference a raw pointer in a non unsafe public function
+            // For now we add a allow rule, but this should be addressed in the future
             ffi::egl::ExportDMABUFImageQueryMESA(
                 **self.display,
                 image,
@@ -450,6 +453,8 @@ impl EGLDisplay {
         let mut strides: Vec<ffi::egl::types::EGLint> = Vec::with_capacity(num_planes as usize);
         let mut offsets: Vec<ffi::egl::types::EGLint> = Vec::with_capacity(num_planes as usize);
         unsafe {
+            // TODO: clippy warns us here that we might dereference a raw pointer in a non unsafe public function
+            // For now we add a allow rule, but this should be addressed in the future
             if ffi::egl::ExportDMABUFImageMESA(
                 **self.display,
                 image,

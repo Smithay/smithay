@@ -51,7 +51,7 @@ pub(crate) fn implement_shell<Impl>(
             .known_surfaces
             .push(make_handle(&shell_surface));
         let mut imp = implementation.borrow_mut();
-        (&mut *imp)(
+        (*imp)(
             ShellRequest::NewShellSurface {
                 surface: make_handle(&shell_surface),
             },
@@ -113,7 +113,7 @@ where
                 })
                 .unwrap();
                 if valid {
-                    (&mut *user_impl)(
+                    (*user_impl)(
                         ShellRequest::Pong {
                             surface: make_handle(&shell_surface),
                         },
@@ -123,7 +123,7 @@ where
             }
             Request::Move { seat, serial } => {
                 let serial = Serial::from(serial);
-                (&mut *user_impl)(
+                (*user_impl)(
                     ShellRequest::Move {
                         surface: make_handle(&shell_surface),
                         serial,
@@ -134,7 +134,7 @@ where
             }
             Request::Resize { seat, serial, edges } => {
                 let serial = Serial::from(serial);
-                (&mut *user_impl)(
+                (*user_impl)(
                     ShellRequest::Resize {
                         surface: make_handle(&shell_surface),
                         serial,
@@ -144,14 +144,14 @@ where
                     dispatch_data,
                 )
             }
-            Request::SetToplevel => (&mut *user_impl)(
+            Request::SetToplevel => (*user_impl)(
                 ShellRequest::SetKind {
                     surface: make_handle(&shell_surface),
                     kind: ShellSurfaceKind::Toplevel,
                 },
                 dispatch_data,
             ),
-            Request::SetTransient { parent, x, y, flags } => (&mut *user_impl)(
+            Request::SetTransient { parent, x, y, flags } => (*user_impl)(
                 ShellRequest::SetKind {
                     surface: make_handle(&shell_surface),
                     kind: ShellSurfaceKind::Transient {
@@ -166,7 +166,7 @@ where
                 method,
                 framerate,
                 output,
-            } => (&mut *user_impl)(
+            } => (*user_impl)(
                 ShellRequest::SetKind {
                     surface: make_handle(&shell_surface),
                     kind: ShellSurfaceKind::Fullscreen {
@@ -186,7 +186,7 @@ where
                 flags,
             } => {
                 let serial = Serial::from(serial);
-                (&mut *user_impl)(
+                (*user_impl)(
                     ShellRequest::SetKind {
                         surface: make_handle(&shell_surface),
                         kind: ShellSurfaceKind::Popup {
@@ -200,7 +200,7 @@ where
                     dispatch_data,
                 )
             }
-            Request::SetMaximized { output } => (&mut *user_impl)(
+            Request::SetMaximized { output } => (*user_impl)(
                 ShellRequest::SetKind {
                     surface: make_handle(&shell_surface),
                     kind: ShellSurfaceKind::Maximized { output },

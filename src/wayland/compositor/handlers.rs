@@ -137,7 +137,7 @@ impl SurfaceImplem {
                 }
                 PrivateSurfaceData::commit(&surface);
                 trace!(self.log, "Calling user implementation for wl_surface.commit");
-                (&mut *user_impl)(surface, ddata);
+                (*user_impl)(surface, ddata);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
                 PrivateSurfaceData::with_states(&surface, |states| {

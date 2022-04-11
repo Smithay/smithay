@@ -30,7 +30,7 @@ pub(crate) fn implement_wm_base(
         client_data: Mutex::new(make_shell_client_data()),
     });
     let mut user_impl = shell_data.user_impl.borrow_mut();
-    (&mut *user_impl)(
+    (*user_impl)(
         XdgRequest::NewClient {
             client: make_shell_client(&shell),
         },
@@ -95,7 +95,7 @@ fn wm_implementation(
             };
             if valid {
                 let mut user_impl = data.shell_data.user_impl.borrow_mut();
-                (&mut *user_impl)(
+                (*user_impl)(
                     XdgRequest::ClientPong {
                         client: make_shell_client(&shell),
                     },
@@ -272,7 +272,7 @@ fn xdg_surface_implementation(
 
             let handle = make_toplevel_handle(&id);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::NewToplevel { surface: handle }, dispatch_data);
+            (*user_impl)(XdgRequest::NewToplevel { surface: handle }, dispatch_data);
         }
         xdg_surface::Request::GetPopup {
             id,
@@ -348,7 +348,7 @@ fn xdg_surface_implementation(
 
             let handle = make_popup_handle(&id);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(
+            (*user_impl)(
                 XdgRequest::NewPopup {
                     surface: handle,
                     positioner: positioner_data,
@@ -453,7 +453,7 @@ fn xdg_surface_implementation(
             };
 
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(
+            (*user_impl)(
                 XdgRequest::AckConfigure {
                     surface: surface.clone(),
                     configure,
@@ -600,7 +600,7 @@ fn toplevel_implementation(
             let handle = make_toplevel_handle(&toplevel);
             let serial = Serial::from(serial);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(
+            (*user_impl)(
                 XdgRequest::ShowWindowMenu {
                     surface: handle,
                     seat,
@@ -615,7 +615,7 @@ fn toplevel_implementation(
             let handle = make_toplevel_handle(&toplevel);
             let serial = Serial::from(serial);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(
+            (*user_impl)(
                 XdgRequest::Move {
                     surface: handle,
                     seat,
@@ -629,7 +629,7 @@ fn toplevel_implementation(
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
             let serial = Serial::from(serial);
-            (&mut *user_impl)(
+            (*user_impl)(
                 XdgRequest::Resize {
                     surface: handle,
                     seat,
@@ -652,17 +652,17 @@ fn toplevel_implementation(
         xdg_toplevel::Request::SetMaximized => {
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::Maximize { surface: handle }, dispatch_data);
+            (*user_impl)(XdgRequest::Maximize { surface: handle }, dispatch_data);
         }
         xdg_toplevel::Request::UnsetMaximized => {
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::UnMaximize { surface: handle }, dispatch_data);
+            (*user_impl)(XdgRequest::UnMaximize { surface: handle }, dispatch_data);
         }
         xdg_toplevel::Request::SetFullscreen { output } => {
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(
+            (*user_impl)(
                 XdgRequest::Fullscreen {
                     surface: handle,
                     output,
@@ -673,14 +673,14 @@ fn toplevel_implementation(
         xdg_toplevel::Request::UnsetFullscreen => {
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::UnFullscreen { surface: handle }, dispatch_data);
+            (*user_impl)(XdgRequest::UnFullscreen { surface: handle }, dispatch_data);
         }
         xdg_toplevel::Request::SetMinimized => {
             // This has to be handled by the compositor, may not be
             // supported and just ignored
             let handle = make_toplevel_handle(&toplevel);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
-            (&mut *user_impl)(XdgRequest::Minimize { surface: handle }, dispatch_data);
+            (*user_impl)(XdgRequest::Minimize { surface: handle }, dispatch_data);
         }
         _ => unreachable!(),
     }
@@ -757,7 +757,7 @@ fn xdg_popup_implementation(
             let handle = make_popup_handle(&popup);
             let mut user_impl = data.shell_data.user_impl.borrow_mut();
             let serial = Serial::from(serial);
-            (&mut *user_impl)(
+            (*user_impl)(
                 XdgRequest::Grab {
                     surface: handle,
                     seat,
@@ -777,7 +777,7 @@ fn xdg_popup_implementation(
                 .unwrap()
                 .borrow();
 
-            (&mut *user_impl)(
+            (*user_impl)(
                 XdgRequest::RePosition {
                     surface: handle,
                     positioner: positioner_data,
