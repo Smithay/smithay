@@ -459,8 +459,7 @@ fn scan_connectors(
             let output_name = format!("{}-{}", interface_short_name, connector_info.interface_id());
 
             let (phys_w, phys_h) = connector_info.size().unwrap_or((0, 0));
-            let (output, global) = Output::new(
-                display,
+            let output = Output::new(
                 output_name,
                 PhysicalProperties {
                     size: (phys_w as i32, phys_h as i32).into(),
@@ -470,6 +469,7 @@ fn scan_connectors(
                 },
                 None,
             );
+            let global = output.create_global(display);
             let position = (
                 space
                     .outputs()

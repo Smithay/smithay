@@ -80,8 +80,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
         refresh: 60_000,
     };
 
-    let (output, _global) = Output::new(
-        &mut *display.borrow_mut(),
+    let output = Output::new(
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
@@ -91,6 +90,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
         },
         logger.clone(),
     );
+    let _global = output.create_global(&mut *display.borrow_mut());
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
     state.space.borrow_mut().map_output(&output, 1.0, (0, 0));

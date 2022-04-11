@@ -23,8 +23,7 @@
 //!
 //! # let mut display = wayland_server::Display::new();
 //! // Create the Output with given name and physical properties
-//! let (output, _output_global) = Output::new(
-//!     &mut display,      // the display
+//! let output = Output::new(
 //!     "output-0".into(), // the name of this output,
 //!     PhysicalProperties {
 //!         size: (200, 150).into(),        // dimensions (width, height) in mm
@@ -34,6 +33,10 @@
 //!     },
 //!     None // insert a logger here
 //! );
+//! // create a global, if you want to advertise it to clients
+//! let _output_global = output.create_global(
+//!     &mut display,      // the display//!
+//! ); // you can drop the global, if you never intend to destroy it.
 //! // Now you can configure it
 //! output.change_current_state(
 //!     Some(Mode { size: (1920, 1080).into(), refresh: 60000 }), // the resolution mode,
@@ -102,7 +105,7 @@ pub struct PhysicalProperties {
 #[derive(Debug)]
 pub(crate) struct Inner {
     name: String,
-    pub(crate) log: ::slog::Logger,
+    description: String,
     instances: Vec<WlOutput>,
     physical: PhysicalProperties,
     location: Point<i32, Logical>,
@@ -112,7 +115,8 @@ pub(crate) struct Inner {
     current_mode: Option<Mode>,
     preferred_mode: Option<Mode>,
 
-    xdg_output: Option<XdgOutput>,
+    pub(crate) xdg_output: Option<XdgOutput>,
+    pub(crate) log: ::slog::Logger,
 }
 
 type InnerType = Arc<(Mutex<Inner>, UserDataMap)>;
@@ -174,17 +178,8 @@ pub struct Output {
 }
 
 impl Output {
-    /// Create a new output global with given name and physical properties
-    ///
-    /// The global is directly registered into the event loop, and this function
-    /// returns the state token allowing you to access it, as well as the global handle,
-    /// in case you wish to remove this global in the future.
-    pub fn new<L>(
-        display: &mut Display,
-        name: String,
-        physical: PhysicalProperties,
-        logger: L,
-    ) -> (Output, Global<WlOutput>)
+    /// Creates a new output state.
+    pub fn new<L>(name: String, physical: PhysicalProperties, logger: L) -> Output
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -192,10 +187,12 @@ impl Output {
 
         info!(log, "Creating new wl_output"; "name" => &name);
 
+        let description = format!("{} - {} - {}", physical.make, physical.model, name);
+
         let inner = Arc::new((
             Mutex::new(Inner {
                 name,
-                log,
+                description,
                 instances: Vec::new(),
                 physical,
                 location: (0, 0).into(),
@@ -205,13 +202,21 @@ impl Output {
                 current_mode: None,
                 preferred_mode: None,
                 xdg_output: None,
+                log,
             }),
             UserDataMap::default(),
         ));
 
-        let output = Output { inner: inner.clone() };
+        Output { inner }
+    }
 
-        let global = display.create_global(
+    /// Create a new output global with given name and physical properties
+    ///
+    /// The global is directly registered into the event loop, and this function
+    /// returns the global handle in case you wish to remove this global in the future.
+    pub fn create_global(&self, display: &mut Display) -> Global<WlOutput> {
+        let inner = self.inner.clone();
+        display.create_global(
             3,
             Filter::new(move |(output, _version): (Main<WlOutput>, _), _, _| {
                 output.assign_destructor(Filter::new(|output: WlOutput, _, _| {
@@ -229,9 +234,7 @@ impl Output {
                 });
                 inner.0.lock().unwrap().new_global(output.deref().clone());
             }),
-        );
-
-        (output, global)
+        )
     }
 
     /// Attempt to retrieve a [`Output`] from an existing resource
@@ -269,6 +272,11 @@ impl Output {
         self.inner.0.lock().unwrap().current_mode
     }
 
+    /// Returns the preferred mode of the output
+    pub fn preferred_mode(&self) -> Option<Mode> {
+        self.inner.0.lock().unwrap().preferred_mode
+    }
+
     /// Returns the currently advertised transformation of the output
     pub fn current_transform(&self) -> Transform {
         self.inner.0.lock().unwrap().transform
@@ -289,9 +297,19 @@ impl Output {
         self.inner.0.lock().unwrap().name.clone()
     }
 
+    /// Returns the description of the output, if xdg-output is initialized
+    pub fn description(&self) -> String {
+        self.inner.0.lock().unwrap().description.clone()
+    }
+
     /// Returns the physical properties of the output
     pub fn physical_properties(&self) -> PhysicalProperties {
         self.inner.0.lock().unwrap().physical.clone()
+    }
+
+    /// Returns the currently advertised modes of the output
+    pub fn modes(&self) -> Vec<Mode> {
+        self.inner.0.lock().unwrap().modes.clone()
     }
 
     /// Removes a mode from the list of known modes
