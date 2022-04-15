@@ -9,7 +9,7 @@ use smithay::{
         },
         winit::{self, WinitEvent},
     },
-    delegate_compositor, delegate_seat, delegate_shm, delegate_xdg_shell,
+    delegate_compositor, delegate_data_device, delegate_seat, delegate_shm, delegate_xdg_shell,
     reexports::wayland_server::Display,
     utils::{Rectangle, Transform},
     wayland::{
@@ -18,6 +18,7 @@ use smithay::{
             with_surface_tree_downward, CompositorHandler, CompositorState, SurfaceAttributes,
             TraversalAction,
         },
+        data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
         seat::{FilterResult, Seat, SeatHandler, SeatState},
         shell::xdg::{XdgRequest, XdgShellHandler, XdgShellState},
         shm::ShmState,
@@ -58,6 +59,15 @@ impl XdgShellHandler for App {
     }
 }
 
+impl DataDeviceHandler for App {
+    fn data_device_state(&self) -> &DataDeviceState {
+        &self.data_device_state
+    }
+}
+
+impl ClientDndGrabHandler for App {}
+impl ServerDndGrabHandler for App {}
+
 impl CompositorHandler for App {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.compositor_state
@@ -85,6 +95,7 @@ struct App {
     xdg_shell_state: XdgShellState,
     shm_state: ShmState,
     seat_state: SeatState<Self>,
+    data_device_state: DataDeviceState,
 
     seat: Seat<Self>,
 }
@@ -112,6 +123,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             xdg_shell_state: XdgShellState::new(&mut display, None).0,
             shm_state: ShmState::new(&mut display, vec![], None),
             seat_state,
+            data_device_state: DataDeviceState::new(&mut display, None),
             seat,
         }
     };
@@ -241,3 +253,4 @@ delegate_xdg_shell!(App);
 delegate_compositor!(App);
 delegate_shm!(App);
 delegate_seat!(App);
+delegate_data_device!(App);

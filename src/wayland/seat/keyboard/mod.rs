@@ -511,6 +511,18 @@ impl KeyboardHandle {
         //     .unwrap_or(false)
     }
 
+    /// Check if client of given resource currently has keyboard focus
+    pub fn client_of_object_has_focus(&self, id: &ObjectId) -> bool {
+        self.arc
+            .internal
+            .lock()
+            .unwrap()
+            .focus
+            .as_ref()
+            .map(|f| f.id().same_client_as(id))
+            .unwrap_or(false)
+    }
+
     /// Check if keyboard has focus
     pub fn is_focused(&self) -> bool {
         self.arc.internal.lock().unwrap().focus.is_some()
