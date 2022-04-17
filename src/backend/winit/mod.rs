@@ -24,7 +24,11 @@ mod input;
 use crate::{
     backend::{
         egl::{
-            context::GlAttributes, display::EGLDisplay, native, EGLContext, EGLSurface, Error as EGLError,
+            context::{EGLContext, GlAttributes},
+            display::EGLDisplay,
+            native,
+            surface::{adjust_damage, EGLSurface},
+            Error as EGLError,
         },
         input::InputEvent,
         renderer::{
@@ -333,19 +337,12 @@ impl WinitGraphicsBackend {
                     .to_f64()
                     .to_logical(scale)
                     .to_i32_round::<i32>();
-                let damage = damage
-                    .iter()
-                    .map(|rect| {
-                        Rectangle::from_loc_and_size(
-                            (rect.loc.x, size.h - rect.loc.y - rect.size.h),
-                            rect.size,
-                        )
-                        .to_f64()
-                        .to_physical(scale)
-                        .to_i32_round::<i32>()
-                    })
-                    .collect::<Vec<_>>();
-                Some(damage)
+                Some(adjust_damage(
+                    damage
+                        .iter()
+                        .map(|x| x.to_f64().to_physical(scale).to_i32_round()),
+                    size.to_f64().to_physical(scale).to_i32_round(),
+                ))
             }
             _ => None,
         };

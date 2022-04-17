@@ -12,10 +12,9 @@
 //! ## Example usage
 //!
 //! ```rust,no_run
-//! # use std::{sync::{Arc, Mutex}, error::Error};
-//! # use smithay::backend::x11::{X11Backend, X11Surface, WindowBuilder};
-//! use smithay::backend::egl::{EGLDisplay, EGLContext};
-//! use smithay::reexports::gbm;
+//! # use std::error::Error;
+//! # use smithay::backend::x11::{X11Connection, X11Backend, WindowBuilder};
+//! use smithay::backend::egl::{EGLDisplay, EGLContext, EGLSurface, context::GlAttributes};
 //! use std::collections::HashSet;
 //!
 //! # struct CompositorState;
@@ -23,34 +22,44 @@
 //!    handle: calloop::LoopHandle<CompositorState>,
 //!    logger: slog::Logger
 //! ) -> Result<(), Box<dyn Error>> {
+//!     // First lets connect to the X11 server
+//!     let connection = X11Connection::new(logger.clone())?;
+//!
+//!     // Create the EGLDisplay and EGLContext from the connection for direct rendering
+//!     let display = EGLDisplay::new(&connection, logger.clone())?;
+//!     let context = EGLContext::new_with_config(
+//!         &display,
+//!         GlAttributes {
+//!             version: (3, 0),
+//!             profile: None,
+//!             debug: false,
+//!             vsync: true,
+//!         },
+//!         Default::default(),
+//!         logger.clone(),
+//!     )?;
+//!
 //!     // Create the backend, also yielding a surface that may be used to render to the window.
-//!     let backend = X11Backend::new(logger.clone())?;
+//!     let backend = X11Backend::new(connection)?;
 //!
 //!     // Get a handle from the backend to interface with the X server
 //!     let x_handle = backend.handle();
 //!     // Create a window
 //!     let window = WindowBuilder::new()
 //!         .title("Wayland inside X11")
-//!         .build(&x_handle)
-//!         .expect("Could not create window");
+//!         .visual_from_context(&context)?
+//!         .build(&x_handle)?;
 //!
-//!     // To render to a window, we need to create an X11 surface.
-//!
-//!     // Get the DRM node used by the X server for direct rendering.
-//!     let (_drm_node, fd) = x_handle.drm_node()?;
-//!     // Create the gbm device for allocating buffers
-//!     let device = gbm::Device::new(fd)?;
-//!     // Initialize EGL to retrieve the support modifier list
-//!     let egl = EGLDisplay::new(&device, logger.clone()).expect("Failed to create EGLDisplay");
-//!     let context = EGLContext::new(&egl, logger).expect("Failed to create EGLContext");
-//!     let modifiers = context.dmabuf_render_formats().iter().map(|format| format.modifier).collect::<HashSet<_>>();
-//!
-//!     // Wrap up the device for sharing among the created X11 surfaces.
-//!     let device = Arc::new(Mutex::new(device));
-//!     // Finally create the X11 surface, you will use this to obtain buffers that will be presented to the
-//!     // window.
-//!     let surface = x_handle.create_surface(&window, device, modifiers.into_iter());
-//!
+//!     // To render to a window, we need to create an EGLSurface.
+//!     let surface = EGLSurface::new(
+//!         &display,
+//!         context.pixel_format().unwrap(),
+//!         context.config_id(),
+//!         window.clone(),
+//!         logger.clone(),
+//!     )?;
+//!     // you can now bind the egl surface to a renderer
+//!     
 //!     // Insert the backend into the event loop to receive events.
 //!     handle.insert_source(backend, |event, _window, state| {
 //!         // Process events from the X server that apply to the window.
@@ -74,38 +83,28 @@ DRI3 protocol documentation: https://gitlab.freedesktop.org/xorg/proto/xorgproto
 Present protocol documentation: https://gitlab.freedesktop.org/xorg/proto/xorgproto/-/blob/master/presentproto.txt
 */
 
-mod buffer;
+mod conn;
 mod error;
 #[macro_use]
 mod extension;
 mod input;
-mod surface;
 mod window_inner;
 
 use crate::{
     backend::{
-        allocator::{Allocator, Swapchain},
-        drm::{node::path_to_type, CreateDrmNodeError, DrmNode, NodeType},
-        egl::{native::X11DefaultDisplay, EGLDevice, EGLDisplay, Error as EGLError},
+        egl::{ffi, EGLContext},
         input::{Axis, ButtonState, InputEvent, KeyState},
     },
     utils::{x11rb::X11Source, Logical, Size},
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
-use drm_fourcc::{DrmFourcc, DrmModifier};
-use gbm::BufferObject;
-use nix::{
-    fcntl::{self, OFlag},
-    sys::stat::Mode,
-};
-use slog::{error, info, o, Logger};
+use slog::{error, Logger};
 use std::{
     collections::HashMap,
     io,
-    os::unix::io::RawFd,
     sync::{
         atomic::{AtomicU32, Ordering},
-        mpsc, Arc, Mutex, Weak,
+        Arc, Mutex, Weak,
     },
 };
 use x11rb::{
@@ -113,28 +112,20 @@ use x11rb::{
     connection::Connection,
     protocol::{
         self as x11,
-        dri3::ConnectionExt as _,
-        xproto::{ColormapAlloc, ConnectionExt, CreateWindowAux, VisualClass, WindowClass, WindowWrapper},
-        ErrorKind,
+        xproto::{ColormapAlloc, ConnectionExt, CreateWindowAux, WindowClass, WindowWrapper},
     },
-    rust_connection::{ReplyError, RustConnection},
+    xcb_ffi::XCBConnection,
 };
 
-use self::{extension::Extensions, window_inner::WindowInner};
+use self::window_inner::WindowInner;
 
+pub use self::conn::*;
 pub use self::error::*;
 pub use self::input::*;
-pub use self::surface::*;
 
 /// An event emitted by the X11 backend.
 #[derive(Debug)]
 pub enum X11Event {
-    /// The X server has required the compositor to redraw the contents of window.
-    Refresh {
-        /// XID of the window
-        window_id: u32,
-    },
-
     /// An input event occurred.
     Input(InputEvent<X11Input>),
 
@@ -142,14 +133,6 @@ pub enum X11Event {
     Resized {
         /// The new size of the window
         new_size: Size<u16, Logical>,
-        /// XID of the window
-        window_id: u32,
-    },
-
-    /// The last buffer presented to the window has been displayed.
-    ///
-    /// When this event is scheduled, the next frame may be rendered.
-    PresentCompleted {
         /// XID of the window
         window_id: u32,
     },
@@ -164,66 +147,26 @@ pub enum X11Event {
 /// Represents an active connection to the X to manage events on the Window provided by the backend.
 #[derive(Debug)]
 pub struct X11Backend {
-    log: Logger,
-    connection: Arc<RustConnection>,
-    source: X11Source,
+    connection: X11Connection,
+    source: X11Source<XCBConnection>,
     inner: Arc<Mutex<X11Inner>>,
+    log: Logger,
 }
 
 impl X11Backend {
     /// Initializes the X11 backend by connecting to the X server.
-    pub fn new<L>(logger: L) -> Result<X11Backend, X11Error>
-    where
-        L: Into<Option<slog::Logger>>,
-    {
-        let logger = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_x11"));
+    pub fn new(connection: X11Connection) -> Result<X11Backend, X11Error> {
+        let screen = &connection.setup().roots[connection.screen];
+        let logger = connection.logger.clone();
 
-        info!(logger, "Connecting to the X server");
-
-        let (connection, screen_number) = RustConnection::connect(None)?;
-        let connection = Arc::new(connection);
-        info!(logger, "Connected to screen {}", screen_number);
-
-        let extensions = Extensions::check_extensions(&*connection, &logger)?;
-
-        let screen = &connection.setup().roots[screen_number];
-
-        let depth = screen
-            .allowed_depths
-            .iter()
-            .find(|depth| depth.depth == 32) // Prefer 32-bit color
-            .or_else(|| screen.allowed_depths.iter().find(|depth| depth.depth == 24)) // 24-bit fallback for Xrgb8888
-            .cloned()
-            .ok_or(CreateWindowError::NoDepth)?;
-
-        // Next find a visual using the supported depth
-        let visual_id = depth
-            .visuals
-            .iter()
-            // Ensure the visual is little endian to comply with the format needed with X/ARGB8888
-            .filter(|visual| visual.red_mask == 0xff0000)
-            .find(|visual| visual.class == VisualClass::TRUE_COLOR)
-            .ok_or(CreateWindowError::NoVisual)?
-            .visual_id;
-
-        let format = match depth.depth {
-            24 => DrmFourcc::Xrgb8888,
-            32 => DrmFourcc::Argb8888,
-            _ => unreachable!(),
-        };
-
-        // Make a colormap
-        let colormap = connection.generate_id()?;
-        connection.create_colormap(ColormapAlloc::NONE, colormap, screen.root, visual_id)?;
-
-        let atoms = Atoms::new(&*connection)?.reply()?;
+        let atoms = Atoms::new(&connection)?.reply()?;
 
         // We need to give the X11Source a window we have created, we cannot send the close event to the root
         // window (0). To handle this, we will create a window we never map or provide to users to the backend
         // can be sent a message for shutdown.
 
         let close_window = WindowWrapper::create_window(
-            &*connection,
+            &connection,
             x11rb::COPY_DEPTH_FROM_PARENT,
             screen.root,
             0,
@@ -238,24 +181,17 @@ impl X11Backend {
         .into_window();
 
         let source = X11Source::new(
-            connection.clone(),
+            connection.xcb.clone(),
             close_window,
             atoms._SMITHAY_X11_BACKEND_CLOSE,
             logger.clone(),
         );
 
         let inner = X11Inner {
-            log: logger.clone(),
-            connection: connection.clone(),
-            screen_number,
+            screen_number: connection.screen,
             windows: HashMap::new(),
             key_counter: Arc::new(AtomicU32::new(0)),
-            window_format: format,
-            extensions,
-            colormap,
             atoms,
-            depth,
-            visual_id,
             devices: false,
         };
 
@@ -270,19 +206,10 @@ impl X11Backend {
     /// Returns a handle to the X11 backend.
     pub fn handle(&self) -> X11Handle {
         X11Handle {
-            log: self.log.clone(),
             connection: self.connection.clone(),
             inner: self.inner.clone(),
         }
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-enum EGLInitError {
-    #[error(transparent)]
-    EGL(#[from] EGLError),
-    #[error(transparent)]
-    IO(#[from] io::Error),
 }
 
 /// A handle to the X11 backend.
@@ -290,8 +217,7 @@ enum EGLInitError {
 /// This is the primary object used to interface with the backend.
 #[derive(Debug)]
 pub struct X11Handle {
-    log: Logger,
-    connection: Arc<RustConnection>,
+    connection: X11Connection,
     inner: Arc<Mutex<X11Inner>>,
 }
 
@@ -302,106 +228,8 @@ impl X11Handle {
     }
 
     /// Returns the underlying connection to the X server.
-    pub fn connection(&self) -> Arc<RustConnection> {
+    pub fn connection(&self) -> X11Connection {
         self.connection.clone()
-    }
-
-    /// Returns the format of the window.
-    pub fn format(&self) -> DrmFourcc {
-        self.inner.lock().unwrap().window_format
-    }
-
-    /// Returns the DRM node the X server uses for direct rendering.
-    ///
-    /// The DRM node may be used to create a [`gbm::Device`] to allocate buffers.
-    pub fn drm_node(&self) -> Result<(DrmNode, RawFd), X11Error> {
-        // Kernel documentation explains why we should prefer the node to be a render node:
-        // https://kernel.readthedocs.io/en/latest/gpu/drm-uapi.html
-        //
-        // > Render nodes solely serve render clients, that is, no modesetting or privileged ioctls
-        // > can be issued on render nodes. Only non-global rendering commands are allowed. If a
-        // > driver supports render nodes, it must advertise it via the DRIVER_RENDER DRM driver
-        // > capability. If not supported, the primary node must be used for render clients together
-        // > with the legacy drmAuth authentication procedure.
-        //
-        // Since giving the X11 backend the ability to do modesetting is a big nono, we try to only
-        // ever create a gbm device from a render node.
-        //
-        // Of course if the DRM device does not support render nodes, no DRIVER_RENDER capability, then
-        // fall back to the primary node.
-
-        // We cannot fallback on the egl_init method, because there is no way for us to authenticate a primary node.
-        // dri3 does not work for closed-source drivers, but *may* give us a authenticated fd as a fallback.
-        // As a result we try to use egl for a cleaner, better supported approach at first and only if that fails use dri3.
-        let inner = self.inner.lock().unwrap();
-
-        egl_init(&*inner).or_else(|err| {
-            slog::warn!(
-                &self.log,
-                "Failed to init X11 surface via egl, falling back to dri3: {}",
-                err
-            );
-            dri3_init(&*inner)
-        })
-    }
-
-    /// Creates a surface that allocates and presents buffers to the window.
-    ///
-    /// This will fail if the window has already been used to create a surface.
-    pub fn create_surface<A: Allocator<BufferObject<()>, Error = std::io::Error> + 'static>(
-        &self,
-        window: &Window,
-        allocator: A,
-        modifiers: impl Iterator<Item = DrmModifier>,
-    ) -> Result<X11Surface, X11Error> {
-        let has_resize = { window.0.resize.lock().unwrap().is_some() };
-
-        if has_resize {
-            return Err(X11Error::SurfaceExists);
-        }
-
-        let inner = self.inner.clone();
-        let inner_guard = inner.lock().unwrap();
-
-        // Fail if the window is not managed by this backend or is destroyed
-        if !inner_guard.windows.contains_key(&window.id()) {
-            return Err(X11Error::InvalidWindow);
-        }
-
-        let mut modifiers = modifiers.collect::<Vec<_>>();
-        // older dri3 versions do only support buffers with one plane.
-        // we need to make sure, we don't accidently allocate buffers with more.
-        if window.0.extensions.dri3 < Some((1, 2)) {
-            modifiers.retain(|modi| modi == &DrmModifier::Invalid || modi == &DrmModifier::Linear);
-        }
-
-        let format = window.0.format;
-        let size = window.size();
-        let swapchain = Swapchain::new(
-            Box::new(allocator) as Box<dyn Allocator<BufferObject<()>, Error = std::io::Error> + 'static>,
-            size.w as u32,
-            size.h as u32,
-            format,
-            modifiers,
-        );
-
-        let (sender, recv) = mpsc::channel();
-
-        {
-            let mut resize = window.0.resize.lock().unwrap();
-            *resize = Some(sender);
-        }
-
-        Ok(X11Surface {
-            connection: Arc::downgrade(&inner_guard.connection),
-            window: Arc::downgrade(&window.0),
-            swapchain,
-            format,
-            width: size.w,
-            height: size.h,
-            buffer: None,
-            resize: recv,
-        })
     }
 
     /// Get a temporary reference to a window by its XID
@@ -418,6 +246,7 @@ impl X11Handle {
 pub struct WindowBuilder<'a> {
     name: Option<&'a str>,
     size: Option<Size<u16, Logical>>,
+    visual_id: Option<u32>,
 }
 
 impl<'a> WindowBuilder<'a> {
@@ -427,6 +256,7 @@ impl<'a> WindowBuilder<'a> {
         WindowBuilder {
             name: None,
             size: None,
+            visual_id: None,
         }
     }
 
@@ -449,23 +279,78 @@ impl<'a> WindowBuilder<'a> {
         }
     }
 
+    /// Derives the visual_id used for window creation from the given [`EGLContext`].
+    ///
+    /// The context needs to originate from an `EGLDisplay` created from the same [`X11Connection`],
+    /// as the [`X11Handle`], that will be passed to [`WindowBuilder::build`].
+    /// Additionally the [`EGLContext`] needs to have been created with a config (see [`EGLContext::new_with_config`]),
+    /// otherwise this function will fail.
+    pub fn visual_from_context(self, context: &EGLContext) -> Result<Self, X11Error> {
+        Ok(Self {
+            visual_id: unsafe {
+                let mut id = 0i32;
+                if ffi::egl::GetConfigAttrib(
+                    **context.display.display,
+                    context.config_id(),
+                    ffi::egl::NATIVE_VISUAL_ID as i32,
+                    &mut id as *mut _,
+                ) == ffi::egl::FALSE
+                {
+                    return Err(CreateWindowError::NoVisual.into());
+                } else {
+                    Some(id as u32)
+                }
+            },
+            ..self
+        })
+    }
+
+    /// Manually sets the visual id of this window.
+    pub fn visual(self, visual_id: u32) -> Self {
+        Self {
+            visual_id: Some(visual_id),
+            ..self
+        }
+    }
+
     /// Creates a window using the options specified in the builder.
     pub fn build(self, handle: &X11Handle) -> Result<Window, X11Error> {
-        let connection = handle.connection();
+        let visual_id = self.visual_id.ok_or(CreateWindowError::NoVisual)?;
+        let connection = &handle.connection;
+        let screen = &connection.setup().roots[connection.screen];
+        let depth = screen
+            .allowed_depths
+            .iter()
+            .filter(|depth| depth.visuals.iter().any(|visual| visual.visual_id == visual_id))
+            .find(|depth| depth.depth == 32) // Prefer 32-bit color
+            .or_else(
+                || {
+                    screen
+                        .allowed_depths
+                        .iter()
+                        .filter(|depth| depth.visuals.iter().any(|visual| visual.visual_id == visual_id))
+                        .find(|depth| depth.depth == 24)
+                }, // 24-bit fallback for Xrgb8888
+            )
+            .cloned()
+            .ok_or(CreateWindowError::NoDepth)?;
+
+        // Make a colormap
+        let colormap = connection.generate_id()?;
+        connection
+            .xcb
+            .create_colormap(ColormapAlloc::NONE, colormap, screen.root, visual_id)?;
 
         let inner = &mut *handle.inner.lock().unwrap();
-
         let window = Arc::new(WindowInner::new(
-            Arc::downgrade(&connection),
-            &connection.setup().roots[inner.screen_number],
+            connection.weak(),
+            screen,
             self.size.unwrap_or_else(|| (1280, 800).into()),
             self.name.unwrap_or("Smithay"),
-            inner.window_format,
             inner.atoms,
-            inner.depth.clone(),
-            inner.visual_id,
-            inner.colormap,
-            inner.extensions,
+            depth,
+            visual_id,
+            colormap,
         )?);
 
         let downgrade = Arc::downgrade(&window);
@@ -477,8 +362,8 @@ impl<'a> WindowBuilder<'a> {
 
 /// An X11 window.
 ///
-/// Dropping an instance of the window will destroy it.
-#[derive(Debug)]
+/// Dropping all instances of the window will destroy it.
+#[derive(Debug, Clone)]
 pub struct Window(Arc<WindowInner>);
 
 impl Window {
@@ -519,11 +404,6 @@ impl Window {
     /// Returns the depth id of this window.
     pub fn depth(&self) -> u8 {
         self.0.depth.depth
-    }
-
-    /// Returns the format expected by the window.
-    pub fn format(&self) -> DrmFourcc {
-        self.0.format
     }
 }
 
@@ -597,17 +477,10 @@ atom_manager! {
 
 #[derive(Debug)]
 pub(crate) struct X11Inner {
-    log: Logger,
-    connection: Arc<RustConnection>,
     screen_number: usize,
     windows: HashMap<u32, Weak<WindowInner>>,
     key_counter: Arc<AtomicU32>,
-    window_format: DrmFourcc,
-    extensions: Extensions,
-    colormap: u32,
     atoms: Atoms,
-    depth: x11::xproto::Depth,
-    visual_id: u32,
     devices: bool,
 }
 
@@ -647,7 +520,7 @@ impl X11Inner {
 
         // If X11 is deadlocking somewhere here, make sure you drop your mutex guards.
 
-        match event {
+        match dbg!(event) {
             x11::Event::ButtonPress(button_press) => {
                 if let Some(window) = X11Inner::window_ref_from_id(inner, &button_press.event) {
                     // X11 decided to associate scroll wheel with a button, 4, 5, 6 and 7 for
@@ -886,36 +759,6 @@ impl X11Inner {
                 }
             }
 
-            x11::Event::Expose(expose) => {
-                if expose.count == 0 {
-                    (callback)(
-                        X11Event::Refresh {
-                            window_id: expose.window,
-                        },
-                        &mut (),
-                    );
-                }
-            }
-
-            x11::Event::PresentCompleteNotify(complete_notify) => {
-                if let Some(window) =
-                    X11Inner::window_ref_from_id(inner, &complete_notify.window).and_then(|w| w.upgrade())
-                {
-                    window.last_msc.store(complete_notify.msc, Ordering::SeqCst);
-
-                    (callback)(
-                        X11Event::PresentCompleted {
-                            window_id: complete_notify.window,
-                        },
-                        &mut (),
-                    );
-                }
-            }
-
-            x11::Event::PresentIdleNotify(_) => {
-                // Pixmap is reference counted in the X server, so we do not need to take and drop.
-            }
-
             x11::Event::Error(e) => {
                 error!(log, "X11 protocol error: {:?}", e);
             }
@@ -923,88 +766,4 @@ impl X11Inner {
             _ => (),
         }
     }
-}
-
-fn egl_init(_: &X11Inner) -> Result<(DrmNode, RawFd), EGLInitError> {
-    let display = EGLDisplay::new(&X11DefaultDisplay, None)?;
-    let device = EGLDevice::device_for_display(&display)?;
-    let path = path_to_type(device.drm_device_path()?, NodeType::Render)?;
-    let node = DrmNode::from_path(&path)
-        .map_err(|err| match err {
-            CreateDrmNodeError::Io(err) => err,
-            _ => unreachable!(),
-        })
-        .map_err(EGLInitError::IO)?;
-    let fd = fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
-        .map_err(Into::<io::Error>::into)
-        .map_err(EGLInitError::IO)?;
-    Ok((node, fd))
-}
-
-fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, RawFd), X11Error> {
-    let connection = &x11.connection;
-
-    // Determine which drm-device the Display is using.
-    let screen = &connection.setup().roots[x11.screen_number];
-    // provider being NONE tells the X server to use the RandR provider.
-    let dri3 = match connection.dri3_open(screen.root, x11rb::NONE)?.reply() {
-        Ok(reply) => reply,
-        Err(err) => {
-            return Err(if let ReplyError::X11Error(ref protocol_error) = err {
-                match protocol_error.error_kind {
-                    // Implementation is risen when the renderer is not capable of X server is not capable
-                    // of rendering at all.
-                    ErrorKind::Implementation => X11Error::CannotDirectRender,
-                    // Match may occur when the node cannot be authenticated for the client.
-                    ErrorKind::Match => X11Error::CannotDirectRender,
-                    _ => err.into(),
-                }
-            } else {
-                err.into()
-            });
-        }
-    };
-
-    let dri_node = DrmNode::from_file(&dri3.device_fd).map_err(Into::<AllocateBuffersError>::into)?;
-    if dri_node.ty() != NodeType::Render {
-        // Try to get the render node.
-        match dri_node.node_with_type(NodeType::Render) {
-            Some(Ok(node)) => {
-                match node
-                    .dev_path()
-                    .map(|path| fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty()))
-                {
-                    Some(Ok(fd)) => return Ok((node, fd)),
-                    Some(Err(err)) => {
-                        slog::warn!(&x11.log, "Could not create render node from existing DRM node ({:?}): {}, falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()), err);
-                    }
-                    None => {
-                        slog::warn!(&x11.log, "Could not create render node from existing DRM node ({:?}), falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()));
-                    }
-                }
-            }
-            Some(Err(err)) => {
-                slog::warn!(&x11.log, "Could not create render node from existing DRM node ({:?}): {}, falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()), err);
-            }
-            None => {
-                slog::warn!(
-                    &x11.log,
-                    "No render node available for DRM node ({:?}), falling back to primary node",
-                    dri_node.dev_path().as_ref().map(|x| x.display())
-                );
-            }
-        };
-    }
-
-    let fd = dri3.device_fd.into_raw_fd();
-    let fd_flags = fcntl::fcntl(fd, fcntl::F_GETFD).map_err(AllocateBuffersError::from)?;
-
-    // Enable the close-on-exec flag.
-    fcntl::fcntl(
-        fd,
-        fcntl::F_SETFD(fcntl::FdFlag::from_bits_truncate(fd_flags) | fcntl::FdFlag::FD_CLOEXEC),
-    )
-    .map_err(AllocateBuffersError::from)?;
-
-    Ok((dri_node, fd))
 }

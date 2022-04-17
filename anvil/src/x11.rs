@@ -1,8 +1,4 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{atomic::Ordering, Arc, Mutex},
-};
+use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 use crate::{drawing::*, state::Backend, AnvilState};
 #[cfg(feature = "debug")]
@@ -14,13 +10,15 @@ use smithay::backend::renderer::{gles2::Gles2Texture, ImportMem};
 use smithay::{backend::renderer::ImportDma, wayland::dmabuf::init_dmabuf_global};
 use smithay::{
     backend::{
-        egl::{EGLContext, EGLDisplay},
+        egl::{
+            context::GlAttributes, surface::adjust_damage as egl_adjust_damage, EGLContext, EGLDisplay,
+            EGLSurface,
+        },
         renderer::{gles2::Gles2Renderer, Bind, ImportEgl},
-        x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
+        x11::{WindowBuilder, X11Backend, X11Connection, X11Event},
     },
     reexports::{
         calloop::EventLoop,
-        gbm,
         wayland_server::{
             protocol::{wl_output, wl_surface},
             Display,
@@ -36,13 +34,13 @@ pub const OUTPUT_NAME: &str = "x11";
 
 #[derive(Debug)]
 pub struct X11Data {
-    render: bool,
     mode: Mode,
-    surface: X11Surface,
+    surface: Rc<EGLSurface>,
     #[cfg(feature = "debug")]
     fps_texture: Gles2Texture,
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
+    full_redraw: u8,
 }
 
 impl Backend for X11Data {
@@ -50,7 +48,7 @@ impl Backend for X11Data {
         "x11".to_owned()
     }
     fn reset_buffers(&mut self, _output: &Output) {
-        self.surface.reset_buffers();
+        self.full_redraw = 4;
     }
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
@@ -59,39 +57,45 @@ pub fn run_x11(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
     let display = Rc::new(RefCell::new(Display::new()));
 
-    let backend = X11Backend::new(log.clone()).expect("Failed to initilize X11 backend");
-    let handle = backend.handle();
+    let connection = X11Connection::new(log.clone()).expect("Failed to initialize X11 connection");
 
-    // Obtain the DRM node the X server uses for direct rendering.
-    let (_, fd) = handle
-        .drm_node()
-        .expect("Could not get DRM node used by X server");
-
-    // Create the gbm device for buffer allocation.
-    let device = gbm::Device::new(fd).expect("Failed to create gbm device");
-    // Initialize EGL using the GBM device.
-    let egl = EGLDisplay::new(&device, log.clone()).expect("Failed to create EGLDisplay");
+    // Initialize EGL using the X11 connection.
+    let egl = EGLDisplay::new(&connection, log.clone()).expect("Failed to create EGLDisplay");
     // Create the OpenGL context
-    let context = EGLContext::new(&egl, log.clone()).expect("Failed to create EGLContext");
+    let context = EGLContext::new_with_config(
+        &egl,
+        GlAttributes {
+            version: (3, 0),
+            profile: None,
+            debug: cfg!(debug_assertions),
+            vsync: true,
+        },
+        Default::default(),
+        log.clone(),
+    )
+    .expect("Failed to create EGLContext");
+
+    let backend = X11Backend::new(connection).expect("Failed to create X11 backend");
+    let handle = backend.handle();
 
     let window = WindowBuilder::new()
         .title("Anvil")
+        .visual_from_context(&context)
+        .expect("Unable to derive visual id from egl context")
         .build(&handle)
         .expect("Failed to create first window");
 
-    let device = Arc::new(Mutex::new(device));
-
     // Create the surface for the window.
-    let surface = handle
-        .create_surface(
-            &window,
-            device,
-            context
-                .dmabuf_render_formats()
-                .iter()
-                .map(|format| format.modifier),
+    let surface = Rc::new(
+        EGLSurface::new(
+            &egl,
+            context.pixel_format().unwrap(),
+            context.config_id(),
+            window.clone(),
+            log.clone(),
         )
-        .expect("Failed to create X11 surface");
+        .expect("Failed to create egl surface"),
+    );
 
     let renderer =
         unsafe { Gles2Renderer::new(context, log.clone()) }.expect("Failed to initialize renderer");
@@ -133,7 +137,6 @@ pub fn run_x11(log: Logger) {
             .decode()
             .unwrap();
     let data = X11Data {
-        render: true,
         mode,
         surface,
         #[cfg(feature = "debug")]
@@ -149,6 +152,7 @@ pub fn run_x11(log: Logger) {
         },
         #[cfg(feature = "debug")]
         fps: fps_ticker::Fps::default(),
+        full_redraw: 2,
     };
 
     let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone(), true);
@@ -186,11 +190,6 @@ pub fn run_x11(log: Logger) {
                 output.change_current_state(Some(state.backend_data.mode), None, None, None);
                 output.set_preferred(state.backend_data.mode);
                 crate::shell::fixup_positions(&mut *state.space.borrow_mut());
-
-                state.backend_data.render = true;
-            }
-            X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => {
-                state.backend_data.render = true;
             }
             X11Event::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
         })
@@ -207,7 +206,7 @@ pub fn run_x11(log: Logger) {
     while state.running.load(Ordering::SeqCst) {
         let mut space = state.space.borrow_mut();
 
-        if state.backend_data.render {
+        {
             let backend_data = &mut state.backend_data;
             let mut renderer = renderer.borrow_mut();
 
@@ -220,12 +219,13 @@ pub fn run_x11(log: Logger) {
             #[cfg(feature = "debug")]
             let fps_texture = &backend_data.fps_texture;
 
-            let (buffer, age) = backend_data.surface.buffer().expect("gbm device was destroyed");
-            if let Err(err) = renderer.bind(buffer) {
-                error!(log, "Error while binding buffer: {}", err);
-                continue;
-            }
-
+            let full_redraw = &mut backend_data.full_redraw;
+            *full_redraw = full_redraw.saturating_sub(1);
+            let age = if *full_redraw > 0 {
+                0
+            } else {
+                backend_data.surface.buffer_age().unwrap_or(0)
+            };
             let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();
             let dnd_guard = dnd_icon.lock().unwrap();
             let mut cursor_guard = cursor_status.lock().unwrap();
@@ -259,26 +259,35 @@ pub fn run_x11(log: Logger) {
                 elements.push(draw_fps::<Gles2Renderer>(fps_texture, fps).into());
             }
 
+            renderer
+                .bind(backend_data.surface.clone())
+                .expect("Failed to bind EGLSurface");
             let render_res = crate::render::render_output(
                 &output,
                 &mut *space,
                 &mut *renderer,
-                age.into(),
+                age as usize,
                 &*elements,
                 &log,
             );
             match render_res {
-                Ok(_) => {
+                Ok(damage) => {
                     trace!(log, "Finished rendering");
-                    if let Err(err) = backend_data.surface.submit() {
-                        backend_data.surface.reset_buffers();
-                        warn!(log, "Failed to submit buffer: {}. Retrying", err);
-                    } else {
-                        state.backend_data.render = false;
-                    };
+                    let scale = space.output_scale(&output).unwrap_or(1.0);
+                    let size = output.current_mode().unwrap().size;
+                    let mut damage = damage.filter(|_| age != 0).map(|damage| {
+                        egl_adjust_damage(
+                            damage
+                                .into_iter()
+                                .map(|rect| rect.to_f64().to_physical(scale).to_i32_round()),
+                            size,
+                        )
+                    });
+                    // try again
+                    let _ = backend_data.surface.swap_buffers(damage.as_deref_mut());
                 }
                 Err(err) => {
-                    backend_data.surface.reset_buffers();
+                    backend_data.full_redraw = 4;
                     error!(log, "Rendering error: {}", err);
                     // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
                 }
@@ -293,7 +302,10 @@ pub fn run_x11(log: Logger) {
         space.send_frames(start_time.elapsed().as_millis() as u32);
         std::mem::drop(space);
 
-        if event_loop.dispatch(None, &mut state).is_err() {
+        if event_loop
+            .dispatch(Some(Duration::from_millis(16)), &mut state)
+            .is_err()
+        {
             state.running.store(false, Ordering::SeqCst);
         } else {
             state.space.borrow_mut().refresh();

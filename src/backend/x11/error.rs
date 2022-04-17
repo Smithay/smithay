@@ -1,12 +1,4 @@
-use std::io;
-
-use gbm::DeviceDestroyedError;
-use nix::errno::Errno;
 use x11rb::rust_connection::{ConnectError, ConnectionError, ReplyError, ReplyOrIdError};
-
-use crate::backend::{allocator::gbm::GbmConvertError, drm::CreateDrmNodeError};
-
-use super::PresentError;
 
 /// An error emitted by the X11 backend during setup.
 #[derive(Debug, thiserror::Error)]
@@ -41,14 +33,6 @@ pub enum X11Error {
     /// The X server is not capable of direct rendering.
     #[error("The X server is not capable of direct rendering")]
     CannotDirectRender,
-
-    /// Failed to allocate buffers needed to present to the window.
-    #[error("Failed to allocate buffers needed to present to the window")]
-    Allocation(#[from] AllocateBuffersError),
-
-    /// Error while presenting to a window.
-    #[error(transparent)]
-    Present(#[from] PresentError),
 }
 
 impl From<ReplyError> for X11Error {
@@ -103,47 +87,4 @@ pub enum CreateWindowError {
     /// No visual fulfilling the pixel format requirements was found.
     #[error("No visual fulfilling the requirements was found")]
     NoVisual,
-}
-
-/// An error which may occur when allocating buffers for presentation to the window.
-#[derive(Debug, thiserror::Error)]
-pub enum AllocateBuffersError {
-    /// Failed to open the DRM device to allocate buffers.
-    #[error("Failed to open the DRM device to allocate buffers.")]
-    OpenDevice(#[from] io::Error),
-
-    /// The gbm device was destroyed
-    #[error("The gbm device was destroyed.")]
-    DeviceDestroyed(#[from] DeviceDestroyedError),
-
-    /// The device used to allocate buffers is not the correct drm node type.
-    #[error("The device used to allocate buffers is not the correct drm node type.")]
-    UnsupportedDrmNode,
-
-    /// Exporting a dmabuf failed.
-    #[error("Exporting a dmabuf failed.")]
-    ExportDmabuf(#[from] GbmConvertError),
-
-    /// No free slots
-    #[error("No free slots in the swapchain")]
-    NoFreeSlots,
-
-    /// The window has been destroyed
-    #[error("The window has been destroyed")]
-    WindowDestroyed,
-}
-
-impl From<Errno> for AllocateBuffersError {
-    fn from(err: Errno) -> Self {
-        Self::OpenDevice(err.into())
-    }
-}
-
-impl From<CreateDrmNodeError> for AllocateBuffersError {
-    fn from(err: CreateDrmNodeError) -> Self {
-        match err {
-            CreateDrmNodeError::Io(err) => AllocateBuffersError::OpenDevice(err),
-            CreateDrmNodeError::NotDrmNode => AllocateBuffersError::UnsupportedDrmNode,
-        }
-    }
 }

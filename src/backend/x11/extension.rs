@@ -112,24 +112,10 @@ macro_rules! extensions {
 }
 
 extensions! {
-    present {
-        present_query_version,
-        required: true,
-        minimum: (1, 0),
-        request: (1, 0),
-    },
-
     xfixes {
         xfixes_query_version,
         required: true,
         minimum: (4, 0),
         request: (4, 0),
-    },
-
-    dri3 {
-        dri3_query_version,
-        required: true,
-        minimum: (1, 0),
-        request: (1, 2),
     },
 }
