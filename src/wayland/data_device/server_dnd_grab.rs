@@ -250,9 +250,7 @@ fn handle_server_dnd<D>(
     handler: &mut D,
     offer: &WlDataOffer,
     request: wl_data_offer::Request,
-
     data: &ServerDndData,
-
     dh: &mut wayland_server::DisplayHandle<'_>,
 ) where
     D: DataDeviceHandler,
