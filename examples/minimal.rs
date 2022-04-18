@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{os::unix::prelude::RawFd, sync::Arc};
 
 use smithay::{
     backend::{
@@ -63,10 +63,14 @@ impl DataDeviceHandler for App {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
+
+    fn send_selection(&mut self, _mime_type: String, _fd: RawFd) {}
 }
 
 impl ClientDndGrabHandler for App {}
-impl ServerDndGrabHandler for App {}
+impl ServerDndGrabHandler for App {
+    fn send(&mut self, _mime_type: String, _fd: RawFd) {}
+}
 
 impl CompositorHandler for App {
     fn compositor_state(&mut self) -> &mut CompositorState {
