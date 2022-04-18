@@ -55,7 +55,6 @@ impl<D> DnDGrab<D> {
 impl<D> PointerGrab<D> for DnDGrab<D>
 where
     D: DataDeviceHandler,
-    D: ClientDndGrabHandler,
     D: 'static,
 {
     fn motion(
@@ -210,7 +209,8 @@ where
                     source.cancelled(dh);
                 }
             }
-            handler.dropped(self.seat.clone());
+
+            ClientDndGrabHandler::dropped(handler, self.seat.clone());
             self.icon = None;
             // in all cases abandon the drop
             // no more buttons are pressed, release the grab
@@ -258,7 +258,6 @@ struct DndDataOffer {
 impl<D> ObjectData<D> for DndDataOffer
 where
     D: DataDeviceHandler,
-    D: ClientDndGrabHandler,
     D: 'static,
 {
     fn request(
@@ -288,7 +287,6 @@ fn handle_dnd<D>(
     dh: &mut wayland_server::DisplayHandle<'_>,
 ) where
     D: DataDeviceHandler,
-    D: ClientDndGrabHandler,
     D: 'static,
 {
     use self::wl_data_offer::Request;
@@ -381,7 +379,8 @@ fn handle_dnd<D>(
             // check that the user provided callback respects that one precise action should be chosen
             debug_assert!(
                 [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]
-                    .contains(&data.chosen_action)
+                    .contains(&data.chosen_action),
+                "Only one precise action should be chosen"
             );
             offer.action(dh, data.chosen_action);
             source.action(dh, data.chosen_action);

@@ -48,7 +48,6 @@ impl<D> ServerDnDGrab<D> {
 impl<D> PointerGrab<D> for ServerDnDGrab<D>
 where
     D: DataDeviceHandler,
-    D: ServerDndGrabHandler,
     D: 'static,
 {
     fn motion(
@@ -181,7 +180,7 @@ where
                 }
             }
 
-            data.dropped();
+            ServerDndGrabHandler::dropped(data);
             if !validated {
                 data.cancelled();
             }
@@ -230,7 +229,6 @@ struct ServerDndData {
 impl<D> ObjectData<D> for ServerDndData
 where
     D: DataDeviceHandler,
-    D: ServerDndGrabHandler,
 {
     fn request(
         self: Arc<Self>,
@@ -261,7 +259,6 @@ fn handle_server_dnd<D>(
     dh: &mut wayland_server::DisplayHandle<'_>,
 ) where
     D: DataDeviceHandler,
-    D: ServerDndGrabHandler,
 {
     use self::wl_data_offer::Request;
 
@@ -344,7 +341,8 @@ fn handle_server_dnd<D>(
             // check that the user provided callback respects that one precise action should be chosen
             debug_assert!(
                 [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]
-                    .contains(&data.chosen_action)
+                    .contains(&data.chosen_action),
+                "Only one precise action should be chosen"
             );
             offer.action(dh, data.chosen_action);
 
