@@ -16,7 +16,7 @@ use crate::wayland::{
     Serial,
 };
 
-use super::{dnd_grab, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState};
+use super::{dnd_grab, DataDeviceHandler, DataDeviceState};
 
 /// WlSurface role of drag and drop icon
 pub const DND_ICON_ROLE: &str = "dnd_icon";
@@ -34,7 +34,6 @@ impl<D> DelegateDispatch<WlDataDevice, D> for DataDeviceState
 where
     D: Dispatch<WlDataDevice, UserData = DataDeviceUserData>,
     D: DataDeviceHandler,
-    D: ClientDndGrabHandler,
     D: 'static,
 {
     fn request(
