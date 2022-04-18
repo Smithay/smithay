@@ -230,7 +230,7 @@ pub fn start_dnd<D, C>(
     metadata: SourceMetadata,
 ) where
     D: DataDeviceHandler,
-    D: 'static
+    D: 'static,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::new()));
