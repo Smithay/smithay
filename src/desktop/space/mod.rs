@@ -124,7 +124,8 @@ impl Space {
     }
 
     /// Finds the topmost surface under this point if any and returns it
-    /// together with the location of this surface and its window.
+    /// together with the location of this surface relative to this space
+    /// and the window the surface belongs to.
     ///
     /// This is equivalent to iterating the windows in the space from
     /// top to bottom and calling [`Window::surface_under`] for each
@@ -139,7 +140,7 @@ impl Space {
     ) -> Option<(Window, WlSurface, Point<i32, Logical>)> {
         let point = point.into();
         for window in self.windows.iter().rev() {
-            let loc = window_loc(window, &self.id);
+            let loc = window.elem_location(self.id);
             let mut geo = window.bbox();
             geo.loc += loc;
 
@@ -148,7 +149,7 @@ impl Space {
             }
 
             if let Some((surface, location)) = window.surface_under(point - loc.to_f64(), surface_type) {
-                return Some((window.clone(), surface, location));
+                return Some((window.clone(), surface, location + loc));
             }
         }
 
@@ -159,7 +160,7 @@ impl Space {
     pub fn window_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<&Window> {
         let point = point.into();
         self.windows.iter().rev().find(|w| {
-            let loc = window_loc(w, &self.id);
+            let loc = w.elem_location(self.id);
             let mut geo = w.bbox();
             geo.loc += loc;
             geo.to_f64().contains(point)
