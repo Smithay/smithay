@@ -113,17 +113,9 @@ where
         location.into(),
         |_surface, states, location| {
             let mut location = *location;
-            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
-                let data = data.borrow();
-                if key
-                    .as_ref()
-                    .map(|key| data.space_seen.get(key).copied().unwrap_or(0) < data.commit_count)
-                    .unwrap_or(true)
-                    && states.role == Some("subsurface")
-                {
-                    let current = states.cached_state.current::<SubsurfaceCachedState>();
-                    location += current.location;
-                }
+            if states.role == Some("subsurface") {
+                let current = states.cached_state.current::<SubsurfaceCachedState>();
+                location += current.location;
             }
             TraversalAction::DoChildren(location)
         },
