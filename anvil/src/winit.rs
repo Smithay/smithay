@@ -130,8 +130,7 @@ pub fn run_winit(log: Logger) {
         refresh: 60_000,
     };
 
-    let (output, _global) = Output::new(
-        &mut *display.borrow_mut(),
+    let output = Output::new(
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
@@ -141,6 +140,7 @@ pub fn run_winit(log: Logger) {
         },
         log.clone(),
     );
+    let _global = output.create_global(&mut *display.borrow_mut());
     output.change_current_state(
         Some(mode),
         Some(wl_output::Transform::Flipped180),

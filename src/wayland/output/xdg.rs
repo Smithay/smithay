@@ -20,38 +20,33 @@ use crate::utils::{Logical, Physical, Point, Size};
 use super::{Mode, Output};
 
 #[derive(Debug)]
-struct Inner {
+pub(crate) struct Inner {
     name: String,
     description: String,
-    logical_position: Point<i32, Logical>,
+    pub(super) logical_position: Point<i32, Logical>,
 
-    physical_size: Option<Size<i32, Physical>>,
-    scale: i32,
+    pub(super) physical_size: Option<Size<i32, Physical>>,
+    pub(super) scale: i32,
 
     instances: Vec<ZxdgOutputV1>,
     _log: ::slog::Logger,
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct XdgOutput {
-    inner: Arc<Mutex<Inner>>,
+pub(crate) struct XdgOutput {
+    pub(crate) inner: Arc<Mutex<Inner>>,
 }
 
 impl XdgOutput {
     fn new(output: &super::Inner, log: ::slog::Logger) -> Self {
         trace!(log, "Creating new xdg_output"; "name" => &output.name);
 
-        let description = format!(
-            "{} - {} - {}",
-            output.physical.make, output.physical.model, output.name
-        );
-
         let physical_size = output.current_mode.map(|mode| mode.size);
 
         Self {
             inner: Arc::new(Mutex::new(Inner {
                 name: output.name.clone(),
-                description,
+                description: output.description.clone(),
                 logical_position: output.location,
 
                 physical_size,

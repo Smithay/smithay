@@ -15,6 +15,7 @@
 - Remove `Other` and add `Forward` and `Back` variants to `MouseButton`. Use the new `PointerButtonEvent::button_code` in place of `Other`.
 - `GrabStartData` has been renamed to `PointerGrabStartData`
 - The `slot` method on touch events no longer returns an `Option` and multi-touch capability is thus opaque to the compositor
+- `wayland::output::Output` now is created separately from it's `Global` as reflected by [`Output::new`] and the new [`Output::create_global] method.
 
 #### Backends
 
