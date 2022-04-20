@@ -257,9 +257,8 @@ impl<Backend> AnvilState<Backend> {
                     WindowSurfaceType::ALL,
                 )
                 .map(|(s, loc)| (s, loc + layer_loc));
-        } else if let Some((window, surface, location)) = space.surface_under(pos, WindowSurfaceType::ALL) {
-            let window_loc = space.window_location(&window).unwrap();
-            under = Some((surface, location + window_loc));
+        } else if let Some((_, surface, location)) = space.surface_under(pos, WindowSurfaceType::ALL) {
+            under = Some((surface, location));
         } else if let Some(layer) = layers
             .layer_under(WlrLayer::Bottom, pos)
             .or_else(|| layers.layer_under(WlrLayer::Background, pos))

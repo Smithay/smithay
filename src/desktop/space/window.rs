@@ -65,11 +65,13 @@ impl Window {
     }
 
     pub(super) fn elem_location(&self, space_id: usize) -> Point<i32, Logical> {
-        window_loc(self, &space_id)
+        window_loc(self, &space_id) - self.geometry().loc
     }
 
     pub(super) fn elem_geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
-        window_rect_with_popups(self, &space_id)
+        let mut geo = window_rect_with_popups(self, &space_id);
+        geo.loc -= self.geometry().loc;
+        geo
     }
 
     pub(super) fn elem_accumulated_damage(

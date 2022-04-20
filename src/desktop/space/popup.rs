@@ -3,7 +3,7 @@ use crate::{
     desktop::{
         layer::LayerSurface,
         popup::{PopupKind, PopupManager},
-        space::{window_loc, Space},
+        space::Space,
         utils::{bbox_from_surface_tree, damage_from_surface_tree},
         window::Window,
     },
@@ -23,7 +23,7 @@ pub struct RenderPopup {
 
 impl Window {
     pub(super) fn popup_elements(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> {
-        let loc = window_loc(self, &space_id) + self.geometry().loc;
+        let loc = self.elem_location(space_id) + self.geometry().loc;
         self.toplevel()
             .get_surface()
             .map(move |surface| {
