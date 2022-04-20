@@ -58,8 +58,8 @@ pub mod utils;
 #[cfg(feature = "wayland_frontend")]
 pub mod wayland;
 
-// #[cfg(feature = "xwayland")]
-// pub mod xwayland;
+#[cfg(feature = "xwayland")]
+pub mod xwayland;
 
 pub mod reexports;
 
