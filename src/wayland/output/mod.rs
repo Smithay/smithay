@@ -1,19 +1,28 @@
 //! Output advertising capabilities
 //!
-//! This module provides a type helping you to handle the advertising
-//! of your compositor's output and their capabilities to your client,
-//! as well as mapping your clients output request to your physical
-//! outputs.
+//! This module provides a type helping you to abstract over various
+//! properties, that make up an [`Output`] of your compositor.
+//!
+//! Additionally the [`Output`] may handle advertising of your compositor's
+//! output and their capabilities to your client, as well as mapping your
+//! clients output request to your physical outputs.
 //!
 //! # How to use it
 //!
-//! You need to instantiate an [`Output`]
-//! for each output global you want to advertise to clients.
+//! You need to instantiate an [`Output`].
+//! To advertise a new output global to clients you then need to use [`Output::create_global`].
+//! The resulting `Global<WlOutput>` can later be destroyed again to stop advertising it
+//! without destroying it's state. E.g. in case the matching physical output got disabled at runtime.
 //!
-//! Just add it to your Display using the [`Output::new(..)`](Output::new)
-//! method. You can use the returned [`Output`] to change
+//! You can use the returned [`Output`] to change
 //! the properties of your output (if the current resolution mode changes for example),
 //! it'll automatically forward any changes to the clients.
+//!
+//! Additional protocols may piggy-back on this type.
+//! E.g. to also advertise an xdg-output for every wl-output you can use
+//! [`xdg::init_xdg_output_manager`].
+//!
+//! You can attach additional properties to your `Output`s by using [`Output::user_data`].
 //!
 //! ```
 //! # extern crate wayland_server;
@@ -168,7 +177,7 @@ impl Inner {
     }
 }
 
-/// An output as seen by the clients
+/// An abstract output.
 ///
 /// This handle is stored in the event loop, and allows you to notify clients
 /// about any change in the properties of this output.
@@ -178,7 +187,7 @@ pub struct Output {
 }
 
 impl Output {
-    /// Creates a new output state.
+    /// Creates a new output state with the given name and physical properties.
     pub fn new<L>(name: String, physical: PhysicalProperties, logger: L) -> Output
     where
         L: Into<Option<::slog::Logger>>,
@@ -210,10 +219,14 @@ impl Output {
         Output { inner }
     }
 
-    /// Create a new output global with given name and physical properties
+    /// Create a new output global.
     ///
     /// The global is directly registered into the event loop, and this function
     /// returns the global handle in case you wish to remove this global in the future.
+    ///
+    /// Calling this function multiple times without destroying the global in between,
+    /// will result in multiple globals, meaning the output will be advertised to clients
+    /// multiple times.
     pub fn create_global(&self, display: &mut Display) -> Global<WlOutput> {
         let inner = self.inner.clone();
         display.create_global(
