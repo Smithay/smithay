@@ -284,7 +284,7 @@ impl Output {
 
     /// Returns the preferred mode of the output
     pub fn preferred_mode(&self) -> Option<Mode> {
-        self.inner.0.lock().unwrap().preferred_mode
+        self.data.inner.0.lock().unwrap().preferred_mode
     }
 
     /// Returns the currently advertised transformation of the output
@@ -299,7 +299,7 @@ impl Output {
 
     /// Returns the currenly advertised location of the output
     pub fn current_location(&self) -> Point<i32, Logical> {
-        self.inner.0.lock().unwrap().location
+        self.data.inner.0.lock().unwrap().location
     }
 
     /// Returns the name of the output
@@ -309,17 +309,17 @@ impl Output {
 
     /// Returns the description of the output, if xdg-output is initialized
     pub fn description(&self) -> String {
-        self.inner.0.lock().unwrap().description.clone()
+        self.data.inner.0.lock().unwrap().description.clone()
     }
 
     /// Returns the physical properties of the output
     pub fn physical_properties(&self) -> PhysicalProperties {
-        self.inner.0.lock().unwrap().physical.clone()
+        self.data.inner.0.lock().unwrap().physical.clone()
     }
 
     /// Returns the currently advertised modes of the output
     pub fn modes(&self) -> Vec<Mode> {
-        self.inner.0.lock().unwrap().modes.clone()
+        self.data.inner.0.lock().unwrap().modes.clone()
     }
 
     /// Removes a mode from the list of known modes
