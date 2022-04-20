@@ -162,8 +162,8 @@ impl KbdInternal {
     {
         if let Some(ref surface) = self.focus {
             for kbd in self.known_kbds.iter() {
-                if kbd.id().same_client_as(&surface.id()) {
-                    f(kbd, surface);
+                if kbd.id().same_client_as(&surface.0.id()) {
+                    f(kbd, &surface.0);
                 }
             }
         }
@@ -519,7 +519,7 @@ impl KeyboardHandle {
             .unwrap()
             .focus
             .as_ref()
-            .map(|f| f.id().same_client_as(id))
+            .map(|f| f.0.id().same_client_as(id))
             .unwrap_or(false)
     }
 
@@ -562,12 +562,12 @@ impl KeyboardHandle {
             kbd.repeat_info(dh, guard.repeat_rate, guard.repeat_delay);
         }
         if let Some((focused, serial)) = guard.focus.as_ref() {
-            if focused.as_ref().same_client_as(kbd.as_ref()) {
+            if focused.id().same_client_as(&kbd.id()) {
                 let (dep, la, lo, gr) = guard.serialize_modifiers();
                 let keys = guard.serialize_pressed_keys();
-                kbd.enter((*serial).into(), focused, keys);
+                kbd.enter(dh, (*serial).into(), focused, keys);
                 // Modifiers must be send after enter event.
-                kbd.modifiers((*serial).into(), dep, la, lo, gr);
+                kbd.modifiers(dh, (*serial).into(), dep, la, lo, gr);
             }
         }
         guard.known_kbds.push(kbd);
@@ -688,7 +688,7 @@ impl<'a> KeyboardInnerHandle<'a> {
             .inner
             .focus
             .as_ref()
-            .and_then(|f| focus.map(|s| s.equals(f.0)))
+            .and_then(|f| focus.map(|s| s == &f.0))
             .unwrap_or(false);
 
         if !same {
