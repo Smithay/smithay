@@ -218,18 +218,13 @@ impl Space {
     /// Maps an [`Output`] inside the space.
     ///
     /// Can be safely called on an already mapped
-    /// [`Output`] to update its scale or location.
-    ///
-    /// The scale is the what is rendered for the given output
-    /// and may be fractional. It is independent from the integer scale
-    /// reported to clients by the output.
+    /// [`Output`] to update its location.
     ///
     /// *Note:* Remapping an output does reset it's damage memory.
-    pub fn map_output<P: Into<Point<i32, Logical>>>(&mut self, output: &Output, scale: f64, location: P) {
+    pub fn map_output<P: Into<Point<i32, Logical>>>(&mut self, output: &Output, location: P) {
         let mut state = output_state(self.id, output);
         *state = OutputState {
             location: location.into(),
-            render_scale: scale,
             // keep surfaces, we still need to inform them of leaving,
             // if they don't overlap anymore during refresh.
             surfaces: state.surfaces.drain(..).collect::<Vec<_>>(),
@@ -262,7 +257,7 @@ impl Space {
     /// Returns the geometry of the output including it's relative position inside the space.
     ///
     /// The size is matching the amount of logical pixels of the space visible on the output
-    /// given is current mode and render scale.
+    /// given is current mode and scale.
     pub fn output_geometry(&self, o: &Output) -> Option<Rectangle<i32, Logical>> {
         if !self.outputs.contains(o) {
             return None;
@@ -276,23 +271,10 @@ impl Space {
                 transform
                     .transform_size(mode.size)
                     .to_f64()
-                    .to_logical(state.render_scale)
+                    .to_logical(o.current_scale().fractional_scale())
                     .to_i32_round(),
             )
         })
-    }
-
-    /// Returns the reder scale of a mapped output.
-    ///
-    /// If the output was not previously mapped to the `Space`
-    /// this function returns `None`.
-    pub fn output_scale(&self, o: &Output) -> Option<f64> {
-        if !self.outputs.contains(o) {
-            return None;
-        }
-
-        let state = output_state(self.id, o);
-        Some(state.render_scale)
     }
 
     /// Returns all [`Output`]s a [`Window`] overlaps with.
@@ -450,7 +432,7 @@ impl Space {
             .ok_or(RenderError::OutputNoMode)?
             .size
             .to_f64()
-            .to_logical(state.render_scale)
+            .to_logical(output.current_scale().fractional_scale())
             .to_i32_round();
         let output_geo = Rectangle::from_loc_and_size(state.location, output_size);
         let layer_map = layer_map_for_output(output);
@@ -563,11 +545,12 @@ impl Space {
         }
 
         let output_transform: Transform = output.current_transform().into();
+        let output_scale = output.current_scale().fractional_scale();
         let res = renderer.render(
             output_transform
                 .transform_size(output_size)
                 .to_f64()
-                .to_physical(state.render_scale)
+                .to_physical(output_scale)
                 .to_i32_round(),
             output_transform,
             |renderer, frame| {
@@ -580,7 +563,7 @@ impl Space {
                         // Map from global space to output space
                         .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
                         // Map from logical to physical
-                        .map(|geo| geo.to_f64().to_physical(state.render_scale))
+                        .map(|geo| geo.to_f64().to_physical(output_scale))
                         .collect::<Vec<_>>(),
                 )?;
                 // Then re-draw all windows & layers overlapping with a damage rect.
@@ -605,7 +588,7 @@ impl Space {
                             self.id,
                             renderer,
                             frame,
-                            state.render_scale,
+                            output_scale,
                             loc - output_geo.loc,
                             &damage,
                             &self.logger,

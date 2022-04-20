@@ -479,7 +479,7 @@ fn scan_connectors(
                 .into();
             output.change_current_state(Some(mode), None, None, Some(position));
             output.set_preferred(mode);
-            space.map_output(&output, 1.0, position);
+            space.map_output(&output, position);
 
             output
                 .user_data()

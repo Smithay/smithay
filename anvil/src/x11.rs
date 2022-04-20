@@ -165,7 +165,7 @@ pub fn run_x11(log: Logger) {
     let _global = output.create_global(&mut *display.borrow_mut());
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
-    state.space.borrow_mut().map_output(&output, 1.0, (0, 0));
+    state.space.borrow_mut().map_output(&output, (0, 0));
 
     let output_clone = output.clone();
     event_loop

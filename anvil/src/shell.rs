@@ -987,8 +987,7 @@ pub fn fixup_positions(space: &mut Space) {
             .output_geometry(&output)
             .map(|geo| geo.size)
             .unwrap_or_else(|| Size::from((0, 0)));
-        let scale = space.output_scale(&output).unwrap_or(1.0);
-        space.map_output(&output, scale, offset);
+        space.map_output(&output, offset);
         layer_map_for_output(&output).arrange();
         offset.x += size.w;
     }

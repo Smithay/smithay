@@ -36,7 +36,6 @@ where
 #[derive(Clone, Default)]
 pub struct OutputState {
     pub location: Point<i32, Logical>,
-    pub render_scale: f64,
 
     // damage and last_state are in space coordinate space
     pub old_damage: VecDeque<Vec<Rectangle<i32, Logical>>>,

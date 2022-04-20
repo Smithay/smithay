@@ -132,7 +132,8 @@ pub enum Scale {
 }
 
 impl Scale {
-    fn integer_scale(&self) -> i32 {
+    /// Returns the integer scale as advertised for this `Scale` variant
+    pub fn integer_scale(&self) -> i32 {
         match self {
             Scale::Integer(scale) => *scale,
             Scale::Fractional(scale) => scale.ceil() as i32,
@@ -142,7 +143,8 @@ impl Scale {
         }
     }
 
-    fn fractional_scale(&self) -> f64 {
+    /// Returns the fractional scale (calculated if necessary)
+    pub fn fractional_scale(&self) -> f64 {
         match self {
             Scale::Integer(scale) => *scale as f64,
             Scale::Fractional(scale) => *scale,
@@ -394,7 +396,6 @@ impl Output {
         new_mode: Option<Mode>,
         new_transform: Option<Transform>,
         new_scale: Option<Scale>,
-        new_fractional_scale: Option<Option<f64>>,
         new_location: Option<Point<i32, Logical>>,
     ) {
         let mut inner = self.inner.0.lock().unwrap();
