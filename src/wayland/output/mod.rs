@@ -27,7 +27,7 @@
 //! ```
 //! # extern crate wayland_server;
 //! # extern crate smithay;
-//! use smithay::wayland::output::{Output, PhysicalProperties, Mode};
+//! use smithay::wayland::output::{Output, PhysicalProperties, Scale, Mode};
 //! use wayland_server::protocol::wl_output;
 //!
 //! # let mut display = wayland_server::Display::new();
@@ -50,7 +50,7 @@
 //! output.change_current_state(
 //!     Some(Mode { size: (1920, 1080).into(), refresh: 60000 }), // the resolution mode,
 //!     Some(wl_output::Transform::Normal), // global screen transformation
-//!     Some(1), // global screen scaling factor
+//!     Some(Scale::Integer(1)), // global screen scaling factor
 //!     Some((0,0).into()) // output position
 //! );
 //! // set the preferred mode
@@ -111,6 +111,46 @@ pub struct PhysicalProperties {
     pub model: String,
 }
 
+/// Describes the scale advertised to clients.
+#[derive(Debug, Clone, Copy)]
+pub enum Scale {
+    /// Integer based scaling
+    Integer(i32),
+    /// Fractional scaling
+    ///
+    /// *Note*: Protocols only supporting integer-scales (e.g. wl_output),
+    /// will be rounded **up** to the next integer value. To control the value
+    /// send to those clients use `Scale::Custom` instead.
+    Fractional(f64),
+    /// Split scale values advertised to clients
+    Custom {
+        /// Integer value for protocols not supporting fractional scaling
+        advertised_integer: i32,
+        /// Fractional scaling value used elsewhere
+        fractional: f64,
+    },
+}
+
+impl Scale {
+    fn integer_scale(&self) -> i32 {
+        match self {
+            Scale::Integer(scale) => *scale,
+            Scale::Fractional(scale) => scale.ceil() as i32,
+            Scale::Custom {
+                advertised_integer, ..
+            } => *advertised_integer,
+        }
+    }
+
+    fn fractional_scale(&self) -> f64 {
+        match self {
+            Scale::Integer(scale) => *scale as f64,
+            Scale::Fractional(scale) => *scale,
+            Scale::Custom { fractional, .. } => *fractional,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Inner {
     name: String,
@@ -119,7 +159,7 @@ pub(crate) struct Inner {
     physical: PhysicalProperties,
     location: Point<i32, Logical>,
     transform: Transform,
-    scale: i32,
+    scale: Scale,
     modes: Vec<Mode>,
     current_mode: Option<Mode>,
     preferred_mode: Option<Mode>,
@@ -156,7 +196,7 @@ impl Inner {
             output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
         }
         if output.as_ref().version() >= 2 {
-            output.scale(self.scale);
+            output.scale(self.scale.integer_scale());
             output.done();
         }
 
@@ -206,7 +246,7 @@ impl Output {
                 physical,
                 location: (0, 0).into(),
                 transform: Transform::Normal,
-                scale: 1,
+                scale: Scale::Integer(1),
                 modes: Vec::new(),
                 current_mode: None,
                 preferred_mode: None,
@@ -295,8 +335,8 @@ impl Output {
         self.inner.0.lock().unwrap().transform
     }
 
-    /// Returns the currenly advertised scale of the output
-    pub fn current_scale(&self) -> i32 {
+    /// Returns the currenly set scale of the output
+    pub fn current_scale(&self) -> Scale {
         self.inner.0.lock().unwrap().scale
     }
 
@@ -353,7 +393,8 @@ impl Output {
         &self,
         new_mode: Option<Mode>,
         new_transform: Option<Transform>,
-        new_scale: Option<i32>,
+        new_scale: Option<Scale>,
+        new_fractional_scale: Option<Option<f64>>,
         new_location: Option<Point<i32, Logical>>,
     ) {
         let mut inner = self.inner.0.lock().unwrap();
@@ -392,7 +433,7 @@ impl Output {
             }
             if let Some(scale) = new_scale {
                 if output.as_ref().version() >= 2 {
-                    output.scale(scale);
+                    output.scale(scale.integer_scale());
                 }
             }
             if output.as_ref().version() >= 2 {
