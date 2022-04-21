@@ -188,13 +188,13 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                         let dh = &mut display.handle();
                         let surface = surface.wl_surface();
                         draw_surface_tree(
+                            dh,
                             renderer,
                             frame,
                             surface,
                             1.0,
                             (0, 0).into(),
                             &[damage.to_logical(1)],
-                            dh,
                             &log,
                         )
                         .unwrap();
