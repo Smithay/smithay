@@ -1867,6 +1867,7 @@ impl Frame for Gles2Frame {
             .collect::<Vec<ffi::types::GLfloat>>();
 
         unsafe {
+            self.gl.Disable(ffi::BLEND);
             self.gl.UseProgram(self.solid_program.program);
             self.gl.Uniform4f(
                 self.solid_program.uniform_color,
@@ -1959,6 +1960,8 @@ impl Frame for Gles2Frame {
                 .DisableVertexAttribArray(self.solid_program.attrib_vert as u32);
             self.gl
                 .DisableVertexAttribArray(self.solid_program.attrib_position as u32);
+            self.gl.Enable(ffi::BLEND);
+            self.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
         }
 
         Ok(())
