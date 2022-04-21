@@ -176,7 +176,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
             let client = state.backend_data.clients.get(&client_id);
             let mut space = state.space.borrow_mut();
             let toplevel = space.windows().find(|w| {
-                let surface = w.toplevel().get_surface().unwrap();
+                let surface = w.toplevel().wl_surface().unwrap();
                 surface.as_ref().client().as_ref() == client && surface.as_ref().id() == surface_id
             });
             if let Some(toplevel) = toplevel.cloned() {

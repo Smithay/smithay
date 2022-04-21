@@ -17,7 +17,7 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{collections::VecDeque, fmt};
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 
 mod element;
 mod layer;
@@ -178,20 +178,11 @@ impl Space {
 
     /// Returns the window matching a given surface, if any
     pub fn window_for_surface(&self, surface: &WlSurface) -> Option<&Window> {
-        if !surface.as_ref().is_alive() {
-            return None;
-        }
-
-        self.windows
-            .iter()
-            .find(|w| w.toplevel().get_surface().map(|x| x == surface).unwrap_or(false))
+        self.windows.iter().find(|w| w.toplevel().wl_surface() == surface)
     }
 
     /// Returns the layer matching a given surface, if any
     pub fn layer_for_surface(&self, surface: &WlSurface) -> Option<LayerSurface> {
-        if !surface.as_ref().is_alive() {
-            return None;
-        }
         self.outputs.iter().find_map(|o| {
             let map = layer_map_for_output(o);
             map.layer_for_surface(surface).cloned()
@@ -332,14 +323,15 @@ impl Space {
     ///
     /// Needs to be called periodically, at best before every
     /// wayland socket flush.
-    pub fn refresh(&mut self) {
+    pub fn refresh(&mut self, dh: &mut DisplayHandle<'_>) {
         self.windows.retain(|w| w.toplevel().alive());
 
-        for output in &mut self.outputs {
-            output_state(self.id, output)
-                .surfaces
-                .retain(|s| s.as_ref().is_alive());
-        }
+        // TODO(desktop-0.30)
+        // for output in &mut self.outputs {
+        //     output_state(self.id, output)
+        //         .surfaces
+        //         .retain(|s| s.as_ref().is_alive());
+        // }
 
         for window in &self.windows {
             let bbox = window_rect(window, &self.id);
@@ -355,40 +347,35 @@ impl Space {
                 // the output, if not no surface in the tree can intersect with
                 // the output.
                 if !output_geometry.overlaps(bbox) {
-                    if let Some(surface) = kind.get_surface() {
-                        output_leave(output, &mut output_state.surfaces, surface, &self.logger);
-                    }
+                    let surface = kind.wl_surface();
+                    output_leave(dh, output, &mut output_state.surfaces, surface, &self.logger);
                     continue;
                 }
 
-                if let Some(surface) = kind.get_surface() {
+                let surface = kind.wl_surface();
+                output_update(
+                    dh,
+                    output,
+                    output_geometry,
+                    &mut output_state.surfaces,
+                    surface,
+                    window_loc(window, &self.id),
+                    &self.logger,
+                );
+
+                for (popup, location) in PopupManager::popups_for_surface(surface) {
+                    let surface = popup.wl_surface();
+                    let location = window_loc(window, &self.id) + window.geometry().loc + location
+                        - popup.geometry().loc;
                     output_update(
+                        dh,
                         output,
                         output_geometry,
                         &mut output_state.surfaces,
                         surface,
-                        window_loc(window, &self.id),
+                        location,
                         &self.logger,
                     );
-
-                    for (popup, location) in PopupManager::popups_for_surface(surface)
-                        .ok()
-                        .into_iter()
-                        .flatten()
-                    {
-                        if let Some(surface) = popup.get_surface() {
-                            let location = window_loc(window, &self.id) + window.geometry().loc + location
-                                - popup.geometry().loc;
-                            output_update(
-                                output,
-                                output_geometry,
-                                &mut output_state.surfaces,
-                                surface,
-                                location,
-                                &self.logger,
-                            );
-                        }
-                    }
                 }
             }
         }
@@ -404,7 +391,7 @@ impl Space {
         while let Some(parent) = get_parent(&root) {
             root = parent;
         }
-        if let Some(window) = self.windows().find(|w| w.toplevel().get_surface() == Some(&root)) {
+        if let Some(window) = self.windows().find(|w| w.toplevel().wl_surface() == &root) {
             window.refresh();
         }
     }
@@ -430,6 +417,7 @@ impl Space {
     /// (or `None` if that list would be empty) in case of success.
     pub fn render_output<R, E>(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         renderer: &mut R,
         output: &Output,
         age: usize,
@@ -603,6 +591,7 @@ impl Space {
                             damage
                         );
                         element.draw(
+                            dh,
                             self.id,
                             renderer,
                             frame,
@@ -648,15 +637,15 @@ impl Space {
     }
 
     /// Sends the frame callback to mapped [`Window`]s and [`LayerSurface`]s.
-    pub fn send_frames(&self, time: u32) {
+    pub fn send_frames(&self, dh: &mut DisplayHandle<'_>, time: u32) {
         for window in self.windows.iter() {
-            window.send_frame(time);
+            window.send_frame(dh, time);
         }
 
         for output in self.outputs.iter() {
             let map = layer_map_for_output(output);
             for layer in map.layers() {
-                layer.send_frame(time);
+                layer.send_frame(dh, time);
             }
         }
     }
@@ -789,6 +778,7 @@ macro_rules! custom_elements_internal {
     (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
+            dh: &mut $crate::reexports::wayland_server::DisplayHandle<'_>,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
             scale: f64,
@@ -810,7 +800,7 @@ macro_rules! custom_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, dh, renderer, frame, scale, location, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -819,6 +809,7 @@ macro_rules! custom_elements_internal {
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
+            dh: &mut $crate::reexports::wayland_server::DisplayHandle<'_>,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
             scale: f64,
@@ -832,7 +823,7 @@ macro_rules! custom_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, dh, renderer, frame, scale, location, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }

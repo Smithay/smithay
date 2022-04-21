@@ -32,8 +32,8 @@ pub(crate) struct SurfaceState {
     pub(crate) damage: VecDeque<Vec<Rectangle<i32, BufferCoord>>>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
-    // #[cfg(feature = "desktop")]
-    // pub(crate) space_seen: HashMap<crate::desktop::space::SpaceOutputHash, usize>,
+    #[cfg(feature = "desktop")]
+    pub(crate) space_seen: HashMap<crate::desktop::space::SpaceOutputHash, usize>,
 }
 
 const MAX_DAMAGE: usize = 4;
@@ -275,13 +275,13 @@ where
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_surface_tree<R>(
+    dh: &mut DisplayHandle<'_>,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     surface: &WlSurface,
     scale: f64,
     location: Point<i32, Logical>,
     damage: &[Rectangle<i32, Logical>],
-    dh: &mut DisplayHandle<'_>,
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where

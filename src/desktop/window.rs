@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager, Space},
-    utils::{Logical, Point, Rectangle},
+    utils::{user_data::UserDataMap, Logical, Point, Rectangle},
     wayland::{
         compositor::with_states,
         output::Output,
@@ -9,13 +9,11 @@ use crate::{
     },
 };
 use std::{
-    cell::Cell,
     hash::{Hash, Hasher},
-    rc::Rc,
+    sync::{Arc, Mutex},
 };
-use wayland_commons::user_data::UserDataMap;
 use wayland_protocols::xdg_shell::server::xdg_toplevel;
-use wayland_server::protocol::wl_surface;
+use wayland_server::{protocol::wl_surface, DisplayHandle};
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
@@ -48,35 +46,34 @@ impl std::cmp::PartialEq for X11Surface {
 impl X11Surface {
     /// Checks if the surface is still alive.
     pub fn alive(&self) -> bool {
-        self.surface.as_ref().is_alive()
+        todo!()
+        // self.surface.as_ref().is_alive()
     }
 
     /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
-    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
-        if self.alive() {
-            Some(&self.surface)
-        } else {
-            None
-        }
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
+        &self.surface
     }
 }
 
 impl Kind {
     /// Checks if the surface is still alive.
     pub fn alive(&self) -> bool {
-        match *self {
-            Kind::Xdg(ref t) => t.alive(),
-            #[cfg(feature = "xwayland")]
-            Kind::X11(ref t) => t.alive(),
-        }
+        true
+        // TODO(desktop-0.30)
+        // match *self {
+        //     Kind::Xdg(ref t) => t.alive(),
+        //     #[cfg(feature = "xwayland")]
+        //     Kind::X11(ref t) => t.alive(),
+        // }
     }
 
     /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
-    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         match *self {
-            Kind::Xdg(ref t) => t.get_surface(),
+            Kind::Xdg(ref t) => t.wl_surface(),
             #[cfg(feature = "xwayland")]
-            Kind::X11(ref t) => t.get_surface(),
+            Kind::X11(ref t) => t.wl_surface(),
         }
     }
 }
@@ -85,8 +82,8 @@ impl Kind {
 pub(super) struct WindowInner {
     pub(super) id: usize,
     toplevel: Kind,
-    bbox: Cell<Rectangle<i32, Logical>>,
-    pub(super) z_index: Cell<Option<u8>>,
+    bbox: Mutex<Rectangle<i32, Logical>>,
+    pub(super) z_index: Mutex<Option<u8>>,
     user_data: UserDataMap,
 }
 
@@ -98,7 +95,7 @@ impl Drop for WindowInner {
 
 /// Represents a single application window
 #[derive(Debug, Clone)]
-pub struct Window(pub(super) Rc<WindowInner>);
+pub struct Window(pub(super) Arc<WindowInner>);
 
 impl PartialEq for Window {
     fn eq(&self, other: &Self) -> bool {
@@ -134,36 +131,28 @@ impl Window {
     pub fn new(toplevel: Kind) -> Window {
         let id = next_window_id();
 
-        Window(Rc::new(WindowInner {
+        Window(Arc::new(WindowInner {
             id,
             toplevel,
-            bbox: Cell::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
+            bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
             user_data: UserDataMap::new(),
-            z_index: Cell::new(None),
+            z_index: Mutex::new(None),
         }))
     }
 
     /// Returns the geometry of this window.
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        let surface = match self.0.toplevel.get_surface() {
-            Some(surface) => surface,
-            None => return Rectangle::from_loc_and_size((0, 0), (0, 0)),
-        };
+        let surface = self.0.toplevel.wl_surface();
         // It's the set geometry with the full bounding box as the fallback.
         with_states(surface, |states| {
             states.cached_state.current::<SurfaceCachedState>().geometry
         })
-        .unwrap()
         .unwrap_or_else(|| self.bbox())
     }
 
     /// Returns a bounding box over this window and its children.
     pub fn bbox(&self) -> Rectangle<i32, Logical> {
-        if self.0.toplevel.get_surface().is_some() {
-            self.0.bbox.get()
-        } else {
-            Rectangle::from_loc_and_size((0, 0), (0, 0))
-        }
+        *self.0.bbox.lock().unwrap()
     }
 
     /// Returns a bounding box over this window and children including popups.
@@ -172,42 +161,35 @@ impl Window {
     /// will not include the popups.
     pub fn bbox_with_popups(&self) -> Rectangle<i32, Logical> {
         let mut bounding_box = self.bbox();
-        if let Some(surface) = self.0.toplevel.get_surface() {
-            for (popup, location) in PopupManager::popups_for_surface(surface)
-                .ok()
-                .into_iter()
-                .flatten()
-            {
-                if let Some(surface) = popup.get_surface() {
-                    let offset = self.geometry().loc + location - popup.geometry().loc;
-                    bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset));
-                }
-            }
+        let surface = self.0.toplevel.wl_surface();
+        for (popup, location) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            let offset = self.geometry().loc + location - popup.geometry().loc;
+            bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset));
         }
+
         bounding_box
     }
 
     /// Activate/Deactivate this window
     pub fn set_activated(&self, active: bool) -> bool {
         match self.0.toplevel {
-            Kind::Xdg(ref t) => t
-                .with_pending_state(|state| {
-                    if active {
-                        state.states.set(xdg_toplevel::State::Activated)
-                    } else {
-                        state.states.unset(xdg_toplevel::State::Activated)
-                    }
-                })
-                .unwrap_or(false),
+            Kind::Xdg(ref t) => t.with_pending_state(|state| {
+                if active {
+                    state.states.set(xdg_toplevel::State::Activated)
+                } else {
+                    state.states.unset(xdg_toplevel::State::Activated)
+                }
+            }),
             #[cfg(feature = "xwayland")]
             Kind::X11(ref _t) => false,
         }
     }
 
     /// Commit any changes to this window
-    pub fn configure(&self) {
+    pub fn configure(&self, dh: &mut DisplayHandle<'_>) {
         match self.0.toplevel {
-            Kind::Xdg(ref t) => t.send_configure(),
+            Kind::Xdg(ref t) => t.send_configure(dh),
             #[cfg(feature = "xwayland")]
             Kind::X11(ref _t) => unimplemented!(),
         }
@@ -215,18 +197,12 @@ impl Window {
 
     /// Sends the frame callback to all the subsurfaces in this
     /// window that requested it
-    pub fn send_frame(&self, time: u32) {
-        if let Some(surface) = self.0.toplevel.get_surface() {
-            send_frames_surface_tree(surface, time);
-            for (popup, _) in PopupManager::popups_for_surface(surface)
-                .ok()
-                .into_iter()
-                .flatten()
-            {
-                if let Some(surface) = popup.get_surface() {
-                    send_frames_surface_tree(surface, time);
-                }
-            }
+    pub fn send_frame(&self, dh: &mut DisplayHandle<'_>, time: u32) {
+        let surface = self.0.toplevel.wl_surface();
+        send_frames_surface_tree(dh, surface, time);
+        for (popup, _) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            send_frames_surface_tree(dh, surface, time);
         }
     }
 
@@ -235,9 +211,7 @@ impl Window {
     /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
     /// to correctly update the bounding box of this window.
     pub fn refresh(&self) {
-        if let Some(surface) = self.0.toplevel.get_surface() {
-            self.0.bbox.set(bbox_from_surface_tree(surface, (0, 0)));
-        }
+        *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0));
     }
 
     /// Finds the topmost surface under this point matching the input regions of the surface and returns
@@ -252,27 +226,18 @@ impl Window {
         surface_type: WindowSurfaceType,
     ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
         let point = point.into();
-        if let Some(surface) = self.0.toplevel.get_surface() {
-            if surface_type.contains(WindowSurfaceType::POPUP) {
-                for (popup, location) in PopupManager::popups_for_surface(surface)
-                    .ok()
-                    .into_iter()
-                    .flatten()
+        let surface = self.0.toplevel.wl_surface();
+        if surface_type.contains(WindowSurfaceType::POPUP) {
+            for (popup, location) in PopupManager::popups_for_surface(surface) {
+                let offset = self.geometry().loc + location - popup.geometry().loc;
+                if let Some(result) = under_from_surface_tree(popup.wl_surface(), point, offset, surface_type)
                 {
-                    let offset = self.geometry().loc + location - popup.geometry().loc;
-                    if let Some(result) = popup
-                        .get_surface()
-                        .and_then(|surface| under_from_surface_tree(surface, point, offset, surface_type))
-                    {
-                        return Some(result);
-                    }
+                    return Some(result);
                 }
             }
-
-            under_from_surface_tree(surface, point, (0, 0), surface_type)
-        } else {
-            None
         }
+
+        under_from_surface_tree(surface, point, (0, 0), surface_type)
     }
 
     /// Damage of all the surfaces of this window.
@@ -282,13 +247,12 @@ impl Window {
     /// Subsequent calls will return an empty vector until the buffer is updated again.
     pub fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
         let mut damage = Vec::new();
-        if let Some(surface) = self.0.toplevel.get_surface() {
-            damage.extend(
-                damage_from_surface_tree(surface, (0, 0), for_values)
-                    .into_iter()
-                    .flat_map(|rect| rect.intersection(self.bbox())),
-            );
-        }
+        let surface = self.0.toplevel.wl_surface();
+        damage.extend(
+            damage_from_surface_tree(surface, (0, 0), for_values)
+                .into_iter()
+                .flat_map(|rect| rect.intersection(self.bbox())),
+        );
         damage
     }
 
@@ -305,13 +269,13 @@ impl Window {
     /// Overrides the default z-index of this window.
     /// (Default is [`RenderZindex::Shell`](crate::desktop::space::RenderZindex))
     pub fn override_z_index(&self, index: u8) {
-        self.0.z_index.set(Some(index));
+        *self.0.z_index.lock().unwrap() = Some(index);
     }
 
     /// Resets a previously overriden z-index to the default of
     /// [`RenderZindex::Shell`](crate::desktop::space::RenderZindex).
     pub fn clear_z_index(&self) {
-        self.0.z_index.take();
+        self.0.z_index.lock().unwrap().take();
     }
 }
 
@@ -325,6 +289,7 @@ impl Window {
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 pub fn draw_window<R, P>(
+    dh: &mut DisplayHandle<'_>,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     window: &Window,
@@ -339,26 +304,29 @@ where
     P: Into<Point<i32, Logical>>,
 {
     let location = location.into();
-    if let Some(surface) = window.toplevel().get_surface() {
-        draw_surface_tree(renderer, frame, surface, scale, location, damage, log)?;
-        for (popup, p_location) in PopupManager::popups_for_surface(surface)
-            .ok()
-            .into_iter()
-            .flatten()
-        {
-            if let Some(surface) = popup.get_surface() {
-                let offset = window.geometry().loc + p_location - popup.geometry().loc;
-                let damage = damage
-                    .iter()
-                    .cloned()
-                    .map(|mut geo| {
-                        geo.loc -= offset;
-                        geo
-                    })
-                    .collect::<Vec<_>>();
-                draw_surface_tree(renderer, frame, surface, scale, location + offset, &damage, log)?;
-            }
-        }
+    let surface = window.toplevel().wl_surface();
+    draw_surface_tree(dh, renderer, frame, surface, scale, location, damage, log)?;
+    for (popup, p_location) in PopupManager::popups_for_surface(surface) {
+        let surface = popup.wl_surface();
+        let offset = window.geometry().loc + p_location - popup.geometry().loc;
+        let damage = damage
+            .iter()
+            .cloned()
+            .map(|mut geo| {
+                geo.loc -= offset;
+                geo
+            })
+            .collect::<Vec<_>>();
+        draw_surface_tree(
+            dh,
+            renderer,
+            frame,
+            surface,
+            scale,
+            location + offset,
+            &damage,
+            log,
+        )?;
     }
     Ok(())
 }

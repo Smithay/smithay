@@ -12,7 +12,7 @@ use crate::{
         output::Output,
     },
 };
-use wayland_server::protocol::wl_surface;
+use wayland_server::{protocol::wl_surface, DisplayHandle};
 
 use std::cell::RefCell;
 
@@ -222,7 +222,7 @@ where
 }
 
 /// Sends frame callbacks for a surface and its subsurfaces with the given `time`.
-pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
+pub fn send_frames_surface_tree(dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface, time: u32) {
     with_surface_tree_downward(
         surface,
         (),
@@ -236,7 +236,7 @@ pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
                 .frame_callbacks
                 .drain(..)
             {
-                callback.done(time);
+                callback.done(dh, time);
             }
         },
         |_, _, &()| true,
@@ -244,6 +244,7 @@ pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
 }
 
 pub(crate) fn output_update(
+    dh: &mut DisplayHandle<'_>,
     output: &Output,
     output_geometry: Rectangle<i32, Logical>,
     surface_list: &mut Vec<wl_surface::WlSurface>,
@@ -278,15 +279,15 @@ pub(crate) fn output_update(
                 let surface_rectangle = Rectangle { loc, size };
                 if output_geometry.overlaps(surface_rectangle) {
                     // We found a matching output, check if we already sent enter
-                    output_enter(output, surface_list, wl_surface, logger);
+                    output_enter(dh, output, surface_list, wl_surface, logger);
                 } else {
                     // Surface does not match output, if we sent enter earlier
                     // we should now send leave
-                    output_leave(output, surface_list, wl_surface, logger);
+                    output_leave(dh, output, surface_list, wl_surface, logger);
                 }
             } else {
                 // Maybe the the surface got unmapped, send leave on output
-                output_leave(output, surface_list, wl_surface, logger);
+                output_leave(dh, output, surface_list, wl_surface, logger);
             }
         },
         |_, _, _| true,
@@ -294,6 +295,7 @@ pub(crate) fn output_update(
 }
 
 pub(crate) fn output_enter(
+    dh: &mut DisplayHandle<'_>,
     output: &Output,
     surface_list: &mut Vec<wl_surface::WlSurface>,
     surface: &wl_surface::WlSurface,
@@ -306,12 +308,13 @@ pub(crate) fn output_enter(
             surface,
             output.name()
         );
-        output.enter(surface);
+        output.enter(dh, surface);
         surface_list.push(surface.clone());
     }
 }
 
 pub(crate) fn output_leave(
+    dh: &mut DisplayHandle<'_>,
     output: &Output,
     surface_list: &mut Vec<wl_surface::WlSurface>,
     surface: &wl_surface::WlSurface,
@@ -324,7 +327,7 @@ pub(crate) fn output_leave(
             surface,
             output.name()
         );
-        output.leave(surface);
+        output.leave(dh, surface);
         surface_list.retain(|s| s != surface);
     }
 }

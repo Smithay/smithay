@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 pub use grab::*;
 pub use manager::*;
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 
 use crate::{
     utils::{Logical, Point, Rectangle},
@@ -23,16 +23,10 @@ pub enum PopupKind {
 }
 
 impl PopupKind {
-    fn alive(&self) -> bool {
-        match *self {
-            PopupKind::Xdg(ref t) => t.alive(),
-        }
-    }
-
     /// Retrieves the underlying [`WlSurface`]
-    pub fn get_surface(&self) -> Option<&WlSurface> {
+    pub fn wl_surface(&self) -> &WlSurface {
         match *self {
-            PopupKind::Xdg(ref t) => t.get_surface(),
+            PopupKind::Xdg(ref t) => t.wl_surface(),
         }
     }
 
@@ -44,10 +38,7 @@ impl PopupKind {
 
     /// Returns the surface geometry as set by the client using `xdg_surface::set_window_geometry`
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        let wl_surface = match self.get_surface() {
-            Some(s) => s,
-            None => return Rectangle::from_loc_and_size((0, 0), (0, 0)),
-        };
+        let wl_surface = self.wl_surface();
 
         with_states(wl_surface, |states| {
             states
@@ -56,24 +47,17 @@ impl PopupKind {
                 .geometry
                 .unwrap_or_default()
         })
-        .unwrap()
     }
 
-    fn send_done(&self) {
-        if !self.alive() {
-            return;
-        }
-
+    fn send_done(&self, dh: &mut DisplayHandle<'_>) {
         match *self {
-            PopupKind::Xdg(ref t) => t.send_popup_done(),
+            PopupKind::Xdg(ref t) => t.send_popup_done(dh),
         }
     }
 
     fn location(&self) -> Point<i32, Logical> {
-        let wl_surface = match self.get_surface() {
-            Some(s) => s,
-            None => return (0, 0).into(),
-        };
+        let wl_surface = self.wl_surface();
+
         with_states(wl_surface, |states| {
             states
                 .data_map
@@ -84,7 +68,6 @@ impl PopupKind {
                 .current
                 .geometry
         })
-        .unwrap_or_default()
         .loc
     }
 }
