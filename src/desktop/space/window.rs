@@ -1,3 +1,5 @@
+use wayland_server::DisplayHandle;
+
 use crate::{
     backend::renderer::{ImportAll, Renderer},
     desktop::{
@@ -99,6 +101,7 @@ impl Window {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn elem_draw<R, S>(
         &self,
+        dh: &mut DisplayHandle<'_>,
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
@@ -112,7 +115,7 @@ impl Window {
         <R as Renderer>::TextureId: 'static,
         S: Into<Scale<f64>>,
     {
-        let res = draw_window(renderer, frame, self, scale, location, damage, log);
+        let res = draw_window(dh, renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {
             window_state(space_id, self).drawn = true;
         }
@@ -120,6 +123,10 @@ impl Window {
     }
 
     pub(super) fn elem_z_index(&self) -> u8 {
-        self.0.z_index.get().unwrap_or(RenderZindex::Shell as u8)
+        self.0
+            .z_index
+            .lock()
+            .unwrap()
+            .unwrap_or(RenderZindex::Shell as u8)
     }
 }

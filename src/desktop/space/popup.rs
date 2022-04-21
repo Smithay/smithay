@@ -1,3 +1,5 @@
+use wayland_server::Resource;
+
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{
@@ -24,66 +26,43 @@ pub struct RenderPopup {
 impl Window {
     pub(super) fn popup_elements(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> {
         let loc = window_loc(self, &space_id);
-        self.toplevel()
-            .get_surface()
-            .map(move |surface| {
-                PopupManager::popups_for_surface(surface)
-                    .ok()
-                    .into_iter()
-                    .flatten()
-                    .map(move |(popup, location)| {
-                        let offset = loc + location - popup.geometry().loc;
-                        RenderPopup {
-                            location: offset,
-                            popup,
-                            z_index: RenderZindex::Popups as u8,
-                        }
-                    })
-            })
-            .into_iter()
-            .flatten()
+        PopupManager::popups_for_surface(self.toplevel().wl_surface())
+            .map(move |(popup, location)| {
+                let offset = loc + location - popup.geometry().loc;
+                RenderPopup {
+                    location: offset,
+                    popup,
+                    z_index: RenderZindex::Popups as u8,
+                }
+        })
     }
 }
 
 impl LayerSurface {
-    pub(super) fn popup_elements(&self, _space_id: usize) -> impl Iterator<Item = RenderPopup> + '_ {
+    pub(super) fn popup_elements(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> + '_ {
         let loc = layer_state(self).location;
-        self.get_surface()
-            .map(move |surface| {
-                PopupManager::popups_for_surface(surface)
-                    .ok()
-                    .into_iter()
-                    .flatten()
-                    .map(move |(popup, location)| {
-                        let offset = loc + location - popup.geometry().loc;
-                        let z_index = if let Some(layer) = self.layer() {
-                            if layer == Layer::Overlay {
-                                RenderZindex::PopupsOverlay as u8
-                            } else {
-                                RenderZindex::Popups as u8
-                            }
-                        } else {
-                            0
-                        };
 
-                        RenderPopup {
-                            location: offset,
-                            popup,
-                            z_index,
-                        }
-                    })
-            })
-            .into_iter()
-            .flatten()
+        PopupManager::popups_for_surface(self.wl_surface())
+            .map(move |(popup, location)| {
+                let offset = loc + location - popup.geometry().loc;
+                let z_index = if self.layer() == Layer::Overlay {
+                    RenderZindex::PopupsOverlay as u8
+                } else {
+                    RenderZindex::Popups as u8
+                };
+
+                RenderPopup {
+                    location: offset,
+                    popup,
+                    z_index,
+                }
+        })
     }
 }
 
 impl RenderPopup {
     pub(super) fn elem_id(&self) -> usize {
-        self.popup
-            .get_surface()
-            .map(|s| s.as_ref().id() as usize)
-            .unwrap_or(0)
+        self.popup.wl_surface().id().protocol_id() as usize
     }
 
     pub(super) fn elem_type_of(&self) -> TypeId {
@@ -133,6 +112,7 @@ impl RenderPopup {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn elem_draw<R, S>(
         &self,
+        dh: &mut DisplayHandle<'_>,
         _space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
@@ -147,7 +127,7 @@ impl RenderPopup {
         S: Into<Scale<f64>>,
     {
         if let Some(surface) = self.popup.get_surface() {
-            draw_surface_tree(renderer, frame, surface, scale, location, damage, log)?;
+            draw_surface_tree(dh, renderer, frame, surface, scale, location, damage, log)?;
         }
         Ok(())
     }

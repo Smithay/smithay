@@ -52,8 +52,8 @@
 pub extern crate nix;
 
 pub mod backend;
-// #[cfg(feature = "desktop")]
-// pub mod desktop;
+#[cfg(feature = "desktop")]
+pub mod desktop;
 pub mod utils;
 #[cfg(feature = "wayland_frontend")]
 pub mod wayland;
