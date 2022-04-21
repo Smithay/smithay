@@ -1,3 +1,5 @@
+use wayland_server::DisplayHandle;
+
 use crate::{
     backend::renderer::{ImportAll, Renderer},
     desktop::{
@@ -55,6 +57,7 @@ impl LayerSurface {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn elem_draw<R>(
         &self,
+        dh: &mut DisplayHandle<'_>,
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
@@ -67,7 +70,7 @@ impl LayerSurface {
         R: Renderer + ImportAll,
         <R as Renderer>::TextureId: 'static,
     {
-        let res = draw_layer_surface(renderer, frame, self, scale, location, damage, log);
+        let res = draw_layer_surface(dh, renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {
             layer_state(space_id, self).drawn = true;
         }
@@ -75,16 +78,13 @@ impl LayerSurface {
     }
 
     pub(super) fn elem_z_index(&self) -> u8 {
-        if let Some(layer) = self.layer() {
-            let z_index = match layer {
-                Layer::Background => RenderZindex::Background,
-                Layer::Bottom => RenderZindex::Bottom,
-                Layer::Top => RenderZindex::Top,
-                Layer::Overlay => RenderZindex::Overlay,
-            };
-            z_index as u8
-        } else {
-            0
-        }
+        let layer = self.layer();
+        let z_index = match layer {
+            Layer::Background => RenderZindex::Background,
+            Layer::Bottom => RenderZindex::Bottom,
+            Layer::Top => RenderZindex::Top,
+            Layer::Overlay => RenderZindex::Overlay,
+        };
+        z_index as u8
     }
 }
