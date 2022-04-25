@@ -55,7 +55,12 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
             zone: Rectangle::from_loc_and_size(
                 (0, 0),
                 o.current_mode()
-                    .map(|mode| mode.size.to_logical(o.current_scale()))
+                    .map(|mode| {
+                        mode.size
+                            .to_f64()
+                            .to_logical(o.current_scale().fractional_scale())
+                            .to_i32_round()
+                    })
                     .unwrap_or_else(|| (0, 0).into()),
             ),
             surfaces: Vec::new(),
@@ -193,7 +198,12 @@ impl LayerMap {
                 (0, 0),
                 output
                     .current_mode()
-                    .map(|mode| mode.size.to_logical(output.current_scale()))
+                    .map(|mode| {
+                        mode.size
+                            .to_f64()
+                            .to_logical(output.current_scale().fractional_scale())
+                            .to_i32_round()
+                    })
                     .unwrap_or_else(|| (0, 0).into()),
             );
             let mut zone = output_rect;

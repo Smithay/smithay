@@ -93,7 +93,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
     let _global = output.create_global(&mut *display.borrow_mut());
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
-    state.space.borrow_mut().map_output(&output, 1.0, (0, 0));
+    state.space.borrow_mut().map_output(&output, (0, 0));
 
     while state.running.load(Ordering::SeqCst) {
         // pretend to draw something

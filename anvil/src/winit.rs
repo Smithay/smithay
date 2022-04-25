@@ -148,7 +148,7 @@ pub fn run_winit(log: Logger) {
         Some((0, 0).into()),
     );
     output.set_preferred(mode);
-    state.space.borrow_mut().map_output(&output, 1.0, (0, 0));
+    state.space.borrow_mut().map_output(&output, (0, 0));
 
     let start_time = std::time::Instant::now();
 
@@ -164,8 +164,7 @@ pub fn run_winit(log: Logger) {
                     let mut space = state.space.borrow_mut();
                     // We only have one output
                     let output = space.outputs().next().unwrap().clone();
-                    let current_scale = space.output_scale(&output).unwrap();
-                    space.map_output(&output, current_scale, (0, 0));
+                    space.map_output(&output, (0, 0));
                     let mode = Mode {
                         size,
                         refresh: 60_000,
@@ -253,7 +252,7 @@ pub fn run_winit(log: Logger) {
 
             match render_res {
                 Ok(Some(damage)) => {
-                    let scale = state.space.borrow().output_scale(&output).unwrap_or(1.0);
+                    let scale = output.current_scale().fractional_scale();
                     if let Err(err) = backend.submit(if age == 0 { None } else { Some(&*damage) }, scale) {
                         warn!(log, "Failed to submit buffer: {}", err);
                     }

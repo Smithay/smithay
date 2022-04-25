@@ -30,7 +30,7 @@ where
     {
         let transform = output.current_transform().into();
         let mode = output.current_mode().unwrap();
-        let scale = space.output_scale(output).unwrap();
+        let scale = output.current_scale().fractional_scale();
         let output_geo = space
             .output_geometry(output)
             .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (0, 0)));

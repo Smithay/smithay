@@ -15,6 +15,7 @@ use smithay::{
     utils::{Logical, Point},
     wayland::{
         compositor::with_states,
+        output::Scale,
         seat::{keysyms as xkb, AxisFrame, FilterResult, Keysym, ModifiersState},
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
         Serial, SERIAL_COUNTER as SCOUNTER,
@@ -321,11 +322,9 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                     let mut space = self.space.borrow_mut();
                     let output = space.outputs().find(|o| o.name() == output_name).unwrap().clone();
 
-                    let geometry = space.output_geometry(&output).unwrap();
-                    let current_scale = space.output_scale(&output).unwrap();
+                    let current_scale = output.current_scale().fractional_scale();
                     let new_scale = current_scale + 0.25;
-                    output.change_current_state(None, None, Some(new_scale.ceil() as i32), None);
-                    space.map_output(&output, new_scale, geometry.loc);
+                    output.change_current_state(None, None, Some(Scale::Fractional(new_scale)), None);
 
                     crate::shell::fixup_positions(&mut *space);
                     self.backend_data.reset_buffers(&output);
@@ -335,11 +334,9 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                     let mut space = self.space.borrow_mut();
                     let output = space.outputs().find(|o| o.name() == output_name).unwrap().clone();
 
-                    let geometry = space.output_geometry(&output).unwrap();
-                    let current_scale = space.output_scale(&output).unwrap();
+                    let current_scale = output.current_scale().fractional_scale();
                     let new_scale = f64::max(1.0, current_scale - 0.25);
-                    output.change_current_state(None, None, Some(new_scale.ceil() as i32), None);
-                    space.map_output(&output, new_scale, geometry.loc);
+                    output.change_current_state(None, None, Some(Scale::Fractional(new_scale)), None);
 
                     crate::shell::fixup_positions(&mut *space);
                     self.backend_data.reset_buffers(&output);
@@ -426,11 +423,10 @@ impl AnvilState<UdevData> {
                     if let Some(output) = output {
                         let (output_location, scale) = (
                             space.output_geometry(&output).unwrap().loc,
-                            space.output_scale(&output).unwrap(),
+                            output.current_scale().fractional_scale(),
                         );
                         let new_scale = scale + 0.25;
-                        output.change_current_state(None, None, Some(new_scale.ceil() as i32), None);
-                        space.map_output(&output, new_scale, output_location);
+                        output.change_current_state(None, None, Some(Scale::Fractional(new_scale)), None);
 
                         let rescale = scale as f64 / new_scale as f64;
                         let output_location = output_location.to_f64();
@@ -459,11 +455,10 @@ impl AnvilState<UdevData> {
                     if let Some(output) = output {
                         let (output_location, scale) = (
                             space.output_geometry(&output).unwrap().loc,
-                            space.output_scale(&output).unwrap(),
+                            output.current_scale().fractional_scale(),
                         );
                         let new_scale = f64::max(1.0, scale - 0.25);
-                        output.change_current_state(None, None, Some(new_scale.ceil() as i32), None);
-                        space.map_output(&output, new_scale, output_location);
+                        output.change_current_state(None, None, Some(Scale::Fractional(new_scale)), None);
 
                         let rescale = scale as f64 / new_scale as f64;
                         let output_location = output_location.to_f64();

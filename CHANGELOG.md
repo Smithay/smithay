@@ -62,6 +62,7 @@
 - `wayland::output::Output` now has a `current_scale` method to quickly retrieve its set scale.
 - `wayland::shell::wlr_layer::KeyboardInteractivity` now implements `PartialEq` and `Eq`.
 - Added `TouchHandle` for Wayland client touch support (see `Seat::get_touch`)
+- `wayland::output::Scale` was introduced to handle fractional scale values better
 
 #### Backends
 

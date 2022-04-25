@@ -17,7 +17,7 @@ use wayland_server::{protocol::wl_output::WlOutput, Display, Filter, Global, Mai
 
 use crate::utils::{Logical, Physical, Point, Size};
 
-use super::{Mode, Output};
+use super::{Mode, Output, Scale};
 
 #[derive(Debug)]
 pub(crate) struct Inner {
@@ -26,7 +26,7 @@ pub(crate) struct Inner {
     pub(super) logical_position: Point<i32, Logical>,
 
     pub(super) physical_size: Option<Size<i32, Physical>>,
-    pub(super) scale: i32,
+    pub(super) scale: Scale,
 
     instances: Vec<ZxdgOutputV1>,
     _log: ::slog::Logger,
@@ -64,7 +64,10 @@ impl XdgOutput {
         xdg_output.logical_position(inner.logical_position.x, inner.logical_position.y);
 
         if let Some(size) = inner.physical_size {
-            let logical_size = size.to_logical(inner.scale);
+            let logical_size = size
+                .to_f64()
+                .to_logical(inner.scale.fractional_scale())
+                .to_i32_round();
             xdg_output.logical_size(logical_size.w, logical_size.h);
         }
 
@@ -100,7 +103,7 @@ impl XdgOutput {
     pub(super) fn change_current_state(
         &self,
         new_mode: Option<Mode>,
-        new_scale: Option<i32>,
+        new_scale: Option<Scale>,
         new_location: Option<Point<i32, Logical>>,
     ) {
         let mut output = self.inner.lock().unwrap();
@@ -118,7 +121,10 @@ impl XdgOutput {
         for instance in output.instances.iter() {
             if new_mode.is_some() | new_scale.is_some() {
                 if let Some(size) = output.physical_size {
-                    let logical_size = size.to_logical(output.scale);
+                    let logical_size = size
+                        .to_f64()
+                        .to_logical(output.scale.fractional_scale())
+                        .to_i32_round();
                     instance.logical_size(logical_size.w, logical_size.h);
                 }
             }
