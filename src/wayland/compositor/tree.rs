@@ -1,10 +1,13 @@
-use crate::wayland::Serial;
+use crate::{backend::renderer::utils::SurfaceState, wayland::Serial};
 
 use super::{
     cache::MultiCache, get_children, handlers::is_effectively_sync, transaction::PendingTransaction,
-    SurfaceData,
+    BufferAssignment, SurfaceAttributes, SurfaceData,
 };
-use std::sync::{atomic::Ordering, Mutex};
+use std::{
+    cell::RefCell,
+    sync::{atomic::Ordering, Mutex},
+};
 use wayland_server::protocol::wl_surface::WlSurface;
 
 pub(crate) static SUBSURFACE_ROLE: &str = "subsurface";
@@ -125,6 +128,32 @@ impl PrivateSurfaceData {
 
             let mut child_guard = child_mutex.lock().unwrap();
             child_guard.parent = None;
+        }
+        if let Some(BufferAssignment::NewBuffer { buffer, .. }) = my_data
+            .public_data
+            .cached_state
+            .current::<SurfaceAttributes>()
+            .buffer
+            .take()
+        {
+            buffer.release();
+        };
+        if let Some(BufferAssignment::NewBuffer { buffer, .. }) = my_data
+            .public_data
+            .cached_state
+            .pending::<SurfaceAttributes>()
+            .buffer
+            .take()
+        {
+            buffer.release();
+        };
+        if let Some(buffer) = my_data
+            .public_data
+            .data_map
+            .get::<RefCell<SurfaceState>>()
+            .and_then(|s| s.borrow_mut().buffer.take())
+        {
+            buffer.release();
         }
     }
 
