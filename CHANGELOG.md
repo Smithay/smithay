@@ -100,6 +100,8 @@
 - `xdg_shell` had an issue where it was possible that configured state gets overwritten before it was acked/committed.
 - `wl_keyboard` rewind the `keymap` file before passing it to the client
 - `wl_shm` properly validates parameters when creating a `wl_buffer`.
+- `ServerDnDGrab` and `DnDGrab` now correctly send data device `leave` event on button release
+
 
 #### Backends
 
