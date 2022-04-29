@@ -63,6 +63,7 @@
 pub mod xdg;
 
 use std::{
+    hash::{Hash, Hasher},
     ops::Deref as _,
     sync::{Arc, Mutex},
 };
@@ -502,3 +503,9 @@ impl PartialEq for Output {
 }
 
 impl Eq for Output {}
+
+impl Hash for Output {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.inner).hash(state);
+    }
+}
