@@ -192,8 +192,6 @@ where
                     if device.as_ref().same_client_as(surface.as_ref()) {
                         if validated {
                             device.drop();
-                        } else {
-                            device.leave();
                         }
                     }
                 }
@@ -213,6 +211,13 @@ where
             }
             // in all cases abandon the drop
             // no more buttons are pressed, release the grab
+            if let Some(ref surface) = self.current_focus {
+                for device in &seat_data.known_devices {
+                    if device.as_ref().same_client_as(surface.as_ref()) {
+                        device.leave();
+                    }
+                }
+            }
             handle.unset_grab(serial, time);
         }
     }
