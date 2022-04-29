@@ -188,10 +188,8 @@ impl PointerGrab for DnDGrab {
             if let Some(ref surface) = self.current_focus {
                 if self.data_source.is_some() || self.origin.as_ref().same_client_as(surface.as_ref()) {
                     for device in &seat_data.known_devices {
-                        if device.as_ref().same_client_as(surface.as_ref()) {
-                            if validated {
-                                device.drop();
-                            }
+                        if device.as_ref().same_client_as(surface.as_ref()) && validated {
+                            device.drop();
                         }
                     }
                 }

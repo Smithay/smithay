@@ -189,10 +189,8 @@ where
             };
             if let Some(ref surface) = self.current_focus {
                 for device in &seat_data.known_devices {
-                    if device.as_ref().same_client_as(surface.as_ref()) {
-                        if validated {
-                            device.drop();
-                        }
+                    if device.as_ref().same_client_as(surface.as_ref()) && validated {
+                        device.drop();
                     }
                 }
             }
