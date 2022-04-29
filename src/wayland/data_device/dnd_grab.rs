@@ -191,8 +191,6 @@ impl PointerGrab for DnDGrab {
                         if device.as_ref().same_client_as(surface.as_ref()) {
                             if validated {
                                 device.drop();
-                            } else {
-                                device.leave();
                             }
                         }
                     }
