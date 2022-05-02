@@ -565,7 +565,7 @@ impl Gles2Renderer {
     /// - This renderer has no default framebuffer, use `Bind::bind` before rendering.
     /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
-    /// - Texture filtering starts with Nearest-downscaling and Linear-upscaling
+    /// - Texture filtering starts with Linear-downscaling and Linear-upscaling
     pub unsafe fn new<L>(context: EGLContext, logger: L) -> Result<Gles2Renderer, Gles2Error>
     where
         L: Into<Option<::slog::Logger>>,
@@ -682,7 +682,7 @@ impl Gles2Renderer {
             destruction_callback: rx,
             destruction_callback_sender: tx,
             vbos,
-            min_filter: TextureFilter::Nearest,
+            min_filter: TextureFilter::Linear,
             max_filter: TextureFilter::Linear,
             supports_instancing,
             logger_ptr,
