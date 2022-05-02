@@ -2089,8 +2089,15 @@ impl Gles2Frame {
         unsafe {
             self.gl.ActiveTexture(ffi::TEXTURE0);
             self.gl.BindTexture(target, tex.0.texture);
+            self.gl
+                .TexParameteri(target, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_BORDER as i32);
+            self.gl
+                .TexParameteri(target, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_BORDER as i32);
+            let border_color = [0.0f32, 0.0f32, 0.0f32, 0.0f32];
+            self.gl
+                .TexParameterfv(target, ffi::TEXTURE_BORDER_COLOR, border_color.as_ptr());
             self.gl.TexParameteri(
-                ffi::TEXTURE_2D,
+                target,
                 ffi::TEXTURE_MIN_FILTER,
                 match self.min_filter {
                     TextureFilter::Nearest => ffi::NEAREST as i32,
@@ -2098,7 +2105,7 @@ impl Gles2Frame {
                 },
             );
             self.gl.TexParameteri(
-                ffi::TEXTURE_2D,
+                target,
                 ffi::TEXTURE_MAG_FILTER,
                 match self.max_filter {
                     TextureFilter::Nearest => ffi::NEAREST as i32,
