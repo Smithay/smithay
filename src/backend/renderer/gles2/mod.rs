@@ -565,7 +565,7 @@ impl Gles2Renderer {
     /// - This renderer has no default framebuffer, use `Bind::bind` before rendering.
     /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
-    /// - Texture filtering starts with Nearest-downscaling and Linear-upscaling
+    /// - Texture filtering starts with Linear-downscaling and Linear-upscaling
     pub unsafe fn new<L>(context: EGLContext, logger: L) -> Result<Gles2Renderer, Gles2Error>
     where
         L: Into<Option<::slog::Logger>>,
@@ -682,7 +682,7 @@ impl Gles2Renderer {
             destruction_callback: rx,
             destruction_callback_sender: tx,
             vbos,
-            min_filter: TextureFilter::Nearest,
+            min_filter: TextureFilter::Linear,
             max_filter: TextureFilter::Linear,
             supports_instancing,
             logger_ptr,
@@ -2089,8 +2089,15 @@ impl Gles2Frame {
         unsafe {
             self.gl.ActiveTexture(ffi::TEXTURE0);
             self.gl.BindTexture(target, tex.0.texture);
+            self.gl
+                .TexParameteri(target, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_BORDER as i32);
+            self.gl
+                .TexParameteri(target, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_BORDER as i32);
+            let border_color = [0.0f32, 0.0f32, 0.0f32, 0.0f32];
+            self.gl
+                .TexParameterfv(target, ffi::TEXTURE_BORDER_COLOR, border_color.as_ptr());
             self.gl.TexParameteri(
-                ffi::TEXTURE_2D,
+                target,
                 ffi::TEXTURE_MIN_FILTER,
                 match self.min_filter {
                     TextureFilter::Nearest => ffi::NEAREST as i32,
@@ -2098,7 +2105,7 @@ impl Gles2Frame {
                 },
             );
             self.gl.TexParameteri(
-                ffi::TEXTURE_2D,
+                target,
                 ffi::TEXTURE_MAG_FILTER,
                 match self.max_filter {
                     TextureFilter::Nearest => ffi::NEAREST as i32,

@@ -428,14 +428,17 @@ impl Space {
         }
 
         let mut state = output_state(self.id, output);
-        let output_size = output
-            .current_mode()
-            .ok_or(RenderError::OutputNoMode)?
-            .size
-            .to_f64()
-            .to_logical(output.current_scale().fractional_scale())
-            .to_i32_round();
-        let output_geo = Rectangle::from_loc_and_size(state.location, output_size);
+        let output_size = output.current_mode().ok_or(RenderError::OutputNoMode)?.size;
+        // We explicitly use ceil for the output geometry size to make sure the damage
+        // spans at least the output size. Round and floor would result in parts not drawn as the
+        // frame size could be bigger than the maximum the output_geo would define.
+        let output_geo = Rectangle::from_loc_and_size(
+            state.location,
+            output_size
+                .to_f64()
+                .to_logical(output.current_scale().fractional_scale())
+                .to_i32_ceil(),
+        );
         let layer_map = layer_map_for_output(output);
 
         let window_popups = self
@@ -548,11 +551,7 @@ impl Space {
         let output_transform: Transform = output.current_transform().into();
         let output_scale = output.current_scale().fractional_scale();
         let res = renderer.render(
-            output_transform
-                .transform_size(output_size)
-                .to_f64()
-                .to_physical(output_scale)
-                .to_i32_round(),
+            output_transform.transform_size(output_size),
             output_transform,
             |renderer, frame| {
                 // First clear all damaged regions
