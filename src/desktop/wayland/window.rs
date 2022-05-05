@@ -1,3 +1,5 @@
+#[cfg(feature = "xwayland")]
+use crate::xwayland::X11Surface;
 use crate::{
     backend::input::KeyState,
     desktop::{space::RenderZindex, utils::*, PopupManager},
@@ -39,33 +41,20 @@ pub enum Kind {
     X11(X11Surface),
 }
 
-/// Xwayland surface
-#[derive(Debug, Clone)]
-#[cfg(feature = "xwayland")]
-pub struct X11Surface {
-    /// underlying wl_surface
-    pub surface: wl_surface::WlSurface,
-}
-
-#[cfg(feature = "xwayland")]
-impl std::cmp::PartialEq for X11Surface {
-    fn eq(&self, other: &Self) -> bool {
-        self.alive() && other.alive() && self.surface == other.surface
-    }
-}
-
-#[cfg(feature = "xwayland")]
-impl IsAlive for X11Surface {
-    fn alive(&self) -> bool {
-        self.surface.alive()
-    }
-}
-
 #[cfg(feature = "xwayland")]
 impl X11Surface {
+    /// Checks if the surface is still alive.
+    pub fn alive(&self) -> bool {
+        self.wl_surface().map(|x| x.as_ref().is_alive()).unwrap_or(false)
+    }
+
     /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
-    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
-        &self.surface
+    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
+        if self.alive() {
+            self.wl_surface()
+        } else {
+            None
+        }
     }
 }
 
