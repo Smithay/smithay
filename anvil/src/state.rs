@@ -70,7 +70,7 @@ use crate::focus::FocusTarget;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::X11State;
 #[cfg(feature = "xwayland")]
-use smithay::xwayland::{XWayland, XWaylandEvent};
+use smithay::xwayland::{XWayland, XWaylandEvent, X11WM};
 
 pub struct CalloopData<BackendData: 'static> {
     pub state: AnvilState<BackendData>,
@@ -126,9 +126,9 @@ pub struct AnvilState<BackendData: 'static> {
     pub clock: Clock<Monotonic>,
 
     #[cfg(feature = "xwayland")]
-    pub xwayland: XWayland,
+    pub xwayland: XWayland<AnvilState<BackendData>>,
     #[cfg(feature = "xwayland")]
-    pub x11_state: Option<X11State>,
+    pub xwm: Option<X11WM>,
 
     #[cfg(feature = "debug")]
     pub renderdoc: Option<renderdoc::RenderDoc<renderdoc::V141>>,
@@ -411,12 +411,60 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         #[cfg(feature = "xwayland")]
         let xwayland = {
-            let (xwayland, channel) = XWayland::new(log.clone(), &display.handle());
-            let ret = handle.insert_source(channel, |event, _, data| match event {
-                XWaylandEvent::Ready {
-                    connection, client, ..
-                } => data.state.xwayland_ready(connection, client),
-                XWaylandEvent::Exited => data.state.xwayland_exited(),
+            let (xwayland, channel) = XWayland::new(handle.clone(), display.clone(), log.clone());
+            let log2 = log.clone();
+            let ret = handle.insert_source(channel, move |event, _, anvil_state| match event {
+                XWaylandEvent::Ready { connection, client } => {
+                    let (wm, source) = X11WM::start_wm(connection, client, log2.clone()).expect("Failed to attach X11 Window Manager");
+                    anvil_state.handle.insert_source(source, |event, _, state| {
+                        use smithay::{
+                            desktop::{Kind, Window},
+                            xwayland::X11Request,
+                            utils::Rectangle,
+                        };
+
+                        let wm = state.xwm.as_mut().unwrap();
+                        let mut space = state.space.borrow_mut();
+                        wm.handle_event(event, |request| match request {
+                            X11Request::NewWindow { window, location } => {
+                                let window = Window::new(Kind::X11(window));
+                                space.map_window(&window, location, true);
+                            },
+                            X11Request::DestroyedWindow { window } => {
+                                let maybe_window = space.windows().find(|x| matches!(x.toplevel(), Kind::X11(surface) if *surface == window)).cloned();
+                                if let Some(window) = maybe_window {
+                                    space.unmap_window(&window);
+                                }
+                            },
+                            X11Request::Configure {
+                                mut window,
+                                x,
+                                y,
+                                width,
+                                height,
+                                ..
+                            } => {
+                                // just grant the wish
+                                let geo = window.geometry();
+                                let _ = window.configure(Rectangle::from_loc_and_size(
+                                    (x.unwrap_or(geo.loc.x), y.unwrap_or(geo.loc.y)),
+                                    (width.unwrap_or(geo.size.w as u32) as i32, height.unwrap_or(geo.size.h as u32) as i32),
+                                ));
+                                if x.is_some() || y.is_some() {
+                                    let maybe_window = space.windows().find(|x| matches!(x.toplevel(), Kind::X11(surface) if *surface == window)).cloned();
+                                    if let Some(window) = maybe_window {
+                                        space.map_window(&window, (x.unwrap_or(geo.loc.x), y.unwrap_or(geo.loc.y)), false);
+                                    }
+                                }
+                            },
+                            _ => {},
+                        }).expect("Failed to handle X11 event");
+                    }).expect("Failed to insert XWM Source into the event loop");
+                    anvil_state.xwm = Some(wm);
+                },
+                XWaylandEvent::Exited => {
+                    let _ = anvil_state.xwm.take();
+                },
             });
             if let Err(e) = ret {
                 error!(
@@ -460,7 +508,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             #[cfg(feature = "xwayland")]
             xwayland,
             #[cfg(feature = "xwayland")]
-            x11_state: None,
+            xwm: None,
             #[cfg(feature = "debug")]
             renderdoc: renderdoc::RenderDoc::new().ok(),
             show_window_preview: false,

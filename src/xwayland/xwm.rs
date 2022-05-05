@@ -1,9 +1,9 @@
 #![allow(missing_docs)]
 
 use crate::{
-    backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
+    backend::renderer::{ImportAll, Renderer},
     utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
-    wayland::compositor::{get_role, give_role},
+    wayland::compositor::{add_post_commit_hook, get_role, give_role},
 };
 use calloop::channel::SyncSender;
 use std::{
@@ -431,6 +431,16 @@ impl X11WM {
             return;
         }
 
+        add_post_commit_hook(&wl_surface, |_, surface| {
+            if let Some(client) = surface.as_ref().client() {
+                if let Some(x11) = client.data_map().get::<X11Injector>() {
+                    if get_role(surface).is_none() {
+                        x11.late_window(surface);
+                    }
+                }
+            }
+        });
+
         let geometry = {
             let state = surface.state.borrow();
             Rectangle::from_loc_and_size(state.location, state.size)
@@ -444,20 +454,8 @@ impl X11WM {
     }
 }
 
-pub fn commit_hook(surface: &WlSurface) {
-    // Is this the Xwayland client?
-    if let Some(client) = surface.as_ref().client() {
-        if let Some(x11) = client.data_map().get::<X11Injector>() {
-            if get_role(surface).is_none() {
-                x11.late_window(surface);
-            }
-        }
-    }
-}
-
 pub fn draw_xwayland_surface<R>(
-    renderer: &mut R,
-    frame: &mut <R as Renderer>::Frame,
+    frame: &mut <R as Renderer>::Frame<'_>,
     surface: &X11Surface,
     scale: f64,
     damage: &[Rectangle<i32, Logical>],
@@ -469,7 +467,7 @@ where
 {
     let location = surface.state.borrow().location;
     if let Some(wl_surface) = surface.wl_surface.as_ref() {
-        draw_surface_tree(renderer, frame, wl_surface, scale, location, damage, log)
+        draw_surface_tree(frame, wl_surface, scale, location, damage, log)
     } else {
         Ok(())
     }

@@ -160,7 +160,9 @@ pub fn run_winit(log: Logger) {
     state.space.map_output(&output, (0, 0));
 
     #[cfg(feature = "xwayland")]
-    state.start_xwayland();
+    if let Err(e) = state.xwayland.start() {
+        error!(log, "Failed to start XWayland: {}", e);
+    }
 
     info!(log, "Initialization completed, starting the main loop.");
 

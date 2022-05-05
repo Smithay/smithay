@@ -282,6 +282,7 @@ pub fn run_udev(log: Logger) {
         })
         .unwrap();
     let handle = event_loop.handle();
+    let log2 = log.clone();
     event_loop
         .handle()
         .insert_source(notifier, move |event, &mut (), data| match event {
@@ -293,7 +294,7 @@ pub fn run_udev(log: Logger) {
             }
             SessionEvent::ActivateSession => {
                 if let Err(err) = libinput_context.resume() {
-                    slog::error!(log, "Failed to resume libinput context: {:?}", err);
+                    slog::error!(log2, "Failed to resume libinput context: {:?}", err);
                 }
                 for (node, backend) in data
                     .state
@@ -306,7 +307,7 @@ pub fn run_udev(log: Logger) {
                     let surfaces = backend.surfaces.borrow();
                     for surface in surfaces.values() {
                         if let Err(err) = surface.borrow().surface.surface().reset_state() {
-                            slog::warn!(log, "Failed to reset drm surface state: {}", err);
+                            slog::warn!(log2, "Failed to reset drm surface state: {}", err);
                         }
                     }
                     handle.insert_idle(move |data| data.state.render(node, None));
@@ -333,7 +334,9 @@ pub fn run_udev(log: Logger) {
      * Start XWayland if supported
      */
     #[cfg(feature = "xwayland")]
-    state.start_xwayland();
+    if let Err(e) = state.xwayland.start() {
+        error!(log, "Failed to start XWayland: {}", e);
+    }
 
     /*
      * And run our loop

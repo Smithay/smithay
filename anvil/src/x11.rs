@@ -224,8 +224,9 @@ pub fn run_x11(log: Logger) {
         .expect("Failed to insert X11 Backend into event loop");
 
     #[cfg(feature = "xwayland")]
-    state.start_xwayland();
-
+    if let Err(e) = state.xwayland.start() {
+        error!(log, "Failed to start XWayland: {}", e);
+    }
     info!(log, "Initialization completed, starting the main loop.");
 
     let mut pointer_element = PointerElement::default();
