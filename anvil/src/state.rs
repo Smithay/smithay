@@ -426,11 +426,13 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                         let wm = state.xwm.as_mut().unwrap();
                         let mut space = state.space.borrow_mut();
                         wm.handle_event(event, |request| match request {
-                            X11Request::NewWindow { window, location } => {
+                            X11Request::MappedWindow { window } => {
+                                window.set_mapped(true);
+                                let location = window.geometry().loc;
                                 let window = Window::new(Kind::X11(window));
                                 space.map_window(&window, location, true);
                             },
-                            X11Request::DestroyedWindow { window } => {
+                            X11Request::UnmappedWindow { window } => {
                                 let maybe_window = space.windows().find(|x| matches!(x.toplevel(), Kind::X11(surface) if *surface == window)).cloned();
                                 if let Some(window) = maybe_window {
                                     space.unmap_window(&window);

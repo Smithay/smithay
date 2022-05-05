@@ -63,6 +63,9 @@ x11rb = { version = "0.10.0", optional = true }
 xkbcommon = { version = "0.5.0", features = ["wayland"]}
 scan_fmt = { version = "0.2.3", default-features = false }
 
+[patch.crates-io]
+"winit" = { git = "https://github.com/rust-windowing/winit.git", rev = "0728105b2" }
+
 [dev-dependencies]
 slog-term = "2.3"
 

@@ -7,13 +7,11 @@ use crate::{
 };
 use calloop::channel::SyncSender;
 use std::{
-    cell::RefCell,
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
     convert::TryFrom,
     os::unix::net::UnixStream,
-    rc::Rc,
-    sync::{Arc, Weak},
+    sync::{Arc, Mutex, Weak},
 };
 use wayland_server::{protocol::wl_surface::WlSurface, Client};
 
@@ -45,38 +43,52 @@ x11rb::atom_manager! {
 #[derive(Debug, Clone)]
 pub struct X11Surface {
     window: X11Window,
-    wl_surface: Option<WlSurface>,
     conn: Weak<RustConnection>,
-    state: Rc<RefCell<SharedSurfaceState>>,
+    state: Arc<Mutex<SharedSurfaceState>>,
 }
 
 #[derive(Debug)]
 struct SharedSurfaceState {
-    mapped: bool,
-    mapped_onto: X11Window,
+    alive: bool,
+    wl_surface: Option<WlSurface>,
+    mapped_onto: Option<X11Window>,
     location: Point<i32, Logical>,
     size: Size<i32, Logical>,
 }
 
 impl PartialEq for X11Surface {
     fn eq(&self, other: &Self) -> bool {
-        self.window == other.window && self.wl_surface == other.wl_surface
+        self.window == other.window
+            && self.state.lock().unwrap().wl_surface == other.state.lock().unwrap().wl_surface
     }
 }
 
 impl X11Surface {
     pub fn set_mapped(&self, mapped: bool) -> Result<(), ConnectionError> {
         if let Some(conn) = self.conn.upgrade() {
-            let mut state = self.state.borrow_mut();
-            let frame = state.mapped_onto;
-            state.mapped = mapped;
-            if mapped {
-                conn.map_window(frame)?;
-            } else {
-                conn.unmap_window(frame)?;
+            if let Some(frame) = self.state.lock().unwrap().mapped_onto {
+                if mapped {
+                    conn.map_window(frame)?;
+                } else {
+                    conn.unmap_window(frame)?;
+                }
+                conn.flush()?;
             }
         }
         Ok(())
+    }
+
+    pub fn is_client_mapped(&self) -> bool {
+        self.state.lock().unwrap().mapped_onto.is_some()
+    }
+
+    pub fn is_visible(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        state.mapped_onto.is_some() && state.wl_surface.is_some()
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.state.lock().unwrap().alive
     }
 
     pub fn configure(&mut self, rect: Rectangle<i32, Logical>) -> Result<(), ConnectionError> {
@@ -87,7 +99,11 @@ impl X11Surface {
                 .width(rect.size.w as u32)
                 .height(rect.size.h as u32);
             conn.configure_window(self.window, &aux)?;
-            let mut state = self.state.borrow_mut();
+            if let Some(frame) = self.state.lock().unwrap().mapped_onto {
+                conn.configure_window(frame, &aux);
+            }
+            conn.flush()?;
+            let mut state = self.state.lock().unwrap();
             state.location = rect.loc;
             state.size = rect.size;
         }
@@ -98,12 +114,12 @@ impl X11Surface {
         self.window
     }
 
-    pub fn wl_surface(&self) -> Option<&WlSurface> {
-        self.wl_surface.as_ref()
+    pub fn wl_surface(&self) -> Option<WlSurface> {
+        self.state.lock().unwrap().wl_surface.clone()
     }
 
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        let state = self.state.borrow();
+        let state = self.state.lock().unwrap();
         Rectangle::from_loc_and_size(state.location, state.size)
     }
 }
@@ -112,9 +128,14 @@ impl X11Surface {
 pub enum X11Request {
     NewWindow {
         window: X11Surface,
-        location: Point<i32, Logical>,
     },
     DestroyedWindow {
+        window: X11Surface,
+    },
+    MappedWindow {
+        window: X11Surface,
+    },
+    UnmappedWindow {
         window: X11Surface,
     },
     Configure {
@@ -263,6 +284,20 @@ impl X11WM {
         match event {
             Event::CreateNotify(n) => {
                 self.conn.composite_redirect_window(n.window, Redirect::MANUAL)?;
+                let geo = self.conn.get_geometry(n.window)?.reply()?;
+                let surface = X11Surface {
+                    window: n.window,
+                    conn: Arc::downgrade(&self.conn),
+                    state: Arc::new(Mutex::new(SharedSurfaceState {
+                        alive: true,
+                        wl_surface: None,
+                        mapped_onto: None,
+                        location: (geo.x as i32, geo.y as i32).into(),
+                        size: (geo.width as i32, geo.height as i32).into(),
+                    })),
+                };
+                self.windows.push(surface.clone());
+                callback(X11Request::NewWindow { window: surface });
             }
             Event::ConfigureRequest(r) => {
                 if let Some(surface) = self.windows.iter().find(|x| x.window == r.window) {
@@ -302,71 +337,73 @@ impl X11WM {
                             None
                         },
                     });
-                } else {
-                    let aux = ConfigureWindowAux::from_configure_request(&r);
-                    self.conn.configure_window(r.window, &aux)?;
                 }
             }
             Event::MapRequest(r) => {
-                // we reparent windows, because a lot of stuff expects, that we do
-                let geo = self.conn.get_geometry(r.window)?.reply()?;
-                let win = r.window;
-                let frame_win = self.conn.generate_id()?;
-                let win_aux = CreateWindowAux::new().event_mask(EventMask::SUBSTRUCTURE_NOTIFY);
-                self.conn.create_window(
-                    COPY_DEPTH_FROM_PARENT,
-                    frame_win,
-                    self.screen.root,
-                    geo.x,
-                    geo.y,
-                    geo.width,
-                    geo.height,
-                    1,
-                    WindowClass::INPUT_OUTPUT,
-                    0,
-                    &win_aux,
-                )?;
+                if let Some(surface) = self.windows.iter().find(|x| x.window == r.window) {
+                    // we reparent windows, because a lot of stuff expects, that we do
+                    let geo = self.conn.get_geometry(r.window)?.reply()?;
+                    let win = r.window;
+                    let frame_win = self.conn.generate_id()?;
+                    let win_aux = CreateWindowAux::new().event_mask(EventMask::SUBSTRUCTURE_NOTIFY);
 
-                self.conn.grab_server()?;
-                let cookie = self.conn.reparent_window(win, frame_win, 0, 0)?;
-                self.conn.map_window(win)?;
-                self.conn.map_window(frame_win)?;
-                self.conn.ungrab_server()?;
+                    self.conn.grab_server()?;
+                    let cookie1 = self.conn.create_window(
+                        COPY_DEPTH_FROM_PARENT,
+                        frame_win,
+                        self.screen.root,
+                        geo.x,
+                        geo.y,
+                        geo.width,
+                        geo.height,
+                        1,
+                        WindowClass::INPUT_OUTPUT,
+                        0,
+                        &win_aux,
+                    )?;
+                    let cookie2 = self.conn.reparent_window(win, frame_win, 0, 0)?;
+                    self.conn.map_window(win)?;
+                    self.conn.ungrab_server()?;
 
-                // Ignore all events caused by reparent_window(). All those events have the sequence number
-                // of the reparent_window() request, thus remember its sequence number. The
-                // grab_server()/ungrab_server() is done so that the server does not handle other clients
-                // in-between, which could cause other events to get the same sequence number.
-                self.sequences_to_ignore
-                    .push(Reverse(cookie.sequence_number() as u16));
+                    // Ignore all events caused by reparent_window(). All those events have the sequence number
+                    // of the reparent_window() request, thus remember its sequence number. The
+                    // grab_server()/ungrab_server() is done so that the server does not handle other clients
+                    // in-between, which could cause other events to get the same sequence number.
+                    self.sequences_to_ignore
+                        .push(Reverse(cookie1.sequence_number() as u16));
+                    self.sequences_to_ignore
+                        .push(Reverse(cookie2.sequence_number() as u16));
 
-                let location = (geo.x as i32, geo.y as i32).into();
-                let surface = X11Surface {
-                    window: win,
-                    wl_surface: None,
-                    conn: Arc::downgrade(&self.conn),
-                    state: Rc::new(RefCell::new(SharedSurfaceState {
-                        mapped: true,
-                        mapped_onto: frame_win,
-                        location,
-                        size: (geo.width as i32, geo.height as i32).into(),
-                    })),
-                };
-                self.windows.push(surface);
+                    surface.state.lock().unwrap().mapped_onto = Some(frame_win);
+                    callback(X11Request::MappedWindow {
+                        window: surface.clone(),
+                    });
+                }
             }
             Event::UnmapNotify(n) => {
-                if let Some(pos) = self.windows.iter().position(|x| x.window == n.window) {
-                    let surface = self.windows.remove(pos);
+                if let Some(surface) = self.windows.iter().find(|x| x.window == n.window) {
+                    slog::warn!(self.log, "UNMAPPING!");
                     {
-                        let state = surface.state.borrow();
+                        let mut state = surface.state.lock().unwrap();
                         self.conn.reparent_window(
                             n.window,
                             self.screen.root,
                             state.location.x as i16,
                             state.location.y as i16,
                         )?;
-                        self.conn.destroy_window(state.mapped_onto)?;
+                        if let Some(frame) = state.mapped_onto.take() {
+                            self.conn.destroy_window(frame)?;
+                        }
                     }
+                    callback(X11Request::UnmappedWindow {
+                        window: surface.clone(),
+                    });
+                }
+            }
+            Event::DestroyNotify(n) => {
+                if let Some(pos) = self.windows.iter().position(|x| x.window == n.window) {
+                    let surface = self.windows.remove(pos);
+                    surface.state.lock().unwrap().alive = false;
                     callback(X11Request::DestroyedWindow {
                         window: surface.clone(),
                     });
@@ -395,7 +432,7 @@ impl X11WM {
                                 self.unpaired_surfaces.insert(id, msg.window);
                             }
                             Some(wl_surface) => {
-                                Self::new_window(surface, wl_surface, callback, self.log.clone());
+                                Self::new_surface(surface, wl_surface, self.log.clone());
                             }
                         }
                     }
@@ -404,7 +441,7 @@ impl X11WM {
                     if let Some(window) = self.unpaired_surfaces.remove(&id) {
                         if let Some(surface) = self.windows.iter_mut().find(|x| x.window == window) {
                             let wl_surface = self.wl_client.get_resource::<WlSurface>(id).unwrap();
-                            Self::new_window(surface, wl_surface, callback, self.log.clone());
+                            Self::new_surface(surface, wl_surface, self.log.clone());
                         }
                     }
                 }
@@ -415,10 +452,7 @@ impl X11WM {
         Ok(())
     }
 
-    fn new_window<Impl>(surface: &mut X11Surface, wl_surface: WlSurface, callback: Impl, log: ::slog::Logger)
-    where
-        Impl: FnOnce(X11Request),
-    {
+    fn new_surface(surface: &mut X11Surface, wl_surface: WlSurface, log: ::slog::Logger) {
         slog::debug!(
             log,
             "Matched X11 surface {:x?} to {:x?}",
@@ -440,17 +474,7 @@ impl X11WM {
                 }
             }
         });
-
-        let geometry = {
-            let state = surface.state.borrow();
-            Rectangle::from_loc_and_size(state.location, state.size)
-        };
-
-        surface.wl_surface = Some(wl_surface);
-        callback(X11Request::NewWindow {
-            window: surface.clone(),
-            location: geometry.loc,
-        });
+        surface.state.lock().unwrap().wl_surface = Some(wl_surface);
     }
 }
 
@@ -465,9 +489,10 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
 {
-    let location = surface.state.borrow().location;
-    if let Some(wl_surface) = surface.wl_surface.as_ref() {
-        draw_surface_tree(frame, wl_surface, scale, location, damage, log)
+    let state = surface.state.borrow();
+    let location = state.location;
+    if let Some(wl_surface) = state.wl_surface.as_ref() {
+        draw_surface_tree(renderer, frame, wl_surface, scale, location, damage, log)
     } else {
         Ok(())
     }
