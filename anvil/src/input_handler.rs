@@ -157,8 +157,16 @@ impl<Backend> AnvilState<Backend> {
     }
 
     fn update_keyboard_focus(&mut self, serial: Serial) {
-        // change the keyboard focus unless the pointer is grabbed
-        if !self.pointer.is_grabbed() {
+        // change the keyboard focus unless the pointer or keyboard is grabbed
+        // We test for any matching surface type here but always use the root
+        // (in case of a window the toplevel) surface for the focus.
+        // So for example if a user clicks on a subsurface or popup the toplevel
+        // will receive the keyboard focus. Directly assigning the focus to the
+        // matching surface leads to issues with clients dismissing popups and
+        // subsurface menus (for example firefox-wayland).
+        // see here for a discussion about that issue:
+        // https://gitlab.freedesktop.org/wayland/wayland/-/issues/294
+        if !self.pointer.is_grabbed() && !self.keyboard.is_grabbed() {
             let mut space = self.space.borrow_mut();
 
             if let Some(output) = space.output_under(self.pointer_location).next() {
@@ -168,14 +176,16 @@ impl<Backend> AnvilState<Backend> {
                     .get::<FullscreenSurface>()
                     .and_then(|f| f.get())
                 {
-                    let surface = window
+                    if window
                         .surface_under(
                             self.pointer_location - output_geo.loc.to_f64(),
-                            WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE,
+                            WindowSurfaceType::ALL,
                         )
-                        .map(|(s, _)| s);
-                    self.keyboard.set_focus(surface.as_ref(), serial);
-                    return;
+                        .is_some()
+                    {
+                        self.keyboard.set_focus(window.toplevel().get_surface(), serial);
+                        return;
+                    }
                 }
 
                 let layers = layer_map_for_output(output);
@@ -183,27 +193,25 @@ impl<Backend> AnvilState<Backend> {
                     .layer_under(WlrLayer::Overlay, self.pointer_location)
                     .or_else(|| layers.layer_under(WlrLayer::Top, self.pointer_location))
                 {
-                    if layer.can_receive_keyboard_focus() {
-                        let surface = layer
+                    if layer.can_receive_keyboard_focus()
+                        && layer
                             .surface_under(
                                 self.pointer_location
                                     - output_geo.loc.to_f64()
                                     - layers.layer_geometry(layer).unwrap().loc.to_f64(),
                                 WindowSurfaceType::ALL,
                             )
-                            .map(|(s, _)| s);
-                        self.keyboard.set_focus(surface.as_ref(), serial);
+                            .is_some()
+                    {
+                        self.keyboard.set_focus(layer.get_surface(), serial);
                         return;
                     }
                 }
             }
 
-            if let Some((window, surface, _)) = space.surface_under(
-                self.pointer_location,
-                WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE,
-            ) {
+            if let Some((window, _, _)) = space.surface_under(self.pointer_location, WindowSurfaceType::ALL) {
                 space.raise_window(&window, true);
-                self.keyboard.set_focus(Some(&surface), serial);
+                self.keyboard.set_focus(window.toplevel().get_surface(), serial);
                 return;
             }
 
@@ -214,16 +222,17 @@ impl<Backend> AnvilState<Backend> {
                     .layer_under(WlrLayer::Bottom, self.pointer_location)
                     .or_else(|| layers.layer_under(WlrLayer::Background, self.pointer_location))
                 {
-                    if layer.can_receive_keyboard_focus() {
-                        let surface = layer
+                    if layer.can_receive_keyboard_focus()
+                        && layer
                             .surface_under(
                                 self.pointer_location
                                     - output_geo.loc.to_f64()
                                     - layers.layer_geometry(layer).unwrap().loc.to_f64(),
                                 WindowSurfaceType::ALL,
                             )
-                            .map(|(s, _)| s);
-                        self.keyboard.set_focus(surface.as_ref(), serial);
+                            .is_some()
+                    {
+                        self.keyboard.set_focus(layer.get_surface(), serial);
                     }
                 }
             };
