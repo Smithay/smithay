@@ -17,7 +17,7 @@ pub mod logind;
 pub(crate) struct DBusConnection {
     cx: LocalConnection,
     current_watch: Watch,
-    token: Token,
+    token: Option<Token>,
 }
 
 impl DBusConnection {
@@ -26,7 +26,7 @@ impl DBusConnection {
         chan.set_watch_enabled(true);
         Ok(DBusConnection {
             cx: chan.into(),
-            token: Token::invalid(),
+            token: None,
             current_watch: Watch {
                 fd: -1,
                 read: false,
@@ -48,18 +48,24 @@ impl EventSource for DBusConnection {
     type Event = Message;
     type Metadata = DBusConnection;
     type Ret = ();
+    type Error = dbus::Error;
 
-    fn process_events<F>(&mut self, _: Readiness, token: Token, mut callback: F) -> io::Result<PostAction>
+    fn process_events<F>(
+        &mut self,
+        _: Readiness,
+        token: Token,
+        mut callback: F,
+    ) -> Result<PostAction, dbus::Error>
     where
         F: FnMut(Message, &mut DBusConnection),
     {
-        if token != self.token {
+        if Some(token) != self.token {
             return Ok(PostAction::Continue);
         }
         self.cx
             .channel()
             .read_write(Some(std::time::Duration::from_millis(0)))
-            .map_err(|()| io::Error::new(io::ErrorKind::NotConnected, "DBus connection is closed"))?;
+            .map_err(|()| dbus::Error::new_failed("Connection was closed"))?;
         while let Some(message) = self.cx.channel().pop_message() {
             callback(message, self);
         }
@@ -67,18 +73,19 @@ impl EventSource for DBusConnection {
         Ok(PostAction::Continue)
     }
 
-    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> io::Result<()> {
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         if self.current_watch.read || self.current_watch.write {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 "DBus session already registered to calloop",
-            ));
+            )
+            .into());
         }
         // reregister handles all the watch logic
         self.reregister(poll, factory)
     }
 
-    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> io::Result<()> {
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         let new_watch = self.cx.channel().watch();
         let new_interest = match (new_watch.read, new_watch.write) {
             (true, true) => Some(Interest::BOTH),
@@ -86,7 +93,7 @@ impl EventSource for DBusConnection {
             (false, true) => Some(Interest::WRITE),
             (false, false) => None,
         };
-        self.token = factory.token();
+        self.token = Some(factory.token());
         if new_watch.fd != self.current_watch.fd {
             // remove the previous fd
             if self.current_watch.read || self.current_watch.write {
@@ -94,12 +101,12 @@ impl EventSource for DBusConnection {
             }
             // insert the new one
             if let Some(interest) = new_interest {
-                poll.register(new_watch.fd, interest, Mode::Level, self.token)?;
+                poll.register(new_watch.fd, interest, Mode::Level, self.token.unwrap())?;
             }
         } else {
             // update the registration
             if let Some(interest) = new_interest {
-                poll.reregister(self.current_watch.fd, interest, Mode::Level, self.token)?;
+                poll.reregister(self.current_watch.fd, interest, Mode::Level, self.token.unwrap())?;
             } else {
                 poll.unregister(self.current_watch.fd)?;
             }
@@ -108,11 +115,11 @@ impl EventSource for DBusConnection {
         Ok(())
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
+    fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         if self.current_watch.read || self.current_watch.write {
             poll.unregister(self.current_watch.fd)?;
         }
-        self.token = Token::invalid();
+        self.token = None;
         self.current_watch = Watch {
             fd: -1,
             read: false,

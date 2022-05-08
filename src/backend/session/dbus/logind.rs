@@ -458,8 +458,9 @@ impl EventSource for LogindSessionNotifier {
     type Event = ();
     type Metadata = ();
     type Ret = ();
+    type Error = Error;
 
-    fn process_events<F>(&mut self, readiness: Readiness, token: Token, _: F) -> std::io::Result<PostAction>
+    fn process_events<F>(&mut self, readiness: Readiness, token: Token, _: F) -> Result<PostAction, Error>
     where
         F: FnMut((), &mut ()),
     {
@@ -469,7 +470,8 @@ impl EventSource for LogindSessionNotifier {
         self.internal
             .conn
             .borrow_mut()
-            .process_events(readiness, token, |msg, _| messages.push(msg))?;
+            .process_events(readiness, token, |msg, _| messages.push(msg))
+            .map_err(Error::FailedDbusConnection)?;
 
         for msg in messages {
             if let Err(err) = self.internal.handle_message(msg) {
@@ -480,15 +482,15 @@ impl EventSource for LogindSessionNotifier {
         Ok(PostAction::Continue)
     }
 
-    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.internal.conn.borrow_mut().register(poll, factory)
     }
 
-    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.internal.conn.borrow_mut().reregister(poll, factory)
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {
+    fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.internal.conn.borrow_mut().unregister(poll)
     }
 }

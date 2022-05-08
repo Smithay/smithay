@@ -39,7 +39,7 @@ use smithay::{
     desktop::space::{RenderError, Space, SurfaceTree},
     reexports::{
         calloop::{
-            timer::{Timer, TimerHandle},
+            timer::{TimeoutAction, Timer},
             Dispatcher, EventLoop, LoopHandle, RegistrationToken,
         },
         drm::{
@@ -102,7 +102,6 @@ pub struct UdevData {
     fps_texture: MultiTexture,
     signaler: Signaler<SessionSignal>,
     pointer_image: crate::cursor::Cursor,
-    render_timer: TimerHandle<(DrmNode, crtc::Handle)>,
     logger: slog::Logger,
 }
 
@@ -203,9 +202,6 @@ pub fn run_udev(log: Logger) {
     #[cfg(feature = "egl")]
     let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
 
-    // setup the timer
-    let timer = Timer::new().unwrap();
-
     let data = UdevData {
         session,
         primary_gpu,
@@ -214,20 +210,11 @@ pub fn run_udev(log: Logger) {
         signaler: session_signal.clone(),
         pointer_image: crate::cursor::Cursor::load(&log),
         pointer_images: Vec::new(),
-        render_timer: timer.handle(),
         #[cfg(feature = "debug")]
         fps_texture,
         logger: log.clone(),
     };
     let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone(), true);
-
-    // re-render timer
-    event_loop
-        .handle()
-        .insert_source(timer, |(dev_id, crtc), _, anvil_state| {
-            anvil_state.render(dev_id, Some(crtc))
-        })
-        .unwrap();
 
     /*
      * Initialize the udev backend
@@ -767,10 +754,15 @@ impl AnvilState<UdevData> {
             };
 
             if reschedule {
-                self.backend_data.render_timer.add_timeout(
-                    Duration::from_millis(1000 /*a seconds*/ / 60 /*refresh rate*/),
-                    (dev_id, crtc),
-                );
+                let timer = Timer::from_duration(Duration::from_millis(
+                    1000 /*a seconds*/ / 60, /*refresh rate*/
+                ));
+                self.handle
+                    .insert_source(timer, move |_, _, anvil_state| {
+                        anvil_state.render(dev_id, Some(crtc));
+                        TimeoutAction::Drop
+                    })
+                    .expect("failed to schedule frame timer");
             }
 
             // Send frame events so that client start drawing their next frame

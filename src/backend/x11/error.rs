@@ -15,6 +15,10 @@ pub enum X11Error {
     #[error("Connecting to the X server failed")]
     ConnectionFailed(#[from] ConnectError),
 
+    /// Connection to X server was lost.
+    #[error("Connection to the X server was lost")]
+    ConnectionLost,
+
     /// A required X11 extension was not present or has the right version.
     #[error("{0}")]
     MissingExtension(#[from] MissingExtensionError),
