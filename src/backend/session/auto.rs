@@ -41,7 +41,7 @@ use super::{
 };
 use crate::utils::signaling::Signaler;
 use nix::fcntl::OFlag;
-use std::{cell::RefCell, io, os::unix::io::RawFd, path::Path, rc::Rc};
+use std::{cell::RefCell, os::unix::io::RawFd, path::Path, rc::Rc};
 
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 
@@ -203,21 +203,27 @@ impl EventSource for AutoSessionNotifier {
     type Event = ();
     type Metadata = ();
     type Ret = ();
+    type Error = Error;
 
-    fn process_events<F>(&mut self, readiness: Readiness, token: Token, callback: F) -> io::Result<PostAction>
+    fn process_events<F>(
+        &mut self,
+        readiness: Readiness,
+        token: Token,
+        callback: F,
+    ) -> Result<PostAction, Error>
     where
         F: FnMut((), &mut ()),
     {
         match self {
             #[cfg(feature = "backend_session_logind")]
-            AutoSessionNotifier::Logind(s) => s.process_events(readiness, token, callback),
-            AutoSessionNotifier::Direct(s) => s.process_events(readiness, token, callback),
+            AutoSessionNotifier::Logind(s) => Ok(s.process_events(readiness, token, callback)?),
+            AutoSessionNotifier::Direct(s) => Ok(s.process_events(readiness, token, callback)?),
             #[cfg(feature = "backend_session_libseat")]
-            AutoSessionNotifier::LibSeat(s) => s.process_events(readiness, token, callback),
+            AutoSessionNotifier::LibSeat(s) => Ok(s.process_events(readiness, token, callback)?),
         }
     }
 
-    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> io::Result<()> {
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         match self {
             #[cfg(feature = "backend_session_logind")]
             AutoSessionNotifier::Logind(s) => EventSource::register(s, poll, factory),
@@ -227,7 +233,7 @@ impl EventSource for AutoSessionNotifier {
         }
     }
 
-    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> io::Result<()> {
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         match self {
             #[cfg(feature = "backend_session_logind")]
             AutoSessionNotifier::Logind(s) => EventSource::reregister(s, poll, factory),
@@ -237,7 +243,7 @@ impl EventSource for AutoSessionNotifier {
         }
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
+    fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         match self {
             #[cfg(feature = "backend_session_logind")]
             AutoSessionNotifier::Logind(s) => EventSource::unregister(s, poll),

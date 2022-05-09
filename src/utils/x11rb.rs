@@ -4,7 +4,6 @@
 //! backend in a compositor.
 
 use std::{
-    io,
     sync::Arc,
     thread::{spawn, JoinHandle},
 };
@@ -19,7 +18,7 @@ use x11rb::{
 };
 
 use calloop::{
-    channel::{sync_channel, Channel, Event as ChannelEvent, SyncSender},
+    channel::{sync_channel, Channel, ChannelError, Event as ChannelEvent, SyncSender},
     EventSource, Poll, PostAction, Readiness, Token, TokenFactory,
 };
 
@@ -103,13 +102,14 @@ impl EventSource for X11Source {
     type Event = Event;
     type Metadata = ();
     type Ret = ();
+    type Error = ChannelError;
 
     fn process_events<C>(
         &mut self,
         readiness: Readiness,
         token: Token,
         mut callback: C,
-    ) -> io::Result<PostAction>
+    ) -> Result<PostAction, ChannelError>
     where
         C: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
@@ -125,7 +125,7 @@ impl EventSource for X11Source {
         }
     }
 
-    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> io::Result<()> {
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         if let Some(channel) = &mut self.channel {
             channel.register(poll, factory)?;
         }
@@ -133,7 +133,7 @@ impl EventSource for X11Source {
         Ok(())
     }
 
-    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> io::Result<()> {
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         if let Some(channel) = &mut self.channel {
             channel.reregister(poll, factory)?;
         }
@@ -141,7 +141,7 @@ impl EventSource for X11Source {
         Ok(())
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
+    fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         if let Some(channel) = &mut self.channel {
             channel.unregister(poll)?;
         }

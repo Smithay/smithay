@@ -55,7 +55,7 @@ use std::{
 
 use calloop::{
     channel::{sync_channel, Channel, SyncSender},
-    generic::{Fd, Generic},
+    generic::Generic,
     Interest, LoopHandle, Mode,
 };
 
@@ -212,14 +212,17 @@ fn launch<Data: Any>(inner: &Rc<RefCell<Inner<Data>>>) -> std::io::Result<()> {
     };
 
     let inner = inner.clone();
-    guard.handle.insert_source(
-        Generic::new(Fd(child_stdout.as_raw_fd()), Interest::READ, Mode::Level),
-        move |_, _, _| {
-            // the closure must be called exactly one time, this cannot panic
-            xwayland_ready(&inner);
-            Ok(calloop::PostAction::Remove)
-        },
-    )?;
+    guard
+        .handle
+        .insert_source(
+            Generic::<_, io::Error>::new(child_stdout.as_raw_fd(), Interest::READ, Mode::Level),
+            move |_, _, _| {
+                // the closure must be called exactly one time, this cannot panic
+                xwayland_ready(&inner);
+                Ok(calloop::PostAction::Remove)
+            },
+        )
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
     guard.instance = Some(XWaylandInstance {
         display_lock: lock,
@@ -245,6 +248,7 @@ impl calloop::EventSource for XWaylandSource {
     type Event = XWaylandEvent;
     type Metadata = ();
     type Ret = ();
+    type Error = io::Error;
 
     fn process_events<F>(
         &mut self,
@@ -260,13 +264,14 @@ impl calloop::EventSource for XWaylandSource {
                 calloop::channel::Event::Msg(msg) => callback(msg, &mut ()),
                 calloop::channel::Event::Closed => {}
             })
+            .map_err(|err| io::Error::new(io::ErrorKind::BrokenPipe, err))
     }
 
     fn register(
         &mut self,
         poll: &mut calloop::Poll,
         factory: &mut calloop::TokenFactory,
-    ) -> std::io::Result<()> {
+    ) -> calloop::Result<()> {
         self.channel.register(poll, factory)
     }
 
@@ -274,11 +279,11 @@ impl calloop::EventSource for XWaylandSource {
         &mut self,
         poll: &mut calloop::Poll,
         factory: &mut calloop::TokenFactory,
-    ) -> std::io::Result<()> {
+    ) -> calloop::Result<()> {
         self.channel.reregister(poll, factory)
     }
 
-    fn unregister(&mut self, poll: &mut calloop::Poll) -> std::io::Result<()> {
+    fn unregister(&mut self, poll: &mut calloop::Poll) -> calloop::Result<()> {
         self.channel.unregister(poll)
     }
 }

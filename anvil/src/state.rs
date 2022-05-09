@@ -68,7 +68,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         // init the wayland connection
         handle
             .insert_source(
-                Generic::from_fd(display.borrow().get_poll_fd(), Interest::READ, Mode::Level),
+                Generic::new(display.borrow().get_poll_fd(), Interest::READ, Mode::Level),
                 move |_, _, state: &mut AnvilState<BackendData>| {
                     let display = state.display.clone();
                     let mut display = display.borrow_mut();

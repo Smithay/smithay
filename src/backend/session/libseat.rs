@@ -57,7 +57,7 @@ pub struct LibSeatSessionNotifier {
     internal: Rc<LibSeatSessionImpl>,
     signaler: Signaler<SessionSignal>,
     rx: Channel<SeatEvent>,
-    token: Token,
+    token: Option<Token>,
 }
 
 impl LibSeatSession {
@@ -112,7 +112,7 @@ impl LibSeatSession {
                 internal,
                 signaler: Signaler::new(),
                 rx,
-                token: Token::invalid(),
+                token: None,
             };
 
             (session, notifier)
@@ -213,64 +213,67 @@ impl EventSource for LibSeatSessionNotifier {
     type Event = ();
     type Metadata = ();
     type Ret = ();
+    type Error = Error;
 
-    fn process_events<F>(&mut self, readiness: Readiness, token: Token, _: F) -> std::io::Result<PostAction>
+    fn process_events<F>(&mut self, readiness: Readiness, token: Token, _: F) -> Result<PostAction, Error>
     where
         F: FnMut((), &mut ()),
     {
-        if token == self.token {
+        if Some(token) == self.token {
             self.internal.seat.borrow_mut().dispatch(0).unwrap();
         }
 
         let internal = &self.internal;
         let signaler = &self.signaler;
 
-        self.rx.process_events(readiness, token, |event, _| match event {
-            channel::Event::Msg(event) => match event {
-                SeatEvent::Enable => {
-                    internal.active.store(true, Ordering::SeqCst);
-                    signaler.signal(SessionSignal::ActivateSession);
+        self.rx
+            .process_events(readiness, token, |event, _| match event {
+                channel::Event::Msg(event) => match event {
+                    SeatEvent::Enable => {
+                        internal.active.store(true, Ordering::SeqCst);
+                        signaler.signal(SessionSignal::ActivateSession);
+                    }
+                    SeatEvent::Disable => {
+                        internal.active.store(false, Ordering::SeqCst);
+                        signaler.signal(SessionSignal::PauseSession);
+                        internal.seat.borrow_mut().disable().unwrap();
+                    }
+                },
+                channel::Event::Closed => {
+                    // Tx is stored inside of Seat, and Rc<Seat> is stored in LibSeatSessionNotifier so this is unreachable
                 }
-                SeatEvent::Disable => {
-                    internal.active.store(false, Ordering::SeqCst);
-                    signaler.signal(SessionSignal::PauseSession);
-                    internal.seat.borrow_mut().disable().unwrap();
-                }
-            },
-            channel::Event::Closed => {
-                // Tx is stored inside of Seat, and Rc<Seat> is stored in LibSeatSessionNotifier so this is unreachable
-            }
-        })
+            })
+            .map_err(|_| Error::SessionLost)
     }
 
-    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.rx.register(poll, factory)?;
 
-        self.token = factory.token();
+        self.token = Some(factory.token());
         poll.register(
             self.internal.seat.borrow_mut().get_fd().unwrap(),
             calloop::Interest::READ,
             calloop::Mode::Level,
-            self.token,
+            self.token.unwrap(),
         )
     }
 
-    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.rx.reregister(poll, factory)?;
 
-        self.token = factory.token();
+        self.token = Some(factory.token());
         poll.reregister(
             self.internal.seat.borrow_mut().get_fd().unwrap(),
             calloop::Interest::READ,
             calloop::Mode::Level,
-            self.token,
+            self.token.unwrap(),
         )
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {
+    fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.rx.unregister(poll)?;
 
-        self.token = Token::invalid();
+        self.token = None;
         poll.unregister(self.internal.seat.borrow_mut().get_fd().unwrap())
     }
 }

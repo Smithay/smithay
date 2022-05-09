@@ -543,18 +543,16 @@ impl AsRef<Window> for WindowTemporary {
 
 impl EventSource for X11Backend {
     type Event = X11Event;
-
-    /// The window the incoming events are applicable to.
     type Metadata = ();
-
     type Ret = ();
+    type Error = X11Error;
 
     fn process_events<F>(
         &mut self,
         readiness: Readiness,
         token: Token,
         mut callback: F,
-    ) -> io::Result<PostAction>
+    ) -> Result<PostAction, X11Error>
     where
         F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
@@ -562,9 +560,12 @@ impl EventSource for X11Backend {
         let log = self.log.clone();
         let inner = self.inner.clone();
 
-        let post_action = self.source.process_events(readiness, token, |event, _| {
-            X11Inner::process_event(&inner, &log, event, &mut callback);
-        })?;
+        let post_action = self
+            .source
+            .process_events(readiness, token, |event, _| {
+                X11Inner::process_event(&inner, &log, event, &mut callback);
+            })
+            .map_err(|_| X11Error::ConnectionLost)?;
 
         // Flush the connection so changes to the window state during callbacks can be emitted.
         let _ = connection.flush();
@@ -572,15 +573,15 @@ impl EventSource for X11Backend {
         Ok(post_action)
     }
 
-    fn register(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> io::Result<()> {
+    fn register(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> calloop::Result<()> {
         self.source.register(poll, token_factory)
     }
 
-    fn reregister(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> io::Result<()> {
+    fn reregister(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> calloop::Result<()> {
         self.source.reregister(poll, token_factory)
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
+    fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.source.unregister(poll)
     }
 }
