@@ -13,7 +13,7 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg_shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_output, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
+            protocol::{wl_output, wl_pointer::ButtonState, wl_surface},
             Display,
         },
     },
@@ -97,20 +97,6 @@ bitflags::bitflags! {
         const RIGHT = 8;
         const TOP_RIGHT = 9;
         const BOTTOM_RIGHT = 10;
-    }
-}
-
-impl From<wl_shell_surface::Resize> for ResizeEdge {
-    #[inline]
-    fn from(x: wl_shell_surface::Resize) -> Self {
-        Self::from_bits(x.bits()).unwrap()
-    }
-}
-
-impl From<ResizeEdge> for wl_shell_surface::Resize {
-    #[inline]
-    fn from(x: ResizeEdge) -> Self {
-        Self::from_bits(x.bits()).unwrap()
     }
 }
 
@@ -290,7 +276,6 @@ impl PointerGrab for ResizeSurfaceGrab {
 #[derive(Debug, Clone)]
 pub struct ShellHandles {
     pub xdg_state: Arc<Mutex<XdgShellState>>,
-    //pub wl_state: Arc<Mutex<WlShellState>>,
     pub layer_state: Arc<Mutex<LayerShellState>>,
 }
 
