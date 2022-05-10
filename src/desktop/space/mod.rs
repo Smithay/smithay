@@ -141,7 +141,7 @@ impl Space {
         let point = point.into();
         for window in self.windows.iter().rev() {
             let loc = window.elem_location(self.id);
-            let mut geo = window.bbox();
+            let mut geo = window.bbox_with_popups();
             geo.loc += loc;
 
             if !geo.to_f64().contains(point) {
