@@ -897,10 +897,18 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     }
 
     /// Checks whether given [`Rectangle`] is inside the rectangle
+    ///
+    /// A rectangle is considered inside another rectangle
+    /// if its location is inside the other rectangle and it does not
+    /// extend outside the other rectangle.
+    /// This includes rectangles with the same location and size
     #[inline]
     pub fn contains_rect<R: Into<Rectangle<N, Kind>>>(self, rect: R) -> bool {
         let r: Rectangle<N, Kind> = rect.into();
-        self.contains(r.loc) && self.contains(r.loc + r.size)
+        r.loc.x >= self.loc.x
+            && r.loc.y >= self.loc.x
+            && r.loc.x.saturating_add(r.size.w) <= self.loc.x.saturating_add(self.size.w)
+            && r.loc.y.saturating_add(r.size.h) <= self.loc.y.saturating_add(self.size.h)
     }
 
     /// Checks whether a given [`Rectangle`] overlaps with this one
@@ -1360,5 +1368,25 @@ mod tests {
             Rectangle::from_loc_and_size((20, 10), (40, 30)),
             transform.transform_rect_in(rect, &size)
         )
+    }
+
+    #[test]
+    fn rectangle_contains_rect_itself() {
+        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        assert!(rect.contains_rect(rect));
+    }
+
+    #[test]
+    fn rectangle_contains_rect_outside() {
+        let first = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let second = Rectangle::<i32, Logical>::from_loc_and_size((41, 61), (30, 40));
+        assert!(!first.contains_rect(second));
+    }
+
+    #[test]
+    fn rectangle_contains_rect_extends() {
+        let first = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let second = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 45));
+        assert!(!first.contains_rect(second));
     }
 }
