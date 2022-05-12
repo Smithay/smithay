@@ -190,6 +190,7 @@ jobs:
         - backend_session
         - backend_session_logind
         - backend_session_libseat
+        - backend_vulkan
         - backend_x11
         - desktop
         - renderer_gl
