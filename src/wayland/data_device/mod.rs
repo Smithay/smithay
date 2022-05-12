@@ -300,7 +300,7 @@ pub fn set_data_device_focus(seat: &Seat, client: Option<Client>) {
     // before initializing its data device, which would already init the user_data.
     seat.user_data().insert_if_missing(|| {
         RefCell::new(SeatData::new(
-            seat.arc.log.new(o!("smithay_module" => "data_device_mgr")),
+            seat.rc.log.new(o!("smithay_module" => "data_device_mgr")),
         ))
     });
     let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
@@ -317,7 +317,7 @@ pub fn set_data_device_selection(seat: &Seat, mime_types: Vec<String>) {
     // TODO: same question as in set_data_device_focus
     seat.user_data().insert_if_missing(|| {
         RefCell::new(SeatData::new(
-            seat.arc.log.new(o!("smithay_module" => "data_device_mgr")),
+            seat.rc.log.new(o!("smithay_module" => "data_device_mgr")),
         ))
     });
     let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
@@ -346,7 +346,7 @@ pub fn start_dnd<C>(
     // TODO: same question as in set_data_device_focus
     seat.user_data().insert_if_missing(|| {
         RefCell::new(SeatData::new(
-            seat.arc.log.new(o!("smithay_module" => "data_device_mgr")),
+            seat.rc.log.new(o!("smithay_module" => "data_device_mgr")),
         ))
     });
     if let Some(pointer) = seat.get_pointer() {
@@ -450,7 +450,7 @@ where
                         icon: icon.clone(),
                         seat: seat.clone(),
                     });
-                    let start_data = pointer.grab_start_data().unwrap();
+                    let start_data = pointer.take_grab_start_data().unwrap();
                     pointer.set_grab(
                         dnd_grab::DnDGrab::new(
                             start_data,

@@ -3,12 +3,17 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::rc::Rc;
 
-use wayland_server::protocol::wl_touch::WlTouch;
-use wayland_server::{Filter, Main};
+#[cfg(feature = "wayland_frontend")]
+use wayland_server::{
+    protocol::{
+        wl_touch::WlTouch,
+        wl_surface::WlSurface,
+    },
+    Filter, Main,
+};
 
 use crate::backend::input::TouchSlot;
 use crate::utils::{Logical, Point};
-use crate::wayland::seat::wl_surface::WlSurface;
 use crate::wayland::Serial;
 
 /// An handle to a touch handler.
@@ -27,13 +32,6 @@ impl TouchHandle {
         Self {
             inner: Default::default(),
         }
-    }
-
-    /// Register a new touch handle to this handler
-    ///
-    /// This should be done first, before anything else is done with this touch handle.
-    pub(crate) fn new_touch(&self, touch: WlTouch) {
-        self.inner.borrow_mut().known_handles.push(touch);
     }
 
     /// Notify clients about new touch points.
@@ -84,12 +82,10 @@ impl TouchHandle {
 #[derive(Default, Debug)]
 struct TouchFocus {
     surface_offset: Point<f64, Logical>,
-    handles: Vec<WlTouch>,
 }
 
 #[derive(Default, Debug)]
 struct TouchInternal {
-    known_handles: Vec<WlTouch>,
     focus: HashMap<TouchSlot, TouchFocus>,
 }
 

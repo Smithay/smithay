@@ -1,14 +1,16 @@
 use std::sync::{Arc, Mutex};
 
-use wayland_server::protocol::{wl_keyboard::KeyState, wl_pointer::ButtonState, wl_surface::WlSurface};
+use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::{
+    backend::input::KeyState,
     utils::{DeadResource, Logical, Point},
     wayland::{
         compositor::get_role,
         seat::{
-            AxisFrame, KeyboardGrab, KeyboardGrabStartData, KeyboardHandle, KeyboardInnerHandle, PointerGrab,
-            PointerGrabStartData, PointerInnerHandle,
+            AxisFrame, ButtonState, KeyboardGrab, KeyboardGrabStartData, KeyboardHandle, KeyboardHandler,
+            KeyboardInnerHandle, ModifiersState, PointerGrab, PointerGrabStartData, PointerHandler,
+            PointerInnerHandle,
         },
         shell::xdg::XDG_POPUP_ROLE,
         Serial,
@@ -227,8 +229,6 @@ pub struct PopupGrab {
     previous_serial: Option<Serial>,
     toplevel_grab: PopupGrabInner,
     keyboard_handle: Option<KeyboardHandle>,
-    keyboard_grab_start_data: KeyboardGrabStartData,
-    pointer_grab_start_data: PointerGrabStartData,
 }
 
 impl PopupGrab {
@@ -245,20 +245,6 @@ impl PopupGrab {
             previous_serial,
             toplevel_grab: toplevel_popups,
             keyboard_handle,
-            keyboard_grab_start_data: KeyboardGrabStartData {
-                // We set the focus to root as this will make
-                // sure the grab will stay alive until the
-                // toplevel is destroyed or the grab is unset
-                focus: Some(root.clone()),
-            },
-            pointer_grab_start_data: PointerGrabStartData {
-                button: 0,
-                // We set the focus to root as this will make
-                // sure the grab will stay alive until the
-                // toplevel is destroyed or the grab is unset
-                focus: Some((root, (0, 0).into())),
-                location: (0f64, 0f64).into(),
-            },
         }
     }
 
@@ -314,8 +300,13 @@ impl PopupGrab {
     /// The focus of the [`KeyboardGrabStartData`] will always be the root
     /// of the popup grab, e.g. the surface of the toplevel, to make sure
     /// the grab is not automatically unset.
-    pub fn keyboard_grab_start_data(&self) -> &KeyboardGrabStartData {
-        &self.keyboard_grab_start_data
+    pub fn keyboard_grab_start_data(&self) -> KeyboardGrabStartData {
+        KeyboardGrabStartData {
+            // We set the focus to root as this will make
+            // sure the grab will stay alive until the
+            // toplevel is destroyed or the grab is unset
+            focus: Some(Box::new(self.root.clone())),
+        }
     }
 
     /// Convenience method for getting a [`PointerGrabStartData`] for this grab.
@@ -323,8 +314,15 @@ impl PopupGrab {
     /// The focus of the [`PointerGrabStartData`] will always be the root
     /// of the popup grab, e.g. the surface of the toplevel, to make sure
     /// the grab is not automatically unset.
-    pub fn pointer_grab_start_data(&self) -> &PointerGrabStartData {
-        &self.pointer_grab_start_data
+    pub fn pointer_grab_start_data(&self) -> PointerGrabStartData {
+        PointerGrabStartData {
+            button: 0,
+            // We set the focus to root as this will make
+            // sure the grab will stay alive until the
+            // toplevel is destroyed or the grab is unset
+            focus: Some((Box::new(self.root.clone()), (0, 0).into())),
+            location: (0f64, 0f64).into(),
+        }
     }
 
     fn unset_keyboard_grab(&self, serial: Serial) {
@@ -334,7 +332,7 @@ impl PopupGrab {
                     || keyboard.has_grab(self.previous_serial.unwrap_or(self.serial)))
             {
                 keyboard.unset_grab();
-                keyboard.set_focus(Some(&self.root), serial);
+                keyboard.set_focus(Some(self.root.clone()), serial);
             }
         }
     }
@@ -349,6 +347,7 @@ impl PopupGrab {
 #[derive(Debug)]
 pub struct PopupKeyboardGrab {
     popup_grab: PopupGrab,
+    keyboard_grab_start_data: KeyboardGrabStartData,
 }
 
 impl PopupKeyboardGrab {
@@ -356,6 +355,7 @@ impl PopupKeyboardGrab {
     pub fn new(popup_grab: &PopupGrab) -> Self {
         PopupKeyboardGrab {
             popup_grab: popup_grab.clone(),
+            keyboard_grab_start_data: popup_grab.keyboard_grab_start_data(),
         }
     }
 }
@@ -366,7 +366,7 @@ impl KeyboardGrab for PopupKeyboardGrab {
         handle: &mut KeyboardInnerHandle<'_>,
         keycode: u32,
         key_state: KeyState,
-        modifiers: Option<(u32, u32, u32, u32)>,
+        modifiers: Option<ModifiersState>,
         serial: Serial,
         time: u32,
     ) {
@@ -374,7 +374,7 @@ impl KeyboardGrab for PopupKeyboardGrab {
         // If the grab has ended this will return the root
         // surface to restore the client expected focus.
         if let Some(surface) = self.popup_grab.current_grab() {
-            handle.set_focus(Some(&surface), serial);
+            handle.set_focus(Some(surface), serial);
         }
 
         if self.popup_grab.has_ended() {
@@ -384,7 +384,12 @@ impl KeyboardGrab for PopupKeyboardGrab {
         handle.input(keycode, key_state, modifiers, serial, time)
     }
 
-    fn set_focus(&mut self, handle: &mut KeyboardInnerHandle<'_>, focus: Option<&WlSurface>, serial: Serial) {
+    fn set_focus(
+        &mut self,
+        handle: &mut KeyboardInnerHandle<'_>,
+        focus: Option<Box<dyn KeyboardHandler>>,
+        serial: Serial,
+    ) {
         // Ignore focus changes unless the grab has ended
         if self.popup_grab.has_ended() {
             handle.set_focus(focus, serial);
@@ -395,13 +400,17 @@ impl KeyboardGrab for PopupKeyboardGrab {
         // Allow to set the focus to the current grab, this can
         // happen if the user initially sets the focus to
         // popup instead of relying on the grab behavior
-        if self.popup_grab.current_grab().as_ref() == focus {
+        if self.popup_grab.current_grab()
+            == focus
+                .as_ref()
+                .and_then(|h| h.as_any().downcast_ref::<WlSurface>().cloned())
+        {
             handle.set_focus(focus, serial);
         }
     }
 
     fn start_data(&self) -> &KeyboardGrabStartData {
-        self.popup_grab.keyboard_grab_start_data()
+        &self.keyboard_grab_start_data
     }
 }
 
@@ -421,6 +430,7 @@ impl KeyboardGrab for PopupKeyboardGrab {
 #[derive(Debug)]
 pub struct PopupPointerGrab {
     popup_grab: PopupGrab,
+    pointer_grab_start_data: PointerGrabStartData,
 }
 
 impl PopupPointerGrab {
@@ -428,6 +438,7 @@ impl PopupPointerGrab {
     pub fn new(popup_grab: &PopupGrab) -> Self {
         PopupPointerGrab {
             popup_grab: popup_grab.clone(),
+            pointer_grab_start_data: popup_grab.pointer_grab_start_data(),
         }
     }
 }
@@ -437,7 +448,7 @@ impl PointerGrab for PopupPointerGrab {
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        focus: Option<(Box<dyn PointerHandler>, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
@@ -449,16 +460,21 @@ impl PointerGrab for PopupPointerGrab {
 
         // Check that the focus is of the same client as the grab
         // If yes allow it, if not unset the focus.
-        let same_client = focus.as_ref().map(|(surface, _)| surface.as_ref().client())
-            == self
-                .popup_grab
-                .current_grab()
-                .map(|surface| surface.as_ref().client());
+        let same_client = focus.as_ref().and_then(|(surface, _)| {
+            surface
+                .as_any()
+                .downcast_ref::<WlSurface>()
+                .map(|s| s.as_ref().client())
+        }) == self
+            .popup_grab
+            .current_grab()
+            .map(|surface| surface.as_ref().client());
 
         if same_client {
             handle.motion(location, focus, serial, time);
         } else {
-            handle.motion(location, None, serial, time);
+            handle.set_pending_focus(focus);
+            handle.motion_no_focus(location, serial, time);
         }
     }
 
@@ -480,7 +496,10 @@ impl PointerGrab for PopupPointerGrab {
         // Check if the the focused surface is still on the current grabbed surface,
         // if not the popup will be dismissed
         if state == ButtonState::Pressed
-            && handle.current_focus().map(|(surface, _)| surface) != self.popup_grab.current_grab().as_ref()
+            && handle
+                .current_focus()
+                .and_then(|(h, _)| h.as_any().downcast_ref::<WlSurface>().cloned())
+                != self.popup_grab.current_grab()
         {
             let _ = self.popup_grab.ungrab(PopupUngrabStrategy::All);
             handle.unset_grab(serial, time);
@@ -496,6 +515,13 @@ impl PointerGrab for PopupPointerGrab {
     }
 
     fn start_data(&self) -> &PointerGrabStartData {
-        self.popup_grab.pointer_grab_start_data()
+        &self.pointer_grab_start_data
+    }
+
+    fn take_start_data(&mut self) -> PointerGrabStartData {
+        PointerGrabStartData {
+            focus: self.pointer_grab_start_data.focus.take(),
+            ..self.pointer_grab_start_data
+        }
     }
 }

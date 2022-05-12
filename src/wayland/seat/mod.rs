@@ -1,67 +1,36 @@
-//! Seat global utilities
+//! Seat utilities
 //!
-//! This module provides you with utilities for handling the seat globals
-//! and the associated input Wayland objects.
-//!
-//! ## How to use it
-//!
-//! ### Initialization
-//!
-//! ```
-//! # extern crate wayland_server;
-//! use smithay::wayland::seat::Seat;
-//!
-//! # let mut display = wayland_server::Display::new();
-//! // insert the seat:
-//! let (seat, seat_global) = Seat::new(
-//!     &mut display,             // the display
-//!     "seat-0".into(),          // the name of the seat, will be advertized to clients
-//!     None                      // insert a logger here
-//! );
-//! ```
-//!
-//! ### Run usage
-//!
-//! Once the seat is initialized, you can add capabilities to it.
-//!
-//! Currently, only pointer and keyboard capabilities are supported by smithay.
-//!
-//! You can add these capabilities via methods of the [`Seat`] struct:
-//! [`Seat::add_keyboard`] and [`Seat::add_pointer`].
-//! These methods return handles that can be cloned and sent across thread, so you can keep one around
-//! in your event-handling code to forward inputs to your clients.
-//!
-//! This module further defines the `"cursor_image"` role, that is assigned to surfaces used by clients
-//! to change the cursor icon.
-
-use std::{cell::RefCell, fmt, ops::Deref as _, rc::Rc};
+//! This module provides you with utilities for handling seats.
+use crate::utils::user_data::UserDataMap;
+use std::{cell::RefCell, fmt, rc::Rc};
+#[cfg(feature = "wayland_frontend")]
+use wayland_server::{protocol::wl_seat, Display, Filter, Global, Main};
 
 mod keyboard;
 mod pointer;
+/*
 mod touch;
-
+*/
 pub use self::{
     keyboard::{
         keysyms, Error as KeyboardError, FilterResult, GrabStartData as KeyboardGrabStartData, KeyboardGrab,
-        KeyboardHandle, KeyboardInnerHandle, Keysym, KeysymHandle, ModifiersState, XkbConfig,
+        KeyboardHandle, KeyboardHandler, KeyboardInnerHandle, Keysym, KeysymHandle, ModifiersState,
+        XkbConfig,
     },
     pointer::{
-        AxisFrame, CursorImageAttributes, CursorImageStatus, GrabStartData as PointerGrabStartData,
-        PointerGrab, PointerHandle, PointerInnerHandle,
+        Axis, AxisFrame, AxisSource, ButtonState, CursorImageAttributes, CursorImageStatus,
+        GrabStartData as PointerGrabStartData, PointerGrab, PointerHandle, PointerHandler,
+        PointerInnerHandle, UnknownButtonState,
     },
-    touch::TouchHandle,
-};
-
-use wayland_server::{
-    protocol::{wl_seat, wl_surface},
-    Display, Filter, Global, Main, UserDataMap,
+    //touch::TouchHandle,
 };
 
 #[derive(Debug)]
 struct Inner {
     pointer: Option<PointerHandle>,
     keyboard: Option<KeyboardHandle>,
-    touch: Option<TouchHandle>,
+    //touch: Option<TouchHandle>,
+    #[cfg(feature = "wayland_frontend")]
     known_seats: Vec<wl_seat::WlSeat>,
 }
 
@@ -84,6 +53,7 @@ impl fmt::Debug for SeatRc {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl Inner {
     fn compute_caps(&self) -> wl_seat::Capability {
         let mut caps = wl_seat::Capability::empty();
@@ -93,9 +63,11 @@ impl Inner {
         if self.keyboard.is_some() {
             caps |= wl_seat::Capability::Keyboard;
         }
+        /*
         if self.touch.is_some() {
             caps |= wl_seat::Capability::Touch;
         }
+        */
         caps
     }
 
@@ -112,69 +84,70 @@ impl Inner {
 /// This struct gives you access to the control of the
 /// capabilities of the associated seat.
 ///
-/// It is directly inserted in the wayland display by its [`new`](Seat::new) method.
-///
 /// This is an handle to the inner logic, it can be cloned.
 ///
 /// See module-level documentation for details of use.
 #[derive(Debug, Clone)]
 pub struct Seat {
-    pub(crate) arc: Rc<SeatRc>,
+    pub(crate) rc: Rc<SeatRc>,
 }
 
 impl Seat {
-    /// Create a new seat global
+    /// Create a new seat
     ///
-    /// A new seat global is created with given name and inserted
-    /// into this wayland display.
+    /// A new seat is created with given name.
     ///
     /// You are provided with the state token to retrieve it (allowing
-    /// you to add or remove capabilities from it), and the global handle,
-    /// in case you want to remove it.
-    pub fn new<L>(display: &mut Display, name: String, logger: L) -> (Seat, Global<wl_seat::WlSeat>)
+    /// you to add or remove capabilities from it)
+    pub fn new<L>(name: String, logger: L) -> Seat
     where
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_fallback(logger);
-        let arc = Rc::new(SeatRc {
+        let rc = Rc::new(SeatRc {
             inner: RefCell::new(Inner {
                 pointer: None,
                 keyboard: None,
-                touch: None,
+                //touch: None,
                 known_seats: Vec::new(),
             }),
             log: log.new(slog::o!("smithay_module" => "seat_handler", "seat_name" => name.clone())),
             name,
             user_data: UserDataMap::new(),
         });
-        let seat = Seat { arc: arc.clone() };
-        let global = display.create_global(
+        Seat { rc: rc.clone() }
+    }
+
+    #[cfg(feature = "wayland_frontend")]
+    pub fn create_global(&mut self, display: &mut Display) -> Global<wl_seat::WlSeat> {
+        let rc = self.rc.clone();
+        display.create_global(
             5,
             Filter::new(move |(new_seat, _version), _, _| {
-                let seat = implement_seat(new_seat, arc.clone());
-                let mut inner = arc.inner.borrow_mut();
+                let seat = implement_seat(new_seat, rc.clone());
+                let mut inner = rc.inner.borrow_mut();
                 if seat.as_ref().version() >= 2 {
-                    seat.name(arc.name.clone());
+                    seat.name(rc.name.clone());
                 }
                 seat.capabilities(inner.compute_caps());
                 inner.known_seats.push(seat);
             }),
-        );
-        (seat, global)
+        )
     }
 
+    #[cfg(feature = "wayland_frontend")]
     /// Attempt to retrieve a [`Seat`] from an existing resource
     pub fn from_resource(seat: &wl_seat::WlSeat) -> Option<Seat> {
         seat.as_ref()
             .user_data()
             .get::<Rc<SeatRc>>()
             .cloned()
-            .map(|arc| Seat { arc })
+            .map(|rc| Seat { rc })
     }
 
     /// Access the `UserDataMap` associated with this `Seat`
     pub fn user_data(&self) -> &UserDataMap {
-        &self.arc.user_data
+        &self.rc.user_data
     }
 
     /// Adds the pointer capability to this seat
@@ -210,7 +183,7 @@ impl Seat {
     where
         F: FnMut(CursorImageStatus) + 'static,
     {
-        let mut inner = self.arc.inner.borrow_mut();
+        let mut inner = self.rc.inner.borrow_mut();
         let pointer = self::pointer::create_pointer_handler(cb);
         if inner.pointer.is_some() {
             // there is already a pointer, remove it and notify the clients
@@ -225,14 +198,14 @@ impl Seat {
 
     /// Access the pointer of this seat if any
     pub fn get_pointer(&self) -> Option<PointerHandle> {
-        self.arc.inner.borrow_mut().pointer.clone()
+        self.rc.inner.borrow_mut().pointer.clone()
     }
 
     /// Remove the pointer capability from this seat
     ///
     /// Clients will be appropriately notified.
     pub fn remove_pointer(&mut self) {
-        let mut inner = self.arc.inner.borrow_mut();
+        let mut inner = self.rc.inner.borrow_mut();
         if inner.pointer.is_some() {
             inner.pointer = None;
             inner.send_all_caps();
@@ -282,15 +255,15 @@ impl Seat {
         mut focus_hook: F,
     ) -> Result<KeyboardHandle, KeyboardError>
     where
-        F: FnMut(&Seat, Option<&wl_surface::WlSurface>) + 'static,
+        F: FnMut(&Seat, Option<&dyn KeyboardHandler>) + 'static,
     {
         let me = self.clone();
-        let mut inner = self.arc.inner.borrow_mut();
+        let mut inner = self.rc.inner.borrow_mut();
         let keyboard = self::keyboard::create_keyboard_handler(
             xkb_config,
             repeat_delay,
             repeat_rate,
-            &self.arc.log,
+            &self.rc.log,
             move |focus| focus_hook(&me, focus),
         )?;
         if inner.keyboard.is_some() {
@@ -306,20 +279,21 @@ impl Seat {
 
     /// Access the keyboard of this seat if any
     pub fn get_keyboard(&self) -> Option<KeyboardHandle> {
-        self.arc.inner.borrow_mut().keyboard.clone()
+        self.rc.inner.borrow_mut().keyboard.clone()
     }
 
     /// Remove the keyboard capability from this seat
     ///
     /// Clients will be appropriately notified.
     pub fn remove_keyboard(&mut self) {
-        let mut inner = self.arc.inner.borrow_mut();
+        let mut inner = self.rc.inner.borrow_mut();
         if inner.keyboard.is_some() {
             inner.keyboard = None;
             inner.send_all_caps();
         }
     }
 
+    /*
     /// Adds the touch capability to this seat
     ///
     /// You are provided a [`TouchHandle`], which allows you to send input events
@@ -359,7 +333,7 @@ impl Seat {
 
     /// Access the touch device of this seat, if any.
     pub fn get_touch(&self) -> Option<TouchHandle> {
-        self.arc.inner.borrow_mut().touch.clone()
+        self.rc.inner.borrow_mut().touch.clone()
     }
 
     /// Remove the touch capability from this seat
@@ -372,51 +346,42 @@ impl Seat {
             inner.send_all_caps();
         }
     }
+    */
 
+    #[cfg(feature = "wayland_frontend")]
     /// Checks whether a given [`WlSeat`](wl_seat::WlSeat) is associated with this [`Seat`]
     pub fn owns(&self, seat: &wl_seat::WlSeat) -> bool {
-        let inner = self.arc.inner.borrow_mut();
+        let inner = self.rc.inner.borrow_mut();
         inner.known_seats.iter().any(|s| s.as_ref().equals(seat.as_ref()))
     }
 }
 
 impl ::std::cmp::PartialEq for Seat {
     fn eq(&self, other: &Seat) -> bool {
-        Rc::ptr_eq(&self.arc, &other.arc)
+        Rc::ptr_eq(&self.rc, &other.rc)
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 fn implement_seat(seat: Main<wl_seat::WlSeat>, arc: Rc<SeatRc>) -> wl_seat::WlSeat {
+    use std::ops::Deref;
+
     let dest_arc = arc.clone();
     seat.quick_assign(move |seat, request, _| {
         let arc = seat.as_ref().user_data().get::<Rc<SeatRc>>().unwrap();
         let inner = arc.inner.borrow_mut();
         match request {
             wl_seat::Request::GetPointer { id } => {
-                let pointer = self::pointer::implement_pointer(id, inner.pointer.as_ref());
-                if let Some(ref ptr_handle) = inner.pointer {
-                    ptr_handle.new_pointer(pointer);
-                } else {
-                    // we should send a protocol error... but the protocol does not allow
-                    // us, so this pointer will just remain inactive ¯\_(ツ)_/¯
-                }
+                self::pointer::implement_pointer(id, inner.pointer.as_ref())
             }
             wl_seat::Request::GetKeyboard { id } => {
-                let keyboard = self::keyboard::implement_keyboard(id, inner.keyboard.as_ref());
-                if let Some(ref kbd_handle) = inner.keyboard {
-                    kbd_handle.new_kbd(keyboard);
-                } else {
-                    // same as pointer, should error but cannot
-                }
+                self::keyboard::implement_keyboard(id, inner.keyboard.as_ref())
             }
+            /*
             wl_seat::Request::GetTouch { id } => {
-                let touch = self::touch::implement_touch(id, inner.touch.as_ref());
-                if let Some(ref touch_handle) = inner.touch {
-                    touch_handle.new_touch(touch);
-                } else {
-                    // same as pointer, should error but cannot
-                }
+                self::touch::implement_touch(id, inner.touch.as_ref())
             }
+            */
             wl_seat::Request::Release => {
                 // Our destructors already handle it
             }

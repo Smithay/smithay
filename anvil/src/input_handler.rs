@@ -16,7 +16,9 @@ use smithay::{
     wayland::{
         compositor::with_states,
         output::Scale,
-        seat::{keysyms as xkb, AxisFrame, FilterResult, Keysym, ModifiersState},
+        seat::{
+            keysyms as xkb, Axis, AxisFrame, AxisSource, ButtonState, FilterResult, Keysym, ModifiersState,
+        },
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
         Serial, SERIAL_COUNTER as SCOUNTER,
     },
@@ -96,7 +98,7 @@ impl<Backend> AnvilState<Backend> {
                     && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)
                 {
                     self.keyboard
-                        .set_focus(Some(layer.get_surface().unwrap()), serial);
+                        .set_focus(Some(layer.get_surface().unwrap().clone()), serial);
                     self.keyboard
                         .input::<(), _>(keycode, state, serial, time, |_, _| FilterResult::Forward);
                     return KeyAction::None;
@@ -145,12 +147,8 @@ impl<Backend> AnvilState<Backend> {
     fn on_pointer_button<B: InputBackend>(&mut self, evt: B::PointerButtonEvent) {
         let serial = SCOUNTER.next_serial();
         let button = evt.button_code();
-        let state = match evt.state() {
-            input::ButtonState::Pressed => wl_pointer::ButtonState::Pressed,
-            input::ButtonState::Released => wl_pointer::ButtonState::Released,
-        };
-
-        if wl_pointer::ButtonState::Pressed == state {
+        let state = evt.state().into();
+        if ButtonState::Pressed == state {
             self.update_keyboard_focus(serial);
         };
         self.pointer.button(button, state, serial, evt.time());
@@ -174,7 +172,7 @@ impl<Backend> AnvilState<Backend> {
                             WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE,
                         )
                         .map(|(s, _)| s);
-                    self.keyboard.set_focus(surface.as_ref(), serial);
+                    self.keyboard.set_focus(surface, serial);
                     return;
                 }
 
@@ -192,7 +190,7 @@ impl<Backend> AnvilState<Backend> {
                                 WindowSurfaceType::ALL,
                             )
                             .map(|(s, _)| s);
-                        self.keyboard.set_focus(surface.as_ref(), serial);
+                        self.keyboard.set_focus(surface, serial);
                         return;
                     }
                 }
@@ -203,7 +201,7 @@ impl<Backend> AnvilState<Backend> {
                 WindowSurfaceType::TOPLEVEL | WindowSurfaceType::SUBSURFACE,
             ) {
                 space.raise_window(&window, true);
-                self.keyboard.set_focus(Some(&surface), serial);
+                self.keyboard.set_focus(Some(surface), serial);
                 return;
             }
 
@@ -223,7 +221,7 @@ impl<Backend> AnvilState<Backend> {
                                 WindowSurfaceType::ALL,
                             )
                             .map(|(s, _)| s);
-                        self.keyboard.set_focus(surface.as_ref(), serial);
+                        self.keyboard.set_focus(surface, serial);
                     }
                 }
             };
@@ -276,11 +274,7 @@ impl<Backend> AnvilState<Backend> {
     }
 
     fn on_pointer_axis<B: InputBackend>(&mut self, evt: B::PointerAxisEvent) {
-        let source = match evt.source() {
-            input::AxisSource::Continuous => wl_pointer::AxisSource::Continuous,
-            input::AxisSource::Finger => wl_pointer::AxisSource::Finger,
-            input::AxisSource::Wheel | input::AxisSource::WheelTilt => wl_pointer::AxisSource::Wheel,
-        };
+        let source = evt.source().into();
         let horizontal_amount = evt
             .amount(input::Axis::Horizontal)
             .unwrap_or_else(|| evt.amount_discrete(input::Axis::Horizontal).unwrap() * 3.0);
@@ -293,20 +287,20 @@ impl<Backend> AnvilState<Backend> {
         {
             let mut frame = AxisFrame::new(evt.time()).source(source);
             if horizontal_amount != 0.0 {
-                frame = frame.value(wl_pointer::Axis::HorizontalScroll, horizontal_amount);
+                frame = frame.value(Axis::Horizontal, horizontal_amount);
                 if let Some(discrete) = horizontal_amount_discrete {
-                    frame = frame.discrete(wl_pointer::Axis::HorizontalScroll, discrete as i32);
+                    frame = frame.discrete(Axis::Horizontal, discrete as i32);
                 }
-            } else if source == wl_pointer::AxisSource::Finger {
-                frame = frame.stop(wl_pointer::Axis::HorizontalScroll);
+            } else if source == AxisSource::Finger {
+                frame = frame.stop(Axis::Horizontal);
             }
             if vertical_amount != 0.0 {
-                frame = frame.value(wl_pointer::Axis::VerticalScroll, vertical_amount);
+                frame = frame.value(Axis::Vertical, vertical_amount);
                 if let Some(discrete) = vertical_amount_discrete {
-                    frame = frame.discrete(wl_pointer::Axis::VerticalScroll, discrete as i32);
+                    frame = frame.discrete(Axis::Vertical, discrete as i32);
                 }
-            } else if source == wl_pointer::AxisSource::Finger {
-                frame = frame.stop(wl_pointer::Axis::VerticalScroll);
+            } else if source == AxisSource::Finger {
+                frame = frame.stop(Axis::Vertical);
             }
             self.pointer.axis(frame);
         }

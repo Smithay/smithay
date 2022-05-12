@@ -13,7 +13,7 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg_shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_output, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
+            protocol::{wl_output, wl_shell_surface, wl_surface},
             Display,
         },
     },
@@ -21,7 +21,10 @@ use smithay::{
     wayland::{
         compositor::{compositor_init, with_states, with_surface_tree_upward, TraversalAction},
         output::Output,
-        seat::{AxisFrame, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat},
+        seat::{
+            AxisFrame, ButtonState, PointerGrab, PointerGrabStartData, PointerHandler, PointerInnerHandle,
+            Seat,
+        },
         shell::{
             wlr_layer::{LayerShellRequest, LayerShellState, LayerSurfaceAttributes},
             xdg::{
@@ -47,12 +50,13 @@ impl PointerGrab for MoveSurfaceGrab {
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
-        _focus: Option<(wl_surface::WlSurface, Point<i32, Logical>)>,
+        focus: Option<(Box<dyn PointerHandler>, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
+        handle.set_pending_focus(focus);
         // While the grab is active, no client has pointer focus
-        handle.motion(location, None, serial, time);
+        handle.motion_no_focus(location, serial, time);
 
         let delta = location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
@@ -83,6 +87,13 @@ impl PointerGrab for MoveSurfaceGrab {
 
     fn start_data(&self) -> &PointerGrabStartData {
         &self.start_data
+    }
+
+    fn take_start_data(&mut self) -> PointerGrabStartData {
+        PointerGrabStartData {
+            focus: self.start_data.focus.take(),
+            ..self.start_data
+        }
     }
 }
 
@@ -141,10 +152,11 @@ impl PointerGrab for ResizeSurfaceGrab {
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
-        _focus: Option<(wl_surface::WlSurface, Point<i32, Logical>)>,
+        focus: Option<(Box<dyn PointerHandler>, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
+        handle.set_pending_focus(focus);
         // It is impossible to get `min_size` and `max_size` of dead toplevel, so we return early.
         if !self.window.toplevel().alive() | self.window.toplevel().get_surface().is_none() {
             handle.unset_grab(serial, time);
@@ -152,7 +164,7 @@ impl PointerGrab for ResizeSurfaceGrab {
         }
 
         // While the grab is active, no client has pointer focus
-        handle.motion(location, None, serial, time);
+        handle.motion_no_focus(location, serial, time);
 
         let (mut dx, mut dy) = (location - self.start_data.location).into();
 
@@ -285,6 +297,13 @@ impl PointerGrab for ResizeSurfaceGrab {
     fn start_data(&self) -> &PointerGrabStartData {
         &self.start_data
     }
+
+    fn take_start_data(&mut self) -> PointerGrabStartData {
+        PointerGrabStartData {
+            focus: self.start_data.focus.take(),
+            ..self.start_data
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -416,20 +435,24 @@ pub fn init_shell<BackendData: Backend + 'static>(
                         return;
                     }
 
-                    let start_data = pointer.grab_start_data().unwrap();
-
-                    // If the focus was for a different surface, ignore the request.
-                    if start_data.focus.is_none()
-                        || !start_data
-                            .focus
-                            .as_ref()
-                            .unwrap()
-                            .0
-                            .as_ref()
-                            .same_client_as(surface.get_surface().unwrap().as_ref())
                     {
-                        return;
+                        let start_data = pointer.grab_start_data().unwrap();
+                        // If the focus was for a different surface, ignore the request.
+                        if start_data.focus.is_none()
+                            || !start_data
+                                .focus
+                                .as_ref()
+                                .and_then(|(f, _)| {
+                                    f.as_any().downcast_ref::<wl_surface::WlSurface>().map(|s| {
+                                        s.as_ref().same_client_as(surface.get_surface().unwrap().as_ref())
+                                    })
+                                })
+                                .unwrap_or(false)
+                        {
+                            return;
+                        }
                     }
+                    let start_data = pointer.take_grab_start_data().unwrap();
 
                     let space = state.space.clone();
                     let window = space
@@ -492,20 +515,24 @@ pub fn init_shell<BackendData: Backend + 'static>(
                         return;
                     }
 
-                    let start_data = pointer.grab_start_data().unwrap();
-
-                    // If the focus was for a different surface, ignore the request.
-                    if start_data.focus.is_none()
-                        || !start_data
-                            .focus
-                            .as_ref()
-                            .unwrap()
-                            .0
-                            .as_ref()
-                            .same_client_as(surface.get_surface().unwrap().as_ref())
                     {
-                        return;
+                        let start_data = pointer.grab_start_data().unwrap();
+                        // If the focus was for a different surface, ignore the request.
+                        if start_data.focus.is_none()
+                            || !start_data
+                                .focus
+                                .as_ref()
+                                .and_then(|(f, _)| {
+                                    f.as_any().downcast_ref::<wl_surface::WlSurface>().map(|s| {
+                                        s.as_ref().same_client_as(surface.get_surface().unwrap().as_ref())
+                                    })
+                                })
+                                .unwrap_or(false)
+                        {
+                            return;
+                        }
                     }
+                    let start_data = pointer.take_grab_start_data().unwrap();
 
                     let space = state.space.clone();
                     let window = space
@@ -722,7 +749,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
                                 grab.ungrab(PopupUngrabStrategy::All);
                                 return;
                             }
-                            keyboard.set_focus(grab.current_grab().as_ref(), serial);
+                            keyboard.set_focus(grab.current_grab(), serial);
                             keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
                         }
                         if let Some(pointer) = seat.get_pointer() {

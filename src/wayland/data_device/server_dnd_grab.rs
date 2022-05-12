@@ -1,14 +1,17 @@
 use std::{cell::RefCell, ops::Deref as _, os::unix::io::RawFd, rc::Rc};
 
 use wayland_server::{
-    protocol::{wl_data_device_manager::DndAction, wl_data_offer, wl_pointer, wl_surface},
+    protocol::{wl_data_device_manager::DndAction, wl_data_offer, wl_surface},
     Main,
 };
 
 use crate::{
     utils::{Logical, Point},
     wayland::{
-        seat::{AxisFrame, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat},
+        seat::{
+            AxisFrame, ButtonState, PointerGrab, PointerGrabStartData, PointerHandler, PointerInnerHandle,
+            Seat,
+        },
         Serial,
     },
 };
@@ -78,7 +81,7 @@ where
         &mut self,
         _handle: &mut PointerInnerHandle<'_>,
         location: Point<f64, Logical>,
-        focus: Option<(wl_surface::WlSurface, Point<i32, Logical>)>,
+        focus: Option<(Box<dyn PointerHandler>, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
@@ -88,7 +91,11 @@ where
             .get::<RefCell<SeatData>>()
             .unwrap()
             .borrow_mut();
-        if focus.as_ref().map(|&(ref s, _)| s) != self.current_focus.as_ref() {
+        if focus
+            .as_ref()
+            .and_then(|&(ref s, _)| s.as_any().downcast_ref::<wl_surface::WlSurface>().cloned())
+            != self.current_focus
+        {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 for device in &seat_data.known_devices {
@@ -103,62 +110,64 @@ where
                 }
             }
         }
-        if let Some((surface, surface_location)) = focus {
-            // early return if the surface is no longer valid
-            let client = match surface.as_ref().client() {
-                Some(c) => c,
-                None => return,
-            };
-            let (x, y) = (location - surface_location.to_f64()).into();
-            if self.current_focus.is_none() {
-                // We entered a new surface, send the data offer
-                let offer_data = Rc::new(RefCell::new(OfferData {
-                    active: true,
-                    dropped: false,
-                    accepted: true,
-                    chosen_action: DndAction::empty(),
-                }));
-                for device in seat_data
-                    .known_devices
-                    .iter()
-                    .filter(|d| d.as_ref().same_client_as(surface.as_ref()))
-                {
-                    let action_choice = device
-                        .as_ref()
-                        .user_data()
-                        .get::<DataDeviceData>()
-                        .unwrap()
-                        .action_choice
-                        .clone();
-                    // create a data offer
-                    let offer = client
-                        .create_resource::<wl_data_offer::WlDataOffer>(device.as_ref().version())
-                        .map(|offer| {
-                            implement_dnd_data_offer(
-                                offer,
-                                self.metadata.clone(),
-                                offer_data.clone(),
-                                self.callback.clone(),
-                                action_choice,
-                            )
-                        })
-                        .unwrap();
-                    // advertize the offer to the client
-                    device.data_offer(&offer);
-                    for mime_type in self.metadata.mime_types.iter().cloned() {
-                        offer.offer(mime_type);
+        if let Some((handler, surface_location)) = focus {
+            if let Some(surface) = handler.as_any().downcast_ref::<wl_surface::WlSurface>() {
+                // early return if the surface is no longer valid
+                let client = match surface.as_ref().client() {
+                    Some(c) => c,
+                    None => return,
+                };
+                let (x, y) = (location - surface_location.to_f64()).into();
+                if self.current_focus.is_none() {
+                    // We entered a new surface, send the data offer
+                    let offer_data = Rc::new(RefCell::new(OfferData {
+                        active: true,
+                        dropped: false,
+                        accepted: true,
+                        chosen_action: DndAction::empty(),
+                    }));
+                    for device in seat_data
+                        .known_devices
+                        .iter()
+                        .filter(|d| d.as_ref().same_client_as(surface.as_ref()))
+                    {
+                        let action_choice = device
+                            .as_ref()
+                            .user_data()
+                            .get::<DataDeviceData>()
+                            .unwrap()
+                            .action_choice
+                            .clone();
+                        // create a data offer
+                        let offer = client
+                            .create_resource::<wl_data_offer::WlDataOffer>(device.as_ref().version())
+                            .map(|offer| {
+                                implement_dnd_data_offer(
+                                    offer,
+                                    self.metadata.clone(),
+                                    offer_data.clone(),
+                                    self.callback.clone(),
+                                    action_choice,
+                                )
+                            })
+                            .unwrap();
+                        // advertize the offer to the client
+                        device.data_offer(&offer);
+                        for mime_type in self.metadata.mime_types.iter().cloned() {
+                            offer.offer(mime_type);
+                        }
+                        offer.source_actions(self.metadata.dnd_action);
+                        device.enter(serial.into(), &surface, x, y, Some(&offer));
+                        self.pending_offers.push(offer);
                     }
-                    offer.source_actions(self.metadata.dnd_action);
-                    device.enter(serial.into(), &surface, x, y, Some(&offer));
-                    self.pending_offers.push(offer);
-                }
-                self.offer_data = Some(offer_data);
-                self.current_focus = Some(surface);
-            } else {
-                // make a move
-                for device in &seat_data.known_devices {
-                    if device.as_ref().same_client_as(surface.as_ref()) {
-                        device.motion(time, x, y);
+                    self.offer_data = Some(offer_data);
+                    self.current_focus = Some(surface.clone());
+                } else {
+                    // make a move
+                    for device in &seat_data.known_devices {
+                        if device.as_ref().same_client_as(surface.as_ref()) {
+                            device.motion(time, x, y);
+                        }
                     }
                 }
             }
@@ -169,7 +178,7 @@ where
         &mut self,
         handle: &mut PointerInnerHandle<'_>,
         _button: u32,
-        _state: wl_pointer::ButtonState,
+        _state: ButtonState,
         serial: Serial,
         time: u32,
     ) {
@@ -227,6 +236,13 @@ where
 
     fn start_data(&self) -> &PointerGrabStartData {
         &self.start_data
+    }
+
+    fn take_start_data(&mut self) -> PointerGrabStartData {
+        PointerGrabStartData {
+            focus: self.start_data.focus.take(),
+            ..self.start_data
+        }
     }
 }
 

@@ -179,7 +179,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         // init input
         let seat_name = backend_data.seat_name();
 
-        let (mut seat, _) = Seat::new(&mut display.borrow_mut(), seat_name.clone(), log.clone());
+        let mut seat = Seat::new(seat_name.clone(), log.clone());
+        let _seat_global = seat.create_global(&mut display.borrow_mut());
 
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
 
@@ -199,7 +200,14 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         let keyboard = seat
             .add_keyboard(XkbConfig::default(), 200, 25, |seat, focus| {
-                set_data_device_focus(seat, focus.and_then(|s| s.as_ref().client()))
+                set_data_device_focus(
+                    seat,
+                    focus.and_then(|s| {
+                        s.as_any()
+                            .downcast_ref::<WlSurface>()
+                            .and_then(|s| s.as_ref().client())
+                    }),
+                )
             })
             .expect("Failed to initialize the keyboard");
 
