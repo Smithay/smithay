@@ -1,7 +1,8 @@
 //! Implementation of the multi-gpu [`GraphicsApi`] using
 //! EGL for device enumeration and OpenGL ES for rendering.
 
-use wayland_server::DisplayHandle;
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+use wayland_server::{protocol::wl_buffer, DisplayHandle};
 
 use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode},
@@ -13,22 +14,18 @@ use crate::backend::{
     },
     SwapBuffersError,
 };
-#[cfg(all(
-    feature = "wayland_frontend",
-    feature = "backend_egl",
-    feature = "use_system_lib"
-))]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Buffer},
+        allocator::{dmabuf::Dmabuf, Buffer as BufferTrait},
         egl::display::EGLBufferReader,
         renderer::{
             multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
             ImportEgl, Offscreen,
         },
     },
-    reexports::wayland_server::protocol::wl_buffer,
     utils::{Buffer as BufferCoords, Rectangle},
+    wayland::buffer::Buffer,
 };
 
 /// Errors raised by the [`EglGlesBackend`]
@@ -142,11 +139,7 @@ impl ApiDevice for EglGlesDevice {
     }
 }
 
-#[cfg(all(
-    feature = "wayland_frontend",
-    feature = "backend_egl",
-    feature = "use_system_lib"
-))]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl<'a, 'b, Target> ImportEgl for MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Target>
 where
     Gles2Renderer: Offscreen<Target>,
@@ -164,12 +157,18 @@ where
     fn import_egl_buffer(
         &mut self,
         dh: &mut DisplayHandle<'_>,
-        buffer: &wl_buffer::WlBuffer,
+        buffer: &Buffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+        let buffer = buffer.buffer(dh).map_err(|_| {
+            Gles2Error::EGLBufferAccessError(crate::backend::egl::BufferAccessError::NotManaged(
+                crate::backend::egl::EGLError::BadParameter,
+            ))
+        })?;
+
         if let Some(ref mut renderer) = self.target.as_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), buffer) {
+            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), &buffer) {
                 let node = *renderer.node();
                 let texture = MultiTexture::from_surface(surface, dmabuf.size());
                 let texture_ref = texture.0.clone();
@@ -183,7 +182,7 @@ where
             }
         }
         for renderer in self.other_renderers.iter_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), buffer) {
+            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), &buffer) {
                 let node = *renderer.node();
                 let texture = MultiTexture::from_surface(surface, dmabuf.size());
                 let texture_ref = texture.0.clone();
@@ -200,11 +199,7 @@ where
     }
 }
 
-#[cfg(all(
-    feature = "wayland_frontend",
-    feature = "backend_egl",
-    feature = "use_system_lib"
-))]
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl<'a, 'b, Target> MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Target> {
     fn try_import_egl(
         dh: &mut DisplayHandle<'_>,
