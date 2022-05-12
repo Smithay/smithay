@@ -105,8 +105,8 @@ impl EGLSurface {
         }
     }
 
-     /// Returns the size of the underlying back buffer
-     pub fn get_size(&self) -> Option<Size<i32, Physical>> {
+    /// Returns the size of the underlying back buffer
+    pub fn get_size(&self) -> Option<Size<i32, Physical>> {
         let surface = self.surface.load(Ordering::SeqCst);
         let mut height = 0;
         let ret_h = unsafe {
