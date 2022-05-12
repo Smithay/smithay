@@ -129,7 +129,7 @@ impl EGLSurface {
         if ret_h == ffi::egl::FALSE || ret_w == ffi::egl::FALSE {
             slog::debug!(
                 self.logger,
-                "Failed to query buffer age value for surface {:?}: {}",
+                "Failed to query size value for surface {:?}: {}",
                 self,
                 EGLError::from_last_call().unwrap_err()
             );
