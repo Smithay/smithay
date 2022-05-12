@@ -45,14 +45,19 @@ use std::{
 };
 
 #[cfg(feature = "wayland_frontend")]
-use crate::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use crate::wayland::{buffer::Buffer, dmabuf::get_dmabuf, shm};
 use crate::{
     backend::{
-        allocator::{dmabuf::WeakDmabuf, Buffer, Format},
+        allocator::{dmabuf::WeakDmabuf, Buffer as BufferTrait, Format},
         drm::DrmNode,
         SwapBuffersError,
     },
     utils::{Buffer as BufferCoords, Physical, Size},
+};
+#[cfg(feature = "wayland_frontend")]
+use wayland_server::{
+    protocol::{wl_buffer, wl_surface::WlSurface},
+    DisplayHandle,
 };
 #[cfg(all(feature = "backend_egl", feature = "renderer_gl"))]
 pub mod egl;
@@ -336,6 +341,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     #[cfg(feature = "wayland_frontend")]
     pub fn early_import(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         source: Option<DrmNode>,
         target: DrmNode,
         surface: &WlSurface,
@@ -393,7 +399,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                             });
 
                         if let Err(err) =
-                            self.early_import_buffer(source, target, buffer, states, &*buffer_damage)
+                            self.early_import_buffer(dh, source, target, buffer, states, &*buffer_damage)
                         {
                             result = Err(err);
                         }
@@ -419,6 +425,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     #[cfg(feature = "wayland_frontend")]
     fn early_import_buffer(
         &mut self,
+        dh: &mut DisplayHandle<'_>,
         source: Option<DrmNode>,
         target: DrmNode,
         buffer: &wl_buffer::WlBuffer,
@@ -430,24 +437,24 @@ impl<A: GraphicsApi> GpuManager<A> {
         <A::Device as ApiDevice>::Renderer: ImportMemWl + ImportDmaWl + ExportMem,
         <<A::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
     {
-        match buffer_type(buffer) {
+        let buffer = Buffer::from_wl(buffer, dh);
+        match buffer_type(dh, &buffer) {
             Some(BufferType::Dma) => {
                 let (mut target_device, others) = self
                     .devices
                     .iter_mut()
                     .partition::<Vec<_>, _>(|device| device.node() == &target);
                 let target_device = target_device.get_mut(0).ok_or(Error::DeviceMissing)?;
-                let format = buffer.as_ref().user_data().get::<Dmabuf>().unwrap().format();
+                let dmabuf = get_dmabuf(&buffer).unwrap();
+                let format = dmabuf.format();
 
-                let dma_source = self
-                    .dma_source
-                    .entry(buffer.as_ref().user_data().get::<Dmabuf>().unwrap().weak());
+                let dma_source = self.dma_source.entry(dmabuf.weak());
                 if matches!(dma_source, Entry::Vacant(_))
                     || matches!(dma_source, Entry::Occupied(ref x) if x.get() == &target)
                 {
                     match target_device
                         .renderer_mut()
-                        .import_dma_buffer(buffer, Some(surface), damage)
+                        .import_dma_buffer(&buffer, Some(surface), damage)
                     {
                         Ok(imported) => {
                             if let Entry::Vacant(vacant) = dma_source {
@@ -487,7 +494,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                     if let Ok(texture) =
                         import_renderer
                             .renderer_mut()
-                            .import_dma_buffer(buffer, Some(surface), damage)
+                            .import_dma_buffer(&buffer, Some(surface), damage)
                     {
                         if let Entry::Vacant(vacant) = dma_source {
                             vacant.insert(*import_renderer.node());
@@ -1255,7 +1262,7 @@ where
 {
     fn import_shm_buffer(
         &mut self,
-        buffer: &wl_buffer::WlBuffer,
+        buffer: &Buffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
@@ -1263,8 +1270,10 @@ where
             .render
             .renderer_mut()
             .import_shm_buffer(buffer, surface, damage)
-            .map_err(Error::Render)?;
-        let mut texture = MultiTexture::from_surface(surface, buffer_dimensions(buffer).unwrap());
+            .expect("import_shm_buffer without checking buffer type?");
+        let dimensions = shm::with_buffer_contents(buffer, |_, data| (data.width, data.height).into())
+            .map_err(|_| Error::ImportFailed)?;
+        let mut texture = MultiTexture::from_surface(surface, dimensions);
         texture.insert_texture::<R>(*self.render.node(), shm_texture);
         Ok(texture)
     }
@@ -1336,18 +1345,14 @@ where
 {
     fn import_dma_buffer(
         &mut self,
-        buffer: &wl_buffer::WlBuffer,
+        buffer: &Buffer,
         surface: Option<&SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        let dmabuf = buffer
-            .as_ref()
-            .user_data()
-            .get::<Dmabuf>()
-            .expect("import_dma_buffer without checking buffer type?");
+        let dmabuf = get_dmabuf(buffer).expect("import_dma_buffer without checking buffer type?");
         let texture = MultiTexture::from_surface(surface, dmabuf.size());
         let texture_ref = texture.0.clone();
-        let res = self.import_dmabuf_internal(None, dmabuf, texture, Some(damage));
+        let res = self.import_dmabuf_internal(None, &dmabuf, texture, Some(damage));
         if res.is_ok() {
             if let Some(surface) = surface {
                 surface.data_map.insert_if_missing(|| texture_ref);
