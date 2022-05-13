@@ -43,6 +43,7 @@
 - `WinitGraphicsBackend` does no longer provide a `render`-method and exposes its `Renderer` directly instead including new functions `bind` and `submit` to handle swapping buffers.
 - `ImportShm` was renamed to `ImportMem`
 - `ImportMem` and `ImportDma` were split and do now have accompanying traits `ImportMemWl` and `ImportDmaWl` to import wayland buffers.
+- Added `EGLSurface::get_size`
 
 ### Additions
 

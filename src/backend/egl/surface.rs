@@ -12,7 +12,7 @@ use crate::backend::egl::{
     native::EGLNativeSurface,
     EGLError, SwapBuffersError,
 };
-use crate::utils::{Physical, Rectangle};
+use crate::utils::{Physical, Rectangle, Size};
 
 use slog::{debug, o};
 
@@ -102,6 +102,40 @@ impl EGLSurface {
             None
         } else {
             Some(age)
+        }
+    }
+
+    /// Returns the size of the underlying back buffer
+    pub fn get_size(&self) -> Option<Size<i32, Physical>> {
+        let surface = self.surface.load(Ordering::SeqCst);
+        let mut height = 0;
+        let ret_h = unsafe {
+            ffi::egl::QuerySurface(
+                **self.display,
+                surface as *const _,
+                ffi::egl::HEIGHT as i32,
+                &mut height as *mut _,
+            )
+        };
+        let mut width = 0;
+        let ret_w = unsafe {
+            ffi::egl::QuerySurface(
+                **self.display,
+                surface as *const _,
+                ffi::egl::WIDTH as i32,
+                &mut width as *mut _,
+            )
+        };
+        if ret_h == ffi::egl::FALSE || ret_w == ffi::egl::FALSE {
+            slog::debug!(
+                self.logger,
+                "Failed to query size value for surface {:?}: {}",
+                self,
+                EGLError::from_last_call().unwrap_err()
+            );
+            None
+        } else {
+            Some(Size::from((width, height)))
         }
     }
 
