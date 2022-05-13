@@ -117,15 +117,7 @@ impl Smallvil {
 
     pub fn surface_under_pointer(&self) -> Option<(WlSurface, Point<i32, Logical>)> {
         let pos = self.pointer_location;
-
-        if let Some(window) = self.space.window_under(pos) {
-            let window_loc = self.space.window_location(window).unwrap();
-            window
-                .surface_under(pos - window_loc.to_f64(), WindowSurfaceType::all())
-                .map(|(s, loc)| (s, loc + window_loc))
-        } else {
-            None
-        }
+        self.space.surface_under(pos, WindowSurfaceType::all()).map(|(_, surface, location)| (surface, location))
     }
 }
 
