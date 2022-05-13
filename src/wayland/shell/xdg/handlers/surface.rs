@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use crate::utils::alive_tracker::{AliveTracker, IsAlive};
 use crate::{
     utils::Rectangle,
     wayland::{
@@ -99,6 +100,7 @@ where
                         xdg_surface: xdg_surface.clone(),
                         wm_base: data.wm_base.clone(),
                         decoration: Default::default(),
+                        alive_tracker: Default::default(),
                     },
                 );
 
@@ -174,6 +176,7 @@ where
                         xdg_surface: xdg_surface.clone(),
                         wm_base: data.wm_base.clone(),
                         decoration: Default::default(),
+                        alive_tracker: Default::default(),
                     },
                 );
 
@@ -347,4 +350,20 @@ pub struct XdgShellSurfaceUserData {
     pub(crate) wm_base: xdg_wm_base::XdgWmBase,
     pub(crate) xdg_surface: xdg_surface::XdgSurface,
     pub(crate) decoration: Mutex<Option<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1>>,
+
+    pub(crate) alive_tracker: AliveTracker,
+}
+
+impl IsAlive for XdgToplevel {
+    fn alive(&self) -> bool {
+        let data: &XdgShellSurfaceUserData = self.data().unwrap();
+        data.alive_tracker.alive()
+    }
+}
+
+impl IsAlive for XdgPopup {
+    fn alive(&self) -> bool {
+        let data: &XdgShellSurfaceUserData = self.data().unwrap();
+        data.alive_tracker.alive()
+    }
 }
