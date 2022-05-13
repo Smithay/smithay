@@ -17,11 +17,6 @@ impl Default for AliveTracker {
 }
 
 impl AliveTracker {
-    /// Create new alive tracker
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Notify the tracker that object is dead
     pub fn destroy_notify(&self) {
         self.is_alive.store(false, Ordering::Release);

@@ -11,7 +11,9 @@ pub(crate) mod ids;
 pub mod user_data;
 
 #[cfg(feature = "wayland_frontend")]
-pub mod alive_tracker;
+pub(crate) mod alive_tracker;
+#[cfg(feature = "wayland_frontend")]
+pub use self::alive_tracker::IsAlive;
 
 pub use self::geometry::{Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Size, Transform};
 
