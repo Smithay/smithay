@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager, Space},
-    utils::{user_data::UserDataMap, Logical, Point, Rectangle},
+    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, TraversalAction},
         output::{Inner as OutputInner, Output, OutputGlobalData},
@@ -307,8 +307,7 @@ impl LayerMap {
     /// to be able cleanup internally used resources.
     pub fn cleanup(&mut self) {
         self.layers.retain(|layer| layer.alive());
-        // TODO(desktop-0.30)
-        // self.surfaces.retain(|s| s.as_ref().is_alive());
+        self.surfaces.retain(|s| s.alive());
     }
 
     /// Returns layers count
@@ -367,6 +366,12 @@ impl Drop for LayerSurfaceInner {
     }
 }
 
+impl IsAlive for LayerSurface {
+    fn alive(&self) -> bool {
+        self.0.surface.alive()
+    }
+}
+
 impl LayerSurface {
     /// Create a new [`LayerSurface`] from a given [`WlrLayerSurface`] and its namespace.
     pub fn new(surface: WlrLayerSurface, namespace: String) -> LayerSurface {
@@ -376,12 +381,6 @@ impl LayerSurface {
             namespace,
             userdata: UserDataMap::new(),
         }))
-    }
-
-    /// Checks if the surface is still alive
-    pub fn alive(&self) -> bool {
-        todo!();
-        // self.0.surface.alive()
     }
 
     /// Returns the underlying [`WlrLayerSurface`]
@@ -518,6 +517,7 @@ impl LayerSurface {
 /// Note: This function will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_layer_surface<R, P>(
     dh: &mut DisplayHandle<'_>,
     renderer: &mut R,

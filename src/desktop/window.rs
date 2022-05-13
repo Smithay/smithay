@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager, Space},
-    utils::{user_data::UserDataMap, Logical, Point, Rectangle},
+    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle},
     wayland::{
         compositor::with_states,
         output::Output,
@@ -42,14 +42,14 @@ impl std::cmp::PartialEq for X11Surface {
     }
 }
 
+impl IsAlive for X11Surface {
+    fn alive(&self) -> bool {
+        self.surface.alive()
+    }
+}
+
 #[cfg(feature = "xwayland")]
 impl X11Surface {
-    /// Checks if the surface is still alive.
-    pub fn alive(&self) -> bool {
-        todo!()
-        // self.surface.as_ref().is_alive()
-    }
-
     /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
     pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.surface
@@ -57,23 +57,22 @@ impl X11Surface {
 }
 
 impl Kind {
-    /// Checks if the surface is still alive.
-    pub fn alive(&self) -> bool {
-        true
-        // TODO(desktop-0.30)
-        // match *self {
-        //     Kind::Xdg(ref t) => t.alive(),
-        //     #[cfg(feature = "xwayland")]
-        //     Kind::X11(ref t) => t.alive(),
-        // }
-    }
-
     /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
     pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         match *self {
             Kind::Xdg(ref t) => t.wl_surface(),
             #[cfg(feature = "xwayland")]
             Kind::X11(ref t) => t.wl_surface(),
+        }
+    }
+}
+
+impl IsAlive for Kind {
+    fn alive(&self) -> bool {
+        match self {
+            Kind::Xdg(ref t) => t.alive(),
+            #[cfg(feature = "xwayland")]
+            Kind::X11(ref t) => t.alive(),
         }
     }
 }
@@ -108,6 +107,12 @@ impl Eq for Window {}
 impl Hash for Window {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.id.hash(state);
+    }
+}
+
+impl IsAlive for Window {
+    fn alive(&self) -> bool {
+        self.0.toplevel.alive()
     }
 }
 
@@ -288,6 +293,7 @@ impl Window {
 /// Note: This function will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_window<R, P>(
     dh: &mut DisplayHandle<'_>,
     renderer: &mut R,
