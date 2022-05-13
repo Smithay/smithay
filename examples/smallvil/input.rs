@@ -73,15 +73,7 @@ impl Smallvil {
                     if !pointer.is_grabbed() {
                         if let Some(window) = self.space.window_under(self.pointer_location).cloned() {
                             self.space.raise_window(&window, true);
-                            let window_loc = self.space.window_location(&window).unwrap();
-                            let surface = window
-                                .surface_under(
-                                    self.pointer_location - window_loc.to_f64(),
-                                    WindowSurfaceType::all(),
-                                )
-                                .map(|(s, _)| s);
-                            keyboard.set_focus(dh, surface.as_ref(), serial);
-
+                            keyboard.set_focus(dh, Some(window.toplevel().wl_surface()), serial);
                             window.set_activated(true);
                             window.configure(dh);
                         } else {
