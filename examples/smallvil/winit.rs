@@ -16,11 +16,6 @@ use slog::Logger;
 
 use crate::CalloopData;
 
-smithay::custom_elements! {
-    pub CustomElem<=Gles2Renderer>;
-    SurfaceTree=SurfaceTree,
-}
-
 pub fn run_winit(
     event_loop: &mut EventLoop<CalloopData>,
     data: &mut CalloopData,
@@ -103,7 +98,7 @@ pub fn winit_dispatch(
     backend.bind().ok().and_then(|_| {
         state
             .space
-            .render_output::<Gles2Renderer, CustomElem>(
+            .render_output::<Gles2Renderer, SurfaceTree>(
                 &mut display.handle(),
                 backend.renderer(),
                 &output,
