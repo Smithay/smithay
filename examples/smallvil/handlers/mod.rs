@@ -21,7 +21,7 @@ impl SeatHandler for Smallvil {
 delegate_seat!(Smallvil);
 
 //
-// Wl Outpu & Xdg Output
+// Wl Output & Xdg Output
 //
 
 use smithay::wayland::output::OutputManagerState;
