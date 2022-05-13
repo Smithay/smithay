@@ -9,7 +9,7 @@ use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
-    utils::{Logical, Point, Rectangle},
+    utils::{IsAlive, Logical, Point, Rectangle},
     wayland::{
         compositor::with_states,
         shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceRoleAttributes},
@@ -21,6 +21,14 @@ use crate::{
 pub enum PopupKind {
     /// xdg-shell [`PopupSurface`]
     Xdg(PopupSurface),
+}
+
+impl IsAlive for PopupKind {
+    fn alive(&self) -> bool {
+        match self {
+            PopupKind::Xdg(ref p) => p.alive(),
+        }
+    }
 }
 
 impl PopupKind {

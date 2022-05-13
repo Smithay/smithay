@@ -9,7 +9,7 @@ use crate::{
         utils::{output_leave, output_update},
         window::Window,
     },
-    utils::{Logical, Point, Rectangle, Transform},
+    utils::{IsAlive, Logical, Point, Rectangle, Transform},
     wayland::{
         compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
         output::Output,
@@ -360,14 +360,11 @@ impl Space {
     /// Needs to be called periodically, at best before every
     /// wayland socket flush.
     pub fn refresh(&mut self, dh: &mut DisplayHandle<'_>) {
-        self.windows.retain(|w| w.toplevel().alive());
+        self.windows.retain(|w| w.alive());
 
-        // TODO(desktop-0.30)
-        // for output in &mut self.outputs {
-        //     output_state(self.id, output)
-        //         .surfaces
-        //         .retain(|s| s.as_ref().is_alive());
-        // }
+        for output in &mut self.outputs {
+            output_state(self.id, output).surfaces.retain(|s| s.alive());
+        }
 
         for window in &self.windows {
             let bbox = window_rect(window, &self.id);

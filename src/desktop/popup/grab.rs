@@ -6,7 +6,7 @@ use wayland_server::{
 };
 
 use crate::{
-    utils::DeadResource,
+    utils::{DeadResource, IsAlive},
     wayland::{
         compositor::get_role,
         seat::{
@@ -58,7 +58,7 @@ struct PopupGrabInternal {
 }
 
 impl PopupGrabInternal {
-    fn alive(&self) -> bool {
+    fn active(&self) -> bool {
         !self.active_grabs.is_empty() || !self.dismissed_grabs.is_empty()
     }
 
@@ -66,9 +66,7 @@ impl PopupGrabInternal {
         self.active_grabs
             .iter()
             .rev()
-            // TODO(desktop-0.30)
-            // .find(|(_, p)| p.alive())
-            .next()
+            .find(|(_, p)| p.alive())
             .map(|(s, _)| s)
     }
 
@@ -82,19 +80,17 @@ impl PopupGrabInternal {
     }
 
     fn cleanup(&mut self) {
-        // TODO(deskop-0.30)
+        let mut i = 0;
+        while i < self.active_grabs.len() {
+            if !self.active_grabs[i].1.alive() {
+                let grab = self.active_grabs.remove(i);
+                self.dismissed_grabs.push(grab);
+            } else {
+                i += 1;
+            }
+        }
 
-        // let mut i = 0;
-        // while i < self.active_grabs.len() {
-        //     if !self.active_grabs[i].1.alive() {
-        //         let grab = self.active_grabs.remove(i);
-        //         self.dismissed_grabs.push(grab);
-        //     } else {
-        //         i += 1;
-        //     }
-        // }
-
-        // self.dismissed_grabs.retain(|(s, _)| s.as_ref().is_alive());
+        self.dismissed_grabs.retain(|(s, _)| s.alive());
     }
 }
 
@@ -104,9 +100,9 @@ pub(super) struct PopupGrabInner {
 }
 
 impl PopupGrabInner {
-    pub(super) fn alive(&self) -> bool {
+    pub(super) fn active(&self) -> bool {
         let guard = self.internal.lock().unwrap();
-        guard.alive()
+        guard.active()
     }
 
     fn current_grab(&self) -> Option<WlSurface> {
@@ -115,9 +111,7 @@ impl PopupGrabInner {
             .active_grabs
             .iter()
             .rev()
-            // TODO(desktop-0.30)
-            // .find(|(_, p)| p.alive())
-            .next()
+            .find(|(_, p)| p.alive())
             .map(|(s, _)| s)
             .cloned()
     }
@@ -171,14 +165,13 @@ impl PopupGrabInner {
                 if let Some(grab) = guard.active_grabs.pop() {
                     let dismissed = PopupManager::dismiss_popup(dh, root, &grab.1);
 
-                    // TODO(desktop-0.30)
-                    // if dismissed.is_ok() {
-                    guard.dismissed_grabs.push(grab);
-                    // }
+                    if dismissed.is_ok() {
+                        guard.dismissed_grabs.push(grab);
+                    }
 
                     dismissed
                 } else {
-                    // Ok(())
+                    Ok(())
                 }
             }
             PopupUngrabStrategy::All => {
@@ -187,27 +180,25 @@ impl PopupGrabInner {
                 if let Some(grab) = grabs.first() {
                     let dismissed = PopupManager::dismiss_popup(dh, root, &grab.1);
 
-                    // TODO(desktop-0.30)
-                    // if dismissed.is_ok() {
-                    guard.dismissed_grabs.push(grab.clone());
-                    guard.dismissed_grabs.extend(grabs);
-                    // }
+                    if dismissed.is_ok() {
+                        guard.dismissed_grabs.push(grab.clone());
+                        guard.dismissed_grabs.extend(grabs);
+                    }
 
                     dismissed
                 } else {
-                    // Ok(())
+                    Ok(())
                 }
             }
         };
 
-        // TODO(desktop-0.30)
-        // if dismissed.is_err() {
-        //     // If dismiss_popup returns Err(DeadResource) there is not much what
-        //     // can do about it here, we just remove all our grabs as they are dead now
-        //     // anyway. The pointer/keyboard grab will be unset automatically so we
-        //     // should be fine.
-        //     guard.active_grabs.drain(..);
-        // }
+        if dismissed.is_err() {
+            // If dismiss_popup returns Err(DeadResource) there is not much what
+            // can do about it here, we just remove all our grabs as they are dead now
+            // anyway. The pointer/keyboard grab will be unset automatically so we
+            // should be fine.
+            guard.active_grabs.drain(..);
+        }
 
         guard.current_grab().cloned()
     }
@@ -299,9 +290,7 @@ impl PopupGrab {
     /// This will also return [`false`] if the root
     /// of the grab has been destroyed.
     pub fn has_ended(&self) -> bool {
-        // TODO(desktop-0.30)
-        // !self.root.as_ref().is_alive() || !self.toplevel_grab.alive()
-        todo!()
+        !self.root.alive() || !self.toplevel_grab.active()
     }
 
     /// Returns the current grabbed [`WlSurface`].
@@ -473,10 +462,7 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
 
         // Check that the focus is of the same client as the grab
         // If yes allow it, if not unset the focus.
-        let same_client = match (
-            event.focus.as_ref().map(|f| &f.0).clone(),
-            self.popup_grab.current_grab(),
-        ) {
+        let same_client = match (event.focus.as_ref().map(|f| &f.0), self.popup_grab.current_grab()) {
             (Some(a), Some(b)) => a.id().same_client_as(&b.id()),
             (None, Some(_)) | (Some(_), None) => false,
             (None, None) => true,
