@@ -23,6 +23,14 @@ pub enum PopupKind {
     Xdg(PopupSurface),
 }
 
+impl IsAlive for PopupKind {
+    fn alive(&self) -> bool {
+        match self {
+            PopupKind::Xdg(ref p) => p.alive(),
+        }
+    }
+}
+
 impl PopupKind {
     /// Retrieves the underlying [`WlSurface`]
     pub fn wl_surface(&self) -> &WlSurface {

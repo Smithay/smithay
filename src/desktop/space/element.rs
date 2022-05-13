@@ -71,6 +71,7 @@ where
     /// - `damage` provides the regions you need to re-draw and *may* not
     ///   be equivalent to the damage returned by `accumulated_damage`.
     ///   Redrawing other parts of the element is not valid and may cause rendering artifacts.
+    #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
         dh: &mut DisplayHandle<'_>,

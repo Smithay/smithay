@@ -52,12 +52,12 @@ impl SurfaceState {
                     buffer_dimensions(dh, &buffer)
                 };
 
-                // #[cfg(feature = "desktop")]
-                // if self.buffer_scale != attrs.buffer_scale
-                //     || self.buffer_transform != attrs.buffer_transform.into()
-                // {
-                //     self.reset_space_damage();
-                // }
+                #[cfg(feature = "desktop")]
+                if self.buffer_scale != attrs.buffer_scale
+                    || self.buffer_transform != attrs.buffer_transform.into()
+                {
+                    self.reset_space_damage();
+                }
                 self.buffer_scale = attrs.buffer_scale;
                 self.buffer_transform = attrs.buffer_transform.into();
 
@@ -136,10 +136,10 @@ impl SurfaceState {
         }
     }
 
-    // #[cfg(feature = "desktop")]
-    // pub fn reset_space_damage(&mut self) {
-    //     self.space_seen.clear();
-    // }
+    #[cfg(feature = "desktop")]
+    pub fn reset_space_damage(&mut self) {
+        self.space_seen.clear();
+    }
 
     /// Returns the size of the surface.
     pub fn surface_size(&self) -> Option<Size<i32, Logical>> {

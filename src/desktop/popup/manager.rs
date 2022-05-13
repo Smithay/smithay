@@ -1,5 +1,5 @@
 use crate::{
-    utils::{DeadResource, Logical, Point},
+    utils::{DeadResource, IsAlive, Logical, Point},
     wayland::{
         compositor::{get_role, with_states},
         seat::Seat,
@@ -107,7 +107,7 @@ impl PopupManager {
         // that it either is new and have never been
         // added to the popupmanager or that it has been
         // cleaned up.
-        if !toplevel_popups.alive() {
+        if !toplevel_popups.active() {
             self.popup_grabs.push(toplevel_popups.clone());
         }
 
@@ -188,7 +188,14 @@ impl PopupManager {
         })
     }
 
-    pub(crate) fn dismiss_popup(dh: &mut DisplayHandle<'_>, surface: &WlSurface, popup: &PopupKind) {
+    pub(crate) fn dismiss_popup(
+        dh: &mut DisplayHandle<'_>,
+        surface: &WlSurface,
+        popup: &PopupKind,
+    ) -> Result<(), DeadResource> {
+        if !surface.alive() {
+            return Err(DeadResource);
+        }
         with_states(surface, |states| {
             let tree = states.data_map.get::<PopupTree>();
 
@@ -196,6 +203,7 @@ impl PopupManager {
                 tree.dismiss_popup(dh, popup);
             }
         });
+        Ok(())
     }
 
     /// Needs to be called periodically (but not necessarily frequently)
@@ -203,11 +211,10 @@ impl PopupManager {
     pub fn cleanup(&mut self) {
         // retain_mut is sadly still unstable
         self.popup_grabs.iter_mut().for_each(|grabs| grabs.cleanup());
-        self.popup_grabs.retain(|grabs| grabs.alive());
+        self.popup_grabs.retain(|grabs| grabs.active());
         self.popup_trees.iter_mut().for_each(|tree| tree.cleanup());
         self.popup_trees.retain(|tree| tree.alive());
-        // TODO(desktop-0.30)
-        // self.unmapped_popups.retain(|surf| surf.alive());
+        self.unmapped_popups.retain(|surf| surf.alive());
     }
 }
 
@@ -281,8 +288,7 @@ impl PopupTree {
         for child in children.iter_mut() {
             child.cleanup();
         }
-        // TODO(desktop-0.30)
-        // children.retain(|n| n.surface.alive());
+        children.retain(|n| n.surface.alive());
     }
 
     fn alive(&self) -> bool {
@@ -358,15 +364,14 @@ impl PopupNode {
             child.cleanup();
         }
 
-        // TODO(desktop-0.30)
-        // if !self.surface.alive() && !self.children.is_empty() {
-        // TODO: The client destroyed a popup before
-        // destroying all children, this is a protocol
-        // error. As the surface is no longer alive we
-        // can not retrieve the client here to send
-        // the error.
-        // }
+        if !self.surface.alive() && !self.children.is_empty() {
+            // TODO: The client destroyed a popup before
+            // destroying all children, this is a protocol
+            // error. As the surface is no longer alive we
+            // can not retrieve the client here to send
+            // the error.
+        }
 
-        // self.children.retain(|n| n.surface.alive());
+        self.children.retain(|n| n.surface.alive());
     }
 }
