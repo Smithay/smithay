@@ -8,7 +8,7 @@ use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
         layer_map_for_output, Kind as SurfaceKind, LayerSurface, PopupKeyboardGrab, PopupKind, PopupManager,
-        PopupPointerGrab, PopupUngrabStrategy, Space, Window,
+        PopupPointerGrab, PopupUngrabStrategy, Space, Window, WindowSurfaceType,
     },
     reexports::{
         wayland_protocols::xdg_shell::server::xdg_toplevel,
@@ -289,7 +289,9 @@ fn fullscreen_output_geometry(
     wl_output
         .and_then(Output::from_resource)
         .or_else(|| {
-            let w = space.window_for_surface(wl_surface).cloned();
+            let w = space
+                .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                .cloned();
             w.and_then(|w| space.outputs_for_window(&w).get(0).cloned())
         })
         .and_then(|o| space.output_geometry(&o))
@@ -419,7 +421,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
                     let space = state.space.clone();
                     let window = space
                         .borrow_mut()
-                        .window_for_surface(surface.get_surface().unwrap())
+                        .window_for_surface(surface.get_surface().unwrap(), WindowSurfaceType::TOPLEVEL)
                         .unwrap()
                         .clone();
                     let mut initial_window_location = space.borrow().window_location(&window).unwrap();
@@ -495,7 +497,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
                     let space = state.space.clone();
                     let window = space
                         .borrow_mut()
-                        .window_for_surface(surface.get_surface().unwrap())
+                        .window_for_surface(surface.get_surface().unwrap(), WindowSurfaceType::TOPLEVEL)
                         .unwrap()
                         .clone();
                     let geometry = window.geometry();
@@ -623,7 +625,9 @@ pub fn init_shell<BackendData: Backend + 'static>(
                         });
 
                         if ret.is_ok() {
-                            let window = space.window_for_surface(wl_surface).unwrap();
+                            let window = space
+                                .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                                .unwrap();
                             window.configure();
                             output.user_data().insert_if_missing(FullscreenSurface::default);
                             output
@@ -661,7 +665,7 @@ pub fn init_shell<BackendData: Backend + 'static>(
                     // get the correct maximum size
                     let mut space = state.space.borrow_mut();
                     let window = space
-                        .window_for_surface(surface.get_surface().unwrap())
+                        .window_for_surface(surface.get_surface().unwrap(), WindowSurfaceType::TOPLEVEL)
                         .unwrap()
                         .clone();
                     let output = &space.outputs_for_window(&window)[0];
@@ -815,7 +819,10 @@ fn surface_commit(surface: &wl_surface::WlSurface, space: &RefCell<Space>, popup
         |_, _, _| true,
     );
 
-    if let Some(window) = space.window_for_surface(surface).cloned() {
+    if let Some(window) = space
+        .window_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+        .cloned()
+    {
         // send the initial configure if relevant
         #[cfg_attr(not(feature = "xwayland"), allow(irrefutable_let_patterns))]
         if let SurfaceKind::Xdg(ref toplevel) = window.toplevel() {
@@ -914,10 +921,13 @@ fn surface_commit(surface: &wl_surface::WlSurface, space: &RefCell<Space>, popup
 
     if let Some(output) = space.outputs().find(|o| {
         let map = layer_map_for_output(o);
-        map.layer_for_surface(surface).is_some()
+        map.layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+            .is_some()
     }) {
         let mut map = layer_map_for_output(output);
-        let layer = map.layer_for_surface(surface).unwrap();
+        let layer = map
+            .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+            .unwrap();
 
         // send the initial configure if relevant
         let initial_configure_sent = with_states(surface, |states| {

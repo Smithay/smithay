@@ -4,6 +4,7 @@ use std::{
 };
 
 use smithay::{
+    desktop::WindowSurfaceType,
     reexports::{
         calloop::{
             channel::{Channel, Event as ChannelEvent},
@@ -203,16 +204,18 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>) {
         WlcsEvent::PointerButtonDown { button_id, .. } => {
             let serial = SCOUNTER.next_serial();
             if !state.pointer.is_grabbed() {
-                let under = state.surface_under();
-                if let Some((s, _)) = under.as_ref() {
-                    let mut space = state.space.borrow_mut();
-                    if let Some(window) = space.window_for_surface(s).cloned() {
-                        space.raise_window(&window, true);
-                    }
+                let under = state
+                    .space
+                    .borrow()
+                    .surface_under(state.pointer.current_location(), WindowSurfaceType::ALL)
+                    .map(|(window, surface, _)| (window, surface));
+                if let Some((window, _)) = under.as_ref() {
+                    state.space.borrow_mut().raise_window(&window, true);
                 }
-                state
-                    .keyboard
-                    .set_focus(under.as_ref().map(|&(ref s, _)| s), serial);
+                state.keyboard.set_focus(
+                    under.as_ref().and_then(|&(ref w, _)| w.toplevel().get_surface()),
+                    serial,
+                );
             }
             let time = state.start_time.elapsed().as_millis() as u32;
             state

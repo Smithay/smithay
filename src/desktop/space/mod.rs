@@ -11,7 +11,7 @@ use crate::{
     },
     utils::{Logical, Point, Rectangle, Transform},
     wayland::{
-        compositor::{get_parent, is_sync_subsurface},
+        compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
         output::Output,
     },
 };
@@ -176,25 +176,79 @@ impl Space {
         })
     }
 
-    /// Returns the window matching a given surface, if any
-    pub fn window_for_surface(&self, surface: &WlSurface) -> Option<&Window> {
+    /// Returns the window matching a given surface, if any.
+    ///
+    /// `surface_type` can be used to limit the types of surfaces queried for equality.
+    pub fn window_for_surface(
+        &self,
+        surface: &WlSurface,
+        surface_type: WindowSurfaceType,
+    ) -> Option<&Window> {
         if !surface.as_ref().is_alive() {
             return None;
         }
 
-        self.windows
-            .iter()
-            .find(|w| w.toplevel().get_surface().map(|x| x == surface).unwrap_or(false))
+        if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
+            if let Some(window) = self
+                .windows
+                .iter()
+                .find(|w| w.toplevel().get_surface().map(|x| x == surface).unwrap_or(false))
+            {
+                return Some(window);
+            }
+        }
+
+        if surface_type.contains(WindowSurfaceType::SUBSURFACE) {
+            use std::sync::atomic::{AtomicBool, Ordering};
+
+            if let Some(window) = self.windows.iter().find(|w| {
+                let toplevel = w.toplevel().get_surface().unwrap();
+                let found = AtomicBool::new(false);
+                with_surface_tree_downward(
+                    toplevel,
+                    surface,
+                    |_, _, search| TraversalAction::DoChildren(search),
+                    |s, _, search| {
+                        found.fetch_or(s == *search, Ordering::SeqCst);
+                    },
+                    |_, _, _| !found.load(Ordering::SeqCst),
+                );
+                found.load(Ordering::SeqCst)
+            }) {
+                return Some(window);
+            }
+        }
+
+        if surface_type.contains(WindowSurfaceType::POPUP) {
+            if let Some(window) = self.windows.iter().find(|w| {
+                PopupManager::popups_for_surface(w.toplevel().get_surface().unwrap())
+                    .ok()
+                    .map(|mut popups| {
+                        popups.any(|(p, _)| p.get_surface().map(|s| s == surface).unwrap_or(false))
+                    })
+                    .unwrap_or(false)
+            }) {
+                return Some(window);
+            }
+        }
+
+        None
     }
 
-    /// Returns the layer matching a given surface, if any
-    pub fn layer_for_surface(&self, surface: &WlSurface) -> Option<LayerSurface> {
+    /// Returns the layer matching a given surface, if any.
+    ///
+    /// `surface_type` can be used to limit the types of surfaces queried for equality.
+    pub fn layer_for_surface(
+        &self,
+        surface: &WlSurface,
+        surface_type: WindowSurfaceType,
+    ) -> Option<LayerSurface> {
         if !surface.as_ref().is_alive() {
             return None;
         }
         self.outputs.iter().find_map(|o| {
             let map = layer_map_for_output(o);
-            map.layer_for_surface(surface).cloned()
+            map.layer_for_surface(surface, surface_type).cloned()
         })
     }
 

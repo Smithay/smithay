@@ -179,14 +179,62 @@ impl LayerMap {
     }
 
     /// Returns the [`LayerSurface`] matching a given [`WlSurface`], if any.
-    pub fn layer_for_surface(&self, surface: &WlSurface) -> Option<&LayerSurface> {
+    ///
+    /// `surface_type` can be used to limit the types of surfaces queried for equality.
+    pub fn layer_for_surface(
+        &self,
+        surface: &WlSurface,
+        surface_type: WindowSurfaceType,
+    ) -> Option<&LayerSurface> {
         if !surface.as_ref().is_alive() {
             return None;
         }
 
-        self.layers
-            .iter()
-            .find(|w| w.get_surface().map(|x| x == surface).unwrap_or(false))
+        if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
+            if let Some(layer) = self
+                .layers
+                .iter()
+                .find(|l| l.get_surface().map(|x| x == surface).unwrap_or(false))
+            {
+                return Some(layer);
+            }
+        }
+
+        if surface_type.contains(WindowSurfaceType::SUBSURFACE) {
+            use std::sync::atomic::{AtomicBool, Ordering};
+
+            if let Some(layer) = self.layers.iter().find(|l| {
+                let toplevel = l.get_surface().unwrap();
+                let found = AtomicBool::new(false);
+                with_surface_tree_downward(
+                    toplevel,
+                    surface,
+                    |_, _, search| TraversalAction::DoChildren(search),
+                    |s, _, search| {
+                        found.fetch_or(s == *search, Ordering::SeqCst);
+                    },
+                    |_, _, _| !found.load(Ordering::SeqCst),
+                );
+                found.load(Ordering::SeqCst)
+            }) {
+                return Some(layer);
+            }
+        }
+
+        if surface_type.contains(WindowSurfaceType::POPUP) {
+            if let Some(layer) = self.layers.iter().find(|l| {
+                PopupManager::popups_for_surface(l.get_surface().unwrap())
+                    .ok()
+                    .map(|mut popups| {
+                        popups.any(|(p, _)| p.get_surface().map(|s| s == surface).unwrap_or(false))
+                    })
+                    .unwrap_or(false)
+            }) {
+                return Some(layer);
+            }
+        }
+
+        None
     }
 
     /// Force re-arranging the layer surfaces, e.g. when the output size changes.
