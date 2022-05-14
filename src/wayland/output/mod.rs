@@ -168,7 +168,7 @@ pub(crate) struct Inner {
 /// Data for WlOutput global
 #[derive(Debug, Clone)]
 pub struct OutputGlobalData {
-    inner: Arc<(Mutex<Inner>, UserDataMap)>,
+    pub(crate) inner: Arc<(Mutex<Inner>, UserDataMap)>,
 }
 
 /// User data for WlOutput

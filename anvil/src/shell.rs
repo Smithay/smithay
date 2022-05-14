@@ -146,7 +146,7 @@ impl PointerGrab for ResizeSurfaceGrab {
         time: u32,
     ) {
         // It is impossible to get `min_size` and `max_size` of dead toplevel, so we return early.
-        if !self.window.toplevel().alive() | self.window.toplevel().get_surface().is_none() {
+        if !self.window.toplevel().alive() | self.window.toplevel().wl_surface().is_none() {
             handle.unset_grab(serial, time);
             return;
         }
@@ -178,7 +178,7 @@ impl PointerGrab for ResizeSurfaceGrab {
             new_window_height = (self.initial_window_size.h as f64 + dy) as i32;
         }
 
-        let (min_size, max_size) = with_states(self.window.toplevel().get_surface().unwrap(), |states| {
+        let (min_size, max_size) = with_states(self.window.toplevel().wl_surface().unwrap(), |states| {
             let data = states.cached_state.current::<SurfaceCachedState>();
             (data.min_size, data.max_size)
         })
@@ -233,7 +233,7 @@ impl PointerGrab for ResizeSurfaceGrab {
             handle.unset_grab(serial, time);
 
             // If toplevel is dead, we can't resize it, so we return early.
-            if !self.window.toplevel().alive() | self.window.toplevel().get_surface().is_none() {
+            if !self.window.toplevel().alive() | self.window.toplevel().wl_surface().is_none() {
                 return;
             }
 
@@ -247,7 +247,7 @@ impl PointerGrab for ResizeSurfaceGrab {
                     xdg.send_configure();
                 }
 
-                with_states(self.window.toplevel().get_surface().unwrap(), |states| {
+                with_states(self.window.toplevel().wl_surface().unwrap(), |states| {
                     let mut data = states
                         .data_map
                         .get::<RefCell<SurfaceData>>()
@@ -261,7 +261,7 @@ impl PointerGrab for ResizeSurfaceGrab {
                 })
                 .unwrap();
             } else {
-                with_states(self.window.toplevel().get_surface().unwrap(), |states| {
+                with_states(self.window.toplevel().wl_surface().unwrap(), |states| {
                     let mut data = states
                         .data_map
                         .get::<RefCell<SurfaceData>>()
