@@ -18,6 +18,7 @@
 pub mod dmabuf;
 #[cfg(feature = "backend_drm")]
 pub mod dumb;
+pub mod format;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
 
