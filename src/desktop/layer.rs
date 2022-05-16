@@ -612,31 +612,36 @@ where
     let location = location.into();
     if let Some(surface) = layer.get_surface() {
         draw_surface_tree(renderer, frame, surface, scale, location, damage, log)?;
-        for (popup, p_location) in PopupManager::popups_for_surface(surface)
-            .ok()
-            .into_iter()
-            .flatten()
-        {
-            if let Some(surface) = popup.get_surface() {
-                let damage = damage
-                    .iter()
-                    .cloned()
-                    .map(|mut geo| {
-                        geo.loc -= p_location;
-                        geo
-                    })
-                    .collect::<Vec<_>>();
-                draw_surface_tree(
-                    renderer,
-                    frame,
-                    surface,
-                    scale,
-                    location + p_location,
-                    &damage,
-                    log,
-                )?;
-            }
-        }
+    }
+    Ok(())
+}
+
+/// Renders popups of a given [`LayerSurface`] using a provided renderer and frame
+///
+/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
+/// - `location` is the position the layer surface would be drawn at (popups will be drawn relative to that coordiante).
+/// - `damage` is the set of regions of the layer surface that should be drawn.
+///
+/// Note: This function will render nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
+pub fn draw_layer_popups<R, P>(
+    renderer: &mut R,
+    frame: &mut <R as Renderer>::Frame,
+    layer: &LayerSurface,
+    scale: f64,
+    location: P,
+    damage: &[Rectangle<i32, Logical>],
+    log: &slog::Logger,
+) -> Result<(), <R as Renderer>::Error>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+    P: Into<Point<i32, Logical>>,
+{
+    let location = location.into();
+    if let Some(surface) = layer.get_surface() {
+        super::popup::draw_popups(renderer, frame, surface, location, (0, 0), scale, damage, log)?;
     }
     Ok(())
 }
