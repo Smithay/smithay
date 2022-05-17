@@ -145,11 +145,14 @@ where
                         });
 
                     damage.extend(new_damage.into_iter().map(|rect| {
-                        let mut rect = rect.to_logical(
-                            data.buffer_scale,
-                            data.buffer_transform,
-                            &data.buffer_dimensions.unwrap(),
-                        );
+                        let mut rect = rect
+                            .to_f64()
+                            .to_logical(
+                                data.buffer_scale as f64,
+                                data.buffer_transform,
+                                &data.buffer_dimensions.unwrap().to_f64(),
+                            )
+                            .to_i32_up();
                         rect.loc += location;
                         rect
                     }));
