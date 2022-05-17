@@ -3,7 +3,6 @@ use smithay::{
         Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent, KeyboardKeyEvent, PointerAxisEvent,
         PointerButtonEvent, PointerMotionAbsoluteEvent,
     },
-    desktop::WindowSurfaceType,
     wayland::{
         seat::{AxisFrame, ButtonEvent, FilterResult, MotionEvent},
         SERIAL_COUNTER,
@@ -64,25 +63,25 @@ impl Smallvil {
                 let serial = SERIAL_COUNTER.next_serial();
 
                 let button = event.button_code();
+
+                // TODO: From trait
                 let button_state = match event.state() {
                     ButtonState::Pressed => wl_pointer::ButtonState::Pressed,
                     ButtonState::Released => wl_pointer::ButtonState::Released,
                 };
 
-                if wl_pointer::ButtonState::Pressed == button_state {
-                    if !pointer.is_grabbed() {
-                        if let Some(window) = self.space.window_under(self.pointer_location).cloned() {
-                            self.space.raise_window(&window, true);
-                            keyboard.set_focus(dh, Some(window.toplevel().wl_surface()), serial);
-                            window.set_activated(true);
+                if wl_pointer::ButtonState::Pressed == button_state && !pointer.is_grabbed() {
+                    if let Some(window) = self.space.window_under(self.pointer_location).cloned() {
+                        self.space.raise_window(&window, true);
+                        keyboard.set_focus(dh, Some(window.toplevel().wl_surface()), serial);
+                        window.set_activated(true);
+                        window.configure(dh);
+                    } else {
+                        self.space.windows().for_each(|window| {
+                            window.set_activated(false);
                             window.configure(dh);
-                        } else {
-                            self.space.windows().for_each(|window| {
-                                window.set_activated(false);
-                                window.configure(dh);
-                            });
-                            keyboard.set_focus(dh, None, serial);
-                        }
+                        });
+                        keyboard.set_focus(dh, None, serial);
                     }
                 };
 
@@ -98,6 +97,7 @@ impl Smallvil {
                 );
             }
             InputEvent::PointerAxis { event, .. } => {
+                // TODO: From trait
                 let source = match event.source() {
                     AxisSource::Continuous => wl_pointer::AxisSource::Continuous,
                     AxisSource::Finger => wl_pointer::AxisSource::Finger,
