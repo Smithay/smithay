@@ -3,12 +3,12 @@ use std::time::Duration;
 use calloop::timer::Timer;
 use smithay::{
     backend::{
-        renderer::{gles2::Gles2Renderer, Frame, Renderer},
-        winit::{self, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
+        renderer::gles2::Gles2Renderer,
+        winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
     },
     desktop::space::SurfaceTree,
     reexports::{calloop::EventLoop, wayland_server::protocol::wl_output},
-    utils::{Rectangle, Transform},
+    utils::Rectangle,
     wayland::output::{Mode, Output, PhysicalProperties},
 };
 
@@ -53,7 +53,7 @@ pub fn run_winit(
 
     state.space.map_output(&output, 1.0, (0, 0));
 
-    std::env::set_var("WAYLAND_DISPLAY", "wayland-5");
+    std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 
     let mut full_redraw = 0u8;
 
@@ -61,7 +61,6 @@ pub fn run_winit(
 
     timer.handle().add_timeout(Duration::ZERO, ());
     event_loop.handle().insert_source(timer, move |_, timer, data| {
-        // run_test(&mut backend, &mut winit, data, &output);
         winit_dispatch(&mut backend, &mut winit, data, &output, &mut full_redraw).unwrap();
         timer.add_timeout(Duration::from_millis(16), ());
     })?;
@@ -79,16 +78,31 @@ pub fn winit_dispatch(
     let display = &mut data.display;
     let state = &mut data.state;
 
-    winit.dispatch_new_events(|event| match event {
+    let res = winit.dispatch_new_events(|event| match event {
         WinitEvent::Resized { size, .. } => {
-            output.change_current_state(&mut display.handle(), Some(Mode {
-                size,
-                refresh: 60_000,
-            }), None, None, None);
+            output.change_current_state(
+                &mut display.handle(),
+                Some(Mode {
+                    size,
+                    refresh: 60_000,
+                }),
+                None,
+                None,
+                None,
+            );
         }
         WinitEvent::Input(event) => state.process_input_event(display, event),
         _ => (),
-    })?;
+    });
+
+    if let Err(WinitError::WindowClosed) = res {
+        // Stop the loop
+        state.loop_signal.stop();
+
+        return Ok(());
+    } else {
+        res?;
+    }
 
     *full_redraw = full_redraw.saturating_sub(1);
 
@@ -101,7 +115,7 @@ pub fn winit_dispatch(
             .render_output::<Gles2Renderer, SurfaceTree>(
                 &mut display.handle(),
                 backend.renderer(),
-                &output,
+                output,
                 0,
                 [0.1, 0.1, 0.1, 1.0],
                 &[],
