@@ -8,7 +8,7 @@ use std::{
 };
 
 use smithay::{
-    desktop::{PopupManager, Space},
+    desktop::{PopupManager, Space, WindowSurfaceType},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
         wayland_protocols::unstable::xdg_decoration,
@@ -107,7 +107,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                         if token_data.timestamp.elapsed().as_secs() < 10 {
                             // Just grant the wish
                             let mut space = anvil_state.space.borrow_mut();
-                            let w = space.window_for_surface(&surface).cloned();
+                            let w = space
+                                .window_for_surface(&surface, WindowSurfaceType::TOPLEVEL)
+                                .cloned();
                             if let Some(window) = w {
                                 space.raise_window(&window, true);
                             }
