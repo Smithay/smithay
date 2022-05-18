@@ -4,7 +4,7 @@
 use crate::utils::Coordinate;
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
-    utils::{Buffer, Logical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
             is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
@@ -20,6 +20,7 @@ use std::{
     collections::{hash_map::Entry, HashMap},
 };
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
+
 #[derive(Default)]
 pub(crate) struct SurfaceState {
     pub(crate) commit_count: usize,
@@ -175,6 +176,21 @@ pub(crate) struct SurfaceView {
 }
 
 impl SurfaceView {
+    fn from_states(states: &SurfaceData, surface_size: Size<i32, Logical>) -> SurfaceView {
+        viewporter::ensure_viewport_valid(states, surface_size);
+        let viewport = states.cached_state.current::<viewporter::ViewportCachedState>();
+        let src = viewport
+            .src
+            .unwrap_or_else(|| Rectangle::from_loc_and_size((0.0, 0.0), surface_size.to_f64()));
+        let dst = viewport.size().unwrap_or(surface_size);
+        let offset = if states.role == Some("subsurface") {
+            states.cached_state.current::<SubsurfaceCachedState>().location
+        } else {
+            Default::default()
+        };
+        SurfaceView { src, dst, offset }
+    }
+
     #[cfg(feature = "desktop")]
     pub(crate) fn rect_to_global<N>(&self, rect: Rectangle<N, Logical>) -> Rectangle<f64, Logical>
     where
@@ -192,21 +208,6 @@ impl SurfaceView {
             self.dst.w as f64 / self.src.size.w,
             self.dst.h as f64 / self.src.size.h,
         ))
-    }
-
-    fn from_states(states: &SurfaceData, surface_size: Size<i32, Logical>) -> SurfaceView {
-        viewporter::ensure_viewport_valid(states, surface_size);
-        let viewport = states.cached_state.current::<viewporter::ViewportCachedState>();
-        let src = viewport
-            .src
-            .unwrap_or_else(|| Rectangle::from_loc_and_size((0.0, 0.0), surface_size.to_f64()));
-        let dst = viewport.size().unwrap_or(surface_size);
-        let offset = if states.role == Some("subsurface") {
-            states.cached_state.current::<SubsurfaceCachedState>().location
-        } else {
-            Default::default()
-        };
-        SurfaceView { src, dst, offset }
     }
 }
 
@@ -229,29 +230,31 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
 {
-    import_surface_tree_and(renderer, surface, log, (0, 0).into(), |_, _, _| {})
+    import_surface_tree_and(renderer, surface, 1.0, log, (0.0, 0.0).into(), |_, _, _| {})
 }
 
-fn import_surface_tree_and<F, R>(
+fn import_surface_tree_and<F, R, S>(
     renderer: &mut R,
     surface: &WlSurface,
+    scale: S,
     log: &slog::Logger,
-    location: Point<i32, Logical>,
+    location: Point<f64, Physical>,
     processor: F,
 ) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
-    F: FnMut(&WlSurface, &SurfaceData, &(Point<i32, Logical>, Point<i32, Logical>)),
+    S: Into<Scale<f64>>,
+    F: FnMut(&WlSurface, &SurfaceData, &Point<f64, Physical>),
 {
     let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
     let mut result = Ok(());
+    let scale = scale.into();
     with_surface_tree_upward(
         surface,
-        (location, (0, 0).into()),
-        |_surface, states, (location, surface_offset)| {
+        location,
+        |_surface, states, location| {
             let mut location = *location;
-            let mut surface_offset = *surface_offset;
             if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
                 let mut data_ref = data.borrow_mut();
                 let data = &mut *data_ref;
@@ -279,9 +282,8 @@ where
                 if data.textures.contains_key(&texture_id) {
                     // if yes, also process the children
                     let surface_view = data.surface_view.unwrap();
-                    location += surface_view.offset;
-                    surface_offset += surface_view.offset;
-                    TraversalAction::DoChildren((location, surface_offset))
+                    location += surface_view.offset.to_f64().to_physical(scale);
+                    TraversalAction::DoChildren(location)
                 } else {
                     // we are not displayed, so our children are neither
                     TraversalAction::SkipChildren
@@ -301,7 +303,7 @@ where
 ///
 /// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
 /// - `location` is the position the surface should be drawn at.
-/// - `damage` is the set of regions of the surface that should be drawn.
+/// - `damage` is the set of regions that should be drawn relative to the same origin as the location.
 ///
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
@@ -311,8 +313,8 @@ pub fn draw_surface_tree<R, S>(
     frame: &mut <R as Renderer>::Frame,
     surface: &WlSurface,
     scale: S,
-    location: Point<i32, Logical>,
-    damage: &[Rectangle<i32, Logical>],
+    location: Point<f64, Physical>,
+    damage: &[Rectangle<i32, Physical>],
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where
@@ -326,11 +328,11 @@ where
     let _ = import_surface_tree_and(
         renderer,
         surface,
+        scale,
         log,
         location,
-        |_surface, states, (location, surface_offset)| {
+        |_surface, states, location| {
             let mut location = *location;
-            let mut surface_offset = *surface_offset;
             if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
                 let mut data = data.borrow_mut();
                 let surface_view = data.surface_view;
@@ -343,24 +345,31 @@ where
                     .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
                 {
                     let surface_view = surface_view.unwrap();
-                    surface_offset += surface_view.offset;
-                    location += surface_view.offset;
+                    // Add the surface offset again to the location as
+                    // with_surface_tree_upward only passes the updated
+                    // location to its children
+                    location += surface_view.offset.to_f64().to_physical(scale);
+
+                    let dst = Rectangle::from_loc_and_size(
+                        location.to_i32_round(),
+                        ((surface_view.dst.to_f64().to_physical(scale).to_point() + location).to_i32_round()
+                            - location.to_i32_round())
+                        .to_size(),
+                    );
 
                     let damage = damage
                         .iter()
                         .cloned()
                         // first move the damage by the surface offset in logical space
+                        .map(|geo| geo.to_f64())
+                        // then clamp to surface size again in logical space
+                        .flat_map(|geo| geo.intersection(dst))
+                        // lastly transform it into physical space
                         .map(|mut geo| {
-                            // make the damage relative to the surface
-                            geo.loc -= surface_offset;
+                            geo.loc -= dst.loc;
                             geo
                         })
-                        // then clamp to surface size again in logical space
-                        .flat_map(|geo| {
-                            geo.intersection(Rectangle::from_loc_and_size((0, 0), surface_view.dst))
-                        })
-                        // lastly transform it into physical space
-                        .map(|geo| geo.to_f64().to_physical(scale))
+                        .map(|geo| geo.to_f64())
                         .collect::<Vec<_>>();
 
                     if damage.is_empty() {
@@ -375,12 +384,14 @@ where
                             .to_logical(buffer_scale, buffer_transform)
                             .to_f64(),
                     );
-                    let dst = Rectangle::from_loc_and_size(location, surface_view.dst)
-                        .to_f64()
-                        .to_physical(scale);
-                    if let Err(err) =
-                        frame.render_texture_from_to(texture, src, dst, &damage, buffer_transform, 1.0)
-                    {
+                    if let Err(err) = frame.render_texture_from_to(
+                        texture,
+                        src,
+                        dst.to_f64(),
+                        &damage,
+                        buffer_transform,
+                        1.0,
+                    ) {
                         result = Err(err);
                     }
                 }

@@ -1155,18 +1155,11 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     #[inline]
     pub fn overlaps(self, other: impl Into<Rectangle<N, Kind>>) -> bool {
         let other = other.into();
-        // if the rectangle is not outside of the other
-        // they must overlap
-        !(
-            // self is left of other
-            self.loc.x.saturating_add(self.size.w) < other.loc.x
-            // self is right of other
-            ||  self.loc.x > other.loc.x.saturating_add(other.size.w)
-            // self is above of other
-            ||  self.loc.y.saturating_add(self.size.h) < other.loc.y
-            // self is below of other
-            ||  self.loc.y > other.loc.y.saturating_add(other.size.h)
-        )
+
+        self.loc.x <= other.loc.x.saturating_add(other.size.w)
+            && other.loc.x <= self.loc.x.saturating_add(self.size.w)
+            && self.loc.y <= other.loc.y.saturating_add(other.size.h)
+            && other.loc.y <= self.loc.y.saturating_add(self.size.h)
     }
 
     /// Clamp rectangle to min and max corners resulting in the overlapping area of two rectangles

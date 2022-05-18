@@ -252,8 +252,7 @@ pub fn run_winit(log: Logger) {
 
             match render_res {
                 Ok(Some(damage)) => {
-                    let scale = output.current_scale().fractional_scale();
-                    if let Err(err) = backend.submit(if age == 0 { None } else { Some(&*damage) }, scale) {
+                    if let Err(err) = backend.submit(if age == 0 { None } else { Some(&*damage) }) {
                         warn!(log, "Failed to submit buffer: {}", err);
                     }
                     backend.window().set_cursor_visible(cursor_visible);

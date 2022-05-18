@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager, Space},
-    utils::{Logical, Point, Rectangle, Scale},
+    utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::with_states,
         output::Output,
@@ -187,6 +187,42 @@ impl Window {
         bounding_box
     }
 
+    /// Returns the [`Physical`] bounding box over this window, it subsurfaces as well as any popups.
+    ///
+    /// This differs from using [`bbox_with_popups`] and translating the returned [`Rectangle`]
+    /// to [`Physical`] space as it rounds the subsurface and popup offsets.
+    /// See [`physical_bbox_from_surface_tree`] for more information.
+    ///
+    /// Note: You need to use a [`PopupManager`] to track popups, otherwise the bounding box
+    /// will not include the popups.
+    pub fn physical_bbox_with_popups(
+        &self,
+        location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
+    ) -> Rectangle<i32, Physical> {
+        let location = location.into();
+        let scale = scale.into();
+        let surface = match self.0.toplevel.get_surface() {
+            Some(surface) => surface,
+            None => return Rectangle::default(),
+        };
+        let mut geo = physical_bbox_from_surface_tree(surface, location, scale);
+        for (popup, p_location) in PopupManager::popups_for_surface(surface)
+            .ok()
+            .into_iter()
+            .flatten()
+        {
+            if let Some(surface) = popup.get_surface() {
+                let offset = (self.geometry().loc + p_location - popup.geometry().loc)
+                    .to_f64()
+                    .to_physical(scale)
+                    .to_i32_round();
+                geo = geo.merge(physical_bbox_from_surface_tree(surface, location + offset, scale));
+            }
+        }
+        geo
+    }
+
     /// Activate/Deactivate this window
     pub fn set_activated(&self, active: bool) -> bool {
         match self.0.toplevel {
@@ -280,14 +316,15 @@ impl Window {
     /// If `for_values` is `Some(_)` it will only return the damage on the
     /// first call for a given [`Space`] and [`Output`], if the buffer hasn't changed.
     /// Subsequent calls will return an empty vector until the buffer is updated again.
-    pub fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
+    pub fn accumulated_damage(
+        &self,
+        location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
+        for_values: Option<(&Space, &Output)>,
+    ) -> Vec<Rectangle<i32, Physical>> {
         let mut damage = Vec::new();
         if let Some(surface) = self.0.toplevel.get_surface() {
-            damage.extend(
-                damage_from_surface_tree(surface, (0, 0), for_values)
-                    .into_iter()
-                    .flat_map(|rect| rect.intersection(self.bbox())),
-            );
+            damage.extend(damage_from_surface_tree(surface, location, scale, for_values));
         }
         damage
     }
@@ -330,14 +367,14 @@ pub fn draw_window<R, P, S>(
     window: &Window,
     scale: S,
     location: P,
-    damage: &[Rectangle<i32, Logical>],
+    damage: &[Rectangle<i32, Physical>],
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
     S: Into<Scale<f64>>,
-    P: Into<Point<i32, Logical>>,
+    P: Into<Point<f64, Physical>>,
 {
     let location = location.into();
     let scale = scale.into();
@@ -362,14 +399,14 @@ pub fn draw_window_popups<R, S, P>(
     window: &Window,
     scale: S,
     location: P,
-    damage: &[Rectangle<i32, Logical>],
+    damage: &[Rectangle<i32, Physical>],
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
     S: Into<Scale<f64>>,
-    P: Into<Point<i32, Logical>>,
+    P: Into<Point<f64, Physical>>,
 {
     let location = location.into();
     if let Some(surface) = window.toplevel().get_surface() {

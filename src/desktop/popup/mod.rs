@@ -9,7 +9,7 @@ use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
-    utils::{Logical, Point, Rectangle, Scale},
+    utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::with_states,
         shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceRoleAttributes},
@@ -114,13 +114,13 @@ pub fn draw_popups<R, P1, P2, S>(
     surface_location: P1,
     offset: P2,
     scale: S,
-    damage: &[Rectangle<i32, Logical>],
+    damage: &[Rectangle<i32, Physical>],
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
-    P1: Into<Point<i32, Logical>>,
+    P1: Into<Point<f64, Physical>>,
     P2: Into<Point<i32, Logical>>,
     S: Into<Scale<f64>>,
 {
@@ -133,16 +133,10 @@ where
         .flatten()
     {
         if let Some(surface) = popup.get_surface() {
-            let offset = offset + p_location - popup.geometry().loc;
-            let damage = damage
-                .iter()
-                .cloned()
-                .map(|mut geo| {
-                    geo.loc -= offset;
-                    geo
-                })
-                .collect::<Vec<_>>();
-            draw_surface_tree(renderer, frame, surface, scale, location + offset, &damage, log)?;
+            let offset = (offset + p_location - popup.geometry().loc)
+                .to_f64()
+                .to_physical(scale);
+            draw_surface_tree(renderer, frame, surface, scale, location + offset, damage, log)?;
         }
     }
     Ok(())

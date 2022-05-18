@@ -3,7 +3,7 @@
 use crate::{
     backend::renderer::utils::SurfaceState,
     desktop::Space,
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::{
             with_surface_tree_downward, with_surface_tree_upward, SurfaceAttributes, TraversalAction,
@@ -84,6 +84,59 @@ where
     bounding_box
 }
 
+/// Returns the physical bounding box of a given surface and all its subsurfaces.
+///
+/// - `location` can be set to offset the returned bounding box.
+/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
+///
+/// This differs from using [`bbox_from_surface_tree`] and translating the returned [`Rectangle`]
+/// to [`Physical`] space as it internally uses the same rounding algorithm as [`damage_from_surface_tree`]
+/// and [`crate::backend::renderer::utils::draw_surface_tree`].
+pub fn physical_bbox_from_surface_tree<P, S>(
+    surface: &wl_surface::WlSurface,
+    location: P,
+    scale: S,
+) -> Rectangle<i32, Physical>
+where
+    P: Into<Point<f64, Physical>>,
+    S: Into<Scale<f64>>,
+{
+    let location = location.into();
+    let scale = scale.into();
+    let mut bounding_box = Rectangle::from_loc_and_size(location.to_i32_round(), (0, 0));
+    with_surface_tree_downward(
+        surface,
+        location,
+        |_, states, location: &Point<f64, Physical>| {
+            let mut location = *location;
+            let data = states.data_map.get::<RefCell<SurfaceState>>();
+
+            if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
+                location += surface_view.offset.to_f64().to_physical(scale);
+
+                let dst = Rectangle::from_loc_and_size(
+                    location.to_i32_round(),
+                    ((surface_view.dst.to_f64().to_physical(scale).to_point() + location).to_i32_round()
+                        - location.to_i32_round())
+                    .to_size(),
+                );
+
+                // Update the bounding box.
+                bounding_box = bounding_box.merge(dst);
+
+                TraversalAction::DoChildren(location)
+            } else {
+                // If the parent surface is unmapped, then the child surfaces are hidden as
+                // well, no need to consider them here.
+                TraversalAction::SkipChildren
+            }
+        },
+        |_, _, _| {},
+        |_, _, _| true,
+    );
+    bounding_box
+}
+
 /// Returns the damage rectangles of the current buffer for a given surface and its subsurfaces.
 ///
 /// - `location` can be set to offset the returned bounding box.
@@ -94,19 +147,21 @@ where
 pub fn damage_from_surface_tree<P>(
     surface: &wl_surface::WlSurface,
     location: P,
+    scale: impl Into<Scale<f64>>,
     key: Option<(&Space, &Output)>,
-) -> Vec<Rectangle<i32, Logical>>
+) -> Vec<Rectangle<i32, Physical>>
 where
-    P: Into<Point<i32, Logical>>,
+    P: Into<Point<f64, Physical>>,
 {
     use super::space::SpaceOutputTuple;
 
+    let scale = scale.into();
     let mut damage = Vec::new();
     let key = key.map(|x| SpaceOutputTuple::from(x).owned_hash());
     with_surface_tree_upward(
         surface,
         location.into(),
-        |_surface, states, location| {
+        |_surface, states, location: &Point<f64, Physical>| {
             let mut location = *location;
 
             if let Some(surface_view) = states
@@ -114,7 +169,7 @@ where
                 .get::<RefCell<SurfaceState>>()
                 .and_then(|d| d.borrow().surface_view)
             {
-                location += surface_view.offset;
+                location += surface_view.offset.to_f64().to_physical(scale);
                 TraversalAction::DoChildren(location)
             } else {
                 TraversalAction::SkipChildren
@@ -130,7 +185,18 @@ where
                     .unwrap_or(true)
                 {
                     if let Some(surface_view) = data.surface_view {
-                        location += surface_view.offset;
+                        // Add the surface offset again to the location as
+                        // with_surface_tree_upward only passes the updated
+                        // location to its children
+                        location += surface_view.offset.to_f64().to_physical(scale);
+
+                        let dst = Rectangle::from_loc_and_size(
+                            location.to_i32_round(),
+                            ((surface_view.dst.to_f64().to_physical(scale).to_point() + location)
+                                .to_i32_round()
+                                - location.to_i32_round())
+                            .to_size(),
+                        );
 
                         let new_damage = key
                             .as_ref()
@@ -158,10 +224,21 @@ where
                                 // then crop by the surface view (viewporter for example could define a src rect)
                                 .intersection(surface_view.src)
                                 // move and scale the cropped rect (viewporter could define a dst size)
-                                .map(|rect| surface_view.rect_to_global(rect).to_i32_up())
+                                .map(|rect| surface_view.rect_to_global(rect).to_i32_up::<i32>())
+                                // now bring the damage to physical space
+                                .map(|rect| {
+                                    // We calculate the scale between to rounded
+                                    // surface size and the scaled surface size
+                                    // and use it to scale the damage to the rounded
+                                    // surface size by multiplying the output scale
+                                    // with the result.
+                                    let surface_scale =
+                                        dst.size.to_f64() / surface_view.dst.to_f64().to_physical(scale);
+                                    rect.to_physical_precise_up(surface_scale * scale)
+                                })
                                 // at last move the damage relative to the surface
                                 .map(|mut rect| {
-                                    rect.loc += location;
+                                    rect.loc += dst.loc;
                                     rect
                                 })
                         }));
@@ -273,12 +350,16 @@ pub(crate) fn output_update(
             let mut location = *location;
             let data = states.data_map.get::<RefCell<SurfaceState>>();
 
+            // If the parent is unmapped we still have to traverse
+            // our children to send a leave events
             if *parent_unmapped {
                 TraversalAction::DoChildren((location, true))
             } else if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
                 location += surface_view.offset;
                 TraversalAction::DoChildren((location, false))
             } else {
+                // If we are unmapped we still have to traverse
+                // our children to send leave events
                 TraversalAction::DoChildren((location, true))
             }
         },
@@ -286,7 +367,8 @@ pub(crate) fn output_update(
             let mut location = *location;
 
             if *parent_unmapped {
-                // The parent is unmapped so we are
+                // The parent is unmapped, just send a leave event
+                // if we were previously mapped and exit early
                 output_leave(output, surface_list, wl_surface, logger);
                 return;
             }
