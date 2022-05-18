@@ -6,7 +6,10 @@ use slog::Logger;
 use smithay::{
     backend::renderer::{Frame, ImportAll, Renderer, Texture},
     desktop::space::{RenderElement, SpaceOutputTuple, SurfaceTree},
-    reexports::wayland_server::protocol::wl_surface,
+    reexports::wayland_server::{
+        protocol::wl_surface,
+        DisplayHandle,
+    },
     utils::{Logical, Point, Rectangle, Size, Transform},
     wayland::{
         compositor::{get_role, with_states},
@@ -30,28 +33,15 @@ pub fn draw_cursor(
     log: &Logger,
 ) -> SurfaceTree {
     let mut position = location.into();
-    let ret = with_states(&surface, |states| {
-        Some(
-            states
-                .data_map
-                .get::<Mutex<CursorImageAttributes>>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .hotspot,
-        )
-    })
-    .unwrap_or(None);
-    position -= match ret {
-        Some(h) => h,
-        None => {
-            warn!(
-                log,
-                "Trying to display as a cursor a surface that does not have the CursorImage role."
-            );
-            (0, 0).into()
-        }
-    };
+    position -= with_states(&surface, |states| {
+        states
+            .data_map
+            .get::<Mutex<CursorImageAttributes>>()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .hotspot
+    });
     SurfaceTree {
         surface,
         position,
@@ -113,6 +103,7 @@ where
 
     fn draw(
         &self,
+        dh: &DisplayHandle,
         _renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
         scale: f64,
