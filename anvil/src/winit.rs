@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
+use std::{sync::atomic::Ordering, time::Duration};
 
 #[cfg(feature = "debug")]
 use image::GenericImageView;
@@ -7,13 +7,17 @@ use slog::Logger;
 use smithay::backend::renderer::{gles2::Gles2Texture, ImportMem};
 #[cfg(feature = "egl")]
 use smithay::{
-    backend::renderer::{ImportDma, ImportEgl},
-    wayland::dmabuf::init_dmabuf_global,
+    backend::{
+        allocator::dmabuf::Dmabuf,
+        renderer::{ImportDma, ImportEgl},
+    },
+    wayland::dmabuf::{DmabufState, DmabufHandler, DmabufGlobal, ImportError},
+    delegate_dmabuf,
 };
 use smithay::{
     backend::{
         renderer::gles2::Gles2Renderer,
-        winit::{self, WinitEvent},
+        winit::{self, WinitGraphicsBackend, WinitEvent},
         SwapBuffersError,
     },
     desktop::space::RenderError,
@@ -28,22 +32,41 @@ use smithay::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
+    utils::IsAlive,
 };
 
 use crate::{
     drawing::*,
-    state::{AnvilState, Backend},
+    state::{AnvilState, Backend, CalloopData},
 };
 
 pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData {
+    backend: WinitGraphicsBackend,
+    #[cfg(feature = "egl")]
+    dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
+    full_redraw: u8,
     #[cfg(feature = "debug")]
     fps_texture: Gles2Texture,
     #[cfg(feature = "debug")]
     pub fps: fps_ticker::Fps,
-    full_redraw: u8,
 }
+
+#[cfg(feature = "egl")]
+impl DmabufHandler for AnvilState<WinitData> {
+    fn dmabuf_state(&mut self) -> &mut DmabufState {
+        &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
+    }
+
+    fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
+        self.backend_data.backend.renderer().import_dmabuf(&dmabuf, None)
+            .map(|_| ())
+            .map_err(|_| ImportError::Failed)
+    }
+}
+#[cfg(feature = "egl")]
+delegate_dmabuf!(AnvilState<WinitData>);
 
 impl Backend for WinitData {
     fn seat_name(&self) -> String {
@@ -57,80 +80,73 @@ impl Backend for WinitData {
 
 pub fn run_winit(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
-    let display = Rc::new(RefCell::new(Display::new()));
+    let mut display = Display::new().unwrap();
 
-    let (backend, mut winit) = match winit::init(log.clone()) {
+    let (mut backend, mut winit) = match winit::init(log.clone()) {
         Ok(ret) => ret,
         Err(err) => {
             slog::crit!(log, "Failed to initialize Winit backend: {}", err);
             return;
         }
     };
-    let backend = Rc::new(RefCell::new(backend));
+    let size = backend.window_size().physical_size;
 
-    #[cfg(feature = "egl")]
-    if backend
-        .borrow_mut()
-        .renderer()
-        .bind_wl_display(&display.borrow())
-        .is_ok()
-    {
-        info!(log, "EGL hardware-acceleration enabled");
-        let dmabuf_formats = backend
-            .borrow_mut()
+    let data = {
+        #[cfg(feature = "egl")]
+        let dmabuf_state = if backend
             .renderer()
-            .dmabuf_formats()
-            .cloned()
-            .collect::<Vec<_>>();
-        let backend = backend.clone();
-        init_dmabuf_global(
-            &mut display.borrow_mut(),
-            dmabuf_formats,
-            move |buffer, _| {
-                backend
-                    .borrow_mut()
-                    .renderer()
-                    .import_dmabuf(buffer, None)
-                    .is_ok()
-            },
-            log.clone(),
-        );
-    };
-
-    let size = backend.borrow().window_size().physical_size;
-
-    /*
-     * Initialize the globals
-     */
-
-    #[cfg(feature = "debug")]
-    let fps_image =
-        image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
-            .decode()
-            .unwrap();
-    let data = WinitData {
+            .bind_wl_display(&display)
+            .is_ok()
+        {
+            info!(log, "EGL hardware-acceleration enabled");
+            let dmabuf_formats = backend
+                .renderer()
+                .dmabuf_formats()
+                .cloned()
+                .collect::<Vec<_>>();
+            let mut state = DmabufState::new();
+            let global = state.create_global(
+                &mut display,
+                dmabuf_formats,
+                log.clone(),
+            );
+            Some((state, global))
+        } else {
+            None
+        };
         #[cfg(feature = "debug")]
-        fps_texture: backend
-            .borrow_mut()
-            .renderer()
-            .import_memory(
-                &fps_image.to_rgba8(),
-                (fps_image.width() as i32, fps_image.height() as i32).into(),
-                false,
-            )
-            .expect("Unable to upload FPS texture"),
-        #[cfg(feature = "debug")]
-        fps: fps_ticker::Fps::default(),
-        full_redraw: 0,
+        let fps_image =
+            image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
+                .decode()
+                .unwrap();
+
+        WinitData {
+            backend,
+            #[cfg(feature = "egl")]
+            dmabuf_state,
+            full_redraw: 0,
+            #[cfg(feature = "debug")]
+            fps_texture: backend
+                .borrow_mut()
+                .renderer()
+                .import_memory(
+                    &fps_image.to_rgba8(),
+                    (fps_image.width() as i32, fps_image.height() as i32).into(),
+                    false,
+                )
+                .expect("Unable to upload FPS texture"),
+            #[cfg(feature = "debug")]
+            fps: fps_ticker::Fps::default(),
+        }
     };
-    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone(), true);
+    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
 
     let mode = Mode {
         size,
         refresh: 60_000,
     };
-
-    let output = Output::new(
+    let (output, _global) = Output::new(
+        &mut display,
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
@@ -140,15 +156,15 @@ pub fn run_winit(log: Logger) {
         },
         log.clone(),
     );
-    let _global = output.create_global(&mut *display.borrow_mut());
     output.change_current_state(
+        &mut display.handle(),
         Some(mode),
         Some(wl_output::Transform::Flipped180),
         None,
         Some((0, 0).into()),
     );
     output.set_preferred(mode);
-    state.space.borrow_mut().map_output(&output, (0, 0));
+    state.space.map_output(&output, (0, 0));
 
     let start_time = std::time::Instant::now();
 
@@ -161,7 +177,7 @@ pub fn run_winit(log: Logger) {
         if winit
             .dispatch_new_events(|event| match event {
                 WinitEvent::Resized { size, .. } => {
-                    let mut space = state.space.borrow_mut();
+                    let mut dh = display.handle();
                     // We only have one output
                     let output = space.outputs().next().unwrap().clone();
                     space.map_output(&output, (0, 0));
@@ -169,13 +185,11 @@ pub fn run_winit(log: Logger) {
                         size,
                         refresh: 60_000,
                     };
-                    output.change_current_state(Some(mode), None, None, None);
+                    output.change_current_state(&mut dh, Some(mode), None, None, None);
                     output.set_preferred(mode);
-                    crate::shell::fixup_positions(&mut *space);
+                    crate::shell::fixup_positions(&mut dh, &mut state.space);
                 }
-
-                WinitEvent::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
-
+                WinitEvent::Input(event) => state.process_input_event_windowed(&mut display.handle(), event, OUTPUT_NAME),
                 _ => (),
             })
             .is_err()
@@ -186,16 +200,15 @@ pub fn run_winit(log: Logger) {
 
         // drawing logic
         {
-            let mut backend = backend.borrow_mut();
+            let mut backend = &mut state.backend_data.backend;
             let cursor_visible: bool;
 
             let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();
-            let dnd_guard = state.dnd_icon.lock().unwrap();
             let mut cursor_guard = state.cursor_status.lock().unwrap();
 
             // draw the dnd icon if any
-            if let Some(ref surface) = *dnd_guard {
-                if surface.as_ref().is_alive() {
+            if let Some(surface) = state.dnd_icon.as_ref() {
+                if surface.alive() {
                     elements.push(
                         draw_dnd_icon(surface.clone(), state.pointer_location.to_i32_round(), &log).into(),
                     );
@@ -206,7 +219,7 @@ pub fn run_winit(log: Logger) {
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
             if let CursorImageStatus::Image(ref surface) = *cursor_guard {
-                reset = !surface.as_ref().is_alive();
+                reset = !surface.alive();
             }
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
@@ -234,11 +247,13 @@ pub fn run_winit(log: Logger) {
             } else {
                 backend.buffer_age().unwrap_or(0)
             };
+            let space = &mut state.space;
             let render_res = backend.bind().and_then(|_| {
                 let renderer = backend.renderer();
                 crate::render::render_output(
+                    &mut display.handle(),
                     &output,
-                    &mut *state.space.borrow_mut(),
+                    space,
                     renderer,
                     age,
                     &*elements,
@@ -269,18 +284,23 @@ pub fn run_winit(log: Logger) {
         // Send frame events so that client start drawing their next frame
         state
             .space
-            .borrow()
-            .send_frames(start_time.elapsed().as_millis() as u32);
+            .send_frames(&mut display.handle(),start_time.elapsed().as_millis() as u32);
 
-        if event_loop
-            .dispatch(Some(Duration::from_millis(16)), &mut state)
-            .is_err()
+        let mut calloop_data = CalloopData {
+            state,
+            display,
+        };
+        let result = event_loop
+            .dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
+        CalloopData { state, display } = calloop_data;
+
+        if result.is_err()
         {
             state.running.store(false, Ordering::SeqCst);
         } else {
-            state.space.borrow_mut().refresh();
-            state.popups.borrow_mut().cleanup();
-            display.borrow_mut().flush_clients(&mut state);
+            state.space.refresh(&mut display.handle());
+            state.popups.cleanup();
+            display.flush_clients().unwrap();
         }
 
         #[cfg(feature = "debug")]
