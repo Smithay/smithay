@@ -7,8 +7,9 @@ use crate::Smallvil;
 // Wl Seat
 //
 
-use smithay::delegate_seat;
+use smithay::wayland::data_device::{ClientDndGrabHandler, DataDeviceHandler, ServerDndGrabHandler};
 use smithay::wayland::seat::{SeatHandler, SeatState};
+use smithay::{delegate_data_device, delegate_seat};
 
 use wayland_server::{delegate_dispatch, delegate_global_dispatch};
 
@@ -19,6 +20,21 @@ impl SeatHandler for Smallvil {
 }
 
 delegate_seat!(Smallvil);
+
+//
+// Wl Data Device
+//
+
+impl DataDeviceHandler for Smallvil {
+    fn data_device_state(&self) -> &smithay::wayland::data_device::DataDeviceState {
+        &self.data_device_state
+    }
+}
+
+impl ClientDndGrabHandler for Smallvil {}
+impl ServerDndGrabHandler for Smallvil {}
+
+delegate_data_device!(Smallvil);
 
 //
 // Wl Output & Xdg Output

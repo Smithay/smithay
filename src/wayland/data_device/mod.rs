@@ -74,7 +74,8 @@ pub trait DataDeviceHandler: Sized + ClientDndGrabHandler + ServerDndGrabHandler
     ///
     /// * `mime_type` - the requested mime type
     /// * `fd` - the fd to write into
-    fn send_selection(&mut self, mime_type: String, fd: RawFd);
+    #[allow(unused_variables)]
+    fn send_selection(&mut self, mime_type: String, fd: RawFd) {}
 }
 
 /// Events that are generated during client initiated drag'n'drop
@@ -121,7 +122,8 @@ pub trait ServerDndGrabHandler {
     ///
     /// * `mime_type` - The requested mime type
     /// * `fd` - The FD to write into
-    fn send(&mut self, mime_type: String, fd: RawFd);
+    #[allow(unused_variables)]
+    fn send(&mut self, mime_type: String, fd: RawFd) {}
 
     /// The client has finished interacting with the resource
     ///
