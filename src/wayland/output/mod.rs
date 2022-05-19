@@ -467,3 +467,20 @@ impl PartialEq for Output {
 }
 
 impl Eq for Output {}
+
+#[allow(missing_docs)] // TODO
+#[macro_export]
+macro_rules! delegate_output {
+    ($ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
+            $crate::reexports::wayland_server::protocol::wl_output::WlOutput,
+            $crate::reexports::wayland_protocols::unstable::xdg_output::v1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1
+        ] => $crate::wayland::output::OutputManagerState);
+
+        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
+            $crate::reexports::wayland_server::protocol::wl_output::WlOutput,
+            $crate::reexports::wayland_protocols::unstable::xdg_output::v1::server::zxdg_output_v1::ZxdgOutputV1,
+            $crate::reexports::wayland_protocols::unstable::xdg_output::v1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1
+        ] => $crate::wayland::output::OutputManagerState);
+    };
+}
