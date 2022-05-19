@@ -37,7 +37,12 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         event: &ButtonEvent,
     ) {
         handle.button(dh, event.button, event.state, event.serial, event.time);
-        if handle.current_pressed().is_empty() {
+
+        // The button is a button code as defined in the
+        // Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
+        const BTN_LEFT: u32 = 0x110;
+
+        if !handle.current_pressed().contains(&BTN_LEFT) {
             // No more buttons are pressed, release the grab.
             handle.unset_grab(dh, event.serial, event.time);
         }

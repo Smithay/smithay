@@ -21,12 +21,16 @@ impl Smallvil {
         match event {
             InputEvent::Keyboard { event, .. } => {
                 let cx = &mut display.handle();
+
+                let serial = SERIAL_COUNTER.next_serial();
+                let time = Event::time(&event);
+
                 self.seat.get_keyboard().unwrap().input::<(), _>(
                     cx,
                     event.key_code(),
                     event.state(),
-                    0.into(),
-                    0,
+                    serial,
+                    time,
                     |_, _| FilterResult::Forward,
                 );
             }
