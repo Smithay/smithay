@@ -20,13 +20,13 @@ impl Smallvil {
     ) {
         match event {
             InputEvent::Keyboard { event, .. } => {
-                let cx = &mut display.handle();
+                let dh = &mut display.handle();
 
                 let serial = SERIAL_COUNTER.next_serial();
                 let time = Event::time(&event);
 
                 self.seat.get_keyboard().unwrap().input::<(), _>(
-                    cx,
+                    dh,
                     event.key_code(),
                     event.state(),
                     serial,
@@ -134,8 +134,8 @@ impl Smallvil {
                     frame = frame.stop(wl_pointer::Axis::VerticalScroll);
                 }
 
-                let cx = &mut display.handle();
-                self.seat.get_pointer().unwrap().axis(self, cx, frame);
+                let dh = &mut display.handle();
+                self.seat.get_pointer().unwrap().axis(self, dh, frame);
             }
             _ => {}
         }
