@@ -27,9 +27,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut data = CalloopData { state, display };
 
-    crate::winit::run_winit(&mut event_loop, &mut data, log)?;
+    crate::winit::init_winit(&mut event_loop, &mut data, log)?;
 
-    std::process::Command::new("weston-terminal").spawn().ok();
+    let mut args = std::env::args().skip(1);
+    let flag = args.next();
+    let arg = args.next();
+
+    match (flag.as_deref(), arg) {
+        (Some("-c") | Some("--command"), Some(command)) => {
+            std::process::Command::new(command).spawn().ok();
+        }
+        _ => {
+            std::process::Command::new("weston-terminal").spawn().ok();
+        }
+    }
 
     event_loop.run(None, &mut data, move |_| {
         // Smallvil is running

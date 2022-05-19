@@ -16,7 +16,7 @@ use slog::Logger;
 
 use crate::CalloopData;
 
-pub fn run_winit(
+pub fn init_winit(
     event_loop: &mut EventLoop<CalloopData>,
     data: &mut CalloopData,
     log: Logger,

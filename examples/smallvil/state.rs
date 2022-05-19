@@ -1,4 +1,4 @@
-use std::{os::unix::prelude::AsRawFd, sync::Arc};
+use std::{ffi::OsString, os::unix::prelude::AsRawFd, sync::Arc};
 
 use calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction};
 use slog::Logger;
@@ -17,7 +17,7 @@ use smithay::{
 use wayland_server::{
     backend::{ClientData, ClientId, DisconnectReason},
     protocol::wl_surface::WlSurface,
-    Client, Display,
+    Display,
 };
 
 use crate::CalloopData;
@@ -26,8 +26,7 @@ pub struct Smallvil {
     pub pointer_location: Point<f64, Logical>,
 
     pub start_time: std::time::Instant,
-    pub clients: Vec<Client>,
-    pub socket_name: String,
+    pub socket_name: OsString,
 
     pub space: Space,
     pub loop_signal: LoopSignal,
@@ -80,7 +79,6 @@ impl Smallvil {
             pointer_location: Default::default(),
 
             start_time,
-            clients: Vec::new(),
 
             space,
             loop_signal,
@@ -96,17 +94,13 @@ impl Smallvil {
         }
     }
 
-    fn init_wayland_listener(event_loop: &mut EventLoop<CalloopData>, log: slog::Logger) -> String {
+    fn init_wayland_listener(event_loop: &mut EventLoop<CalloopData>, log: slog::Logger) -> OsString {
         // Creates a new listening socket, automatically choosing the next available `wayland` socket name.
         let listening_socket = ListeningSocketSource::new_auto(log).unwrap();
 
         // Get the name of the listening socket.
         // Clients will connect to this socket.
-        let socket_name = listening_socket
-            .socket_name()
-            .to_os_string()
-            .into_string()
-            .unwrap();
+        let socket_name = listening_socket.socket_name().to_os_string();
 
         let handle = event_loop.handle();
 
