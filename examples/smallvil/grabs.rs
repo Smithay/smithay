@@ -51,11 +51,11 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
     fn axis(
         &mut self,
         _data: &mut Smallvil,
-        cx: &mut DisplayHandle<'_>,
+        dh: &mut DisplayHandle<'_>,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
         details: AxisFrame,
     ) {
-        handle.axis(cx, details)
+        handle.axis(dh, details)
     }
 
     fn start_data(&self) -> &PointerGrabStartData {
