@@ -7,6 +7,7 @@ use smithay::{
     utils::{Logical, Point},
     wayland::{
         compositor::CompositorState,
+        data_device::DataDeviceState,
         output::OutputManagerState,
         seat::{Seat, SeatState},
         shell::xdg::XdgShellState,
@@ -38,6 +39,8 @@ pub struct Smallvil {
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Smallvil>,
+    pub data_device_state: DataDeviceState,
+
     pub seat: Seat<Self>,
 }
 
@@ -50,6 +53,7 @@ impl Smallvil {
         let shm_state = ShmState::new(display, vec![], log.clone());
         let output_manager_state = OutputManagerState::new_with_xdg_output(display);
         let seat_state = SeatState::new();
+        let data_device_state = DataDeviceState::new(display, log.clone());
 
         // A seat is a group of keyboards, pointer and touch devices.
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
@@ -90,6 +94,7 @@ impl Smallvil {
             shm_state,
             output_manager_state,
             seat_state,
+            data_device_state,
             seat,
         }
     }
