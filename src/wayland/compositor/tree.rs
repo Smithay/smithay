@@ -164,7 +164,7 @@ impl PrivateSurfaceData {
             .get::<Mutex<PrivateSurfaceData>>()
             .unwrap();
         let mut my_data = my_data_mutex.lock().unwrap();
-        if my_data.public_data.role.is_some() {
+        if my_data.public_data.role.is_some() && my_data.public_data.role != Some(role) {
             return Err(AlreadyHasRole);
         }
         my_data.public_data.role = Some(role);
