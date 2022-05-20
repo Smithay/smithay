@@ -97,3 +97,6 @@ required-features = ["wayland_frontend"]
 [[example]]
 name = "compositor"
 required-features = ["wayland_frontend"]
+
+[[example]]
+name = "smallvil"
