@@ -1,14 +1,12 @@
-use std::{
-    cell::RefCell, collections::HashMap, convert::TryFrom, os::unix::net::UnixStream, rc::Rc, sync::Arc,
-};
+use std::{collections::HashMap, convert::TryFrom, os::unix::net::UnixStream, sync::Arc};
 
+use crate::AnvilState;
 use smithay::{
     desktop::{Kind, Space, Window, X11Surface},
-    reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
+    reexports::wayland_server::{protocol::wl_surface::WlSurface, Client, Display, DisplayHandle, Resource},
     utils::{x11rb::X11Source, Logical, Point},
     wayland::compositor::give_role,
 };
-
 use x11rb::{
     connection::Connection as _,
     errors::ReplyOrIdError,
@@ -23,31 +21,31 @@ use x11rb::{
     rust_connection::{DefaultStream, RustConnection},
 };
 
-use crate::AnvilState;
-
 impl<BackendData: 'static> AnvilState<BackendData> {
-    pub fn start_xwayland(&mut self) {
-        if let Err(e) = self.xwayland.start() {
+    pub fn start_xwayland(&mut self, display: &mut Display<AnvilState<BackendData>>) {
+        if let Err(e) = self.xwayland.start(self.handle.clone(), display) {
             error!(self.log, "Failed to start XWayland: {}", e);
         }
     }
 
     pub fn xwayland_ready(&mut self, connection: UnixStream, client: Client) {
-        let (wm, source) = X11State::start_wm(connection, self.space.clone(), self.log.clone()).unwrap();
-        let wm = Rc::new(RefCell::new(wm));
-        client.data_map().insert_if_missing(|| Rc::clone(&wm));
+        let (wm, source) = X11State::start_wm(connection, client, self.log.clone()).unwrap();
+        self.x11_state = Some(wm);
         let log = self.log.clone();
         self.handle
-            .insert_source(source, move |event, _, _| {
-                match wm.borrow_mut().handle_event(event, &client) {
-                    Ok(()) => {}
-                    Err(err) => error!(log, "Error while handling X11 event: {}", err),
+            .insert_source(source, move |event, _, data| {
+                if let Some(x11) = data.state.x11_state.as_mut() {
+                    match x11.handle_event(event, &mut data.display.handle(), &mut data.state.space) {
+                        Ok(()) => {}
+                        Err(err) => error!(log, "Error while handling X11 event: {}", err),
+                    }
                 }
             })
             .unwrap();
     }
 
     pub fn xwayland_exited(&mut self) {
+        let _ = self.x11_state.take();
         error!(self.log, "Xwayland crashed");
     }
 }
@@ -61,18 +59,19 @@ x11rb::atom_manager! {
 }
 
 /// The actual runtime state of the XWayland integration.
-struct X11State {
+#[derive(Debug)]
+pub struct X11State {
     conn: Arc<RustConnection>,
     atoms: Atoms,
+    client: Client,
     log: slog::Logger,
     unpaired_surfaces: HashMap<u32, (X11Window, Point<i32, Logical>)>,
-    space: Rc<RefCell<Space>>,
 }
 
 impl X11State {
     fn start_wm(
         connection: UnixStream,
-        space: Rc<RefCell<Space>>,
+        client: Client,
         log: slog::Logger,
     ) -> Result<(Self, X11Source), Box<dyn std::error::Error>> {
         // Create an X11 connection. XWayland only uses screen 0.
@@ -116,15 +115,20 @@ impl X11State {
         let wm = Self {
             conn: Arc::clone(&conn),
             atoms,
+            client,
             unpaired_surfaces: Default::default(),
-            space,
             log: log.clone(),
         };
 
         Ok((wm, X11Source::new(conn, win, atoms._ANVIL_CLOSE_CONNECTION, log)))
     }
 
-    fn handle_event(&mut self, event: Event, client: &Client) -> Result<(), ReplyOrIdError> {
+    fn handle_event(
+        &mut self,
+        event: Event,
+        dh: &mut DisplayHandle<'_>,
+        space: &mut Space,
+    ) -> Result<(), ReplyOrIdError> {
         debug!(self.log, "X11: Got event {:?}", event);
         match event {
             Event::ConfigureRequest(r) => {
@@ -181,16 +185,22 @@ impl X11State {
                     };
 
                     let id = msg.data.as_data32()[0];
-                    let surface = client.get_resource::<WlSurface>(id);
-                    info!(
-                        self.log,
-                        "X11 surface {:x?} corresponds to WlSurface {:x} = {:?}", msg.window, id, surface,
-                    );
+                    let surface = self.client.object_from_protocol_id(dh, id);
+
                     match surface {
-                        None => {
+                        Err(_) => {
                             self.unpaired_surfaces.insert(id, (msg.window, location));
                         }
-                        Some(surface) => self.new_window(msg.window, surface, location),
+                        Ok(surface) => {
+                            info!(
+                                self.log,
+                                "X11 surface {:x?} corresponds to WlSurface {:x} = {:?}",
+                                msg.window,
+                                id,
+                                surface,
+                            );
+                            self.new_window(msg.window, surface, location, space);
+                        }
                     }
                 }
             }
@@ -200,7 +210,13 @@ impl X11State {
         Ok(())
     }
 
-    fn new_window(&mut self, window: X11Window, surface: WlSurface, location: Point<i32, Logical>) {
+    fn new_window(
+        &mut self,
+        window: X11Window,
+        surface: WlSurface,
+        location: Point<i32, Logical>,
+        space: &mut Space,
+    ) {
         debug!(self.log, "Matched X11 surface {:x?} to {:x?}", window, surface);
 
         if give_role(&surface, "x11_surface").is_err() {
@@ -210,22 +226,19 @@ impl X11State {
         }
 
         let x11surface = X11Surface { surface };
-        self.space
-            .borrow_mut()
-            .map_window(&Window::new(Kind::X11(x11surface)), location, true);
+        space.map_window(&Window::new(Kind::X11(x11surface)), location, true);
     }
 }
 
 // Called when a WlSurface commits.
-pub fn commit_hook(surface: &WlSurface) {
-    // Is this the Xwayland client?
-    if let Some(client) = surface.as_ref().client() {
-        if let Some(x11) = client.data_map().get::<Rc<RefCell<X11State>>>() {
-            let mut inner = x11.borrow_mut();
+pub fn commit_hook(surface: &WlSurface, dh: &mut DisplayHandle<'_>, state: &mut X11State, space: &mut Space) {
+    if let Ok(client) = dh.get_client(surface.id()) {
+        // Is this the Xwayland client?
+        if client == state.client {
             // Is the surface among the unpaired surfaces (see comment next to WL_SURFACE_ID
             // handling above)
-            if let Some((window, location)) = inner.unpaired_surfaces.remove(&surface.as_ref().id()) {
-                inner.new_window(window, surface.clone(), location);
+            if let Some((window, location)) = state.unpaired_surfaces.remove(&surface.id().protocol_id()) {
+                state.new_window(window, surface.clone(), location, space);
             }
         }
     }
