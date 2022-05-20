@@ -43,6 +43,8 @@ use smithay::{
 };
 
 #[cfg(feature = "xwayland")]
+use crate::xwayland::X11State;
+#[cfg(feature = "xwayland")]
 use smithay::xwayland::{XWayland, XWaylandEvent};
 
 pub struct CalloopData<BackendData: 'static> {
@@ -91,9 +93,10 @@ pub struct AnvilState<BackendData: 'static> {
     pub seat: Seat<AnvilState<BackendData>>,
     pub start_time: std::time::Instant,
 
-    // things we must keep alive
     #[cfg(feature = "xwayland")]
-    pub xwayland: XWayland<AnvilState<BackendData>>,
+    pub xwayland: XWayland,
+    #[cfg(feature = "xwayland")]
+    pub x11_state: Option<X11State>,
 }
 
 delegate_compositor!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
@@ -204,22 +207,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             let socket_name = source.socket_name().to_string_lossy().into_owned();
             handle
                 .insert_source(source, |client_stream, _, data| {
-                    use std::os::unix::io::AsRawFd;
-
-                    data.state
-                        .handle
-                        .insert_source(
-                            Generic::new(client_stream.as_raw_fd(), Interest::READ, Mode::Level),
-                            |_, _, data| {
-                                data.display.dispatch_clients(&mut data.state).unwrap();
-                                Ok(PostAction::Continue)
-                            },
-                        )
-                        .unwrap();
-                    data.display
-                        .handle()
-                        .insert_client(client_stream, Arc::new(ClientState));
-                    data.display.dispatch_clients(&mut data.state).unwrap();
+                    if let Err(err) = data.display.insert_client(client_stream, Arc::new(ClientState)) {
+                        slog::warn!(data.state.log, "Error adding wayland client: {}", err);
+                    };
                 })
                 .expect("Failed to init wayland socket source");
             info!(log, "Listening on wayland socket"; "name" => socket_name.clone());
@@ -228,6 +218,19 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         } else {
             None
         };
+        handle
+            .insert_source(
+                Generic::new(
+                    display.backend().lock().unwrap().poll_fd(),
+                    Interest::READ,
+                    Mode::Level,
+                ),
+                |_, _, data| {
+                    data.display.dispatch_clients(&mut data.state).unwrap();
+                    Ok(PostAction::Continue)
+                },
+            )
+            .expect("Failed to init wayland server source");
 
         // init globals
         let dh = display.handle();
@@ -267,10 +270,12 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         #[cfg(feature = "xwayland")]
         let xwayland = {
-            let (xwayland, channel) = XWayland::new(handle.clone(), display.clone(), log.clone());
-            let ret = handle.insert_source(channel, |event, _, anvil_state| match event {
-                XWaylandEvent::Ready { connection, client } => anvil_state.xwayland_ready(connection, client),
-                XWaylandEvent::Exited => anvil_state.xwayland_exited(),
+            let (xwayland, channel) = XWayland::new(log.clone());
+            let ret = handle.insert_source(channel, |event, _, data| match event {
+                XWaylandEvent::Ready {
+                    connection, client, ..
+                } => data.state.xwayland_ready(connection, client),
+                XWaylandEvent::Exited => data.state.xwayland_exited(),
             });
             if let Err(e) = ret {
                 error!(
@@ -307,6 +312,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             start_time: std::time::Instant::now(),
             #[cfg(feature = "xwayland")]
             xwayland,
+            #[cfg(feature = "xwayland")]
+            x11_state: None,
         }
     }
 }
