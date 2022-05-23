@@ -1007,7 +1007,7 @@ macro_rules! custom_elements_internal {
 /// #   fn render_texture_from_to(
 /// #       &mut self,
 /// #       texture: &Self::TextureId,
-/// #       src: Rectangle<i32, Buffer>,
+/// #       src: Rectangle<f64, Buffer>,
 /// #       dst: Rectangle<f64, Physical>,
 /// #       damage: &[Rectangle<f64, Physical>],
 /// #       src_transform: Transform,

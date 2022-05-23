@@ -1970,14 +1970,12 @@ impl Frame for Gles2Frame {
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,
-        src: Rectangle<i32, Buffer>,
+        src: Rectangle<f64, Buffer>,
         dest: Rectangle<f64, Physical>,
         damage: &[Rectangle<f64, Physical>],
         transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
-        let src = src.to_f64();
-
         let mut mat = Matrix3::<f32>::identity();
 
         // dest position and scale

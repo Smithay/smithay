@@ -360,7 +360,9 @@ impl<A: GraphicsApi> GpuManager<A> {
                     let data = &mut *data_ref;
                     let attributes = states.cached_state.current::<SurfaceAttributes>();
                     // Import a new buffer if available
-                    let surface_size = data.surface_size();
+                    let surface_size = data
+                        .buffer_dimensions
+                        .map(|d| d.to_logical(data.buffer_scale, data.buffer_transform));
                     if let Some(buffer) = data.buffer.as_ref() {
                         let surface_size = surface_size.unwrap();
                         let buffer_damage = attributes
@@ -924,7 +926,7 @@ where
                                 .render(size, dst_transform, |_renderer, frame| {
                                     frame.render_texture_from_to(
                                         &texture,
-                                        Rectangle::from_loc_and_size((0, 0), buffer_size),
+                                        Rectangle::from_loc_and_size((0, 0), buffer_size).to_f64(),
                                         Rectangle::from_loc_and_size((0, 0), size).to_f64(),
                                         &damage,
                                         dst_transform.invert(),
@@ -1011,7 +1013,7 @@ where
                         frame
                             .render_texture_from_to(
                                 &texture,
-                                Rectangle::from_loc_and_size((0, 0), mapping.1.size),
+                                Rectangle::from_loc_and_size((0, 0), mapping.1.size).to_f64(),
                                 dst.to_f64(),
                                 &[Rectangle::from_loc_and_size((0, 0), dst.size).to_f64()],
                                 Transform::Normal,
@@ -1204,7 +1206,7 @@ where
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,
-        src: Rectangle<i32, BufferCoords>,
+        src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<f64, Physical>,
         damage: &[Rectangle<f64, Physical>],
         src_transform: Transform,
@@ -1212,7 +1214,6 @@ where
     ) -> Result<(), Self::Error> {
         if let Some(texture) = texture.get::<R>(&self.node) {
             self.damage.extend(damage.iter().map(|rect| {
-                let src = src.to_f64();
                 let (x, y, w, h) = (rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
                 Rectangle::from_loc_and_size(
                     (
