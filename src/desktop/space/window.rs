@@ -4,7 +4,7 @@ use crate::{
         space::Space,
         window::{draw_window, Window},
     },
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Point, Rectangle, Scale},
     wayland::output::Output,
 };
 use std::{
@@ -82,12 +82,12 @@ impl Window {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn elem_draw<R>(
+    pub(super) fn elem_draw<R, S>(
         &self,
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
+        scale: S,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
@@ -95,6 +95,7 @@ impl Window {
     where
         R: Renderer + ImportAll,
         <R as Renderer>::TextureId: 'static,
+        S: Into<Scale<f64>>,
     {
         let res = draw_window(renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {

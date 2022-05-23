@@ -2,7 +2,7 @@ use crate::desktop::space::popup::RenderPopup;
 use crate::{
     backend::renderer::{ImportAll, Renderer, Texture},
     desktop::{space::*, utils::*},
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Point, Rectangle, Scale},
     wayland::output::Output,
 };
 use std::{
@@ -71,7 +71,7 @@ where
         &self,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
+        scale: impl Into<Scale<f64>>,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
@@ -148,7 +148,7 @@ where
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
+        scale: impl Into<Scale<f64>>,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
@@ -220,7 +220,7 @@ where
         &self,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
+        scale: impl Into<Scale<f64>>,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,

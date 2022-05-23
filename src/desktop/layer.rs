@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager, Space},
-    utils::{user_data::UserDataMap, Logical, Point, Rectangle},
+    utils::{user_data::UserDataMap, Logical, Point, Rectangle, Scale},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, TraversalAction},
         output::{Inner as OutputInner, Output},
@@ -643,11 +643,11 @@ impl LayerSurface {
 /// Note: This function will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn draw_layer_surface<R, P>(
+pub fn draw_layer_surface<R, P, S>(
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     layer: &LayerSurface,
-    scale: f64,
+    scale: S,
     location: P,
     damage: &[Rectangle<i32, Logical>],
     log: &slog::Logger,
@@ -655,9 +655,11 @@ pub fn draw_layer_surface<R, P>(
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
+    S: Into<Scale<f64>>,
     P: Into<Point<i32, Logical>>,
 {
     let location = location.into();
+    let scale = scale.into();
     if let Some(surface) = layer.get_surface() {
         draw_surface_tree(renderer, frame, surface, scale, location, damage, log)?;
     }
@@ -673,11 +675,11 @@ where
 /// Note: This function will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn draw_layer_popups<R, P>(
+pub fn draw_layer_popups<R, S, P>(
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     layer: &LayerSurface,
-    scale: f64,
+    scale: S,
     location: P,
     damage: &[Rectangle<i32, Logical>],
     log: &slog::Logger,
@@ -685,6 +687,7 @@ pub fn draw_layer_popups<R, P>(
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
+    S: Into<Scale<f64>>,
     P: Into<Point<i32, Logical>>,
 {
     let location = location.into();

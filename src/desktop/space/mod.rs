@@ -827,7 +827,7 @@ macro_rules! custom_elements_internal {
             &self,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
-            scale: f64,
+            scale: impl Into<$crate::utils::Scale<f64>>,
             location: $crate::utils::Point<i32, $crate::utils::Logical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Logical>],
             log: &slog::Logger,
@@ -857,7 +857,7 @@ macro_rules! custom_elements_internal {
             &self,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
-            scale: f64,
+            scale: impl Into<$crate::utils::Scale<f64>>,
             location: $crate::utils::Point<i32, $crate::utils::Logical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Logical>],
             log: &slog::Logger,
@@ -941,7 +941,7 @@ macro_rules! custom_elements_internal {
 /// use smithay::{
 ///     backend::renderer::{Texture, Renderer, ImportAll},
 ///     desktop::space::{SurfaceTree, Space, SpaceOutputTuple, RenderElement},
-///     utils::{Point, Size, Rectangle, Transform, Logical},
+///     utils::{Point, Size, Rectangle, Transform, Logical, Scale},
 /// };
 /// use slog::Logger;
 ///
@@ -997,7 +997,7 @@ macro_rules! custom_elements_internal {
 /// #       texture: &Self::TextureId,
 /// #       pos: Point<f64, Physical>,
 /// #       texture_scale: i32,
-/// #       output_scale: f64,
+/// #       output_scale: impl Into<Scale<f64>>,
 /// #       src_transform: Transform,
 /// #       damage: &[Rectangle<f64, Physical>],
 /// #       alpha: f32,
@@ -1078,7 +1078,7 @@ macro_rules! custom_elements_internal {
 ///#        &self,
 ///#        _renderer: &mut R,
 ///#        frame: &mut <R as Renderer>::Frame,
-///#        scale: f64,
+///#        scale: impl Into<Scale<f64>>,
 ///#        location: Point<i32, Logical>,
 ///#        damage: &[Rectangle<i32, Logical>],
 ///#        _log: &Logger,

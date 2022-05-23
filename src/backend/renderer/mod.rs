@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 use std::error::Error;
 
-use crate::utils::{Buffer, Physical, Point, Rectangle, Size, Transform};
+use crate::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::compositor::SurfaceData;
@@ -147,7 +147,7 @@ pub trait Frame {
         texture: &Self::TextureId,
         pos: Point<f64, Physical>,
         texture_scale: i32,
-        output_scale: f64,
+        output_scale: impl Into<Scale<f64>>,
         src_transform: Transform,
         damage: &[Rectangle<f64, Physical>],
         alpha: f32,

@@ -7,7 +7,7 @@ use smithay::{
     backend::renderer::{Frame, ImportAll, Renderer, Texture},
     desktop::space::{RenderElement, SpaceOutputTuple, SurfaceTree},
     reexports::wayland_server::protocol::wl_surface,
-    utils::{Logical, Point, Rectangle, Size, Transform},
+    utils::{Logical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{get_role, with_states},
         seat::CursorImageAttributes,
@@ -115,16 +115,17 @@ where
         &self,
         _renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
+        scale: impl Into<Scale<f64>>,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         _log: &Logger,
     ) -> Result<(), <R as Renderer>::Error> {
+        let scale = scale.into();
         frame.render_texture_at(
             &self.texture,
             location.to_f64().to_physical(scale).to_i32_round(),
             1,
-            scale as f64,
+            scale,
             Transform::Normal,
             &*damage
                 .iter()

@@ -7,7 +7,7 @@ use crate::{
         utils::{bbox_from_surface_tree, damage_from_surface_tree},
         window::Window,
     },
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Point, Rectangle, Scale},
     wayland::{output::Output, shell::wlr_layer::Layer},
 };
 use std::any::TypeId;
@@ -111,12 +111,12 @@ impl RenderPopup {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn elem_draw<R>(
+    pub(super) fn elem_draw<R, S>(
         &self,
         _space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
+        scale: S,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,
@@ -124,6 +124,7 @@ impl RenderPopup {
     where
         R: Renderer + ImportAll,
         <R as Renderer>::TextureId: 'static,
+        S: Into<Scale<f64>>,
     {
         if let Some(surface) = self.popup.get_surface() {
             draw_surface_tree(renderer, frame, surface, scale, location, damage, log)?;

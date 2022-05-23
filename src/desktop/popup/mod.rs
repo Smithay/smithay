@@ -9,7 +9,7 @@ use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Point, Rectangle, Scale},
     wayland::{
         compositor::with_states,
         shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceRoleAttributes},
@@ -107,13 +107,13 @@ impl From<PopupSurface> for PopupKind {
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
-pub fn draw_popups<R, P1, P2>(
+pub fn draw_popups<R, P1, P2, S>(
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     for_surface: &WlSurface,
     surface_location: P1,
     offset: P2,
-    scale: f64,
+    scale: S,
     damage: &[Rectangle<i32, Logical>],
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
@@ -122,9 +122,11 @@ where
     <R as Renderer>::TextureId: 'static,
     P1: Into<Point<i32, Logical>>,
     P2: Into<Point<i32, Logical>>,
+    S: Into<Scale<f64>>,
 {
     let location = surface_location.into();
     let offset = offset.into();
+    let scale = scale.into();
     for (popup, p_location) in PopupManager::popups_for_surface(for_surface)
         .ok()
         .into_iter()

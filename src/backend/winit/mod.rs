@@ -32,7 +32,7 @@ use crate::{
             Bind,
         },
     },
-    utils::{Logical, Physical, Rectangle, Size},
+    utils::{Logical, Physical, Rectangle, Scale, Size},
 };
 use std::{cell::RefCell, rc::Rc, time::Instant};
 use wayland_egl as wegl;
@@ -322,8 +322,9 @@ impl WinitGraphicsBackend {
     pub fn submit(
         &mut self,
         damage: Option<&[Rectangle<i32, Logical>]>,
-        scale: f64,
+        scale: impl Into<Scale<f64>>,
     ) -> Result<(), crate::backend::SwapBuffersError> {
+        let scale = scale.into();
         let mut damage = match damage {
             Some(damage) if self.damage_tracking && !damage.is_empty() => {
                 let size = self

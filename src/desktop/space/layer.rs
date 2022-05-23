@@ -4,7 +4,7 @@ use crate::{
         layer::{layer_state as output_layer_state, *},
         space::Space,
     },
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Point, Rectangle, Scale},
     wayland::{output::Output, shell::wlr_layer::Layer},
 };
 use std::{
@@ -58,7 +58,7 @@ impl LayerSurface {
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
+        scale: impl Into<Scale<f64>>,
         location: Point<i32, Logical>,
         damage: &[Rectangle<i32, Logical>],
         log: &slog::Logger,

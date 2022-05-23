@@ -2,7 +2,7 @@
 
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
-    utils::{Buffer, Logical, Point, Rectangle, Size, Transform},
+    utils::{Buffer, Logical, Point, Rectangle, Scale, Size, Transform},
     wayland::compositor::{
         is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
         SurfaceAttributes, SurfaceData, TraversalAction,
@@ -259,11 +259,11 @@ where
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn draw_surface_tree<R>(
+pub fn draw_surface_tree<R, S>(
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     surface: &WlSurface,
-    scale: f64,
+    scale: S,
     location: Point<i32, Logical>,
     damage: &[Rectangle<i32, Logical>],
     log: &slog::Logger,
@@ -271,9 +271,11 @@ pub fn draw_surface_tree<R>(
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
+    S: Into<Scale<f64>>,
 {
     let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
     let mut result = Ok(());
+    let scale = scale.into();
     let _ = import_surface_tree_and(
         renderer,
         surface,
