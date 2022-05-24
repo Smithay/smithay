@@ -5,9 +5,12 @@ use crate::utils::Coordinate;
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
     utils::{Buffer, Logical, Point, Rectangle, Scale, Size, Transform},
-    wayland::compositor::{
-        is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
-        SurfaceAttributes, SurfaceData, TraversalAction,
+    wayland::{
+        compositor::{
+            is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
+            SurfaceAttributes, SurfaceData, TraversalAction,
+        },
+        viewporter,
     },
 };
 use std::collections::VecDeque;
@@ -192,9 +195,12 @@ impl SurfaceView {
     }
 
     fn from_states(states: &SurfaceData, surface_size: Size<i32, Logical>) -> SurfaceView {
-        // TODO: Take wp_viewporter into account
-        let src = Rectangle::from_loc_and_size((0.0, 0.0), surface_size.to_f64());
-        let dst = surface_size;
+        viewporter::ensure_viewport_valid(states, surface_size);
+        let viewport = states.cached_state.current::<viewporter::ViewportCachedState>();
+        let src = viewport
+            .src
+            .unwrap_or_else(|| Rectangle::from_loc_and_size((0.0, 0.0), surface_size.to_f64()));
+        let dst = viewport.size().unwrap_or(surface_size);
         let offset = if states.role == Some("subsurface") {
             states.cached_state.current::<SubsurfaceCachedState>().location
         } else {
