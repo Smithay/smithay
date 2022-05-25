@@ -61,7 +61,7 @@
 //! ```
 
 mod handlers;
-pub mod xdg;
+mod xdg;
 
 use std::sync::{Arc, Mutex};
 
@@ -84,6 +84,7 @@ use slog::{info, o};
 use crate::utils::{user_data::UserDataMap, Logical, Physical, Point, Raw, Size};
 
 use self::xdg::XdgOutput;
+pub use self::handlers::XdgOutputUserData;
 
 /// State of Smithay output manager
 #[derive(Debug, Default)]
@@ -470,16 +471,16 @@ impl Eq for Output {}
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_output {
-    ($ty: ty) => {
+    ($ty: tt) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_output::WlOutput,
-            $crate::reexports::wayland_protocols::unstable::xdg_output::v1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1
+            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::OutputGlobalData,
+            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()
         ] => $crate::wayland::output::OutputManagerState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_output::WlOutput,
-            $crate::reexports::wayland_protocols::unstable::xdg_output::v1::server::zxdg_output_v1::ZxdgOutputV1,
-            $crate::reexports::wayland_protocols::unstable::xdg_output::v1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1
+            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::OutputUserData,
+            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1: $crate::wayland::output::XdgOutputUserData,
+            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()
         ] => $crate::wayland::output::OutputManagerState);
     };
 }

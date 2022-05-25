@@ -88,7 +88,7 @@ mod transaction;
 mod tree;
 
 pub use self::cache::{Cacheable, MultiCache};
-pub use self::handlers::SubsurfaceCachedState;
+pub use self::handlers::{SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData, RegionUserData};
 use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
@@ -97,8 +97,6 @@ use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
 use wayland_server::{Display, DisplayHandle, GlobalDispatch, Resource};
-
-pub use handlers::{RegionUserData, SubsurfaceUserData, SurfaceUserData};
 
 /// Description of a part of a surface that
 /// should be considered damaged and needs to be redrawn
@@ -413,6 +411,7 @@ pub struct CompositorState {
     subcompositor: GlobalId,
 }
 
+#[doc(hidden)]
 impl CompositorState {
     /// Create new [`wl_compositor`](wayland_server::protocol::wl_compositor)
     /// and [`wl_subcompositor`](wayland_server::protocol::wl_subcompositor) globals.
@@ -426,8 +425,8 @@ impl CompositorState {
     {
         let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
 
-        let compositor = display.handle().create_global::<D, WlCompositor, _>(4, ());
-        let subcompositor = display.handle().create_global::<D, WlSubcompositor, _>(1, ());
+        let compositor = display.handle().create_global::<D, WlCompositor, ()>(4, ());
+        let subcompositor = display.handle().create_global::<D, WlSubcompositor, ()>(1, ());
 
         CompositorState {
             log,
@@ -450,20 +449,20 @@ impl CompositorState {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_compositor {
-    ($ty: ty) => {
+    ($ty: tt) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor,
-            $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor
+            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor: (),
+            $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor: ()
         ] => $crate::wayland::compositor::CompositorState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor,
-            $crate::reexports::wayland_server::protocol::wl_surface::WlSurface,
-            $crate::reexports::wayland_server::protocol::wl_region::WlRegion,
-            $crate::reexports::wayland_server::protocol::wl_callback::WlCallback,
+            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor: (),
+            $crate::reexports::wayland_server::protocol::wl_surface::WlSurface: $crate::wayland::compositor::SurfaceUserData,
+            $crate::reexports::wayland_server::protocol::wl_region::WlRegion: $crate::wayland::compositor::RegionUserData,
+            $crate::reexports::wayland_server::protocol::wl_callback::WlCallback: (),
             // WlSubcompositor
-            $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor,
-            $crate::reexports::wayland_server::protocol::wl_subsurface::WlSubsurface
+            $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor: (),
+            $crate::reexports::wayland_server::protocol::wl_subsurface::WlSubsurface: $crate::wayland::compositor::SubsurfaceUserData
         ] => $crate::wayland::compositor::CompositorState);
     };
 }

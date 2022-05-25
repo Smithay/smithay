@@ -225,14 +225,14 @@ pub struct ShmBufferUserData {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_shm {
-    ($ty: ty) => {
+    ($ty: tt) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm
+            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: ()
         ] => $crate::wayland::shm::ShmState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm,
-            $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool
+            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: (),
+            $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool: $crate::wayland::shm::ShmPoolUserData
         ] => $crate::wayland::shm::ShmState);
     };
 }

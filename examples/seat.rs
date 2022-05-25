@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(stream) = listener.accept().unwrap() {
             println!("Got a client: {:?}", stream);
 
-            let client = display.insert_client(stream, Arc::new(ClientState)).unwrap();
+            let client = display.handle().insert_client(stream, Arc::new(ClientState)).unwrap();
             clients.push(client);
         }
 

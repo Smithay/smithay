@@ -51,8 +51,8 @@ mod seat_data;
 mod server_dnd_grab;
 mod source;
 
-pub use device::DND_ICON_ROLE;
-pub use source::{with_source_metadata, SourceMetadata};
+pub use device::{DND_ICON_ROLE, DataDeviceUserData};
+pub use source::{with_source_metadata, SourceMetadata, DataSourceUserData};
 
 use seat_data::{SeatData, Selection};
 
@@ -334,15 +334,15 @@ mod handlers {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_data_device {
-    ($ty: ty) => {
+    ($ty: tt) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager
+            $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager: ()
         ] => $crate::wayland::data_device::DataDeviceState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager,
-            $crate::reexports::wayland_server::protocol::wl_data_device::WlDataDevice,
-            $crate::reexports::wayland_server::protocol::wl_data_source::WlDataSource
+            $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager: (),
+            $crate::reexports::wayland_server::protocol::wl_data_device::WlDataDevice: $crate::wayland::data_device::DataDeviceUserData,
+            $crate::reexports::wayland_server::protocol::wl_data_source::WlDataSource: $crate::wayland::data_device::DataSourceUserData
         ] => $crate::wayland::data_device::DataDeviceState);
     };
 }
