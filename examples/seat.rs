@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         keyboard.input(
-            &mut display.handle(),
+            &display.handle(),
             1,
             smithay::backend::input::KeyState::Pressed,
             0.into(),
@@ -60,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         );
 
-        keyboard.set_focus(&mut display.handle(), None, 0.into());
+        keyboard.set_focus(&display.handle(), None, 0.into());
 
         display.dispatch_clients(&mut state)?;
         display.flush_clients()?;
