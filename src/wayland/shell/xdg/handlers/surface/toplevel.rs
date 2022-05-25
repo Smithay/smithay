@@ -231,7 +231,6 @@ where
 }
 
 pub fn send_toplevel_configure(
-    dh: &DisplayHandle,
     resource: &xdg_toplevel::XdgToplevel,
     configure: ToplevelConfigure,
 ) {

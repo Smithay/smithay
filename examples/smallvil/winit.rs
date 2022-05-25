@@ -43,7 +43,6 @@ pub fn init_winit(
         log.clone(),
     );
     output.change_current_state(
-        &mut display.handle(),
         Some(mode),
         Some(wl_output::Transform::Flipped180),
         None,
@@ -81,7 +80,6 @@ pub fn winit_dispatch(
     let res = winit.dispatch_new_events(|event| match event {
         WinitEvent::Resized { size, .. } => {
             output.change_current_state(
-                &mut display.handle(),
                 Some(Mode {
                     size,
                     refresh: 60_000,
@@ -126,7 +124,6 @@ pub fn winit_dispatch(
     backend.submit(Some(&[damage.to_logical(1)]), 1.0).unwrap();
 
     state.space.send_frames(
-        &mut display.handle(),
         state.start_time.elapsed().as_millis() as u32,
     );
 

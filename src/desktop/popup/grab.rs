@@ -370,7 +370,7 @@ impl PopupKeyboardGrab {
 impl KeyboardGrab for PopupKeyboardGrab {
     fn input(
         &mut self,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut KeyboardInnerHandle<'_>,
         keycode: u32,
         key_state: KeyState,
@@ -382,27 +382,27 @@ impl KeyboardGrab for PopupKeyboardGrab {
         // If the grab has ended this will return the root
         // surface to restore the client expected focus.
         if let Some(surface) = self.popup_grab.current_grab() {
-            handle.set_focus(dh, Some(&surface), serial);
+            handle.set_focus(Some(&surface), serial);
         }
 
         if self.popup_grab.has_ended() {
-            handle.unset_grab(dh, serial, false);
+            handle.unset_grab(serial, false);
         }
 
-        handle.input(dh, keycode, key_state, modifiers, serial, time)
+        handle.input(keycode, key_state, modifiers, serial, time)
     }
 
     fn set_focus(
         &mut self,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut KeyboardInnerHandle<'_>,
         focus: Option<&WlSurface>,
         serial: Serial,
     ) {
         // Ignore focus changes unless the grab has ended
         if self.popup_grab.has_ended() {
-            handle.set_focus(dh, focus, serial);
-            handle.unset_grab(dh, serial, false);
+            handle.set_focus(focus, serial);
+            handle.unset_grab(serial, false);
             return;
         }
 
@@ -410,7 +410,7 @@ impl KeyboardGrab for PopupKeyboardGrab {
         // happen if the user initially sets the focus to
         // popup instead of relying on the grab behavior
         if self.popup_grab.current_grab().as_ref() == focus {
-            handle.set_focus(dh, focus, serial);
+            handle.set_focus(focus, serial);
         }
     }
 
@@ -455,7 +455,7 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
         event: &MotionEvent,
     ) {
         if self.popup_grab.has_ended() {
-            handle.unset_grab(dh, event.serial, event.time);
+            handle.unset_grab(event.serial, event.time);
             self.popup_grab.unset_keyboard_grab(dh, event.serial);
             return;
         }
@@ -469,9 +469,9 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
         };
 
         if same_client {
-            handle.motion(dh, event.location, event.focus.clone(), event.serial, event.time);
+            handle.motion(event.location, event.focus.clone(), event.serial, event.time);
         } else {
-            handle.motion(dh, event.location, None, event.serial, event.time);
+            handle.motion(event.location, None, event.serial, event.time);
         }
     }
 
@@ -488,8 +488,8 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
         let state = event.state;
 
         if self.popup_grab.has_ended() {
-            handle.unset_grab(dh, serial, time);
-            handle.button(dh, button, state, serial, time);
+            handle.unset_grab(serial, time);
+            handle.button(button, state, serial, time);
             self.popup_grab.unset_keyboard_grab(dh, serial);
             return;
         }
@@ -500,22 +500,22 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
             && handle.current_focus().map(|(surface, _)| surface) != self.popup_grab.current_grab().as_ref()
         {
             let _ = self.popup_grab.ungrab(dh, PopupUngrabStrategy::All);
-            handle.unset_grab(dh, serial, time);
-            handle.button(dh, button, state, serial, time);
+            handle.unset_grab(serial, time);
+            handle.button(button, state, serial, time);
             self.popup_grab.unset_keyboard_grab(dh, serial);
         }
 
-        handle.button(dh, button, state, serial, time);
+        handle.button(button, state, serial, time);
     }
 
     fn axis(
         &mut self,
         _data: &mut D,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {
-        handle.axis(dh, details);
+        handle.axis(details);
     }
 
     fn start_data(&self) -> &PointerGrabStartData {

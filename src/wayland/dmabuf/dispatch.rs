@@ -65,7 +65,7 @@ where
 {
     fn bind(
         _state: &mut D,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _client: &Client,
         resource: New<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1>,
         global_data: &DmabufGlobalData,

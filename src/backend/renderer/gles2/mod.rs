@@ -16,6 +16,11 @@ use std::{
         mpsc::{channel, Receiver, Sender},
     },
 };
+#[cfg(all(
+    feature = "wayland_frontend",
+    feature = "backend_egl",
+    feature = "use_system_lib"
+))]
 use wayland_server::DisplayHandle;
 
 #[cfg(feature = "wayland_frontend")]

@@ -189,7 +189,7 @@ where
         let mut dh = DisplayHandle::from(dh.clone());
 
         if let Ok((_resource, request)) = WlDataOffer::parse_request(&mut dh, msg) {
-            handle_client_selection(handler, request, &self.source, &mut dh);
+            handle_client_selection(handler, request, &self.source);
         }
 
         None
@@ -202,7 +202,6 @@ fn handle_client_selection<D>(
     state: &mut D,
     request: wl_data_offer::Request,
     source: &WlDataSource,
-    dh: &DisplayHandle,
 ) where
     D: DataDeviceHandler,
 {
