@@ -67,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 struct ClientState;
-impl ClientData<App> for ClientState {
+impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {
         println!("initialized");
     }
