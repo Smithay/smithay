@@ -49,12 +49,12 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab {
     fn motion(
         &mut self,
         data: &mut AnvilState<BackendData>,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
-        handle.motion(dh, event.location, None, event.serial, event.time);
+        handle.motion(event.location, None, event.serial, event.time);
 
         let delta = event.location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
@@ -66,25 +66,25 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab {
     fn button(
         &mut self,
         _data: &mut AnvilState<BackendData>,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &ButtonEvent,
     ) {
-        handle.button(dh, event.button, event.state, event.serial, event.time);
+        handle.button(event.button, event.state, event.serial, event.time);
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(dh, event.serial, event.time);
+            handle.unset_grab(event.serial, event.time);
         }
     }
 
     fn axis(
         &mut self,
         _data: &mut AnvilState<BackendData>,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         details: AxisFrame,
     ) {
-        handle.axis(dh, details)
+        handle.axis(details)
     }
 
     fn start_data(&self) -> &PointerGrabStartData {
@@ -135,18 +135,18 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
     fn motion(
         &mut self,
         _data: &mut AnvilState<BackendData>,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &MotionEvent,
     ) {
         // It is impossible to get `min_size` and `max_size` of dead toplevel, so we return early.
         if !self.window.toplevel().alive() {
-            handle.unset_grab(dh, event.serial, event.time);
+            handle.unset_grab(event.serial, event.time);
             return;
         }
 
         // While the grab is active, no client has pointer focus
-        handle.motion(dh, event.location, None, event.serial, event.time);
+        handle.motion(event.location, None, event.serial, event.time);
 
         let (mut dx, mut dy) = (event.location - self.start_data.location).into();
 
@@ -201,7 +201,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
                     state.states.set(xdg_toplevel::State::Resizing);
                     state.size = Some(self.last_window_size);
                 });
-                xdg.send_configure(dh);
+                xdg.send_configure();
             }
             #[cfg(feature = "xwayland")]
             SurfaceKind::X11(_) => {
@@ -217,10 +217,10 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &ButtonEvent,
     ) {
-        handle.button(dh, event.button, event.state, event.serial, event.time);
+        handle.button(event.button, event.state, event.serial, event.time);
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(dh, event.serial, event.time);
+            handle.unset_grab(event.serial, event.time);
 
             // If toplevel is dead, we can't resize it, so we return early.
             if !self.window.toplevel().alive() {
@@ -233,7 +233,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
                     state.states.unset(xdg_toplevel::State::Resizing);
                     state.size = Some(self.last_window_size);
                 });
-                xdg.send_configure(dh);
+                xdg.send_configure();
                 if self.edges.intersects(ResizeEdge::TOP_LEFT) {
                     let geometry = self.window.geometry();
                     let mut location = data.space.window_location(&self.window).unwrap();
@@ -286,7 +286,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         details: AxisFrame
     ) {
-        handle.axis(dh, details)
+        handle.axis(details)
     }
 
     fn start_data(&self) -> &PointerGrabStartData {
@@ -398,7 +398,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     state.geometry = geometry;
                     state.positioner = positioner;
                 });
-                surface.send_repositioned(dh, token);
+                surface.send_repositioned(token);
             }
 
             XdgRequest::Move {
@@ -444,7 +444,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                         state.size = None;
                     });
 
-                    surface.send_configure(dh);
+                    surface.send_configure();
 
                     // NOTE: In real compositor mouse location should be mapped to a new window size
                     // For example, you could:
@@ -467,7 +467,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     initial_window_location,
                 };
 
-                pointer.set_grab(dh, grab, serial, 0);
+                pointer.set_grab(grab, serial, 0);
             }
 
             XdgRequest::Resize {
@@ -530,7 +530,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     last_window_size: initial_window_size,
                 };
 
-                pointer.set_grab(dh, grab, serial, 0);
+                pointer.set_grab(grab, serial, 0);
             }
 
             XdgRequest::AckConfigure {
@@ -619,7 +619,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     });
 
                     let window = self.space.window_for_surface(wl_surface).unwrap();
-                    window.configure(dh);
+                    window.configure();
                     output.user_data().insert_if_missing(FullscreenSurface::default);
                     output
                         .user_data()
@@ -644,7 +644,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                         self.backend_data.reset_buffers(&output);
                     }
 
-                    surface.send_configure(dh);
+                    surface.send_configure();
                 }
             }
 
@@ -663,14 +663,14 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     state.states.set(xdg_toplevel::State::Maximized);
                     state.size = Some(geometry.size);
                 });
-                window.configure(dh);
+                window.configure();
             }
             XdgRequest::UnMaximize { surface } => {
                 surface.with_pending_state(|state| {
                     state.states.unset(xdg_toplevel::State::Maximized);
                     state.size = None;
                 });
-                surface.send_configure(dh);
+                surface.send_configure();
             }
             XdgRequest::Grab {
                 serial,
@@ -703,7 +703,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                             grab.ungrab(dh, PopupUngrabStrategy::All);
                             return;
                         }
-                        pointer.set_grab(dh, PopupPointerGrab::new(&grab), serial, 0);
+                        pointer.set_grab(PopupPointerGrab::new(&grab), serial, 0);
                     }
                 }
             }
@@ -802,7 +802,7 @@ fn ensure_initial_configure(dh: &DisplayHandle, surface: &WlSurface, space: &Spa
                     .initial_configure_sent
             });
             if !initial_configure_sent {
-                toplevel.send_configure(dh);
+                toplevel.send_configure();
             }
         }
 
@@ -836,7 +836,7 @@ fn ensure_initial_configure(dh: &DisplayHandle, surface: &WlSurface, space: &Spa
         if !initial_configure_sent {
             // NOTE: This should never fail as the initial configure is always
             // allowed.
-            popup.send_configure(dh).expect("initial configure failed");
+            popup.send_configure().expect("initial configure failed");
         }
 
         return;
@@ -863,7 +863,7 @@ fn ensure_initial_configure(dh: &DisplayHandle, surface: &WlSurface, space: &Spa
                 .initial_configure_sent
         });
         if !initial_configure_sent {
-            layer.layer_surface().send_configure(dh);
+            layer.layer_surface().send_configure();
         }
 
         map.arrange(dh);
