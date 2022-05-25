@@ -674,15 +674,15 @@ impl Space {
     }
 
     /// Sends the frame callback to mapped [`Window`]s and [`LayerSurface`]s.
-    pub fn send_frames(&self, dh: &DisplayHandle, time: u32) {
+    pub fn send_frames(&self, time: u32) {
         for window in self.windows.iter() {
-            window.send_frame(dh, time);
+            window.send_frame(time);
         }
 
         for output in self.outputs.iter() {
             let map = layer_map_for_output(output);
             for layer in map.layers() {
-                layer.send_frame(dh, time);
+                layer.send_frame(time);
             }
         }
     }

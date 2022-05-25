@@ -41,7 +41,7 @@ impl XdgShellHandler for App {
         &mut self.xdg_shell_state
     }
 
-    fn request(&mut self, dh: &DisplayHandle, request: XdgRequest) {
+    fn request(&mut self, _dh: &DisplayHandle, request: XdgRequest) {
         dbg!(&request);
 
         match request {
@@ -49,7 +49,7 @@ impl XdgShellHandler for App {
                 surface.with_pending_state(|state| {
                     state.states.set(xdg_toplevel::State::Activated);
                 });
-                surface.send_configure(dh);
+                surface.send_configure();
             }
             XdgRequest::Move { .. } => {
                 //
@@ -141,7 +141,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
     let keyboard = state
         .seat
-        .add_keyboard(&mut display.handle(), Default::default(), 200, 200, |_, _| {})
+        .add_keyboard(Default::default(), 200, 200, |_, _| {})
         .unwrap();
 
     std::env::set_var("WAYLAND_DISPLAY", "wayland-5");
@@ -199,7 +199,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                         )
                         .unwrap();
 
-                        send_frames_surface_tree(dh, surface, start_time.elapsed().as_millis() as u32);
+                        send_frames_surface_tree(surface, start_time.elapsed().as_millis() as u32);
                     }
                 });
             })?;
@@ -223,7 +223,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-pub fn send_frames_surface_tree(dh: &DisplayHandle, surface: &wl_surface::WlSurface, time: u32) {
+pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
     with_surface_tree_downward(
         surface,
         (),

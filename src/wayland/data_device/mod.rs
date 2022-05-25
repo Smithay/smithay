@@ -225,7 +225,6 @@ where
 /// drag'n'drop in the provided callback. See [`ServerDndEvent`] for details about
 /// which events can be generated and what response is expected from you to them.
 pub fn start_dnd<D, C>(
-    dh: &DisplayHandle,
     seat: &Seat<D>,
     serial: Serial,
     start_data: PointerGrabStartData,
@@ -238,7 +237,6 @@ pub fn start_dnd<D, C>(
         .insert_if_missing(|| RefCell::new(SeatData::new()));
     if let Some(pointer) = seat.get_pointer() {
         pointer.set_grab(
-            dh,
             server_dnd_grab::ServerDnDGrab::new(start_data, metadata, seat.clone()),
             serial,
             0,

@@ -23,7 +23,7 @@ where
 {
     fn bind(
         _state: &mut D,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _client: &Client,
         resource: New<WlOutput>,
         global_data: &OutputGlobalData,
@@ -143,7 +143,7 @@ where
         _resource: &ZxdgOutputManagerV1,
         request: zxdg_output_manager_v1::Request,
         _data: &(),
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {

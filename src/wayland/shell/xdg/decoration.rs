@@ -103,7 +103,6 @@ macro_rules! delegate_xdg_decoration {
 }
 
 pub(super) fn send_decoration_configure(
-    dh: &DisplayHandle,
     id: &zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
     mode: Mode,
 ) {

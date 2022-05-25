@@ -65,7 +65,7 @@ where
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
-        handle.motion(dh, event.location, None, event.serial, event.time);
+        handle.motion(event.location, None, event.serial, event.time);
 
         let seat_data = self
             .seat
@@ -168,7 +168,7 @@ where
     fn button(
         &mut self,
         handler: &mut D,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &ButtonEvent,
     ) {
@@ -221,19 +221,19 @@ where
                     }
                 }
             }
-            handle.unset_grab(dh, event.serial, event.time);
+            handle.unset_grab(event.serial, event.time);
         }
     }
 
     fn axis(
         &mut self,
         _data: &mut D,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {
         // we just forward the axis events as is
-        handle.axis(dh, details);
+        handle.axis(details);
     }
 
     fn start_data(&self) -> &PointerGrabStartData {

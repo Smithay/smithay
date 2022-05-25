@@ -228,9 +228,9 @@ impl Window {
     }
 
     /// Commit any changes to this window
-    pub fn configure(&self, dh: &DisplayHandle) {
+    pub fn configure(&self) {
         match self.0.toplevel {
-            Kind::Xdg(ref t) => t.send_configure(dh),
+            Kind::Xdg(ref t) => t.send_configure(),
             #[cfg(feature = "xwayland")]
             Kind::X11(ref _t) => unimplemented!(),
         }
@@ -238,12 +238,12 @@ impl Window {
 
     /// Sends the frame callback to all the subsurfaces in this
     /// window that requested it
-    pub fn send_frame(&self, dh: &DisplayHandle, time: u32) {
+    pub fn send_frame(&self, time: u32) {
         let surface = self.0.toplevel.wl_surface();
-        send_frames_surface_tree(dh, surface, time);
+        send_frames_surface_tree(surface, time);
         for (popup, _) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
-            send_frames_surface_tree(dh, surface, time);
+            send_frames_surface_tree(surface, time);
         }
     }
 

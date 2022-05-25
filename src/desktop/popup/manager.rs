@@ -332,7 +332,7 @@ impl PopupNode {
             child.send_done(dh);
         }
 
-        self.surface.send_done(dh);
+        self.surface.send_done();
     }
 
     fn dismiss_popup(&mut self, dh: &DisplayHandle, popup: &PopupKind) -> bool {

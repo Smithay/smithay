@@ -45,7 +45,6 @@ impl TouchHandle {
     /// Notify clients about new touch points.
     pub fn down(
         &mut self,
-        dh: &DisplayHandle,
         serial: Serial,
         time: u32,
         surface: &WlSurface,
@@ -56,35 +55,35 @@ impl TouchHandle {
         self.inner
             .lock()
             .unwrap()
-            .down(dh, serial, time, surface, surface_offset, slot, location);
+            .down(serial, time, surface, surface_offset, slot, location);
     }
 
     /// Notify clients about touch point removal.
-    pub fn up(&self, dh: &DisplayHandle, serial: Serial, time: u32, slot: TouchSlot) {
-        self.inner.lock().unwrap().up(dh, serial, time, slot);
+    pub fn up(&self, serial: Serial, time: u32, slot: TouchSlot) {
+        self.inner.lock().unwrap().up(serial, time, slot);
     }
 
     /// Notify clients about touch motion.
-    pub fn motion(&self, dh: &DisplayHandle, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
-        self.inner.lock().unwrap().motion(dh, time, slot, location);
+    pub fn motion(&self, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
+        self.inner.lock().unwrap().motion(time, slot, location);
     }
 
     /// Notify clients about touch shape changes.
-    pub fn shape(&self, dh: &DisplayHandle, slot: TouchSlot, major: f64, minor: f64) {
-        self.inner.lock().unwrap().shape(dh, slot, major, minor);
+    pub fn shape(&self, slot: TouchSlot, major: f64, minor: f64) {
+        self.inner.lock().unwrap().shape(slot, major, minor);
     }
 
     /// Notify clients about touch shape orientation.
-    pub fn orientation(&self, dh: &DisplayHandle, slot: TouchSlot, orientation: f64) {
-        self.inner.lock().unwrap().orientation(dh, slot, orientation);
+    pub fn orientation(&self, slot: TouchSlot, orientation: f64) {
+        self.inner.lock().unwrap().orientation(slot, orientation);
     }
 
     /// Notify clients about touch cancellation.
     ///
     /// This should be sent by the compositor when the currently active touch
     /// slot was recognized as a gesture.
-    pub fn cancel(&self, dh: &DisplayHandle) {
-        self.inner.lock().unwrap().cancel(dh);
+    pub fn cancel(&self) {
+        self.inner.lock().unwrap().cancel();
     }
 }
 
@@ -106,7 +105,6 @@ impl TouchInternal {
     #[allow(clippy::too_many_arguments)]
     fn down(
         &mut self,
-        dh: &DisplayHandle,
         serial: Serial,
         time: u32,
         surface: &WlSurface,
@@ -127,35 +125,35 @@ impl TouchInternal {
         }
 
         let (x, y) = (location - focus.surface_offset).into();
-        self.with_focused_handles(dh, slot, |dh, handle| {
+        self.with_focused_handles(slot, |handle| {
             handle.down(serial.into(), time, surface, slot.into(), x, y)
         });
     }
 
-    fn up(&self, dh: &DisplayHandle, serial: Serial, time: u32, slot: TouchSlot) {
-        self.with_focused_handles(dh, slot, |dh, handle| handle.up(serial.into(), time, slot.into()));
+    fn up(&self, serial: Serial, time: u32, slot: TouchSlot) {
+        self.with_focused_handles(slot, |handle| handle.up(serial.into(), time, slot.into()));
     }
 
-    fn motion(&self, dh: &DisplayHandle, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
+    fn motion(&self, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
         let focus = match self.focus.get(&slot) {
             Some(slot) => slot,
             None => return,
         };
 
         let (x, y) = (location - focus.surface_offset).into();
-        self.with_focused_handles(dh, slot, |dh, handle| handle.motion(time, slot.into(), x, y));
+        self.with_focused_handles(slot, |handle| handle.motion(time, slot.into(), x, y));
     }
 
-    fn shape(&self, dh: &DisplayHandle, slot: TouchSlot, major: f64, minor: f64) {
-        self.with_focused_handles(dh, slot, |dh, handle| {
+    fn shape(&self, slot: TouchSlot, major: f64, minor: f64) {
+        self.with_focused_handles(slot, |handle| {
             if handle.version() >= 6 {
                 handle.shape(slot.into(), major, minor);
             }
         });
     }
 
-    fn orientation(&self, dh: &DisplayHandle, slot: TouchSlot, orientation: f64) {
-        self.with_focused_handles(dh, slot, |dh, handle| {
+    fn orientation(&self, slot: TouchSlot, orientation: f64) {
+        self.with_focused_handles(slot, |handle| {
             if handle.version() >= 6 {
                 handle.orientation(slot.into(), orientation);
             }
@@ -163,7 +161,7 @@ impl TouchInternal {
     }
 
     // TODO: In theory doesn't need to be sent for WlTouch that isn't in the focus hashmap?
-    fn cancel(&self, dh: &DisplayHandle) {
+    fn cancel(&self) {
         for handle in &self.known_handles {
             handle.cancel();
         }
@@ -171,13 +169,13 @@ impl TouchInternal {
 
     // TODO: Document this also sends frame every time.
     #[inline]
-    fn with_focused_handles<F>(&self, dh: &DisplayHandle, slot: TouchSlot, mut f: F)
+    fn with_focused_handles<F>(&self, slot: TouchSlot, mut f: F)
     where
-        F: FnMut(&DisplayHandle, &WlTouch),
+        F: FnMut(&WlTouch),
     {
         if let Some(focus) = self.focus.get(&slot) {
             for handle in &focus.handles {
-                f(dh, handle);
+                f(handle);
                 handle.frame();
             }
         }

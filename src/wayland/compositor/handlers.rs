@@ -117,7 +117,7 @@ impl Cacheable for SurfaceAttributes {
             frame_callbacks: std::mem::take(&mut self.frame_callbacks),
         }
     }
-    fn merge_into(self, into: &mut Self, dh: &DisplayHandle) {
+    fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
         if self.buffer.is_some() {
             if let Some(BufferAssignment::NewBuffer { buffer, .. }) =
                 std::mem::replace(&mut into.buffer, self.buffer)

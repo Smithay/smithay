@@ -67,31 +67,24 @@ impl<D> PointerInternal<D> {
         }
     }
 
-    fn set_grab<G: PointerGrab<D> + 'static>(
-        &mut self,
-        dh: &DisplayHandle,
-        serial: Serial,
-        grab: G,
-        time: u32,
-    ) {
+    fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, grab: G, time: u32) {
         self.grab = GrabStatus::Active(serial, Box::new(grab));
         // generate a move to let the grab change the focus or move the pointer as result of its initialization
         let location = self.location;
         let focus = self.focus.clone();
-        self.motion(dh, location, focus, serial, time);
+        self.motion(location, focus, serial, time);
     }
 
-    fn unset_grab(&mut self, dh: &DisplayHandle, serial: Serial, time: u32) {
+    fn unset_grab(&mut self, serial: Serial, time: u32) {
         self.grab = GrabStatus::None;
         // restore the focus
         let location = self.location;
         let focus = self.pending_focus.clone();
-        self.motion(dh, location, focus, serial, time);
+        self.motion(location, focus, serial, time);
     }
 
     fn motion(
         &mut self,
-        dh: &DisplayHandle,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -108,7 +101,7 @@ impl<D> PointerInternal<D> {
             }
         }
         if leave {
-            self.with_focused_pointers(dh, |dh, pointer, surface| {
+            self.with_focused_pointers(|pointer, surface| {
                 pointer.leave(serial.into(), surface);
                 if pointer.version() >= 5 {
                     pointer.frame();
@@ -126,7 +119,7 @@ impl<D> PointerInternal<D> {
             self.focus = Some((surface, surface_location));
             let (x, y) = (location - surface_location.to_f64()).into();
             if entered {
-                self.with_focused_pointers(dh, |dh, pointer, surface| {
+                self.with_focused_pointers(|pointer, surface| {
                     pointer.enter(serial.into(), surface, x, y);
                     if pointer.version() >= 5 {
                         pointer.frame();
@@ -134,7 +127,7 @@ impl<D> PointerInternal<D> {
                 })
             } else {
                 // we were on top of a surface and remained on it
-                self.with_focused_pointers(dh, |dh, pointer, _| {
+                self.with_focused_pointers(|pointer, _| {
                     pointer.motion(time, x, y);
                     if pointer.version() >= 5 {
                         pointer.frame();
@@ -144,19 +137,18 @@ impl<D> PointerInternal<D> {
         }
     }
 
-    fn with_focused_pointers<F>(&self, dh: &DisplayHandle, mut f: F)
+    fn with_focused_pointers<F>(&self, mut f: F)
     where
-        F: FnMut(&DisplayHandle, &WlPointer, &WlSurface),
+        F: FnMut(&WlPointer, &WlSurface),
     {
+        use crate::utils::IsAlive;
         if let Some((ref focus, _)) = self.focus {
-            // TODO: is this alive check still needed?
-            // This is is_alive check
-            if dh.object_info(focus.id()).is_err() {
+            if !focus.alive() {
                 return;
             }
             for ptr in &self.known_pointers {
                 if ptr.id().same_client_as(&focus.id()) {
-                    f(dh, ptr, focus)
+                    f(ptr, focus)
                 }
             }
         }
@@ -234,19 +226,13 @@ impl<D> PointerHandle<D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<D> + 'static>(
-        &self,
-        dh: &DisplayHandle,
-        grab: G,
-        serial: Serial,
-        time: u32,
-    ) {
-        self.inner.lock().unwrap().set_grab(dh, serial, grab, time);
+    pub fn set_grab<G: PointerGrab<D> + 'static>(&self, grab: G, serial: Serial, time: u32) {
+        self.inner.lock().unwrap().set_grab(serial, grab, time);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
-    pub fn unset_grab(&self, dh: &DisplayHandle, serial: Serial, time: u32) {
-        self.inner.lock().unwrap().unset_grab(dh, serial, time);
+    pub fn unset_grab(&self, serial: Serial, time: u32) {
+        self.inner.lock().unwrap().unset_grab(serial, time);
     }
 
     /// Check if this pointer is currently grabbed with this serial
@@ -338,21 +324,15 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<D> + 'static>(
-        &mut self,
-        dh: &DisplayHandle,
-        serial: Serial,
-        time: u32,
-        grab: G,
-    ) {
-        self.inner.set_grab(dh, serial, grab, time);
+    pub fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, time: u32, grab: G) {
+        self.inner.set_grab(serial, grab, time);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
     ///
     /// This will also restore the focus of the underlying pointer
-    pub fn unset_grab(&mut self, dh: &DisplayHandle, serial: Serial, time: u32) {
-        self.inner.unset_grab(dh, serial, time);
+    pub fn unset_grab(&mut self, serial: Serial, time: u32) {
+        self.inner.unset_grab(serial, time);
     }
 
     /// Access the current focus of this pointer
@@ -386,21 +366,20 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     /// of enter/motion/leave events.
     pub fn motion(
         &mut self,
-        dh: &DisplayHandle,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
-        self.inner.motion(dh, location, focus, serial, time);
+        self.inner.motion(location, focus, serial, time);
     }
 
     /// Notify that a button was pressed
     ///
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
-    pub fn button(&self, dh: &DisplayHandle, button: u32, state: ButtonState, serial: Serial, time: u32) {
-        self.inner.with_focused_pointers(dh, |dh, pointer, _| {
+    pub fn button(&self, button: u32, state: ButtonState, serial: Serial, time: u32) {
+        self.inner.with_focused_pointers(|pointer, _| {
             pointer.button(serial.into(), time, button, state);
             if pointer.version() >= 5 {
                 pointer.frame();
@@ -412,8 +391,8 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     ///
     /// This will internally send the appropriate axis events to the client
     /// objects matching with the currently focused surface.
-    pub fn axis(&mut self, dh: &DisplayHandle, details: AxisFrame) {
-        self.inner.with_focused_pointers(dh, |dh, pointer, _| {
+    pub fn axis(&mut self, details: AxisFrame) {
+        self.inner.with_focused_pointers(|pointer, _| {
             // axis
             if details.axis.0 != 0.0 {
                 pointer.axis(details.time, Axis::HorizontalScroll, details.axis.0);
