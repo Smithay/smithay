@@ -11,9 +11,9 @@
 //! # extern crate wayland_server;
 //! use smithay::wayland::seat::Seat;
 //!
-//! # let mut display = wayland_server::Display::new();
+//! # let mut display = wayland_server::Display::new().unwrap();
 //! // insert the seat:
-//! let (seat, seat_global) = Seat::new(
+//! let seat = Seat::new(
 //!     &mut display,             // the display
 //!     "seat-0".into(),          // the name of the seat, will be advertized to clients
 //!     None                      // insert a logger here
@@ -236,8 +236,8 @@ impl<D> Seat<D> {
     /// #
     /// # use smithay::wayland::seat::Seat;
     /// #
-    /// # let mut display = wayland_server::Display::new();
-    /// # let (mut seat, seat_global) = Seat::new(
+    /// # let mut display = wayland_server::Display::new().unwrap();
+    /// # let mut seat = Seat::new(
     /// #     &mut display,
     /// #     "seat-0".into(),
     /// #     None
@@ -300,7 +300,7 @@ impl<D: 'static> Seat<D> {
     /// ```no_run
     /// # extern crate smithay;
     /// # use smithay::wayland::seat::{Seat, XkbConfig};
-    /// # let mut seat: Seat = unimplemented!();
+    /// # let mut seat: Seat<()> = unimplemented!();
     /// let keyboard = seat
     ///     .add_keyboard(
     ///         XkbConfig {
@@ -382,7 +382,7 @@ impl<D> Seat<D> {
     /// #
     /// # use smithay::wayland::seat::Seat;
     /// #
-    /// # let mut display = wayland_server::Display::new();
+    /// # let mut display = wayland_server::Display::new().unwrap();
     /// # let (mut seat, seat_global) = Seat::new(
     /// #     &mut display,
     /// #     "seat-0".into(),

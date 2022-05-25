@@ -25,7 +25,7 @@
 //!     reexports::{wayland_server::protocol::wl_buffer::WlBuffer},
 //!     wayland::{
 //!         buffer::{Buffer, BufferHandler},
-//!         dmabuf::{DmabufGlobal, DmabufHandler, DmabufState}
+//!         dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError}
 //!     },
 //! };
 //!
@@ -51,12 +51,12 @@
 //!         &mut self.dmabuf_state
 //!     }
 //!
-//!     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> bool {
+//!     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
 //!         // Here you should import the dmabuf into your renderer.
 //!         //
-//!         // The return value indicates whether import was successful. If the return value is false, then
+//!         // The return value indicates whether import was successful. If the return value is Err, then
 //!         // the client is told dmabuf import has failed.
-//!         true
+//!         Ok(())
 //!     }
 //! }
 //!

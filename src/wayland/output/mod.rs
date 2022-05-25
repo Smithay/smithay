@@ -30,9 +30,12 @@
 //! use smithay::wayland::output::{Output, PhysicalProperties, Mode};
 //! use wayland_server::protocol::wl_output;
 //!
-//! # let mut display = wayland_server::Display::new();
-//! // Create the Output with given name and physical properties
-//! let output = Output::new(
+//! # let mut display = wayland_server::Display::new().unwrap();
+//! // Create the Output with given name and physical properties.
+//! // This also creates the global, which you may destroy later
+//! // or drop if you don't intend to destroy the output.
+//! let (output, _global) = Output::new(
+//!     &mut display,
 //!     "output-0".into(), // the name of this output,
 //!     PhysicalProperties {
 //!         size: (200, 150).into(),        // dimensions (width, height) in mm
@@ -42,11 +45,8 @@
 //!     },
 //!     None // insert a logger here
 //! );
-//! // create a global, if you want to advertise it to clients
-//! let _output_global = output.create_global(
-//!     &mut display,      // the display//!
-//! ); // you can drop the global, if you never intend to destroy it.
-//! // Now you can configure it
+//!
+//! // Now you can configure the output
 //! output.change_current_state(
 //!     Some(Mode { size: (1920, 1080).into(), refresh: 60000 }), // the resolution mode,
 //!     Some(wl_output::Transform::Normal), // global screen transformation
