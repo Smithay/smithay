@@ -1,11 +1,11 @@
 use smithay::{
     desktop::Window,
+    reexports::wayland_server::DisplayHandle,
     utils::{Logical, Point},
     wayland::seat::{
         AxisFrame, ButtonEvent, MotionEvent, PointerGrab, PointerGrabStartData, PointerInnerHandle,
     },
 };
-use wayland_server::DisplayHandle;
 
 use crate::Smallvil;
 

@@ -1,4 +1,3 @@
-use calloop::EventLoop;
 use slog::Drain;
 
 mod handlers;
@@ -8,8 +7,8 @@ mod input;
 mod state;
 mod winit;
 
+use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
 pub use state::Smallvil;
-use wayland_server::Display;
 
 pub struct CalloopData {
     state: Smallvil,

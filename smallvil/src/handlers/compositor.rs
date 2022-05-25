@@ -1,13 +1,13 @@
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     delegate_compositor, delegate_shm,
+    reexports::wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle},
     wayland::{
         buffer::BufferHandler,
         compositor::{CompositorHandler, CompositorState},
         shm::ShmState,
     },
 };
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 
 use crate::Smallvil;
 
