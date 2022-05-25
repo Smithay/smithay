@@ -3,12 +3,12 @@ use smithay::{
         Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent, KeyboardKeyEvent, PointerAxisEvent,
         PointerButtonEvent, PointerMotionAbsoluteEvent,
     },
+    reexports::wayland_server::{protocol::wl_pointer, Display},
     wayland::{
         seat::{AxisFrame, ButtonEvent, FilterResult, MotionEvent},
         SERIAL_COUNTER,
     },
 };
-use wayland_server::{protocol::wl_pointer, Display};
 
 use crate::state::Smallvil;
 

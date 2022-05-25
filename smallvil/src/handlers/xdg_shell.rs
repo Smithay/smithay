@@ -1,9 +1,9 @@
 use smithay::{
     delegate_xdg_shell,
     desktop::{Kind, Window},
+    reexports::wayland_server::{DisplayHandle, Resource},
     wayland::shell::xdg::{XdgRequest, XdgShellHandler, XdgShellState},
 };
-use wayland_server::{DisplayHandle, Resource};
 
 use crate::{grabs::MoveSurfaceGrab, Smallvil};
 

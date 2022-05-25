@@ -16,7 +16,11 @@ features = ["test_all_features"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
- members = [ "anvil", "wlcs_anvil" ]
+members = [
+    "smallvil",
+    "anvil",
+    "wlcs_anvil"
+]
 
 [dependencies]
 appendlist = "1.4"
@@ -98,6 +102,3 @@ required-features = ["wayland_frontend"]
 [[example]]
 name = "compositor"
 required-features = ["wayland_frontend"]
-
-[[example]]
-name = "smallvil"
