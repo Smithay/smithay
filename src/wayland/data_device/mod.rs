@@ -51,8 +51,8 @@ mod seat_data;
 mod server_dnd_grab;
 mod source;
 
-pub use device::{DND_ICON_ROLE, DataDeviceUserData};
-pub use source::{with_source_metadata, SourceMetadata, DataSourceUserData};
+pub use device::{DataDeviceUserData, DND_ICON_ROLE};
+pub use source::{with_source_metadata, DataSourceUserData, SourceMetadata};
 
 use seat_data::{SeatData, Selection};
 

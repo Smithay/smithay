@@ -83,8 +83,8 @@ use slog::{info, o};
 
 use crate::utils::{user_data::UserDataMap, Logical, Physical, Point, Raw, Size};
 
-use self::xdg::XdgOutput;
 pub use self::handlers::XdgOutputUserData;
+use self::xdg::XdgOutput;
 
 /// State of Smithay output manager
 #[derive(Debug, Default)]

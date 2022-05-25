@@ -88,7 +88,7 @@ mod transaction;
 mod tree;
 
 pub use self::cache::{Cacheable, MultiCache};
-pub use self::handlers::{SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData, RegionUserData};
+pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
 use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
