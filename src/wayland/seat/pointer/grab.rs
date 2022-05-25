@@ -43,7 +43,7 @@ pub trait PointerGrab<D>: Send + Sync {
     fn motion(
         &mut self,
         data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &MotionEvent,
     );
@@ -55,7 +55,7 @@ pub trait PointerGrab<D>: Send + Sync {
     fn button(
         &mut self,
         data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &ButtonEvent,
     );
@@ -67,7 +67,7 @@ pub trait PointerGrab<D>: Send + Sync {
     fn axis(
         &mut self,
         data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     );
@@ -112,23 +112,22 @@ impl<D> PointerGrab<D> for DefaultGrab {
     fn motion(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &MotionEvent,
     ) {
-        handle.motion(dh, event.location, event.focus.clone(), event.serial, event.time);
+        handle.motion(event.location, event.focus.clone(), event.serial, event.time);
     }
 
     fn button(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &ButtonEvent,
     ) {
-        handle.button(dh, event.button, event.state, event.serial, event.time);
+        handle.button(event.button, event.state, event.serial, event.time);
         handle.set_grab(
-            dh,
             event.serial,
             event.time,
             ClickGrab {
@@ -144,11 +143,11 @@ impl<D> PointerGrab<D> for DefaultGrab {
     fn axis(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {
-        handle.axis(dh, details);
+        handle.axis(details);
     }
 
     fn start_data(&self) -> &GrabStartData {
@@ -169,12 +168,11 @@ impl<D> PointerGrab<D> for ClickGrab {
     fn motion(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &MotionEvent,
     ) {
         handle.motion(
-            dh,
             event.location,
             self.start_data.focus.clone(),
             event.serial,
@@ -185,25 +183,25 @@ impl<D> PointerGrab<D> for ClickGrab {
     fn button(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &ButtonEvent,
     ) {
-        handle.button(dh, event.button, event.state, event.serial, event.time);
+        handle.button(event.button, event.state, event.serial, event.time);
         if handle.current_pressed().is_empty() {
             // no more buttons are pressed, release the grab
-            handle.unset_grab(dh, event.serial, event.time);
+            handle.unset_grab(event.serial, event.time);
         }
     }
 
     fn axis(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {
-        handle.axis(dh, details);
+        handle.axis(details);
     }
 
     fn start_data(&self) -> &GrabStartData {

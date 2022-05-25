@@ -71,7 +71,7 @@ where
     #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
         scale: f64,
@@ -148,7 +148,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
@@ -222,7 +222,7 @@ where
 
     fn draw(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
         scale: f64,

@@ -2,38 +2,33 @@ use std::sync::{atomic::AtomicBool, Mutex};
 
 use crate::wayland::{shell::xdg::XdgShellState, Serial};
 
-use wayland_protocols::xdg_shell::server::{
+use wayland_protocols::xdg::shell::server::{
     xdg_positioner::XdgPositioner, xdg_surface::XdgSurface, xdg_wm_base, xdg_wm_base::XdgWmBase,
 };
 
 use wayland_server::{
-    DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
-    Dispatch, DisplayHandle, GlobalDispatch, New,
+    DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
 };
 
 use super::{
     ShellClient, ShellClientData, XdgPositionerUserData, XdgRequest, XdgShellHandler, XdgSurfaceUserData,
 };
 
-impl DelegateGlobalDispatchBase<XdgWmBase> for XdgShellState {
-    type GlobalData = ();
-}
-
-impl<D> DelegateGlobalDispatch<XdgWmBase, D> for XdgShellState
+impl<D> DelegateGlobalDispatch<XdgWmBase, (), D> for XdgShellState
 where
-    D: GlobalDispatch<XdgWmBase, GlobalData = ()>,
-    D: Dispatch<XdgWmBase, UserData = XdgWmBaseUserData>,
-    D: Dispatch<XdgSurface, UserData = XdgSurfaceUserData>,
-    D: Dispatch<XdgPositioner, UserData = XdgPositionerUserData>,
+    D: GlobalDispatch<XdgWmBase, ()>,
+    D: Dispatch<XdgWmBase, XdgWmBaseUserData>,
+    D: Dispatch<XdgSurface, XdgSurfaceUserData>,
+    D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
     fn bind(
         state: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<XdgWmBase>,
-        _global_data: &Self::GlobalData,
+        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
         let shell = data_init.init(resource, XdgWmBaseUserData::default());
@@ -48,15 +43,11 @@ where
     }
 }
 
-impl DelegateDispatchBase<XdgWmBase> for XdgShellState {
-    type UserData = XdgWmBaseUserData;
-}
-
-impl<D> DelegateDispatch<XdgWmBase, D> for XdgShellState
+impl<D> DelegateDispatch<XdgWmBase, XdgWmBaseUserData, D> for XdgShellState
 where
-    D: Dispatch<XdgWmBase, UserData = XdgWmBaseUserData>,
-    D: Dispatch<XdgSurface, UserData = XdgSurfaceUserData>,
-    D: Dispatch<XdgPositioner, UserData = XdgPositionerUserData>,
+    D: Dispatch<XdgWmBase, XdgWmBaseUserData>,
+    D: Dispatch<XdgSurface, XdgSurfaceUserData>,
+    D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
@@ -65,8 +56,8 @@ where
         _client: &wayland_server::Client,
         wm_base: &XdgWmBase,
         request: xdg_wm_base::Request,
-        data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        data: &XdgWmBaseUserData,
+        dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {

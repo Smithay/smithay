@@ -6,7 +6,7 @@ use wayland_server::{
         wl_data_device::{self, WlDataDevice},
         wl_seat::WlSeat,
     },
-    DelegateDispatch, DelegateDispatchBase, Dispatch, Resource,
+    Client, DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::wayland::{
@@ -21,29 +21,26 @@ use super::{dnd_grab, DataDeviceHandler, DataDeviceState};
 /// WlSurface role of drag and drop icon
 pub const DND_ICON_ROLE: &str = "dnd_icon";
 
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct DataDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
-impl DelegateDispatchBase<WlDataDevice> for DataDeviceState {
-    type UserData = DataDeviceUserData;
-}
-
-impl<D> DelegateDispatch<WlDataDevice, D> for DataDeviceState
+impl<D> DelegateDispatch<WlDataDevice, DataDeviceUserData, D> for DataDeviceState
 where
-    D: Dispatch<WlDataDevice, UserData = DataDeviceUserData>,
+    D: Dispatch<WlDataDevice, DataDeviceUserData>,
     D: DataDeviceHandler,
     D: 'static,
 {
     fn request(
         handler: &mut D,
-        _client: &wayland_server::Client,
+        _client: &Client,
         resource: &WlDataDevice,
         request: wl_data_device::Request,
-        data: &Self::UserData,
-        dh: &mut wayland_server::DisplayHandle<'_>,
-        _data_init: &mut wayland_server::DataInit<'_, D>,
+        data: &DataDeviceUserData,
+        dh: &DisplayHandle,
+        _data_init: &mut DataInit<'_, D>,
     ) {
         let data_device_state = handler.data_device_state();
 
@@ -74,8 +71,7 @@ where
                             handler.started(source.clone(), icon.clone(), seat.clone());
                             let start_data = pointer.grab_start_data().unwrap();
                             pointer.set_grab(
-                                dh,
-                                dnd_grab::DnDGrab::new(start_data, source, origin, seat.clone(), icon),
+                                dnd_grab::DnDGrab::new(start_data, source, origin, seat, icon),
                                 serial,
                                 0,
                             );

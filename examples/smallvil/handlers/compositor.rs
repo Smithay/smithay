@@ -16,7 +16,7 @@ impl CompositorHandler for Smallvil {
         &mut self.compositor_state
     }
 
-    fn commit(&mut self, dh: &mut DisplayHandle, surface: &WlSurface) {
+    fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
         on_commit_buffer_handler(dh, surface);
         self.space.commit(surface);
     }

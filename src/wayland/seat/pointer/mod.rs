@@ -9,7 +9,7 @@ use wayland_server::{
         wl_pointer::{self, Axis, ButtonState, Request, WlPointer},
         wl_surface::WlSurface,
     },
-    DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource,
+    DelegateDispatch, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::{
@@ -67,31 +67,24 @@ impl<D> PointerInternal<D> {
         }
     }
 
-    fn set_grab<G: PointerGrab<D> + 'static>(
-        &mut self,
-        dh: &mut DisplayHandle<'_>,
-        serial: Serial,
-        grab: G,
-        time: u32,
-    ) {
+    fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, grab: G, time: u32) {
         self.grab = GrabStatus::Active(serial, Box::new(grab));
         // generate a move to let the grab change the focus or move the pointer as result of its initialization
         let location = self.location;
         let focus = self.focus.clone();
-        self.motion(dh, location, focus, serial, time);
+        self.motion(location, focus, serial, time);
     }
 
-    fn unset_grab(&mut self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32) {
+    fn unset_grab(&mut self, serial: Serial, time: u32) {
         self.grab = GrabStatus::None;
         // restore the focus
         let location = self.location;
         let focus = self.pending_focus.clone();
-        self.motion(dh, location, focus, serial, time);
+        self.motion(location, focus, serial, time);
     }
 
     fn motion(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
@@ -108,10 +101,10 @@ impl<D> PointerInternal<D> {
             }
         }
         if leave {
-            self.with_focused_pointers(dh, |dh, pointer, surface| {
-                pointer.leave(dh, serial.into(), surface);
+            self.with_focused_pointers(|pointer, surface| {
+                pointer.leave(serial.into(), surface);
                 if pointer.version() >= 5 {
-                    pointer.frame(dh);
+                    pointer.frame();
                 }
             });
             self.focus = None;
@@ -126,45 +119,44 @@ impl<D> PointerInternal<D> {
             self.focus = Some((surface, surface_location));
             let (x, y) = (location - surface_location.to_f64()).into();
             if entered {
-                self.with_focused_pointers(dh, |dh, pointer, surface| {
-                    pointer.enter(dh, serial.into(), surface, x, y);
+                self.with_focused_pointers(|pointer, surface| {
+                    pointer.enter(serial.into(), surface, x, y);
                     if pointer.version() >= 5 {
-                        pointer.frame(dh);
+                        pointer.frame();
                     }
                 })
             } else {
                 // we were on top of a surface and remained on it
-                self.with_focused_pointers(dh, |dh, pointer, _| {
-                    pointer.motion(dh, time, x, y);
+                self.with_focused_pointers(|pointer, _| {
+                    pointer.motion(time, x, y);
                     if pointer.version() >= 5 {
-                        pointer.frame(dh);
+                        pointer.frame();
                     }
                 })
             }
         }
     }
 
-    fn with_focused_pointers<F>(&self, dh: &mut DisplayHandle<'_>, mut f: F)
+    fn with_focused_pointers<F>(&self, mut f: F)
     where
-        F: FnMut(&mut DisplayHandle<'_>, &WlPointer, &WlSurface),
+        F: FnMut(&WlPointer, &WlSurface),
     {
+        use crate::utils::IsAlive;
         if let Some((ref focus, _)) = self.focus {
-            // TODO: is this alive check still needed?
-            // This is is_alive check
-            if dh.object_info(focus.id()).is_err() {
+            if !focus.alive() {
                 return;
             }
             for ptr in &self.known_pointers {
                 if ptr.id().same_client_as(&focus.id()) {
-                    f(dh, ptr, focus)
+                    f(ptr, focus)
                 }
             }
         }
     }
 
-    fn with_grab<F>(&mut self, dh: &mut DisplayHandle<'_>, f: F)
+    fn with_grab<F>(&mut self, dh: &DisplayHandle, f: F)
     where
-        F: FnOnce(&mut DisplayHandle<'_>, PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
+        F: FnOnce(&DisplayHandle, PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
     {
         let mut grab = ::std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
         match grab {
@@ -234,19 +226,13 @@ impl<D> PointerHandle<D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<D> + 'static>(
-        &self,
-        dh: &mut DisplayHandle<'_>,
-        grab: G,
-        serial: Serial,
-        time: u32,
-    ) {
-        self.inner.lock().unwrap().set_grab(dh, serial, grab, time);
+    pub fn set_grab<G: PointerGrab<D> + 'static>(&self, grab: G, serial: Serial, time: u32) {
+        self.inner.lock().unwrap().set_grab(serial, grab, time);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
-    pub fn unset_grab(&self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32) {
-        self.inner.lock().unwrap().unset_grab(dh, serial, time);
+    pub fn unset_grab(&self, serial: Serial, time: u32) {
+        self.inner.lock().unwrap().unset_grab(serial, time);
     }
 
     /// Check if this pointer is currently grabbed with this serial
@@ -284,7 +270,7 @@ impl<D> PointerHandle<D> {
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
-    pub fn motion(&self, data: &mut D, dh: &mut DisplayHandle<'_>, event: &MotionEvent) {
+    pub fn motion(&self, data: &mut D, dh: &DisplayHandle, event: &MotionEvent) {
         let mut inner = self.inner.lock().unwrap();
         inner.pending_focus = event.focus.clone();
         inner.with_grab(dh, move |dh, mut handle, grab| {
@@ -296,7 +282,7 @@ impl<D> PointerHandle<D> {
     ///
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
-    pub fn button(&self, data: &mut D, dh: &mut DisplayHandle<'_>, event: &ButtonEvent) {
+    pub fn button(&self, data: &mut D, dh: &DisplayHandle, event: &ButtonEvent) {
         let mut inner = self.inner.lock().unwrap();
         match event.state {
             ButtonState::Pressed => {
@@ -315,7 +301,7 @@ impl<D> PointerHandle<D> {
     /// Start an axis frame
     ///
     /// A single frame will group multiple scroll events as if they happened in the same instance.
-    pub fn axis(&self, data: &mut D, dh: &mut DisplayHandle<'_>, details: AxisFrame) {
+    pub fn axis(&self, data: &mut D, dh: &DisplayHandle, details: AxisFrame) {
         self.inner.lock().unwrap().with_grab(dh, |dh, mut handle, grab| {
             grab.axis(data, dh, &mut handle, details);
         });
@@ -338,21 +324,15 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<D> + 'static>(
-        &mut self,
-        dh: &mut DisplayHandle<'_>,
-        serial: Serial,
-        time: u32,
-        grab: G,
-    ) {
-        self.inner.set_grab(dh, serial, grab, time);
+    pub fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, time: u32, grab: G) {
+        self.inner.set_grab(serial, grab, time);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
     ///
     /// This will also restore the focus of the underlying pointer
-    pub fn unset_grab(&mut self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32) {
-        self.inner.unset_grab(dh, serial, time);
+    pub fn unset_grab(&mut self, serial: Serial, time: u32) {
+        self.inner.unset_grab(serial, time);
     }
 
     /// Access the current focus of this pointer
@@ -386,31 +366,23 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     /// of enter/motion/leave events.
     pub fn motion(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
         location: Point<f64, Logical>,
         focus: Option<(WlSurface, Point<i32, Logical>)>,
         serial: Serial,
         time: u32,
     ) {
-        self.inner.motion(dh, location, focus, serial, time);
+        self.inner.motion(location, focus, serial, time);
     }
 
     /// Notify that a button was pressed
     ///
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
-    pub fn button(
-        &self,
-        dh: &mut DisplayHandle<'_>,
-        button: u32,
-        state: ButtonState,
-        serial: Serial,
-        time: u32,
-    ) {
-        self.inner.with_focused_pointers(dh, |dh, pointer, _| {
-            pointer.button(dh, serial.into(), time, button, state);
+    pub fn button(&self, button: u32, state: ButtonState, serial: Serial, time: u32) {
+        self.inner.with_focused_pointers(|pointer, _| {
+            pointer.button(serial.into(), time, button, state);
             if pointer.version() >= 5 {
-                pointer.frame(dh);
+                pointer.frame();
             }
         })
     }
@@ -419,36 +391,36 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     ///
     /// This will internally send the appropriate axis events to the client
     /// objects matching with the currently focused surface.
-    pub fn axis(&mut self, dh: &mut DisplayHandle<'_>, details: AxisFrame) {
-        self.inner.with_focused_pointers(dh, |dh, pointer, _| {
+    pub fn axis(&mut self, details: AxisFrame) {
+        self.inner.with_focused_pointers(|pointer, _| {
             // axis
             if details.axis.0 != 0.0 {
-                pointer.axis(dh, details.time, Axis::HorizontalScroll, details.axis.0);
+                pointer.axis(details.time, Axis::HorizontalScroll, details.axis.0);
             }
             if details.axis.1 != 0.0 {
-                pointer.axis(dh, details.time, Axis::VerticalScroll, details.axis.1);
+                pointer.axis(details.time, Axis::VerticalScroll, details.axis.1);
             }
             if pointer.version() >= 5 {
                 // axis source
                 if let Some(source) = details.source {
-                    pointer.axis_source(dh, source);
+                    pointer.axis_source(source);
                 }
                 // axis discrete
                 if details.discrete.0 != 0 {
-                    pointer.axis_discrete(dh, Axis::HorizontalScroll, details.discrete.0);
+                    pointer.axis_discrete(Axis::HorizontalScroll, details.discrete.0);
                 }
                 if details.discrete.1 != 0 {
-                    pointer.axis_discrete(dh, Axis::VerticalScroll, details.discrete.1);
+                    pointer.axis_discrete(Axis::VerticalScroll, details.discrete.1);
                 }
                 // stop
                 if details.stop.0 {
-                    pointer.axis_stop(dh, details.time, Axis::HorizontalScroll);
+                    pointer.axis_stop(details.time, Axis::HorizontalScroll);
                 }
                 if details.stop.1 {
-                    pointer.axis_stop(dh, details.time, Axis::VerticalScroll);
+                    pointer.axis_stop(details.time, Axis::VerticalScroll);
                 }
                 // frame
-                pointer.frame(dh);
+                pointer.frame();
             }
         });
     }
@@ -464,13 +436,9 @@ pub struct PointerUserData<D> {
     pub(crate) handle: Option<PointerHandle<D>>,
 }
 
-impl<D: 'static> DelegateDispatchBase<WlPointer> for SeatState<D> {
-    type UserData = PointerUserData<D>;
-}
-
-impl<D> DelegateDispatch<WlPointer, D> for SeatState<D>
+impl<D> DelegateDispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
 where
-    D: Dispatch<WlPointer, UserData = PointerUserData<D>>,
+    D: Dispatch<WlPointer, PointerUserData<D>>,
     D: SeatHandler,
     D: 'static,
 {
@@ -479,8 +447,8 @@ where
         _client: &wayland_server::Client,
         pointer: &WlPointer,
         request: wl_pointer::Request,
-        data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        data: &PointerUserData<D>,
+        dh: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
@@ -542,7 +510,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &Self::UserData) {
+    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &PointerUserData<D>) {
         if let Some(ref handle) = data.handle {
             handle
                 .inner

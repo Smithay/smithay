@@ -61,12 +61,12 @@ impl Smallvil {
 
         // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
         // You may want to track keyboard hot-plug in real compositor.
-        seat.add_keyboard(&mut display.handle(), Default::default(), 200, 200, |_, _| {})
+        seat.add_keyboard(Default::default(), 200, 200, |_, _| {})
             .unwrap();
 
         // Notify clients that we have a pointer (mouse)
         // Here we assume that there is always pointer plugged in
-        seat.add_pointer(&mut display.handle(), |_| {});
+        seat.add_pointer(|_| {});
 
         // A space represents a two-dimensional plane. Windows and Outputs can be mapped onto it.
         //
@@ -127,6 +127,7 @@ impl Smallvil {
                 // You may also associate some data with the client when inserting the client.
                 state
                     .display
+                    .handle()
                     .insert_client(client_stream, Arc::new(ClientState))
                     .unwrap();
 
@@ -146,7 +147,7 @@ impl Smallvil {
 }
 
 pub struct ClientState;
-impl ClientData<Smallvil> for ClientState {
+impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }

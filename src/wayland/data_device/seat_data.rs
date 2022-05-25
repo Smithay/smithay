@@ -55,7 +55,7 @@ impl SeatData {
         self.known_devices.retain(f)
     }
 
-    pub fn set_selection<D>(&mut self, dh: &mut DisplayHandle<'_>, new_selection: Selection)
+    pub fn set_selection<D>(&mut self, dh: &DisplayHandle, new_selection: Selection)
     where
         D: DataDeviceHandler,
         D: 'static,
@@ -64,7 +64,7 @@ impl SeatData {
         self.send_selection::<D>(dh);
     }
 
-    pub fn set_focus<D>(&mut self, dh: &mut DisplayHandle<'_>, new_focus: Option<Client>)
+    pub fn set_focus<D>(&mut self, dh: &DisplayHandle, new_focus: Option<Client>)
     where
         D: DataDeviceHandler,
         D: 'static,
@@ -73,7 +73,7 @@ impl SeatData {
         self.send_selection::<D>(dh);
     }
 
-    pub fn send_selection<D>(&mut self, dh: &mut DisplayHandle<'_>)
+    pub fn send_selection<D>(&mut self, dh: &DisplayHandle)
     where
         D: DataDeviceHandler,
         D: 'static,
@@ -104,7 +104,7 @@ impl SeatData {
                     if dh.get_client(dd.id()).map(|c| &c != client).unwrap_or(true) {
                         continue;
                     }
-                    dd.selection(dh, None);
+                    dd.selection(None);
                 }
             }
             Selection::Client(ref data_source) => {
@@ -115,10 +115,10 @@ impl SeatData {
                     }
                     let source = data_source.clone();
 
-                    let handle = dh.backend_handle::<D>().unwrap();
+                    let handle = dh.backend_handle();
                     // create a data offer
                     let offer = handle
-                        .create_object(
+                        .create_object::<D>(
                             client.id(),
                             WlDataOffer::interface(),
                             dd.version(),
@@ -128,14 +128,14 @@ impl SeatData {
                     let offer = WlDataOffer::from_id(dh, offer).unwrap();
 
                     // advertize the offer to the client
-                    dd.data_offer(dh, &offer);
+                    dd.data_offer(&offer);
                     with_source_metadata(data_source, |meta| {
                         for mime_type in meta.mime_types.iter().cloned() {
-                            offer.offer(dh, mime_type);
+                            offer.offer(mime_type);
                         }
                     })
                     .unwrap();
-                    dd.selection(dh, Some(&offer));
+                    dd.selection(Some(&offer));
                 }
             }
             Selection::Compositor(ref meta) => {
@@ -147,10 +147,10 @@ impl SeatData {
 
                     let offer_meta = meta.clone();
 
-                    let handle = dh.backend_handle::<D>().unwrap();
+                    let handle = dh.backend_handle();
                     // create a data offer
                     let offer = handle
-                        .create_object(
+                        .create_object::<D>(
                             client.id(),
                             WlDataOffer::interface(),
                             dd.version(),
@@ -160,11 +160,11 @@ impl SeatData {
                     let offer = WlDataOffer::from_id(dh, offer).unwrap();
 
                     // advertize the offer to the client
-                    dd.data_offer(dh, &offer);
+                    dd.data_offer(&offer);
                     for mime_type in meta.mime_types.iter().cloned() {
-                        offer.offer(dh, mime_type);
+                        offer.offer(mime_type);
                     }
-                    dd.selection(dh, Some(&offer));
+                    dd.selection(Some(&offer));
                 }
             }
         }
@@ -181,15 +181,14 @@ where
 {
     fn request(
         self: Arc<Self>,
-        dh: &mut Handle<D>,
+        dh: &Handle,
         handler: &mut D,
         _client_id: ClientId,
         msg: Message<ObjectId>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
-        let mut dh = DisplayHandle::from(dh);
-
-        if let Ok((_resource, request)) = WlDataOffer::parse_request(&mut dh, msg) {
-            handle_client_selection(handler, request, &self.source, &mut dh);
+        let dh = DisplayHandle::from(dh.clone());
+        if let Ok((_resource, request)) = WlDataOffer::parse_request(&dh, msg) {
+            handle_client_selection(handler, request, &self.source);
         }
 
         None
@@ -198,12 +197,8 @@ where
     fn destroyed(&self, _data: &mut D, _client_id: ClientId, _object_id: ObjectId) {}
 }
 
-fn handle_client_selection<D>(
-    state: &mut D,
-    request: wl_data_offer::Request,
-    source: &WlDataSource,
-    dh: &mut wayland_server::DisplayHandle<'_>,
-) where
+fn handle_client_selection<D>(state: &mut D, request: wl_data_offer::Request, source: &WlDataSource)
+where
     D: DataDeviceHandler,
 {
     let data_device_state = state.data_device_state();
@@ -222,7 +217,7 @@ fn handle_client_selection<D>(
                 "Denying a wl_data_offer.receive with invalid source."
             );
         } else {
-            source.send(dh, mime_type, fd);
+            source.send(mime_type, fd);
         }
         let _ = ::nix::unistd::close(fd);
     }
@@ -238,14 +233,13 @@ where
 {
     fn request(
         self: Arc<Self>,
-        dh: &mut Handle<D>,
+        dh: &Handle,
         handler: &mut D,
         _client_id: ClientId,
         msg: Message<ObjectId>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
-        let mut dh = DisplayHandle::from(dh);
-
-        if let Ok((_resource, request)) = WlDataOffer::parse_request(&mut dh, msg) {
+        let dh = DisplayHandle::from(dh.clone());
+        if let Ok((_resource, request)) = WlDataOffer::parse_request(&dh, msg) {
             handle_server_selection(handler, request, &self.offer_meta);
         }
 

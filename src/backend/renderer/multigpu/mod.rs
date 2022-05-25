@@ -341,7 +341,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     #[cfg(feature = "wayland_frontend")]
     pub fn early_import(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         source: Option<DrmNode>,
         target: DrmNode,
         surface: &WlSurface,
@@ -425,7 +425,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     #[cfg(feature = "wayland_frontend")]
     fn early_import_buffer(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         source: Option<DrmNode>,
         target: DrmNode,
         buffer: &wl_buffer::WlBuffer,

@@ -57,7 +57,7 @@ impl LayerSurface {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn elem_draw<R>(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,

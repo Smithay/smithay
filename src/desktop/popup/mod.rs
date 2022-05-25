@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 pub use grab::*;
 pub use manager::*;
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
+use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::{
     utils::{IsAlive, Logical, Point, Rectangle},
@@ -57,9 +57,9 @@ impl PopupKind {
         })
     }
 
-    fn send_done(&self, dh: &mut DisplayHandle<'_>) {
+    fn send_done(&self) {
         match *self {
-            PopupKind::Xdg(ref t) => t.send_popup_done(dh),
+            PopupKind::Xdg(ref t) => t.send_popup_done(),
         }
     }
 

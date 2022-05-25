@@ -16,6 +16,12 @@ use std::{
         mpsc::{channel, Receiver, Sender},
     },
 };
+#[cfg(all(
+    feature = "wayland_frontend",
+    feature = "backend_egl",
+    feature = "use_system_lib"
+))]
+use wayland_server::DisplayHandle;
 
 #[cfg(feature = "wayland_frontend")]
 use std::{cell::RefCell, collections::HashMap};
@@ -1004,9 +1010,9 @@ impl ImportMem for Gles2Renderer {
     feature = "use_system_lib"
 ))]
 impl ImportEgl for Gles2Renderer {
-    fn bind_wl_display<D: 'static>(
+    fn bind_wl_display(
         &mut self,
-        display: &wayland_server::Display<D>,
+        display: &wayland_server::DisplayHandle,
     ) -> Result<(), crate::backend::egl::Error> {
         self.egl_reader = Some(self.egl.display.bind_wl_display(display)?);
         Ok(())
@@ -1022,7 +1028,7 @@ impl ImportEgl for Gles2Renderer {
 
     fn import_egl_buffer(
         &mut self,
-        dh: &mut wayland_server::DisplayHandle<'_>,
+        dh: &DisplayHandle,
         buffer: &Buffer,
         _surface: Option<&crate::wayland::compositor::SurfaceData>,
         _damage: &[Rectangle<i32, BufferCoord>],

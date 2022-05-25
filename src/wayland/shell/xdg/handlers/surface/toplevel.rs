@@ -2,12 +2,12 @@ use std::sync::{atomic::Ordering, Mutex};
 
 use crate::wayland::{compositor, Serial};
 
-use wayland_protocols::xdg_shell::server::xdg_toplevel::{self, XdgToplevel};
+use wayland_protocols::xdg::shell::server::xdg_toplevel::{self, XdgToplevel};
 
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::wl_surface,
-    DataInit, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource, WEnum,
+    DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource, WEnum,
 };
 
 use super::{
@@ -15,13 +15,9 @@ use super::{
     XdgShellSurfaceUserData, XdgSurfaceUserData, XdgToplevelSurfaceRoleAttributes,
 };
 
-impl DelegateDispatchBase<XdgToplevel> for XdgShellState {
-    type UserData = XdgShellSurfaceUserData;
-}
-
-impl<D> DelegateDispatch<XdgToplevel, D> for XdgShellState
+impl<D> DelegateDispatch<XdgToplevel, XdgShellSurfaceUserData, D> for XdgShellState
 where
-    D: Dispatch<XdgToplevel, UserData = XdgShellSurfaceUserData>,
+    D: Dispatch<XdgToplevel, XdgShellSurfaceUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
@@ -30,8 +26,8 @@ where
         _client: &wayland_server::Client,
         toplevel: &XdgToplevel,
         request: xdg_toplevel::Request,
-        data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        data: &XdgShellSurfaceUserData,
+        dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -154,7 +150,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &Self::UserData) {
+    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
         data.alive_tracker.destroy_notify();
 
         if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
@@ -234,11 +230,7 @@ where
     })
 }
 
-pub fn send_toplevel_configure(
-    dh: &mut DisplayHandle<'_>,
-    resource: &xdg_toplevel::XdgToplevel,
-    configure: ToplevelConfigure,
-) {
+pub fn send_toplevel_configure(resource: &xdg_toplevel::XdgToplevel, configure: ToplevelConfigure) {
     let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
     let (width, height) = configure.state.size.unwrap_or_default().into();
     // convert the Vec<State> (which is really a Vec<u32>) into Vec<u8>
@@ -254,9 +246,9 @@ pub fn send_toplevel_configure(
     let serial = configure.serial;
 
     // Send the toplevel configure
-    resource.configure(dh, width, height, states);
+    resource.configure(width, height, states);
 
     // Send the base xdg_surface configure event to mark
     // The configure as finished
-    data.xdg_surface.configure(dh, serial.into());
+    data.xdg_surface.configure(serial.into());
 }

@@ -79,11 +79,11 @@ impl Smallvil {
                         self.space.raise_window(&window, true);
                         keyboard.set_focus(dh, Some(window.toplevel().wl_surface()), serial);
                         window.set_activated(true);
-                        window.configure(dh);
+                        window.configure();
                     } else {
                         self.space.windows().for_each(|window| {
                             window.set_activated(false);
-                            window.configure(dh);
+                            window.configure();
                         });
                         keyboard.set_focus(dh, None, serial);
                     }

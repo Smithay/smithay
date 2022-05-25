@@ -144,7 +144,7 @@ impl<'a, 'b, Target> ImportEgl for MultiRenderer<'a, 'b, EglGlesBackend, EglGles
 where
     Gles2Renderer: Offscreen<Target>,
 {
-    fn bind_wl_display<D: 'static>(&mut self, display: &wayland_server::Display<D>) -> Result<(), EGLError> {
+    fn bind_wl_display(&mut self, display: &wayland_server::DisplayHandle) -> Result<(), EGLError> {
         self.render.renderer_mut().bind_wl_display(display)
     }
     fn unbind_wl_display(&mut self) {
@@ -156,7 +156,7 @@ where
 
     fn import_egl_buffer(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         buffer: &Buffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
@@ -202,7 +202,7 @@ where
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl<'a, 'b, Target> MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Target> {
     fn try_import_egl(
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         renderer: &mut Gles2Renderer,
         buffer: &wl_buffer::WlBuffer,
     ) -> Result<Dmabuf, MultigpuError<EglGlesBackend, EglGlesBackend>> {

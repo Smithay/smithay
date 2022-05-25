@@ -33,8 +33,8 @@ pub struct PrivateSurfaceData {
     public_data: SurfaceData,
     pending_transaction: PendingTransaction,
     current_txid: Serial,
-    pre_commit_hooks: Vec<fn(&mut DisplayHandle<'_>, &WlSurface)>,
-    post_commit_hooks: Vec<fn(&mut DisplayHandle<'_>, &WlSurface)>,
+    pre_commit_hooks: Vec<fn(&DisplayHandle, &WlSurface)>,
+    post_commit_hooks: Vec<fn(&DisplayHandle, &WlSurface)>,
     destruction_hooks: Vec<fn(&SurfaceData)>,
 }
 
@@ -161,13 +161,13 @@ impl PrivateSurfaceData {
         f(&my_data.public_data)
     }
 
-    pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
+    pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         my_data.pre_commit_hooks.push(hook);
     }
 
-    pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
+    pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         my_data.post_commit_hooks.push(hook);
@@ -179,7 +179,7 @@ impl PrivateSurfaceData {
         my_data.destruction_hooks.push(hook);
     }
 
-    pub fn invoke_pre_commit_hooks(dh: &mut DisplayHandle<'_>, surface: &WlSurface) {
+    pub fn invoke_pre_commit_hooks(dh: &DisplayHandle, surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
         let hooks = {
             let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
@@ -191,7 +191,7 @@ impl PrivateSurfaceData {
         }
     }
 
-    pub fn invoke_post_commit_hooks(dh: &mut DisplayHandle<'_>, surface: &WlSurface) {
+    pub fn invoke_post_commit_hooks(dh: &DisplayHandle, surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
         let hooks = {
             let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
@@ -203,7 +203,7 @@ impl PrivateSurfaceData {
         }
     }
 
-    pub fn commit(surface: &WlSurface, dh: &mut DisplayHandle<'_>) {
+    pub fn commit(surface: &WlSurface, dh: &DisplayHandle) {
         let is_sync = is_effectively_sync(surface);
         let children = PrivateSurfaceData::get_children(surface);
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;

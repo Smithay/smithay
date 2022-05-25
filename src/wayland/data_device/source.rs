@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use wayland_server::{
     protocol::wl_data_source::{self},
     protocol::{wl_data_device_manager::DndAction, wl_data_source::WlDataSource},
-    DelegateDispatch, DelegateDispatchBase, Dispatch, Resource,
+    DelegateDispatch, Dispatch, DisplayHandle, Resource,
 };
 
 use super::{DataDeviceHandler, DataDeviceState};
@@ -27,6 +27,7 @@ impl Default for SourceMetadata {
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct DataSourceUserData {
     inner: Mutex<SourceMetadata>,
@@ -40,13 +41,9 @@ impl DataSourceUserData {
     }
 }
 
-impl DelegateDispatchBase<WlDataSource> for DataDeviceState {
-    type UserData = DataSourceUserData;
-}
-
-impl<D> DelegateDispatch<WlDataSource, D> for DataDeviceState
+impl<D> DelegateDispatch<WlDataSource, DataSourceUserData, D> for DataDeviceState
 where
-    D: Dispatch<WlDataSource, UserData = DataSourceUserData>,
+    D: Dispatch<WlDataSource, DataSourceUserData>,
     D: DataDeviceHandler,
     D: 'static,
 {
@@ -55,8 +52,8 @@ where
         _client: &wayland_server::Client,
         _resource: &WlDataSource,
         request: wl_data_source::Request,
-        data: &Self::UserData,
-        _dhandle: &mut wayland_server::DisplayHandle<'_>,
+        data: &DataSourceUserData,
+        _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         let data_device_state = state.data_device_state();

@@ -69,8 +69,8 @@ use wayland_server::{
         wl_surface,
         wl_touch::WlTouch,
     },
-    DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
-    Dispatch, Display, DisplayHandle, GlobalDispatch, New, Resource,
+    DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, Display, DisplayHandle, GlobalDispatch,
+    New, Resource,
 };
 
 #[derive(Debug)]
@@ -107,10 +107,10 @@ impl<D> Inner<D> {
         caps
     }
 
-    fn send_all_caps(&self, dh: &mut DisplayHandle<'_>) {
+    fn send_all_caps(&self) {
         let capabilities = self.compute_caps();
         for seat in &self.known_seats {
-            seat.capabilities(dh, capabilities);
+            seat.capabilities(capabilities);
         }
     }
 }
@@ -160,7 +160,7 @@ impl<D: 'static> Seat<D> {
     /// in case you want to remove it.
     pub fn new<N, L>(display: &mut Display<D>, name: N, logger: L) -> Self
     where
-        D: GlobalDispatch<WlSeat, GlobalData = SeatGlobalData<D>> + 'static,
+        D: GlobalDispatch<WlSeat, SeatGlobalData<D>> + 'static,
         N: Into<String>,
         L: Into<Option<::slog::Logger>>,
     {
@@ -183,7 +183,9 @@ impl<D: 'static> Seat<D> {
             log,
         });
 
-        let global_id = display.create_global(5, SeatGlobalData { arc: arc.clone() });
+        let global_id = display
+            .handle()
+            .create_global::<D, _, _>(5, SeatGlobalData { arc: arc.clone() });
         arc.inner.lock().unwrap().global_id = Some(global_id);
 
         Self { arc }
@@ -244,7 +246,7 @@ impl<D> Seat<D> {
     ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
     /// );
     /// ```
-    pub fn add_pointer<F>(&mut self, dh: &mut DisplayHandle<'_>, cb: F) -> PointerHandle<D>
+    pub fn add_pointer<F>(&mut self, cb: F) -> PointerHandle<D>
     where
         F: FnMut(CursorImageStatus) + Send + Sync + 'static,
     {
@@ -254,10 +256,10 @@ impl<D> Seat<D> {
             // there is already a pointer, remove it and notify the clients
             // of the change
             inner.pointer = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
         inner.pointer = Some(pointer.clone());
-        inner.send_all_caps(dh);
+        inner.send_all_caps();
         pointer
     }
 
@@ -269,11 +271,11 @@ impl<D> Seat<D> {
     /// Remove the pointer capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_pointer(&mut self, dh: &mut DisplayHandle<'_>) {
+    pub fn remove_pointer(&mut self) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.pointer.is_some() {
             inner.pointer = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
     }
 }
@@ -317,7 +319,6 @@ impl<D: 'static> Seat<D> {
     /// ```
     pub fn add_keyboard<F>(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
         xkb_config: keyboard::XkbConfig<'_>,
         repeat_delay: i32,
         repeat_rate: i32,
@@ -339,10 +340,10 @@ impl<D: 'static> Seat<D> {
             // there is already a keyboard, remove it and notify the clients
             // of the change
             inner.keyboard = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
         inner.keyboard = Some(keyboard.clone());
-        inner.send_all_caps(dh);
+        inner.send_all_caps();
         Ok(keyboard)
     }
 
@@ -354,11 +355,11 @@ impl<D: 'static> Seat<D> {
     /// Remove the keyboard capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_keyboard(&mut self, dh: &mut DisplayHandle<'_>) {
+    pub fn remove_keyboard(&mut self) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.keyboard.is_some() {
             inner.keyboard = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
     }
 }
@@ -389,16 +390,16 @@ impl<D> Seat<D> {
     /// # );
     /// let touch_handle = seat.add_touch();
     /// ```
-    pub fn add_touch(&mut self, dh: &mut DisplayHandle<'_>) -> TouchHandle {
+    pub fn add_touch(&mut self) -> TouchHandle {
         let mut inner = self.arc.inner.lock().unwrap();
         let touch = TouchHandle::new();
         if inner.touch.is_some() {
             // If there's already a tocuh device, remove it notify the clients about the change.
             inner.touch = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
         inner.touch = Some(touch.clone());
-        inner.send_all_caps(dh);
+        inner.send_all_caps();
         touch
     }
 
@@ -410,11 +411,11 @@ impl<D> Seat<D> {
     /// Remove the touch capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_touch(&mut self, dh: &mut DisplayHandle<'_>) {
+    pub fn remove_touch(&mut self) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.touch.is_some() {
             inner.touch = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
     }
 }
@@ -450,30 +451,26 @@ pub struct SeatUserData<D> {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_seat {
-    ($ty: ty) => {
+    ($ty: tt) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat
+            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatGlobalData<$ty>
         ] => $crate::wayland::seat::SeatState<$ty>);
 
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat,
-            $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer,
-            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard,
-            $crate::reexports::wayland_server::protocol::wl_touch::WlTouch
+            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatUserData<$ty>,
+            $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer: $crate::wayland::seat::PointerUserData<$ty>,
+            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard: $crate::wayland::seat::KeyboardUserData,
+            $crate::reexports::wayland_server::protocol::wl_touch::WlTouch: $crate::wayland::seat::TouchUserData
         ] => $crate::wayland::seat::SeatState<$ty>);
     };
 }
 
-impl<D: 'static> DelegateDispatchBase<WlSeat> for SeatState<D> {
-    type UserData = SeatUserData<D>;
-}
-
-impl<D> DelegateDispatch<WlSeat, D> for SeatState<D>
+impl<D> DelegateDispatch<WlSeat, SeatUserData<D>, D> for SeatState<D>
 where
-    D: Dispatch<WlSeat, UserData = SeatUserData<D>>,
-    D: Dispatch<WlKeyboard, UserData = KeyboardUserData>,
-    D: Dispatch<WlPointer, UserData = PointerUserData<D>>,
-    D: Dispatch<WlTouch, UserData = TouchUserData>,
+    D: Dispatch<WlSeat, SeatUserData<D>>,
+    D: Dispatch<WlKeyboard, KeyboardUserData>,
+    D: Dispatch<WlPointer, PointerUserData<D>>,
+    D: Dispatch<WlTouch, TouchUserData>,
     D: SeatHandler,
     D: 'static,
 {
@@ -482,8 +479,8 @@ where
         _client: &wayland_server::Client,
         _resource: &WlSeat,
         request: wl_seat::Request,
-        data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        data: &SeatUserData<D>,
+        _dh: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
@@ -515,7 +512,7 @@ where
                 );
 
                 if let Some(ref h) = inner.keyboard {
-                    h.new_kbd(dh, keyboard);
+                    h.new_kbd(keyboard);
                 } else {
                     // same as pointer, should error but cannot
                 }
@@ -543,7 +540,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &Self::UserData) {
+    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &SeatUserData<D>) {
         data.arc
             .inner
             .lock()
@@ -553,26 +550,22 @@ where
     }
 }
 
-impl<D: 'static> DelegateGlobalDispatchBase<WlSeat> for SeatState<D> {
-    type GlobalData = SeatGlobalData<D>;
-}
-
-impl<D> DelegateGlobalDispatch<WlSeat, D> for SeatState<D>
+impl<D> DelegateGlobalDispatch<WlSeat, SeatGlobalData<D>, D> for SeatState<D>
 where
-    D: GlobalDispatch<WlSeat, GlobalData = Self::GlobalData>,
-    D: Dispatch<WlSeat, UserData = SeatUserData<D>>,
-    D: Dispatch<WlKeyboard, UserData = KeyboardUserData>,
-    D: Dispatch<WlPointer, UserData = PointerUserData<D>>,
-    D: Dispatch<WlTouch, UserData = TouchUserData>,
+    D: GlobalDispatch<WlSeat, SeatGlobalData<D>>,
+    D: Dispatch<WlSeat, SeatUserData<D>>,
+    D: Dispatch<WlKeyboard, KeyboardUserData>,
+    D: Dispatch<WlPointer, PointerUserData<D>>,
+    D: Dispatch<WlTouch, TouchUserData>,
     D: SeatHandler,
     D: 'static,
 {
     fn bind(
         _state: &mut D,
-        handle: &mut wayland_server::DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<WlSeat>,
-        global_data: &Self::GlobalData,
+        global_data: &SeatGlobalData<D>,
         data_init: &mut DataInit<'_, D>,
     ) {
         let data = SeatUserData {
@@ -582,12 +575,12 @@ where
         let resource = data_init.init(resource, data);
 
         if resource.version() >= 2 {
-            resource.name(handle, global_data.arc.name.clone());
+            resource.name(global_data.arc.name.clone());
         }
 
         let mut inner = global_data.arc.inner.lock().unwrap();
-        resource.capabilities(handle, inner.compute_caps());
+        resource.capabilities(inner.compute_caps());
 
-        inner.known_seats.push(resource.clone());
+        inner.known_seats.push(resource);
     }
 }

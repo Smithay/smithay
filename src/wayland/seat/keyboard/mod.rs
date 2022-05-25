@@ -16,7 +16,7 @@ use wayland_server::{
         wl_keyboard::{self, KeyState as WlKeyState, KeymapFormat, WlKeyboard},
         wl_surface::WlSurface,
     },
-    Client, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource,
+    Client, DelegateDispatch, Dispatch, DisplayHandle, Resource,
 };
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
@@ -160,10 +160,14 @@ impl KbdInternal {
     where
         F: FnMut(&WlKeyboard, &WlSurface),
     {
-        if let Some(ref surface) = self.focus {
+        use crate::utils::IsAlive;
+        if let Some((ref surface, _)) = self.focus {
+            if !surface.alive() {
+                return;
+            }
             for kbd in self.known_kbds.iter() {
-                if kbd.id().same_client_as(&surface.0.id()) {
-                    f(kbd, &surface.0);
+                if kbd.id().same_client_as(&surface.id()) {
+                    f(kbd, surface);
                 }
             }
         }
@@ -297,7 +301,7 @@ pub trait KeyboardGrab {
     #[allow(clippy::too_many_arguments)]
     fn input(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut KeyboardInnerHandle<'_>,
         keycode: u32,
         key_state: WlKeyState,
@@ -309,7 +313,7 @@ pub trait KeyboardGrab {
     /// A focus change was requested
     fn set_focus(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut KeyboardInnerHandle<'_>,
         focus: Option<&WlSurface>,
         serial: Serial,
@@ -422,7 +426,7 @@ impl KeyboardHandle {
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
     pub fn input<T, F>(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         keycode: u32,
         state: KeyState,
         serial: Serial,
@@ -484,7 +488,7 @@ impl KeyboardHandle {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&self, dh: &mut DisplayHandle<'_>, focus: Option<&WlSurface>, serial: Serial) {
+    pub fn set_focus(&self, dh: &DisplayHandle, focus: Option<&WlSurface>, serial: Serial) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.pending_focus = focus.cloned();
         guard.with_grab(
@@ -533,7 +537,7 @@ impl KeyboardHandle {
     /// The keymap will automatically be sent to it
     ///
     /// This should be done first, before anything else is done with this keyboard.
-    pub(crate) fn new_kbd(&self, dh: &mut DisplayHandle<'_>, kbd: WlKeyboard) {
+    pub(crate) fn new_kbd(&self, kbd: WlKeyboard) {
         trace!(self.arc.logger, "Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
@@ -541,7 +545,6 @@ impl KeyboardHandle {
             f.write_all(self.arc.keymap.as_bytes())?;
             f.flush()?;
             kbd.keymap(
-                dh,
                 KeymapFormat::XkbV1,
                 f.as_raw_fd(),
                 self.arc.keymap.as_bytes().len() as u32,
@@ -559,27 +562,27 @@ impl KeyboardHandle {
 
         let mut guard = self.arc.internal.lock().unwrap();
         if kbd.version() >= 4 {
-            kbd.repeat_info(dh, guard.repeat_rate, guard.repeat_delay);
+            kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
         }
         if let Some((focused, serial)) = guard.focus.as_ref() {
             if focused.id().same_client_as(&kbd.id()) {
                 let (dep, la, lo, gr) = guard.serialize_modifiers();
                 let keys = guard.serialize_pressed_keys();
-                kbd.enter(dh, (*serial).into(), focused, keys);
+                kbd.enter((*serial).into(), focused, keys);
                 // Modifiers must be send after enter event.
-                kbd.modifiers(dh, (*serial).into(), dep, la, lo, gr);
+                kbd.modifiers((*serial).into(), dep, la, lo, gr);
             }
         }
         guard.known_kbds.push(kbd);
     }
 
     /// Change the repeat info configured for this keyboard
-    pub fn change_repeat_info(&self, dh: &mut DisplayHandle<'_>, rate: i32, delay: i32) {
+    pub fn change_repeat_info(&self, rate: i32, delay: i32) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.repeat_delay = delay;
         guard.repeat_rate = rate;
         for kbd in &guard.known_kbds {
-            kbd.repeat_info(dh, rate, delay);
+            kbd.repeat_info(rate, delay);
         }
     }
 }
@@ -590,13 +593,9 @@ pub struct KeyboardUserData {
     pub(crate) handle: Option<KeyboardHandle>,
 }
 
-impl<D> DelegateDispatchBase<WlKeyboard> for SeatState<D> {
-    type UserData = KeyboardUserData;
-}
-
-impl<D> DelegateDispatch<WlKeyboard, D> for SeatState<D>
+impl<D> DelegateDispatch<WlKeyboard, KeyboardUserData, D> for SeatState<D>
 where
-    D: 'static + Dispatch<WlKeyboard, UserData = KeyboardUserData>,
+    D: 'static + Dispatch<WlKeyboard, KeyboardUserData>,
     D: SeatHandler,
 {
     fn request(
@@ -604,13 +603,13 @@ where
         _client: &wayland_server::Client,
         _resource: &WlKeyboard,
         _request: wl_keyboard::Request,
-        _data: &Self::UserData,
-        _dhandle: &mut DisplayHandle<'_>,
+        _data: &KeyboardUserData,
+        _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &Self::UserData) {
+    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &KeyboardUserData) {
         if let Some(ref handle) = data.handle {
             handle
                 .arc
@@ -643,12 +642,12 @@ impl<'a> KeyboardInnerHandle<'a> {
     ///
     /// This will also restore the focus of the underlying keyboard if restore_focus
     /// is [`true`]
-    pub fn unset_grab(&mut self, dh: &mut DisplayHandle<'_>, serial: Serial, restore_focus: bool) {
+    pub fn unset_grab(&mut self, serial: Serial, restore_focus: bool) {
         self.inner.grab = GrabStatus::None;
         // restore the focus
         if restore_focus {
             let focus = self.inner.pending_focus.clone();
-            self.set_focus(dh, focus.as_ref(), serial);
+            self.set_focus(focus.as_ref(), serial);
         }
     }
 
@@ -660,7 +659,6 @@ impl<'a> KeyboardInnerHandle<'a> {
     /// Send the input to the focused keyboards
     pub fn input(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
         keycode: u32,
         key_state: WlKeyState,
         modifiers: Option<(u32, u32, u32, u32)>,
@@ -670,9 +668,9 @@ impl<'a> KeyboardInnerHandle<'a> {
         self.inner.with_focused_kbds(|kbd, _| {
             // key event must be sent before modifers event for libxkbcommon
             // to process them correctly
-            kbd.key(dh, serial.into(), time, keycode, key_state);
+            kbd.key(serial.into(), time, keycode, key_state);
             if let Some((dep, la, lo, gr)) = modifiers {
-                kbd.modifiers(dh, serial.into(), dep, la, lo, gr);
+                kbd.modifiers(serial.into(), dep, la, lo, gr);
             }
         });
     }
@@ -683,7 +681,7 @@ impl<'a> KeyboardInnerHandle<'a> {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&mut self, dh: &mut DisplayHandle<'_>, focus: Option<&WlSurface>, serial: Serial) {
+    pub fn set_focus(&mut self, focus: Option<&WlSurface>, serial: Serial) {
         let same = self
             .inner
             .focus
@@ -694,7 +692,7 @@ impl<'a> KeyboardInnerHandle<'a> {
         if !same {
             // unset old focus
             self.inner.with_focused_kbds(|kbd, s| {
-                kbd.leave(dh, serial.into(), s);
+                kbd.leave(serial.into(), s);
             });
 
             // set new focus
@@ -702,9 +700,9 @@ impl<'a> KeyboardInnerHandle<'a> {
             let (dep, la, lo, gr) = self.inner.serialize_modifiers();
             let keys = self.inner.serialize_pressed_keys();
             self.inner.with_focused_kbds(|kbd, surface| {
-                kbd.enter(dh, serial.into(), surface, keys.clone());
+                kbd.enter(serial.into(), surface, keys.clone());
                 // Modifiers must be send after enter event.
-                kbd.modifiers(dh, serial.into(), dep, la, lo, gr);
+                kbd.modifiers(serial.into(), dep, la, lo, gr);
             });
             {
                 let KbdInternal {
@@ -731,7 +729,7 @@ struct DefaultGrab;
 impl KeyboardGrab for DefaultGrab {
     fn input(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         handle: &mut KeyboardInnerHandle<'_>,
         keycode: u32,
         key_state: WlKeyState,
@@ -739,17 +737,17 @@ impl KeyboardGrab for DefaultGrab {
         serial: Serial,
         time: u32,
     ) {
-        handle.input(dh, keycode, key_state, modifiers, serial, time)
+        handle.input(keycode, key_state, modifiers, serial, time)
     }
 
     fn set_focus(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         handle: &mut KeyboardInnerHandle<'_>,
         focus: Option<&WlSurface>,
         serial: Serial,
     ) {
-        handle.set_focus(dh, focus, serial)
+        handle.set_focus(focus, serial)
     }
 
     fn start_data(&self) -> &GrabStartData {

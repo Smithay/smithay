@@ -24,7 +24,7 @@ use smithay::{
         shm::ShmState,
     },
 };
-use wayland_protocols::xdg_shell::server::xdg_toplevel;
+use wayland_protocols::xdg::shell::server::xdg_toplevel;
 use wayland_server::{
     backend::{ClientData, ClientId, DisconnectReason},
     protocol::wl_surface::{self, WlSurface},
@@ -41,7 +41,7 @@ impl XdgShellHandler for App {
         &mut self.xdg_shell_state
     }
 
-    fn request(&mut self, dh: &mut DisplayHandle, request: XdgRequest) {
+    fn request(&mut self, _dh: &DisplayHandle, request: XdgRequest) {
         dbg!(&request);
 
         match request {
@@ -49,7 +49,7 @@ impl XdgShellHandler for App {
                 surface.with_pending_state(|state| {
                     state.states.set(xdg_toplevel::State::Activated);
                 });
-                surface.send_configure(dh);
+                surface.send_configure();
             }
             XdgRequest::Move { .. } => {
                 //
@@ -77,7 +77,7 @@ impl CompositorHandler for App {
         &mut self.compositor_state
     }
 
-    fn commit(&mut self, dh: &mut DisplayHandle, surface: &WlSurface) {
+    fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
         on_commit_buffer_handler(dh, surface);
     }
 }
@@ -141,7 +141,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
     let keyboard = state
         .seat
-        .add_keyboard(&mut display.handle(), Default::default(), 200, 200, |_, _| {})
+        .add_keyboard(Default::default(), 200, 200, |_, _| {})
         .unwrap();
 
     std::env::set_var("WAYLAND_DISPLAY", "wayland-5");
@@ -161,10 +161,9 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                 InputEvent::PointerMotionAbsolute { .. } => {
                     let dh = &mut display.handle();
                     state.xdg_shell_state.toplevel_surfaces(|surfaces| {
-                        for surface in surfaces {
+                        if let Some(surface) = surfaces.iter().next() {
                             let surface = surface.wl_surface();
                             keyboard.set_focus(dh, Some(surface), 0.into());
-                            break;
                         }
                     });
                 }
@@ -199,7 +198,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                         )
                         .unwrap();
 
-                        send_frames_surface_tree(dh, surface, start_time.elapsed().as_millis() as u32);
+                        send_frames_surface_tree(surface, start_time.elapsed().as_millis() as u32);
                     }
                 });
             })?;
@@ -207,7 +206,10 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(stream) = listener.accept()? {
             println!("Got a client: {:?}", stream);
 
-            let client = display.insert_client(stream, Arc::new(ClientState)).unwrap();
+            let client = display
+                .handle()
+                .insert_client(stream, Arc::new(ClientState))
+                .unwrap();
             clients.push(client);
         }
 
@@ -220,7 +222,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-pub fn send_frames_surface_tree(dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface, time: u32) {
+pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
     with_surface_tree_downward(
         surface,
         (),
@@ -234,7 +236,7 @@ pub fn send_frames_surface_tree(dh: &mut DisplayHandle<'_>, surface: &wl_surface
                 .frame_callbacks
                 .drain(..)
             {
-                callback.done(dh, time);
+                callback.done(time);
             }
         },
         |_, _, &()| true,
@@ -242,7 +244,7 @@ pub fn send_frames_surface_tree(dh: &mut DisplayHandle<'_>, surface: &wl_surface
 }
 
 struct ClientState;
-impl ClientData<App> for ClientState {
+impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {
         println!("initialized");
     }

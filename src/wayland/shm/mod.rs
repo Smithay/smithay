@@ -112,9 +112,9 @@ impl ShmState {
     /// remove this global in the future.
     pub fn new<L, D>(display: &mut Display<D>, mut formats: Vec<wl_shm::Format>, logger: L) -> ShmState
     where
-        D: GlobalDispatch<WlShm, GlobalData = ()>
-            + Dispatch<WlShm, UserData = ()>
-            + Dispatch<WlShmPool, UserData = ShmPoolUserData>
+        D: GlobalDispatch<WlShm, ()>
+            + Dispatch<WlShm, ()>
+            + Dispatch<WlShmPool, ShmPoolUserData>
             + BufferHandler
             + AsRef<ShmState>
             + 'static,
@@ -126,7 +126,7 @@ impl ShmState {
         formats.push(wl_shm::Format::Argb8888);
         formats.push(wl_shm::Format::Xrgb8888);
 
-        let shm = display.create_global::<WlShm>(1, ());
+        let shm = display.handle().create_global::<D, WlShm, _>(1, ());
 
         ShmState {
             formats,
@@ -225,14 +225,14 @@ pub struct ShmBufferUserData {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_shm {
-    ($ty: ty) => {
+    ($ty: tt) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm
+            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: ()
         ] => $crate::wayland::shm::ShmState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm,
-            $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool
+            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: (),
+            $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool: $crate::wayland::shm::ShmPoolUserData
         ] => $crate::wayland::shm::ShmState);
     };
 }

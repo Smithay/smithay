@@ -12,13 +12,13 @@ impl XdgShellHandler for Smallvil {
         &mut self.xdg_shell_state
     }
 
-    fn request(&mut self, dh: &mut DisplayHandle, request: XdgRequest) {
+    fn request(&mut self, _dh: &DisplayHandle, request: XdgRequest) {
         match request {
             XdgRequest::NewToplevel { surface } => {
                 let window = Window::new(Kind::Xdg(surface.clone()));
                 self.space.map_window(&window, (0, 0), false);
 
-                surface.send_configure(dh);
+                surface.send_configure();
             }
             XdgRequest::Move { serial, surface, .. } => {
                 // TODO: Multi seat support?
@@ -59,7 +59,7 @@ impl XdgShellHandler for Smallvil {
                     initial_window_location,
                 };
 
-                pointer.set_grab(dh, grab, serial, 0);
+                pointer.set_grab(grab, serial, 0);
             }
             _ => {}
         }

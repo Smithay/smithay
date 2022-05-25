@@ -19,7 +19,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
     fn motion(
         &mut self,
         data: &mut Smallvil,
-        _dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         _handle: &mut PointerInnerHandle<'_, Smallvil>,
         event: &MotionEvent,
     ) {
@@ -32,11 +32,11 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
     fn button(
         &mut self,
         _data: &mut Smallvil,
-        dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
         event: &ButtonEvent,
     ) {
-        handle.button(dh, event.button, event.state, event.serial, event.time);
+        handle.button(event.button, event.state, event.serial, event.time);
 
         // The button is a button code as defined in the
         // Linux kernel's linux/input-event-codes.h header file, e.g. BTN_LEFT.
@@ -44,18 +44,18 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
 
         if !handle.current_pressed().contains(&BTN_LEFT) {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(dh, event.serial, event.time);
+            handle.unset_grab(event.serial, event.time);
         }
     }
 
     fn axis(
         &mut self,
         _data: &mut Smallvil,
-        dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
         details: AxisFrame,
     ) {
-        handle.axis(dh, details)
+        handle.axis(details)
     }
 
     fn start_data(&self) -> &PointerGrabStartData {
