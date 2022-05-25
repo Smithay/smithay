@@ -24,7 +24,7 @@ use smithay::{
         shm::ShmState,
     },
 };
-use wayland_protocols::xdg_shell::server::xdg_toplevel;
+use wayland_protocols::xdg::shell::server::xdg_toplevel;
 use wayland_server::{
     backend::{ClientData, ClientId, DisconnectReason},
     protocol::wl_surface::{self, WlSurface},
@@ -207,7 +207,10 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(stream) = listener.accept()? {
             println!("Got a client: {:?}", stream);
 
-            let client = display.insert_client(stream, Arc::new(ClientState)).unwrap();
+            let client = display
+                .handle()
+                .insert_client(stream, Arc::new(ClientState))
+                .unwrap();
             clients.push(client);
         }
 
@@ -234,7 +237,7 @@ pub fn send_frames_surface_tree(dh: &DisplayHandle, surface: &wl_surface::WlSurf
                 .frame_callbacks
                 .drain(..)
             {
-                callback.done(dh, time);
+                callback.done(time);
             }
         },
         |_, _, &()| true,
@@ -242,7 +245,7 @@ pub fn send_frames_surface_tree(dh: &DisplayHandle, surface: &wl_surface::WlSurf
 }
 
 struct ClientState;
-impl ClientData<App> for ClientState {
+impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {
         println!("initialized");
     }
