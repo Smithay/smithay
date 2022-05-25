@@ -41,7 +41,7 @@ impl XdgShellHandler for App {
         &mut self.xdg_shell_state
     }
 
-    fn request(&mut self, dh: &mut DisplayHandle, request: XdgRequest) {
+    fn request(&mut self, dh: &DisplayHandle, request: XdgRequest) {
         dbg!(&request);
 
         match request {
@@ -77,7 +77,7 @@ impl CompositorHandler for App {
         &mut self.compositor_state
     }
 
-    fn commit(&mut self, dh: &mut DisplayHandle, surface: &WlSurface) {
+    fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
         on_commit_buffer_handler(dh, surface);
     }
 }
@@ -220,7 +220,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-pub fn send_frames_surface_tree(dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface, time: u32) {
+pub fn send_frames_surface_tree(dh: &DisplayHandle, surface: &wl_surface::WlSurface, time: u32) {
     with_surface_tree_downward(
         surface,
         (),

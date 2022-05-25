@@ -12,7 +12,7 @@ use std::{
     hash::{Hash, Hasher},
     sync::{Arc, Mutex},
 };
-use wayland_protocols::xdg_shell::server::xdg_toplevel;
+use wayland_protocols::xdg::shell::server::xdg_toplevel;
 use wayland_server::{protocol::wl_surface, DisplayHandle};
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
@@ -192,7 +192,7 @@ impl Window {
     }
 
     /// Commit any changes to this window
-    pub fn configure(&self, dh: &mut DisplayHandle<'_>) {
+    pub fn configure(&self, dh: &DisplayHandle) {
         match self.0.toplevel {
             Kind::Xdg(ref t) => t.send_configure(dh),
             #[cfg(feature = "xwayland")]
@@ -202,7 +202,7 @@ impl Window {
 
     /// Sends the frame callback to all the subsurfaces in this
     /// window that requested it
-    pub fn send_frame(&self, dh: &mut DisplayHandle<'_>, time: u32) {
+    pub fn send_frame(&self, dh: &DisplayHandle, time: u32) {
         let surface = self.0.toplevel.wl_surface();
         send_frames_surface_tree(dh, surface, time);
         for (popup, _) in PopupManager::popups_for_surface(surface) {
@@ -295,7 +295,7 @@ impl Window {
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_window<R, P>(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     window: &Window,

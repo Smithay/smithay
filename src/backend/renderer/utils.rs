@@ -39,7 +39,7 @@ pub(crate) struct SurfaceState {
 const MAX_DAMAGE: usize = 4;
 
 impl SurfaceState {
-    pub fn update_buffer(&mut self, dh: &mut DisplayHandle<'_>, attrs: &mut SurfaceAttributes) {
+    pub fn update_buffer(&mut self, dh: &DisplayHandle, attrs: &mut SurfaceAttributes) {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
@@ -60,7 +60,7 @@ impl SurfaceState {
 
                 if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
                     if &old_buffer != self.buffer.as_ref().unwrap() {
-                        old_buffer.release(dh);
+                        old_buffer.release();
                     }
                 }
                 self.textures.clear();
@@ -91,7 +91,7 @@ impl SurfaceState {
                 // remove the contents
                 self.buffer_dimensions = None;
                 if let Some(buffer) = self.buffer.take() {
-                    buffer.release(dh);
+                    buffer.release();
                 };
                 self.textures.clear();
                 self.commit_count = self.commit_count.wrapping_add(1);
@@ -149,7 +149,7 @@ impl SurfaceState {
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
-pub fn on_commit_buffer_handler(dh: &mut DisplayHandle<'_>, surface: &WlSurface) {
+pub fn on_commit_buffer_handler(dh: &DisplayHandle, surface: &WlSurface) {
     if !is_sync_subsurface(surface) {
         with_surface_tree_upward(
             surface,
@@ -193,7 +193,7 @@ pub fn on_commit_buffer_handler(dh: &mut DisplayHandle<'_>, surface: &WlSurface)
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 pub fn import_surface_tree<R>(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     renderer: &mut R,
     surface: &WlSurface,
     log: &slog::Logger,
@@ -206,7 +206,7 @@ where
 }
 
 fn import_surface_tree_and<F, R>(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     renderer: &mut R,
     surface: &WlSurface,
     log: &slog::Logger,
@@ -286,7 +286,7 @@ where
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_surface_tree<R>(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     surface: &WlSurface,

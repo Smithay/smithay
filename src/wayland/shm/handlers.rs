@@ -14,57 +14,46 @@ use wayland_server::{
         wl_shm::{self, WlShm},
         wl_shm_pool::{self, WlShmPool},
     },
-    DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase,
-    Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
+    DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
+    Resource, WEnum,
 };
 
-impl DelegateGlobalDispatchBase<WlShm> for ShmState {
-    type GlobalData = ();
-}
-
-impl<D> DelegateGlobalDispatch<WlShm, D> for ShmState
+impl<D> DelegateGlobalDispatch<WlShm, (), D> for ShmState
 where
-    D: GlobalDispatch<WlShm, GlobalData = ()>,
-    D: Dispatch<WlShm, UserData = ()>,
-    D: Dispatch<WlShmPool, UserData = ShmPoolUserData>,
+    D: GlobalDispatch<WlShm, ()>,
+    D: Dispatch<WlShm, ()>,
+    D: Dispatch<WlShmPool, ShmPoolUserData>,
     D: AsRef<ShmState>,
     D: 'static,
 {
     fn bind(
         state: &mut D,
-        handle: &mut wayland_server::DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<WlShm>,
-        _global_data: &Self::GlobalData,
+        _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
         let shm = data_init.init(resource, ());
 
         // send the formats
         for &f in &state.as_ref().formats[..] {
-            shm.format(handle, f);
+            shm.format(f);
         }
     }
 }
 
-impl DelegateDispatchBase<WlShm> for ShmState {
-    type UserData = ();
-}
-
-impl<D> DelegateDispatch<WlShm, D> for ShmState
+impl<D> DelegateDispatch<WlShm, (), D> for ShmState
 where
-    D: Dispatch<WlShm, UserData = ()>
-        + Dispatch<WlShmPool, UserData = ShmPoolUserData>
-        + AsRef<ShmState>
-        + 'static,
+    D: Dispatch<WlShm, ()> + Dispatch<WlShmPool, ShmPoolUserData> + AsRef<ShmState> + 'static,
 {
     fn request(
         state: &mut D,
         _client: &wayland_server::Client,
         shm: &WlShm,
         request: wl_shm::Request,
-        _data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        _data: &(),
+        dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         use wl_shm::{Error, Request};
@@ -100,21 +89,17 @@ where
  * wl_shm_pool
  */
 
-impl DelegateDispatchBase<WlShmPool> for ShmState {
-    type UserData = ShmPoolUserData;
-}
-
-impl<D> DelegateDispatch<WlShmPool, D> for ShmState
+impl<D> DelegateDispatch<WlShmPool, ShmPoolUserData, D> for ShmState
 where
-    D: Dispatch<WlShmPool, UserData = ShmPoolUserData> + BufferHandler + AsRef<ShmState> + 'static,
+    D: Dispatch<WlShmPool, ShmPoolUserData> + BufferHandler + AsRef<ShmState> + 'static,
 {
     fn request(
         state: &mut D,
         _client: &wayland_server::Client,
         pool: &WlShmPool,
         request: wl_shm_pool::Request,
-        data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        data: &ShmPoolUserData,
+        dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         use self::wl_shm_pool::Request;

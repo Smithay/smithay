@@ -1,14 +1,12 @@
 use std::{convert::TryFrom, sync::Mutex};
 
-use wayland_protocols::wlr::unstable::layer_shell::v1::server::zwlr_layer_shell_v1::{
-    self, ZwlrLayerShellV1,
-};
-use wayland_protocols::wlr::unstable::layer_shell::v1::server::zwlr_layer_surface_v1;
-use wayland_protocols::wlr::unstable::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
+use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::{self, ZwlrLayerShellV1};
+use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1;
+use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
 use wayland_server::protocol::wl_surface;
 use wayland_server::{
-    DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase, Dispatch,
-    GlobalDispatch, Resource,
+    Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch,
+    Resource,
 };
 
 use crate::utils::alive_tracker::{AliveTracker, IsAlive};
@@ -25,49 +23,41 @@ use super::LAYER_SURFACE_ROLE;
  * layer_shell
  */
 
-impl DelegateGlobalDispatchBase<ZwlrLayerShellV1> for WlrLayerShellState {
-    type GlobalData = ();
-}
-
-impl<D> DelegateGlobalDispatch<ZwlrLayerShellV1, D> for WlrLayerShellState
+impl<D> DelegateGlobalDispatch<ZwlrLayerShellV1, (), D> for WlrLayerShellState
 where
-    D: GlobalDispatch<ZwlrLayerShellV1, GlobalData = ()>,
-    D: Dispatch<ZwlrLayerShellV1, UserData = ()>,
-    D: Dispatch<ZwlrLayerSurfaceV1, UserData = WlrLayerSurfaceUserData>,
+    D: GlobalDispatch<ZwlrLayerShellV1, ()>,
+    D: Dispatch<ZwlrLayerShellV1, ()>,
+    D: Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData>,
     D: WlrLayerShellHandler,
     D: 'static,
 {
     fn bind(
         _state: &mut D,
-        _handle: &mut wayland_server::DisplayHandle<'_>,
-        _client: &wayland_server::Client,
+        _handle: &DisplayHandle,
+        _client: &Client,
         resource: wayland_server::New<ZwlrLayerShellV1>,
-        _global_data: &Self::GlobalData,
-        data_init: &mut wayland_server::DataInit<'_, D>,
+        _global_data: &(),
+        data_init: &mut DataInit<'_, D>,
     ) {
         data_init.init(resource, ());
     }
 }
 
-impl DelegateDispatchBase<ZwlrLayerShellV1> for WlrLayerShellState {
-    type UserData = ();
-}
-
-impl<D> DelegateDispatch<ZwlrLayerShellV1, D> for WlrLayerShellState
+impl<D> DelegateDispatch<ZwlrLayerShellV1, (), D> for WlrLayerShellState
 where
-    D: Dispatch<ZwlrLayerShellV1, UserData = ()>,
-    D: Dispatch<ZwlrLayerSurfaceV1, UserData = WlrLayerSurfaceUserData>,
+    D: Dispatch<ZwlrLayerShellV1, ()>,
+    D: Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData>,
     D: WlrLayerShellHandler,
     D: 'static,
 {
     fn request(
         state: &mut D,
-        _client: &wayland_server::Client,
+        _client: &Client,
         shell: &ZwlrLayerShellV1,
         request: zwlr_layer_shell_v1::Request,
-        _data: &Self::UserData,
-        dh: &mut wayland_server::DisplayHandle<'_>,
-        data_init: &mut wayland_server::DataInit<'_, D>,
+        _data: &(),
+        dh: &DisplayHandle,
+        data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             zwlr_layer_shell_v1::Request::GetLayerSurface {
@@ -199,23 +189,19 @@ impl IsAlive for ZwlrLayerSurfaceV1 {
     }
 }
 
-impl DelegateDispatchBase<ZwlrLayerSurfaceV1> for WlrLayerShellState {
-    type UserData = WlrLayerSurfaceUserData;
-}
-
-impl<D> DelegateDispatch<ZwlrLayerSurfaceV1, D> for WlrLayerShellState
+impl<D> DelegateDispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData, D> for WlrLayerShellState
 where
-    D: Dispatch<ZwlrLayerSurfaceV1, UserData = WlrLayerSurfaceUserData>,
+    D: Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData>,
     D: WlrLayerShellHandler,
 {
     fn request(
         state: &mut D,
-        _client: &wayland_server::Client,
+        _client: &Client,
         layer_surface: &ZwlrLayerSurfaceV1,
         request: zwlr_layer_surface_v1::Request,
-        data: &Self::UserData,
-        dh: &mut wayland_server::DisplayHandle<'_>,
-        _data_init: &mut wayland_server::DataInit<'_, D>,
+        data: &WlrLayerSurfaceUserData,
+        dh: &DisplayHandle,
+        _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             zwlr_layer_surface_v1::Request::SetSize { width, height } => {
@@ -340,7 +326,7 @@ where
         _state: &mut D,
         _client_id: wayland_server::backend::ClientId,
         object_id: wayland_server::backend::ObjectId,
-        data: &Self::UserData,
+        data: &WlrLayerSurfaceUserData,
     ) {
         data.alive_tracker.destroy_notify();
         // remove this surface from the known ones (as well as any leftover dead surface)

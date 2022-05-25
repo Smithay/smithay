@@ -12,7 +12,7 @@ impl XdgShellHandler for Smallvil {
         &mut self.xdg_shell_state
     }
 
-    fn request(&mut self, dh: &mut DisplayHandle, request: XdgRequest) {
+    fn request(&mut self, dh: &DisplayHandle, request: XdgRequest) {
         match request {
             XdgRequest::NewToplevel { surface } => {
                 let window = Window::new(Kind::Xdg(surface.clone()));

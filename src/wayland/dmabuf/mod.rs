@@ -100,9 +100,7 @@ use std::{
 };
 
 use nix::unistd;
-use wayland_protocols::unstable::linux_dmabuf::v1::server::{
-    zwp_linux_buffer_params_v1, zwp_linux_dmabuf_v1,
-};
+use wayland_protocols::wp::linux_dmabuf::zv1::server::{zwp_linux_buffer_params_v1, zwp_linux_dmabuf_v1};
 use wayland_server::{backend::GlobalId, Client, Display, DisplayHandle, GlobalDispatch, Resource, WEnum};
 
 use crate::{
@@ -141,7 +139,7 @@ impl DmabufState {
         logger: L,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, GlobalData = DmabufGlobalData>
+        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
             + BufferHandler
             + DmabufHandler
             + 'static,
@@ -163,7 +161,7 @@ impl DmabufState {
         logger: L,
     ) -> DmabufGlobal
     where
-        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, GlobalData = DmabufGlobalData>
+        D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
             + BufferHandler
             + DmabufHandler
             + 'static,
@@ -181,7 +179,9 @@ impl DmabufState {
             logger,
         };
 
-        let global = display.create_global::<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1>(GLOBAL_VERSION, data);
+        let global = display
+            .handle()
+            .create_global::<D, zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, _>(GLOBAL_VERSION, data);
         self.globals.insert(id, global);
 
         DmabufGlobal { id }
@@ -191,7 +191,9 @@ impl DmabufState {
     ///
     /// This operation is permanent and there is no way to re-enable a global.
     pub fn disable_global<D: 'static>(&mut self, display: &mut Display<D>, global: &DmabufGlobal) {
-        display.disable_global(self.globals.get(&global.id).unwrap().clone())
+        display
+            .handle()
+            .disable_global(self.globals.get(&global.id).unwrap().clone())
     }
 
     /// Destroys a dmabuf global.
@@ -199,7 +201,9 @@ impl DmabufState {
     /// It is highly recommended you disable the global before destroying it and ensure all child objects have
     /// been destroyed.
     pub fn destroy_global<D: 'static>(&mut self, display: &mut Display<D>, global: DmabufGlobal) {
-        display.remove_global(self.globals.remove(&global.id).unwrap());
+        display
+            .handle()
+            .remove_global(self.globals.remove(&global.id).unwrap());
         DMABUF_GLOBAL_IDS.lock().unwrap().remove(&global.id);
     }
 }
@@ -324,7 +328,7 @@ impl DmabufParamsData {
     /// This returns true if the protocol object has not been used.
     fn ensure_unused(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         params: &zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
     ) -> bool {
         if !self.used.load(Ordering::Relaxed) {
@@ -348,7 +352,7 @@ impl DmabufParamsData {
     /// A return value of [`None`] indicates buffer import has failed and the client has been killed.
     fn create_dmabuf(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         params: &zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
         width: i32,
         height: i32,

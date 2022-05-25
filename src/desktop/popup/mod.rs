@@ -58,7 +58,7 @@ impl PopupKind {
         })
     }
 
-    fn send_done(&self, dh: &mut DisplayHandle<'_>) {
+    fn send_done(&self, dh: &DisplayHandle) {
         match *self {
             PopupKind::Xdg(ref t) => t.send_popup_done(dh),
         }

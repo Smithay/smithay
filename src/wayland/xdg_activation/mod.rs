@@ -62,7 +62,7 @@ use std::{
     time::Instant,
 };
 
-use wayland_protocols::staging::xdg_activation::v1::server::xdg_activation_v1;
+use wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;
 use wayland_server::{
     backend::GlobalId,
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
@@ -169,14 +169,16 @@ impl XdgActivationState {
     /// In order to use this abstraction, your `D` type needs to implement [`XdgActivationHandler`].
     pub fn new<D, L>(display: &mut Display<D>, logger: L) -> XdgActivationState
     where
-        D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, GlobalData = ()>
-            + Dispatch<xdg_activation_v1::XdgActivationV1, UserData = ()>
+        D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, ()>
+            + Dispatch<xdg_activation_v1::XdgActivationV1, ()>
             + XdgActivationHandler
             + 'static,
         L: Into<Option<::slog::Logger>>,
     {
         let logger = crate::slog_or_fallback(logger);
-        let global = display.create_global::<xdg_activation_v1::XdgActivationV1>(1, ());
+        let global = display
+            .handle()
+            .create_global::<D, xdg_activation_v1::XdgActivationV1, _>(1, ());
 
         XdgActivationState {
             _logger: logger.new(slog::o!("smithay_module" => "xdg_activation_handler")),

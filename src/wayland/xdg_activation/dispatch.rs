@@ -3,25 +3,21 @@ use std::sync::{
     Mutex,
 };
 
-use wayland_protocols::staging::xdg_activation::v1::server::{xdg_activation_token_v1, xdg_activation_v1};
+use wayland_protocols::xdg::activation::v1::server::{xdg_activation_token_v1, xdg_activation_v1};
 use wayland_server::{
     backend::{ClientId, ObjectId},
-    Client, DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch,
-    DelegateGlobalDispatchBase, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
+    Resource,
 };
 
 use super::{
     ActivationTokenData, TokenBuilder, XdgActivationHandler, XdgActivationState, XdgActivationTokenData,
 };
 
-impl DelegateDispatchBase<xdg_activation_v1::XdgActivationV1> for XdgActivationState {
-    type UserData = ();
-}
-
-impl<D> DelegateDispatch<xdg_activation_v1::XdgActivationV1, D> for XdgActivationState
+impl<D> DelegateDispatch<xdg_activation_v1::XdgActivationV1, (), D> for XdgActivationState
 where
-    D: Dispatch<xdg_activation_v1::XdgActivationV1, UserData = Self::UserData>
-        + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, UserData = ActivationTokenData>
+    D: Dispatch<xdg_activation_v1::XdgActivationV1, ()>
+        + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData>
         + XdgActivationHandler
         + 'static,
 {
@@ -30,8 +26,8 @@ where
         _: &Client,
         _: &xdg_activation_v1::XdgActivationV1,
         request: xdg_activation_v1::Request,
-        _: &Self::UserData,
-        _: &mut DisplayHandle<'_>,
+        _: &(),
+        _: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -70,46 +66,38 @@ where
     }
 }
 
-impl DelegateGlobalDispatchBase<xdg_activation_v1::XdgActivationV1> for XdgActivationState {
-    type GlobalData = ();
-}
-
-impl<D> DelegateGlobalDispatch<xdg_activation_v1::XdgActivationV1, D> for XdgActivationState
+impl<D> DelegateGlobalDispatch<xdg_activation_v1::XdgActivationV1, (), D> for XdgActivationState
 where
-    D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, GlobalData = Self::GlobalData>
-        + Dispatch<xdg_activation_v1::XdgActivationV1, UserData = Self::UserData>
-        + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, UserData = ActivationTokenData>
+    D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, ()>
+        + Dispatch<xdg_activation_v1::XdgActivationV1, ()>
+        + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData>
         + XdgActivationHandler
         + 'static,
 {
     fn bind(
         _: &mut D,
-        _: &mut DisplayHandle<'_>,
+        _: &DisplayHandle,
         _: &Client,
         resource: New<xdg_activation_v1::XdgActivationV1>,
-        _: &Self::GlobalData,
+        _: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
         data_init.init(resource, ());
     }
 }
 
-impl DelegateDispatchBase<xdg_activation_token_v1::XdgActivationTokenV1> for XdgActivationState {
-    type UserData = ActivationTokenData;
-}
-
-impl<D> DelegateDispatch<xdg_activation_token_v1::XdgActivationTokenV1, D> for XdgActivationState
+impl<D> DelegateDispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, D>
+    for XdgActivationState
 where
-    D: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, UserData = Self::UserData>
-        + XdgActivationHandler,
+    D: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData> + XdgActivationHandler,
 {
     fn request(
         state: &mut D,
         _: &Client,
         token: &xdg_activation_token_v1::XdgActivationTokenV1,
         request: xdg_activation_token_v1::Request,
-        data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        data: &ActivationTokenData,
+        dh: &DisplayHandle,
         _: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -179,7 +167,7 @@ where
                     .activation_state()
                     .pending_tokens
                     .insert(activation_token.clone(), token_data);
-                token.done(dh, activation_token.to_string());
+                token.done(activation_token.to_string());
             }
 
             xdg_activation_token_v1::Request::Destroy => {}
@@ -188,7 +176,7 @@ where
         }
     }
 
-    fn destroyed(state: &mut D, _: ClientId, _: ObjectId, data: &Self::UserData) {
+    fn destroyed(state: &mut D, _: ClientId, _: ObjectId, data: &ActivationTokenData) {
         let guard = data.token.lock().unwrap();
 
         if let Some(token) = &*guard {

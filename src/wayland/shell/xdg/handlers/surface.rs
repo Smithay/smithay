@@ -13,8 +13,8 @@ use crate::{
 };
 
 use wayland_protocols::{
-    unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1,
-    xdg_shell::server::{
+    xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1,
+    xdg::shell::server::{
         xdg_popup::XdgPopup, xdg_surface, xdg_surface::XdgSurface, xdg_toplevel::XdgToplevel, xdg_wm_base,
     },
 };
@@ -22,7 +22,7 @@ use wayland_protocols::{
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::wl_surface,
-    DataInit, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource,
+    DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource,
 };
 
 use super::{
@@ -46,15 +46,11 @@ pub struct XdgSurfaceUserData {
     pub(crate) has_active_role: AtomicBool,
 }
 
-impl DelegateDispatchBase<XdgSurface> for XdgShellState {
-    type UserData = XdgSurfaceUserData;
-}
-
-impl<D> DelegateDispatch<XdgSurface, D> for XdgShellState
+impl<D> DelegateDispatch<XdgSurface, XdgSurfaceUserData, D> for XdgShellState
 where
-    D: Dispatch<XdgSurface, UserData = XdgSurfaceUserData>,
-    D: Dispatch<XdgToplevel, UserData = XdgShellSurfaceUserData>,
-    D: Dispatch<XdgPopup, UserData = XdgShellSurfaceUserData>,
+    D: Dispatch<XdgSurface, XdgSurfaceUserData>,
+    D: Dispatch<XdgToplevel, XdgShellSurfaceUserData>,
+    D: Dispatch<XdgPopup, XdgShellSurfaceUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
@@ -63,8 +59,8 @@ where
         _client: &wayland_server::Client,
         xdg_surface: &XdgSurface,
         request: xdg_surface::Request,
-        data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        data: &XdgSurfaceUserData,
+        dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -312,7 +308,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, _object_id: ObjectId, _data: &Self::UserData) {
+    fn destroyed(_state: &mut D, _client_id: ClientId, _object_id: ObjectId, _data: &XdgSurfaceUserData) {
         // TODO
         // if !self.wl_surface.as_ref().is_alive() {
         //     // the wl_surface is destroyed, this means the client is not

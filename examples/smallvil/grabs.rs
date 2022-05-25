@@ -19,7 +19,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
     fn motion(
         &mut self,
         data: &mut Smallvil,
-        _dh: &mut DisplayHandle<'_>,
+        _dh: &DisplayHandle,
         _handle: &mut PointerInnerHandle<'_, Smallvil>,
         event: &MotionEvent,
     ) {
@@ -32,7 +32,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
     fn button(
         &mut self,
         _data: &mut Smallvil,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
         event: &ButtonEvent,
     ) {
@@ -51,7 +51,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
     fn axis(
         &mut self,
         _data: &mut Smallvil,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
         details: AxisFrame,
     ) {

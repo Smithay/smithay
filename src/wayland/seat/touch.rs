@@ -6,7 +6,7 @@ use std::{
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::wl_touch::{self, WlTouch},
-    DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource,
+    DelegateDispatch, Dispatch, DisplayHandle, Resource,
 };
 
 use super::{SeatHandler, SeatState};
@@ -45,7 +45,7 @@ impl TouchHandle {
     /// Notify clients about new touch points.
     pub fn down(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         serial: Serial,
         time: u32,
         surface: &WlSurface,
@@ -60,28 +60,22 @@ impl TouchHandle {
     }
 
     /// Notify clients about touch point removal.
-    pub fn up(&self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32, slot: TouchSlot) {
+    pub fn up(&self, dh: &DisplayHandle, serial: Serial, time: u32, slot: TouchSlot) {
         self.inner.lock().unwrap().up(dh, serial, time, slot);
     }
 
     /// Notify clients about touch motion.
-    pub fn motion(
-        &self,
-        dh: &mut DisplayHandle<'_>,
-        time: u32,
-        slot: TouchSlot,
-        location: Point<f64, Logical>,
-    ) {
+    pub fn motion(&self, dh: &DisplayHandle, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
         self.inner.lock().unwrap().motion(dh, time, slot, location);
     }
 
     /// Notify clients about touch shape changes.
-    pub fn shape(&self, dh: &mut DisplayHandle<'_>, slot: TouchSlot, major: f64, minor: f64) {
+    pub fn shape(&self, dh: &DisplayHandle, slot: TouchSlot, major: f64, minor: f64) {
         self.inner.lock().unwrap().shape(dh, slot, major, minor);
     }
 
     /// Notify clients about touch shape orientation.
-    pub fn orientation(&self, dh: &mut DisplayHandle<'_>, slot: TouchSlot, orientation: f64) {
+    pub fn orientation(&self, dh: &DisplayHandle, slot: TouchSlot, orientation: f64) {
         self.inner.lock().unwrap().orientation(dh, slot, orientation);
     }
 
@@ -89,7 +83,7 @@ impl TouchHandle {
     ///
     /// This should be sent by the compositor when the currently active touch
     /// slot was recognized as a gesture.
-    pub fn cancel(&self, dh: &mut DisplayHandle<'_>) {
+    pub fn cancel(&self, dh: &DisplayHandle) {
         self.inner.lock().unwrap().cancel(dh);
     }
 }
@@ -112,7 +106,7 @@ impl TouchInternal {
     #[allow(clippy::too_many_arguments)]
     fn down(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         serial: Serial,
         time: u32,
         surface: &WlSurface,
@@ -134,59 +128,57 @@ impl TouchInternal {
 
         let (x, y) = (location - focus.surface_offset).into();
         self.with_focused_handles(dh, slot, |dh, handle| {
-            handle.down(dh, serial.into(), time, surface, slot.into(), x, y)
+            handle.down(serial.into(), time, surface, slot.into(), x, y)
         });
     }
 
-    fn up(&self, dh: &mut DisplayHandle<'_>, serial: Serial, time: u32, slot: TouchSlot) {
-        self.with_focused_handles(dh, slot, |dh, handle| {
-            handle.up(dh, serial.into(), time, slot.into())
-        });
+    fn up(&self, dh: &DisplayHandle, serial: Serial, time: u32, slot: TouchSlot) {
+        self.with_focused_handles(dh, slot, |dh, handle| handle.up(serial.into(), time, slot.into()));
     }
 
-    fn motion(&self, dh: &mut DisplayHandle<'_>, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
+    fn motion(&self, dh: &DisplayHandle, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
         let focus = match self.focus.get(&slot) {
             Some(slot) => slot,
             None => return,
         };
 
         let (x, y) = (location - focus.surface_offset).into();
-        self.with_focused_handles(dh, slot, |dh, handle| handle.motion(dh, time, slot.into(), x, y));
+        self.with_focused_handles(dh, slot, |dh, handle| handle.motion(time, slot.into(), x, y));
     }
 
-    fn shape(&self, dh: &mut DisplayHandle<'_>, slot: TouchSlot, major: f64, minor: f64) {
+    fn shape(&self, dh: &DisplayHandle, slot: TouchSlot, major: f64, minor: f64) {
         self.with_focused_handles(dh, slot, |dh, handle| {
             if handle.version() >= 6 {
-                handle.shape(dh, slot.into(), major, minor);
+                handle.shape(slot.into(), major, minor);
             }
         });
     }
 
-    fn orientation(&self, dh: &mut DisplayHandle<'_>, slot: TouchSlot, orientation: f64) {
+    fn orientation(&self, dh: &DisplayHandle, slot: TouchSlot, orientation: f64) {
         self.with_focused_handles(dh, slot, |dh, handle| {
             if handle.version() >= 6 {
-                handle.orientation(dh, slot.into(), orientation);
+                handle.orientation(slot.into(), orientation);
             }
         });
     }
 
     // TODO: In theory doesn't need to be sent for WlTouch that isn't in the focus hashmap?
-    fn cancel(&self, dh: &mut DisplayHandle<'_>) {
+    fn cancel(&self, dh: &DisplayHandle) {
         for handle in &self.known_handles {
-            handle.cancel(dh);
+            handle.cancel();
         }
     }
 
     // TODO: Document this also sends frame every time.
     #[inline]
-    fn with_focused_handles<F>(&self, dh: &mut DisplayHandle<'_>, slot: TouchSlot, mut f: F)
+    fn with_focused_handles<F>(&self, dh: &DisplayHandle, slot: TouchSlot, mut f: F)
     where
-        F: FnMut(&mut DisplayHandle<'_>, &WlTouch),
+        F: FnMut(&DisplayHandle, &WlTouch),
     {
         if let Some(focus) = self.focus.get(&slot) {
             for handle in &focus.handles {
                 f(dh, handle);
-                handle.frame(dh);
+                handle.frame();
             }
         }
     }
@@ -198,13 +190,9 @@ pub struct TouchUserData {
     pub(crate) handle: Option<TouchHandle>,
 }
 
-impl<D> DelegateDispatchBase<WlTouch> for SeatState<D> {
-    type UserData = TouchUserData;
-}
-
-impl<D> DelegateDispatch<WlTouch, D> for SeatState<D>
+impl<D> DelegateDispatch<WlTouch, TouchUserData, D> for SeatState<D>
 where
-    D: Dispatch<WlTouch, UserData = TouchUserData>,
+    D: Dispatch<WlTouch, TouchUserData>,
     D: SeatHandler,
     D: 'static,
 {
@@ -213,13 +201,13 @@ where
         _client: &wayland_server::Client,
         _resource: &WlTouch,
         _request: wl_touch::Request,
-        _data: &Self::UserData,
-        _dhandle: &mut DisplayHandle<'_>,
+        _data: &TouchUserData,
+        _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &Self::UserData) {
+    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &TouchUserData) {
         if let Some(ref handle) = data.handle {
             handle
                 .inner

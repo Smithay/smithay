@@ -155,7 +155,7 @@ impl PopupGrabInner {
 
     fn ungrab(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         root: &WlSurface,
         strategy: PopupUngrabStrategy,
     ) -> Option<WlSurface> {
@@ -310,7 +310,7 @@ impl PopupGrab {
     ///
     /// Returns the new topmost popup in case of nested popups
     /// or if the grab has ended the root surface
-    pub fn ungrab(&mut self, dh: &mut DisplayHandle<'_>, strategy: PopupUngrabStrategy) -> Option<WlSurface> {
+    pub fn ungrab(&mut self, dh: &DisplayHandle, strategy: PopupUngrabStrategy) -> Option<WlSurface> {
         self.toplevel_grab
             .ungrab(dh, &self.root, strategy)
             .or_else(|| Some(self.root.clone()))
@@ -334,7 +334,7 @@ impl PopupGrab {
         &self.pointer_grab_start_data
     }
 
-    fn unset_keyboard_grab(&self, dh: &mut DisplayHandle<'_>, serial: Serial) {
+    fn unset_keyboard_grab(&self, dh: &DisplayHandle, serial: Serial) {
         if let Some(keyboard) = self.keyboard_handle.as_ref() {
             if keyboard.is_grabbed()
                 && (keyboard.has_grab(self.serial)
@@ -370,7 +370,7 @@ impl PopupKeyboardGrab {
 impl KeyboardGrab for PopupKeyboardGrab {
     fn input(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut KeyboardInnerHandle<'_>,
         keycode: u32,
         key_state: KeyState,
@@ -394,7 +394,7 @@ impl KeyboardGrab for PopupKeyboardGrab {
 
     fn set_focus(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut KeyboardInnerHandle<'_>,
         focus: Option<&WlSurface>,
         serial: Serial,
@@ -450,7 +450,7 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
     fn motion(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &MotionEvent,
     ) {
@@ -478,7 +478,7 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
     fn button(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &ButtonEvent,
     ) {
@@ -511,7 +511,7 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
     fn axis(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {

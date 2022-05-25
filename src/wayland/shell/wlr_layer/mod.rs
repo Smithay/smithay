@@ -27,7 +27,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use wayland_protocols::wlr::unstable::layer_shell::v1::server::{
+use wayland_protocols_wlr::layer_shell::v1::server::{
     zwlr_layer_shell_v1::{self, ZwlrLayerShellV1},
     zwlr_layer_surface_v1,
 };
@@ -139,10 +139,10 @@ pub struct LayerSurfaceCachedState {
 }
 
 impl Cacheable for LayerSurfaceCachedState {
-    fn commit(&mut self, _dh: &mut DisplayHandle<'_>) -> Self {
+    fn commit(&mut self, _dh: &DisplayHandle) -> Self {
         *self
     }
-    fn merge_into(self, into: &mut Self, _dh: &mut DisplayHandle<'_>) {
+    fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
         *into = self;
     }
 }
@@ -163,12 +163,12 @@ impl WlrLayerShellState {
     pub fn new<L, D>(display: &mut Display<D>, logger: L) -> WlrLayerShellState
     where
         L: Into<Option<::slog::Logger>>,
-        D: GlobalDispatch<ZwlrLayerShellV1, GlobalData = ()>,
+        D: GlobalDispatch<ZwlrLayerShellV1, ()>,
         D: 'static,
     {
         let log = crate::slog_or_fallback(logger);
 
-        let shell_global = display.create_global::<ZwlrLayerShellV1>(4, ());
+        let shell_global = display.handle().create_global::<D, ZwlrLayerShellV1, _>(4, ());
 
         WlrLayerShellState {
             known_layers: Default::default(),
@@ -258,7 +258,7 @@ impl LayerSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self, dh: &mut DisplayHandle<'_>) {
+    pub fn send_configure(&self, dh: &DisplayHandle) {
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -286,7 +286,7 @@ impl LayerSurface {
             let (width, height) = configure.state.size.unwrap_or_default().into();
             let serial = configure.serial;
             self.shell_surface
-                .configure(dh, serial.into(), width as u32, height as u32);
+                .configure(serial.into(), width as u32, height as u32);
         }
     }
 
@@ -295,7 +295,7 @@ impl LayerSurface {
     /// Returns `true` if it was, if not, returns `false` and raise
     /// a protocol error to the associated layer surface. Also returns `false`
     /// if the surface is already destroyed.
-    pub fn ensure_configured(&self, dh: &mut DisplayHandle<'_>) -> bool {
+    pub fn ensure_configured(&self, dh: &DisplayHandle) -> bool {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -316,8 +316,8 @@ impl LayerSurface {
     }
 
     /// Send a "close" event to the client
-    pub fn send_close(&self, dh: &mut DisplayHandle<'_>) {
-        self.shell_surface.closed(dh)
+    pub fn send_close(&self, dh: &DisplayHandle) {
+        self.shell_surface.closed()
     }
 
     /// Access the underlying `wl_surface` of this layer surface
