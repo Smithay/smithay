@@ -127,6 +127,7 @@ impl Smallvil {
                 // You may also associate some data with the client when inserting the client.
                 state
                     .display
+                    .handle()
                     .insert_client(client_stream, Arc::new(ClientState))
                     .unwrap();
 
@@ -146,7 +147,7 @@ impl Smallvil {
 }
 
 pub struct ClientState;
-impl ClientData<Smallvil> for ClientState {
+impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
