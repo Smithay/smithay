@@ -938,7 +938,7 @@ impl ToplevelSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self, dh: &DisplayHandle) {
+    pub fn send_configure(&self) {
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -972,7 +972,6 @@ impl ToplevelSurface {
                 if let Some(data) = self.shell_surface.data::<XdgShellSurfaceUserData>() {
                     if let Some(decoration) = &*data.decoration.lock().unwrap() {
                         self::decoration::send_decoration_configure(
-                            dh,
                             decoration,
                             configure
                                 .state
@@ -983,7 +982,7 @@ impl ToplevelSurface {
                 }
             }
 
-            self::handlers::send_toplevel_configure(dh, &self.shell_surface, configure)
+            self::handlers::send_toplevel_configure(&self.shell_surface, configure)
         }
     }
 
@@ -1038,7 +1037,7 @@ impl ToplevelSurface {
     }
 
     /// Send a "close" event to the client
-    pub fn send_close(&self, dh: &DisplayHandle) {
+    pub fn send_close(&self) {
         self.shell_surface.close()
     }
 
@@ -1197,7 +1196,7 @@ impl PopupSurface {
 
     /// Internal configure function to re-use the configure
     /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
-    fn send_configure_internal(&self, dh: &DisplayHandle, reposition_token: Option<u32>) {
+    fn send_configure_internal(&self, reposition_token: Option<u32>) {
         let next_configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -1230,7 +1229,7 @@ impl PopupSurface {
             }
         });
         if let Some(configure) = next_configure {
-            self::handlers::send_popup_configure(dh, &self.shell_surface, configure);
+            self::handlers::send_popup_configure(&self.shell_surface, configure);
         }
     }
 
@@ -1244,7 +1243,7 @@ impl PopupSurface {
     /// Returns [`Err(PopupConfigureError)`] if the initial configure has already been sent and
     /// the client protocol version disallows a re-configure or the current [`PositionerState`]
     /// is not reactive
-    pub fn send_configure(&self, dh: &DisplayHandle) -> Result<(), PopupConfigureError> {
+    pub fn send_configure(&self) -> Result<(), PopupConfigureError> {
         // Check if we are allowed to send a configure
         compositor::with_states(&self.wl_surface, |states| {
             let attributes = states
@@ -1270,7 +1269,7 @@ impl PopupSurface {
             Ok(())
         })?;
 
-        self.send_configure_internal(dh, None);
+        self.send_configure_internal(None);
 
         Ok(())
     }
@@ -1279,8 +1278,8 @@ impl PopupSurface {
     /// in response to a `reposition` request.
     ///
     /// For further information see [`send_configure`](#method.send_configure)
-    pub fn send_repositioned(&self, dh: &DisplayHandle, token: u32) {
-        self.send_configure_internal(dh, Some(token))
+    pub fn send_repositioned(&self, token: u32) {
+        self.send_configure_internal(Some(token))
     }
 
     /// Handles the role specific commit logic
@@ -1366,7 +1365,7 @@ impl PopupSurface {
     ///
     /// It means that the use has dismissed the popup surface, or that
     /// the pointer has left the area of popup grab if there was a grab.
-    pub fn send_popup_done(&self, dh: &DisplayHandle) {
+    pub fn send_popup_done(&self) {
         self.shell_surface.popup_done();
     }
 

@@ -21,6 +21,7 @@ use super::{dnd_grab, DataDeviceHandler, DataDeviceState};
 /// WlSurface role of drag and drop icon
 pub const DND_ICON_ROLE: &str = "dnd_icon";
 
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct DataDeviceUserData {
     pub(crate) wl_seat: WlSeat,
@@ -70,7 +71,6 @@ where
                             handler.started(source.clone(), icon.clone(), seat.clone());
                             let start_data = pointer.grab_start_data().unwrap();
                             pointer.set_grab(
-                                dh,
                                 dnd_grab::DnDGrab::new(start_data, source, origin, seat.clone(), icon),
                                 serial,
                                 0,

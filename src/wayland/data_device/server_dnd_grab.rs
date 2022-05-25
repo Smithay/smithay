@@ -143,7 +143,7 @@ where
     fn button(
         &mut self,
         data: &mut D,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &ButtonEvent,
     ) {
@@ -193,19 +193,19 @@ where
                     }
                 }
             }
-            handle.unset_grab(dh, serial, time);
+            handle.unset_grab(serial, time);
         }
     }
 
     fn axis(
         &mut self,
         _data: &mut D,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {
         // we just forward the axis events as is
-        handle.axis(dh, details);
+        handle.axis(details);
     }
 
     fn start_data(&self) -> &PointerGrabStartData {

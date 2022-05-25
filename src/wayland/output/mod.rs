@@ -398,7 +398,6 @@ impl Output {
     /// By default, transform status is `Normal`, and scale is `1`.
     pub fn change_current_state(
         &self,
-        dh: &DisplayHandle,
         new_mode: Option<Mode>,
         new_transform: Option<Transform>,
         new_scale: Option<Scale>,
@@ -492,7 +491,7 @@ impl Output {
     /// with the matching client output
     pub fn enter(&self, dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
         if let Ok(client) = dh.get_client(surface.id()) {
-            self.with_client_outputs(dh, &client, |dh, output| surface.enter(output))
+            self.with_client_outputs(dh, &client, |_dh, output| surface.enter(output))
         }
     }
 
@@ -500,7 +499,7 @@ impl Output {
     /// with the matching client output
     pub fn leave(&self, dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
         if let Ok(client) = dh.get_client(surface.id()) {
-            self.with_client_outputs(dh, &client, |dh, output| surface.leave(output))
+            self.with_client_outputs(dh, &client, |_dh, output| surface.leave(output))
         }
     }
 

@@ -222,7 +222,7 @@ where
 }
 
 /// Sends frame callbacks for a surface and its subsurfaces with the given `time`.
-pub fn send_frames_surface_tree(dh: &DisplayHandle, surface: &wl_surface::WlSurface, time: u32) {
+pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
     with_surface_tree_downward(
         surface,
         (),

@@ -28,9 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut state = App { seat_state, seat };
 
-    let keyboard = state
-        .seat
-        .add_keyboard(&mut display.handle(), Default::default(), 25, 600, |_, _| {})?;
+    let keyboard = state.seat.add_keyboard(Default::default(), 25, 600, |_, _| {})?;
 
     let listener = ListeningSocket::bind("wayland-5").unwrap();
 

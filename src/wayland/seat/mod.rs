@@ -107,7 +107,7 @@ impl<D> Inner<D> {
         caps
     }
 
-    fn send_all_caps(&self, dh: &DisplayHandle) {
+    fn send_all_caps(&self) {
         let capabilities = self.compute_caps();
         for seat in &self.known_seats {
             seat.capabilities(capabilities);
@@ -246,7 +246,7 @@ impl<D> Seat<D> {
     ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
     /// );
     /// ```
-    pub fn add_pointer<F>(&mut self, dh: &DisplayHandle, cb: F) -> PointerHandle<D>
+    pub fn add_pointer<F>(&mut self, cb: F) -> PointerHandle<D>
     where
         F: FnMut(CursorImageStatus) + Send + Sync + 'static,
     {
@@ -256,10 +256,10 @@ impl<D> Seat<D> {
             // there is already a pointer, remove it and notify the clients
             // of the change
             inner.pointer = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
         inner.pointer = Some(pointer.clone());
-        inner.send_all_caps(dh);
+        inner.send_all_caps();
         pointer
     }
 
@@ -271,11 +271,11 @@ impl<D> Seat<D> {
     /// Remove the pointer capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_pointer(&mut self, dh: &DisplayHandle) {
+    pub fn remove_pointer(&mut self) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.pointer.is_some() {
             inner.pointer = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
     }
 }
@@ -319,7 +319,6 @@ impl<D: 'static> Seat<D> {
     /// ```
     pub fn add_keyboard<F>(
         &mut self,
-        dh: &DisplayHandle,
         xkb_config: keyboard::XkbConfig<'_>,
         repeat_delay: i32,
         repeat_rate: i32,
@@ -341,10 +340,10 @@ impl<D: 'static> Seat<D> {
             // there is already a keyboard, remove it and notify the clients
             // of the change
             inner.keyboard = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
         inner.keyboard = Some(keyboard.clone());
-        inner.send_all_caps(dh);
+        inner.send_all_caps();
         Ok(keyboard)
     }
 
@@ -356,11 +355,11 @@ impl<D: 'static> Seat<D> {
     /// Remove the keyboard capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_keyboard(&mut self, dh: &DisplayHandle) {
+    pub fn remove_keyboard(&mut self) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.keyboard.is_some() {
             inner.keyboard = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
     }
 }
@@ -391,16 +390,16 @@ impl<D> Seat<D> {
     /// # );
     /// let touch_handle = seat.add_touch();
     /// ```
-    pub fn add_touch(&mut self, dh: &DisplayHandle) -> TouchHandle {
+    pub fn add_touch(&mut self) -> TouchHandle {
         let mut inner = self.arc.inner.lock().unwrap();
         let touch = TouchHandle::new();
         if inner.touch.is_some() {
             // If there's already a tocuh device, remove it notify the clients about the change.
             inner.touch = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
         inner.touch = Some(touch.clone());
-        inner.send_all_caps(dh);
+        inner.send_all_caps();
         touch
     }
 
@@ -412,11 +411,11 @@ impl<D> Seat<D> {
     /// Remove the touch capability from this seat
     ///
     /// Clients will be appropriately notified.
-    pub fn remove_touch(&mut self, dh: &DisplayHandle) {
+    pub fn remove_touch(&mut self) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.touch.is_some() {
             inner.touch = None;
-            inner.send_all_caps(dh);
+            inner.send_all_caps();
         }
     }
 }
@@ -481,7 +480,7 @@ where
         _resource: &WlSeat,
         request: wl_seat::Request,
         data: &SeatUserData<D>,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
@@ -513,7 +512,7 @@ where
                 );
 
                 if let Some(ref h) = inner.keyboard {
-                    h.new_kbd(dh, keyboard);
+                    h.new_kbd(keyboard);
                 } else {
                     // same as pointer, should error but cannot
                 }

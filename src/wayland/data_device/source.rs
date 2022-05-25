@@ -27,6 +27,7 @@ impl Default for SourceMetadata {
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct DataSourceUserData {
     inner: Mutex<SourceMetadata>,

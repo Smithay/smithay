@@ -342,7 +342,7 @@ impl LayerMap {
                     state.size.replace(size).map(|old| old != size).unwrap_or(true)
                 });
                 if size_changed {
-                    layer.0.surface.send_configure(dh);
+                    layer.0.surface.send_configure();
                 }
 
                 layer_state(layer).location = location;
@@ -551,12 +551,12 @@ impl LayerSurface {
 
     /// Sends the frame callback to all the subsurfaces in this
     /// window that requested it
-    pub fn send_frame(&self, dh: &DisplayHandle, time: u32) {
+    pub fn send_frame(&self, time: u32) {
         let wl_surface = self.0.surface.wl_surface();
 
-        send_frames_surface_tree(dh, wl_surface, time);
+        send_frames_surface_tree(wl_surface, time);
         for (popup, _) in PopupManager::popups_for_surface(wl_surface) {
-            send_frames_surface_tree(dh, popup.wl_surface(), time);
+            send_frames_surface_tree(popup.wl_surface(), time);
         }
     }
 

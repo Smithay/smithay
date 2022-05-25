@@ -258,7 +258,7 @@ impl LayerSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self, dh: &DisplayHandle) {
+    pub fn send_configure(&self) {
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -316,7 +316,7 @@ impl LayerSurface {
     }
 
     /// Send a "close" event to the client
-    pub fn send_close(&self, dh: &DisplayHandle) {
+    pub fn send_close(&self) {
         self.shell_surface.closed()
     }
 

@@ -71,7 +71,7 @@ where
     }
 }
 
-pub fn send_popup_configure(dh: &DisplayHandle, resource: &XdgPopup, configure: PopupConfigure) {
+pub fn send_popup_configure(resource: &XdgPopup, configure: PopupConfigure) {
     let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
 
     let serial = configure.serial;
