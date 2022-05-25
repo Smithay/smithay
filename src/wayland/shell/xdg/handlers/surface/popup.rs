@@ -1,18 +1,14 @@
 use crate::wayland::{shell::xdg::XdgPositionerUserData, Serial};
 
-use wayland_protocols::xdg_shell::server::xdg_popup::{self, XdgPopup};
+use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
-use wayland_server::{DataInit, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource};
+use wayland_server::{DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource};
 
 use super::{PopupConfigure, XdgRequest, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData};
 
-impl DelegateDispatchBase<XdgPopup> for XdgShellState {
-    type UserData = XdgShellSurfaceUserData;
-}
-
-impl<D> DelegateDispatch<XdgPopup, D> for XdgShellState
+impl<D> DelegateDispatch<XdgPopup, XdgShellSurfaceUserData, D> for XdgShellState
 where
-    D: Dispatch<XdgPopup, UserData = XdgShellSurfaceUserData>,
+    D: Dispatch<XdgPopup, XdgShellSurfaceUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
@@ -21,8 +17,8 @@ where
         _client: &wayland_server::Client,
         popup: &XdgPopup,
         request: xdg_popup::Request,
-        data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        data: &XdgShellSurfaceUserData,
+        dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -75,7 +71,7 @@ where
     }
 }
 
-pub fn send_popup_configure(dh: &mut DisplayHandle<'_>, resource: &XdgPopup, configure: PopupConfigure) {
+pub fn send_popup_configure(dh: &DisplayHandle, resource: &XdgPopup, configure: PopupConfigure) {
     let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
 
     let serial = configure.serial;
@@ -83,21 +79,15 @@ pub fn send_popup_configure(dh: &mut DisplayHandle<'_>, resource: &XdgPopup, con
 
     // Send repositioned if token is set
     if let Some(token) = configure.reposition_token {
-        resource.repositioned(dh, token);
+        resource.repositioned(token);
     }
 
     // Send the popup configure
-    resource.configure(
-        dh,
-        geometry.loc.x,
-        geometry.loc.y,
-        geometry.size.w,
-        geometry.size.h,
-    );
+    resource.configure(geometry.loc.x, geometry.loc.y, geometry.size.w, geometry.size.h);
 
     // Send the base xdg_surface configure event to mark
     // the configure as finished
-    data.xdg_surface.configure(dh, serial.into());
+    data.xdg_surface.configure(serial.into());
 }
 
 pub fn make_popup_handle(resource: &XdgPopup) -> crate::wayland::shell::xdg::PopupSurface {

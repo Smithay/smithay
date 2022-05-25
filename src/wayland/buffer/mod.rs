@@ -64,7 +64,7 @@ impl Buffer {
     /// You must send the created protocol object to the client immediately or else protocol errors will occur.
     #[must_use = "You must send the WlBuffer to the client or else protocol errors will occur"]
     pub fn create_buffer<D, T>(
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         client: &Client,
         data: T,
     ) -> Result<(WlBuffer, Buffer), InvalidId>
@@ -72,9 +72,9 @@ impl Buffer {
         D: BufferHandler + 'static,
         T: Send + Sync + 'static,
     {
-        let backend = dh.backend_handle::<D>().unwrap();
+        let backend = dh.backend_handle();
         let data = Arc::new(BufferData { data: Box::new(data) });
-        let buffer_id = backend.create_object(client.id(), WlBuffer::interface(), 1, data.clone())?;
+        let buffer_id = backend.create_object::<D>(client.id(), WlBuffer::interface(), 1, data.clone())?;
         let wl_buffer = WlBuffer::from_id(dh, buffer_id.clone())?;
 
         Ok((
@@ -87,7 +87,7 @@ impl Buffer {
     }
 
     /// Creates a [`Buffer`] from a [`WlBuffer`].
-    pub fn from_wl(buffer: &WlBuffer, dh: &mut DisplayHandle<'_>) -> Buffer {
+    pub fn from_wl(buffer: &WlBuffer, dh: &DisplayHandle) -> Buffer {
         match dh.get_object_data(buffer.id()) {
             Ok(data) => {
                 match data.downcast::<BufferData>() {
@@ -115,7 +115,7 @@ impl Buffer {
     }
 
     /// Returns a reference to the underlying [`WlBuffer`].
-    pub fn buffer(&self, dh: &mut DisplayHandle<'_>) -> Result<WlBuffer, InvalidId> {
+    pub fn buffer(&self, dh: &DisplayHandle) -> Result<WlBuffer, InvalidId> {
         match &self.0 {
             BufferInner::Managed { buffer, .. } => WlBuffer::from_id(dh, buffer.clone()),
             BufferInner::Unmanaged(buffer) => Ok(buffer.clone()),
@@ -124,8 +124,8 @@ impl Buffer {
 
     /// Sends a `release` event, indicating the buffer is no longer in use by the compositor, meaning the
     /// client is free to reuse or destroy the buffer.
-    pub fn release(&self, dh: &mut DisplayHandle<'_>) -> Result<(), InvalidId> {
-        self.buffer(dh)?.release(dh);
+    pub fn release(&self, dh: &DisplayHandle) -> Result<(), InvalidId> {
+        self.buffer(dh)?.release();
         Ok(())
     }
 
@@ -195,7 +195,7 @@ where
 {
     fn request(
         self: Arc<Self>,
-        _: &mut Handle<D>,
+        _: &Handle,
         data: &mut D,
         _: ClientId,
         msg: Message<ObjectId>,

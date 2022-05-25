@@ -143,12 +143,12 @@ impl DataDeviceState {
     pub fn new<D, L>(display: &mut Display<D>, logger: L) -> Self
     where
         L: Into<Option<::slog::Logger>>,
-        D: GlobalDispatch<WlDataDeviceManager, GlobalData = ()> + 'static,
+        D: GlobalDispatch<WlDataDeviceManager, ()> + 'static,
         D: DataDeviceHandler,
     {
         let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "data_device_mgr"));
 
-        let manager_global_id = display.create_global::<WlDataDeviceManager>(3, ());
+        let manager_global_id = display.handle().create_global::<D, WlDataDeviceManager, _>(3, ());
 
         Self {
             log,
@@ -185,7 +185,7 @@ pub fn default_action_chooser(available: DndAction, preferred: DndAction) -> Dnd
 }
 
 /// Set the data device focus to a certain client for a given seat
-pub fn set_data_device_focus<D>(dh: &mut DisplayHandle<'_>, seat: &Seat<D>, client: Option<Client>)
+pub fn set_data_device_focus<D>(dh: &DisplayHandle, seat: &Seat<D>, client: Option<Client>)
 where
     D: DataDeviceHandler,
     D: 'static,
@@ -202,7 +202,7 @@ where
 ///
 /// Whenever a client requests to read the selection, your callback will
 /// receive a [`DataDeviceEvent::SendSelection`] event.
-pub fn set_data_device_selection<D>(dh: &mut DisplayHandle<'_>, seat: &Seat<D>, mime_types: Vec<String>)
+pub fn set_data_device_selection<D>(dh: &DisplayHandle, seat: &Seat<D>, mime_types: Vec<String>)
 where
     D: DataDeviceHandler,
     D: 'static,
@@ -225,7 +225,7 @@ where
 /// drag'n'drop in the provided callback. See [`ServerDndEvent`] for details about
 /// which events can be generated and what response is expected from you to them.
 pub fn start_dnd<D, C>(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     seat: &Seat<D>,
     serial: Serial,
     start_data: PointerGrabStartData,
@@ -256,8 +256,7 @@ mod handlers {
             wl_data_device_manager::{self, WlDataDeviceManager},
             wl_data_source::WlDataSource,
         },
-        DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch, DelegateGlobalDispatchBase, Dispatch,
-        GlobalDispatch,
+        DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch,
     };
 
     use crate::wayland::seat::Seat;
@@ -265,40 +264,32 @@ mod handlers {
     use super::{device::DataDeviceUserData, seat_data::SeatData, source::DataSourceUserData};
     use super::{DataDeviceHandler, DataDeviceState};
 
-    impl DelegateGlobalDispatchBase<WlDataDeviceManager> for DataDeviceState {
-        type GlobalData = ();
-    }
-
-    impl<D> DelegateGlobalDispatch<WlDataDeviceManager, D> for DataDeviceState
+    impl<D> DelegateGlobalDispatch<WlDataDeviceManager, (), D> for DataDeviceState
     where
-        D: GlobalDispatch<WlDataDeviceManager, GlobalData = ()>,
-        D: Dispatch<WlDataDeviceManager, UserData = ()>,
-        D: Dispatch<WlDataSource, UserData = DataSourceUserData>,
-        D: Dispatch<WlDataDevice, UserData = DataDeviceUserData>,
+        D: GlobalDispatch<WlDataDeviceManager, ()>,
+        D: Dispatch<WlDataDeviceManager, ()>,
+        D: Dispatch<WlDataSource, DataSourceUserData>,
+        D: Dispatch<WlDataDevice, DataDeviceUserData>,
         D: DataDeviceHandler,
         D: 'static,
     {
         fn bind(
             _state: &mut D,
-            _handle: &mut wayland_server::DisplayHandle<'_>,
+            _handle: &DisplayHandle,
             _client: &wayland_server::Client,
             resource: wayland_server::New<WlDataDeviceManager>,
-            _global_data: &Self::GlobalData,
+            _global_data: &(),
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
             data_init.init(resource, ());
         }
     }
 
-    impl DelegateDispatchBase<WlDataDeviceManager> for DataDeviceState {
-        type UserData = ();
-    }
-
-    impl<D> DelegateDispatch<WlDataDeviceManager, D> for DataDeviceState
+    impl<D> DelegateDispatch<WlDataDeviceManager, (), D> for DataDeviceState
     where
-        D: Dispatch<WlDataDeviceManager, UserData = ()>,
-        D: Dispatch<WlDataSource, UserData = DataSourceUserData>,
-        D: Dispatch<WlDataDevice, UserData = DataDeviceUserData>,
+        D: Dispatch<WlDataDeviceManager, ()>,
+        D: Dispatch<WlDataSource, DataSourceUserData>,
+        D: Dispatch<WlDataDevice, DataDeviceUserData>,
         D: DataDeviceHandler,
         D: 'static,
     {
@@ -307,8 +298,8 @@ mod handlers {
             _client: &wayland_server::Client,
             _resource: &WlDataDeviceManager,
             request: wl_data_device_manager::Request,
-            _data: &Self::UserData,
-            _dhandle: &mut wayland_server::DisplayHandle<'_>,
+            _data: &(),
+            _dhandle: &DisplayHandle,
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
             let data_device_state = state.data_device_state();

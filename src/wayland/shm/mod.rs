@@ -112,9 +112,9 @@ impl ShmState {
     /// remove this global in the future.
     pub fn new<L, D>(display: &mut Display<D>, mut formats: Vec<wl_shm::Format>, logger: L) -> ShmState
     where
-        D: GlobalDispatch<WlShm, GlobalData = ()>
-            + Dispatch<WlShm, UserData = ()>
-            + Dispatch<WlShmPool, UserData = ShmPoolUserData>
+        D: GlobalDispatch<WlShm, ()>
+            + Dispatch<WlShm, ()>
+            + Dispatch<WlShmPool, ShmPoolUserData>
             + BufferHandler
             + AsRef<ShmState>
             + 'static,
@@ -126,7 +126,7 @@ impl ShmState {
         formats.push(wl_shm::Format::Argb8888);
         formats.push(wl_shm::Format::Xrgb8888);
 
-        let shm = display.create_global::<WlShm>(1, ());
+        let shm = display.handle().create_global::<D, WlShm, _>(1, ());
 
         ShmState {
             formats,

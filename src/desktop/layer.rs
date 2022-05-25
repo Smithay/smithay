@@ -75,7 +75,7 @@ pub enum LayerError {
 
 impl LayerMap {
     /// Map a [`LayerSurface`] to this [`LayerMap`].
-    pub fn map_layer(&mut self, dh: &mut DisplayHandle<'_>, layer: &LayerSurface) -> Result<(), LayerError> {
+    pub fn map_layer(&mut self, dh: &DisplayHandle, layer: &LayerSurface) -> Result<(), LayerError> {
         if !self.layers.contains(layer) {
             if layer
                 .0
@@ -94,7 +94,7 @@ impl LayerMap {
     }
 
     /// Remove a [`LayerSurface`] from this [`LayerMap`].
-    pub fn unmap_layer(&mut self, dh: &mut DisplayHandle<'_>, layer: &LayerSurface) {
+    pub fn unmap_layer(&mut self, dh: &DisplayHandle, layer: &LayerSurface) {
         if self.layers.shift_remove(layer) {
             let _ = layer.user_data().get::<LayerUserdata>().take();
             self.arrange(dh);
@@ -174,7 +174,7 @@ impl LayerMap {
     /// Force re-arranging the layer surfaces, e.g. when the output size changes.
     ///
     /// Note: Mapping or unmapping a layer surface will automatically cause a re-arrangement.
-    pub fn arrange(&mut self, dh: &mut DisplayHandle<'_>) {
+    pub fn arrange(&mut self, dh: &DisplayHandle) {
         if let Some(output) = self.output() {
             let output_rect = Rectangle::from_loc_and_size(
                 (0, 0),
@@ -493,7 +493,7 @@ impl LayerSurface {
 
     /// Sends the frame callback to all the subsurfaces in this
     /// window that requested it
-    pub fn send_frame(&self, dh: &mut DisplayHandle<'_>, time: u32) {
+    pub fn send_frame(&self, dh: &DisplayHandle, time: u32) {
         let wl_surface = self.0.surface.wl_surface();
 
         send_frames_surface_tree(dh, wl_surface, time);
@@ -519,7 +519,7 @@ impl LayerSurface {
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_layer_surface<R, P>(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     layer: &LayerSurface,

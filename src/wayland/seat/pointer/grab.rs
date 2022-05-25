@@ -43,7 +43,7 @@ pub trait PointerGrab<D>: Send + Sync {
     fn motion(
         &mut self,
         data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &MotionEvent,
     );
@@ -55,7 +55,7 @@ pub trait PointerGrab<D>: Send + Sync {
     fn button(
         &mut self,
         data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &ButtonEvent,
     );
@@ -67,7 +67,7 @@ pub trait PointerGrab<D>: Send + Sync {
     fn axis(
         &mut self,
         data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     );
@@ -112,7 +112,7 @@ impl<D> PointerGrab<D> for DefaultGrab {
     fn motion(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &MotionEvent,
     ) {
@@ -122,7 +122,7 @@ impl<D> PointerGrab<D> for DefaultGrab {
     fn button(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &ButtonEvent,
     ) {
@@ -144,7 +144,7 @@ impl<D> PointerGrab<D> for DefaultGrab {
     fn axis(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {
@@ -169,7 +169,7 @@ impl<D> PointerGrab<D> for ClickGrab {
     fn motion(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &MotionEvent,
     ) {
@@ -185,7 +185,7 @@ impl<D> PointerGrab<D> for ClickGrab {
     fn button(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &ButtonEvent,
     ) {
@@ -199,7 +199,7 @@ impl<D> PointerGrab<D> for ClickGrab {
     fn axis(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {

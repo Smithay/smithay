@@ -60,7 +60,7 @@ where
     fn motion(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &MotionEvent,
     ) {
@@ -80,7 +80,7 @@ where
                 if self.data_source.is_some() || self.origin.id().same_client_as(&surface.id()) {
                     for device in seat_data.known_devices() {
                         if device.id().same_client_as(&surface.id()) {
-                            device.leave(dh);
+                            device.leave();
                         }
                     }
                     // disable the offers
@@ -112,11 +112,11 @@ where
                         .iter()
                         .filter(|d| d.id().same_client_as(&surface.id()))
                     {
-                        let handle = dh.backend_handle::<D>().unwrap();
+                        let handle = dh.backend_handle();
 
                         // create a data offer
                         let offer = handle
-                            .create_object(
+                            .create_object::<D>(
                                 client.id(),
                                 WlDataOffer::interface(),
                                 device.version(),
@@ -129,15 +129,15 @@ where
                         let offer = WlDataOffer::from_id(dh, offer).unwrap();
 
                         // advertize the offer to the client
-                        device.data_offer(dh, &offer);
+                        device.data_offer(&offer);
                         with_source_metadata(source, |meta| {
                             for mime_type in meta.mime_types.iter().cloned() {
-                                offer.offer(dh, mime_type);
+                                offer.offer(mime_type);
                             }
-                            offer.source_actions(dh, meta.dnd_action);
+                            offer.source_actions(meta.dnd_action);
                         })
                         .unwrap();
-                        device.enter(dh, event.serial.into(), surface, x, y, Some(&offer));
+                        device.enter(event.serial.into(), surface, x, y, Some(&offer));
                         self.pending_offers.push(offer);
                     }
                     self.offer_data = Some(offer_data);
@@ -146,7 +146,7 @@ where
                     if self.origin.id().same_client_as(&surface.id()) {
                         for device in seat_data.known_devices() {
                             if device.id().same_client_as(&surface.id()) {
-                                device.enter(dh, event.serial.into(), surface, x, y, None);
+                                device.enter(event.serial.into(), surface, x, y, None);
                             }
                         }
                     }
@@ -157,7 +157,7 @@ where
                 if self.data_source.is_some() || self.origin.id().same_client_as(&surface.id()) {
                     for device in seat_data.known_devices() {
                         if device.id().same_client_as(&surface.id()) {
-                            device.motion(dh, event.time, x, y);
+                            device.motion(event.time, x, y);
                         }
                     }
                 }
@@ -168,7 +168,7 @@ where
     fn button(
         &mut self,
         handler: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         event: &ButtonEvent,
     ) {
@@ -191,9 +191,9 @@ where
                     for device in seat_data.known_devices() {
                         if device.id().same_client_as(&surface.id()) {
                             if validated {
-                                device.drop(dh);
+                                device.drop();
                             } else {
-                                device.leave(dh);
+                                device.leave();
                             }
                         }
                     }
@@ -208,9 +208,9 @@ where
                 }
             }
             if let Some(ref source) = self.data_source {
-                source.dnd_drop_performed(dh);
+                source.dnd_drop_performed();
                 if !validated {
-                    source.cancelled(dh);
+                    source.cancelled();
                 }
             }
 
@@ -225,7 +225,7 @@ where
     fn axis(
         &mut self,
         _data: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, D>,
         details: AxisFrame,
     ) {
@@ -259,12 +259,12 @@ where
 {
     fn request(
         self: Arc<Self>,
-        dh: &mut Handle<D>,
+        dh: &Handle,
         handler: &mut D,
         _client_id: ClientId,
         msg: Message<ObjectId>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
-        let mut dh = DisplayHandle::from(dh);
+        let mut dh = DisplayHandle::from(dh.clone());
 
         if let Ok((resource, request)) = WlDataOffer::parse_request(&mut dh, msg) {
             handle_dnd(handler, &resource, request, &self, &mut dh);
@@ -281,7 +281,7 @@ fn handle_dnd<D>(
     offer: &WlDataOffer,
     request: wl_data_offer::Request,
     data: &DndDataOffer,
-    dh: &mut wayland_server::DisplayHandle<'_>,
+    dh: &DisplayHandle,
 ) where
     D: DataDeviceHandler,
     D: 'static,
@@ -309,7 +309,7 @@ fn handle_dnd<D>(
                     // && source.as_ref().is_alive() 
                     && data.active;
             if valid {
-                source.send(dh, mime_type, fd);
+                source.send(mime_type, fd);
             }
             let _ = ::nix::unistd::close(fd);
         }
@@ -347,7 +347,7 @@ fn handle_dnd<D>(
                 );
                 return;
             }
-            source.dnd_finished(dh);
+            source.dnd_finished();
             data.active = false;
         }
         Request::SetActions {
@@ -379,8 +379,8 @@ fn handle_dnd<D>(
                     .contains(&data.chosen_action),
                 "Only one precise action should be chosen"
             );
-            offer.action(dh, data.chosen_action);
-            source.action(dh, data.chosen_action);
+            offer.action(data.chosen_action);
+            source.action(data.chosen_action);
         }
         _ => unreachable!(),
     }

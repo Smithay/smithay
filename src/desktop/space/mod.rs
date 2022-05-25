@@ -323,7 +323,7 @@ impl Space {
     ///
     /// Needs to be called periodically, at best before every
     /// wayland socket flush.
-    pub fn refresh(&mut self, dh: &mut DisplayHandle<'_>) {
+    pub fn refresh(&mut self, dh: &DisplayHandle) {
         self.windows.retain(|w| w.alive());
 
         for output in &mut self.outputs {
@@ -414,7 +414,7 @@ impl Space {
     /// (or `None` if that list would be empty) in case of success.
     pub fn render_output<R, E>(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         renderer: &mut R,
         output: &Output,
         age: usize,
@@ -634,7 +634,7 @@ impl Space {
     }
 
     /// Sends the frame callback to mapped [`Window`]s and [`LayerSurface`]s.
-    pub fn send_frames(&self, dh: &mut DisplayHandle<'_>, time: u32) {
+    pub fn send_frames(&self, dh: &DisplayHandle, time: u32) {
         for window in self.windows.iter() {
             window.send_frame(dh, time);
         }
@@ -775,7 +775,7 @@ macro_rules! custom_elements_internal {
     (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
-            dh: &mut $crate::reexports::wayland_server::DisplayHandle<'_>,
+            dh: &mut $crate::reexports::wayland_server::DisplayHandle,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
             scale: f64,
@@ -806,7 +806,7 @@ macro_rules! custom_elements_internal {
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
-            dh: &mut $crate::reexports::wayland_server::DisplayHandle<'_>,
+            dh: &mut $crate::reexports::wayland_server::DisplayHandle,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
             scale: f64,
