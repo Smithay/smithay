@@ -1,7 +1,4 @@
-use std::{
-    cell::RefCell,
-    sync::Mutex,
-};
+use std::{cell::RefCell, sync::Mutex};
 
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
@@ -12,25 +9,27 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{
-                wl_output,
-                wl_surface::WlSurface,
-            },
+            protocol::{wl_output, wl_surface::WlSurface},
             DisplayHandle, Resource,
         },
     },
-    utils::{Logical, Point, Rectangle, Size, IsAlive},
+    utils::{IsAlive, Logical, Point, Rectangle, Size},
     wayland::{
         buffer::{Buffer, BufferHandler},
-        compositor::{with_states, with_surface_tree_upward, TraversalAction, CompositorHandler, CompositorState},
+        compositor::{
+            with_states, with_surface_tree_upward, CompositorHandler, CompositorState, TraversalAction,
+        },
         output::Output,
-        seat::{AxisFrame, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat, MotionEvent, ButtonEvent},
+        seat::{
+            AxisFrame, ButtonEvent, MotionEvent, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat,
+        },
         shell::{
-            wlr_layer::{LayerShellRequest, LayerSurfaceAttributes, WlrLayerShellState, WlrLayerShellHandler},
+            wlr_layer::{
+                LayerShellRequest, LayerSurfaceAttributes, WlrLayerShellHandler, WlrLayerShellState,
+            },
             xdg::{
-                Configure, SurfaceCachedState,
-                XdgPopupSurfaceRoleAttributes, XdgRequest, XdgToplevelSurfaceRoleAttributes,
-                XdgShellHandler, XdgShellState,
+                Configure, SurfaceCachedState, XdgPopupSurfaceRoleAttributes, XdgRequest, XdgShellHandler,
+                XdgShellState, XdgToplevelSurfaceRoleAttributes,
             },
         },
         viewporter, Serial,
@@ -284,7 +283,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
         _data: &mut AnvilState<BackendData>,
         dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        details: AxisFrame
+        details: AxisFrame,
     ) {
         handle.axis(details)
     }
@@ -340,18 +339,18 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
     fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
         on_commit_buffer_handler(dh, &surface);
         self.backend_data.early_import(&surface);
-        
+
         #[cfg(feature = "xwayland")]
         super::xwayland::commit_hook(surface);
-        
+
         self.space.commit(&surface);
         self.popups.commit(surface);
-    
+
         ensure_initial_configure(dh, &surface, &self.space, &mut self.popups)
     }
 }
 
-impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {   
+impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg_shell_state
     }
@@ -371,14 +370,13 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 // the surface is not already configured
 
                 // TODO: properly recompute the geometry with the whole of positioner state
-                surface
-                    .with_pending_state(|state| {
-                        // NOTE: This is not really necessary as the default geometry
-                        // is already set the same way, but for demonstrating how
-                        // to set the initial popup geometry this code is left as
-                        // an example
-                        state.geometry = positioner.get_geometry();
-                    });
+                surface.with_pending_state(|state| {
+                    // NOTE: This is not really necessary as the default geometry
+                    // is already set the same way, but for demonstrating how
+                    // to set the initial popup geometry this code is left as
+                    // an example
+                    state.geometry = positioner.get_geometry();
+                });
                 if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
                     slog::warn!(self.log, "Failed to track popup: {}", err);
                 }
@@ -430,7 +428,8 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     return;
                 }
 
-                let window = self.space
+                let window = self
+                    .space
                     .window_for_surface(surface.wl_surface())
                     .unwrap()
                     .clone();
@@ -500,7 +499,8 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     return;
                 }
 
-                let window = self.space
+                let window = self
+                    .space
                     .window_for_surface(surface.wl_surface())
                     .unwrap()
                     .clone();
@@ -596,11 +596,8 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 // independently from its buffer size
                 let wl_surface = surface.wl_surface();
 
-                let output_geometry = fullscreen_output_geometry(
-                    wl_surface,
-                    wl_output.as_ref(),
-                    &mut self.space,
-                );
+                let output_geometry =
+                    fullscreen_output_geometry(wl_surface, wl_output.as_ref(), &mut self.space);
 
                 if let Some(geometry) = output_geometry {
                     let output = wl_output
@@ -651,7 +648,8 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             XdgRequest::Maximize { surface } => {
                 // NOTE: This should use layer-shell when it is implemented to
                 // get the correct maximum size
-                let window = self.space
+                let window = self
+                    .space
                     .window_for_surface(surface.wl_surface())
                     .unwrap()
                     .clone();
@@ -678,9 +676,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 seat,
             } => {
                 let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
-                let ret = self
-                    .popups
-                    .grab_popup(dh, surface.into(), &seat, serial);
+                let ret = self.popups.grab_popup(dh, surface.into(), &seat, serial);
 
                 if let Ok(mut grab) = ret {
                     if let Some(keyboard) = seat.get_keyboard() {
@@ -697,8 +693,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     if let Some(pointer) = seat.get_pointer() {
                         if pointer.is_grabbed()
                             && !(pointer.has_grab(serial)
-                                || pointer
-                                    .has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
+                                || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
                         {
                             grab.ungrab(dh, PopupUngrabStrategy::All);
                             return;
@@ -730,8 +725,8 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
                     .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
                 let mut map = layer_map_for_output(&output);
                 map.map_layer(dh, &LayerSurface::new(surface, namespace)).unwrap();
-            },
-            LayerShellRequest::AckConfigure { .. } => {},
+            }
+            LayerShellRequest::AckConfigure { .. } => {}
         }
     }
 }
@@ -772,7 +767,12 @@ pub struct SurfaceData {
     pub resize_state: ResizeState,
 }
 
-fn ensure_initial_configure(dh: &DisplayHandle, surface: &WlSurface, space: &Space, popups: &mut PopupManager) {
+fn ensure_initial_configure(
+    dh: &DisplayHandle,
+    surface: &WlSurface,
+    space: &Space,
+    popups: &mut PopupManager,
+) {
     with_surface_tree_upward(
         surface,
         (),

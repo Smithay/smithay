@@ -11,13 +11,13 @@ use smithay::{
         allocator::dmabuf::Dmabuf,
         renderer::{ImportDma, ImportEgl},
     },
-    wayland::dmabuf::{DmabufState, DmabufHandler, DmabufGlobal, ImportError},
     delegate_dmabuf,
+    wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
 };
 use smithay::{
     backend::{
         renderer::gles2::Gles2Renderer,
-        winit::{self, WinitGraphicsBackend, WinitEvent},
+        winit::{self, WinitEvent, WinitGraphicsBackend},
         SwapBuffersError,
     },
     desktop::space::RenderError,
@@ -28,11 +28,11 @@ use smithay::{
             Display,
         },
     },
+    utils::IsAlive,
     wayland::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
-    utils::IsAlive,
 };
 
 use crate::{
@@ -60,7 +60,10 @@ impl DmabufHandler for AnvilState<WinitData> {
     }
 
     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
-        self.backend_data.backend.renderer().import_dmabuf(&dmabuf, None)
+        self.backend_data
+            .backend
+            .renderer()
+            .import_dmabuf(&dmabuf, None)
             .map(|_| ())
             .map_err(|_| ImportError::Failed)
     }
@@ -93,23 +96,11 @@ pub fn run_winit(log: Logger) {
 
     let data = {
         #[cfg(feature = "egl")]
-        let dmabuf_state = if backend
-            .renderer()
-            .bind_wl_display(&display.handle())
-            .is_ok()
-        {
+        let dmabuf_state = if backend.renderer().bind_wl_display(&display.handle()).is_ok() {
             info!(log, "EGL hardware-acceleration enabled");
-            let dmabuf_formats = backend
-                .renderer()
-                .dmabuf_formats()
-                .cloned()
-                .collect::<Vec<_>>();
+            let dmabuf_formats = backend.renderer().dmabuf_formats().cloned().collect::<Vec<_>>();
             let mut state = DmabufState::new();
-            let global = state.create_global(
-                &mut display,
-                dmabuf_formats,
-                log.clone(),
-            );
+            let global = state.create_global(&mut display, dmabuf_formats, log.clone());
             Some((state, global))
         } else {
             None
@@ -188,7 +179,9 @@ pub fn run_winit(log: Logger) {
                     output.set_preferred(mode);
                     crate::shell::fixup_positions(&mut dh, &mut state.space);
                 }
-                WinitEvent::Input(event) => state.process_input_event_windowed(&mut display.handle(), event, OUTPUT_NAME),
+                WinitEvent::Input(event) => {
+                    state.process_input_event_windowed(&mut display.handle(), event, OUTPUT_NAME)
+                }
                 _ => (),
             })
             .is_err()
@@ -281,20 +274,13 @@ pub fn run_winit(log: Logger) {
         }
 
         // Send frame events so that client start drawing their next frame
-        state
-            .space
-            .send_frames(start_time.elapsed().as_millis() as u32);
+        state.space.send_frames(start_time.elapsed().as_millis() as u32);
 
-        let mut calloop_data = CalloopData {
-            state,
-            display,
-        };
-        let result = event_loop
-            .dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
+        let mut calloop_data = CalloopData { state, display };
+        let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
         CalloopData { state, display } = calloop_data;
 
-        if result.is_err()
-        {
+        if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
             state.space.refresh(&mut display.handle());
