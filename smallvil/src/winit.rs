@@ -1,13 +1,15 @@
 use std::time::Duration;
 
-use calloop::timer::Timer;
 use smithay::{
     backend::{
         renderer::gles2::Gles2Renderer,
         winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
     },
     desktop::space::SurfaceTree,
-    reexports::{calloop::EventLoop, wayland_server::protocol::wl_output},
+    reexports::{
+        calloop::{timer::Timer, EventLoop},
+        wayland_server::protocol::wl_output,
+    },
     utils::Rectangle,
     wayland::output::{Mode, Output, PhysicalProperties},
 };
