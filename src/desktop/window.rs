@@ -42,6 +42,7 @@ impl std::cmp::PartialEq for X11Surface {
     }
 }
 
+#[cfg(feature = "xwayland")]
 impl IsAlive for X11Surface {
     fn alive(&self) -> bool {
         self.surface.alive()
