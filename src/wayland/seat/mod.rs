@@ -452,16 +452,16 @@ pub struct SeatUserData<D> {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_seat {
-    ($ty: ty) => {
+    ($ty: tt) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat
+            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatGlobalData<$ty>
         ] => $crate::wayland::seat::SeatState<$ty>);
 
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat,
-            $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer,
-            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard,
-            $crate::reexports::wayland_server::protocol::wl_touch::WlTouch
+            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatUserData<$ty>,
+            $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer: $crate::wayland::seat::PointerUserData<$ty>,
+            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard: $crate::wayland::seat::KeyboardUserData,
+            $crate::reexports::wayland_server::protocol::wl_touch::WlTouch: $crate::wayland::seat::TouchUserData
         ] => $crate::wayland::seat::SeatState<$ty>);
     };
 }

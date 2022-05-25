@@ -1581,17 +1581,17 @@ pub enum XdgRequest {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_xdg_shell {
-    ($ty: ty) => {
+    ($ty: tt) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            wayland_protocols::xdg_shell::server::xdg_wm_base::XdgWmBase
+            wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase: ()
         ] => $crate::wayland::shell::xdg::XdgShellState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            wayland_protocols::xdg_shell::server::xdg_wm_base::XdgWmBase,
-            wayland_protocols::xdg_shell::server::xdg_positioner::XdgPositioner,
-            wayland_protocols::xdg_shell::server::xdg_popup::XdgPopup,
-            wayland_protocols::xdg_shell::server::xdg_surface::XdgSurface,
-            wayland_protocols::xdg_shell::server::xdg_toplevel::XdgToplevel
+            wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase: $crate::wayland::shell::xdg::XdgWmBaseUserData,
+            wayland_protocols::xdg::shell::server::xdg_positioner::XdgPositioner: $crate::wayland::shell::xdg::XdgPositionerUserData,
+            wayland_protocols::xdg::shell::server::xdg_popup::XdgPopup: $crate::wayland::shell::xdg::XdgShellSurfaceUserData,
+            wayland_protocols::xdg::shell::server::xdg_surface::XdgSurface: $crate::wayland::shell::xdg::XdgSurfaceUserData,
+            wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel: $crate::wayland::shell::xdg::XdgShellSurfaceUserData
         ] => $crate::wayland::shell::xdg::XdgShellState);
     };
 }
