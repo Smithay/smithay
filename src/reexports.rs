@@ -16,6 +16,8 @@ pub use udev;
 #[cfg(feature = "wayland_frontend")]
 pub use wayland_protocols;
 #[cfg(feature = "wayland_frontend")]
+pub use wayland_protocols_wlr;
+#[cfg(feature = "wayland_frontend")]
 pub use wayland_server;
 #[cfg(feature = "backend_winit")]
 pub use winit;

@@ -303,18 +303,20 @@ pub fn get_dmabuf(buffer: &Buffer) -> Result<Dmabuf, UnmanagedResource> {
 /// You must also implement [`DmabufHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_dmabuf {
-    ($ty: tt) => {
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         type __ZwpLinuxDmabufV1 =
             $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
         type __ZwpLinuxBufferParamsV1 =
             $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1;
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             __ZwpLinuxDmabufV1: $crate::wayland::dmabuf::DmabufGlobalData
         ] => $crate::wayland::dmabuf::DmabufState);
 
-        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            __ZwpLinuxDmabufV1: $crate::wayland::dmabuf::DmabufData,
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __ZwpLinuxDmabufV1: $crate::wayland::dmabuf::DmabufData
+        ] => $crate::wayland::dmabuf::DmabufState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             __ZwpLinuxBufferParamsV1: $crate::wayland::dmabuf::DmabufParamsData
         ] => $crate::wayland::dmabuf::DmabufState);
     };
