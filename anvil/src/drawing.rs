@@ -6,10 +6,7 @@ use slog::Logger;
 use smithay::{
     backend::renderer::{Frame, ImportAll, Renderer, Texture},
     desktop::space::{RenderElement, SpaceOutputTuple, SurfaceTree},
-    reexports::wayland_server::{
-        protocol::wl_surface,
-        DisplayHandle,
-    },
+    reexports::wayland_server::{protocol::wl_surface, DisplayHandle},
     utils::{Logical, Point, Rectangle, Size, Transform},
     wayland::{
         compositor::{get_role, with_states},

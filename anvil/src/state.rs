@@ -1,46 +1,45 @@
 use std::{
     os::unix::io::RawFd,
-    sync::{
-        atomic::AtomicBool,
-        Arc, Mutex,
-    },
+    sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
 use smithay::{
+    delegate_compositor, delegate_data_device, delegate_layer_shell, delegate_output, delegate_seat,
+    delegate_shm, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
-        wayland_protocols::{
-            xdg::decoration::{self as xdg_decoration, zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode},
+        wayland_protocols::xdg::decoration::{
+            self as xdg_decoration, zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode,
         },
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason},
-            protocol::{
-                wl_data_source::WlDataSource,
-                wl_surface::WlSurface,
-            },
+            protocol::{wl_data_source::WlDataSource, wl_surface::WlSurface},
             Display, DisplayHandle, Resource,
         },
     },
     utils::{Logical, Point},
     wayland::{
         compositor::CompositorState,
-        data_device::{set_data_device_focus, DataDeviceState, DataDeviceHandler, ClientDndGrabHandler, ServerDndGrabHandler},
-        output::{OutputManagerState, Output},
-        seat::{CursorImageStatus, Seat, XkbConfig, SeatState, SeatHandler},
+        data_device::{
+            set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
+            ServerDndGrabHandler,
+        },
+        output::{Output, OutputManagerState},
+        seat::{CursorImageStatus, Seat, SeatHandler, SeatState, XkbConfig},
         shell::{
+            wlr_layer::WlrLayerShellState,
             xdg::{
                 decoration::{XdgDecorationHandler, XdgDecorationManager},
-                XdgShellState, ToplevelSurface,
+                ToplevelSurface, XdgShellState,
             },
-            wlr_layer::WlrLayerShellState,
         },
         shm::ShmState,
         socket::ListeningSocketSource,
-        xdg_activation::{XdgActivationHandler, XdgActivationToken, XdgActivationTokenData, XdgActivationState},
+        xdg_activation::{
+            XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
+        },
     },
-    delegate_compositor, delegate_data_device, delegate_layer_shell, delegate_output, delegate_seat,
-    delegate_shm, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
 };
 
 #[cfg(feature = "xwayland")]
@@ -69,7 +68,7 @@ pub struct AnvilState<BackendData: 'static> {
     // desktop
     pub space: Space,
     pub popups: PopupManager,
-   
+
     // smithay state
     pub compositor_state: CompositorState,
     pub data_device_state: DataDeviceState,
@@ -83,7 +82,7 @@ pub struct AnvilState<BackendData: 'static> {
 
     pub dnd_icon: Option<WlSurface>,
     pub log: slog::Logger,
-    
+
     // input-related fields
     pub suppressed_keys: Vec<u32>,
     pub pointer_location: Point<f64, Logical>,
@@ -108,12 +107,7 @@ impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
     }
 }
 impl<BackendData> ClientDndGrabHandler for AnvilState<BackendData> {
-    fn started(
-        &mut self, 
-        source: Option<WlDataSource>, 
-        icon: Option<WlSurface>, 
-        seat: Seat<Self>
-    ) {
+    fn started(&mut self, source: Option<WlDataSource>, icon: Option<WlSurface>, seat: Seat<Self>) {
         self.dnd_icon = icon;
     }
     fn dropped(&mut self, seat: Seat<Self>) {
@@ -151,7 +145,7 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
         &mut self,
         token: XdgActivationToken,
         token_data: XdgActivationTokenData,
-        surface: WlSurface
+        surface: WlSurface,
     ) {
         if token_data.timestamp.elapsed().as_secs() < 10 {
             // Just grant the wish
@@ -159,7 +153,7 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
             if let Some(window) = w {
                 self.space.raise_window(&window, true);
             }
-        } else{
+        } else {
             // Discard the request
             self.xdg_activation_state.remove_request(&token);
         }
@@ -169,7 +163,7 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
         &mut self,
         token: XdgActivationToken,
         token_data: XdgActivationTokenData,
-        surface: WlSurface
+        surface: WlSurface,
     ) {
         // The request is cancelled
     }
@@ -177,36 +171,22 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
 delegate_xdg_activation!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgDecorationHandler for AnvilState<BackendData> {
-    fn new_decoration(
-        &mut self, 
-        dh: &DisplayHandle, 
-        toplevel: ToplevelSurface
-    ) {
+    fn new_decoration(&mut self, dh: &DisplayHandle, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ClientSide);
         });
         toplevel.send_configure();
     }
-    fn request_mode(
-        &mut self, 
-        _dh: &DisplayHandle, 
-        _toplevel: ToplevelSurface, 
-        _mode: DecorationMode,
-    ) {}
-    fn unset_mode(
-        &mut self, 
-        _dh: &DisplayHandle, 
-        _toplevel: ToplevelSurface
-    ) {}
+    fn request_mode(&mut self, _dh: &DisplayHandle, _toplevel: ToplevelSurface, _mode: DecorationMode) {}
+    fn unset_mode(&mut self, _dh: &DisplayHandle, _toplevel: ToplevelSurface) {}
 }
 delegate_xdg_decoration!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_xdg_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 delegate_layer_shell!(@<BackendData: 'static> AnvilState<BackendData>);
 
-impl<BackendData: Backend + 'static> AnvilState<BackendData>
-{
+impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         mut display: &mut Display<AnvilState<BackendData>>,
         handle: LoopHandle<'static, CalloopData<BackendData>>,
@@ -218,29 +198,33 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData>
         let socket_name = if listen_on_socket {
             let source = ListeningSocketSource::new_auto(log.clone()).unwrap();
             let socket_name = source.socket_name().to_string_lossy().into_owned();
-            handle.insert_source(
-                source,
-                |client_stream, _, data| {
+            handle
+                .insert_source(source, |client_stream, _, data| {
                     use std::os::unix::io::AsRawFd;
 
-                    data.state.handle.insert_source(
-                        Generic::new(client_stream.as_raw_fd(), Interest::READ, Mode::Level),
-                        |_, _, data| {
-                            data.display.dispatch_clients(&mut data.state).unwrap();
-                            Ok(PostAction::Continue)
-                        },
-                    ).unwrap();
-                    data.display.handle().insert_client(client_stream, Arc::new(ClientState));
+                    data.state
+                        .handle
+                        .insert_source(
+                            Generic::new(client_stream.as_raw_fd(), Interest::READ, Mode::Level),
+                            |_, _, data| {
+                                data.display.dispatch_clients(&mut data.state).unwrap();
+                                Ok(PostAction::Continue)
+                            },
+                        )
+                        .unwrap();
+                    data.display
+                        .handle()
+                        .insert_client(client_stream, Arc::new(ClientState));
                     data.display.dispatch_clients(&mut data.state).unwrap();
-                }
-            ).expect("Failed to init wayland socket source");
+                })
+                .expect("Failed to init wayland socket source");
             info!(log, "Listening on wayland socket"; "name" => socket_name.clone());
             ::std::env::set_var("WAYLAND_DISPLAY", &socket_name);
             Some(socket_name)
         } else {
             None
         };
-    
+
         // init globals
         let compositor_state = CompositorState::new(display, log.clone());
         let data_device_state = DataDeviceState::new(display, log.clone());
@@ -251,24 +235,21 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData>
         let xdg_activation_state = XdgActivationState::new(display, log.clone());
         let xdg_decoration_state = XdgDecorationManager::new(display, log.clone()).0;
         let xdg_shell_state = XdgShellState::new(display, log.clone()).0;
-        
+
         // init input
         let seat_name = backend_data.seat_name();
         let mut seat = Seat::new(&mut display, seat_name.clone(), log.clone());
-        
+
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
         let cursor_status2 = cursor_status.clone();
-        seat.add_pointer(move |new_status| {
-            *cursor_status2.lock().unwrap() = new_status
-        });
-       
+        seat.add_pointer(move |new_status| *cursor_status2.lock().unwrap() = new_status);
+
         let dh = display.handle();
-        seat
-            .add_keyboard(XkbConfig::default(), 200, 25, move |seat, focus| {
-                let focus = focus.and_then(|s| dh.get_client(s.id()).ok());
-                set_data_device_focus(&dh, seat, focus)
-            })
-            .expect("Failed to initialize the keyboard");
+        seat.add_keyboard(XkbConfig::default(), 200, 25, move |seat, focus| {
+            let focus = focus.and_then(|s| dh.get_client(s.id()).ok());
+            set_data_device_focus(&dh, seat, focus)
+        })
+        .expect("Failed to initialize the keyboard");
 
         /*
         init_tablet_manager_global(&mut display.borrow_mut());
