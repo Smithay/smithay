@@ -314,7 +314,7 @@ where
 }
 
 /// Sends frame callbacks for a surface and its subsurfaces with the given `time`.
-pub fn send_frames_surface_tree(dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface, time: u32) {
+pub fn send_frames_surface_tree(dh: &DisplayHandle, surface: &wl_surface::WlSurface, time: u32) {
     with_surface_tree_downward(
         surface,
         (),
@@ -328,7 +328,7 @@ pub fn send_frames_surface_tree(dh: &mut DisplayHandle<'_>, surface: &wl_surface
                 .frame_callbacks
                 .drain(..)
             {
-                callback.done(dh, time);
+                callback.done(time);
             }
         },
         |_, _, &()| true,
@@ -336,7 +336,7 @@ pub fn send_frames_surface_tree(dh: &mut DisplayHandle<'_>, surface: &wl_surface
 }
 
 pub(crate) fn output_update(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     output: &Output,
     output_geometry: Rectangle<i32, Logical>,
     surface_list: &mut Vec<wl_surface::WlSurface>,
@@ -397,7 +397,7 @@ pub(crate) fn output_update(
 }
 
 pub(crate) fn output_enter(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     output: &Output,
     surface_list: &mut Vec<wl_surface::WlSurface>,
     surface: &wl_surface::WlSurface,
@@ -416,7 +416,7 @@ pub(crate) fn output_enter(
 }
 
 pub(crate) fn output_leave(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     output: &Output,
     surface_list: &mut Vec<wl_surface::WlSurface>,
     surface: &wl_surface::WlSurface,

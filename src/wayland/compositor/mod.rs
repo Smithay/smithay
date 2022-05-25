@@ -377,14 +377,14 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 /// Register a pre-commit hook to be invoked on surface commit
 ///
 /// It'll be invoked on surface commit, *before* the new state is merged into the current state.
-pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
+pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
     PrivateSurfaceData::add_pre_commit_hook(surface, hook)
 }
 
 /// Register a post-commit hook to be invoked on surface commit
 ///
 /// It'll be invoked on surface commit, *after* the new state is merged into the current state.
-pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&mut DisplayHandle<'_>, &WlSurface)) {
+pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
     PrivateSurfaceData::add_post_commit_hook(surface, hook)
 }
 
@@ -402,7 +402,7 @@ pub trait CompositorHandler {
     fn compositor_state(&mut self) -> &mut CompositorState;
 
     /// Surface commit handler
-    fn commit(&mut self, dh: &mut DisplayHandle<'_>, surface: &WlSurface);
+    fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface);
 }
 
 /// State of a compositor
@@ -422,14 +422,12 @@ impl CompositorState {
     pub fn new<D, L>(display: &mut Display<D>, logger: L) -> Self
     where
         L: Into<Option<::slog::Logger>>,
-        D: GlobalDispatch<WlCompositor, GlobalData = ()>
-            + GlobalDispatch<WlSubcompositor, GlobalData = ()>
-            + 'static,
+        D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
     {
         let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
 
-        let compositor = display.create_global::<WlCompositor>(4, ());
-        let subcompositor = display.create_global::<WlSubcompositor>(1, ());
+        let compositor = display.handle().create_global::<D, WlCompositor, _>(4, ());
+        let subcompositor = display.handle().create_global::<D, WlSubcompositor, _>(1, ());
 
         CompositorState {
             log,

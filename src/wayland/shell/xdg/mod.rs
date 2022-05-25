@@ -70,10 +70,10 @@ use crate::wayland::{Serial, SERIAL_COUNTER};
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
-use wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1;
-use wayland_protocols::xdg_shell::server::xdg_surface;
-use wayland_protocols::xdg_shell::server::xdg_wm_base::XdgWmBase;
-use wayland_protocols::xdg_shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base};
+use wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
+use wayland_protocols::xdg::shell::server::xdg_surface;
+use wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase;
+use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base};
 use wayland_server::backend::GlobalId;
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
@@ -706,10 +706,10 @@ pub struct SurfaceCachedState {
 }
 
 impl Cacheable for SurfaceCachedState {
-    fn commit(&mut self, _dh: &mut DisplayHandle<'_>) -> Self {
+    fn commit(&mut self, _dh: &DisplayHandle) -> Self {
         *self
     }
-    fn merge_into(self, into: &mut Self, _dh: &mut DisplayHandle<'_>) {
+    fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
         *into = self;
     }
 }
@@ -720,7 +720,7 @@ pub trait XdgShellHandler {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState;
 
     /// Xdg requests
-    fn request(&mut self, dh: &mut DisplayHandle<'_>, request: XdgRequest);
+    fn request(&mut self, dh: &DisplayHandle, request: XdgRequest);
 }
 
 #[derive(Debug)]
@@ -745,7 +745,7 @@ impl XdgShellState {
     pub fn new<D, L>(display: &mut Display<D>, logger: L) -> (XdgShellState, GlobalId)
     where
         L: Into<Option<::slog::Logger>>,
-        D: GlobalDispatch<XdgWmBase, GlobalData = ()> + 'static,
+        D: GlobalDispatch<XdgWmBase, ()> + 'static,
     {
         let log = crate::slog_or_fallback(logger);
         let shell_state = XdgShellState {
@@ -757,13 +757,7 @@ impl XdgShellState {
             _log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
         };
 
-        let xdg_shell_global = display.create_global(
-            3,
-            (),
-            // Filter::new(move |(shell, _version), _, dispatch_data| {
-            //     self::xdg_handlers::implement_wm_base(shell, &shell_data, dispatch_data);
-            // }),
-        );
+        let xdg_shell_global = display.handle().create_global::<D, XdgWmBase, _>(3, ());
 
         (shell_state, xdg_shell_global)
     }
@@ -832,7 +826,7 @@ impl ShellClient {
     }
 
     /// Is the shell client represented by this handle still connected?
-    pub fn alive(&self, dh: &mut DisplayHandle<'_>) -> bool {
+    pub fn alive(&self, dh: &DisplayHandle) -> bool {
         dh.object_info(self.kind.id()).is_ok()
     }
 
@@ -845,7 +839,7 @@ impl ShellClient {
     /// down to 0 before a pong is received, mark the client as unresponsive.
     ///
     /// Fails if this shell client already has a pending ping or is already dead.
-    pub fn send_ping(&self, dh: &mut DisplayHandle<'_>, serial: Serial) -> Result<(), PingError> {
+    pub fn send_ping(&self, dh: &DisplayHandle, serial: Serial) -> Result<(), PingError> {
         if !self.alive(dh) {
             return Err(PingError::DeadSurface);
         }
@@ -855,13 +849,13 @@ impl ShellClient {
             return Err(PingError::PingAlreadyPending(pending_ping));
         }
         guard.pending_ping = Some(serial);
-        self.kind.ping(dh, serial.into());
+        self.kind.ping(serial.into());
 
         Ok(())
     }
 
     /// Access the user data associated with this shell client
-    pub fn with_data<F, T>(&self, dh: &mut DisplayHandle<'_>, f: F) -> Result<T, crate::utils::DeadResource>
+    pub fn with_data<F, T>(&self, dh: &DisplayHandle, f: F) -> Result<T, crate::utils::DeadResource>
     where
         F: FnOnce(&mut UserDataMap) -> T,
     {
@@ -944,7 +938,7 @@ impl ToplevelSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self, dh: &mut DisplayHandle<'_>) {
+    pub fn send_configure(&self, dh: &DisplayHandle) {
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -997,7 +991,7 @@ impl ToplevelSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook(_dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface) {
+    pub(crate) fn commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
         compositor::with_states(surface, |states| {
             let mut guard = states
                 .data_map
@@ -1019,7 +1013,7 @@ impl ToplevelSurface {
     ///
     /// `xdg_shell` mandates that a client acks a configure before committing
     /// anything.
-    pub fn ensure_configured(&self, dh: &mut DisplayHandle<'_>) -> bool {
+    pub fn ensure_configured(&self, dh: &DisplayHandle) -> bool {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -1044,8 +1038,8 @@ impl ToplevelSurface {
     }
 
     /// Send a "close" event to the client
-    pub fn send_close(&self, dh: &mut DisplayHandle<'_>) {
-        self.shell_surface.close(dh)
+    pub fn send_close(&self, dh: &DisplayHandle) {
+        self.shell_surface.close()
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
@@ -1203,7 +1197,7 @@ impl PopupSurface {
 
     /// Internal configure function to re-use the configure
     /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
-    fn send_configure_internal(&self, dh: &mut DisplayHandle<'_>, reposition_token: Option<u32>) {
+    fn send_configure_internal(&self, dh: &DisplayHandle, reposition_token: Option<u32>) {
         let next_configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -1250,7 +1244,7 @@ impl PopupSurface {
     /// Returns [`Err(PopupConfigureError)`] if the initial configure has already been sent and
     /// the client protocol version disallows a re-configure or the current [`PositionerState`]
     /// is not reactive
-    pub fn send_configure(&self, dh: &mut DisplayHandle<'_>) -> Result<(), PopupConfigureError> {
+    pub fn send_configure(&self, dh: &DisplayHandle) -> Result<(), PopupConfigureError> {
         // Check if we are allowed to send a configure
         compositor::with_states(&self.wl_surface, |states| {
             let attributes = states
@@ -1285,7 +1279,7 @@ impl PopupSurface {
     /// in response to a `reposition` request.
     ///
     /// For further information see [`send_configure`](#method.send_configure)
-    pub fn send_repositioned(&self, dh: &mut DisplayHandle<'_>, token: u32) {
+    pub fn send_repositioned(&self, dh: &DisplayHandle, token: u32) {
         self.send_configure_internal(dh, Some(token))
     }
 
@@ -1293,7 +1287,7 @@ impl PopupSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook(dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface) {
+    pub(crate) fn commit_hook(dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
         let send_error_to = compositor::with_states(surface, |states| {
             let attributes = states
                 .data_map
@@ -1344,7 +1338,7 @@ impl PopupSurface {
     ///
     /// xdg_shell mandates that a client acks a configure before committing
     /// anything.
-    pub fn ensure_configured(&self, dh: &mut DisplayHandle<'_>) -> bool {
+    pub fn ensure_configured(&self, dh: &DisplayHandle) -> bool {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -1372,8 +1366,8 @@ impl PopupSurface {
     ///
     /// It means that the use has dismissed the popup surface, or that
     /// the pointer has left the area of popup grab if there was a grab.
-    pub fn send_popup_done(&self, dh: &mut DisplayHandle<'_>) {
-        self.shell_surface.popup_done(dh);
+    pub fn send_popup_done(&self, dh: &DisplayHandle) {
+        self.shell_surface.popup_done();
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface

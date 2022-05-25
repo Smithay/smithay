@@ -57,9 +57,9 @@ use crate::wayland::Serial;
 /// additional logic.
 pub trait Cacheable: Default {
     /// Produce a new state to be cached from the pending state
-    fn commit(&mut self, dh: &mut DisplayHandle<'_>) -> Self;
+    fn commit(&mut self, dh: &DisplayHandle) -> Self;
     /// Merge a state update into the current state
-    fn merge_into(self, into: &mut Self, dh: &mut DisplayHandle<'_>);
+    fn merge_into(self, into: &mut Self, dh: &DisplayHandle);
 }
 
 struct CachedState<T> {
@@ -79,14 +79,14 @@ impl<T: Default> Default for CachedState<T> {
 }
 
 trait Cache: Downcast {
-    fn commit(&self, commit_id: Option<Serial>, dh: &mut DisplayHandle<'_>);
-    fn apply_state(&self, commit_id: Serial, dh: &mut DisplayHandle<'_>);
+    fn commit(&self, commit_id: Option<Serial>, dh: &DisplayHandle);
+    fn apply_state(&self, commit_id: Serial, dh: &DisplayHandle);
 }
 
 impl_downcast!(Cache);
 
 impl<T: Cacheable + 'static> Cache for RefCell<CachedState<T>> {
-    fn commit(&self, commit_id: Option<Serial>, dh: &mut DisplayHandle<'_>) {
+    fn commit(&self, commit_id: Option<Serial>, dh: &DisplayHandle) {
         let mut guard = self.borrow_mut();
         let me = &mut *guard;
         let new_state = me.pending.commit(dh);
@@ -103,7 +103,7 @@ impl<T: Cacheable + 'static> Cache for RefCell<CachedState<T>> {
         }
     }
 
-    fn apply_state(&self, commit_id: Serial, dh: &mut DisplayHandle<'_>) {
+    fn apply_state(&self, commit_id: Serial, dh: &DisplayHandle) {
         let mut me = self.borrow_mut();
         loop {
             if me.cache.front().map(|&(s, _)| s > commit_id).unwrap_or(true) {
@@ -192,7 +192,7 @@ impl MultiCache {
     ///
     /// If a None commit is given but there are some cached states, they'll
     /// all be merged into the current state before merging the pending one.
-    pub(crate) fn commit(&mut self, commit_id: Option<Serial>, dh: &mut DisplayHandle<'_>) {
+    pub(crate) fn commit(&mut self, commit_id: Option<Serial>, dh: &DisplayHandle) {
         // none of the underlying borrow_mut() can panic, as we hold
         // a &mut reference to the container, non are borrowed.
         for cache in &self.caches {
@@ -203,7 +203,7 @@ impl MultiCache {
     /// Apply given identified cached state to the current one
     ///
     /// All other preceding states are applied as well, to preserve commit ordering
-    pub(crate) fn apply_state(&self, commit_id: Serial, dh: &mut DisplayHandle<'_>) {
+    pub(crate) fn apply_state(&self, commit_id: Serial, dh: &DisplayHandle) {
         // none of the underlying borrow_mut() can panic, as we hold
         // a &mut reference to the container, non are borrowed.
         for cache in &self.caches {

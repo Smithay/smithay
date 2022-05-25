@@ -6,12 +6,12 @@
 use std::sync::{Arc, Mutex};
 
 use slog::{o, trace};
-use wayland_protocols::unstable::xdg_output::v1::server::zxdg_output_v1::ZxdgOutputV1;
-use wayland_server::{protocol::wl_output::WlOutput, DisplayHandle, Resource};
+use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1;
+use wayland_server::{protocol::wl_output::WlOutput, Resource};
 
 use crate::utils::{Logical, Physical, Point, Size};
 
-use super::{Mode, Output, Scale};
+use super::{Mode, Scale};
 
 #[derive(Debug)]
 pub(crate) struct Inner {
@@ -54,42 +54,36 @@ impl XdgOutput {
         }
     }
 
-    pub(super) fn add_instance(
-        &self,
-        dh: &mut DisplayHandle<'_>,
-        xdg_output: &ZxdgOutputV1,
-        wl_output: &WlOutput,
-    ) {
+    pub(super) fn add_instance(&self, xdg_output: &ZxdgOutputV1, wl_output: &WlOutput) {
         let mut inner = self.inner.lock().unwrap();
 
-        xdg_output.logical_position(dh, inner.logical_position.x, inner.logical_position.y);
+        xdg_output.logical_position(inner.logical_position.x, inner.logical_position.y);
 
         if let Some(size) = inner.physical_size {
             let logical_size = size
                 .to_f64()
                 .to_logical(inner.scale.fractional_scale())
                 .to_i32_round();
-            xdg_output.logical_size(dh, logical_size.w, logical_size.h);
+            xdg_output.logical_size(logical_size.w, logical_size.h);
         }
 
         if xdg_output.version() >= 2 {
-            xdg_output.name(dh, inner.name.clone());
-            xdg_output.description(dh, inner.description.clone());
+            xdg_output.name(inner.name.clone());
+            xdg_output.description(inner.description.clone());
         }
 
         // xdg_output.done() is deprecated since version 3
         if xdg_output.version() < 3 {
-            xdg_output.done(dh);
+            xdg_output.done();
         }
 
-        wl_output.done(dh);
+        wl_output.done();
 
         inner.instances.push(xdg_output.clone());
     }
 
     pub(super) fn change_current_state(
         &self,
-        dh: &mut DisplayHandle<'_>,
         new_mode: Option<Mode>,
         new_scale: Option<Scale>,
         new_location: Option<Point<i32, Logical>>,
@@ -113,17 +107,17 @@ impl XdgOutput {
                         .to_f64()
                         .to_logical(output.scale.fractional_scale())
                         .to_i32_round();
-                    instance.logical_size(dh, logical_size.w, logical_size.h);
+                    instance.logical_size(logical_size.w, logical_size.h);
                 }
             }
 
             if new_location.is_some() {
-                instance.logical_position(dh, output.logical_position.x, output.logical_position.y);
+                instance.logical_position(output.logical_position.x, output.logical_position.y);
             }
 
             // xdg_output.done() is deprecated since version 3
             if instance.version() < 3 {
-                instance.done(dh);
+                instance.done();
             }
 
             // No need for wl_output.done() here, it will be called by caller (super::Output::change_current_state)

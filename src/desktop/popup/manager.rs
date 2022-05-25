@@ -8,6 +8,7 @@ use crate::{
     },
 };
 use std::sync::{Arc, Mutex};
+use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_wm_base};
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 use super::{PopupGrab, PopupGrabError, PopupGrabInner, PopupKind};
@@ -66,7 +67,7 @@ impl PopupManager {
     /// if the grab has been denied.
     pub fn grab_popup<D: 'static>(
         &mut self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         popup: PopupKind,
         seat: &Seat<D>,
         serial: Serial,
@@ -88,11 +89,7 @@ impl PopupManager {
                 });
 
                 if committed {
-                    surface.post_error(
-                        dh,
-                        wayland_protocols::xdg_shell::server::xdg_popup::Error::InvalidGrab,
-                        "xdg_popup already is mapped",
-                    );
+                    surface.post_error(dh, xdg_popup::Error::InvalidGrab, "xdg_popup already is mapped");
                     return Err(PopupGrabError::InvalidGrab);
                 }
             }
@@ -121,7 +118,7 @@ impl PopupManager {
                     PopupGrabError::NotTheTopmostPopup => {
                         surface.post_error(
                             dh,
-                            wayland_protocols::xdg_shell::server::xdg_wm_base::Error::NotTheTopmostPopup,
+                            xdg_wm_base::Error::NotTheTopmostPopup,
                             "xdg_popup was not created on the topmost popup",
                         );
                     }
@@ -189,7 +186,7 @@ impl PopupManager {
     }
 
     pub(crate) fn dismiss_popup(
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         surface: &WlSurface,
         popup: &PopupKind,
     ) -> Result<(), DeadResource> {
@@ -267,7 +264,7 @@ impl PopupTree {
         children.push(PopupNode::new(popup));
     }
 
-    fn dismiss_popup(&self, dh: &mut DisplayHandle<'_>, popup: &PopupKind) {
+    fn dismiss_popup(&self, dh: &DisplayHandle, popup: &PopupKind) {
         let mut children = self.0.lock().unwrap();
 
         let mut i = 0;
@@ -330,7 +327,7 @@ impl PopupNode {
         }
     }
 
-    fn send_done(&self, dh: &mut DisplayHandle<'_>) {
+    fn send_done(&self, dh: &DisplayHandle) {
         for child in self.children.iter().rev() {
             child.send_done(dh);
         }
@@ -338,7 +335,7 @@ impl PopupNode {
         self.surface.send_done(dh);
     }
 
-    fn dismiss_popup(&mut self, dh: &mut DisplayHandle<'_>, popup: &PopupKind) -> bool {
+    fn dismiss_popup(&mut self, dh: &DisplayHandle, popup: &PopupKind) -> bool {
         if self.surface.wl_surface() == popup.wl_surface() {
             self.send_done(dh);
             return true;

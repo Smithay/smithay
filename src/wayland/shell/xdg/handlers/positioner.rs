@@ -2,11 +2,9 @@ use std::sync::Mutex;
 
 use crate::{utils::Rectangle, wayland::Serial};
 
-use wayland_protocols::xdg_shell::server::{xdg_positioner, xdg_positioner::XdgPositioner};
+use wayland_protocols::xdg::shell::server::{xdg_positioner, xdg_positioner::XdgPositioner};
 
-use wayland_server::{
-    DataInit, DelegateDispatch, DelegateDispatchBase, Dispatch, DisplayHandle, Resource, WEnum,
-};
+use wayland_server::{DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource, WEnum};
 
 use super::{PositionerState, XdgShellHandler, XdgShellState};
 
@@ -20,13 +18,9 @@ pub struct XdgPositionerUserData {
     pub(crate) inner: Mutex<PositionerState>,
 }
 
-impl DelegateDispatchBase<XdgPositioner> for XdgShellState {
-    type UserData = XdgPositionerUserData;
-}
-
-impl<D> DelegateDispatch<XdgPositioner, D> for XdgShellState
+impl<D> DelegateDispatch<XdgPositioner, XdgPositionerUserData, D> for XdgShellState
 where
-    D: Dispatch<XdgPositioner, UserData = XdgPositionerUserData>,
+    D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,
     D: 'static,
 {
@@ -35,8 +29,8 @@ where
         _client: &wayland_server::Client,
         positioner: &XdgPositioner,
         request: xdg_positioner::Request,
-        data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        data: &XdgPositionerUserData,
+        dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         let mut state = data.inner.lock().unwrap();

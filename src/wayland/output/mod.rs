@@ -68,7 +68,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use wayland_protocols::unstable::xdg_output::v1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
+use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
 use wayland_server::{
     backend::GlobalId,
     protocol::{
@@ -105,11 +105,11 @@ impl OutputManagerState {
     /// Create new output manager with xdg output support
     pub fn new_with_xdg_output<D>(display: &mut Display<D>) -> Self
     where
-        D: GlobalDispatch<WlOutput, GlobalData = OutputGlobalData>,
-        D: GlobalDispatch<ZxdgOutputManagerV1, GlobalData = ()>,
+        D: GlobalDispatch<WlOutput, OutputData>,
+        D: GlobalDispatch<ZxdgOutputManagerV1, ()>,
         D: 'static,
     {
-        let xdg_output_manager = display.create_global::<ZxdgOutputManagerV1>(3, ());
+        let xdg_output_manager = display.handle().create_global::<D, ZxdgOutputManagerV1, _>(3, ());
 
         Self {
             xdg_output_manager: Some(xdg_output_manager),
@@ -223,9 +223,8 @@ pub struct OutputUserData {
 }
 
 impl Inner {
-    fn send_geometry_to(&self, dh: &mut DisplayHandle<'_>, output: &WlOutput) {
+    fn send_geometry_to(&self, output: &WlOutput) {
         output.geometry(
-            dh,
             self.location.x,
             self.location.y,
             self.physical.size.w,
@@ -244,7 +243,7 @@ impl Inner {
 /// about any change in the properties of this output.
 #[derive(Debug, Clone)]
 pub struct Output {
-    pub(crate) data: OutputGlobalData,
+    pub(crate) data: OutputData,
 }
 
 impl Output {
@@ -294,7 +293,7 @@ impl Output {
     /// multiple times.
     pub fn create_global<D>(&self, display: &mut Display<D>) -> GlobalId
     where
-        D: GlobalDispatch<WlOutput, GlobalData = OutputGlobalData>,
+        D: GlobalDispatch<WlOutput, OutputData>,
         D: 'static,
     {
         display.create_global::<WlOutput>(4, self.data.clone())
@@ -398,7 +397,7 @@ impl Output {
     /// By default, transform status is `Normal`, and scale is `1`.
     pub fn change_current_state(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         new_mode: Option<Mode>,
         new_transform: Option<Transform>,
         new_scale: Option<Scale>,
@@ -428,23 +427,23 @@ impl Output {
         // XdgOutput has to be updated before WlOutput
         // Because WlOutput::done() has to allways be called last
         if let Some(xdg_output) = inner.xdg_output.as_ref() {
-            xdg_output.change_current_state(dh, new_mode, new_scale, new_location);
+            xdg_output.change_current_state(new_mode, new_scale, new_location);
         }
 
         for output in &inner.instances {
             if let Some(mode) = new_mode {
-                output.mode(dh, flags, mode.size.w, mode.size.h, mode.refresh);
+                output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
             }
             if new_transform.is_some() || new_location.is_some() {
-                inner.send_geometry_to(dh, output);
+                inner.send_geometry_to(output);
             }
             if let Some(scale) = new_scale {
                 if output.version() >= 2 {
-                    output.scale(dh, scale.integer_scale());
+                    output.scale(scale.integer_scale());
                 }
             }
             if output.version() >= 2 {
-                output.done(dh);
+                output.done();
             }
         }
     }
@@ -463,9 +462,9 @@ impl Output {
 
     /// This function allows to run a [FnMut] on every
     /// [WlOutput] matching the same [Client] as provided
-    pub fn with_client_outputs<F>(&self, dh: &mut DisplayHandle<'_>, client: &Client, mut f: F)
+    pub fn with_client_outputs<F>(&self, dh: &DisplayHandle, client: &Client, mut f: F)
     where
-        F: FnMut(&mut DisplayHandle<'_>, &WlOutput),
+        F: FnMut(&DisplayHandle, &WlOutput),
     {
         let list: Vec<_> = self
             .data
@@ -490,17 +489,17 @@ impl Output {
 
     /// Sends `wl_surface.enter` for the provided surface
     /// with the matching client output
-    pub fn enter(&self, dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface) {
+    pub fn enter(&self, dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
         if let Ok(client) = dh.get_client(surface.id()) {
-            self.with_client_outputs(dh, &client, |dh, output| surface.enter(dh, output))
+            self.with_client_outputs(dh, &client, |dh, output| surface.enter(output))
         }
     }
 
     /// Sends `wl_surface.leave` for the provided surface
     /// with the matching client output
-    pub fn leave(&self, dh: &mut DisplayHandle<'_>, surface: &wl_surface::WlSurface) {
+    pub fn leave(&self, dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
         if let Ok(client) = dh.get_client(surface.id()) {
-            self.with_client_outputs(dh, &client, |dh, output| surface.leave(dh, output))
+            self.with_client_outputs(dh, &client, |dh, output| surface.leave(output))
         }
     }
 

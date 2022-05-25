@@ -1,11 +1,9 @@
 use std::sync::{atomic::AtomicBool, Mutex};
 
-use wayland_protocols::unstable::linux_dmabuf::v1::server::{
-    zwp_linux_buffer_params_v1, zwp_linux_dmabuf_v1,
-};
+use wayland_protocols::wp::linux_dmabuf::zv1::server::{zwp_linux_buffer_params_v1, zwp_linux_dmabuf_v1};
 use wayland_server::{
-    Client, DataInit, DelegateDispatch, DelegateDispatchBase, DelegateGlobalDispatch,
-    DelegateGlobalDispatchBase, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
+    Resource,
 };
 
 use crate::{
@@ -18,14 +16,10 @@ use super::{
     Modifier,
 };
 
-impl DelegateDispatchBase<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1> for DmabufState {
-    type UserData = DmabufData;
-}
-
-impl<D> DelegateDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, D> for DmabufState
+impl<D> DelegateDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData, D> for DmabufState
 where
-    D: Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, UserData = Self::UserData>
-        + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, UserData = DmabufParamsData>
+    D: Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData>
+        + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
         + 'static,
 {
     fn request(
@@ -33,8 +27,8 @@ where
         _client: &Client,
         _resource: &zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
         request: zwp_linux_dmabuf_v1::Request,
-        data: &Self::UserData,
-        _dh: &mut DisplayHandle<'_>,
+        data: &DmabufData,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -62,23 +56,19 @@ where
     }
 }
 
-impl DelegateGlobalDispatchBase<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1> for DmabufState {
-    type GlobalData = DmabufGlobalData;
-}
-
-impl<D> DelegateGlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, D> for DmabufState
+impl<D> DelegateGlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData, D> for DmabufState
 where
-    D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, GlobalData = Self::GlobalData>
-        + Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, UserData = Self::UserData>
-        + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, UserData = DmabufParamsData>
+    D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
+        + Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData>
+        + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
         + 'static,
 {
     fn bind(
         _state: &mut D,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         _client: &Client,
         resource: New<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1>,
-        global_data: &Self::GlobalData,
+        global_data: &DmabufGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
         let data = DmabufData {
@@ -94,30 +84,27 @@ where
         // These events are deprecated in version 4 of the protocol.
         if zwp_dmabuf.version() <= 3 {
             for format in &*global_data.formats {
-                zwp_dmabuf.format(dh, format.code as u32);
+                zwp_dmabuf.format(format.code as u32);
 
                 if zwp_dmabuf.version() == 3 {
                     let modifier_hi = (Into::<u64>::into(format.modifier) >> 32) as u32;
                     let modifier_lo = Into::<u64>::into(format.modifier) as u32;
 
-                    zwp_dmabuf.modifier(dh, format.code as u32, modifier_hi, modifier_lo);
+                    zwp_dmabuf.modifier(format.code as u32, modifier_hi, modifier_lo);
                 }
             }
         }
     }
 
-    fn can_view(client: Client, global_data: &Self::GlobalData) -> bool {
+    fn can_view(client: Client, global_data: &DmabufGlobalData) -> bool {
         (global_data.filter)(&client)
     }
 }
 
-impl DelegateDispatchBase<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1> for DmabufState {
-    type UserData = DmabufParamsData;
-}
-
-impl<D> DelegateDispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, D> for DmabufState
+impl<D> DelegateDispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData, D>
+    for DmabufState
 where
-    D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, UserData = Self::UserData>
+    D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
         + BufferHandler
         + DmabufHandler,
 {
@@ -126,8 +113,8 @@ where
         client: &Client,
         params: &zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
         request: zwp_linux_buffer_params_v1::Request,
-        data: &Self::UserData,
-        dh: &mut DisplayHandle<'_>,
+        data: &DmabufParamsData,
+        dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -190,7 +177,7 @@ where
                             Ok(_) => {
                                 match Buffer::create_buffer::<D, _>(dh, client, dmabuf) {
                                     Ok((wl_buffer, _)) => {
-                                        params.created(dh, &wl_buffer);
+                                        params.created(&wl_buffer);
                                     }
 
                                     Err(_) => {
@@ -199,7 +186,7 @@ where
                                             "failed to create protocol object for \"create\" request"
                                         );
                                         // Failed to import since the buffer protocol object could not be created.
-                                        params.failed(dh);
+                                        params.failed();
                                     }
                                 }
                             }
@@ -213,12 +200,12 @@ where
                             }
 
                             Err(ImportError::Failed) => {
-                                params.failed(dh);
+                                params.failed();
                             }
                         }
                     } else {
                         // If the dmabuf global was destroyed, we cannot import any buffers.
-                        params.failed(dh);
+                        params.failed();
                     }
                 }
             }

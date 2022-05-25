@@ -11,7 +11,7 @@ use std::sync::{Mutex, Weak};
 use libc::c_void;
 use nix::libc::c_int;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
-use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
+use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
@@ -616,8 +616,9 @@ impl EGLDisplay {
     /// This might return [`OtherEGLDisplayAlreadyBound`](Error::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`] multiple times, as only one egl display may be bound at any given time.
     #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
-    pub fn bind_wl_display<D: 'static>(&self, display: &Display<D>) -> Result<EGLBufferReader, Error> {
-        let display_ptr = display.backend().lock().unwrap().display_ptr();
+    #[allow(unreachable_code, unused_variables)] // Temporary warnings
+    pub fn bind_wl_display(&self, _display: &DisplayHandle) -> Result<EGLBufferReader, Error> {
+        let display_ptr = todo!("Expose display ptr on DisplayHandle"); //display.backend_handle().display_ptr();
         if !self.extensions.iter().any(|s| s == "EGL_WL_bind_wayland_display") {
             return Err(Error::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
@@ -803,7 +804,7 @@ impl EGLBufferReader {
     /// a [`BufferAccessError::NotManaged`](crate::backend::egl::BufferAccessError::NotManaged) is returned.
     pub fn egl_buffer_contents(
         &self,
-        dh: &mut wayland_server::DisplayHandle<'_>,
+        dh: &DisplayHandle,
         buffer: &WlBuffer,
     ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
         use wayland_server::Resource;
@@ -926,7 +927,7 @@ impl EGLBufferReader {
     /// context has been lost, `None` is returned.
     pub fn egl_buffer_dimensions(
         &self,
-        dh: &mut wayland_server::DisplayHandle<'_>,
+        dh: &DisplayHandle,
         buffer: &Buffer,
     ) -> Option<crate::utils::Size<i32, crate::utils::Buffer>> {
         if dh.get_object_data(buffer.id()).is_err() {

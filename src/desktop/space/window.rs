@@ -101,7 +101,7 @@ impl Window {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn elem_draw<R, S>(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
