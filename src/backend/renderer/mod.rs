@@ -11,13 +11,12 @@ use std::collections::HashSet;
 use std::error::Error;
 
 use crate::utils::{Buffer as BufferCoord, Physical, Point, Rectangle, Size, Transform};
+use cgmath::Matrix3;
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::{buffer::Buffer, compositor::SurfaceData};
-use cgmath::Matrix3;
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::wl_shm;
-use wayland_server::DisplayHandle;
+use wayland_server::{protocol::wl_shm, DisplayHandle};
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
