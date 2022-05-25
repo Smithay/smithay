@@ -616,9 +616,8 @@ impl EGLDisplay {
     /// This might return [`OtherEGLDisplayAlreadyBound`](Error::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`] multiple times, as only one egl display may be bound at any given time.
     #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
-    #[allow(unreachable_code, unused_variables)] // Temporary warnings
-    pub fn bind_wl_display(&self, _display: &DisplayHandle) -> Result<EGLBufferReader, Error> {
-        let display_ptr = todo!("Expose display ptr on DisplayHandle"); //display.backend_handle().display_ptr();
+    pub fn bind_wl_display(&self, display: &DisplayHandle) -> Result<EGLBufferReader, Error> {
+        let display_ptr = display.backend_handle().display_ptr();
         if !self.extensions.iter().any(|s| s == "EGL_WL_bind_wayland_display") {
             return Err(Error::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
