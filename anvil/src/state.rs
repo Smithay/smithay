@@ -11,23 +11,15 @@ use smithay::{
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
         wayland_protocols::{
-            unstable::{
-                xdg_decoration::{self, v1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode},
-                xdg_output::v1::server::{
-                    zxdg_output_manager_v1::ZxdgOutputManagerV1, zxdg_output_v1::ZxdgOutputV1,
-                }
-            },
-            wlr::unstable::layer_shell::v1::server::{zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::ZwlrLayerSurfaceV1},
+            xdg::decoration::{self as xdg_decoration, zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode},
         },
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason},
             protocol::{
                 wl_data_source::WlDataSource,
                 wl_surface::WlSurface,
-                wl_output::WlOutput,
             },
             Display, DisplayHandle, Resource,
-            delegate_dispatch, delegate_global_dispatch,
         },
     },
     utils::{Logical, Point},
@@ -35,7 +27,7 @@ use smithay::{
         compositor::CompositorState,
         data_device::{set_data_device_focus, DataDeviceState, DataDeviceHandler, ClientDndGrabHandler, ServerDndGrabHandler},
         output::{OutputManagerState, Output},
-        seat::{CursorImageStatus, KeyboardHandle, PointerHandle, Seat, XkbConfig, SeatState, SeatHandler},
+        seat::{CursorImageStatus, Seat, XkbConfig, SeatState, SeatHandler},
         shell::{
             xdg::{
                 decoration::{XdgDecorationHandler, XdgDecorationManager},
@@ -47,9 +39,8 @@ use smithay::{
         socket::ListeningSocketSource,
         xdg_activation::{XdgActivationHandler, XdgActivationToken, XdgActivationTokenData, XdgActivationState},
     },
-    delegate_compositor, delegate_data_device, delegate_seat,
-    delegate_shm, delegate_xdg_activation, delegate_xdg_decoration,
-    delegate_xdg_shell,
+    delegate_compositor, delegate_data_device, delegate_layer_shell, delegate_output, delegate_seat,
+    delegate_shm, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
 };
 
 #[cfg(feature = "xwayland")]
@@ -61,8 +52,7 @@ pub struct CalloopData<BackendData: 'static> {
 }
 
 struct ClientState;
-
-impl<BackendData> ClientData<AnvilState<BackendData>> for ClientState {
+impl ClientData for ClientState {
     /// Notification that a client was initialized
     fn initialized(&self, client_id: ClientId) {}
     /// Notification that a client is disconnected
@@ -107,12 +97,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub xwayland: XWayland<AnvilState<BackendData>>,
 }
 
-#[cfg(feature = "winit")]
-delegate_compositor!(AnvilState<crate::winit::WinitData>);
-#[cfg(feature = "x11")]
-delegate_compositor!(AnvilState<crate::x11::X11Data>);
-#[cfg(feature = "udev")]
-delegate_compositor!(AnvilState<crate::udev::UdevData>);
+delegate_compositor!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
@@ -140,49 +125,22 @@ impl<BackendData> ServerDndGrabHandler for AnvilState<BackendData> {
         unreachable!("Anvil doesn't do server-side grabs");
     }
 }
-#[cfg(feature = "winit")]
-delegate_data_device!(AnvilState<crate::winit::WinitData>);
-#[cfg(feature = "x11")]
-delegate_data_device!(AnvilState<crate::x11::X11Data>);
-#[cfg(feature = "udev")]
-delegate_data_device!(AnvilState<crate::udev::UdevData>);
-
-#[cfg(feature = "winit")]
-delegate_global_dispatch!(AnvilState<crate::winit::WinitData>: [WlOutput, ZxdgOutputManagerV1] => OutputManagerState);
-#[cfg(feature = "winit")]
-delegate_dispatch!(AnvilState<crate::winit::WinitData>: [WlOutput, ZxdgOutputManagerV1, ZxdgOutputV1] => OutputManagerState);
-#[cfg(feature = "x11")]
-delegate_global_dispatch!(AnvilState<crate::x11::X11Data>: [WlOutput, ZxdgOutputManagerV1] => OutputManagerState);
-#[cfg(feature = "x11")]
-delegate_dispatch!(AnvilState<crate::x11::X11Data>: [WlOutput, ZxdgOutputManagerV1, ZxdgOutputV1] => OutputManagerState);
-#[cfg(feature = "udev")]
-delegate_global_dispatch!(AnvilState<crate::udev::UdevData>: [WlOutput, ZxdgOutputManagerV1] => OutputManagerState);
-#[cfg(feature = "udev")]
-delegate_dispatch!(AnvilState<crate::udev::UdevData>: [WlOutput, ZxdgOutputManagerV1, ZxdgOutputV1] => OutputManagerState);
+delegate_data_device!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_output!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> AsRef<ShmState> for AnvilState<BackendData> {
     fn as_ref(&self) -> &ShmState {
         &self.shm_state
     }
 }
-#[cfg(feature = "winit")]
-delegate_shm!(AnvilState<crate::winit::WinitData>);
-#[cfg(feature = "x11")]
-delegate_shm!(AnvilState<crate::x11::X11Data>);
-#[cfg(feature = "udev")]
-delegate_shm!(AnvilState<crate::udev::UdevData>);
+delegate_shm!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> SeatHandler for AnvilState<BackendData> {
     fn seat_state(&mut self) -> &mut SeatState<AnvilState<BackendData>> {
         &mut self.seat_state
     }
 }
-#[cfg(feature = "winit")]
-delegate_seat!(AnvilState<crate::winit::WinitData>);
-#[cfg(feature = "x11")]
-delegate_seat!(AnvilState<crate::x11::X11Data>);
-#[cfg(feature = "udev")]
-delegate_seat!(AnvilState<crate::udev::UdevData>);
+delegate_seat!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
     fn activation_state(&mut self) -> &mut XdgActivationState {
@@ -216,66 +174,46 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
         // The request is cancelled
     }
 }
-#[cfg(feature = "winit")]
-delegate_xdg_activation!(AnvilState<crate::winit::WinitData>);
-#[cfg(feature = "x11")]
-delegate_xdg_activation!(AnvilState<crate::x11::X11Data>);
-#[cfg(feature = "udev")]
-delegate_xdg_activation!(AnvilState<crate::udev::UdevData>);
+delegate_xdg_activation!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgDecorationHandler for AnvilState<BackendData> {
     fn new_decoration(
         &mut self, 
-        dh: &mut DisplayHandle<'_>, 
+        dh: &DisplayHandle, 
         toplevel: ToplevelSurface
     ) {
-        use xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::Mode;
+        use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ClientSide);
         });
-        toplevel.send_configure(dh);
+        toplevel.send_configure();
     }
     fn request_mode(
         &mut self, 
-        _dh: &mut DisplayHandle<'_>, 
+        _dh: &DisplayHandle, 
         _toplevel: ToplevelSurface, 
         _mode: DecorationMode,
     ) {}
     fn unset_mode(
         &mut self, 
-        _dh: &mut DisplayHandle<'_>, 
+        _dh: &DisplayHandle, 
         _toplevel: ToplevelSurface
     ) {}
 }
+delegate_xdg_decoration!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-#[cfg(feature = "winit")]
-delegate_xdg_decoration!(AnvilState<crate::winit::WinitData>);
-#[cfg(feature = "x11")]
-delegate_xdg_decoration!(AnvilState<crate::x11::X11Data>);
-#[cfg(feature = "udev")]
-delegate_xdg_decoration!(AnvilState<crate::udev::UdevData>);
+delegate_xdg_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+delegate_layer_shell!(@<BackendData: 'static> AnvilState<BackendData>);
 
-#[cfg(feature = "winit")]
-delegate_xdg_shell!(AnvilState<crate::winit::WinitData>);
-#[cfg(feature = "x11")]
-delegate_xdg_shell!(AnvilState<crate::x11::X11Data>);
-#[cfg(feature = "udev")]
-delegate_xdg_shell!(AnvilState<crate::udev::UdevData>);
-
-#[cfg(feature = "winit")]
-delegate_global_dispatch!(AnvilState<crate::winit::WinitData>: [ZwlrLayerShellV1] => WlrLayerShellState);
-#[cfg(feature = "winit")]
-delegate_dispatch!(AnvilState<crate::winit::WinitData>: [ZwlrLayerShellV1, ZwlrLayerSurfaceV1] => WlrLayerShellState);
-
-impl/*<BackendData: Backend + 'static>*/ AnvilState<crate::winit::WinitData>//BackendData>
+impl<BackendData: Backend + 'static> AnvilState<BackendData>
 {
     pub fn init(
-        mut display: &mut Display<AnvilState<crate::winit::WinitData>>,//<BackendData>>,
-        handle: LoopHandle<'static, CalloopData<crate::winit::WinitData>>,//<BackendData>>,
-        backend_data: crate::winit::WinitData,//BackendData,
+        mut display: &mut Display<AnvilState<BackendData>>,
+        handle: LoopHandle<'static, CalloopData<BackendData>>,
+        backend_data: BackendData,
         log: slog::Logger,
         listen_on_socket: bool,
-    ) -> AnvilState<crate::winit::WinitData> {//BackendData> {
+    ) -> AnvilState<BackendData> {
         // init wayland clients
         let socket_name = if listen_on_socket {
             let source = ListeningSocketSource::new_auto(log.clone()).unwrap();
@@ -292,7 +230,7 @@ impl/*<BackendData: Backend + 'static>*/ AnvilState<crate::winit::WinitData>//Ba
                             Ok(PostAction::Continue)
                         },
                     ).unwrap();
-                    data.display.insert_client(client_stream, Arc::new(ClientState));
+                    data.display.handle().insert_client(client_stream, Arc::new(ClientState));
                     data.display.dispatch_clients(&mut data.state).unwrap();
                 }
             ).expect("Failed to init wayland socket source");
@@ -320,14 +258,15 @@ impl/*<BackendData: Backend + 'static>*/ AnvilState<crate::winit::WinitData>//Ba
         
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
         let cursor_status2 = cursor_status.clone();
-        seat.add_pointer(&mut display.handle(), move |new_status| {
+        seat.add_pointer(move |new_status| {
             *cursor_status2.lock().unwrap() = new_status
         });
-        
+       
+        let dh = display.handle();
         seat
-            .add_keyboard(&mut display.handle(), XkbConfig::default(), 200, 25, |dh, seat, focus| {
+            .add_keyboard(XkbConfig::default(), 200, 25, move |seat, focus| {
                 let focus = focus.and_then(|s| dh.get_client(s.id()).ok());
-                set_data_device_focus(dh, seat, focus)
+                set_data_device_focus(&dh, seat, focus)
             })
             .expect("Failed to initialize the keyboard");
 

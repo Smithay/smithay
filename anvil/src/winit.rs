@@ -95,7 +95,7 @@ pub fn run_winit(log: Logger) {
         #[cfg(feature = "egl")]
         let dmabuf_state = if backend
             .renderer()
-            .bind_wl_display(&display)
+            .bind_wl_display(&display.handle())
             .is_ok()
         {
             info!(log, "EGL hardware-acceleration enabled");
@@ -157,7 +157,6 @@ pub fn run_winit(log: Logger) {
         log.clone(),
     );
     output.change_current_state(
-        &mut display.handle(),
         Some(mode),
         Some(wl_output::Transform::Flipped180),
         None,
@@ -185,7 +184,7 @@ pub fn run_winit(log: Logger) {
                         size,
                         refresh: 60_000,
                     };
-                    output.change_current_state(&mut dh, Some(mode), None, None, None);
+                    output.change_current_state(Some(mode), None, None, None);
                     output.set_preferred(mode);
                     crate::shell::fixup_positions(&mut dh, &mut state.space);
                 }
@@ -284,7 +283,7 @@ pub fn run_winit(log: Logger) {
         // Send frame events so that client start drawing their next frame
         state
             .space
-            .send_frames(&mut display.handle(),start_time.elapsed().as_millis() as u32);
+            .send_frames(start_time.elapsed().as_millis() as u32);
 
         let mut calloop_data = CalloopData {
             state,
