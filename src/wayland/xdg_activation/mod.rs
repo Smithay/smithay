@@ -272,20 +272,20 @@ pub struct ActivationTokenData {
 /// You must also implement [`XdgActivationHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_xdg_activation {
-    ($ty: tt) => {
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         type __XdgActivationV1 =
             $crate::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_v1::XdgActivationV1;
         type __XdgActivationTokenV1 =
             $crate::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_token_v1::XdgActivationTokenV1;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($ty:
-            [
-                __XdgActivationV1: (),
-                __XdgActivationTokenV1: $crate::wayland::xdg_activation::ActivationTokenData
-            ] => $crate::wayland::xdg_activation::XdgActivationState
-        );
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __XdgActivationV1: ()
+        ] => $crate::wayland::xdg_activation::XdgActivationState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __XdgActivationTokenV1: $crate::wayland::xdg_activation::ActivationTokenData
+        ] => $crate::wayland::xdg_activation::XdgActivationState);
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($ty:
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
             [
                 __XdgActivationV1: ()
             ] => $crate::wayland::xdg_activation::XdgActivationState

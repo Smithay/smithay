@@ -48,6 +48,7 @@ use crate::{
 mod handlers;
 mod types;
 
+pub use handlers::WlrLayerSurfaceUserData;
 pub use types::{Anchor, ExclusiveZone, KeyboardInteractivity, Layer, Margins};
 
 /// The role of a wlr_layer_shell_surface
@@ -416,4 +417,28 @@ pub enum LayerShellRequest {
         /// The configure serial.
         configure: LayerSurfaceConfigure,
     },
+}
+
+/// Macro to delegate implementation of wlr layer shell to [`WlrLayerShellState`].
+///
+/// You must also implement [`WlrLayerShellHandler`] to use this.
+#[macro_export]
+macro_rules! delegate_layer_shell {
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
+        type __ZwlrLayerShellV1 =
+            $crate::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::ZwlrLayerShellV1;
+        type __ZwlrLayerShellSurfaceV1 =
+            $crate::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
+
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __ZwlrLayerShellV1: ()
+        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __ZwlrLayerShellSurfaceV1: $crate::wayland::shell::wlr_layer::WlrLayerSurfaceUserData
+        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
+
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __ZwlrLayerShellV1: ()
+        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
+    };
 }
