@@ -40,8 +40,8 @@
 //! ```
 //! # extern crate wayland_server;
 //! # extern crate smithay;
-//! # use wayland_server::protocol::wl_buffer::WlBuffer;
-//! # fn wrap(buffer: &WlBuffer) {
+//! # use smithay::wayland::buffer::Buffer;
+//! # fn wrap(buffer: &Buffer) {
 //! use smithay::wayland::shm::{with_buffer_contents, BufferData, BufferAccessError};
 //!
 //! let content = with_buffer_contents(&buffer,

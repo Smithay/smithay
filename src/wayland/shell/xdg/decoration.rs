@@ -9,7 +9,7 @@
 //! # extern crate wayland_server;
 //! #
 //! use smithay::wayland::shell::xdg::decoration::{init_xdg_decoration_manager, XdgDecorationRequest};
-//! use smithay::reexports::wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::Mode;
+//! use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
 //!
 //! # let mut display = wayland_server::Display::new();
 //!
