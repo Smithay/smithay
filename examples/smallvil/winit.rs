@@ -111,7 +111,7 @@ pub fn winit_dispatch(
         state
             .space
             .render_output::<Gles2Renderer, SurfaceTree>(
-                &mut display.handle(),
+                &display.handle(),
                 backend.renderer(),
                 output,
                 0,
@@ -123,11 +123,11 @@ pub fn winit_dispatch(
 
     backend.submit(Some(&[damage.to_logical(1)]), 1.0).unwrap();
 
-    state.space.send_frames(
-        state.start_time.elapsed().as_millis() as u32,
-    );
+    state
+        .space
+        .send_frames(state.start_time.elapsed().as_millis() as u32);
 
-    state.space.refresh(&mut display.handle());
+    state.space.refresh(&display.handle());
     display.flush_clients()?;
 
     Ok(())

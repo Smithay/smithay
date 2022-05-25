@@ -67,12 +67,7 @@ impl<D> PointerInternal<D> {
         }
     }
 
-    fn set_grab<G: PointerGrab<D> + 'static>(
-        &mut self,
-        serial: Serial,
-        grab: G,
-        time: u32,
-    ) {
+    fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, grab: G, time: u32) {
         self.grab = GrabStatus::Active(serial, Box::new(grab));
         // generate a move to let the grab change the focus or move the pointer as result of its initialization
         let location = self.location;
@@ -231,12 +226,7 @@ impl<D> PointerHandle<D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<D> + 'static>(
-        &self,
-        grab: G,
-        serial: Serial,
-        time: u32,
-    ) {
+    pub fn set_grab<G: PointerGrab<D> + 'static>(&self, grab: G, serial: Serial, time: u32) {
         self.inner.lock().unwrap().set_grab(serial, grab, time);
     }
 
@@ -334,12 +324,7 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<D> + 'static>(
-        &mut self,
-        serial: Serial,
-        time: u32,
-        grab: G,
-    ) {
+    pub fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, time: u32, grab: G) {
         self.inner.set_grab(serial, grab, time);
     }
 

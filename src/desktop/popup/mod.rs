@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 pub use grab::*;
 pub use manager::*;
-use wayland_server::{protocol::wl_surface::WlSurface};
+use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::{
     utils::{IsAlive, Logical, Point, Rectangle},

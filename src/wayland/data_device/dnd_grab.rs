@@ -264,10 +264,9 @@ where
         _client_id: ClientId,
         msg: Message<ObjectId>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
-        let mut dh = DisplayHandle::from(dh.clone());
-
-        if let Ok((resource, request)) = WlDataOffer::parse_request(&mut dh, msg) {
-            handle_dnd(handler, &resource, request, &self, &mut dh);
+        let dh = DisplayHandle::from(dh.clone());
+        if let Ok((resource, request)) = WlDataOffer::parse_request(&dh, msg) {
+            handle_dnd(handler, &resource, request, &self, &dh);
         }
 
         None

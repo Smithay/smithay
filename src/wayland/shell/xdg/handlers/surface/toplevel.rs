@@ -230,10 +230,7 @@ where
     })
 }
 
-pub fn send_toplevel_configure(
-    resource: &xdg_toplevel::XdgToplevel,
-    configure: ToplevelConfigure,
-) {
+pub fn send_toplevel_configure(resource: &xdg_toplevel::XdgToplevel, configure: ToplevelConfigure) {
     let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
     let (width, height) = configure.state.size.unwrap_or_default().into();
     // convert the Vec<State> (which is really a Vec<u32>) into Vec<u8>

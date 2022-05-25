@@ -167,7 +167,7 @@ impl KbdInternal {
             }
             for kbd in self.known_kbds.iter() {
                 if kbd.id().same_client_as(&surface.id()) {
-                    f(kbd, &surface);
+                    f(kbd, surface);
                 }
             }
         }
