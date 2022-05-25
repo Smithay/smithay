@@ -71,7 +71,7 @@ where
                             handler.started(source.clone(), icon.clone(), seat.clone());
                             let start_data = pointer.grab_start_data().unwrap();
                             pointer.set_grab(
-                                dnd_grab::DnDGrab::new(start_data, source, origin, seat.clone(), icon),
+                                dnd_grab::DnDGrab::new(start_data, source, origin, seat, icon),
                                 serial,
                                 0,
                             );

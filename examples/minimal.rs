@@ -161,10 +161,9 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                 InputEvent::PointerMotionAbsolute { .. } => {
                     let dh = &mut display.handle();
                     state.xdg_shell_state.toplevel_surfaces(|surfaces| {
-                        for surface in surfaces {
+                        if let Some(surface) = surfaces.iter().next() {
                             let surface = surface.wl_surface();
                             keyboard.set_focus(dh, Some(surface), 0.into());
-                            break;
                         }
                     });
                 }

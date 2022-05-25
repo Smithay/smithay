@@ -581,6 +581,6 @@ where
         let mut inner = global_data.arc.inner.lock().unwrap();
         resource.capabilities(inner.compute_caps());
 
-        inner.known_seats.push(resource.clone());
+        inner.known_seats.push(resource);
     }
 }
