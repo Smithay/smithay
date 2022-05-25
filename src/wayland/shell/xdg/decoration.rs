@@ -90,14 +90,14 @@ pub trait XdgDecorationHandler {
 /// You must also implement [`XdgDecorationHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_xdg_decoration {
-    ($ty: ty) => {
+    ($ty: tt) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1
+            wayland_protocols::xdg::decoration::v1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1: ()
         ] => $crate::wayland::shell::xdg::decoration::XdgDecorationManager);
 
         $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
-            wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1
+            wayland_protocols::xdg::decoration::v1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1: (),
+            wayland_protocols::xdg::decoration::v1::server::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1: $crate::wayland::shell::xdg::ToplevelSurface
         ] => $crate::wayland::shell::xdg::decoration::XdgDecorationManager);
     };
 }
