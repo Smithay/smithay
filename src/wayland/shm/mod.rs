@@ -40,8 +40,8 @@
 //! ```
 //! # extern crate wayland_server;
 //! # extern crate smithay;
-//! # use wayland_server::protocol::wl_buffer::WlBuffer;
-//! # fn wrap(buffer: &WlBuffer) {
+//! # use smithay::wayland::buffer::Buffer;
+//! # fn wrap(buffer: &Buffer) {
 //! use smithay::wayland::shm::{with_buffer_contents, BufferData, BufferAccessError};
 //!
 //! let content = with_buffer_contents(&buffer,
@@ -225,13 +225,15 @@ pub struct ShmBufferUserData {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_shm {
-    ($ty: tt) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_shm::WlShm: ()
         ] => $crate::wayland::shm::ShmState);
 
-        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: (),
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: ()
+        ] => $crate::wayland::shm::ShmState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool: $crate::wayland::shm::ShmPoolUserData
         ] => $crate::wayland::shm::ShmState);
     };

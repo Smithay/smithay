@@ -11,9 +11,9 @@
 //! # extern crate wayland_server;
 //! use smithay::wayland::seat::Seat;
 //!
-//! # let mut display = wayland_server::Display::new();
+//! # let mut display = wayland_server::Display::new().unwrap();
 //! // insert the seat:
-//! let (seat, seat_global) = Seat::new(
+//! let seat = Seat::new(
 //!     &mut display,             // the display
 //!     "seat-0".into(),          // the name of the seat, will be advertized to clients
 //!     None                      // insert a logger here
@@ -236,8 +236,8 @@ impl<D> Seat<D> {
     /// #
     /// # use smithay::wayland::seat::Seat;
     /// #
-    /// # let mut display = wayland_server::Display::new();
-    /// # let (mut seat, seat_global) = Seat::new(
+    /// # let mut display = wayland_server::Display::new().unwrap();
+    /// # let mut seat = Seat::new(
     /// #     &mut display,
     /// #     "seat-0".into(),
     /// #     None
@@ -300,7 +300,7 @@ impl<D: 'static> Seat<D> {
     /// ```no_run
     /// # extern crate smithay;
     /// # use smithay::wayland::seat::{Seat, XkbConfig};
-    /// # let mut seat: Seat = unimplemented!();
+    /// # let mut seat: Seat<()> = unimplemented!();
     /// let keyboard = seat
     ///     .add_keyboard(
     ///         XkbConfig {
@@ -382,7 +382,7 @@ impl<D> Seat<D> {
     /// #
     /// # use smithay::wayland::seat::Seat;
     /// #
-    /// # let mut display = wayland_server::Display::new();
+    /// # let mut display = wayland_server::Display::new().unwrap();
     /// # let (mut seat, seat_global) = Seat::new(
     /// #     &mut display,
     /// #     "seat-0".into(),
@@ -451,15 +451,21 @@ pub struct SeatUserData<D> {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_seat {
-    ($ty: tt) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatGlobalData<$ty>
         ] => $crate::wayland::seat::SeatState<$ty>);
 
-        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatUserData<$ty>,
-            $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer: $crate::wayland::seat::PointerUserData<$ty>,
-            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard: $crate::wayland::seat::KeyboardUserData,
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatUserData<$ty>
+        ] => $crate::wayland::seat::SeatState<$ty>);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer: $crate::wayland::seat::PointerUserData<$ty>
+        ] => $crate::wayland::seat::SeatState<$ty>);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard: $crate::wayland::seat::KeyboardUserData
+        ] => $crate::wayland::seat::SeatState<$ty>);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?$ty: [
             $crate::reexports::wayland_server::protocol::wl_touch::WlTouch: $crate::wayland::seat::TouchUserData
         ] => $crate::wayland::seat::SeatState<$ty>);
     };

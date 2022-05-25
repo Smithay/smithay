@@ -332,14 +332,18 @@ mod handlers {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_data_device {
-    ($ty: tt) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager: ()
         ] => $crate::wayland::data_device::DataDeviceState);
 
-        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager: (),
-            $crate::reexports::wayland_server::protocol::wl_data_device::WlDataDevice: $crate::wayland::data_device::DataDeviceUserData,
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager: ()
+        ] => $crate::wayland::data_device::DataDeviceState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_data_device::WlDataDevice: $crate::wayland::data_device::DataDeviceUserData
+        ] => $crate::wayland::data_device::DataDeviceState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_data_source::WlDataSource: $crate::wayland::data_device::DataSourceUserData
         ] => $crate::wayland::data_device::DataDeviceState);
     };

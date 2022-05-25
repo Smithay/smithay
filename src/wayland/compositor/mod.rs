@@ -449,19 +449,31 @@ impl CompositorState {
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_compositor {
-    ($ty: tt) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor: (),
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor: ()
+        ] => $crate::wayland::compositor::CompositorState);
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor: ()
         ] => $crate::wayland::compositor::CompositorState);
 
-        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor: (),
-            $crate::reexports::wayland_server::protocol::wl_surface::WlSurface: $crate::wayland::compositor::SurfaceUserData,
-            $crate::reexports::wayland_server::protocol::wl_region::WlRegion: $crate::wayland::compositor::RegionUserData,
-            $crate::reexports::wayland_server::protocol::wl_callback::WlCallback: (),
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor: ()
+        ] => $crate::wayland::compositor::CompositorState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_surface::WlSurface: $crate::wayland::compositor::SurfaceUserData
+        ] => $crate::wayland::compositor::CompositorState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_region::WlRegion: $crate::wayland::compositor::RegionUserData
+        ] => $crate::wayland::compositor::CompositorState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_callback::WlCallback: ()
+        ] => $crate::wayland::compositor::CompositorState);
             // WlSubcompositor
-            $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor: (),
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor: ()
+        ] => $crate::wayland::compositor::CompositorState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_subsurface::WlSubsurface: $crate::wayland::compositor::SubsurfaceUserData
         ] => $crate::wayland::compositor::CompositorState);
     };

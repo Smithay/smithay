@@ -30,9 +30,12 @@
 //! use smithay::wayland::output::{Output, PhysicalProperties, Mode};
 //! use wayland_server::protocol::wl_output;
 //!
-//! # let mut display = wayland_server::Display::new();
-//! // Create the Output with given name and physical properties
-//! let output = Output::new(
+//! # let mut display = wayland_server::Display::new().unwrap();
+//! // Create the Output with given name and physical properties.
+//! // This also creates the global, which you may destroy later
+//! // or drop if you don't intend to destroy the output.
+//! let (output, _global) = Output::new(
+//!     &mut display,
 //!     "output-0".into(), // the name of this output,
 //!     PhysicalProperties {
 //!         size: (200, 150).into(),        // dimensions (width, height) in mm
@@ -42,11 +45,8 @@
 //!     },
 //!     None // insert a logger here
 //! );
-//! // create a global, if you want to advertise it to clients
-//! let _output_global = output.create_global(
-//!     &mut display,      // the display//!
-//! ); // you can drop the global, if you never intend to destroy it.
-//! // Now you can configure it
+//!
+//! // Now you can configure the output
 //! output.change_current_state(
 //!     Some(Mode { size: (1920, 1080).into(), refresh: 60000 }), // the resolution mode,
 //!     Some(wl_output::Transform::Normal), // global screen transformation
@@ -470,15 +470,21 @@ impl Eq for Output {}
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_output {
-    ($ty: tt) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::OutputGlobalData,
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::OutputGlobalData
+        ] => $crate::wayland::output::OutputManagerState);
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()
         ] => $crate::wayland::output::OutputManagerState);
 
-        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::OutputUserData,
-            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1: $crate::wayland::output::XdgOutputUserData,
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::OutputUserData
+        ] => $crate::wayland::output::OutputManagerState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1: $crate::wayland::output::XdgOutputUserData
+        ] => $crate::wayland::output::OutputManagerState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()
         ] => $crate::wayland::output::OutputManagerState);
     };

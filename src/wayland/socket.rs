@@ -29,12 +29,12 @@
 //!     // Inside the callback, you should insert the client into the display.
 //!     //
 //!     // You may also associate some data with the client when inserting the client.
-//!     state.display.insert_client(client_stream, Arc::new(ExampleClientData));
+//!     state.display.handle().insert_client(client_stream, Arc::new(ExampleClientData));
 //! });
 //!
 //! # struct ExampleClientData;
 //! #
-//! # impl<D> wayland_server::backend::ClientData<D> for ExampleClientData {
+//! # impl wayland_server::backend::ClientData for ExampleClientData {
 //! #     fn initialized(&self, _: wayland_server::backend::ClientId) {}
 //! #     fn disconnected(
 //! #         &self,

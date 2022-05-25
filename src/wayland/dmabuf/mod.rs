@@ -25,7 +25,7 @@
 //!     reexports::{wayland_server::protocol::wl_buffer::WlBuffer},
 //!     wayland::{
 //!         buffer::{Buffer, BufferHandler},
-//!         dmabuf::{DmabufGlobal, DmabufHandler, DmabufState}
+//!         dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError}
 //!     },
 //! };
 //!
@@ -51,12 +51,12 @@
 //!         &mut self.dmabuf_state
 //!     }
 //!
-//!     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> bool {
+//!     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
 //!         // Here you should import the dmabuf into your renderer.
 //!         //
-//!         // The return value indicates whether import was successful. If the return value is false, then
+//!         // The return value indicates whether import was successful. If the return value is Err, then
 //!         // the client is told dmabuf import has failed.
-//!         true
+//!         Ok(())
 //!     }
 //! }
 //!
@@ -303,19 +303,21 @@ pub fn get_dmabuf(buffer: &Buffer) -> Result<Dmabuf, UnmanagedResource> {
 /// You must also implement [`DmabufHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_dmabuf {
-    ($ty: ty) => {
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         type __ZwpLinuxDmabufV1 =
-            $crate::reexports::wayland_protocols::unstable::linux_dmabuf::v1::server::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
+            $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
         type __ZwpLinuxBufferParamsV1 =
-            $crate::reexports::wayland_protocols::unstable::linux_dmabuf::v1::server::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1;
+            $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1;
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($ty: [
-            __ZwpLinuxDmabufV1
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __ZwpLinuxDmabufV1: $crate::wayland::dmabuf::DmabufGlobalData
         ] => $crate::wayland::dmabuf::DmabufState);
 
-        $crate::reexports::wayland_server::delegate_dispatch!($ty: [
-            __ZwpLinuxDmabufV1,
-            __ZwpLinuxBufferParamsV1
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __ZwpLinuxDmabufV1: $crate::wayland::dmabuf::DmabufData
+        ] => $crate::wayland::dmabuf::DmabufState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __ZwpLinuxBufferParamsV1: $crate::wayland::dmabuf::DmabufParamsData
         ] => $crate::wayland::dmabuf::DmabufState);
     };
 }
