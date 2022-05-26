@@ -96,7 +96,7 @@ use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
-use wayland_server::{Display, DisplayHandle, GlobalDispatch, Resource};
+use wayland_server::{DisplayHandle, GlobalDispatch, Resource};
 
 /// Description of a part of a surface that
 /// should be considered damaged and needs to be redrawn
@@ -418,15 +418,15 @@ impl CompositorState {
     ///
     /// It returns the two global handles, in case you wish to remove these globals from
     /// the event loop in the future.
-    pub fn new<D, L>(display: &mut Display<D>, logger: L) -> Self
+    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> Self
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
     {
         let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
 
-        let compositor = display.handle().create_global::<D, WlCompositor, ()>(4, ());
-        let subcompositor = display.handle().create_global::<D, WlSubcompositor, ()>(1, ());
+        let compositor = display.create_global::<D, WlCompositor, ()>(4, ());
+        let subcompositor = display.create_global::<D, WlSubcompositor, ()>(1, ());
 
         CompositorState {
             log,

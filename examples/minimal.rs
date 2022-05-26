@@ -117,17 +117,18 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let log = log();
 
     let mut display: Display<App> = Display::new()?;
+    let dh = display.handle();
 
     let seat_state = SeatState::new();
-    let seat = Seat::new(&mut display, "winit", None);
+    let seat = Seat::<App>::new(&dh, "winit", None);
 
     let mut state = {
         App {
-            compositor_state: CompositorState::new(&mut display, None),
-            xdg_shell_state: XdgShellState::new(&mut display, None).0,
-            shm_state: ShmState::new(&mut display, vec![], None),
+            compositor_state: CompositorState::new::<App, _>(&dh, None),
+            xdg_shell_state: XdgShellState::new::<App, _>(&dh, None).0,
+            shm_state: ShmState::new::<App, _>(&dh, vec![], None),
             seat_state,
-            data_device_state: DataDeviceState::new(&mut display, None),
+            data_device_state: DataDeviceState::new::<App, _>(&dh, None),
             seat,
         }
     };

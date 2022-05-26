@@ -34,7 +34,7 @@ use wayland_protocols_wlr::layer_shell::v1::server::{
 use wayland_server::{
     backend::GlobalId,
     protocol::{wl_output::WlOutput, wl_surface},
-    Display, DisplayHandle, GlobalDispatch, Resource,
+    DisplayHandle, GlobalDispatch, Resource,
 };
 
 use crate::{
@@ -161,7 +161,7 @@ pub struct WlrLayerShellState {
 
 impl WlrLayerShellState {
     /// Create a new `wlr_layer_shell` globals
-    pub fn new<L, D>(display: &mut Display<D>, logger: L) -> WlrLayerShellState
+    pub fn new<L, D>(display: &DisplayHandle, logger: L) -> WlrLayerShellState
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<ZwlrLayerShellV1, ()>,
@@ -169,7 +169,7 @@ impl WlrLayerShellState {
     {
         let log = crate::slog_or_fallback(logger);
 
-        let shell_global = display.handle().create_global::<D, ZwlrLayerShellV1, _>(4, ());
+        let shell_global = display.create_global::<D, ZwlrLayerShellV1, _>(4, ());
 
         WlrLayerShellState {
             known_layers: Default::default(),

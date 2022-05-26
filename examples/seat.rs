@@ -22,9 +22,10 @@ impl SeatHandler for App {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
+    let dh = display.handle();
 
     let seat_state = SeatState::new();
-    let seat = Seat::new(&mut display, "Example", None);
+    let seat = Seat::<App>::new(&dh, "Example", None);
 
     let mut state = App { seat_state, seat };
 

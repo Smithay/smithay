@@ -40,8 +40,8 @@ use wayland_protocols::xdg::decoration::zv1::server::{
     zxdg_toplevel_decoration_v1::{self, Mode},
 };
 use wayland_server::{
-    backend::GlobalId, Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, Display,
-    DisplayHandle, GlobalDispatch, New, Resource, WEnum,
+    backend::GlobalId, Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle,
+    GlobalDispatch, New, Resource, WEnum,
 };
 
 use super::{ToplevelSurface, XdgShellHandler};
@@ -57,7 +57,7 @@ impl XdgDecorationManager {
     /// Creates a new delegate type for handling xdg decoration events.
     ///
     /// A global id is also returned to allow destroying the global in the future.
-    pub fn new<D, L>(display: &mut Display<D>, logger: L) -> (XdgDecorationManager, GlobalId)
+    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> (XdgDecorationManager, GlobalId)
     where
         D: GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
             + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
@@ -65,9 +65,8 @@ impl XdgDecorationManager {
         L: Into<Option<::slog::Logger>>,
     {
         let _logger = crate::slog_or_fallback(logger);
-        let global = display
-            .handle()
-            .create_global::<D, zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _>(1, ());
+        let global =
+            display.create_global::<D, zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _>(1, ());
 
         (XdgDecorationManager { _logger }, global)
     }
