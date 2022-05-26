@@ -16,7 +16,7 @@ use smithay::{
 
 use slog::Logger;
 
-use crate::CalloopData;
+use crate::{CalloopData, Smallvil};
 
 pub fn init_winit(
     event_loop: &mut EventLoop<CalloopData>,
@@ -33,8 +33,8 @@ pub fn init_winit(
         refresh: 60_000,
     };
 
-    let (output, _global) = Output::new(
-        display,
+    let (output, _global) = Output::new::<Smallvil, _>(
+        &display.handle(),
         "winit".to_string(),
         PhysicalProperties {
             size: (0, 0).into(),

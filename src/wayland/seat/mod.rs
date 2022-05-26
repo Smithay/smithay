@@ -12,9 +12,10 @@
 //! use smithay::wayland::seat::Seat;
 //!
 //! # let mut display = wayland_server::Display::new().unwrap();
+//! # let display_handle = display.handle();
 //! // insert the seat:
 //! let seat = Seat::new(
-//!     &mut display,             // the display
+//!     &display_handle,          // the display
 //!     "seat-0".into(),          // the name of the seat, will be advertized to clients
 //!     None                      // insert a logger here
 //! );
@@ -69,8 +70,8 @@ use wayland_server::{
         wl_surface,
         wl_touch::WlTouch,
     },
-    DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, Display, DisplayHandle, GlobalDispatch,
-    New, Resource,
+    DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
+    Resource,
 };
 
 #[derive(Debug)]
@@ -158,7 +159,7 @@ impl<D: 'static> Seat<D> {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new<N, L>(display: &mut Display<D>, name: N, logger: L) -> Self
+    pub fn new<N, L>(display: &DisplayHandle, name: N, logger: L) -> Self
     where
         D: GlobalDispatch<WlSeat, SeatGlobalData<D>> + 'static,
         N: Into<String>,
@@ -183,9 +184,7 @@ impl<D: 'static> Seat<D> {
             log,
         });
 
-        let global_id = display
-            .handle()
-            .create_global::<D, _, _>(5, SeatGlobalData { arc: arc.clone() });
+        let global_id = display.create_global::<D, _, _>(5, SeatGlobalData { arc: arc.clone() });
         arc.inner.lock().unwrap().global_id = Some(global_id);
 
         Self { arc }
@@ -237,8 +236,9 @@ impl<D> Seat<D> {
     /// # use smithay::wayland::seat::Seat;
     /// #
     /// # let mut display = wayland_server::Display::new().unwrap();
+    /// # let display_handle = display.handle();
     /// # let mut seat = Seat::new(
-    /// #     &mut display,
+    /// #     &display_handle,
     /// #     "seat-0".into(),
     /// #     None
     /// # );
@@ -383,8 +383,9 @@ impl<D> Seat<D> {
     /// # use smithay::wayland::seat::Seat;
     /// #
     /// # let mut display = wayland_server::Display::new().unwrap();
+    /// # let display_handle = display.handle();
     /// # let (mut seat, seat_global) = Seat::new(
-    /// #     &mut display,
+    /// #     &display_handle,
     /// #     "seat-0".into(),
     /// #     None
     /// # );

@@ -77,7 +77,7 @@ use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_positioner, xdg_tople
 use wayland_server::backend::GlobalId;
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
-    Display, DisplayHandle, GlobalDispatch, Resource,
+    DisplayHandle, GlobalDispatch, Resource,
 };
 
 use super::PingError;
@@ -742,7 +742,7 @@ pub struct XdgShellState {
 
 impl XdgShellState {
     /// Create a new `xdg_shell` global
-    pub fn new<D, L>(display: &mut Display<D>, logger: L) -> (XdgShellState, GlobalId)
+    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> (XdgShellState, GlobalId)
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<XdgWmBase, ()> + 'static,
@@ -757,7 +757,7 @@ impl XdgShellState {
             _log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
         };
 
-        let xdg_shell_global = display.handle().create_global::<D, XdgWmBase, _>(3, ());
+        let xdg_shell_global = display.create_global::<D, XdgWmBase, _>(3, ());
 
         (shell_state, xdg_shell_global)
     }

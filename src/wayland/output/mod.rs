@@ -31,6 +31,7 @@
 //! use wayland_server::protocol::wl_output;
 //!
 //! # let mut display = wayland_server::Display::new().unwrap();
+//! # let display_handle = display.handle();
 //! // Create the Output with given name and physical properties.
 //! let output = Output::new(
 //!     "output-0".into(), // the name of this output,
@@ -44,7 +45,7 @@
 //! );
 //! // create a global, if you want to advertise it to clients
 //! let _global = output.create_global(
-//!     &mut display,      // the display
+//!     &display_handle,      // the display
 //! ); // you can drop the global, if you never intend to destroy it.
 //! // Now you can configure it
 //! output.change_current_state(
@@ -72,14 +73,10 @@ use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::Zxd
 use wayland_server::{
     backend::GlobalId,
     protocol::{
-        wl_output::{Subpixel, Transform},
+        wl_output::{Mode as WMode, Subpixel, Transform, WlOutput},
         wl_surface,
     },
-    DisplayHandle, GlobalDispatch, Resource,
-};
-use wayland_server::{
-    protocol::wl_output::{Mode as WMode, WlOutput},
-    Client, Display,
+    Client, DisplayHandle, GlobalDispatch, Resource,
 };
 
 use slog::{info, o};
@@ -104,13 +101,13 @@ impl OutputManagerState {
     }
 
     /// Create new output manager with xdg output support
-    pub fn new_with_xdg_output<D>(display: &mut Display<D>) -> Self
+    pub fn new_with_xdg_output<D>(display: &DisplayHandle) -> Self
     where
         D: GlobalDispatch<WlOutput, OutputData>,
         D: GlobalDispatch<ZxdgOutputManagerV1, ()>,
         D: 'static,
     {
-        let xdg_output_manager = display.handle().create_global::<D, ZxdgOutputManagerV1, _>(3, ());
+        let xdg_output_manager = display.create_global::<D, ZxdgOutputManagerV1, _>(3, ());
 
         Self {
             xdg_output_manager: Some(xdg_output_manager),
@@ -292,12 +289,12 @@ impl Output {
     /// Calling this function multiple times without destroying the global in between,
     /// will result in multiple globals, meaning the output will be advertised to clients
     /// multiple times.
-    pub fn create_global<D>(&self, display: &mut Display<D>) -> GlobalId
+    pub fn create_global<D>(&self, display: &DisplayHandle) -> GlobalId
     where
         D: GlobalDispatch<WlOutput, OutputData>,
         D: 'static,
     {
-        display.create_global::<WlOutput>(4, self.data.clone())
+        display.create_global::<D, WlOutput, _>(4, self.data.clone())
     }
 
     /// Attempt to retrieve a [`Output`] from an existing resource
