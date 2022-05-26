@@ -1,9 +1,16 @@
 use std::{ffi::OsString, os::unix::prelude::AsRawFd, sync::Arc};
 
-use calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction};
 use slog::Logger;
 use smithay::{
     desktop::{Space, WindowSurfaceType},
+    reexports::{
+        calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
+        wayland_server::{
+            backend::{ClientData, ClientId, DisconnectReason},
+            protocol::wl_surface::WlSurface,
+            Display,
+        },
+    },
     utils::{Logical, Point},
     wayland::{
         compositor::CompositorState,
@@ -14,11 +21,6 @@ use smithay::{
         shm::ShmState,
         socket::ListeningSocketSource,
     },
-};
-use wayland_server::{
-    backend::{ClientData, ClientId, DisconnectReason},
-    protocol::wl_surface::WlSurface,
-    Display,
 };
 
 use crate::CalloopData;
