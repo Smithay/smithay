@@ -263,7 +263,12 @@ pub trait DmabufHandler: BufferHandler {
     ///
     /// If the import fails due to an implementation specific reason, then [`ImportError::Failed`] should be
     /// returned.
-    fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError>;
+    fn dmabuf_imported(
+        &mut self,
+        dh: &DisplayHandle,
+        global: &DmabufGlobal,
+        dmabuf: Dmabuf,
+    ) -> Result<(), ImportError>;
 }
 
 /// Error that may occur when importing a [`Dmabuf`].
