@@ -840,7 +840,7 @@ macro_rules! custom_elements_internal {
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
-            dh: &mut $crate::reexports::wayland_server::DisplayHandle,
+            dh: &$crate::reexports::wayland_server::DisplayHandle,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
             scale: f64,
