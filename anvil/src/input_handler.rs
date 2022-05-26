@@ -429,11 +429,11 @@ impl AnvilState<UdevData> {
                     }
                 }
                 KeyAction::Screen(num) => {
-                    let space = self.space.borrow();
-                    let geometry = space
+                    let geometry = self
+                        .space
                         .outputs()
                         .nth(num)
-                        .map(|o| space.output_geometry(o).unwrap());
+                        .map(|o| self.space.output_geometry(o).unwrap());
 
                     if let Some(geometry) = geometry {
                         let x = geometry.loc.x as f64 + geometry.size.w as f64 / 2.0;
@@ -442,12 +442,11 @@ impl AnvilState<UdevData> {
                     }
                 }
                 KeyAction::ScaleUp => {
-                    let mut space = self.space.borrow_mut();
-
                     let pos = self.pointer_location.to_i32_round();
-                    let output = space
+                    let output = self
+                        .space
                         .outputs()
-                        .find(|o| space.output_geometry(o).unwrap().contains(pos))
+                        .find(|o| self.space.output_geometry(o).unwrap().contains(pos))
                         .cloned();
 
                     if let Some(output) = output {
@@ -465,21 +464,29 @@ impl AnvilState<UdevData> {
                         pointer_output_location.y *= rescale;
                         self.pointer_location = output_location + pointer_output_location;
 
-                        crate::shell::fixup_positions(&mut *space);
-                        std::mem::drop(space);
+                        crate::shell::fixup_positions(dh, &mut self.space);
                         let under = self.surface_under();
-                        self.pointer
-                            .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0);
+                        if let Some(ptr) = self.seat.get_pointer() {
+                            ptr.motion(
+                                self,
+                                dh,
+                                &MotionEvent {
+                                    location: self.pointer_location,
+                                    focus: under,
+                                    serial: SCOUNTER.next_serial(),
+                                    time: 0,
+                                },
+                            );
+                        }
                         self.backend_data.reset_buffers(&output);
                     }
                 }
                 KeyAction::ScaleDown => {
-                    let mut space = self.space.borrow_mut();
-
                     let pos = self.pointer_location.to_i32_round();
-                    let output = space
+                    let output = self
+                        .space
                         .outputs()
-                        .find(|o| space.output_geometry(o).unwrap().contains(pos))
+                        .find(|o| self.space.output_geometry(o).unwrap().contains(pos))
                         .cloned();
 
                     if let Some(output) = output {
@@ -497,11 +504,20 @@ impl AnvilState<UdevData> {
                         pointer_output_location.y *= rescale;
                         self.pointer_location = output_location + pointer_output_location;
 
-                        crate::shell::fixup_positions(&mut *space);
-                        std::mem::drop(space);
+                        crate::shell::fixup_positions(dh, &mut self.space);
                         let under = self.surface_under();
-                        self.pointer
-                            .motion(self.pointer_location, under, SCOUNTER.next_serial(), 0);
+                        if let Some(ptr) = self.seat.get_pointer() {
+                            ptr.motion(
+                                self,
+                                dh,
+                                &MotionEvent {
+                                    location: self.pointer_location,
+                                    focus: under,
+                                    serial: SCOUNTER.next_serial(),
+                                    time: 0,
+                                },
+                            );
+                        }
                         self.backend_data.reset_buffers(&output);
                     }
                 }
@@ -514,9 +530,9 @@ impl AnvilState<UdevData> {
                     _ => unreachable!(),
                 },
             },
-            InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(event),
-            InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(event),
-            InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(event),
+            InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(dh, event),
+            InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(dh, event),
+            InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(dh, event),
             /*
             InputEvent::TabletToolAxis { event, .. } => self.on_tablet_tool_axis::<B>(event),
             InputEvent::TabletToolProximity { event, .. } => self.on_tablet_tool_proximity::<B>(event),
@@ -548,7 +564,7 @@ impl AnvilState<UdevData> {
         }
     }
 
-    fn on_pointer_move<B: InputBackend>(&mut self, evt: B::PointerMotionEvent) {
+    fn on_pointer_move<B: InputBackend>(&mut self, dh: &DisplayHandle, evt: B::PointerMotionEvent) {
         let serial = SCOUNTER.next_serial();
         self.pointer_location += evt.delta();
 
@@ -557,8 +573,18 @@ impl AnvilState<UdevData> {
         self.pointer_location = self.clamp_coords(self.pointer_location);
 
         let under = self.surface_under();
-        self.pointer
-            .motion(self.pointer_location, under, serial, evt.time());
+        if let Some(ptr) = self.seat.get_pointer() {
+            ptr.motion(
+                self,
+                dh,
+                &MotionEvent {
+                    location: self.pointer_location,
+                    focus: under,
+                    serial,
+                    time: evt.time(),
+                },
+            );
+        }
     }
 
     /*
@@ -671,23 +697,24 @@ impl AnvilState<UdevData> {
     */
 
     fn clamp_coords(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
-        let space = self.space.borrow();
-        if space.outputs().next().is_none() {
+        if self.space.outputs().next().is_none() {
             return pos;
         }
 
         let (pos_x, pos_y) = pos.into();
-        let max_x = space
+        let max_x = self
+            .space
             .outputs()
-            .fold(0, |acc, o| acc + space.output_geometry(o).unwrap().size.w);
+            .fold(0, |acc, o| acc + self.space.output_geometry(o).unwrap().size.w);
         let clamped_x = pos_x.max(0.0).min(max_x as f64);
-        let max_y = space
+        let max_y = self
+            .space
             .outputs()
             .find(|o| {
-                let geo = space.output_geometry(o).unwrap();
+                let geo = self.space.output_geometry(o).unwrap();
                 geo.contains((clamped_x as i32, 0))
             })
-            .map(|o| space.output_geometry(o).unwrap().size.h);
+            .map(|o| self.space.output_geometry(o).unwrap().size.h);
 
         if let Some(max_y) = max_y {
             let clamped_y = pos_y.max(0.0).min(max_y as f64);
