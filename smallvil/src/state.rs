@@ -50,16 +50,18 @@ impl Smallvil {
     pub fn new(event_loop: &mut EventLoop<CalloopData>, display: &mut Display<Self>, log: Logger) -> Self {
         let start_time = std::time::Instant::now();
 
-        let compositor_state = CompositorState::new(display, log.clone());
-        let xdg_shell_state = XdgShellState::new(display, log.clone()).0;
-        let shm_state = ShmState::new(display, vec![], log.clone());
-        let output_manager_state = OutputManagerState::new_with_xdg_output(display);
+        let dh = display.handle();
+
+        let compositor_state = CompositorState::new::<Self, _>(&dh, log.clone());
+        let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone()).0;
+        let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
+        let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let seat_state = SeatState::new();
-        let data_device_state = DataDeviceState::new(display, log.clone());
+        let data_device_state = DataDeviceState::new::<Self, _>(&dh, log.clone());
 
         // A seat is a group of keyboards, pointer and touch devices.
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
-        let mut seat: Seat<Self> = Seat::new(display, "winit", log.clone());
+        let mut seat: Seat<Self> = Seat::new(&dh, "winit", log.clone());
 
         // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
         // You may want to track keyboard hot-plug in real compositor.

@@ -31,11 +31,12 @@
 //! use wayland_server::protocol::wl_output;
 //!
 //! # let mut display = wayland_server::Display::new().unwrap();
+//! # let display_handle = display.handle();
 //! // Create the Output with given name and physical properties.
 //! // This also creates the global, which you may destroy later
 //! // or drop if you don't intend to destroy the output.
 //! let (output, _global) = Output::new(
-//!     &mut display,
+//!     &display_handle,
 //!     "output-0".into(), // the name of this output,
 //!     PhysicalProperties {
 //!         size: (200, 150).into(),        // dimensions (width, height) in mm
@@ -69,14 +70,10 @@ use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::Zxd
 use wayland_server::{
     backend::GlobalId,
     protocol::{
-        wl_output::{Subpixel, Transform},
+        wl_output::{Mode as WMode, Subpixel, Transform, WlOutput},
         wl_surface,
     },
-    DisplayHandle, GlobalDispatch, Resource,
-};
-use wayland_server::{
-    protocol::wl_output::{Mode as WMode, WlOutput},
-    Client, Display,
+    Client, DisplayHandle, GlobalDispatch, Resource,
 };
 
 use slog::{info, o};
@@ -101,13 +98,13 @@ impl OutputManagerState {
     }
 
     /// Create new output manager with xdg output support
-    pub fn new_with_xdg_output<D>(display: &mut Display<D>) -> Self
+    pub fn new_with_xdg_output<D>(display: &DisplayHandle) -> Self
     where
         D: GlobalDispatch<WlOutput, OutputGlobalData>,
         D: GlobalDispatch<ZxdgOutputManagerV1, ()>,
         D: 'static,
     {
-        let xdg_output_manager = display.handle().create_global::<D, ZxdgOutputManagerV1, _>(3, ());
+        let xdg_output_manager = display.create_global::<D, ZxdgOutputManagerV1, _>(3, ());
 
         Self {
             xdg_output_manager: Some(xdg_output_manager),
@@ -208,8 +205,8 @@ impl Output {
     /// The global is directly registered into the event loop, and this function
     /// returns the state token allowing you to access it, as well as the global handle,
     /// in case you wish to remove this global in the future.
-    pub fn new<L, D>(
-        display: &mut Display<D>,
+    pub fn new<D, L>(
+        display: &DisplayHandle,
         name: String,
         physical: PhysicalProperties,
         logger: L,
@@ -245,7 +242,7 @@ impl Output {
 
         let output = Output { data: data.clone() };
 
-        let global = display.handle().create_global::<D, WlOutput, _>(4, data);
+        let global = display.create_global::<D, WlOutput, _>(4, data);
 
         (output, global)
     }

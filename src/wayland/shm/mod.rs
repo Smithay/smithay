@@ -81,7 +81,7 @@ use wayland_server::{
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
     },
-    Dispatch, Display, GlobalDispatch,
+    Dispatch, DisplayHandle, GlobalDispatch,
 };
 
 mod handlers;
@@ -110,7 +110,7 @@ impl ShmState {
     /// The global is directly created on the provided [`Display`](wayland_server::Display),
     /// and this function returns the a delegate type. The id provided by [`ShmState::global`] may be used to
     /// remove this global in the future.
-    pub fn new<L, D>(display: &mut Display<D>, mut formats: Vec<wl_shm::Format>, logger: L) -> ShmState
+    pub fn new<D, L>(display: &DisplayHandle, mut formats: Vec<wl_shm::Format>, logger: L) -> ShmState
     where
         D: GlobalDispatch<WlShm, ()>
             + Dispatch<WlShm, ()>
@@ -126,7 +126,7 @@ impl ShmState {
         formats.push(wl_shm::Format::Argb8888);
         formats.push(wl_shm::Format::Xrgb8888);
 
-        let shm = display.handle().create_global::<D, WlShm, _>(1, ());
+        let shm = display.create_global::<D, WlShm, _>(1, ());
 
         ShmState {
             formats,
