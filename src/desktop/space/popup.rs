@@ -1,5 +1,5 @@
 use crate::{
-    backend::renderer::Renderer,
+    backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{
         layer::LayerSurface,
         popup::{PopupKind, PopupManager},
@@ -23,7 +23,8 @@ pub struct RenderPopup {
 
 impl Window {
     pub(super) fn popup_elements(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> {
-        let loc = self.elem_location(space_id) + self.geometry().loc;
+        let loc = self.elem_location(space_id);
+        let geo_loc = self.geometry().loc;
         self.toplevel()
             .get_surface()
             .map(move |surface| {
@@ -32,7 +33,7 @@ impl Window {
                     .into_iter()
                     .flatten()
                     .map(move |(popup, location)| {
-                        let offset = loc + location - popup.geometry().loc;
+                        let offset = loc + geo_loc + location - popup.geometry().loc;
                         RenderPopup {
                             location: offset,
                             popup,
@@ -113,17 +114,20 @@ impl RenderPopup {
     pub(super) fn elem_draw<R>(
         &self,
         _space_id: usize,
-        _renderer: &mut R,
-        _frame: &mut <R as Renderer>::Frame,
-        _scale: f64,
-        _location: Point<i32, Logical>,
-        _damage: &[Rectangle<i32, Logical>],
-        _log: &slog::Logger,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        scale: f64,
+        location: Point<i32, Logical>,
+        damage: &[Rectangle<i32, Logical>],
+        log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error>
     where
-        R: Renderer,
+        R: Renderer + ImportAll,
+        <R as Renderer>::TextureId: 'static,
     {
-        // popups are special, we track them, but they render with their parents
+        if let Some(surface) = self.popup.get_surface() {
+            draw_surface_tree(renderer, frame, surface, scale, location, damage, log)?;
+        }
         Ok(())
     }
 
