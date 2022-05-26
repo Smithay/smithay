@@ -27,7 +27,7 @@ where
         _: &xdg_activation_v1::XdgActivationV1,
         request: xdg_activation_v1::Request,
         _: &(),
-        _: &DisplayHandle,
+        dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -57,7 +57,7 @@ where
                     activation_state
                         .activation_requests
                         .insert(token.clone(), (token_data.clone(), surface.clone()));
-                    state.request_activation(token, token_data, surface);
+                    state.request_activation(dh, token, token_data, surface);
                 }
             }
 

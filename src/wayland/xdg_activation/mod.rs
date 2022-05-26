@@ -67,7 +67,7 @@ use wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;
 use wayland_server::{
     backend::GlobalId,
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
-    Dispatch, DisplayHandle, GlobalDispatch,
+    Dispatch, Display, DisplayHandle, GlobalDispatch,
 };
 
 use rand::distributions::{Alphanumeric, DistString};
@@ -239,6 +239,7 @@ pub trait XdgActivationHandler {
     /// ignore any future requests.
     fn request_activation(
         &mut self,
+        dh: &DisplayHandle,
         token: XdgActivationToken,
         token_data: XdgActivationTokenData,
         surface: WlSurface,

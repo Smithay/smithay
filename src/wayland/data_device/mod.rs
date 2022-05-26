@@ -62,20 +62,21 @@ pub trait DataDeviceHandler: Sized + ClientDndGrabHandler + ServerDndGrabHandler
     fn data_device_state(&self) -> &DataDeviceState;
 
     /// Action chooser for DnD negociation
-    fn action_choice(&mut self, available: DndAction, preferred: DndAction) -> DndAction {
+    #[allow(unused_variables)]
+    fn action_choice(&mut self, dh: &DisplayHandle, available: DndAction, preferred: DndAction) -> DndAction {
         default_action_chooser(available, preferred)
     }
 
     /// A client has set the selection
     #[allow(unused_variables)]
-    fn new_selection(&mut self, source: Option<WlDataSource>) {}
+    fn new_selection(&mut self, dh: &DisplayHandle, source: Option<WlDataSource>) {}
 
     /// A client requested to read the server-set selection
     ///
     /// * `mime_type` - the requested mime type
     /// * `fd` - the fd to write into
     #[allow(unused_variables)]
-    fn send_selection(&mut self, mime_type: String, fd: RawFd) {}
+    fn send_selection(&mut self, dh: &DisplayHandle, mime_type: String, fd: RawFd) {}
 }
 
 /// Events that are generated during client initiated drag'n'drop

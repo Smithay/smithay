@@ -154,6 +154,7 @@ where
 
                 WlrLayerShellHandler::request(
                     state,
+                    dh,
                     LayerShellRequest::NewLayerSurface {
                         surface: handle,
                         output,
@@ -312,6 +313,7 @@ where
 
                 WlrLayerShellHandler::request(
                     state,
+                    dh,
                     LayerShellRequest::AckConfigure {
                         surface: data.wl_surface.clone(),
                         configure,
