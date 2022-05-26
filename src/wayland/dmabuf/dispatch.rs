@@ -173,7 +173,7 @@ where
                 // create_dmabuf performs an implicit ensure_unused function call.
                 if let Some(dmabuf) = data.create_dmabuf(dh, params, width, height, format, flags) {
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
-                        match state.dmabuf_imported(&DmabufGlobal { id: data.id }, dmabuf.clone()) {
+                        match state.dmabuf_imported(dh, &DmabufGlobal { id: data.id }, dmabuf.clone()) {
                             Ok(_) => {
                                 match Buffer::create_buffer::<D, _>(dh, client, dmabuf) {
                                     Ok((wl_buffer, _)) => {
@@ -221,7 +221,7 @@ where
                 // create_dmabuf performs an implicit ensure_unused function call.
                 if let Some(dmabuf) = data.create_dmabuf(dh, params, width, height, format, flags) {
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
-                        match state.dmabuf_imported(&DmabufGlobal { id: data.id }, dmabuf.clone()) {
+                        match state.dmabuf_imported(dh, &DmabufGlobal { id: data.id }, dmabuf.clone()) {
                             Ok(_) => {
                                 // Import was successful, initialize the dmabuf data
                                 Buffer::init_buffer(data_init, buffer_id, dmabuf);

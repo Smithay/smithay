@@ -64,7 +64,7 @@ impl DataDeviceHandler for App {
         &self.data_device_state
     }
 
-    fn send_selection(&mut self, _mime_type: String, _fd: RawFd) {}
+    fn send_selection(&mut self, _dh: &DisplayHandle, _mime_type: String, _fd: RawFd) {}
 }
 
 impl ClientDndGrabHandler for App {}

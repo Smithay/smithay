@@ -194,8 +194,9 @@ impl WlrLayerShellState {
 pub trait WlrLayerShellHandler {
     /// [WlrLayerShellState] getter
     fn shell_state(&mut self) -> &mut WlrLayerShellState;
+
     /// Layer shell request
-    fn request(&mut self, request: LayerShellRequest);
+    fn request(&mut self, dh: &DisplayHandle, request: LayerShellRequest);
 }
 
 /// A handle to a layer surface

@@ -371,7 +371,7 @@ fn handle_dnd<D>(
             let source_actions =
                 with_source_metadata(source, |meta| meta.dnd_action).unwrap_or_else(|_| DndAction::empty());
             let possible_actions = source_actions & dnd_actions;
-            data.chosen_action = handler.action_choice(possible_actions, preferred_action);
+            data.chosen_action = handler.action_choice(dh, possible_actions, preferred_action);
             // check that the user provided callback respects that one precise action should be chosen
             debug_assert!(
                 [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]
