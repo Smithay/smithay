@@ -112,6 +112,7 @@ impl EventSource for ListeningSocketSource {
     type Event = UnixStream;
     type Metadata = ();
     type Ret = ();
+    type Error = io::Error;
 
     fn process_events<F>(
         &mut self,
@@ -132,15 +133,15 @@ impl EventSource for ListeningSocketSource {
         })
     }
 
-    fn register(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> io::Result<()> {
+    fn register(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> calloop::Result<()> {
         self.socket.register(poll, token_factory)
     }
 
-    fn reregister(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> io::Result<()> {
+    fn reregister(&mut self, poll: &mut Poll, token_factory: &mut TokenFactory) -> calloop::Result<()> {
         self.socket.reregister(poll, token_factory)
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> io::Result<()> {
+    fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.socket.unregister(poll)
     }
 }
