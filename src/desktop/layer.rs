@@ -4,7 +4,7 @@ use crate::{
     utils::{user_data::UserDataMap, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, TraversalAction},
-        output::{Inner as OutputInner, Output, OutputGlobalData},
+        output::{Inner as OutputInner, Output, OutputData},
         shell::wlr_layer::{
             Anchor, ExclusiveZone, KeyboardInteractivity, Layer as WlrLayer, LayerSurface as WlrLayerSurface,
             LayerSurfaceCachedState,
@@ -212,10 +212,7 @@ impl LayerMap {
 
         if surface_type.contains(WindowSurfaceType::POPUP) {
             if let Some(layer) = self.layers.iter().find(|l| {
-                PopupManager::popups_for_surface(l.wl_surface())
-                    .ok()
-                    .map(|mut popups| popups.any(|(p, _)| p.wl_surface() == surface))
-                    .unwrap_or(false)
+                PopupManager::popups_for_surface(l.wl_surface()).any(|(p, _)| p.wl_surface() == surface)
             }) {
                 return Some(layer);
             }
@@ -355,7 +352,7 @@ impl LayerMap {
 
     fn output(&self) -> Option<Output> {
         self.output.upgrade().map(|inner| Output {
-            data: OutputGlobalData { inner },
+            data: OutputData { inner },
         })
     }
 
@@ -649,7 +646,7 @@ where
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 pub fn draw_layer_popups<R, S, P>(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     layer: &LayerSurface,

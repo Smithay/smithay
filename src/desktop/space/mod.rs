@@ -184,7 +184,7 @@ impl Space {
         surface: &WlSurface,
         surface_type: WindowSurfaceType,
     ) -> Option<&Window> {
-        if !surface.as_ref().is_alive() {
+        if !surface.alive() {
             return None;
         }
 
@@ -218,9 +218,7 @@ impl Space {
         if surface_type.contains(WindowSurfaceType::POPUP) {
             if let Some(window) = self.windows.iter().find(|w| {
                 PopupManager::popups_for_surface(w.toplevel().wl_surface())
-                    .ok()
-                    .map(|mut popups| popups.any(|(p, _)| p.wl_surface() == surface))
-                    .unwrap_or(false)
+                    .any(|(p, _)| p.wl_surface() == surface)
             }) {
                 return Some(window);
             }

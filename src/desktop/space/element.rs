@@ -173,7 +173,7 @@ where
                 window.elem_draw(dh, space_id, renderer, frame, scale, location, damage, log)
             }
             SpaceElement::Popup(popup) => {
-                popup.elem_draw(space_id, renderer, frame, scale, location, damage, log)
+                popup.elem_draw(dh, space_id, renderer, frame, scale, location, damage, log)
             }
             SpaceElement::Custom(custom, _) => custom.draw(dh, renderer, frame, scale, location, damage, log),
         }

@@ -4,7 +4,7 @@ use super::{
     cache::MultiCache,
     handlers::{is_effectively_sync, SurfaceUserData},
     transaction::PendingTransaction,
-    SurfaceData,
+    BufferAssignment, SurfaceAttributes, SurfaceData,
 };
 use std::{
     fmt,

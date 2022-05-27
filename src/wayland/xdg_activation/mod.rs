@@ -67,7 +67,7 @@ use wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;
 use wayland_server::{
     backend::GlobalId,
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
-    Dispatch, Display, DisplayHandle, GlobalDispatch,
+    Dispatch, DisplayHandle, GlobalDispatch,
 };
 
 use rand::distributions::{Alphanumeric, DistString};
