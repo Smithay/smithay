@@ -22,6 +22,7 @@ use smithay::{
         seat::{FilterResult, Seat, SeatHandler, SeatState},
         shell::xdg::{XdgRequest, XdgShellHandler, XdgShellState},
         shm::ShmState,
+        SERIAL_COUNTER,
     },
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -49,7 +50,7 @@ impl XdgShellHandler for App {
                 surface.with_pending_state(|state| {
                     state.states.set(xdg_toplevel::State::Activated);
                 });
-                surface.send_configure();
+                surface.send_configure(SERIAL_COUNTER.next_serial());
             }
             XdgRequest::Move { .. } => {
                 //

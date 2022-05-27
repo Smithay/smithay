@@ -2,7 +2,10 @@ use smithay::{
     delegate_xdg_shell,
     desktop::{Kind, Window, WindowSurfaceType},
     reexports::wayland_server::{DisplayHandle, Resource},
-    wayland::shell::xdg::{XdgRequest, XdgShellHandler, XdgShellState},
+    wayland::{
+        shell::xdg::{XdgRequest, XdgShellHandler, XdgShellState},
+        SERIAL_COUNTER,
+    },
 };
 
 use crate::{grabs::MoveSurfaceGrab, Smallvil};
@@ -18,7 +21,7 @@ impl XdgShellHandler for Smallvil {
                 let window = Window::new(Kind::Xdg(surface.clone()));
                 self.space.map_window(&window, (0, 0), false);
 
-                surface.send_configure();
+                surface.send_configure(SERIAL_COUNTER.next_serial());
             }
             XdgRequest::Move { serial, surface, .. } => {
                 // TODO: Multi seat support?

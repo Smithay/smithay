@@ -938,7 +938,7 @@ impl ToplevelSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self) {
+    pub fn send_configure(&self, serial: Serial) {
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -955,7 +955,7 @@ impl ToplevelSurface {
                     pending.decoration_mode != attributes.current_server_state().decoration_mode;
 
                 let configure = ToplevelConfigure {
-                    serial: SERIAL_COUNTER.next_serial(),
+                    serial,
                     state: pending,
                 };
 

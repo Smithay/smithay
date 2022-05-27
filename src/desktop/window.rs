@@ -6,6 +6,7 @@ use crate::{
         compositor::with_states,
         output::Output,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
+        Serial,
     },
 };
 use std::{
@@ -193,9 +194,9 @@ impl Window {
     }
 
     /// Commit any changes to this window
-    pub fn configure(&self) {
+    pub fn configure(&self, serial: Serial) {
         match self.0.toplevel {
-            Kind::Xdg(ref t) => t.send_configure(),
+            Kind::Xdg(ref t) => t.send_configure(serial),
             #[cfg(feature = "xwayland")]
             Kind::X11(ref _t) => unimplemented!(),
         }
