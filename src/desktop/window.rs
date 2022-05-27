@@ -324,6 +324,7 @@ where
 /// Note: This function will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_window_popups<R, P>(
     dh: &DisplayHandle,
     renderer: &mut R,
