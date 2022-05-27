@@ -1,6 +1,6 @@
 use smithay::{
     delegate_xdg_shell,
-    desktop::{Kind, Window},
+    desktop::{Kind, Window, WindowSurfaceType},
     reexports::wayland_server::{DisplayHandle, Resource},
     wayland::shell::xdg::{XdgRequest, XdgShellHandler, XdgShellState},
 };
@@ -50,7 +50,11 @@ impl XdgShellHandler for Smallvil {
                     return;
                 }
 
-                let window = self.space.window_for_surface(wl_surface).unwrap().clone();
+                let window = self
+                    .space
+                    .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                    .unwrap()
+                    .clone();
                 let initial_window_location = self.space.window_location(&window).unwrap();
 
                 let grab = MoveSurfaceGrab {
