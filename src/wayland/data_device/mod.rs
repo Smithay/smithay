@@ -37,7 +37,7 @@ use wayland_server::{
         wl_data_source::WlDataSource,
         wl_surface::WlSurface,
     },
-    Client, Display, DisplayHandle, GlobalDispatch,
+    Client, DisplayHandle, GlobalDispatch,
 };
 
 use super::{
@@ -141,7 +141,7 @@ pub struct DataDeviceState {
 
 impl DataDeviceState {
     /// Regiseter new [WlDataDeviceManager] global
-    pub fn new<D, L>(display: &mut Display<D>, logger: L) -> Self
+    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> Self
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<WlDataDeviceManager, ()> + 'static,
@@ -149,7 +149,7 @@ impl DataDeviceState {
     {
         let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "data_device_mgr"));
 
-        let manager_global_id = display.handle().create_global::<D, WlDataDeviceManager, _>(3, ());
+        let manager_global_id = display.create_global::<D, WlDataDeviceManager, _>(3, ());
 
         Self {
             log,

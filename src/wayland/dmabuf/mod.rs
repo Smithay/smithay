@@ -64,6 +64,7 @@
 //! delegate_dmabuf!(State);
 //!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! # let display_handle = display.handle();
 //! // First a DmabufState must be created. This type is used to create some "DmabufGlobal"s
 //! let mut dmabuf_state = DmabufState::new();
 //!
@@ -73,8 +74,8 @@
 //! ];
 //!
 //! // And create the dmabuf global.
-//! let dmabuf_global = dmabuf_state.create_global(
-//!     &mut display,
+//! let dmabuf_global = dmabuf_state.create_global::<State, _>(
+//!     &display_handle,
 //!     formats,
 //!     None // we don't provide a logger in this example
 //! );
@@ -101,7 +102,7 @@ use std::{
 
 use nix::unistd;
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{zwp_linux_buffer_params_v1, zwp_linux_dmabuf_v1};
-use wayland_server::{backend::GlobalId, Client, Display, DisplayHandle, GlobalDispatch, Resource, WEnum};
+use wayland_server::{backend::GlobalId, Client, DisplayHandle, GlobalDispatch, Resource, WEnum};
 
 use crate::{
     backend::allocator::{
@@ -134,7 +135,7 @@ impl DmabufState {
     /// Creates a dmabuf global with the specified supported formats.
     pub fn create_global<D, L>(
         &mut self,
-        display: &mut Display<D>,
+        display: &DisplayHandle,
         formats: Vec<Format>,
         logger: L,
     ) -> DmabufGlobal
@@ -145,7 +146,7 @@ impl DmabufState {
             + 'static,
         L: Into<Option<::slog::Logger>>,
     {
-        self.create_global_with_filter(display, formats, |_| true, logger)
+        self.create_global_with_filter::<D, _, L>(display, formats, |_| true, logger)
     }
 
     /// Creates a dmabuf global with the specified supported formats.
@@ -155,7 +156,7 @@ impl DmabufState {
     /// order to make a client choose the correct gpu.
     pub fn create_global_with_filter<D, F, L>(
         &mut self,
-        display: &mut Display<D>,
+        display: &DisplayHandle,
         formats: Vec<Format>,
         filter: F,
         logger: L,
@@ -179,9 +180,8 @@ impl DmabufState {
             logger,
         };
 
-        let global = display
-            .handle()
-            .create_global::<D, zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, _>(GLOBAL_VERSION, data);
+        let global =
+            display.create_global::<D, zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, _>(GLOBAL_VERSION, data);
         self.globals.insert(id, global);
 
         DmabufGlobal { id }
@@ -190,20 +190,16 @@ impl DmabufState {
     /// Disables a dmabuf global.
     ///
     /// This operation is permanent and there is no way to re-enable a global.
-    pub fn disable_global<D: 'static>(&mut self, display: &mut Display<D>, global: &DmabufGlobal) {
-        display
-            .handle()
-            .disable_global(self.globals.get(&global.id).unwrap().clone())
+    pub fn disable_global<D: 'static>(&mut self, display: &DisplayHandle, global: &DmabufGlobal) {
+        display.disable_global(self.globals.get(&global.id).unwrap().clone())
     }
 
     /// Destroys a dmabuf global.
     ///
     /// It is highly recommended you disable the global before destroying it and ensure all child objects have
     /// been destroyed.
-    pub fn destroy_global<D: 'static>(&mut self, display: &mut Display<D>, global: DmabufGlobal) {
-        display
-            .handle()
-            .remove_global(self.globals.remove(&global.id).unwrap());
+    pub fn destroy_global<D: 'static>(&mut self, display: &DisplayHandle, global: DmabufGlobal) {
+        display.remove_global(self.globals.remove(&global.id).unwrap());
         DMABUF_GLOBAL_IDS.lock().unwrap().remove(&global.id);
     }
 }
