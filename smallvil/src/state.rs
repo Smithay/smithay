@@ -1,4 +1,4 @@
-use std::{ffi::OsString, os::unix::prelude::AsRawFd, sync::Arc};
+use std::{ffi::OsString, sync::Arc};
 
 use slog::Logger;
 use smithay::{
@@ -78,7 +78,7 @@ impl Smallvil {
         // Outputs become views of a part of the Space and can be rendered via Space::render_output.
         let space = Space::new(log.clone());
 
-        let socket_name = Self::init_wayland_listener(event_loop, log.clone());
+        let socket_name = Self::init_wayland_listener(display, event_loop, log.clone());
 
         // Get the loop signal, used to stop the event loop
         let loop_signal = event_loop.get_signal();
@@ -103,7 +103,11 @@ impl Smallvil {
         }
     }
 
-    fn init_wayland_listener(event_loop: &mut EventLoop<CalloopData>, log: slog::Logger) -> OsString {
+    fn init_wayland_listener(
+        display: &mut Display<Smallvil>,
+        event_loop: &mut EventLoop<CalloopData>,
+        log: slog::Logger,
+    ) -> OsString {
         // Creates a new listening socket, automatically choosing the next available `wayland` socket name.
         let listening_socket = ListeningSocketSource::new_auto(log).unwrap();
 
@@ -116,16 +120,6 @@ impl Smallvil {
         event_loop
             .handle()
             .insert_source(listening_socket, move |client_stream, _, state| {
-                handle
-                    .insert_source(
-                        Generic::new(client_stream.as_raw_fd(), Interest::READ, Mode::Level),
-                        |_, _, state| {
-                            state.display.dispatch_clients(&mut state.state).unwrap();
-                            Ok(PostAction::Continue)
-                        },
-                    )
-                    .unwrap();
-
                 // Inside the callback, you should insert the client into the display.
                 //
                 // You may also associate some data with the client when inserting the client.
@@ -134,10 +128,19 @@ impl Smallvil {
                     .handle()
                     .insert_client(client_stream, Arc::new(ClientState))
                     .unwrap();
-
-                state.display.dispatch_clients(&mut state.state).unwrap();
             })
             .expect("Failed to init the wayland event source.");
+
+        // You also need to add the display itself to the event loop, so that client events will be processed by wayland-server.
+        handle
+            .insert_source(
+                Generic::new(display.backend().poll_fd(), Interest::READ, Mode::Level),
+                |_, _, state| {
+                    state.display.dispatch_clients(&mut state.state).unwrap();
+                    Ok(PostAction::Continue)
+                },
+            )
+            .unwrap();
 
         socket_name
     }

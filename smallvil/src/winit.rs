@@ -7,7 +7,10 @@ use smithay::{
     },
     desktop::space::SurfaceTree,
     reexports::{
-        calloop::{timer::Timer, EventLoop},
+        calloop::{
+            timer::{TimeoutAction, Timer},
+            EventLoop,
+        },
         wayland_server::protocol::wl_output,
     },
     utils::Rectangle,
@@ -33,8 +36,7 @@ pub fn init_winit(
         refresh: 60_000,
     };
 
-    let (output, _global) = Output::new::<Smallvil, _>(
-        &display.handle(),
+    let output = Output::new::<_>(
         "winit".to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
@@ -44,6 +46,7 @@ pub fn init_winit(
         },
         log.clone(),
     );
+    let _global = output.create_global::<Smallvil>(&display.handle());
     output.change_current_state(
         Some(mode),
         Some(wl_output::Transform::Flipped180),
@@ -52,18 +55,16 @@ pub fn init_winit(
     );
     output.set_preferred(mode);
 
-    state.space.map_output(&output, 1.0, (0, 0));
+    state.space.map_output(&output, (0, 0));
 
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 
     let mut full_redraw = 0u8;
 
-    let timer = Timer::<()>::new().unwrap();
-
-    timer.handle().add_timeout(Duration::ZERO, ());
-    event_loop.handle().insert_source(timer, move |_, timer, data| {
+    let timer = Timer::immediate();
+    event_loop.handle().insert_source(timer, move |_, _, data| {
         winit_dispatch(&mut backend, &mut winit, data, &output, &mut full_redraw).unwrap();
-        timer.add_timeout(Duration::from_millis(16), ());
+        TimeoutAction::ToDuration(Duration::from_millis(16))
     })?;
 
     Ok(())
