@@ -151,6 +151,7 @@ impl SurfaceState {
 /// become usable for surfaces handled this way.
 pub fn on_commit_buffer_handler(dh: &DisplayHandle, surface: &WlSurface) {
     if !is_sync_subsurface(surface) {
+        let mut new_surfaces = Vec::new();
         with_surface_tree_upward(
             surface,
             (),
@@ -160,15 +161,7 @@ pub fn on_commit_buffer_handler(dh: &DisplayHandle, surface: &WlSurface) {
                     .data_map
                     .insert_if_missing(|| RefCell::new(SurfaceState::default()))
                 {
-                    add_destruction_hook(surf, |data| {
-                        if let Some(buffer) = data
-                            .data_map
-                            .get::<RefCell<SurfaceState>>()
-                            .and_then(|s| s.borrow_mut().buffer.take())
-                        {
-                            buffer.release();
-                        }
-                    });
+                    new_surfaces.push(surf.clone());
                 }
                 let mut data = states
                     .data_map
@@ -179,6 +172,17 @@ pub fn on_commit_buffer_handler(dh: &DisplayHandle, surface: &WlSurface) {
             },
             |_, _, _| true,
         );
+        for surf in &new_surfaces {
+            add_destruction_hook(surf, |data| {
+                if let Some(buffer) = data
+                    .data_map
+                    .get::<RefCell<SurfaceState>>()
+                    .and_then(|s| s.borrow_mut().buffer.take())
+                {
+                    buffer.release();
+                }
+            });
+        }
     }
 }
 
