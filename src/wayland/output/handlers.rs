@@ -9,15 +9,15 @@ use wayland_server::{
     Resource,
 };
 
-use super::{xdg::XdgOutput, Output, OutputGlobalData, OutputManagerState, OutputUserData};
+use super::{xdg::XdgOutput, Output, OutputData, OutputManagerState, OutputUserData};
 
 /*
  * Wl Output
  */
 
-impl<D> DelegateGlobalDispatch<WlOutput, OutputGlobalData, D> for OutputManagerState
+impl<D> DelegateGlobalDispatch<WlOutput, OutputData, D> for OutputManagerState
 where
-    D: GlobalDispatch<WlOutput, OutputGlobalData>,
+    D: GlobalDispatch<WlOutput, OutputData>,
     D: Dispatch<WlOutput, OutputUserData>,
     D: 'static,
 {
@@ -26,7 +26,7 @@ where
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<WlOutput>,
-        global_data: &OutputGlobalData,
+        global_data: &OutputData,
         data_init: &mut DataInit<'_, D>,
     ) {
         let output = data_init.init(
@@ -69,7 +69,7 @@ where
         }
 
         if output.version() >= 2 {
-            output.scale(inner.scale);
+            output.scale(inner.scale.integer_scale());
             output.done();
         }
 

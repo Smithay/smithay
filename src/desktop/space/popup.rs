@@ -1,4 +1,4 @@
-use wayland_server::Resource;
+use wayland_server::{DisplayHandle, Resource};
 
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
@@ -82,7 +82,7 @@ impl RenderPopup {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn elem_draw<R>(
         &self,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         _space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
@@ -95,10 +95,8 @@ impl RenderPopup {
         R: Renderer + ImportAll,
         <R as Renderer>::TextureId: 'static,
     {
-        if let Some(surface) = self.popup.get_surface() {
-            draw_surface_tree(dh, renderer, frame, surface, scale, location, damage, log)?;
-        }
-        Ok(())
+        let surface = self.popup.wl_surface();
+        draw_surface_tree(dh, renderer, frame, surface, scale, location, damage, log)
     }
 
     pub(super) fn elem_z_index(&self) -> u8 {

@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 pub use grab::*;
 pub use manager::*;
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
@@ -99,7 +99,7 @@ impl From<PopupSurface> for PopupKind {
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_popups<R, P1, P2>(
-    dh: &mut DisplayHandle<'_>,
+    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     for_surface: &WlSurface,
@@ -117,11 +117,7 @@ where
 {
     let location = surface_location.into();
     let offset = offset.into();
-    for (popup, p_location) in PopupManager::popups_for_surface(for_surface)
-        .ok()
-        .into_iter()
-        .flatten()
-    {
+    for (popup, p_location) in PopupManager::popups_for_surface(for_surface) {
         let surface = popup.wl_surface();
         let offset = offset + p_location - popup.geometry().loc;
         let damage = damage
