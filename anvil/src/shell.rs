@@ -430,7 +430,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
                 let window = self
                     .space
-                    .window_for_surface(surface.wl_surface())
+                    .window_for_surface(surface.wl_surface(), WindowSurfaceType::TOPLEVEL)
                     .unwrap()
                     .clone();
                 let mut initial_window_location = self.space.window_location(&window).unwrap();
@@ -501,7 +501,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
                 let window = self
                     .space
-                    .window_for_surface(surface.wl_surface())
+                    .window_for_surface(surface.wl_surface(), WindowSurfaceType::TOPLEVEL)
                     .unwrap()
                     .clone();
                 let geometry = window.geometry();
@@ -615,7 +615,10 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                         state.fullscreen_output = wl_output;
                     });
 
-                    let window = self.space.window_for_surface(wl_surface).unwrap();
+                    let window = self
+                        .space
+                        .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                        .unwrap();
                     window.configure();
                     output.user_data().insert_if_missing(FullscreenSurface::default);
                     output
@@ -650,7 +653,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 // get the correct maximum size
                 let window = self
                     .space
-                    .window_for_surface(surface.wl_surface())
+                    .window_for_surface(surface.wl_surface(), WindowSurfaceType::TOPLEVEL)
                     .unwrap()
                     .clone();
                 let output = &self.space.outputs_for_window(&window)[0];
