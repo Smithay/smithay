@@ -102,7 +102,7 @@ impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
-    fn send_selection(&mut self, mime_type: String, fd: RawFd) {
+    fn send_selection(&mut self, _dh: &DisplayHandle, mime_type: String, fd: RawFd) {
         unreachable!("Anvil doesn't do server-side selections");
     }
 }
@@ -143,13 +143,17 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
 
     fn request_activation(
         &mut self,
+        _dh: &DisplayHandle,
         token: XdgActivationToken,
         token_data: XdgActivationTokenData,
         surface: WlSurface,
     ) {
         if token_data.timestamp.elapsed().as_secs() < 10 {
             // Just grant the wish
-            let w = self.space.window_for_surface(&surface).cloned();
+            let w = self
+                .space
+                .window_for_surface(&surface, WindowSurfaceType::TOPLEVEL)
+                .cloned();
             if let Some(window) = w {
                 self.space.raise_window(&window, true);
             }
@@ -226,25 +230,25 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         };
 
         // init globals
-        let compositor_state = CompositorState::new(display, log.clone());
-        let data_device_state = DataDeviceState::new(display, log.clone());
-        let layer_shell_state = WlrLayerShellState::new(display, log.clone());
+        let dh = display.handle();
+        let compositor_state = CompositorState::new::<Self, _>(&dh, log.clone());
+        let data_device_state = DataDeviceState::new::<Self, _>(&dh, log.clone());
+        let layer_shell_state = WlrLayerShellState::new::<_, Self>(&dh, log.clone());
         let output_manager_state = OutputManagerState::new();
         let seat_state = SeatState::new();
-        let shm_state = ShmState::new(display, vec![], log.clone());
-        let xdg_activation_state = XdgActivationState::new(display, log.clone());
-        let xdg_decoration_state = XdgDecorationManager::new(display, log.clone()).0;
-        let xdg_shell_state = XdgShellState::new(display, log.clone()).0;
+        let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
+        let xdg_activation_state = XdgActivationState::new::<Self, _>(&dh, log.clone());
+        let xdg_decoration_state = XdgDecorationManager::new::<Self, _>(&dh, log.clone()).0;
+        let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone()).0;
 
         // init input
         let seat_name = backend_data.seat_name();
-        let mut seat = Seat::new(&mut display, seat_name.clone(), log.clone());
+        let mut seat = Seat::new(&dh, seat_name.clone(), log.clone());
 
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
         let cursor_status2 = cursor_status.clone();
         seat.add_pointer(move |new_status| *cursor_status2.lock().unwrap() = new_status);
 
-        let dh = display.handle();
         seat.add_keyboard(XkbConfig::default(), 200, 25, move |seat, focus| {
             let focus = focus.and_then(|s| dh.get_client(s.id()).ok());
             set_data_device_focus(&dh, seat, focus)

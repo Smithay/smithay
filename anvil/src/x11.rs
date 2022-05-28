@@ -32,7 +32,7 @@ use smithay::{
         gbm,
         wayland_server::{
             protocol::{wl_output, wl_surface},
-            Display,
+            Display, DisplayHandle,
         },
     },
     utils::IsAlive,
@@ -64,7 +64,12 @@ impl DmabufHandler for AnvilState<X11Data> {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
     }
 
-    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
+    fn dmabuf_imported(
+        &mut self,
+        _dh: &DisplayHandle,
+        _global: &DmabufGlobal,
+        dmabuf: Dmabuf,
+    ) -> Result<(), ImportError> {
         self.backend_data
             .renderer
             .import_dmabuf(&dmabuf, None)
@@ -131,7 +136,8 @@ pub fn run_x11(log: Logger) {
         info!(log, "EGL hardware-acceleration enabled");
         let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
         let mut state = DmabufState::new();
-        let global = state.create_global(&mut display, dmabuf_formats, log.clone());
+        let global =
+            state.create_global::<AnvilState<X11Data>, _>(&display.handle(), dmabuf_formats, log.clone());
         Some((state, global))
     } else {
         None
@@ -176,8 +182,7 @@ pub fn run_x11(log: Logger) {
     };
 
     let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
-    let (output, _global) = Output::new(
-        &mut display,
+    let output = Output::new(
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
@@ -187,6 +192,7 @@ pub fn run_x11(log: Logger) {
         },
         log.clone(),
     );
+    let _global = output.create_global::<AnvilState<X11Data>>(&display.handle());
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));

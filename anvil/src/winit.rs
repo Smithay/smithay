@@ -25,7 +25,7 @@ use smithay::{
         calloop::EventLoop,
         wayland_server::{
             protocol::{wl_output, wl_surface},
-            Display,
+            Display, DisplayHandle,
         },
     },
     utils::IsAlive,
@@ -59,7 +59,12 @@ impl DmabufHandler for AnvilState<WinitData> {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
     }
 
-    fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
+    fn dmabuf_imported(
+        &mut self,
+        _dh: &DisplayHandle,
+        global: &DmabufGlobal,
+        dmabuf: Dmabuf,
+    ) -> Result<(), ImportError> {
         self.backend_data
             .backend
             .renderer()
@@ -100,7 +105,11 @@ pub fn run_winit(log: Logger) {
             info!(log, "EGL hardware-acceleration enabled");
             let dmabuf_formats = backend.renderer().dmabuf_formats().cloned().collect::<Vec<_>>();
             let mut state = DmabufState::new();
-            let global = state.create_global(&mut display, dmabuf_formats, log.clone());
+            let global = state.create_global::<AnvilState<WinitData>, _>(
+                &display.handle(),
+                dmabuf_formats,
+                log.clone(),
+            );
             Some((state, global))
         } else {
             None
@@ -136,8 +145,7 @@ pub fn run_winit(log: Logger) {
         size,
         refresh: 60_000,
     };
-    let (output, _global) = Output::new(
-        &mut display,
+    let output = Output::new(
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
@@ -147,6 +155,7 @@ pub fn run_winit(log: Logger) {
         },
         log.clone(),
     );
+    let _global = output.create_global::<AnvilState<WinitData>>(&display.handle());
     output.change_current_state(
         Some(mode),
         Some(wl_output::Transform::Flipped180),
@@ -169,8 +178,8 @@ pub fn run_winit(log: Logger) {
                 WinitEvent::Resized { size, .. } => {
                     let mut dh = display.handle();
                     // We only have one output
-                    let output = space.outputs().next().unwrap().clone();
-                    space.map_output(&output, (0, 0));
+                    let output = state.space.outputs().next().unwrap().clone();
+                    state.space.map_output(&output, (0, 0));
                     let mode = Mode {
                         size,
                         refresh: 60_000,

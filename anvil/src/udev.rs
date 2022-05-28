@@ -119,7 +119,12 @@ impl DmabufHandler for AnvilState<UdevData> {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
     }
 
-    fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
+    fn dmabuf_imported(
+        &mut self,
+        _dh: &DisplayHandle,
+        global: &DmabufGlobal,
+        dmabuf: Dmabuf,
+    ) -> Result<(), ImportError> {
         self.backend_data
             .gpus
             .renderer::<Gles2Renderbuffer>(&self.backend_data.primary_gpu, &self.backend_data.primary_gpu)
@@ -232,7 +237,8 @@ pub fn run_udev(log: Logger) {
         info!(log, "EGL hardware-acceleration enabled");
         let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
         let mut state = DmabufState::new();
-        let global = state.create_global(&mut display, dmabuf_formats, log.clone());
+        let global =
+            state.create_global::<AnvilState<UdevData>, _>(&display.handle(), dmabuf_formats, log.clone());
         Some((state, global))
     } else {
         None
@@ -254,14 +260,6 @@ pub fn run_udev(log: Logger) {
         logger: log.clone(),
     };
     let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
-
-    // re-render timer
-    event_loop
-        .handle()
-        .insert_source(timer, |(dev_id, crtc), _, data| {
-            data.state.render(dev_id, Some(crtc))
-        })
-        .unwrap();
 
     /*
      * Initialize the udev backend
@@ -474,8 +472,7 @@ fn scan_connectors(
             let output_name = format!("{}-{}", interface_short_name, connector_info.interface_id());
 
             let (phys_w, phys_h) = connector_info.size().unwrap_or((0, 0));
-            let (output, global) = Output::new(
-                display,
+            let output = Output::new(
                 output_name,
                 PhysicalProperties {
                     size: (phys_w as i32, phys_h as i32).into(),
@@ -485,6 +482,7 @@ fn scan_connectors(
                 },
                 None,
             );
+            let global = output.create_global::<AnvilState<UdevData>>(&display.handle());
             let position = (
                 space
                     .outputs()
@@ -784,8 +782,8 @@ impl AnvilState<UdevData> {
                     1000 /*a seconds*/ / 60, /*refresh rate*/
                 ));
                 self.handle
-                    .insert_source(timer, move |_, _, anvil_state| {
-                        anvil_state.render(dev_id, Some(crtc));
+                    .insert_source(timer, move |_, _, data| {
+                        data.state.render(dev_id, Some(crtc));
                         TimeoutAction::Drop
                     })
                     .expect("failed to schedule frame timer");

@@ -82,7 +82,7 @@ impl<Backend> AnvilState<Backend> {
         let suppressed_keys = &mut self.suppressed_keys;
         let keyboard = self.seat.get_keyboard().unwrap();
 
-        for layer in self.layer_shell_state.layer_surfaces().iter().rev() {
+        for layer in self.layer_shell_state.layer_surfaces().rev() {
             let data = with_states(layer.wl_surface(), |states| {
                 *states.cached_state.current::<LayerSurfaceCachedState>()
             });
@@ -183,7 +183,7 @@ impl<Backend> AnvilState<Backend> {
                         )
                         .is_some()
                     {
-                        keyboard.set_focus(dh, surface.as_ref(), serial);
+                        keyboard.set_focus(dh, Some(&window.toplevel().wl_surface()), serial);
                         return;
                     }
                 }
@@ -209,9 +209,12 @@ impl<Backend> AnvilState<Backend> {
                 }
             }
 
-            if let Some((window, _, _)) = space.surface_under(self.pointer_location, WindowSurfaceType::ALL) {
+            if let Some((window, _, _)) = self
+                .space
+                .surface_under(self.pointer_location, WindowSurfaceType::ALL)
+            {
                 self.space.raise_window(&window, true);
-                self.keyboard.set_focus(dh, window.toplevel().wl_surface(), serial);
+                keyboard.set_focus(dh, Some(&window.toplevel().wl_surface()), serial);
                 return;
             }
 
@@ -451,7 +454,7 @@ impl AnvilState<UdevData> {
 
                     if let Some(output) = output {
                         let (output_location, scale) = (
-                            space.output_geometry(&output).unwrap().loc,
+                            self.space.output_geometry(&output).unwrap().loc,
                             output.current_scale().fractional_scale(),
                         );
                         let new_scale = scale + 0.25;
@@ -491,7 +494,7 @@ impl AnvilState<UdevData> {
 
                     if let Some(output) = output {
                         let (output_location, scale) = (
-                            space.output_geometry(&output).unwrap().loc,
+                            self.space.output_geometry(&output).unwrap().loc,
                             output.current_scale().fractional_scale(),
                         );
                         let new_scale = f64::max(1.0, scale - 0.25);
