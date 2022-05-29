@@ -45,7 +45,7 @@ use std::{
 };
 
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::{buffer::Buffer, dmabuf::get_dmabuf, shm};
+use crate::wayland::{dmabuf::get_dmabuf, shm};
 use crate::{
     backend::{
         allocator::{dmabuf::WeakDmabuf, Buffer as BufferTrait, Format},
@@ -55,10 +55,7 @@ use crate::{
     utils::{Buffer as BufferCoords, Physical, Size},
 };
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{
-    protocol::{wl_buffer, wl_surface::WlSurface},
-    DisplayHandle,
-};
+use wayland_server::protocol::{wl_buffer, wl_surface::WlSurface};
 #[cfg(all(feature = "backend_egl", feature = "renderer_gl"))]
 pub mod egl;
 
@@ -437,15 +434,14 @@ impl<A: GraphicsApi> GpuManager<A> {
         <A::Device as ApiDevice>::Renderer: ImportMemWl + ImportDmaWl + ExportMem,
         <<A::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
     {
-        let buffer = Buffer::from_wl(buffer, dh);
-        match buffer_type(dh, &buffer) {
+        match buffer_type(dh, buffer) {
             Some(BufferType::Dma) => {
                 let (mut target_device, others) = self
                     .devices
                     .iter_mut()
                     .partition::<Vec<_>, _>(|device| device.node() == &target);
                 let target_device = target_device.get_mut(0).ok_or(Error::DeviceMissing)?;
-                let dmabuf = get_dmabuf(&buffer).unwrap();
+                let dmabuf = get_dmabuf(buffer).unwrap();
                 let format = dmabuf.format();
 
                 let dma_source = self.dma_source.entry(dmabuf.weak());
@@ -454,7 +450,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                 {
                     match target_device
                         .renderer_mut()
-                        .import_dma_buffer(&buffer, Some(surface), damage)
+                        .import_dma_buffer(buffer, Some(surface), damage)
                     {
                         Ok(imported) => {
                             if let Entry::Vacant(vacant) = dma_source {
@@ -494,7 +490,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                     if let Ok(texture) =
                         import_renderer
                             .renderer_mut()
-                            .import_dma_buffer(&buffer, Some(surface), damage)
+                            .import_dma_buffer(buffer, Some(surface), damage)
                     {
                         if let Entry::Vacant(vacant) = dma_source {
                             vacant.insert(*import_renderer.node());
@@ -1262,7 +1258,7 @@ where
 {
     fn import_shm_buffer(
         &mut self,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
@@ -1345,7 +1341,7 @@ where
 {
     fn import_dma_buffer(
         &mut self,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {

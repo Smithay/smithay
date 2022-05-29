@@ -102,7 +102,9 @@ use std::{
 
 use nix::unistd;
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{zwp_linux_buffer_params_v1, zwp_linux_dmabuf_v1};
-use wayland_server::{backend::GlobalId, Client, DisplayHandle, GlobalDispatch, Resource, WEnum};
+use wayland_server::{
+    backend::GlobalId, protocol::wl_buffer, Client, DisplayHandle, GlobalDispatch, Resource, WEnum,
+};
 
 use crate::{
     backend::allocator::{
@@ -112,7 +114,7 @@ use crate::{
     utils::{ids::id_gen, UnmanagedResource},
 };
 
-use super::buffer::{Buffer, BufferHandler};
+use super::buffer::BufferHandler;
 
 /// Delegate type for all dmabuf globals.
 ///
@@ -288,15 +290,17 @@ pub enum ImportError {
     InvalidFormat,
 }
 
-/// Gets the contents of a [`Dmabuf`] backed [`Buffer`].
+/// Gets the contents of a [`Dmabuf`] backed [`WlBuffer`].
 ///
 /// If the buffer is managed by the dmabuf handler, the [`Dmabuf`] is returned.
 ///
 /// If the buffer is not managed by the dmabuf handler (whether the buffer is a different kind of buffer,
 /// such as an shm buffer or is not managed by smithay), this function will return an [`UnmanagedResource`]
 /// error.
-pub fn get_dmabuf(buffer: &Buffer) -> Result<Dmabuf, UnmanagedResource> {
-    Ok(buffer.buffer_data::<Dmabuf>()?.ok_or(UnmanagedResource)?.clone())
+///
+/// [`WlBuffer`]: wl_buffer::WlBuffer
+pub fn get_dmabuf(buffer: &wl_buffer::WlBuffer) -> Result<Dmabuf, UnmanagedResource> {
+    buffer.data::<Dmabuf>().cloned().ok_or(UnmanagedResource)
 }
 
 /// Macro to delegate implementation of the linux dmabuf to [`DmabufState`].
@@ -319,6 +323,9 @@ macro_rules! delegate_dmabuf {
         ] => $crate::wayland::dmabuf::DmabufState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             __ZwpLinuxBufferParamsV1: $crate::wayland::dmabuf::DmabufParamsData
+        ] => $crate::wayland::dmabuf::DmabufState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer: $crate::backend::allocator::dmabuf::Dmabuf
         ] => $crate::wayland::dmabuf::DmabufState);
     };
 }

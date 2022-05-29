@@ -1,7 +1,10 @@
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     delegate_compositor, delegate_shm,
-    reexports::wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle},
+    reexports::wayland_server::{
+        protocol::{wl_buffer, wl_surface::WlSurface},
+        DisplayHandle,
+    },
     wayland::{
         buffer::BufferHandler,
         compositor::{CompositorHandler, CompositorState},
@@ -23,7 +26,7 @@ impl CompositorHandler for Smallvil {
 }
 
 impl BufferHandler for Smallvil {
-    fn buffer_destroyed(&mut self, _buffer: &smithay::wayland::buffer::Buffer) {}
+    fn buffer_destroyed(&mut self, _buffer: &wl_buffer::WlBuffer) {}
 }
 
 impl AsRef<ShmState> for Smallvil {
