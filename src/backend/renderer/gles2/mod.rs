@@ -49,11 +49,9 @@ use super::ImportEgl;
 #[cfg(feature = "wayland_frontend")]
 use super::{ImportDmaWl, ImportMemWl};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-use crate::backend::egl::{self, display::EGLBufferReader, EGLError, Format as EGLFormat};
+use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::buffer::Buffer;
-#[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::wl_shm;
+use wayland_server::protocol::{wl_buffer, wl_shm};
 
 use slog::{debug, error, info, o, trace, warn};
 
@@ -775,7 +773,7 @@ impl Gles2Renderer {
 impl ImportMemWl for Gles2Renderer {
     fn import_shm_buffer(
         &mut self,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<Gles2Texture, Gles2Error> {
@@ -1029,7 +1027,7 @@ impl ImportEgl for Gles2Renderer {
     fn import_egl_buffer(
         &mut self,
         dh: &DisplayHandle,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         _surface: Option<&crate::wayland::compositor::SurfaceData>,
         _damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<Gles2Texture, Gles2Error> {
@@ -1049,10 +1047,6 @@ impl ImportEgl for Gles2Renderer {
         // is_alive check will always return true and the cache entry
         // will never be cleaned up.
         self.make_current()?;
-
-        let buffer = buffer.buffer(dh).map_err(|_| {
-            Gles2Error::EGLBufferAccessError(egl::BufferAccessError::NotManaged(EGLError::BadParameter))
-        })?;
 
         let egl = self
             .egl_reader

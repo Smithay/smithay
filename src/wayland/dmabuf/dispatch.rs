@@ -2,19 +2,42 @@ use std::sync::{atomic::AtomicBool, Mutex};
 
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{zwp_linux_buffer_params_v1, zwp_linux_dmabuf_v1};
 use wayland_server::{
-    Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource,
+    protocol::wl_buffer, Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle,
+    GlobalDispatch, New, Resource,
 };
 
 use crate::{
-    backend::allocator::dmabuf::{Plane, MAX_PLANES},
-    wayland::buffer::{Buffer, BufferHandler},
+    backend::allocator::dmabuf::{Dmabuf, Plane, MAX_PLANES},
+    wayland::buffer::BufferHandler,
 };
 
 use super::{
     DmabufData, DmabufGlobal, DmabufGlobalData, DmabufHandler, DmabufParamsData, DmabufState, ImportError,
     Modifier,
 };
+
+impl<D> DelegateDispatch<wl_buffer::WlBuffer, Dmabuf, D> for DmabufState
+where
+    D: Dispatch<wl_buffer::WlBuffer, Dmabuf> + BufferHandler,
+{
+    fn request(
+        data: &mut D,
+        _client: &Client,
+        buffer: &wl_buffer::WlBuffer,
+        request: wl_buffer::Request,
+        _udata: &Dmabuf,
+        _dh: &DisplayHandle,
+        _data_init: &mut DataInit<'_, D>,
+    ) {
+        match request {
+            wl_buffer::Request::Destroy => {
+                data.buffer_destroyed(buffer);
+            }
+
+            _ => unreachable!(),
+        }
+    }
+}
 
 impl<D> DelegateDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData, D> for DmabufState
 where
@@ -105,6 +128,7 @@ impl<D> DelegateDispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, Dma
     for DmabufState
 where
     D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
+        + Dispatch<wl_buffer::WlBuffer, Dmabuf>
         + BufferHandler
         + DmabufHandler,
 {
@@ -175,9 +199,10 @@ where
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
                         match state.dmabuf_imported(dh, &DmabufGlobal { id: data.id }, dmabuf.clone()) {
                             Ok(_) => {
-                                match Buffer::create_buffer::<D, _>(dh, client, dmabuf) {
-                                    Ok((wl_buffer, _)) => {
-                                        params.created(&wl_buffer);
+                                match client.create_resource::<wl_buffer::WlBuffer, Dmabuf, D>(dh, 1, dmabuf)
+                                {
+                                    Ok(buffer) => {
+                                        params.created(&buffer);
                                     }
 
                                     Err(_) => {
@@ -224,7 +249,7 @@ where
                         match state.dmabuf_imported(dh, &DmabufGlobal { id: data.id }, dmabuf.clone()) {
                             Ok(_) => {
                                 // Import was successful, initialize the dmabuf data
-                                Buffer::init_buffer(data_init, buffer_id, dmabuf);
+                                data_init.init(buffer_id, dmabuf);
                             }
 
                             Err(ImportError::InvalidFormat) => {

@@ -13,7 +13,7 @@ use smithay::{
     reexports::wayland_server::Display,
     utils::{Rectangle, Transform},
     wayland::{
-        buffer::{Buffer, BufferHandler},
+        buffer::BufferHandler,
         compositor::{
             with_surface_tree_downward, CompositorHandler, CompositorState, SurfaceAttributes,
             TraversalAction,
@@ -27,13 +27,16 @@ use smithay::{
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
 use wayland_server::{
     backend::{ClientData, ClientId, DisconnectReason},
-    protocol::wl_surface::{self, WlSurface},
+    protocol::{
+        wl_buffer,
+        wl_surface::{self, WlSurface},
+    },
     socket::ListeningSocket,
     DisplayHandle,
 };
 
 impl BufferHandler for App {
-    fn buffer_destroyed(&mut self, _buffer: &Buffer) {}
+    fn buffer_destroyed(&mut self, _buffer: &wl_buffer::WlBuffer) {}
 }
 
 impl XdgShellHandler for App {

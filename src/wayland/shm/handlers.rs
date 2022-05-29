@@ -1,7 +1,4 @@
-use crate::wayland::{
-    buffer::{Buffer, BufferHandler},
-    shm::ShmBufferUserData,
-};
+use crate::wayland::{buffer::BufferHandler, shm::ShmBufferUserData};
 
 use super::{
     pool::{Pool, ResizeError},
@@ -11,6 +8,7 @@ use super::{
 use std::sync::Arc;
 use wayland_server::{
     protocol::{
+        wl_buffer,
         wl_shm::{self, WlShm},
         wl_shm_pool::{self, WlShmPool},
     },
@@ -91,7 +89,11 @@ where
 
 impl<D> DelegateDispatch<WlShmPool, ShmPoolUserData, D> for ShmState
 where
-    D: Dispatch<WlShmPool, ShmPoolUserData> + BufferHandler + AsRef<ShmState> + 'static,
+    D: Dispatch<WlShmPool, ShmPoolUserData>
+        + Dispatch<wl_buffer::WlBuffer, ShmBufferUserData>
+        + BufferHandler
+        + AsRef<ShmState>
+        + 'static,
 {
     fn request(
         state: &mut D,
@@ -164,7 +166,7 @@ where
                             },
                         };
 
-                        Buffer::init_buffer(data_init, buffer, data);
+                        data_init.init(buffer, data);
                     }
 
                     WEnum::Unknown(unknown) => {
@@ -192,6 +194,29 @@ where
             }
 
             Request::Destroy => {}
+
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<D> DelegateDispatch<wl_buffer::WlBuffer, ShmBufferUserData, D> for ShmState
+where
+    D: Dispatch<wl_buffer::WlBuffer, ShmBufferUserData> + BufferHandler,
+{
+    fn request(
+        data: &mut D,
+        _client: &wayland_server::Client,
+        buffer: &wl_buffer::WlBuffer,
+        request: wl_buffer::Request,
+        _udata: &ShmBufferUserData,
+        _dh: &DisplayHandle,
+        _data_init: &mut DataInit<'_, D>,
+    ) {
+        match request {
+            wl_buffer::Request::Destroy => {
+                data.buffer_destroyed(buffer);
+            }
 
             _ => unreachable!(),
         }

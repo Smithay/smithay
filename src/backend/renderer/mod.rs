@@ -14,9 +14,12 @@ use crate::utils::{Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Siz
 use cgmath::Matrix3;
 
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::{buffer::Buffer, compositor::SurfaceData};
+use crate::wayland::compositor::SurfaceData;
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{protocol::wl_shm, DisplayHandle};
+use wayland_server::{
+    protocol::{wl_buffer, wl_shm},
+    DisplayHandle,
+};
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
@@ -252,7 +255,7 @@ pub trait ImportMemWl: ImportMem {
     /// with an empty list `&[]`, the renderer is allowed to not update the texture at all.
     fn import_shm_buffer(
         &mut self,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
@@ -361,7 +364,7 @@ pub trait ImportEgl: Renderer {
     fn import_egl_buffer(
         &mut self,
         dh: &DisplayHandle,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
@@ -383,7 +386,7 @@ pub trait ImportDmaWl: ImportDma {
     /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
     fn import_dma_buffer(
         &mut self,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         _surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
@@ -445,7 +448,7 @@ pub trait ImportAll: Renderer {
     fn import_buffer(
         &mut self,
         dh: &DisplayHandle,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoord>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>>;
@@ -461,7 +464,7 @@ impl<R: Renderer + ImportMemWl + ImportEgl + ImportDmaWl> ImportAll for R {
     fn import_buffer(
         &mut self,
         dh: &DisplayHandle,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceData>,
         damage: &[Rectangle<i32, BufferCoord>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
@@ -482,7 +485,7 @@ impl<R: Renderer + ImportMemWl + ImportDmaWl> ImportAll for R {
     fn import_buffer(
         &mut self,
         dh: &DisplayHandle,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceData>,
         damage: &[Rectangle<i32, BufferCoord>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
@@ -581,11 +584,10 @@ pub enum BufferType {
 /// Returns `None` if the type is not known to smithay
 /// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
 #[cfg(feature = "wayland_frontend")]
-pub fn buffer_type(_dh: &DisplayHandle, buffer: &Buffer) -> Option<BufferType> {
-    // TODO: Dma
-    // if buffer.data::<Dmabuf>().is_some() {
-    //     return Some(BufferType::Dma);
-    // }
+pub fn buffer_type(_dh: &DisplayHandle, buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
+    if crate::wayland::dmabuf::get_dmabuf(buffer).is_ok() {
+        return Some(BufferType::Dma);
+    }
 
     if crate::wayland::shm::with_buffer_contents(buffer, |_, _| ()).is_ok() {
         return Some(BufferType::Shm);
@@ -611,14 +613,15 @@ pub fn buffer_type(_dh: &DisplayHandle, buffer: &Buffer) -> Option<BufferType> {
 ///
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
 #[cfg(feature = "wayland_frontend")]
-pub fn buffer_dimensions(_dh: &DisplayHandle, buffer: &Buffer) -> Option<Size<i32, BufferCoord>> {
-    #[allow(unused_imports)] // TODO: Dma
+pub fn buffer_dimensions(
+    _dh: &DisplayHandle,
+    buffer: &wl_buffer::WlBuffer,
+) -> Option<Size<i32, BufferCoord>> {
     use crate::{backend::allocator::Buffer, wayland::shm};
 
-    // TODO: Dma
-    // if let Some(buf) = buffer.data::<Dmabuf>() {
-    //     return Some((buf.width() as i32, buf.height() as i32).into());
-    // }
+    if let Ok(buf) = crate::wayland::dmabuf::get_dmabuf(buffer) {
+        return Some((buf.width() as i32, buf.height() as i32).into());
+    }
 
     match shm::with_buffer_contents(buffer, |_, data| (data.width, data.height).into()) {
         Ok(data) => Some(data),
