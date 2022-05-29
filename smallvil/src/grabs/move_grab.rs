@@ -1,3 +1,4 @@
+use crate::Smallvil;
 use smithay::{
     desktop::Window,
     reexports::wayland_server::DisplayHandle,
@@ -6,8 +7,6 @@ use smithay::{
         AxisFrame, ButtonEvent, MotionEvent, PointerGrab, PointerGrabStartData, PointerInnerHandle,
     },
 };
-
-use crate::Smallvil;
 
 pub struct MoveSurfaceGrab {
     pub start_data: PointerGrabStartData,
