@@ -438,7 +438,7 @@ impl CompositorState {
     {
         let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
 
-        let compositor = display.create_global::<D, WlCompositor, ()>(4, ());
+        let compositor = display.create_global::<D, WlCompositor, ()>(5, ());
         let subcompositor = display.create_global::<D, WlSubcompositor, ()>(1, ());
 
         CompositorState {

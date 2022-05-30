@@ -28,7 +28,7 @@ use super::{
     RegionAttributes, SurfaceAttributes,
 };
 
-use slog::trace;
+use slog::{error, trace};
 
 /*
  * wl_compositor
@@ -166,6 +166,14 @@ where
     ) {
         match request {
             wl_surface::Request::Attach { buffer, x, y } => {
+                if surface.version() >= 5 && (x != 0 || y != 0) {
+                    surface.post_error(
+                        handle,
+                        wl_surface::Error::InvalidOffset,
+                        "Passing non-zero x,y is protocol violation",
+                    );
+                }
+
                 PrivateSurfaceData::with_states(surface, |states| {
                     states.cached_state.pending::<SurfaceAttributes>().buffer = Some(match buffer {
                         Some(buffer) => BufferAssignment::NewBuffer {
@@ -256,6 +264,21 @@ where
                             (x, y),
                             (width, height),
                         )))
+                });
+            }
+            wl_surface::Request::Offset { x, y } => {
+                PrivateSurfaceData::with_states(surface, |states| {
+                    match &mut states.cached_state.pending::<SurfaceAttributes>().buffer {
+                        Some(BufferAssignment::NewBuffer { delta, .. }) => {
+                            *delta = (x, y).into();
+                        }
+                        _ => {
+                            error!(
+                                state.compositor_state().log,
+                                "Got wl_surface::Offset request, but there is no pending buffer available."
+                            );
+                        }
+                    }
                 });
             }
             wl_surface::Request::Destroy => {
