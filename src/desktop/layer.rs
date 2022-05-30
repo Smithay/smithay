@@ -9,6 +9,7 @@ use crate::{
             Anchor, ExclusiveZone, KeyboardInteractivity, Layer as WlrLayer, LayerSurface as WlrLayerSurface,
             LayerSurfaceCachedState,
         },
+        SERIAL_COUNTER,
     },
 };
 use indexmap::IndexSet;
@@ -339,7 +340,7 @@ impl LayerMap {
                     state.size.replace(size).map(|old| old != size).unwrap_or(true)
                 });
                 if size_changed {
-                    layer.0.surface.send_configure();
+                    layer.0.surface.send_configure(SERIAL_COUNTER.next_serial());
                 }
 
                 layer_state(layer).location = location;

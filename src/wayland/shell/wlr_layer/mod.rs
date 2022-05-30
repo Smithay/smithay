@@ -41,7 +41,7 @@ use crate::{
     utils::{alive_tracker::IsAlive, Logical, Size},
     wayland::{
         compositor::{self, Cacheable},
-        Serial, SERIAL_COUNTER,
+        Serial,
     },
 };
 
@@ -259,7 +259,7 @@ impl LayerSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self) {
+    pub fn send_configure(&self, serial: Serial) {
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -269,7 +269,7 @@ impl LayerSurface {
                 .unwrap();
             if let Some(pending) = self.get_pending_state(&mut *attributes) {
                 let configure = LayerSurfaceConfigure {
-                    serial: SERIAL_COUNTER.next_serial(),
+                    serial,
                     state: pending,
                 };
 
