@@ -78,10 +78,11 @@ use std::sync::Arc;
 use wayland_server::{
     backend::GlobalId,
     protocol::{
+        wl_buffer,
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
     },
-    Dispatch, DisplayHandle, GlobalDispatch,
+    Dispatch, DisplayHandle, GlobalDispatch, Resource,
 };
 
 mod handlers;
@@ -91,7 +92,7 @@ use crate::utils::UnmanagedResource;
 
 use self::pool::Pool;
 
-use super::buffer::{Buffer, BufferHandler};
+use super::buffer::BufferHandler;
 
 /// State of SHM module
 #[derive(Debug)]
@@ -175,12 +176,12 @@ impl From<UnmanagedResource> for BufferAccessError {
 /// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
 /// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
 /// EGL buffer for example).
-pub fn with_buffer_contents<F, T>(buffer: &Buffer, f: F) -> Result<T, BufferAccessError>
+pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<T, BufferAccessError>
 where
     F: FnOnce(&[u8], BufferData) -> T,
 {
     let data = buffer
-        .buffer_data::<ShmBufferUserData>()?
+        .data::<ShmBufferUserData>()
         .ok_or(BufferAccessError::NotManaged)?;
 
     match data.pool.with_data_slice(|slice| f(slice, data.data)) {
@@ -235,6 +236,9 @@ macro_rules! delegate_shm {
         ] => $crate::wayland::shm::ShmState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool: $crate::wayland::shm::ShmPoolUserData
+        ] => $crate::wayland::shm::ShmState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer: $crate::wayland::shm::ShmBufferUserData
         ] => $crate::wayland::shm::ShmState);
     };
 }

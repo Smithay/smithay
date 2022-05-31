@@ -3,12 +3,9 @@
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
     utils::{Buffer as BufferCoord, Logical, Point, Rectangle, Size, Transform},
-    wayland::{
-        buffer::Buffer,
-        compositor::{
-            add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage,
-            SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
-        },
+    wayland::compositor::{
+        add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage,
+        SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
     },
 };
 use std::collections::VecDeque;
@@ -43,11 +40,7 @@ impl SurfaceState {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer { buffer, .. }) => {
                 // new contents
-                self.buffer_dimensions = {
-                    let buffer = Buffer::from_wl(&buffer, dh);
-
-                    buffer_dimensions(dh, &buffer)
-                };
+                self.buffer_dimensions = buffer_dimensions(dh, &buffer);
 
                 #[cfg(feature = "desktop")]
                 if self.buffer_scale != attrs.buffer_scale
@@ -238,9 +231,7 @@ where
                 let buffer_damage = data.damage_since(last_commit.copied());
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
-                        let buffer = Buffer::from_wl(buffer, dh);
-
-                        match renderer.import_buffer(dh, &buffer, Some(states), &buffer_damage) {
+                        match renderer.import_buffer(dh, buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 e.insert(Box::new(m));
                                 data.renderer_seen.insert(texture_id, data.commit_count);

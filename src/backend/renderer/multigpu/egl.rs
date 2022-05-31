@@ -25,7 +25,6 @@ use crate::{
         },
     },
     utils::{Buffer as BufferCoords, Rectangle},
-    wayland::buffer::Buffer,
 };
 
 /// Errors raised by the [`EglGlesBackend`]
@@ -157,16 +156,10 @@ where
     fn import_egl_buffer(
         &mut self,
         dh: &DisplayHandle,
-        buffer: &Buffer,
+        buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        let buffer = buffer.buffer(dh).map_err(|_| {
-            Gles2Error::EGLBufferAccessError(crate::backend::egl::BufferAccessError::NotManaged(
-                crate::backend::egl::EGLError::BadParameter,
-            ))
-        })?;
-
         if let Some(ref mut renderer) = self.target.as_mut() {
             if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), &buffer) {
                 let node = *renderer.node();

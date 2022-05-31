@@ -11,15 +11,12 @@ use std::sync::{Mutex, Weak};
 use libc::c_void;
 use nix::libc::c_int;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
-use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle};
+use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-use crate::{
-    backend::egl::{BufferAccessError, EGLBuffer, Format},
-    wayland::buffer::Buffer,
-};
+use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
 use crate::{
     backend::{
         allocator::{dmabuf::Dmabuf, Buffer as _, Format as DrmFormat, Fourcc, Modifier},
@@ -806,7 +803,6 @@ impl EGLBufferReader {
         dh: &DisplayHandle,
         buffer: &WlBuffer,
     ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
-        use wayland_server::Resource;
         if dh.get_object_data(buffer.id()).is_err() {
             debug!(self.logger, "Suplied buffer is no longer alive");
             return Err(BufferAccessError::NotManaged(EGLError::BadParameter));
@@ -927,7 +923,7 @@ impl EGLBufferReader {
     pub fn egl_buffer_dimensions(
         &self,
         dh: &DisplayHandle,
-        buffer: &Buffer,
+        buffer: &WlBuffer,
     ) -> Option<crate::utils::Size<i32, crate::utils::Buffer>> {
         if dh.get_object_data(buffer.id()).is_err() {
             debug!(self.logger, "Supplied buffer is no longer alive");
