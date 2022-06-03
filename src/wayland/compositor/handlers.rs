@@ -28,7 +28,7 @@ use super::{
     RegionAttributes, SurfaceAttributes,
 };
 
-use slog::{error, trace};
+use slog::{debug, trace};
 
 /*
  * wl_compositor
@@ -170,7 +170,7 @@ where
                     surface.post_error(
                         handle,
                         wl_surface::Error::InvalidOffset,
-                        "Passing non-zero x,y is protocol violation",
+                        "Passing non-zero x,y is protocol violation since versions 5",
                     );
                 }
 
@@ -273,7 +273,7 @@ where
                             *delta = (x, y).into();
                         }
                         _ => {
-                            error!(
+                            debug!(
                                 state.compositor_state().log,
                                 "Got wl_surface::Offset request, but there is no pending buffer available."
                             );
