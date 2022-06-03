@@ -26,6 +26,16 @@
 //! # use smithay::backend::allocator::format::get_bpp;
 //! assert_eq!(get_bpp(Fourcc::Argb8888), Some(32));
 //! ```
+//!
+//! [`get_depth`] returns the number of used bits per pixel of a format
+//! (excluding padding or non-alpha "X" parts of the format).
+//!
+//! ```
+//! # use smithay::backend::allocator::Fourcc;
+//! # use smithay::backend::allocator::format::get_depth;
+//! assert_eq!(get_depth(Fourcc::Argb8888), Some(32));
+//! assert_eq!(get_depth(Fourcc::Xrgb8888), Some(24));
+//! ```
 
 /// Macro to generate table lookup functions for formats.
 ///
@@ -35,7 +45,8 @@ macro_rules! format_tables {
         $($fourcc: ident {
             $(opaque: $opaque: ident,)?
             alpha: $alpha: expr,
-            bpp: $bpp: expr $(,)?
+            bpp: $bpp: expr,
+            depth: $depth: expr $(,)?
         }),*
     ) => {
         /// Returns the opaque alternative of the specified format.
@@ -82,6 +93,18 @@ macro_rules! format_tables {
             }
         }
 
+        /// Returns the depth of the specified format.
+        ///
+        /// Unknown formats will always return [`None`].
+        pub const fn get_depth(
+            fourcc: $crate::backend::allocator::Fourcc,
+        ) -> Option<usize> {
+            match fourcc {
+                $($crate::backend::allocator::Fourcc::$fourcc => Some($depth),)*
+                _ => None,
+            }
+        }
+
         fn _impl_formats() -> &'static [$crate::backend::allocator::Fourcc] {
             &[
                 $(
@@ -94,139 +117,151 @@ macro_rules! format_tables {
 
 format_tables! {
     // 8-bit bpp Red
-    R8 { alpha: false, bpp: 8 },
+    R8 { alpha: false, bpp: 8, depth: 8 },
 
     // TODO: Update drm-fourcc
     // 16-bit bpp Red with padding (x:R)
-    // R10 { bpp: 16 },
-    // R12 { bpp: 16 },
+    // R10 { bpp: 16, depth: 10 },
+    // R12 { bpp: 16, depth: 12 },
 
     // 16-bit bpp Red
-    R16 { alpha: false, bpp: 16 },
+    R16 { alpha: false, bpp: 16, depth: 16 },
 
     // 16-bit bpp RG
-    Rg88 { alpha: false, bpp: 16 },
+    Rg88 { alpha: false, bpp: 16, depth: 16 },
 
-    Gr88 { alpha: false, bpp: 16 },
+    Gr88 { alpha: false, bpp: 16, depth: 16 },
 
     // 32-bit bpp RG
-    Rg1616 { alpha: false, bpp: 16 },
+    Rg1616 { alpha: false, bpp: 32, depth: 32 },
 
-    Gr1616 { alpha: false, bpp: 16 },
+    Gr1616 { alpha: false, bpp: 32, depth: 32 },
 
     // 8-bit bpp RGB
-    Rgb332 { alpha: false, bpp: 8 },
+    Rgb332 { alpha: false, bpp: 8, depth: 8 },
 
-    Bgr233 { alpha: false, bpp: 8 },
+    Bgr233 { alpha: false, bpp: 8, depth: 8 },
 
     // 16-bit bpp RGB, 4 bits per channel
     Argb4444 {
         opaque: Xrgb4444,
         alpha: true,
         bpp: 16,
+        depth: 16,
     },
 
-    Xrgb4444 { alpha: false, bpp: 16 },
+    Xrgb4444 { alpha: false, bpp: 16, depth: 12 },
 
     Abgr4444 {
         opaque: Xbgr4444,
         alpha: true,
         bpp: 16,
+        depth: 16,
     },
 
-    Xbgr4444 { alpha: false, bpp: 16 },
+    Xbgr4444 { alpha: false, bpp: 16, depth: 12 },
 
     Rgba4444 {
         opaque: Rgbx4444,
         alpha: true,
         bpp: 16,
+        depth: 16,
     },
 
-    Rgbx4444 { alpha: false, bpp: 16 },
+    Rgbx4444 { alpha: false, bpp: 16, depth: 12 },
 
     Bgra4444 {
         opaque: Bgrx4444,
         alpha: true,
         bpp: 16,
+        depth: 16,
     },
 
-    Bgrx4444 { alpha: false, bpp: 16 },
+    Bgrx4444 { alpha: false, bpp: 16, depth: 12 },
 
     // 16-bit bpp RGB, 5 bits per color channel, 1 bit for alpha channel
     Argb1555 {
         opaque: Xrgb1555,
         alpha: true,
         bpp: 16,
+        depth: 16
     },
 
-    Xrgb1555 { alpha: false, bpp: 16 },
+    Xrgb1555 { alpha: false, bpp: 16, depth: 15 },
 
     Abgr1555 {
         opaque: Xbgr1555,
         alpha: true,
         bpp: 16,
+        depth: 16,
     },
 
-    Xbgr1555 { alpha: false, bpp: 16 },
+    Xbgr1555 { alpha: false, bpp: 16, depth: 15 },
 
     Rgba5551 {
         opaque: Rgbx5551,
         alpha: true,
         bpp: 16,
+        depth: 16,
     },
 
-    Rgbx5551 { alpha: false, bpp: 16 },
+    Rgbx5551 { alpha: false, bpp: 16, depth: 15 },
 
     Bgra5551 {
         opaque: Bgrx5551,
         alpha: true,
         bpp: 16,
+        depth: 16,
     },
 
-    Bgrx5551 { alpha: false, bpp: 16 },
+    Bgrx5551 { alpha: false, bpp: 16, depth: 15 },
 
     // 16-bit bpp RGB, no alpha, 6 bits for green channel and 5 bits for blue and red
-    Rgb565 { alpha: false, bpp: 16 },
+    Rgb565 { alpha: false, bpp: 16, depth: 16 },
 
-    Bgr565 { alpha: false, bpp: 16 },
+    Bgr565 { alpha: false, bpp: 16, depth: 16 },
 
     // 24-bit bpp RGB
-    Rgb888 { alpha: false, bpp: 24 },
+    Rgb888 { alpha: false, bpp: 24, depth: 24 },
 
-    Bgr888 { alpha: false, bpp: 24 },
+    Bgr888 { alpha: false, bpp: 24, depth: 24 },
 
     // 32-bit bpp RGB, 8 bits per channel
     Argb8888 {
         opaque: Xrgb8888,
         alpha: true,
         bpp: 32,
+        depth: 32,
     },
 
-    Xrgb8888 { alpha: false, bpp: 32 },
+    Xrgb8888 { alpha: false, bpp: 32, depth: 24 },
 
     Abgr8888 {
         opaque: Xbgr8888,
         alpha: true,
         bpp: 32,
+        depth: 32,
     },
 
-    Xbgr8888 { alpha: false, bpp: 32 },
+    Xbgr8888 { alpha: false, bpp: 32, depth: 24 },
 
     Rgba8888 {
         opaque: Rgbx8888,
         alpha: true,
         bpp: 32,
+        depth: 32,
     },
 
-    Rgbx8888 { alpha: false, bpp: 32 },
+    Rgbx8888 { alpha: false, bpp: 32, depth: 24 },
 
     Bgra8888 {
         opaque: Bgrx8888,
         alpha: true,
         bpp: 32,
+        depth: 32,
     },
 
-    Bgrx8888 { alpha: false, bpp: 32 },
+    Bgrx8888 { alpha: false, bpp: 32, depth: 24 },
 
     // 32-bit bpp RGB with 10-bits per color channel
 
@@ -234,33 +269,37 @@ format_tables! {
         opaque: Xrgb2101010,
         alpha: true,
         bpp: 32,
+        depth: 32,
     },
 
-    Xrgb2101010 { alpha: false, bpp: 32 },
+    Xrgb2101010 { alpha: false, bpp: 32, depth: 30 },
 
     Abgr2101010 {
         opaque: Xbgr2101010,
         alpha: true,
         bpp: 32,
+        depth: 32,
     },
 
-    Xbgr2101010 { alpha: false, bpp: 32 },
+    Xbgr2101010 { alpha: false, bpp: 32, depth: 30 },
 
     Rgba1010102 {
         opaque: Rgbx1010102,
         alpha: true,
         bpp: 32,
+        depth: 32,
     },
 
-    Rgbx1010102 { alpha: false, bpp: 32 },
+    Rgbx1010102 { alpha: false, bpp: 32, depth: 30 },
 
     Bgra1010102 {
         opaque: Bgrx1010102,
         alpha: true,
         bpp: 32,
+        depth: 32,
     },
 
-    Bgrx1010102 { alpha: false, bpp: 32 },
+    Bgrx1010102 { alpha: false, bpp: 32, depth: 30 },
 
     // 64-bit RGB, 16-bits per channel
     // TODO: Update drm-fourcc
@@ -268,14 +307,16 @@ format_tables! {
     //     opaque: Xrgb16161616,
     //     alpha: true,
     //     bpp: 64,
+    //     depth: 64,
     // },
-    // Xrgb16161616 { alpha: false, bpp: 64 },
+    // Xrgb16161616 { alpha: false, bpp: 64, depth: 48 },
     // Abgr16161616 {
     //     opaque: Xbgr16161616,
     //     alpha: true,
     //     bpp: 64,
+    //     depth: 64,
     // },
-    // Xbgr16161616 { alpha: false, bpp: 64 },
+    // Xbgr16161616 { alpha: false, bpp: 64, depth: 48 },
 
     // Floating point 64bpp RGB
     // IEEE 754-2008 binary16 half-precision float
@@ -283,29 +324,31 @@ format_tables! {
         opaque: Xrgb16161616f,
         alpha: true,
         bpp: 64,
+        depth: 64
     },
 
-    Xrgb16161616f { alpha: false, bpp: 64 },
+    Xrgb16161616f { alpha: false, bpp: 64, depth: 48 },
 
     Abgr16161616f {
         opaque: Xbgr16161616f,
         alpha: true,
         bpp: 64,
+        depth: 64,
     },
 
-    Xbgr16161616f { alpha: false, bpp: 64 },
+    Xbgr16161616f { alpha: false, bpp: 64, depth: 48 },
 
     // RGBA with 10-bit components packed in 64-bits per pixel, with 6-bits of unused padding per component
 
     // Axbxgxrx106106106106 has no direct non-alpha alternative.
-    Axbxgxrx106106106106 { alpha: true, bpp: 64 }
+    Axbxgxrx106106106106 { alpha: true, bpp: 64, depth: 40 }
 
     // TODO: YUV and other formats
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{_impl_formats, get_bpp, get_opaque, has_alpha};
+    use super::{_impl_formats, get_bpp, get_depth, get_opaque, has_alpha};
 
     /// Tests that opaque alternatives are not the same as the variant with alpha.
     #[test]
@@ -386,6 +429,18 @@ mod tests {
                     opaque
                 );
             }
+        }
+    }
+
+    // A format's depth should always be equal or small to it's bits-per-pixel
+    #[test]
+    fn format_bpp_greater_or_equal_than_depth() {
+        for &format in _impl_formats() {
+            assert!(
+                get_depth(format) <= get_bpp(format),
+                "{} has a depth higher than its bpp",
+                format
+            );
         }
     }
 }
