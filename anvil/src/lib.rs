@@ -2,7 +2,7 @@
 // If no backend is enabled, a large portion of the codebase is unused.
 // So silence this useless warning for the CI.
 #![cfg_attr(
-    not(any(feature = "winit", feature = "udev")),
+    not(any(feature = "winit", feature = "x11", feature = "udev")),
     allow(dead_code, unused_imports)
 )]
 

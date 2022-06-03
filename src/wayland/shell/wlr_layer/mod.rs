@@ -161,7 +161,7 @@ pub struct WlrLayerShellState {
 
 impl WlrLayerShellState {
     /// Create a new `wlr_layer_shell` globals
-    pub fn new<L, D>(display: &DisplayHandle, logger: L) -> WlrLayerShellState
+    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> WlrLayerShellState
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<ZwlrLayerShellV1, ()>,
@@ -184,7 +184,7 @@ impl WlrLayerShellState {
     }
 
     /// Access all the shell surfaces known by this handler
-    pub fn layer_surfaces(&self) -> impl Iterator<Item = LayerSurface> {
+    pub fn layer_surfaces(&self) -> impl DoubleEndedIterator<Item = LayerSurface> {
         self.known_layers.lock().unwrap().clone().into_iter()
     }
 }
