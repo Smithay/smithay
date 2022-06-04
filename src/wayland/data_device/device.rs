@@ -44,7 +44,6 @@ where
     ) {
         let data_device_state = handler.data_device_state();
 
-        // TODO: Change Seat T to always be equal to D )-:
         if let Some(seat) = Seat::<D>::from_resource(&data.wl_seat) {
             match request {
                 wl_data_device::Request::StartDrag {

@@ -11,6 +11,8 @@ use wayland_server::{
     Client, DisplayHandle, Resource,
 };
 
+use crate::utils::IsAlive;
+
 use super::{with_source_metadata, DataDeviceHandler, SourceMetadata};
 
 pub enum Selection {
@@ -82,18 +84,16 @@ impl SeatData {
             Some(c) => c,
             None => return,
         };
-        // TODO:
         // first sanitize the selection, reseting it to null if the client holding
         // it dropped it
-        // let cleanup = if let Selection::Client(ref _data_source) = self.selection {
-        //     false
-        //     // !data_source.as_ref().is_alive()
-        // } else {
-        //     false
-        // };
-        // if cleanup {
-        //     self.selection = Selection::Empty;
-        // }
+        let cleanup = if let Selection::Client(ref data_source) = self.selection {
+            !data_source.alive()
+        } else {
+            false
+        };
+        if cleanup {
+            self.selection = Selection::Empty;
+        }
 
         // then send it if appropriate
         match self.selection {
