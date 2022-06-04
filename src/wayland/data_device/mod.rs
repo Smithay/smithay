@@ -308,7 +308,6 @@ mod handlers {
                     data_init.init(id, DataSourceUserData::new());
                 }
                 wl_data_device_manager::Request::GetDataDevice { id, seat: wl_seat } => {
-                    // TODO: Change Seat T to always be equal to D )-:
                     match Seat::<D>::from_resource(&wl_seat) {
                         Some(seat) => {
                             seat.user_data()
