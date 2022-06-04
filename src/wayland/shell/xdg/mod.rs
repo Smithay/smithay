@@ -826,8 +826,8 @@ impl ShellClient {
     }
 
     /// Is the shell client represented by this handle still connected?
-    pub fn alive(&self, dh: &DisplayHandle) -> bool {
-        dh.object_info(self.kind.id()).is_ok()
+    pub fn alive(&self) -> bool {
+        self.kind.alive()
     }
 
     /// Send a ping request to this shell client
@@ -839,8 +839,8 @@ impl ShellClient {
     /// down to 0 before a pong is received, mark the client as unresponsive.
     ///
     /// Fails if this shell client already has a pending ping or is already dead.
-    pub fn send_ping(&self, dh: &DisplayHandle, serial: Serial) -> Result<(), PingError> {
-        if !self.alive(dh) {
+    pub fn send_ping(&self, serial: Serial) -> Result<(), PingError> {
+        if !self.alive() {
             return Err(PingError::DeadSurface);
         }
         let user_data = self.kind.data::<self::handlers::XdgWmBaseUserData>().unwrap();
@@ -855,11 +855,11 @@ impl ShellClient {
     }
 
     /// Access the user data associated with this shell client
-    pub fn with_data<F, T>(&self, dh: &DisplayHandle, f: F) -> Result<T, crate::utils::DeadResource>
+    pub fn with_data<F, T>(&self, f: F) -> Result<T, crate::utils::DeadResource>
     where
         F: FnOnce(&mut UserDataMap) -> T,
     {
-        if !self.alive(dh) {
+        if !self.alive() {
             return Err(crate::utils::DeadResource);
         }
         let data = self.kind.data::<self::handlers::XdgWmBaseUserData>().unwrap();
