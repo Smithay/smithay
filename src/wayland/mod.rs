@@ -58,7 +58,6 @@ pub mod buffer;
 pub mod compositor;
 pub mod data_device;
 pub mod dmabuf;
-// pub mod explicit_synchronization;
 pub mod output;
 pub mod seat;
 pub mod shell;
@@ -66,7 +65,6 @@ pub mod shm;
 pub mod socket;
 // pub mod tablet_manager;
 pub mod xdg_activation;
-// pub mod xdg_foreign;
 
 /// A global [`SerialCounter`] for use in your compositor.
 ///
