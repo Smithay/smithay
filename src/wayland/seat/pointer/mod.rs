@@ -403,6 +403,17 @@ impl<'a, D> PointerInnerHandle<'a, D> {
             if pointer.version() >= 5 {
                 // axis source
                 if let Some(source) = details.source {
+                    // WheelTilt was not supported before version 6
+                    // The best we can do is replace it with Wheel
+                    let source = if pointer.version() < 6 {
+                        match source {
+                            wl_pointer::AxisSource::WheelTilt => wl_pointer::AxisSource::Wheel,
+                            other => other,
+                        }
+                    } else {
+                        source
+                    };
+
                     pointer.axis_source(source);
                 }
                 // axis discrete
