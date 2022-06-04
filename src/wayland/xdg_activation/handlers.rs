@@ -54,7 +54,7 @@ fn get_activation_token(
         let mut token_constructed = false;
 
         move |id, req, _| {
-            if !token_constructed {
+            if !token_constructed || matches!(req, xdg_activation_token_v1::Request::Destroy) {
                 match req {
                     xdg_activation_token_v1::Request::SetSerial { serial, seat } => {
                         token_serial = Some((serial.into(), seat));
