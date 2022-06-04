@@ -161,12 +161,7 @@ pub enum BufferAssignment {
     /// The surface no longer has a buffer attached to it
     Removed,
     /// A new buffer has been attached
-    NewBuffer {
-        /// The buffer object
-        buffer: wl_buffer::WlBuffer,
-        /// location of the new buffer relative to the previous one
-        delta: Point<i32, Logical>,
-    },
+    NewBuffer(wl_buffer::WlBuffer),
 }
 
 /// General state associated with a surface
@@ -182,6 +177,18 @@ pub struct SurfaceAttributes {
     /// times. It'll be set to `Some(...)` if the user attaches a buffer (or `NULL`) to
     /// the surface, and be left to `None` if the user does not attach anything.
     pub buffer: Option<BufferAssignment>,
+
+    /// Location of the new buffer relative to the previous one
+    ///
+    /// The x and y arguments specify the location of the new pending buffer's upper left corner,
+    /// relative to the current buffer's upper left corner, in surface-local coordinates.
+    ///
+    /// In other words, the x and y, combined with the new surface size define in which directions
+    /// the surface's size changes.
+    ///
+    /// You are free to set this field to `None` to avoid processing it several times.
+    pub buffer_delta: Option<Point<i32, Logical>>,
+
     /// Scale of the contents of the buffer, for higher-resolution contents.
     ///
     /// If it matches the one of the output displaying this surface, no change
@@ -227,6 +234,7 @@ impl Default for SurfaceAttributes {
     fn default() -> SurfaceAttributes {
         SurfaceAttributes {
             buffer: None,
+            buffer_delta: None,
             buffer_scale: 1,
             buffer_transform: wl_output::Transform::Normal,
             opaque_region: None,

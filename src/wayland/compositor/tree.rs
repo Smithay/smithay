@@ -133,7 +133,7 @@ impl PrivateSurfaceData {
             let mut child_guard = child_mutex.lock().unwrap();
             child_guard.parent = None;
         }
-        if let Some(BufferAssignment::NewBuffer { buffer, .. }) = my_data
+        if let Some(BufferAssignment::NewBuffer(buffer)) = my_data
             .public_data
             .cached_state
             .current::<SurfaceAttributes>()
@@ -142,7 +142,7 @@ impl PrivateSurfaceData {
         {
             buffer.release();
         };
-        if let Some(BufferAssignment::NewBuffer { buffer, .. }) = my_data
+        if let Some(BufferAssignment::NewBuffer(buffer)) = my_data
             .public_data
             .cached_state
             .pending::<SurfaceAttributes>()

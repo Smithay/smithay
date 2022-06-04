@@ -37,8 +37,9 @@ const MAX_DAMAGE: usize = 4;
 
 impl SurfaceState {
     pub fn update_buffer(&mut self, dh: &DisplayHandle, attrs: &mut SurfaceAttributes) {
+        let _delta = attrs.buffer_delta.take();
         match attrs.buffer.take() {
-            Some(BufferAssignment::NewBuffer { buffer, .. }) => {
+            Some(BufferAssignment::NewBuffer(buffer)) => {
                 // new contents
                 self.buffer_dimensions = buffer_dimensions(dh, &buffer);
 
