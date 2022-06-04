@@ -9,13 +9,13 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_output, wl_surface::WlSurface},
+            protocol::{wl_buffer::WlBuffer, wl_output, wl_surface::WlSurface},
             DisplayHandle, Resource,
         },
     },
     utils::{IsAlive, Logical, Point, Rectangle, Size},
     wayland::{
-        buffer::{Buffer, BufferHandler},
+        buffer::BufferHandler,
         compositor::{
             with_states, with_surface_tree_upward, CompositorHandler, CompositorState, TraversalAction,
         },
@@ -329,7 +329,7 @@ impl FullscreenSurface {
 }
 
 impl<BackendData> BufferHandler for AnvilState<BackendData> {
-    fn buffer_destroyed(&mut self, buffer: &Buffer) {}
+    fn buffer_destroyed(&mut self, buffer: &WlBuffer) {}
 }
 
 impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
