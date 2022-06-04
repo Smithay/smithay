@@ -68,7 +68,7 @@ impl Smallvil {
 
                 let button = event.button_code();
 
-                let button_state: wl_pointer::ButtonState = event.state().into();
+                let button_state = wl_pointer::ButtonState::from(event.state());
 
                 if wl_pointer::ButtonState::Pressed == button_state && !pointer.is_grabbed() {
                     if let Some(window) = self.space.window_under(self.pointer_location).cloned() {
@@ -97,7 +97,7 @@ impl Smallvil {
                 );
             }
             InputEvent::PointerAxis { event, .. } => {
-                let source: wl_pointer::AxisSource = event.source().into();
+                let source = wl_pointer::AxisSource::from(event.source());
 
                 let horizontal_amount = event
                     .amount(Axis::Horizontal)

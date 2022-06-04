@@ -137,7 +137,7 @@ impl<Backend> AnvilState<Backend> {
         let serial = SCOUNTER.next_serial();
         let button = evt.button_code();
 
-        let state: wl_pointer::ButtonState = evt.state().into();
+        let state = wl_pointer::ButtonState::from(evt.state());
 
         if wl_pointer::ButtonState::Pressed == state {
             self.update_keyboard_focus(dh, serial);
@@ -285,7 +285,8 @@ impl<Backend> AnvilState<Backend> {
     }
 
     fn on_pointer_axis<B: InputBackend>(&mut self, dh: &DisplayHandle, evt: B::PointerAxisEvent) {
-        let source: wl_pointer::AxisSource = evt.source().into();
+        let source = wl_pointer::AxisSource::from(evt.source());
+
         let horizontal_amount = evt
             .amount(input::Axis::Horizontal)
             .unwrap_or_else(|| evt.amount_discrete(input::Axis::Horizontal).unwrap() * 3.0);
