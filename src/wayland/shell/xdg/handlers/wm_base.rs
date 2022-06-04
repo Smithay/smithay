@@ -1,13 +1,18 @@
 use std::sync::{atomic::AtomicBool, Mutex};
 
-use crate::wayland::{shell::xdg::XdgShellState, Serial};
+use crate::{
+    utils::{alive_tracker::AliveTracker, IsAlive},
+    wayland::{shell::xdg::XdgShellState, Serial},
+};
 
 use wayland_protocols::xdg::shell::server::{
     xdg_positioner::XdgPositioner, xdg_surface::XdgSurface, xdg_wm_base, xdg_wm_base::XdgWmBase,
 };
 
 use wayland_server::{
+    backend::{ClientId, ObjectId},
     DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
+    Resource,
 };
 
 use super::{
@@ -105,6 +110,17 @@ where
             _ => unreachable!(),
         }
     }
+
+    fn destroyed(_state: &mut D, _client_id: ClientId, _object_id: ObjectId, data: &XdgWmBaseUserData) {
+        data.alive_tracker.destroy_notify();
+    }
+}
+
+impl IsAlive for XdgWmBase {
+    fn alive(&self) -> bool {
+        let data: &XdgWmBaseUserData = self.data().unwrap();
+        data.alive_tracker.alive()
+    }
 }
 
 /*
@@ -115,4 +131,5 @@ where
 #[derive(Default, Debug)]
 pub struct XdgWmBaseUserData {
     pub(crate) client_data: Mutex<ShellClientData>,
+    alive_tracker: AliveTracker,
 }
