@@ -1,15 +1,13 @@
 use crate::backend::input::KeyState;
 use crate::utils::IsAlive;
 use crate::wayland::Serial;
-use slog::{debug, info, o, trace, warn};
+use slog::{debug, error, info, o, trace, warn};
 use std::{
     default::Default,
-    fmt,
-    io::{self, Write},
-    os::unix::io::AsRawFd,
+    ffi::CString,
+    fmt, io,
     sync::{Arc, Mutex},
 };
-use tempfile::tempfile;
 use thiserror::Error;
 use wayland_server::{
     backend::{ClientId, ObjectId},
@@ -29,6 +27,9 @@ pub use modifiers_state::ModifiersState;
 
 mod xkb_config;
 pub use xkb_config::XkbConfig;
+
+mod keymap_file;
+use keymap_file::KeymapFile;
 
 enum GrabStatus {
     None,
@@ -217,7 +218,7 @@ pub enum Error {
 #[derive(Debug)]
 struct KbdRc {
     internal: Mutex<KbdInternal>,
-    keymap: String,
+    keymap: KeymapFile,
     logger: ::slog::Logger,
 }
 
@@ -362,11 +363,12 @@ impl KeyboardHandle {
         info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
 
         let keymap = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
+        let keymap = CString::new(keymap).expect("Keymap should not contain interior nul bytes");
 
         Ok(Self {
             arc: Arc::new(KbdRc {
                 internal: Mutex::new(internal),
-                keymap,
+                keymap: KeymapFile::new(keymap, log.clone()),
                 logger: log,
             }),
         })
@@ -538,15 +540,8 @@ impl KeyboardHandle {
         trace!(self.arc.logger, "Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
-        let ret = tempfile().and_then(|mut f| {
-            f.write_all(self.arc.keymap.as_bytes())?;
-            f.flush()?;
-            kbd.keymap(
-                KeymapFormat::XkbV1,
-                f.as_raw_fd(),
-                self.arc.keymap.as_bytes().len() as u32,
-            );
-            Ok(())
+        let ret = self.arc.keymap.with_fd(kbd.version() >= 7, |fd, size| {
+            kbd.keymap(KeymapFormat::XkbV1, fd, size as u32);
         });
 
         if let Err(e) = ret {
