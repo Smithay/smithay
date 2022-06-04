@@ -13,7 +13,7 @@ use wayland_server::{
 };
 
 use crate::{
-    utils::{Logical, Point},
+    utils::{IsAlive, Logical, Point},
     wayland::{compositor, Serial},
 };
 
@@ -141,7 +141,6 @@ impl<D> PointerInternal<D> {
     where
         F: FnMut(&WlPointer, &WlSurface),
     {
-        use crate::utils::IsAlive;
         if let Some((ref focus, _)) = self.focus {
             if !focus.alive() {
                 return;
@@ -164,9 +163,7 @@ impl<D> PointerInternal<D> {
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some((ref surface, _)) = handler.start_data().focus {
-                    // TODO: is this alive check still needed?
-                    // This is is_alive check
-                    if dh.object_info(surface.id()).is_err() {
+                    if !surface.alive() {
                         self.grab = GrabStatus::None;
                         f(dh, PointerInnerHandle { inner: self }, &mut DefaultGrab);
                         return;

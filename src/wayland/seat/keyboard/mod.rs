@@ -1,4 +1,5 @@
 use crate::backend::input::KeyState;
+use crate::utils::IsAlive;
 use crate::wayland::Serial;
 use slog::{debug, info, o, trace, warn};
 use std::{
@@ -160,7 +161,6 @@ impl KbdInternal {
     where
         F: FnMut(&WlKeyboard, &WlSurface),
     {
-        use crate::utils::IsAlive;
         if let Some((ref surface, _)) = self.focus {
             if !surface.alive() {
                 return;
@@ -182,15 +182,12 @@ impl KbdInternal {
             GrabStatus::Borrowed => panic!("Accessed a keyboard grab from within a keyboard grab access."),
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
-                if let Some(ref _surface) = handler.start_data().focus {
-                    // TODO
-                    /*
-                    if !surface.as_ref().is_alive() {
+                if let Some(ref surface) = handler.start_data().focus {
+                    if !surface.alive() {
                         self.grab = GrabStatus::None;
                         f(KeyboardInnerHandle { inner: self, logger }, &mut DefaultGrab);
                         return;
                     }
-                    */
                 }
                 f(KeyboardInnerHandle { inner: self, logger }, &mut **handler);
             }
