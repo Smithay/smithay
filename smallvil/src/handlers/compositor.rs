@@ -1,3 +1,4 @@
+use crate::{grabs::resize_grab, Smallvil};
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     delegate_compositor, delegate_shm,
@@ -12,8 +13,6 @@ use smithay::{
     },
 };
 
-use crate::Smallvil;
-
 impl CompositorHandler for Smallvil {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.compositor_state
@@ -22,6 +21,8 @@ impl CompositorHandler for Smallvil {
     fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
         on_commit_buffer_handler(dh, surface);
         self.space.commit(surface);
+
+        resize_grab::handle_commit(&mut self.space, surface);
     }
 }
 

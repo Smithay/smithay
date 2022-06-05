@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 slog = { version = "2.1.1" }
 slog-stdlog = "4.1.0"
+bitflags = "1"
 
 [dependencies.smithay]
 path = "../"
