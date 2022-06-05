@@ -14,8 +14,11 @@ use wayland_server::{
     DisplayHandle, Resource,
 };
 
-use crate::wayland::seat::{
-    AxisFrame, ButtonEvent, MotionEvent, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat,
+use crate::{
+    utils::IsAlive,
+    wayland::seat::{
+        AxisFrame, ButtonEvent, MotionEvent, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat,
+    },
 };
 
 use super::{seat_data::SeatData, with_source_metadata, ClientDndGrabHandler, DataDeviceHandler};
@@ -306,10 +309,9 @@ fn handle_dnd<D>(
         Request::Receive { mime_type, fd } => {
             // check if the source and associated mime type is still valid
             let valid = with_source_metadata(source, |meta| meta.mime_types.contains(&mime_type))
-                    .unwrap_or(false)
-                    // TODO:
-                    // && source.as_ref().is_alive() 
-                    && data.active;
+                .unwrap_or(false)
+                && source.alive()
+                && data.active;
             if valid {
                 source.send(mime_type, fd);
             }

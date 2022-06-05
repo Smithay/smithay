@@ -2,10 +2,13 @@ use slog::error;
 use std::sync::Mutex;
 
 use wayland_server::{
+    backend::{ClientId, ObjectId},
     protocol::wl_data_source::{self},
     protocol::{wl_data_device_manager::DndAction, wl_data_source::WlDataSource},
     DelegateDispatch, Dispatch, DisplayHandle, Resource,
 };
+
+use crate::utils::{alive_tracker::AliveTracker, IsAlive};
 
 use super::{DataDeviceHandler, DataDeviceState};
 
@@ -31,12 +34,14 @@ impl Default for SourceMetadata {
 #[derive(Debug)]
 pub struct DataSourceUserData {
     inner: Mutex<SourceMetadata>,
+    alive_tracker: AliveTracker,
 }
 
 impl DataSourceUserData {
     pub(super) fn new() -> Self {
         Self {
             inner: Default::default(),
+            alive_tracker: Default::default(),
         }
     }
 }
@@ -74,6 +79,17 @@ where
             wl_data_source::Request::Destroy => {}
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(_state: &mut D, _client: ClientId, _resource: ObjectId, data: &DataSourceUserData) {
+        data.alive_tracker.destroy_notify();
+    }
+}
+
+impl IsAlive for WlDataSource {
+    fn alive(&self) -> bool {
+        let data: &DataSourceUserData = self.data().unwrap();
+        data.alive_tracker.alive()
     }
 }
 

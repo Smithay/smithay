@@ -47,7 +47,7 @@ use std::{
 
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
-use crate::wayland::Serial;
+use crate::{utils::IsAlive, wayland::Serial};
 
 use super::tree::PrivateSurfaceData;
 
@@ -244,7 +244,7 @@ impl TransactionQueue {
             if !skip {
                 for (s, _) in &self.transactions[i].surfaces {
                     // TODO: is this alive check still needed?
-                    if dh.object_info(s.id()).is_err() {
+                    if !s.alive() {
                         continue;
                     }
                     if self.seen_surfaces.contains(&s.id().protocol_id()) {
@@ -259,7 +259,7 @@ impl TransactionQueue {
                 // seen list
                 for (s, _) in &self.transactions[i].surfaces {
                     // TODO: is this alive check still needed?
-                    if dh.object_info(s.id()).is_err() {
+                    if !s.alive() {
                         continue;
                     }
                     self.seen_surfaces.insert(s.id().protocol_id());
