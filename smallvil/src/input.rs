@@ -68,11 +68,7 @@ impl Smallvil {
 
                 let button = event.button_code();
 
-                // TODO: From trait
-                let button_state = match event.state() {
-                    ButtonState::Pressed => wl_pointer::ButtonState::Pressed,
-                    ButtonState::Released => wl_pointer::ButtonState::Released,
-                };
+                let button_state = wl_pointer::ButtonState::from(event.state());
 
                 if wl_pointer::ButtonState::Pressed == button_state && !pointer.is_grabbed() {
                     if let Some(window) = self.space.window_under(self.pointer_location).cloned() {
@@ -101,12 +97,8 @@ impl Smallvil {
                 );
             }
             InputEvent::PointerAxis { event, .. } => {
-                // TODO: From trait
-                let source = match event.source() {
-                    AxisSource::Continuous => wl_pointer::AxisSource::Continuous,
-                    AxisSource::Finger => wl_pointer::AxisSource::Finger,
-                    AxisSource::Wheel | AxisSource::WheelTilt => wl_pointer::AxisSource::Wheel,
-                };
+                let source = wl_pointer::AxisSource::from(event.source());
+
                 let horizontal_amount = event
                     .amount(Axis::Horizontal)
                     .unwrap_or_else(|| event.amount_discrete(Axis::Horizontal).unwrap() * 3.0);
