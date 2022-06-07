@@ -109,15 +109,17 @@ impl X11Surface {
                 mem::swap(&mut next, current);
             }
 
-            let window = self.window().ok_or(AllocateBuffersError::WindowDestroyed)?;
-            let pixmap = PixmapWrapper::with_dmabuf(
-                &*connection,
-                window.as_ref(),
-                next.userdata().get::<Dmabuf>().unwrap(),
-            )?;
+            {
+                let window = self.window().ok_or(AllocateBuffersError::WindowDestroyed)?;
+                let pixmap = PixmapWrapper::with_dmabuf(
+                    &*connection,
+                    window.as_ref(),
+                    next.userdata().get::<Dmabuf>().unwrap(),
+                )?;
 
-            // Now present the current buffer
-            let _ = pixmap.present(&*connection, window.as_ref())?;
+                // Now present the current buffer
+                let _ = pixmap.present(&*connection, window.as_ref())?;
+            }
             self.swapchain.submitted(&next);
 
             // Flush the connection after presenting to the window to ensure we don't run out of buffer space in the X11 connection.

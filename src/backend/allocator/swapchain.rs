@@ -173,25 +173,28 @@ where
     /// Buffers can always just be safely discarded by dropping them, but not
     /// calling this function before may affect performance characteristics
     /// (e.g. by not tracking the buffer age).
-    pub fn submitted(&self, slot: &Slot<B>) {
+    pub fn submitted(&mut self, slot: &Slot<B>) {
         // don't mess up the state, if the user submitted and old buffer, after e.g. a resize
         if !self.slots.iter().any(|other| Arc::ptr_eq(&slot.0, other)) {
             return;
         }
 
         slot.0.age.store(1, Ordering::SeqCst);
-        for other_slot in &self.slots {
+        for other_slot in &mut self.slots {
             if !Arc::ptr_eq(other_slot, &slot.0) && other_slot.buffer.is_some() {
                 let res = other_slot
                     .age
                     .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |age| {
                         if age > 0 {
-                            Some(age + 1)
+                            age.checked_add(1)
                         } else {
                             Some(0)
                         }
                     });
-                assert!(res.is_ok());
+                // If the age overflows the slot was not used for a long time. Lets clear it
+                if res.is_err() {
+                    *other_slot = Default::default();
+                }
             }
         }
     }
