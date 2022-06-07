@@ -32,11 +32,11 @@ impl KeymapFile {
         }
     }
 
-    pub fn with_fd<F>(&self, supports_seeled: bool, cb: F) -> Result<(), std::io::Error>
+    pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
         F: FnOnce(RawFd, usize),
     {
-        if let Some(file) = supports_seeled.then(|| self.sealed.as_ref()).flatten() {
+        if let Some(file) = supports_sealed.then(|| self.sealed.as_ref()).flatten() {
             cb(file.as_raw_fd(), file.size);
             Ok(())
         } else {
