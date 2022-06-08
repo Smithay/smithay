@@ -195,7 +195,7 @@ delegate_layer_shell!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
-        mut display: &mut Display<AnvilState<BackendData>>,
+        display: &mut Display<AnvilState<BackendData>>,
         handle: LoopHandle<'static, CalloopData<BackendData>>,
         backend_data: BackendData,
         log: slog::Logger,
@@ -207,7 +207,11 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             let socket_name = source.socket_name().to_string_lossy().into_owned();
             handle
                 .insert_source(source, |client_stream, _, data| {
-                    if let Err(err) = data.display.insert_client(client_stream, Arc::new(ClientState)) {
+                    if let Err(err) = data
+                        .display
+                        .handle()
+                        .insert_client(client_stream, Arc::new(ClientState))
+                    {
                         slog::warn!(data.state.log, "Error adding wayland client: {}", err);
                     };
                 })
@@ -220,11 +224,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         };
         handle
             .insert_source(
-                Generic::new(
-                    display.backend().lock().unwrap().poll_fd(),
-                    Interest::READ,
-                    Mode::Level,
-                ),
+                Generic::new(display.backend().poll_fd(), Interest::READ, Mode::Level),
                 |_, _, data| {
                     data.display.dispatch_clients(&mut data.state).unwrap();
                     Ok(PostAction::Continue)
@@ -270,7 +270,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         #[cfg(feature = "xwayland")]
         let xwayland = {
-            let (xwayland, channel) = XWayland::new(log.clone());
+            let (xwayland, channel) = XWayland::new(log.clone(), &display.handle());
             let ret = handle.insert_source(channel, |event, _, data| match event {
                 XWaylandEvent::Ready {
                     connection, client, ..
