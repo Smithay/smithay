@@ -11,15 +11,12 @@
 //!
 //! - The [`xdg`](xdg/index.html) module provides handlers for the `xdg_shell` protocol, which is
 //!   the current standard for desktop apps
-//! - The [`legacy`](legacy/index.html) module provides handlers for the `wl_shell` protocol, which
-//!   is now deprecated. You only need it if you want to support apps predating `xdg_shell`.
 
 use super::Serial;
 use crate::wayland::compositor;
 use thiserror::Error;
 use wayland_server::protocol::wl_surface::WlSurface;
 
-// pub mod legacy;
 pub mod xdg;
 
 pub mod wlr_layer;
@@ -38,13 +35,11 @@ pub enum PingError {
 
 /// Returns true if the surface is toplevel equivalent.
 ///
-/// This is method checks if the surface roles is `wl_shell_surface` or `xdg_toplevel`
+/// Currently is method only checks if the surface roles is `xdg_toplevel`,
+/// but may be extended to other shell-protocols in the future, if applicable.
 pub fn is_toplevel_equivalent(surface: &WlSurface) -> bool {
-    // (z)xdg_toplevel and wl_shell_surface are toplevel like, so verify if the roles match.
+    // xdg_toplevel is toplevel like, so verify if the role matches.
     let role = compositor::get_role(surface);
 
-    matches!(
-        role,
-        Some(xdg::XDG_TOPLEVEL_ROLE) //| Some(legacy::WL_SHELL_SURFACE_ROLE)
-    )
+    matches!(role, Some(xdg::XDG_TOPLEVEL_ROLE))
 }
