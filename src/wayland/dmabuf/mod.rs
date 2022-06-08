@@ -336,17 +336,12 @@ impl DmabufParamsData {
     /// Emits a protocol error if the params have already been used to create a dmabuf.
     ///
     /// This returns true if the protocol object has not been used.
-    fn ensure_unused(
-        &self,
-        dh: &DisplayHandle,
-        params: &zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
-    ) -> bool {
+    fn ensure_unused(&self, params: &zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1) -> bool {
         if !self.used.load(Ordering::Relaxed) {
             return true;
         }
 
         params.post_error(
-            dh,
             zwp_linux_buffer_params_v1::Error::AlreadyUsed,
             "This buffer_params has already been used to create a buffer.",
         );
@@ -362,7 +357,6 @@ impl DmabufParamsData {
     /// A return value of [`None`] indicates buffer import has failed and the client has been killed.
     fn create_dmabuf(
         &self,
-        dh: &DisplayHandle,
         params: &zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
         width: i32,
         height: i32,
@@ -370,7 +364,7 @@ impl DmabufParamsData {
         flags: WEnum<zwp_linux_buffer_params_v1::Flags>,
     ) -> Option<Dmabuf> {
         // We cannot create a dmabuf if the parameters have already been used.
-        if !self.ensure_unused(dh, params) {
+        if !self.ensure_unused(params) {
             return None;
         }
 
@@ -380,7 +374,6 @@ impl DmabufParamsData {
             Ok(format) => format,
             Err(_) => {
                 params.post_error(
-                    dh,
                     zwp_linux_buffer_params_v1::Error::InvalidFormat,
                     format!("Format {:x} is not supported", format),
                 );
@@ -393,7 +386,6 @@ impl DmabufParamsData {
         // 1. Must have known format
         if !self.formats.iter().any(|f| f.code == format) {
             params.post_error(
-                dh,
                 zwp_linux_buffer_params_v1::Error::InvalidFormat,
                 format!("Format {:?}/{:x} is not supported.", format, format as u32),
             );
@@ -403,7 +395,6 @@ impl DmabufParamsData {
         // 2. Width and height must be positive
         if width < 1 {
             params.post_error(
-                dh,
                 zwp_linux_buffer_params_v1::Error::InvalidDimensions,
                 "invalid width",
             );
@@ -411,7 +402,6 @@ impl DmabufParamsData {
 
         if height < 1 {
             params.post_error(
-                dh,
                 zwp_linux_buffer_params_v1::Error::InvalidDimensions,
                 "invalid height",
             );
@@ -431,7 +421,6 @@ impl DmabufParamsData {
 
                 None => {
                     params.post_error(
-                        dh,
                         zwp_linux_buffer_params_v1::Error::OutOfBounds,
                         format!("Size overflow for plane {}.", plane.plane_idx),
                     );
@@ -446,7 +435,6 @@ impl DmabufParamsData {
 
                 if plane.offset as libc::off_t > size {
                     params.post_error(
-                        dh,
                         zwp_linux_buffer_params_v1::Error::OutOfBounds,
                         format!("Invalid offset {} for plane {}.", plane.offset, plane.plane_idx),
                     );
@@ -456,7 +444,6 @@ impl DmabufParamsData {
 
                 if (plane.offset + plane.stride) as libc::off_t > size {
                     params.post_error(
-                        dh,
                         zwp_linux_buffer_params_v1::Error::OutOfBounds,
                         format!("Invalid stride {} for plane {}.", plane.stride, plane.plane_idx),
                     );
@@ -467,7 +454,6 @@ impl DmabufParamsData {
                 // Planes > 0 can be subsampled, in which case 'size' will be smaller than expected.
                 if plane.plane_idx == 0 && end as libc::off_t > size {
                     params.post_error(
-                        dh,
                         zwp_linux_buffer_params_v1::Error::OutOfBounds,
                         format!(
                             "Invalid stride ({}) or height ({}) for plane {}.",
@@ -498,7 +484,6 @@ impl DmabufParamsData {
 
             None => {
                 params.post_error(
-                    dh,
                     zwp_linux_buffer_params_v1::Error::Incomplete as u32,
                     "Provided buffer is incomplete, it has zero planes",
                 );

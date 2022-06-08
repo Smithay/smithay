@@ -59,7 +59,6 @@ where
                             if let Some(ref icon) = icon {
                                 if compositor::give_role(icon, DND_ICON_ROLE).is_err() {
                                     resource.post_error(
-                                        dh,
                                         wl_data_device::Error::Role,
                                         "Given surface already has an other role",
                                     );

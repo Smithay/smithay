@@ -321,7 +321,6 @@ fn handle_dnd<D>(
         Request::Finish => {
             if !data.active {
                 offer.post_error(
-                    dh,
                     wl_data_offer::Error::InvalidFinish,
                     "Cannot finish a data offer that is no longer active.",
                 );
@@ -329,7 +328,6 @@ fn handle_dnd<D>(
             }
             if !data.accepted {
                 offer.post_error(
-                    dh,
                     wl_data_offer::Error::InvalidFinish,
                     "Cannot finish a data offer that has not been accepted.",
                 );
@@ -337,7 +335,6 @@ fn handle_dnd<D>(
             }
             if !data.dropped {
                 offer.post_error(
-                    dh,
                     wl_data_offer::Error::InvalidFinish,
                     "Cannot finish a data offer that has not been dropped.",
                 );
@@ -345,7 +342,6 @@ fn handle_dnd<D>(
             }
             if data.chosen_action.is_empty() {
                 offer.post_error(
-                    dh,
                     wl_data_offer::Error::InvalidFinish,
                     "Cannot finish a data offer with no valid action.",
                 );
@@ -366,7 +362,6 @@ fn handle_dnd<D>(
                 .contains(&preferred_action)
             {
                 offer.post_error(
-                    dh,
                     wl_data_offer::Error::InvalidAction,
                     "Invalid preferred action.",
                 );

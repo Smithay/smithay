@@ -89,7 +89,7 @@ impl PopupManager {
                 });
 
                 if committed {
-                    surface.post_error(dh, xdg_popup::Error::InvalidGrab, "xdg_popup already is mapped");
+                    surface.post_error(xdg_popup::Error::InvalidGrab, "xdg_popup already is mapped");
                     return Err(PopupGrabError::InvalidGrab);
                 }
             }
@@ -117,7 +117,6 @@ impl PopupManager {
                     }
                     PopupGrabError::NotTheTopmostPopup => {
                         surface.post_error(
-                            dh,
                             xdg_wm_base::Error::NotTheTopmostPopup,
                             "xdg_popup was not created on the topmost popup",
                         );
