@@ -184,7 +184,7 @@ impl<D: 'static> Seat<D> {
             log,
         });
 
-        let global_id = display.create_global::<D, _, _>(5, SeatGlobalData { arc: arc.clone() });
+        let global_id = display.create_global::<D, _, _>(7, SeatGlobalData { arc: arc.clone() });
         arc.inner.lock().unwrap().global_id = Some(global_id);
 
         Self { arc }
