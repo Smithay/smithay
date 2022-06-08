@@ -41,8 +41,8 @@ pub struct OutputState {
     // old_damage represents the damage from the last n render iterations
     // used to track the damage for different buffer ages
     pub old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
-    // physical geometry of the toplevels from the last render iteration
-    pub last_toplevel_state: IndexMap<ToplevelId, Rectangle<i32, Physical>>,
+    // z_index and physical geometry of the toplevels from the last render iteration
+    pub last_toplevel_state: IndexMap<ToplevelId, (usize, Rectangle<i32, Physical>)>,
     // output geometry from the last render iteration
     // used to react on output geometry changes, like damaging
     // the whole output

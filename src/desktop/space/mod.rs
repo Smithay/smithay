@@ -530,9 +530,9 @@ impl Space {
         for old_toplevel in state
             .last_toplevel_state
             .iter()
-            .filter_map(|(id, geo)| {
+            .filter_map(|(id, state)| {
                 if !render_elements.iter().any(|e| ToplevelId::from(e) == *id) {
-                    Some(*geo)
+                    Some(state.1)
                 } else {
                     None
                 }
@@ -544,9 +544,9 @@ impl Space {
         }
 
         // lets iterate front to back and figure out, what new windows or unmoved windows we have
-        for element in &render_elements {
+        for (zindex, element) in render_elements.iter().enumerate() {
             let geo = element.geometry(self.id, output_scale);
-            let old_geo = state.last_toplevel_state.get(&ToplevelId::from(element)).cloned();
+            let old_state = state.last_toplevel_state.get(&ToplevelId::from(element)).cloned();
 
             // add the damage as reported by the element
             damage.extend(
@@ -556,10 +556,13 @@ impl Space {
             );
 
             // window was moved, resized or just appeared
-            if old_geo.map(|old_geo| old_geo != geo).unwrap_or(true) {
-                slog::trace!(self.logger, "Toplevel geometry changed, damaging previous and current geometry. previous geometry: {:?}, current geometry: {:?}", old_geo, geo);
+            if old_state
+                .map(|(old_zindex, old_geo)| old_geo != geo || zindex != old_zindex)
+                .unwrap_or(true)
+            {
+                slog::trace!(self.logger, "Toplevel geometry changed, damaging previous and current geometry. previous geometry: {:?}, current geometry: {:?}", old_state, geo);
                 // Add damage for the old position of the window
-                if let Some(old_geo) = old_geo {
+                if let Some((_, old_geo)) = old_state {
                     damage.push(old_geo);
                 }
                 damage.push(geo);
@@ -664,9 +667,10 @@ impl Space {
         // If rendering was successful capture the state and add the damage
         state.last_toplevel_state = render_elements
             .iter()
-            .map(|elem| {
+            .enumerate()
+            .map(|(zindex, elem)| {
                 let geo = elem.geometry(self.id, output_scale);
-                (ToplevelId::from(elem), geo)
+                (ToplevelId::from(elem), (zindex, geo))
             })
             .collect();
         state.old_damage.push_front(new_damage.clone());
