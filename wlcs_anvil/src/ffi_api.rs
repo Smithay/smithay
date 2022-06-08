@@ -1,7 +1,6 @@
 use std::os::raw::{c_char, c_int};
 
-use smithay::reexports::wayland_server::sys::server as ssys;
-use wayland_sys::{client::*, common::wl_fixed_t};
+use wayland_sys::{client::*, common::wl_fixed_t, server as ssys};
 
 #[repr(C)]
 pub struct WlcsExtensionDescriptor {

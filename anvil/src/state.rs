@@ -52,7 +52,8 @@ pub struct CalloopData<BackendData: 'static> {
     pub display: Display<AnvilState<BackendData>>,
 }
 
-struct ClientState;
+#[derive(Debug, Default)]
+pub struct ClientState;
 impl ClientData for ClientState {
     /// Notification that a client was initialized
     fn initialized(&self, _client_id: ClientId) {}
