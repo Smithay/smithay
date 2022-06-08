@@ -548,6 +548,13 @@ impl Space {
             let geo = element.geometry(self.id, output_scale);
             let old_geo = state.last_toplevel_state.get(&ToplevelId::from(element)).cloned();
 
+            // add the damage as reported by the element
+            damage.extend(
+                element
+                    .accumulated_damage(self.id, output_scale, Some((self, output)))
+                    .into_iter(),
+            );
+
             // window was moved, resized or just appeared
             if old_geo.map(|old_geo| old_geo != geo).unwrap_or(true) {
                 slog::trace!(self.logger, "Toplevel geometry changed, damaging previous and current geometry. previous geometry: {:?}, current geometry: {:?}", old_geo, geo);
@@ -556,13 +563,6 @@ impl Space {
                     damage.push(old_geo);
                 }
                 damage.push(geo);
-            } else {
-                // window stayed at its place
-                damage.extend(
-                    element
-                        .accumulated_damage(self.id, output_scale, Some((self, output)))
-                        .into_iter(),
-                );
             }
         }
 
