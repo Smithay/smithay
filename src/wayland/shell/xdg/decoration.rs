@@ -159,7 +159,6 @@ where
 
                 if decoration_guard.is_some() {
                     resource.post_error(
-                        dh,
                         zxdg_toplevel_decoration_v1::Error::AlreadyConstructed,
                         "toplevel decoration is already constructed",
                     );

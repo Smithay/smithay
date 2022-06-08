@@ -73,7 +73,7 @@ where
                 let shell = &data.wm_base;
 
                 if compositor::give_role(surface, XDG_TOPLEVEL_ROLE).is_err() {
-                    shell.post_error(dh, xdg_wm_base::Error::Role, "Surface already has a role.");
+                    shell.post_error(xdg_wm_base::Error::Role, "Surface already has a role.");
                     return;
                 }
 
@@ -143,7 +143,7 @@ where
                     ..Default::default()
                 };
                 if compositor::give_role(surface, XDG_POPUP_ROLE).is_err() {
-                    shell.post_error(dh, xdg_wm_base::Error::Role, "Surface already has a role.");
+                    shell.post_error(xdg_wm_base::Error::Role, "Surface already has a role.");
                     return;
                 }
 
@@ -205,7 +205,6 @@ where
 
                 if role.is_none() {
                     xdg_surface.post_error(
-                        dh,
                         xdg_surface::Error::NotConstructed,
                         "xdg_surface must have a role.",
                     );
@@ -214,7 +213,6 @@ where
 
                 if role != Some(XDG_TOPLEVEL_ROLE) && role != Some(XDG_POPUP_ROLE) {
                     data.wm_base.post_error(
-                        dh,
                         xdg_wm_base::Error::Role,
                         "xdg_surface must have a role of xdg_toplevel or xdg_popup.",
                     );
@@ -234,7 +232,6 @@ where
                 // which is a protocol error.
                 if compositor::get_role(surface).is_none() {
                     xdg_surface.post_error(
-                        dh,
                         xdg_surface::Error::NotConstructed,
                         "xdg_surface must have a role.",
                     );
@@ -279,7 +276,6 @@ where
                     Ok(Some(configure)) => configure,
                     Ok(None) => {
                         data.wm_base.post_error(
-                            dh,
                             xdg_wm_base::Error::InvalidSurfaceState,
                             format!("wrong configure serial: {}", <u32>::from(serial)),
                         );
@@ -287,7 +283,6 @@ where
                     }
                     Err(()) => {
                         data.wm_base.post_error(
-                            dh,
                             xdg_wm_base::Error::Role as u32,
                             "xdg_surface must have a role of xdg_toplevel or xdg_popup.",
                         );
@@ -308,26 +303,25 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, _object_id: ObjectId, _data: &XdgSurfaceUserData) {
-        // TODO
-        // if !self.wl_surface.as_ref().is_alive() {
-        //     // the wl_surface is destroyed, this means the client is not
-        //     // trying to change the role but it's a cleanup (possibly a
-        //     // disconnecting client), ignore the protocol check.
-        //     return;
-        // }
+    fn destroyed(_state: &mut D, _client_id: ClientId, _object_id: ObjectId, data: &XdgSurfaceUserData) {
+        if !data.wl_surface.alive() {
+            // the wl_surface is destroyed, this means the client is not
+            // trying to change the role but it's a cleanup (possibly a
+            // disconnecting client), ignore the protocol check.
+            return;
+        }
 
-        // if compositor::get_role(&data.wl_surface).is_none() {
-        //     // No role assigned to the surface, we can exit early.
-        //     return;
-        // }
+        if compositor::get_role(&data.wl_surface).is_none() {
+            // No role assigned to the surface, we can exit early.
+            return;
+        }
 
-        // if data.has_active_role.load(Ordering::Acquire) {
-        //     data.wm_base.as_ref().post_error(
-        //         xdg_wm_base::Error::Role as u32,
-        //         "xdg_surface was destroyed before its role object".into(),
-        //     );
-        // }
+        if data.has_active_role.load(Ordering::Acquire) {
+            data.wm_base.post_error(
+                xdg_wm_base::Error::Role,
+                "xdg_surface was destroyed before its role object",
+            );
+        }
     }
 }
 

@@ -456,7 +456,7 @@ where
         pointer: &WlPointer,
         request: wl_pointer::Request,
         data: &PointerUserData<D>,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
         match request {
@@ -480,7 +480,6 @@ where
                                         && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
                                     {
                                         pointer.post_error(
-                                            dh,
                                             wl_pointer::Error::Role,
                                             "Given wl_surface has another role.",
                                         );

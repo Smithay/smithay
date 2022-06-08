@@ -97,14 +97,13 @@ where
         token: &xdg_activation_token_v1::XdgActivationTokenV1,
         request: xdg_activation_token_v1::Request,
         data: &ActivationTokenData,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _: &mut DataInit<'_, D>,
     ) {
         match request {
             xdg_activation_token_v1::Request::SetSerial { serial, seat } => {
                 if data.constructed.load(Ordering::Relaxed) {
                     token.post_error(
-                        dh,
                         xdg_activation_token_v1::Error::AlreadyUsed,
                         "The activation token has already been constructed",
                     );
@@ -117,7 +116,6 @@ where
             xdg_activation_token_v1::Request::SetAppId { app_id } => {
                 if data.constructed.load(Ordering::Relaxed) {
                     token.post_error(
-                        dh,
                         xdg_activation_token_v1::Error::AlreadyUsed,
                         "The activation token has already been constructed",
                     );
@@ -130,7 +128,6 @@ where
             xdg_activation_token_v1::Request::SetSurface { surface } => {
                 if data.constructed.load(Ordering::Relaxed) {
                     token.post_error(
-                        dh,
                         xdg_activation_token_v1::Error::AlreadyUsed,
                         "The activation token has already been constructed",
                     );
@@ -143,7 +140,6 @@ where
             xdg_activation_token_v1::Request::Commit => {
                 if data.constructed.load(Ordering::Relaxed) {
                     token.post_error(
-                        dh,
                         xdg_activation_token_v1::Error::AlreadyUsed,
                         "The activation token has already been constructed",
                     );

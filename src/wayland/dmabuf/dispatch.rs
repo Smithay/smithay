@@ -152,14 +152,13 @@ where
                 modifier_hi,
                 modifier_lo,
             } => {
-                if !data.ensure_unused(dh, params) {
+                if !data.ensure_unused(params) {
                     return;
                 }
 
                 // Plane index should not be too large
                 if plane_idx as usize >= MAX_PLANES {
                     params.post_error(
-                        dh,
                         zwp_linux_buffer_params_v1::Error::PlaneIdx,
                         format!("Plane index {} is out of bounds", plane_idx),
                     );
@@ -171,7 +170,6 @@ where
                 // Is the index already set?
                 if planes.iter().any(|plane| plane.plane_idx == plane_idx) {
                     params.post_error(
-                        dh,
                         zwp_linux_buffer_params_v1::Error::PlaneSet,
                         format!("Plane index {} is already set.", plane_idx),
                     );
@@ -195,7 +193,7 @@ where
                 flags,
             } => {
                 // create_dmabuf performs an implicit ensure_unused function call.
-                if let Some(dmabuf) = data.create_dmabuf(dh, params, width, height, format, flags) {
+                if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags) {
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
                         match state.dmabuf_imported(dh, &DmabufGlobal { id: data.id }, dmabuf.clone()) {
                             Ok(_) => {
@@ -218,7 +216,6 @@ where
 
                             Err(ImportError::InvalidFormat) => {
                                 params.post_error(
-                                    dh,
                                     zwp_linux_buffer_params_v1::Error::InvalidFormat,
                                     "format and plane combination are not valid",
                                 );
@@ -244,7 +241,7 @@ where
             } => {
                 // Client is killed if the if statement is not taken.
                 // create_dmabuf performs an implicit ensure_unused function call.
-                if let Some(dmabuf) = data.create_dmabuf(dh, params, width, height, format, flags) {
+                if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags) {
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
                         match state.dmabuf_imported(dh, &DmabufGlobal { id: data.id }, dmabuf.clone()) {
                             Ok(_) => {
@@ -254,7 +251,6 @@ where
 
                             Err(ImportError::InvalidFormat) => {
                                 params.post_error(
-                                    dh,
                                     zwp_linux_buffer_params_v1::Error::InvalidFormat,
                                     "format and plane combination are not valid",
                                 );
@@ -264,7 +260,6 @@ where
                                 // Buffer import failed. The protocol documentation heavily implies killing the
                                 // client is the right thing to do here.
                                 params.post_error(
-                                    dh,
                                     zwp_linux_buffer_params_v1::Error::InvalidWlBuffer,
                                     "buffer import failed",
                                 );
@@ -274,7 +269,6 @@ where
                         // Buffer import failed. The protocol documentation heavily implies killing the
                         // client is the right thing to do here.
                         params.post_error(
-                            dh,
                             zwp_linux_buffer_params_v1::Error::InvalidWlBuffer,
                             "dmabuf global was destroyed on server",
                         );

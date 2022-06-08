@@ -1012,7 +1012,7 @@ impl ToplevelSurface {
     ///
     /// `xdg_shell` mandates that a client acks a configure before committing
     /// anything.
-    pub fn ensure_configured(&self, dh: &DisplayHandle) -> bool {
+    pub fn ensure_configured(&self) -> bool {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -1028,7 +1028,6 @@ impl ToplevelSurface {
                 .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.xdg_surface.post_error(
-                dh,
                 xdg_surface::Error::NotConstructed,
                 "Surface has not been configured yet.",
             );
@@ -1286,7 +1285,7 @@ impl PopupSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook(dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
+    pub(crate) fn commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
         let send_error_to = compositor::with_states(surface, |states| {
             let attributes = states
                 .data_map
@@ -1303,7 +1302,6 @@ impl PopupSurface {
         if let Some(handle) = send_error_to {
             let data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
             data.xdg_surface.post_error(
-                dh,
                 xdg_surface::Error::NotConstructed,
                 "Surface has not been configured yet.",
             );
@@ -1337,7 +1335,7 @@ impl PopupSurface {
     ///
     /// xdg_shell mandates that a client acks a configure before committing
     /// anything.
-    pub fn ensure_configured(&self, dh: &DisplayHandle) -> bool {
+    pub fn ensure_configured(&self) -> bool {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -1353,7 +1351,6 @@ impl PopupSurface {
                 .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.xdg_surface.post_error(
-                dh,
                 xdg_surface::Error::NotConstructed,
                 "Surface has not been configured yet.",
             );
