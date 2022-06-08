@@ -168,7 +168,7 @@ pub fn run_winit(log: Logger) {
     let start_time = std::time::Instant::now();
 
     #[cfg(feature = "xwayland")]
-    state.start_xwayland(&mut display);
+    state.start_xwayland();
 
     info!(log, "Initialization completed, starting the main loop.");
 
@@ -201,7 +201,7 @@ pub fn run_winit(log: Logger) {
 
         // drawing logic
         {
-            let mut backend = &mut state.backend_data.backend;
+            let backend = &mut state.backend_data.backend;
             let cursor_visible: bool;
 
             let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();

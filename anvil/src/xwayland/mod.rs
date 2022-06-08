@@ -3,7 +3,7 @@ use std::{collections::HashMap, convert::TryFrom, os::unix::net::UnixStream, syn
 use crate::AnvilState;
 use smithay::{
     desktop::{Kind, Space, Window, X11Surface},
-    reexports::wayland_server::{protocol::wl_surface::WlSurface, Client, Display, DisplayHandle, Resource},
+    reexports::wayland_server::{protocol::wl_surface::WlSurface, Client, DisplayHandle, Resource},
     utils::{x11rb::X11Source, Logical, Point},
     wayland::compositor::give_role,
 };
@@ -22,8 +22,8 @@ use x11rb::{
 };
 
 impl<BackendData: 'static> AnvilState<BackendData> {
-    pub fn start_xwayland(&mut self, display: &mut Display<AnvilState<BackendData>>) {
-        if let Err(e) = self.xwayland.start(self.handle.clone(), display) {
+    pub fn start_xwayland(&mut self) {
+        if let Err(e) = self.xwayland.start(self.handle.clone()) {
             error!(self.log, "Failed to start XWayland: {}", e);
         }
     }
@@ -126,7 +126,7 @@ impl X11State {
     fn handle_event(
         &mut self,
         event: Event,
-        dh: &mut DisplayHandle<'_>,
+        dh: &DisplayHandle,
         space: &mut Space,
     ) -> Result<(), ReplyOrIdError> {
         debug!(self.log, "X11: Got event {:?}", event);
@@ -231,7 +231,7 @@ impl X11State {
 }
 
 // Called when a WlSurface commits.
-pub fn commit_hook(surface: &WlSurface, dh: &mut DisplayHandle<'_>, state: &mut X11State, space: &mut Space) {
+pub fn commit_hook(surface: &WlSurface, dh: &DisplayHandle, state: &mut X11State, space: &mut Space) {
     if let Ok(client) = dh.get_client(surface.id()) {
         // Is this the Xwayland client?
         if client == state.client {
