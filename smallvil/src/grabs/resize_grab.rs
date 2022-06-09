@@ -53,7 +53,6 @@ impl ResizeSurfaceGrab {
         edges: ResizeEdge,
         initial_window_rect: Rectangle<i32, Logical>,
     ) -> Self {
-        let edges = edges.into();
         let initial_rect = initial_window_rect;
 
         ResizeSurfaceState::with(window.toplevel().wl_surface(), |state| {
@@ -208,7 +207,7 @@ impl ResizeSurfaceState {
     where
         F: FnOnce(&mut Self) -> T,
     {
-        compositor::with_states(&surface, |states| {
+        compositor::with_states(surface, |states| {
             states.data_map.insert_if_missing(RefCell::<Self>::default);
             let state = states.data_map.get::<RefCell<Self>>().unwrap();
 
