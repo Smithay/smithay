@@ -12,15 +12,29 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::wayland::shell::wlr_layer::{wlr_layer_shell_init, LayerShellRequest};
+//! use smithay::delegate_layer_shell;
+//! use smithay::wayland::shell::wlr_layer::{WlrLayerShellState, WlrLayerShellHandler, LayerShellRequest};
 //!
-//! # let mut display = wayland_server::Display::new();
-//! let (shell_state, _) = wlr_layer_shell_init(
-//!     &mut display,
-//!     // your implementation
-//!     |event: LayerShellRequest, dispatch_data| { /* handle the shell requests here */ },
+//! # struct State { layer_shell_state: WlrLayerShellState }
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! let layer_shell_state = WlrLayerShellState::new::<State, _>(
+//!     &display.handle(),
 //!     None  // put a logger if you want
 //! );
+//!
+//! // - Put your layer_shell_state into your `State`.
+//! // - And implement `LayerShellHandler
+//! impl WlrLayerShellHandler for State {
+//!     fn shell_state(&mut self) -> &mut WlrLayerShellState {
+//!         &mut self.layer_shell_state
+//!     }
+//!     fn request(&mut self, dh: &wayland_server::DisplayHandle, request: LayerShellRequest) {
+//!         # let _ =  (dh, request);
+//!         // your implementation
+//!     }
+//! }
+//! // let smithay implement wayland_server::DelegateDispatch
+//! delegate_layer_shell!(State);
 //!
 //! // You're now ready to go!
 //! ```
