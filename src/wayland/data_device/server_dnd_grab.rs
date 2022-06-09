@@ -281,7 +281,6 @@ fn handle_server_dnd<D>(
         Request::Finish => {
             if !data.active {
                 offer.post_error(
-                    dh,
                     wl_data_offer::Error::InvalidFinish as u32,
                     "Cannot finish a data offer that is no longer active.",
                 );
@@ -289,7 +288,6 @@ fn handle_server_dnd<D>(
             }
             if !data.accepted {
                 offer.post_error(
-                    dh,
                     wl_data_offer::Error::InvalidFinish,
                     "Cannot finish a data offer that has not been accepted.",
                 );
@@ -297,7 +295,6 @@ fn handle_server_dnd<D>(
             }
             if !data.dropped {
                 offer.post_error(
-                    dh,
                     wl_data_offer::Error::InvalidFinish,
                     "Cannot finish a data offer that has not been dropped.",
                 );
@@ -305,7 +302,6 @@ fn handle_server_dnd<D>(
             }
             if data.chosen_action.is_empty() {
                 offer.post_error(
-                    dh,
                     wl_data_offer::Error::InvalidFinish,
                     "Cannot finish a data offer with no valid action.",
                 );
@@ -326,11 +322,7 @@ fn handle_server_dnd<D>(
             if ![DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]
                 .contains(&preferred_action)
             {
-                offer.post_error(
-                    dh,
-                    wl_data_offer::Error::InvalidAction,
-                    "Invalid preferred action.",
-                );
+                offer.post_error(wl_data_offer::Error::InvalidAction, "Invalid preferred action.");
                 return;
             }
             let possible_actions = metadata.dnd_action & dnd_actions;

@@ -71,7 +71,6 @@ where
                     Ok(layer) => layer,
                     Err(layer) => {
                         shell.post_error(
-                            dh,
                             zwlr_layer_shell_v1::Error::InvalidLayer,
                             format!("invalid layer: {:?}", layer),
                         );
@@ -80,11 +79,7 @@ where
                 };
 
                 if compositor::give_role(&wl_surface, LAYER_SURFACE_ROLE).is_err() {
-                    shell.post_error(
-                        dh,
-                        zwlr_layer_shell_v1::Error::Role,
-                        "Surface already has a role.",
-                    );
+                    shell.post_error(zwlr_layer_shell_v1::Error::Role, "Surface already has a role.");
                     return;
                 }
 
@@ -105,7 +100,7 @@ where
                     states.cached_state.pending::<LayerSurfaceCachedState>().layer = layer;
                 });
 
-                compositor::add_pre_commit_hook(&wl_surface, |dh, surface| {
+                compositor::add_pre_commit_hook(&wl_surface, |_dh, surface| {
                     compositor::with_states(surface, |states| {
                         let mut guard = states
                             .data_map
@@ -118,7 +113,6 @@ where
 
                         if pending.size.w == 0 && !pending.anchor.anchored_horizontally() {
                             guard.surface.post_error(
-                                dh,
                                 zwlr_layer_surface_v1::Error::InvalidSize,
                                 "width 0 requested without setting left and right anchors",
                             );
@@ -127,7 +121,6 @@ where
 
                         if pending.size.h == 0 && !pending.anchor.anchored_vertically() {
                             guard.surface.post_error(
-                                dh,
                                 zwlr_layer_surface_v1::Error::InvalidSize,
                                 "height 0 requested without setting top and bottom anchors",
                             );
@@ -218,7 +211,7 @@ where
                         });
                     }
                     Err((err, msg)) => {
-                        layer_surface.post_error(dh, err, msg);
+                        layer_surface.post_error(err, msg);
                     }
                 };
             }
@@ -252,7 +245,7 @@ where
                         });
                     }
                     Err((err, msg)) => {
-                        layer_surface.post_error(dh, err, msg);
+                        layer_surface.post_error(err, msg);
                     }
                 };
             }
@@ -264,7 +257,7 @@ where
                         });
                     }
                     Err((err, msg)) => {
-                        layer_surface.post_error(dh, err, msg);
+                        layer_surface.post_error(err, msg);
                     }
                 };
             }
@@ -303,7 +296,6 @@ where
                     Some(configure) => configure,
                     None => {
                         layer_surface.post_error(
-                            dh,
                             zwlr_layer_surface_v1::Error::InvalidSurfaceState,
                             format!("wrong configure serial: {}", <u32>::from(serial)),
                         );

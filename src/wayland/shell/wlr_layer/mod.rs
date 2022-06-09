@@ -296,7 +296,7 @@ impl LayerSurface {
     /// Returns `true` if it was, if not, returns `false` and raise
     /// a protocol error to the associated layer surface. Also returns `false`
     /// if the surface is already destroyed.
-    pub fn ensure_configured(&self, dh: &DisplayHandle) -> bool {
+    pub fn ensure_configured(&self) -> bool {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -308,7 +308,6 @@ impl LayerSurface {
         });
         if !configured {
             self.shell_surface.post_error(
-                dh,
                 zwlr_layer_shell_v1::Error::AlreadyConstructed,
                 "layer_surface has never been configured",
             );

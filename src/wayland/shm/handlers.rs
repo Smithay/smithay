@@ -51,7 +51,7 @@ where
         shm: &WlShm,
         request: wl_shm::Request,
         _data: &(),
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         use wl_shm::{Error, Request};
@@ -62,14 +62,14 @@ where
         };
 
         if size <= 0 {
-            shm.post_error(dh, Error::InvalidStride, "invalid wl_shm_pool size");
+            shm.post_error(Error::InvalidStride, "invalid wl_shm_pool size");
             return;
         }
 
         let mmap_pool = match Pool::new(fd, size as usize, state.as_ref().log.clone()) {
             Ok(p) => p,
             Err(()) => {
-                shm.post_error(dh, wl_shm::Error::InvalidFd, format!("Failed to mmap fd {}", fd));
+                shm.post_error(wl_shm::Error::InvalidFd, format!("Failed to mmap fd {}", fd));
                 return;
             }
         };
@@ -101,7 +101,7 @@ where
         pool: &WlShmPool,
         request: wl_shm_pool::Request,
         data: &ShmPoolUserData,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         use self::wl_shm_pool::Request;
@@ -139,7 +139,7 @@ where
                 };
 
                 if let Some(message) = message {
-                    pool.post_error(dh, wl_shm::Error::InvalidStride, message);
+                    pool.post_error(wl_shm::Error::InvalidStride, message);
                     return;
                 }
 
@@ -147,7 +147,6 @@ where
                     WEnum::Value(format) => {
                         if !state.as_ref().formats.contains(&format) {
                             pool.post_error(
-                                dh,
                                 wl_shm::Error::InvalidFormat,
                                 format!("format {:?} not supported", format),
                             );
@@ -171,7 +170,6 @@ where
 
                     WEnum::Unknown(unknown) => {
                         pool.post_error(
-                            dh,
                             wl_shm::Error::InvalidFormat,
                             format!("unknown format 0x{:x}", unknown),
                         );
@@ -183,11 +181,11 @@ where
                 if let Err(err) = arc_pool.resize(size) {
                     match err {
                         ResizeError::InvalidSize => {
-                            pool.post_error(dh, wl_shm::Error::InvalidFd, "cannot shrink wl_shm_pool");
+                            pool.post_error(wl_shm::Error::InvalidFd, "cannot shrink wl_shm_pool");
                         }
 
                         ResizeError::MremapFailed => {
-                            pool.post_error(dh, wl_shm::Error::InvalidFd, "mremap failed");
+                            pool.post_error(wl_shm::Error::InvalidFd, "mremap failed");
                         }
                     }
                 }

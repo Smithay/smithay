@@ -362,17 +362,14 @@ where
         subcompositor: &WlSubcompositor,
         request: wl_subcompositor::Request,
         _data: &(),
-        handle: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             wl_subcompositor::Request::GetSubsurface { id, surface, parent } => {
                 if let Err(AlreadyHasRole) = PrivateSurfaceData::set_parent(&surface, &parent) {
-                    subcompositor.post_error(
-                        handle,
-                        wl_subcompositor::Error::BadSurface,
-                        "Surface already has a role.",
-                    );
+                    subcompositor
+                        .post_error(wl_subcompositor::Error::BadSurface, "Surface already has a role.");
                     return;
                 }
 
@@ -473,7 +470,7 @@ where
         subsurface: &WlSubsurface,
         request: wl_subsurface::Request,
         data: &SubsurfaceUserData,
-        handle: &DisplayHandle,
+        _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -485,7 +482,6 @@ where
             wl_subsurface::Request::PlaceAbove { sibling } => {
                 if let Err(()) = PrivateSurfaceData::reorder(&data.surface, Location::After, &sibling) {
                     subsurface.post_error(
-                        handle,
                         wl_subsurface::Error::BadSurface,
                         "Provided surface is not a sibling or parent.",
                     )
@@ -494,7 +490,6 @@ where
             wl_subsurface::Request::PlaceBelow { sibling } => {
                 if let Err(()) = PrivateSurfaceData::reorder(&data.surface, Location::Before, &sibling) {
                     subsurface.post_error(
-                        handle,
                         wl_subsurface::Error::BadSurface,
                         "Provided surface is not a sibling or parent.",
                     )

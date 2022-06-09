@@ -188,8 +188,7 @@ where
         Ok(t) => Ok(t),
         Err(()) => {
             // SIGBUS error occurred
-            // FIXME: This error should be emitted.
-            // buffer.post_error(display_handle, wl_shm::Error::InvalidFd, "Bad pool size.");
+            buffer.post_error(wl_shm::Error::InvalidFd, "Bad pool size.");
             Err(BufferAccessError::BadMap)
         }
     }
