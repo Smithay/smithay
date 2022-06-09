@@ -15,7 +15,7 @@ use wayland_server::{
         wl_keyboard::{self, KeyState as WlKeyState, KeymapFormat, WlKeyboard},
         wl_surface::WlSurface,
     },
-    Client, DelegateDispatch, Dispatch, DisplayHandle, Resource,
+    DelegateDispatch, Dispatch, DisplayHandle, Resource,
 };
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
@@ -499,19 +499,16 @@ impl KeyboardHandle {
     }
 
     /// Check if given client currently has keyboard focus
-    pub fn has_focus(&self, _client: &Client) -> bool {
-        todo!("has_focus");
-        // let client_id = client.id();
-
-        // self.arc
-        //     .internal
-        //     .lock()
-        //     .unwrap()
-        //     .focus
-        //     .as_ref()
-        //     .and_then(|f| f.id().client())
-        //     .map(|c| c.equals(client))
-        //     .unwrap_or(false)
+    pub fn has_focus(&self, client: &ClientId) -> bool {
+        self.arc
+            .internal
+            .lock()
+            .unwrap()
+            .focus
+            .as_ref()
+            .and_then(|(f, _)| f.client_id())
+            .map(|c| c == *client)
+            .unwrap_or(false)
     }
 
     /// Check if client of given resource currently has keyboard focus
