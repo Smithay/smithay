@@ -1,7 +1,7 @@
 use smithay::{
     backend::renderer::{Frame, ImportAll, Renderer},
     desktop::{
-        draw_window,
+        draw_window, draw_window_popups,
         space::{RenderElement, RenderError, Space},
     },
     utils::{Logical, Rectangle},
@@ -42,6 +42,18 @@ where
                     &[Rectangle::from_loc_and_size((0, 0), mode.size).to_f64()],
                 )?;
                 draw_window(
+                    renderer,
+                    frame,
+                    &window,
+                    scale,
+                    (0, 0),
+                    &[Rectangle::from_loc_and_size(
+                        (0, 0),
+                        mode.size.to_f64().to_logical(scale).to_i32_round(),
+                    )],
+                    log,
+                )?;
+                draw_window_popups(
                     renderer,
                     frame,
                     &window,
