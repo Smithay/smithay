@@ -122,7 +122,7 @@ impl DmabufHandler for AnvilState<UdevData> {
     fn dmabuf_imported(
         &mut self,
         _dh: &DisplayHandle,
-        global: &DmabufGlobal,
+        _global: &DmabufGlobal,
         dmabuf: Dmabuf,
     ) -> Result<(), ImportError> {
         self.backend_data
@@ -335,7 +335,7 @@ pub fn run_udev(log: Logger) {
         } else {
             state.space.refresh(&display.handle());
             state.popups.cleanup();
-            display.flush_clients();
+            display.flush_clients().unwrap();
         }
     }
 }
@@ -835,9 +835,9 @@ fn render_surface(
         let ptr_location = Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)); // - output_geometry.loc;
                                                                                       // draw the dnd icon if applicable
         {
-            if let Some(ref wl_surface) = dnd_icon.as_ref() {
+            if let Some(wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.alive() {
-                    elements.push(draw_dnd_icon((*wl_surface).clone(), ptr_location, logger).into());
+                    elements.push(draw_dnd_icon(wl_surface.clone(), ptr_location, logger).into());
                 }
             }
         }

@@ -180,6 +180,7 @@ where
 
     fn draw(
         &self,
+        _dh: &DisplayHandle,
         _renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
         scale: impl Into<Scale<f64>>,

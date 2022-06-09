@@ -35,7 +35,7 @@ impl<BackendData: 'static> AnvilState<BackendData> {
         self.handle
             .insert_source(source, move |event, _, data| {
                 if let Some(x11) = data.state.x11_state.as_mut() {
-                    match x11.handle_event(event, &mut data.display.handle(), &mut data.state.space) {
+                    match x11.handle_event(event, &data.display.handle(), &mut data.state.space) {
                         Ok(()) => {}
                         Err(err) => error!(log, "Error while handling X11 event: {}", err),
                     }

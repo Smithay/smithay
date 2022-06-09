@@ -32,10 +32,13 @@ use smithay::{backend::input::PointerMotionAbsoluteEvent, wayland::output::Outpu
 use crate::state::Backend;
 #[cfg(feature = "udev")]
 use smithay::backend::{
+    input::PointerMotionEvent,
+    /* TODO: tablet_manager
     input::{
         Device, DeviceCapability, PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
         TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
     },
+    */
     session::Session,
 };
 
@@ -181,7 +184,7 @@ impl<Backend> AnvilState<Backend> {
                         )
                         .is_some()
                     {
-                        keyboard.set_focus(dh, Some(&window.toplevel().wl_surface()), serial);
+                        keyboard.set_focus(dh, Some(window.toplevel().wl_surface()), serial);
                         return;
                     }
                 }
@@ -201,7 +204,7 @@ impl<Backend> AnvilState<Backend> {
                             )
                             .is_some()
                     {
-                        keyboard.set_focus(dh, Some(&layer.wl_surface()), serial);
+                        keyboard.set_focus(dh, Some(layer.wl_surface()), serial);
                         return;
                     }
                 }
@@ -212,7 +215,7 @@ impl<Backend> AnvilState<Backend> {
                 .surface_under(self.pointer_location, WindowSurfaceType::ALL)
             {
                 self.space.raise_window(&window, true);
-                keyboard.set_focus(dh, Some(&window.toplevel().wl_surface()), serial);
+                keyboard.set_focus(dh, Some(window.toplevel().wl_surface()), serial);
                 return;
             }
 
@@ -233,7 +236,7 @@ impl<Backend> AnvilState<Backend> {
                             )
                             .is_some()
                     {
-                        keyboard.set_focus(dh, Some(&layer.wl_surface()), serial);
+                        keyboard.set_focus(dh, Some(layer.wl_surface()), serial);
                     }
                 }
             };

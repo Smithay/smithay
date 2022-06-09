@@ -337,18 +337,18 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
         &mut self.compositor_state
     }
     fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
-        on_commit_buffer_handler(dh, &surface);
-        self.backend_data.early_import(&surface);
+        on_commit_buffer_handler(dh, surface);
+        self.backend_data.early_import(surface);
 
         #[cfg(feature = "xwayland")]
         if let Some(x11) = self.x11_state.as_mut() {
             super::xwayland::commit_hook(surface, dh, x11, &mut self.space);
         }
 
-        self.space.commit(&surface);
+        self.space.commit(surface);
         self.popups.commit(surface);
 
-        ensure_initial_configure(dh, &surface, &self.space, &mut self.popups)
+        ensure_initial_configure(dh, surface, &self.space, &mut self.popups)
     }
 }
 
