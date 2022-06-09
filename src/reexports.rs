@@ -1,5 +1,7 @@
 //! Reexports of crates, that are part of the public api, for convenience
 
+#[cfg(feature = "backend_vulkan")]
+pub use ash;
 pub use calloop;
 #[cfg(feature = "dbus")]
 pub use dbus;
