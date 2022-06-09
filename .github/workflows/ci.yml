@@ -59,21 +59,35 @@ jobs:
           path: target
           key: ${{ runner.os }}-build-rust_stable-check-${{ hashFiles('**/Cargo.toml') }}
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
       - name: Downgrade log
         uses: actions-rs/cargo@v1
         with:
           command: update
           args: -p log --precise 0.4.14
       - name: Clippy Smithay
+        if: ${{ !env.ACT }} # act has no token
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
+      - name: Clippy Smithay (ACT)
+        if: ${{ env.ACT }} # on act lets just run clippy normally
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
       - name: Clippy Anvil
+        if: ${{ !env.ACT }} # act has no token
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
+      - name: Clippy Anvil (ACT)
+        if: ${{ env.ACT }} # on act lets just run clippy normally
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
           args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
   
   check-minimal:
@@ -99,7 +113,7 @@ jobs:
             ~/.cargo/git
           key: ${{ runner.os }}-cargo-rust_nightly-${{ hashFiles('**/Cargo.toml') }}
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
       - name: Downgrade to minimal dependencies
         uses: actions-rs/cargo@v1
         with:
@@ -169,7 +183,7 @@ jobs:
           profile: minimal
       
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
 
       - name: Build cache
         uses: actions/cache@v2
@@ -180,7 +194,7 @@ jobs:
       - name: Build and install Libseat
         if: matrix.features == 'backend_session_libseat'
         run: |
-          sudo apt-get install meson ninja-build
+          sudo apt-get install -y meson ninja-build
           wget https://git.sr.ht/~kennylevinsen/seatd/archive/0.5.0.tar.gz -O libseat-source.tar.gz
           tar xf libseat-source.tar.gz
           cd seatd-0.5.0
@@ -236,7 +250,7 @@ jobs:
           profile: minimal
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libxkbcommon-dev libegl1-mesa-dev libwayland-dev
+        run: sudo apt-get update; sudo apt-get install -y libxkbcommon-dev libegl1-mesa-dev libwayland-dev
 
       - name: Build cache
         uses: actions/cache@v2
@@ -302,7 +316,7 @@ jobs:
           profile: minimal
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
 
       - name: Build cache
         uses: actions/cache@v2
@@ -370,7 +384,7 @@ jobs:
           profile: minimal
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install cmake libgtest-dev google-mock libboost-dev libxkbcommon-dev libwayland-dev
+        run: sudo apt-get update; sudo apt-get install -y cmake libgtest-dev google-mock libboost-dev libxkbcommon-dev libwayland-dev
 
       - name: Build cache
         uses: actions/cache@v2
