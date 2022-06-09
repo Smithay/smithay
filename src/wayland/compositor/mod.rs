@@ -31,19 +31,32 @@
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
-//! use smithay::wayland::compositor::compositor_init;
+//! use smithay::delegate_compositor;
+//! use smithay::wayland::compositor::{CompositorState, CompositorHandler};
 //!
-//! # let mut display = wayland_server::Display::new();
-//! // Call the init function:
-//! compositor_init(
-//!     &mut display,
-//!     |surface, dispatch_data| {
-//!         /*
-//!           Your handling of surface commits
-//!          */
-//!     },
-//!     None // put a logger here
+//! # struct State { compositor_state: CompositorState }
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! // Create the compositor state
+//! let compositor_state = CompositorState::new::<State, _>(
+//!     &display.handle(),
+//!     None // We don't add a logger in this example
 //! );
+//!
+//! // insert the CompositorState into your state
+//! // ..
+//!
+//! // implement the necessary traits
+//! impl CompositorHandler for State {
+//!    fn compositor_state(&mut self) -> &mut CompositorState {
+//!        &mut self.compositor_state
+//!    }
+//!
+//!    fn commit(&mut self, dh: &wayland_server::DisplayHandle, surface: &wayland_server::protocol::wl_surface::WlSurface) {
+//!        // called on every buffer commit.
+//!        // .. your implementation ..
+//!    }
+//! }
+//! delegate_compositor!(State);
 //!
 //! // You're now ready to go!
 //! ```
