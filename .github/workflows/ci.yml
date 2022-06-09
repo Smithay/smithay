@@ -109,7 +109,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: update
-          args: -p libdbus-sys
+          args: -p libdbus-sys -p arrayref -p freetype-sys
       - name: Check
         uses: actions-rs/cargo@v1
         with:
@@ -206,7 +206,7 @@ jobs:
     needs:
       - format
       - clippy-check
-      # - smithay-tests # Temporarily disable the requirement for smithay-tests
+      - smithay-tests
     strategy:
       fail-fast: false
 
@@ -259,7 +259,6 @@ jobs:
           args: --manifest-path "./smallvil/Cargo.toml""
 
   anvil-tests:
-    if: ${{ false }}  # disable for now
     needs:
       - format
       - clippy-check
@@ -326,7 +325,6 @@ jobs:
           args: --manifest-path "./anvil/Cargo.toml" --no-default-features --features "${{ matrix.features }}"
 
   anvil-wlcs:
-    if: ${{ false }}  # disable for now
     needs:
       - format
       - clippy-check
