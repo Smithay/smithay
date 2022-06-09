@@ -12,6 +12,7 @@ use smithay::{
         renderer::{ImportDma, ImportEgl},
     },
     delegate_dmabuf,
+    reexports::wayland_server::DisplayHandle,
     wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
 };
 use smithay::{
@@ -25,7 +26,7 @@ use smithay::{
         calloop::EventLoop,
         wayland_server::{
             protocol::{wl_output, wl_surface},
-            Display, DisplayHandle,
+            Display,
         },
     },
     utils::IsAlive,
@@ -90,6 +91,7 @@ pub fn run_winit(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();
 
+    #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     let (mut backend, mut winit) = match winit::init(log.clone()) {
         Ok(ret) => ret,
         Err(err) => {
