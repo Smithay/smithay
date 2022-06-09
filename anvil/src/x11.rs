@@ -159,6 +159,15 @@ pub fn run_x11(log: Logger) {
         image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
             .decode()
             .unwrap();
+    #[cfg(feature = "debug")]
+    let fps_texture = renderer
+        .import_memory(
+            &fps_image.to_rgba8(),
+            (fps_image.width() as i32, fps_image.height() as i32).into(),
+            false,
+        )
+        .expect("Unable to upload FPS texture");
+
     let data = X11Data {
         render: true,
         mode,
@@ -167,16 +176,7 @@ pub fn run_x11(log: Logger) {
         #[cfg(feature = "egl")]
         dmabuf_state,
         #[cfg(feature = "debug")]
-        fps_texture: {
-            renderer
-                .borrow_mut()
-                .import_memory(
-                    &fps_image.to_rgba8(),
-                    (fps_image.width() as i32, fps_image.height() as i32).into(),
-                    false,
-                )
-                .expect("Unable to upload FPS texture")
-        },
+        fps_texture,
         #[cfg(feature = "debug")]
         fps: fps_ticker::Fps::default(),
     };
