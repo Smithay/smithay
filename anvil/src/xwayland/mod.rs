@@ -192,7 +192,7 @@ impl X11State {
                             self.unpaired_surfaces.insert(id, (msg.window, location));
                         }
                         Ok(surface) => {
-                            info!(
+                            debug!(
                                 self.log,
                                 "X11 surface {:x?} corresponds to WlSurface {:x} = {:?}",
                                 msg.window,
