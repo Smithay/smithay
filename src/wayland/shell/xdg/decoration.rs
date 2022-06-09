@@ -8,31 +8,45 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::wayland::shell::xdg::decoration::{init_xdg_decoration_manager, XdgDecorationRequest};
+//! use smithay::{delegate_xdg_decoration, delegate_xdg_shell};
+//! use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellHandler};
+//! # use smithay::wayland::shell::xdg::{XdgShellState, XdgRequest};
+//! use smithay::wayland::shell::xdg::decoration::{XdgDecorationManager, XdgDecorationHandler};
 //! use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
 //!
-//! # let mut display = wayland_server::Display::new();
+//! # struct State { decoration_manager: XdgDecorationManager }
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //!
-//! init_xdg_decoration_manager(
-//!     &mut display,
-//!     |req, _ddata| match req {
-//!         XdgDecorationRequest::NewToplevelDecoration { toplevel } => {
-//!             let res = toplevel.with_pending_state(|state| {
-//!                   // Advertise server side decoration
-//!                 state.decoration_mode = Some(Mode::ServerSide);
-//!             });
-//!
-//!             if res.is_ok() {
-//!                 toplevel.send_configure();
-//!             }
-//!         }
-//!         XdgDecorationRequest::SetMode { .. } => {}
-//!         XdgDecorationRequest::UnsetMode { .. } => {}
-//!     },
+//! // Create a decoration manager
+//! let decoration_manager = XdgDecorationManager::new::<State, _>(
+//!     &display.handle(),
 //!     None,
 //! );
 //!
-
+//! // store that manager inside your state
+//! // ...
+//!
+//! // implement the necessary traits
+//! impl XdgShellHandler for State {
+//!     # fn xdg_shell_state(&mut self) -> &mut XdgShellState { unimplemented!() }
+//!     # fn request(&mut self, dh: &wayland_server::DisplayHandle, request: XdgRequest) { unimplemented!() }
+//!     // ...
+//! }
+//! impl XdgDecorationHandler for State {
+//!     fn new_decoration(&mut self, dh: &wayland_server::DisplayHandle, toplevel: ToplevelSurface) {
+//!         toplevel.with_pending_state(|state| {
+//!             // Advertise server side decoration
+//!             state.decoration_mode = Some(Mode::ServerSide);
+//!         });
+//!         toplevel.send_configure();
+//!     }
+//!     fn request_mode(&mut self, dh: &wayland_server::DisplayHandle, toplevel: ToplevelSurface, mode: Mode) { /* ... */ }
+//!     fn unset_mode(&mut self, dh: &wayland_server::DisplayHandle, toplevel: ToplevelSurface) { /* ... */ }
+//! }
+//! delegate_xdg_shell!(State);
+//! delegate_xdg_decoration!(State);
+//!
+//! // You are ready to go!  
 // TODO: Describe how to change decoration mode.
 
 use wayland_protocols::xdg::decoration::zv1::server::{
