@@ -924,6 +924,7 @@ macro_rules! custom_elements_internal {
 /// ## Example
 ///
 /// ```no_run
+/// # use wayland_server::{Display, DisplayHandle};
 /// use smithay::{
 ///     backend::renderer::{Texture, Renderer, ImportAll},
 ///     desktop::space::{SurfaceTree, Space, SpaceOutputTuple, RenderElement},
@@ -964,6 +965,7 @@ macro_rules! custom_elements_internal {
 /// # impl ImportAll for DummyRenderer {
 /// #    fn import_buffer(
 /// #        &mut self,
+/// #        dh: &DisplayHandle,
 /// #        buffer: &wl_buffer::WlBuffer,
 /// #        surface: Option<&SurfaceData>,
 /// #        damage: &[Rectangle<i32, Buffer>],
@@ -1062,6 +1064,7 @@ macro_rules! custom_elements_internal {
 ///#
 ///#    fn draw(
 ///#        &self,
+///#        dh: &DisplayHandle,
 ///#        _renderer: &mut R,
 ///#        frame: &mut <R as Renderer>::Frame,
 ///#        scale: f64,
@@ -1079,9 +1082,11 @@ macro_rules! custom_elements_internal {
 ///# let surface_tree: SurfaceTree = unsafe { std::mem::zeroed() };
 ///# let mut space = Space::new(None);
 ///# let age = 0;
+///# let display = Display::<()>::new().unwrap();
+///# let dh = display.handle();
 ///
 /// let elements = [CustomElem::from(surface_tree)];
-/// space.render_output(&mut renderer, &output, age, [0.0, 0.0, 0.0, 1.0], &elements);
+/// space.render_output(&dh, &mut renderer, &output, age, [0.0, 0.0, 0.0, 1.0], &elements);
 /// ```
 #[macro_export]
 macro_rules! custom_elements {
