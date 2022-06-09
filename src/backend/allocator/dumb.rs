@@ -7,7 +7,7 @@ use std::sync::Arc;
 use drm::buffer::Buffer as DrmBuffer;
 use drm::control::{dumbbuffer::DumbBuffer as Handle, Device as ControlDevice};
 
-use super::{Allocator, Buffer, Format, Fourcc, Modifier};
+use super::{format::get_bpp, Allocator, Buffer, Format, Fourcc, Modifier};
 use crate::backend::drm::device::{DrmDevice, DrmDeviceInternal, FdWrapper};
 use crate::utils::{Buffer as BufferCoords, Size};
 
@@ -45,7 +45,11 @@ impl<A: AsRawFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {
             return Err(drm::SystemError::InvalidArgument);
         }
 
-        let handle = self.create_dumb_buffer((width, height), fourcc, 32 /* TODO */)?;
+        let handle = self.create_dumb_buffer(
+            (width, height),
+            fourcc,
+            get_bpp(fourcc).ok_or(drm::SystemError::InvalidArgument)? as u32,
+        )?;
 
         Ok(DumbBuffer {
             fd: match &*self.internal {

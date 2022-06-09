@@ -8,6 +8,7 @@ use gbm::BufferObject;
 
 use crate::backend::allocator::{
     dmabuf::{AsDmabuf, Dmabuf},
+    format::{get_bpp, get_depth},
     gbm::GbmConvertError,
     Allocator, Format, Fourcc, Modifier, Slot, Swapchain,
 };
@@ -27,6 +28,17 @@ pub struct GbmBufferedSurface<A: Allocator<BufferObject<()>> + 'static, D: AsRaw
     drm: Arc<DrmSurface<D>>,
 }
 
+// we cannot simply pick the first supported format of the intersection of *all* formats, because:
+// - we do not want something like Abgr4444, which looses color information, if something better is available
+// - some formats might perform terribly
+// - we might need some work-arounds, if one supports modifiers, but the other does not
+//
+// So lets just pick `ARGB8888` or `XRGB8888` for now, they are widely supported.
+// Once we have proper color management and possibly HDR support,
+// we need to have a more sophisticated picker.
+// (Or maybe just select A/XRGB2101010, if available, we will see.)
+const SUPPORTED_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Xrgb8888];
+
 impl<A, D> GbmBufferedSurface<A, D>
 where
     A: Allocator<BufferObject<()>>,
@@ -39,38 +51,64 @@ where
     /// To successfully call this function, you need to have a renderer,
     /// which can render into a Dmabuf, and a gbm allocator that can produce
     /// buffers of a supported format for rendering.
-    #[allow(clippy::type_complexity)]
     pub fn new<L>(
         drm: DrmSurface<D>,
-        allocator: A,
-        mut renderer_formats: HashSet<Format>,
+        mut allocator: A,
+        renderer_formats: HashSet<Format>,
         log: L,
     ) -> Result<GbmBufferedSurface<A, D>, Error<A::Error>>
     where
         L: Into<Option<::slog::Logger>>,
     {
-        // we cannot simply pick the first supported format of the intersection of *all* formats, because:
-        // - we do not want something like Abgr4444, which looses color information
-        // - some formats might perform terribly
-        // - we might need some work-arounds, if one supports modifiers, but the other does not
-        //
-        // So lets just pick `ARGB8888` for now, it is widely supported.
-        // Once we have proper color management and possibly HDR support,
-        // we need to have a more sophisticated picker.
-        // (Or maybe just pick ARGB2101010, if available, we will see.)
-        let mut code = Fourcc::Argb8888;
-        let logger = crate::slog_or_fallback(log).new(o!("backend" => "drm_render"));
+        let mut error = None;
+        let drm = Arc::new(drm);
 
+        let log = crate::slog_or_fallback(log).new(o!("backend" => "drm_render"));
+        for format in SUPPORTED_FORMATS {
+            debug!(log, "Testing color format: {}", format);
+            match Self::new_internal(
+                drm.clone(),
+                allocator,
+                renderer_formats.clone(),
+                *format,
+                log.clone(),
+            ) {
+                Ok((current_fb, swapchain)) => {
+                    return Ok(GbmBufferedSurface {
+                        current_fb,
+                        pending_fb: None,
+                        queued_fb: None,
+                        next_fb: None,
+                        swapchain,
+                        drm,
+                    })
+                }
+                Err((alloc, err)) => {
+                    warn!(log, "Preferred format {} not available: {:?}", format, err);
+                    allocator = alloc;
+                    error = Some(err);
+                }
+            }
+        }
+        Err(error.unwrap())
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn new_internal(
+        drm: Arc<DrmSurface<D>>,
+        allocator: A,
+        mut renderer_formats: HashSet<Format>,
+        code: Fourcc,
+        logger: slog::Logger,
+    ) -> Result<(Slot<BufferObject<()>>, Swapchain<A, BufferObject<()>>), (A, Error<A::Error>)> {
         // select a format
-        let mut plane_formats = drm
-            .supported_formats(drm.plane())?
-            .iter()
-            .cloned()
-            .collect::<HashSet<_>>();
+        let mut plane_formats = match drm.supported_formats(drm.plane()) {
+            Ok(formats) => formats.iter().cloned().collect::<HashSet<_>>(),
+            Err(err) => return Err((allocator, err.into())),
+        };
 
-        // try non alpha variant if not available
         if !plane_formats.iter().any(|fmt| fmt.code == code) {
-            code = Fourcc::Xrgb8888;
+            return Err((allocator, Error::NoSupportedPlaneFormat));
         }
         plane_formats.retain(|fmt| fmt.code == code);
         renderer_formats.retain(|fmt| fmt.code == code);
@@ -86,9 +124,9 @@ where
         );
 
         if plane_formats.is_empty() {
-            return Err(Error::NoSupportedPlaneFormat);
+            return Err((allocator, Error::NoSupportedPlaneFormat));
         } else if renderer_formats.is_empty() {
-            return Err(Error::NoSupportedRendererFormat);
+            return Err((allocator, Error::NoSupportedRendererFormat));
         }
 
         let formats = {
@@ -118,9 +156,7 @@ where
         };
         debug!(logger, "Testing Formats: {:?}", formats);
 
-        let drm = Arc::new(drm);
         let modifiers = formats.iter().map(|x| x.modifier).collect::<Vec<_>>();
-
         let mode = drm.pending_mode();
 
         let mut swapchain: Swapchain<A, BufferObject<()>> = Swapchain::new(
@@ -132,7 +168,10 @@ where
         );
 
         // Test format
-        let buffer = swapchain.acquire().map_err(Error::GbmError)?.unwrap();
+        let buffer = match swapchain.acquire() {
+            Ok(buffer) => buffer.unwrap(),
+            Err(err) => return Err((swapchain.allocator, Error::GbmError(err))),
+        };
         let format = Format {
             code,
             modifier: buffer.modifier().unwrap(), // no guarantee
@@ -141,8 +180,14 @@ where
                                                   // It has no further use.
         };
 
-        let fb = attach_framebuffer(&drm, &*buffer)?;
-        let dmabuf = buffer.export()?;
+        let fb = match attach_framebuffer(&drm, &*buffer) {
+            Ok(fb) => fb,
+            Err(err) => return Err((swapchain.allocator, err)),
+        };
+        let dmabuf = match buffer.export() {
+            Ok(dmabuf) => dmabuf,
+            Err(err) => return Err((swapchain.allocator, err.into())),
+        };
         let handle = fb.fb;
         buffer.userdata().insert_if_missing(|| dmabuf);
         buffer.userdata().insert_if_missing(|| fb);
@@ -150,21 +195,14 @@ where
         match drm.test_buffer(handle, &mode, true) {
             Ok(_) => {
                 debug!(logger, "Choosen format: {:?}", format);
-                Ok(GbmBufferedSurface {
-                    current_fb: buffer,
-                    pending_fb: None,
-                    queued_fb: None,
-                    next_fb: None,
-                    swapchain,
-                    drm,
-                })
+                Ok((buffer, swapchain))
             }
             Err(err) => {
                 warn!(
                     logger,
                     "Mode-setting failed with automatically selected buffer format {:?}: {}", format, err
                 );
-                Err(err).map_err(Into::into)
+                Err((swapchain.allocator, err.into()))
             }
         }
     }
@@ -369,9 +407,8 @@ where
     } {
         Ok(fb) => fb,
         Err(source) => {
-            // We only support this as a fallback of last resort for ARGB8888 visuals,
-            // like xf86-video-modesetting does.
-            if drm::buffer::Buffer::format(bo) != Fourcc::Argb8888 || bo.handles()[1].is_some() {
+            // We only support this as a fallback of last resort like xf86-video-modesetting does.
+            if bo.handles()[1].is_some() {
                 return Err(Error::DrmError(DrmError::Access {
                     errmsg: "Failed to add framebuffer",
                     dev: drm.dev_path(),
@@ -379,7 +416,17 @@ where
                 }));
             }
             debug!(logger, "Failed to add framebuffer, trying legacy method");
-            drm.add_framebuffer(bo, 32, 32)
+            let fourcc = bo.format().unwrap();
+            let (depth, bpp) = get_depth(fourcc)
+                .and_then(|d| get_bpp(fourcc).map(|b| (d, b)))
+                .ok_or_else(|| {
+                    Error::DrmError(DrmError::Access {
+                        errmsg: "Unknown format for legacy framebuffer",
+                        dev: drm.dev_path(),
+                        source,
+                    })
+                })?;
+            drm.add_framebuffer(bo, depth as u32, bpp as u32)
                 .map_err(|source| DrmError::Access {
                     errmsg: "Failed to add framebuffer",
                     dev: drm.dev_path(),
