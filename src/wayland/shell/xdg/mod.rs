@@ -28,15 +28,30 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::wayland::shell::xdg::{xdg_shell_init, XdgRequest};
+//! use smithay::delegate_xdg_shell;
+//! use smithay::wayland::shell::xdg::{XdgShellState, XdgShellHandler, XdgRequest};
 //!
-//! # let mut display = wayland_server::Display::new();
-//! let (shell_state, _) = xdg_shell_init(
-//!     &mut display,
-//!     // your implementation
-//!     |event: XdgRequest, dispatch_data| { /* handle the shell requests here */ },
+//! # struct State { xdg_shell_state: XdgShellState }
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! let xdg_shell_state = XdgShellState::new::<State, _>(
+//!     &display.handle(),
 //!     None  // put a logger if you want
 //! );
+//!
+//! // insert the xdg_shell_state into your state
+//! // ...
+//!
+//! // implement the necessary traits
+//! impl XdgShellHandler for State {
+//!     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
+//!         &mut self.xdg_shell_state    
+//!     }
+//!
+//!     fn request(&mut self, dh: &wayland_server::DisplayHandle, request: XdgRequest) {
+//!         /* handle the shell requests here */
+//!     }
+//! }
+//! delegate_xdg_shell!(State);
 //!
 //! // You're now ready to go!
 //! ```
