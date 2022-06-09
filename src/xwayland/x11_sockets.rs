@@ -13,8 +13,9 @@ pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [Unix
         // if fails, try the next one
         if let Ok(lock) = X11Lock::grab(d, log.clone()) {
             // we got a lockfile, try and create the socket
-            if let Ok(sockets) = open_x11_sockets_for_display(d) {
-                return Ok((lock, sockets));
+            match open_x11_sockets_for_display(d) {
+                Ok(sockets) => return Ok((lock, sockets)),
+                Err(err) => warn!(log, "Failed to create sockets: {}", err),
             }
         }
     }

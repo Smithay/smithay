@@ -201,7 +201,7 @@ pub fn run_winit(log: Logger) {
 
         // drawing logic
         {
-            let mut backend = &mut state.backend_data.backend;
+            let backend = &mut state.backend_data.backend;
             let cursor_visible: bool;
 
             let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();
