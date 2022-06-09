@@ -29,7 +29,7 @@ smithay::custom_elements! {
 pub fn draw_cursor(
     surface: wl_surface::WlSurface,
     location: impl Into<Point<i32, Logical>>,
-    log: &Logger,
+    _log: &Logger,
 ) -> SurfaceTree {
     let mut position = location.into();
     position -= with_states(&surface, |states| {
@@ -111,7 +111,7 @@ where
 
     fn draw(
         &self,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
         scale: impl Into<Scale<f64>>,
