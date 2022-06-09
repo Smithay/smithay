@@ -24,7 +24,7 @@
 //!     backend::allocator::dmabuf::Dmabuf,
 //!     reexports::{wayland_server::protocol::wl_buffer::WlBuffer},
 //!     wayland::{
-//!         buffer::{Buffer, BufferHandler},
+//!         buffer::BufferHandler,
 //!         dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError}
 //!     },
 //! };
@@ -37,7 +37,7 @@
 //! // Smithay's "DmabufHandler" also requires the buffer management utilities, you need to implement
 //! // "BufferHandler".
 //! impl BufferHandler for State {
-//!     fn buffer_destroyed(&mut self, buffer: &Buffer) {
+//!     fn buffer_destroyed(&mut self, buffer: &wayland_server::protocol::wl_buffer::WlBuffer) {
 //!         // All renderers can handle buffer destruction at this point. Some parts of window management may
 //!         // also use this function.
 //!         //
@@ -51,7 +51,7 @@
 //!         &mut self.dmabuf_state
 //!     }
 //!
-//!     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
+//!     fn dmabuf_imported(&mut self, dh: &wayland_server::DisplayHandle, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
 //!         // Here you should import the dmabuf into your renderer.
 //!         //
 //!         // The return value indicates whether import was successful. If the return value is Err, then
