@@ -212,7 +212,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
     fn button(
         &mut self,
         data: &mut AnvilState<BackendData>,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &ButtonEvent,
     ) {
@@ -281,7 +281,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
     fn axis(
         &mut self,
         _data: &mut AnvilState<BackendData>,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         details: AxisFrame,
     ) {
@@ -329,7 +329,7 @@ impl FullscreenSurface {
 }
 
 impl<BackendData> BufferHandler for AnvilState<BackendData> {
-    fn buffer_destroyed(&mut self, buffer: &WlBuffer) {}
+    fn buffer_destroyed(&mut self, _buffer: &WlBuffer) {}
 }
 
 impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
@@ -721,7 +721,7 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
             LayerShellRequest::NewLayerSurface {
                 surface,
                 output: wl_output,
-                layer,
+                layer: _layer,
                 namespace,
             } => {
                 let output = wl_output
