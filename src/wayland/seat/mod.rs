@@ -9,16 +9,30 @@
 //!
 //! ```
 //! # extern crate wayland_server;
-//! use smithay::wayland::seat::Seat;
+//! use smithay::delegate_seat;
+//! use smithay::wayland::seat::{Seat, SeatState, SeatHandler};
 //!
-//! # let mut display = wayland_server::Display::new().unwrap();
+//! # struct State { seat_state: SeatState<Self> };
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
-//! // insert the seat:
-//! let seat = Seat::new(
+//! // create the seat
+//! let seat = Seat::<State>::new(
 //!     &display_handle,          // the display
-//!     "seat-0".into(),          // the name of the seat, will be advertized to clients
+//!     "seat-0",          // the name of the seat, will be advertized to clients
 //!     None                      // insert a logger here
 //! );
+//!
+//! let seat_state = SeatState::<State>::new();
+//! // add the seat state to your state
+//! // ...
+//!
+//! // implement the required traits
+//! impl SeatHandler for State {
+//!     fn seat_state(&mut self) -> &mut SeatState<Self> {
+//!         &mut self.seat_state
+//!     }
+//! }
+//! delegate_seat!(State);
 //! ```
 //!
 //! ### Run usage
@@ -230,18 +244,12 @@ impl<D> Seat<D> {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// # extern crate wayland_server;
     /// #
     /// # use smithay::wayland::seat::Seat;
     /// #
-    /// # let mut display = wayland_server::Display::new().unwrap();
-    /// # let display_handle = display.handle();
-    /// # let mut seat = Seat::new(
-    /// #     &display_handle,
-    /// #     "seat-0".into(),
-    /// #     None
-    /// # );
+    /// # let mut seat: Seat<()> = unimplemented!();
     /// let pointer_handle = seat.add_pointer(
     ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
     /// );
@@ -377,18 +385,11 @@ impl<D> Seat<D> {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
     /// # extern crate wayland_server;
     /// #
     /// # use smithay::wayland::seat::Seat;
-    /// #
-    /// # let mut display = wayland_server::Display::new().unwrap();
-    /// # let display_handle = display.handle();
-    /// # let (mut seat, seat_global) = Seat::new(
-    /// #     &display_handle,
-    /// #     "seat-0".into(),
-    /// #     None
-    /// # );
+    /// # let mut seat: Seat<()> = unimplemented!();
     /// let touch_handle = seat.add_touch();
     /// ```
     pub fn add_touch(&mut self) -> TouchHandle {
