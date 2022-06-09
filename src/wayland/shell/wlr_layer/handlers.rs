@@ -79,10 +79,7 @@ where
                 };
 
                 if compositor::give_role(&wl_surface, LAYER_SURFACE_ROLE).is_err() {
-                    shell.post_error(
-                        zwlr_layer_shell_v1::Error::Role,
-                        "Surface already has a role.",
-                    );
+                    shell.post_error(zwlr_layer_shell_v1::Error::Role, "Surface already has a role.");
                     return;
                 }
 
@@ -214,7 +211,7 @@ where
                         });
                     }
                     Err((err, msg)) => {
-                        layer_surface.post_error( err, msg);
+                        layer_surface.post_error(err, msg);
                     }
                 };
             }

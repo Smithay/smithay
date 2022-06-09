@@ -368,10 +368,8 @@ where
         match request {
             wl_subcompositor::Request::GetSubsurface { id, surface, parent } => {
                 if let Err(AlreadyHasRole) = PrivateSurfaceData::set_parent(&surface, &parent) {
-                    subcompositor.post_error(
-                        wl_subcompositor::Error::BadSurface,
-                        "Surface already has a role.",
-                    );
+                    subcompositor
+                        .post_error(wl_subcompositor::Error::BadSurface, "Surface already has a role.");
                     return;
                 }
 

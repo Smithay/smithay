@@ -322,10 +322,7 @@ fn handle_server_dnd<D>(
             if ![DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]
                 .contains(&preferred_action)
             {
-                offer.post_error(
-                    wl_data_offer::Error::InvalidAction,
-                    "Invalid preferred action.",
-                );
+                offer.post_error(wl_data_offer::Error::InvalidAction, "Invalid preferred action.");
                 return;
             }
             let possible_actions = metadata.dnd_action & dnd_actions;
