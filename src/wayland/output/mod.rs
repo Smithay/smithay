@@ -60,6 +60,7 @@
 //! output.add_mode(Mode { size: (1024, 768).into(), refresh: 60000 });
 //! ```
 
+pub mod wlr_configuration;
 pub mod xdg;
 
 use std::{
