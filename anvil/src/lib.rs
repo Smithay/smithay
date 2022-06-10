@@ -25,4 +25,4 @@ pub mod x11;
 #[cfg(feature = "xwayland")]
 pub mod xwayland;
 
-pub use state::AnvilState;
+pub use state::{AnvilState, CalloopData, ClientState};
