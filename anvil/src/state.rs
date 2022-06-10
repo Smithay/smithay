@@ -55,9 +55,9 @@ pub struct CalloopData<BackendData: 'static> {
 struct ClientState;
 impl ClientData for ClientState {
     /// Notification that a client was initialized
-    fn initialized(&self, client_id: ClientId) {}
+    fn initialized(&self, _client_id: ClientId) {}
     /// Notification that a client is disconnected
-    fn disconnected(&self, client_id: ClientId, reason: DisconnectReason) {}
+    fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
 
 #[derive(Debug)]
@@ -105,20 +105,20 @@ impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
-    fn send_selection(&mut self, _dh: &DisplayHandle, mime_type: String, fd: RawFd) {
+    fn send_selection(&mut self, _dh: &DisplayHandle, _mime_type: String, _fd: RawFd) {
         unreachable!("Anvil doesn't do server-side selections");
     }
 }
 impl<BackendData> ClientDndGrabHandler for AnvilState<BackendData> {
-    fn started(&mut self, source: Option<WlDataSource>, icon: Option<WlSurface>, seat: Seat<Self>) {
+    fn started(&mut self, _source: Option<WlDataSource>, icon: Option<WlSurface>, _seat: Seat<Self>) {
         self.dnd_icon = icon;
     }
-    fn dropped(&mut self, seat: Seat<Self>) {
+    fn dropped(&mut self, _seat: Seat<Self>) {
         self.dnd_icon = None;
     }
 }
 impl<BackendData> ServerDndGrabHandler for AnvilState<BackendData> {
-    fn send(&mut self, mime_type: String, fd: RawFd) {
+    fn send(&mut self, _mime_type: String, _fd: RawFd) {
         unreachable!("Anvil doesn't do server-side grabs");
     }
 }
@@ -168,9 +168,9 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
 
     fn destroy_activation(
         &mut self,
-        token: XdgActivationToken,
-        token_data: XdgActivationTokenData,
-        surface: WlSurface,
+        _token: XdgActivationToken,
+        _token_data: XdgActivationTokenData,
+        _surface: WlSurface,
     ) {
         // The request is cancelled
     }
@@ -178,7 +178,7 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
 delegate_xdg_activation!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgDecorationHandler for AnvilState<BackendData> {
-    fn new_decoration(&mut self, dh: &DisplayHandle, toplevel: ToplevelSurface) {
+    fn new_decoration(&mut self, _dh: &DisplayHandle, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ClientSide);

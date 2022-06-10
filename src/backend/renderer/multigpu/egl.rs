@@ -161,7 +161,7 @@ where
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         if let Some(ref mut renderer) = self.target.as_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), &buffer) {
+            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), buffer) {
                 let node = *renderer.node();
                 let texture = MultiTexture::from_surface(surface, dmabuf.size());
                 let texture_ref = texture.0.clone();
@@ -175,7 +175,7 @@ where
             }
         }
         for renderer in self.other_renderers.iter_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), &buffer) {
+            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), buffer) {
                 let node = *renderer.node();
                 let texture = MultiTexture::from_surface(surface, dmabuf.size());
                 let texture_ref = texture.0.clone();

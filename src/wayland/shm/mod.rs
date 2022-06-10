@@ -19,18 +19,38 @@
 //! extern crate wayland_server;
 //! extern crate smithay;
 //!
-//! use smithay::wayland::shm::init_shm_global;
+//! use smithay::wayland::buffer::BufferHandler;
+//! use smithay::wayland::shm::ShmState;
+//! use smithay::delegate_shm;
 //! use wayland_server::protocol::wl_shm::Format;
 //!
-//! # let mut display = wayland_server::Display::new();
-//! // Insert the ShmGlobal into your event loop
+//! # struct State { shm_state: ShmState };
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! // Create the ShmState.
 //! // Here, we specify that Yuyv and C8 format are supported
 //! // additionally to the standard Argb8888 and Xrgb8888.
-//! init_shm_global(
-//!     &mut display,
+//! let state = ShmState::new::<State, _>(
+//!     &display.handle(),
 //!     vec![Format::Yuyv, Format::C8],
 //!     None // we don't provide a logger here
 //! );
+//!
+//! // insert the shmstate into your compositor state.
+//! // ..
+//!
+//! // provide the necessary trait implementations
+//! impl BufferHandler for State {
+//!     fn buffer_destroyed(&mut self, buffer: &wayland_server::protocol::wl_buffer::WlBuffer) {
+//!         // All renderers can handle buffer destruction at this point.
+//!         // Some parts of window management may also use this function.
+//!     }
+//! }
+//! impl AsRef<ShmState> for State {
+//!     fn as_ref(&self) -> &ShmState {
+//!         &self.shm_state
+//!     }
+//! }
+//! delegate_shm!(State);
 //! ```
 //!
 //! Then, when you have a [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)
@@ -40,8 +60,7 @@
 //! ```
 //! # extern crate wayland_server;
 //! # extern crate smithay;
-//! # use smithay::wayland::buffer::Buffer;
-//! # fn wrap(buffer: &Buffer) {
+//! # fn wrap(buffer: &wayland_server::protocol::wl_buffer::WlBuffer) {
 //! use smithay::wayland::shm::{with_buffer_contents, BufferData, BufferAccessError};
 //!
 //! let content = with_buffer_contents(&buffer,

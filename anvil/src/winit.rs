@@ -12,6 +12,7 @@ use smithay::{
         renderer::{ImportDma, ImportEgl},
     },
     delegate_dmabuf,
+    reexports::wayland_server::DisplayHandle,
     wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
 };
 use smithay::{
@@ -25,7 +26,7 @@ use smithay::{
         calloop::EventLoop,
         wayland_server::{
             protocol::{wl_output, wl_surface},
-            Display, DisplayHandle,
+            Display,
         },
     },
     utils::IsAlive,
@@ -62,7 +63,7 @@ impl DmabufHandler for AnvilState<WinitData> {
     fn dmabuf_imported(
         &mut self,
         _dh: &DisplayHandle,
-        global: &DmabufGlobal,
+        _global: &DmabufGlobal,
         dmabuf: Dmabuf,
     ) -> Result<(), ImportError> {
         self.backend_data
@@ -90,6 +91,7 @@ pub fn run_winit(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();
 
+    #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     let (mut backend, mut winit) = match winit::init(log.clone()) {
         Ok(ret) => ret,
         Err(err) => {
@@ -120,21 +122,23 @@ pub fn run_winit(log: Logger) {
                 .decode()
                 .unwrap();
 
+        #[cfg(feature = "debug")]
+        let fps_texture = backend
+            .renderer()
+            .import_memory(
+                &fps_image.to_rgba8(),
+                (fps_image.width() as i32, fps_image.height() as i32).into(),
+                false,
+            )
+            .expect("Unable to upload FPS texture");
+
         WinitData {
             backend,
             #[cfg(feature = "egl")]
             dmabuf_state,
             full_redraw: 0,
             #[cfg(feature = "debug")]
-            fps_texture: backend
-                .borrow_mut()
-                .renderer()
-                .import_memory(
-                    &fps_image.to_rgba8(),
-                    (fps_image.width() as i32, fps_image.height() as i32).into(),
-                    false,
-                )
-                .expect("Unable to upload FPS texture"),
+            fps_texture,
             #[cfg(feature = "debug")]
             fps: fps_ticker::Fps::default(),
         }
@@ -176,7 +180,7 @@ pub fn run_winit(log: Logger) {
         if winit
             .dispatch_new_events(|event| match event {
                 WinitEvent::Resized { size, .. } => {
-                    let mut dh = display.handle();
+                    let dh = display.handle();
                     // We only have one output
                     let output = state.space.outputs().next().unwrap().clone();
                     state.space.map_output(&output, (0, 0));
@@ -186,10 +190,10 @@ pub fn run_winit(log: Logger) {
                     };
                     output.change_current_state(Some(mode), None, None, None);
                     output.set_preferred(mode);
-                    crate::shell::fixup_positions(&mut dh, &mut state.space);
+                    crate::shell::fixup_positions(&dh, &mut state.space);
                 }
                 WinitEvent::Input(event) => {
-                    state.process_input_event_windowed(&mut display.handle(), event, OUTPUT_NAME)
+                    state.process_input_event_windowed(&display.handle(), event, OUTPUT_NAME)
                 }
                 _ => (),
             })

@@ -27,10 +27,12 @@
 //! ```
 //! # extern crate wayland_server;
 //! # extern crate smithay;
+//! use smithay::delegate_output;
 //! use smithay::wayland::output::{Output, PhysicalProperties, Scale, Mode};
 //! use wayland_server::protocol::wl_output;
 //!
-//! # let mut display = wayland_server::Display::new().unwrap();
+//! # struct State;
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! // Create the Output with given name and physical properties.
 //! let output = Output::new(
@@ -44,7 +46,7 @@
 //!     None // insert a logger here
 //! );
 //! // create a global, if you want to advertise it to clients
-//! let _global = output.create_global(
+//! let _global = output.create_global::<State>(
 //!     &display_handle,      // the display
 //! ); // you can drop the global, if you never intend to destroy it.
 //! // Now you can configure it
@@ -59,6 +61,8 @@
 //! // add other supported modes
 //! output.add_mode(Mode { size: (800, 600).into(), refresh: 60000 });
 //! output.add_mode(Mode { size: (1024, 768).into(), refresh: 60000 });
+//!
+//! delegate_output!(State);
 //! ```
 
 mod handlers;

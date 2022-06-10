@@ -5,7 +5,7 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use wayland_server::protocol::wl_surface::WlSurface;
+//! use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 //! use smithay::{
 //!     delegate_xdg_activation,
 //!     wayland::xdg_activation::{XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData}
@@ -22,6 +22,7 @@
 //!
 //!     fn request_activation(
 //!         &mut self,
+//!         dh: &DisplayHandle,
 //!         token: XdgActivationToken,
 //!         token_data: XdgActivationTokenData,
 //!         surface: WlSurface

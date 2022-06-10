@@ -212,7 +212,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
     fn button(
         &mut self,
         data: &mut AnvilState<BackendData>,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &ButtonEvent,
     ) {
@@ -281,7 +281,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
     fn axis(
         &mut self,
         _data: &mut AnvilState<BackendData>,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         details: AxisFrame,
     ) {
@@ -329,7 +329,7 @@ impl FullscreenSurface {
 }
 
 impl<BackendData> BufferHandler for AnvilState<BackendData> {
-    fn buffer_destroyed(&mut self, buffer: &WlBuffer) {}
+    fn buffer_destroyed(&mut self, _buffer: &WlBuffer) {}
 }
 
 impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
@@ -337,18 +337,18 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
         &mut self.compositor_state
     }
     fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
-        on_commit_buffer_handler(dh, &surface);
-        self.backend_data.early_import(&surface);
+        on_commit_buffer_handler(dh, surface);
+        self.backend_data.early_import(surface);
 
         #[cfg(feature = "xwayland")]
         if let Some(x11) = self.x11_state.as_mut() {
             super::xwayland::commit_hook(surface, dh, x11, &mut self.space);
         }
 
-        self.space.commit(&surface);
+        self.space.commit(surface);
         self.popups.commit(surface);
 
-        ensure_initial_configure(dh, &surface, &self.space, &mut self.popups)
+        ensure_initial_configure(dh, surface, &self.space, &mut self.popups)
     }
 }
 
@@ -721,7 +721,7 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
             LayerShellRequest::NewLayerSurface {
                 surface,
                 output: wl_output,
-                layer,
+                layer: _layer,
                 namespace,
             } => {
                 let output = wl_output
