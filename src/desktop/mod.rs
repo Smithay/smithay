@@ -2,7 +2,7 @@
 //!
 //! This module contains helpers to organize and interact with desktop-style shells.
 //!
-//! It is therefore a lot more opinionated than for example the [xdg-shell handler](crate::wayland::shell::xdg::xdg_shell_init)
+//! It is therefore a lot more opinionated than for example the [xdg-shell handler](crate::wayland::shell::xdg::XdgShellHandler)
 //! and tightly integrates with some protocols (e.g. xdg-shell).
 //!
 //! The usage of this module is therefor entirely optional and depending on your use-case you might also only want

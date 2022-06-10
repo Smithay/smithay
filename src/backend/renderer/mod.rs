@@ -302,7 +302,7 @@ pub trait ImportMem: Renderer {
     /// Anything beyond will be truncated, if the buffer is too small an error will be returned.
     ///
     /// This function *may* error, if (but not limited to):
-    /// - The texture was not created using either [`ImportMem::import_shm_buffer`] or [`ImportMem::import_memory`].
+    /// - The texture was not created using either [`ImportMemWl::import_shm_buffer`] or [`ImportMem::import_memory`].
     ///   External textures imported by other means (e.g. via ImportDma) may not be writable. This property is defined
     ///   by the implementation.
     /// - The region is out of bounds of the initial size the texture was created with. Implementations are not required
@@ -376,7 +376,7 @@ pub trait ImportEgl: Renderer {
 pub trait ImportDmaWl: ImportDma {
     /// Import a given dmabuf-based buffer into the renderer (see [`buffer_type`]).
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.

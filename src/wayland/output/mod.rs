@@ -11,7 +11,7 @@
 //!
 //! You need to instantiate an [`Output`].
 //! To advertise a new output global to clients you then need to use [`Output::create_global`].
-//! The resulting `Global<WlOutput>` can later be destroyed again to stop advertising it
+//! The resulting `GlobalId` can later be destroyed again to stop advertising it
 //! without destroying it's state. E.g. in case the matching physical output got disabled at runtime.
 //!
 //! You can use the returned [`Output`] to change
@@ -20,7 +20,7 @@
 //!
 //! Additional protocols may piggy-back on this type.
 //! E.g. to also advertise an xdg-output for every wl-output you can use
-//! [`xdg::init_xdg_output_manager`].
+//! [`OutputManagerState::new_with_xdg_output`].
 //!
 //! You can attach additional properties to your `Output`s by using [`Output::user_data`].
 //!

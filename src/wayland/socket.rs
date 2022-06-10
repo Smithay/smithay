@@ -4,7 +4,7 @@
 //! socket. This is one of the ways a Wayland compositor allows clients to discover the compositor.
 //!
 //! The callback provides a [`UnixStream`] that represents the client connection. You need to create the
-//! client using this stream by calling [`Display::insert_client`](wayland_server::Display::insert_client).
+//! client using this stream by calling [`DisplayHandle::insert_client`](wayland_server::DisplayHandle::insert_client).
 //!
 //! # Example usage
 //!
@@ -108,7 +108,7 @@ impl EventSource for ListeningSocketSource {
     /// A stream to the new client.
     ///
     /// You must register the  client using the stream by calling
-    /// [`Display::insert_client`](wayland_server::Display::insert_client).
+    /// [`DisplayHandle::insert_client`](wayland_server::DisplayHandle::insert_client).
     type Event = UnixStream;
     type Metadata = ();
     type Ret = ();

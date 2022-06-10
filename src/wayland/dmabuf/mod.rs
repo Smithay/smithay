@@ -8,14 +8,15 @@
 //!
 //! To setup the dmabuf global, you will need to provide 2 things:
 //!
-//! - a list of the dmabuf formats you wish to support
-//! - a closure to test if a dmabuf buffer can be imported by your renderer
+//! - a list of the dmabuf formats you wish to support when creating the `Global` through `DmabufState::create_global`
+//! - an implementation of `DmabufHandler` to test if a dmabuf buffer can be imported by your renderer
 //!
 //! The list of supported formats is a `Vec<Format>`, where you will enter all the (code, modifier) pairs you
 //! support. You can typically receive a list of supported formats for one renderer by calling
 //! [`ImportDma::dmabuf_formats`](crate::backend::renderer::ImportDma::dmabuf_formats).
 //!
-//! Accessing a [`Dmabuf`] associated with a [`Buffer`] may be achieved using [`get_dmabuf`].
+//! Accessing a [`Dmabuf`] associated with a [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)
+//! may be achieved using [`get_dmabuf`].
 //!
 //! ```no_run
 //! # extern crate wayland_server;
