@@ -19,13 +19,14 @@ use super::{
 /// the underlying surfaces will no longer receive classic pointer event, but rather special events.
 ///
 /// This trait is the interface to intercept regular pointer events and change them as needed, its
-/// interface mimics the [`PointerHandle`] interface.
+/// interface mimics the [`PointerHandle`](super::PointerHandle) interface.
 ///
-/// Any interactions with [`PointerHandle`] should be done using [`PointerInnerHandle`],
-/// as handle is borrowed/locked before grab methods are called,
-/// so calling methods on [`PointerHandle`] would result in a deadlock.
+/// Any interactions with [`PointerHandle`](super::PointerHandle)
+/// should be done using [`PointerInnerHandle`], as handle is borrowed/locked before grab methods are called,
+/// so calling methods on [`PointerHandle`](super::PointerHandle) would result in a deadlock.
 ///
-/// If your logic decides that the grab should end, both [`PointerInnerHandle`] and [`PointerHandle`] have
+/// If your logic decides that the grab should end, both [`PointerInnerHandle`]
+/// and [`PointerHandle`](super::PointerHandle) have
 /// a method to change it.
 ///
 /// When your grab ends (either as you requested it or if it was forcefully cancelled by the server),

@@ -5,9 +5,8 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this handler, simple use the [`wlr_layer_shell_init`] function provided in this module.
-//! You need to provide a closure that will be invoked whenever some action is required from you,
-//! are represented by the [`LayerShellRequest`] enum.
+//! To initialize this handler, create the [`WlrLayerShellState`], store it inside your `State` and
+//! implement the [`WlrLayerShellHandler`], as shown in this example:
 //!
 //! ```no_run
 //! # extern crate wayland_server;

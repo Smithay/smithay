@@ -4,15 +4,24 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this implementation, use the [`viewporter_init`]
-//! method provided by this module.
+//! To initialize this implementation, create [`ViewporterState`], store it in your `State` struct and
+//! implement the required traits, as shown in this example:
 //!
 //! ```
-//! use smithay::wayland::viewporter::viewporter_init;
+//! use smithay::wayland::viewporter::ViewporterState;
+//! use smithay::delegate_viewporter;
 //!
-//! # let mut display = wayland_server::Display::new();
-//! // Call the init function:
-//! viewporter_init(&mut display);
+//! # struct State;
+//! # let mut display = wayland_server::Display::<State>::new();
+//!
+//! // Create the viewporter state:
+//! let viewporter_state = ViewporterState::new(
+//!     &display.handle(), // the display
+//!     None // provide a logger, if you want
+//! );
+//!
+//! // implement Dispatch for the Viewporter types
+//! delegate_viewporter!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -47,6 +56,7 @@ use crate::utils::{IsAlive, Logical, Rectangle, Size};
 
 use super::compositor::{self, with_states, Cacheable, SurfaceData};
 
+/// State of the wp_viewporter Global
 #[derive(Debug)]
 pub struct ViewporterState {
     dh: DisplayHandle,
@@ -261,6 +271,7 @@ where
     }
 }
 
+/// State of a single viewport attached to a surface
 #[derive(Debug)]
 pub struct ViewportState {
     surface: wl_surface::WlSurface,

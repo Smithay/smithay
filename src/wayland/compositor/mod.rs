@@ -24,9 +24,8 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this implementation, use the [`compositor_init`]
-//! method provided by this module. It'll require you to first define as few things, as shown in
-//! this example:
+//! To initialize this implementation create the [`CompositorState`], store it inside your `State` struct
+//! and implement the [`CompositorHandler`], as shown in this example:
 //!
 //! ```
 //! # extern crate wayland_server;
@@ -73,19 +72,25 @@
 //! On commit of a surface several steps are taken to update the state of the surface. Actions
 //! are taken by smithay in the following order:
 //!
-//! 1. Commit hooks registered to this surface are invoked. Such hooks can be registered using
-//!    the [`add_commit_hook`] function. They are typically used by protocol extensions that
+//! 1. Pre Commit hooks registered to this surface are invoked. Such hooks can be registered using
+//!    the [`add_pre_commit_hook`] function. They are typically used by protocol extensions that
 //!    add state to a surface and need to check on commit that client did not request an
 //!    illegal state before it is applied on commit.
 //! 2. The pending state is either applied and made current, or cached for later application
 //!    is the surface is a synchronize subsurface. If the current state is applied, state
 //!    of the synchronized children subsurface are applied as well at this point.
-//! 3. Your user callback provided to [`compositor_init`] is invoked, so that you can access
+//! 3. Post Commit hooks registered to this surface are invoked. Such hooks can be registered using
+//!    the [`add_post_commit_hook`] function. They are typically used by abstractions that further process
+//!    the state.
+//! 4. Your implementation of [`CompositorHandler::commit`] is invoked, so that you can access
 //!    the new current state of the surface. The state of sync children subsurfaces of your
 //!    surface may have changed as well, so this is the place to check it, using functions
 //!    like [`with_surface_tree_upward`] or [`with_surface_tree_downward`]. On the other hand,
 //!    if the surface is a sync subsurface, its current state will note have changed as
 //!    the result of that commit. You can check if it is using [`is_sync_subsurface`].
+//! 5. If the surface is destroyed, destruction hooks are invoked. Such hooks can be registered
+//!    using the [`add_destruction_hook`] function. They are typically used to cleanup associated
+//!    state.
 //!
 //! ### Surface roles
 //!

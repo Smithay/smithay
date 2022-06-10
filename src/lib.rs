@@ -30,10 +30,11 @@
 //! Using a callback-heavy structure however poses the question of state management: a lot of state needs
 //! to be accessed from many different callbacks. To avoid an heavy requirement on shared pointers such
 //! as `Rc` and `Arc` and the synchronization they require, [`calloop`] allows you to provide a mutable
-//! reference to a value, that will be passed down to most callbacks (possibly under the form of a
-//! [`DispatchData`](::wayland_server::DispatchData) for wayland-related callbacks). This structure provides
+//! reference to a value, that will be passed down to most callbacks. This structure provides
 //! easy access to a centralized mutable state without synchronization (as the callback invocation is
 //! *always* sequential), and is the recommended way to of structuring your compositor.
+//! TODO: Add a section here how this links to wayland-server's `Dispatch` and link to the wayland-server
+//! docs, once they exist for 0.30.
 //!
 //! Several objects, in particular on the wayland clients side, can exist as multiple instances where each
 //! instance has its own associated state. For these situations, these objects provide an interface allowing

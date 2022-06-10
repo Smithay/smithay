@@ -7,17 +7,15 @@
 //!
 //! Most utilities provided in this module work in the same way:
 //!
-//! - An `init` function or method will take the wayland display as argument and
-//!   insert one or more globals into it.
-//! - If you want to remove a previously inserted global, just call the
-//!   `destroy()` method on the associated `Global`. If you don't plan to
-//!   destroy the global at all, you don't need to bother keeping the
-//!   `Global` around.
-//!
-//! Some of these modules require you to provide a callback that is invoked for some
-//! client requests that your logic needs to handle. In most cases these callback
-//! are given as input an enum specifying the event that occurred, as well as the
-//! [`DispatchData`](wayland_server::DispatchData) from `wayland_server`.
+//! - A module specific `*State` struct will take the wayland display as argument and
+//!   insert one or more globals into it through its constructor.
+//! - The module-`State` will have to be stored inside your global compositor state.
+//!   (The same type you parametrized [`wayland_server::Display`] over.)
+//! - You need to implement a module-specific `*Handler`-trait for your compositor state.
+//!   This implementation will be called when wayland events require custom handling.
+//! - Call the matching `delegate_*!` macro from smithay on your state to implement
+//!   some required `wayland_server` traits.
+//! - If you want to remove a previously inserted global, just drop the `*State`.
 //!
 //! ## Provided helpers
 //!
@@ -46,11 +44,6 @@
 //! clients about whether they are currently visible or not (allowing them to stop drawing if they
 //! are not, for example).
 //!
-//! ### Experimental helpers
-//!
-//! The [`explicit_synchronization`] module provides helpers to give clients fine-grained control
-//! over the synchronization for accessing graphics buffer with the compositor, for low-latency
-//! rendering. It is however still experimental, and largely untested.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
