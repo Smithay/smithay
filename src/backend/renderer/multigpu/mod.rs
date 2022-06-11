@@ -349,7 +349,7 @@ impl<A: GraphicsApi> GpuManager<A> {
         <<A::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
     {
         use crate::{
-            backend::renderer::utils::SurfaceState,
+            backend::renderer::utils::RendererSurfaceState,
             wayland::compositor::{with_surface_tree_upward, Damage, SurfaceAttributes, TraversalAction},
         };
 
@@ -358,7 +358,7 @@ impl<A: GraphicsApi> GpuManager<A> {
             surface,
             (),
             |_surface, states, _| {
-                if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+                if let Some(data) = states.data_map.get::<RefCell<RendererSurfaceState>>() {
                     let mut data_ref = data.borrow_mut();
                     let data = &mut *data_ref;
                     let attributes = states.cached_state.current::<SurfaceAttributes>();

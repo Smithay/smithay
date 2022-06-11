@@ -178,7 +178,6 @@ where
                 } else {
                     if offset.is_some() {
                         surface.post_error(
-                            handle,
                             wl_surface::Error::InvalidOffset,
                             "Passing non-zero x,y is protocol violation since versions 5",
                         );
