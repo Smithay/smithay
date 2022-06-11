@@ -36,16 +36,14 @@ pub struct RendererSurfaceState {
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
     pub(crate) buffer_delta: Option<Point<i32, Logical>>,
-    /// Did user acknowledge new buffer delta
-    /// It is set to true when user calls `take_buffer_delta`
-    /// It is reset to false when new delta appears
-    buffer_delta_ack: bool,
     pub(crate) buffer: Option<WlBuffer>,
     pub(crate) damage: VecDeque<Vec<Rectangle<i32, BufferCoord>>>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     #[cfg(feature = "desktop")]
     pub(crate) space_seen: HashMap<crate::desktop::space::SpaceOutputHash, usize>,
+
+    accumulated_buffer_delta: Point<i32, Logical>,
 }
 
 const MAX_DAMAGE: usize = 4;
@@ -53,7 +51,10 @@ const MAX_DAMAGE: usize = 4;
 impl RendererSurfaceState {
     pub(crate) fn update_buffer(&mut self, dh: &DisplayHandle, attrs: &mut SurfaceAttributes) {
         self.buffer_delta = attrs.buffer_delta.take();
-        self.buffer_delta_ack = false;
+
+        if let Some(delta) = self.buffer_delta {
+            self.accumulated_buffer_delta += delta;
+        }
 
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer(buffer)) => {
@@ -156,27 +157,16 @@ impl RendererSurfaceState {
         self.buffer.as_ref()
     }
 
-    /// Location of the new buffer relative to the previous one
-    ///
-    /// The x and y arguments specify the location of the new pending buffer's upper left corner,
-    /// relative to the current buffer's upper left corner, in surface-local coordinates.
+    /// Location of the buffer relative to the previous call of take_accumulated_buffer_delta
     ///
     /// In other words, the x and y, combined with the new surface size define in which directions
-    /// the surface's size changes.
-    pub fn buffer_delta(&self) -> Option<Point<i32, Logical>> {
-        self.buffer_delta
-    }
-
-    /// Same as [`Self::buffer_delta`] but takes the delta.
+    /// the surface's size changed since last call to this method.
     ///
     /// Once delta is taken this method returns `None` to avoid processing it several times.
-    pub fn take_buffer_delta(&mut self) -> Option<Point<i32, Logical>> {
-        if self.buffer_delta_ack {
-            None
-        } else {
-            self.buffer_delta_ack = true;
-            self.buffer_delta
-        }
+    pub fn take_accumulated_buffer_delta(&mut self) -> Point<i32, Logical> {
+        let accumulated_buffer_delta = self.accumulated_buffer_delta;
+        self.accumulated_buffer_delta = (0, 0).into();
+        accumulated_buffer_delta
     }
 }
 
