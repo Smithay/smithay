@@ -267,6 +267,17 @@ pub struct Scale<N: Coordinate> {
     pub y: N,
 }
 
+impl<N: Coordinate> Scale<N> {
+    /// Convert the underlying numerical type to f64 for floating point manipulations
+    #[inline]
+    pub fn to_f64(self) -> Scale<f64> {
+        Scale {
+            x: self.x.to_f64(),
+            y: self.y.to_f64(),
+        }
+    }
+}
+
 impl<N: Coordinate> From<N> for Scale<N> {
     fn from(scale: N) -> Self {
         Scale { x: scale, y: scale }
@@ -474,6 +485,36 @@ impl<N: Coordinate> Point<N, Logical> {
             y: self.y.upscale(scale.y),
             _kind: std::marker::PhantomData,
         }
+    }
+
+    /// Convert this logical point to physical coordinate space according to given scale factor
+    /// and round the result
+    #[inline]
+    pub fn to_physical_precise_round<S: Coordinate, R: Coordinate>(
+        self,
+        scale: impl Into<Scale<S>>,
+    ) -> Point<R, Physical> {
+        self.to_f64().to_physical(scale.into().to_f64()).to_i32_round()
+    }
+
+    /// Convert this logical point to physical coordinate space according to given scale factor
+    /// and ceil the result
+    #[inline]
+    pub fn to_physical_precise_ceil<S: Coordinate, R: Coordinate>(
+        &self,
+        scale: impl Into<Scale<S>>,
+    ) -> Point<R, Physical> {
+        self.to_f64().to_physical(scale.into().to_f64()).to_i32_ceil()
+    }
+
+    /// Convert this logical point to physical coordinate space according to given scale factor
+    /// and floor the result
+    #[inline]
+    pub fn to_physical_precise_floor<S: Coordinate, R: Coordinate>(
+        &self,
+        scale: impl Into<Scale<S>>,
+    ) -> Point<R, Physical> {
+        self.to_f64().to_physical(scale.into().to_f64()).to_i32_floor()
     }
 
     #[inline]
@@ -783,6 +824,36 @@ impl<N: Coordinate> Size<N, Logical> {
             h: self.h.upscale(scale.y),
             _kind: std::marker::PhantomData,
         }
+    }
+
+    /// Convert this logical size to physical coordinate space according to given scale factor
+    /// and round the result
+    #[inline]
+    pub fn to_physical_precise_round<S: Coordinate, R: Coordinate>(
+        self,
+        scale: impl Into<Scale<S>>,
+    ) -> Size<R, Physical> {
+        self.to_f64().to_physical(scale.into().to_f64()).to_i32_round()
+    }
+
+    /// Convert this logical size to physical coordinate space according to given scale factor
+    /// and ceil the result
+    #[inline]
+    pub fn to_physical_precise_ceil<S: Coordinate, R: Coordinate>(
+        &self,
+        scale: impl Into<Scale<S>>,
+    ) -> Size<R, Physical> {
+        self.to_f64().to_physical(scale.into().to_f64()).to_i32_ceil()
+    }
+
+    /// Convert this logical size to physical coordinate space according to given scale factor
+    /// and floor the result
+    #[inline]
+    pub fn to_physical_precise_floor<S: Coordinate, R: Coordinate>(
+        &self,
+        scale: impl Into<Scale<S>>,
+    ) -> Size<R, Physical> {
+        self.to_f64().to_physical(scale.into().to_f64()).to_i32_floor()
     }
 
     #[inline]
@@ -1148,6 +1219,40 @@ impl<N: Coordinate> Rectangle<N, Logical> {
             loc: self.loc.to_physical(scale),
             size: self.size.to_physical(scale),
         }
+    }
+
+    /// Convert this logical rectangle to physical coordinate space according to given scale factor
+    /// and round the result
+    #[inline]
+    pub fn to_physical_precise_round<S: Coordinate, R: Coordinate>(
+        self,
+        scale: impl Into<Scale<S>>,
+    ) -> Rectangle<R, Physical> {
+        self.to_f64().to_physical(scale.into().to_f64()).to_i32_round()
+    }
+
+    /// Convert this logical rectangle to physical coordinate space according to given scale factor,
+    /// returning the largest N-space rectangle fitting into the N-based rectangle
+    ///
+    /// This will ceil the location and floor the size after applying the scale
+    #[inline]
+    pub fn to_physical_precise_down<S: Coordinate, R: Coordinate>(
+        &self,
+        scale: impl Into<Scale<S>>,
+    ) -> Rectangle<R, Physical> {
+        self.to_f64().to_physical(scale.into().to_f64()).to_i32_down()
+    }
+
+    /// Convert this logical rectangle to physical coordinate space according to given scale factor,
+    /// returning the smallest N-space rectangle encapsulating the N-based rectangle
+    ///
+    /// This will floor the location and ceil the size after applying the scale
+    #[inline]
+    pub fn to_physical_precise_up<S: Coordinate, R: Coordinate>(
+        &self,
+        scale: impl Into<Scale<S>>,
+    ) -> Rectangle<R, Physical> {
+        self.to_f64().to_physical(scale.into().to_f64()).to_i32_up()
     }
 
     /// Convert this logical rectangle to buffer coordinate space according to given scale factor
