@@ -31,15 +31,15 @@ use smithay::{backend::input::PointerMotionAbsoluteEvent, wayland::output::Outpu
 #[cfg(feature = "udev")]
 use crate::state::Backend;
 #[cfg(feature = "udev")]
-use smithay::backend::{
-    input::PointerMotionEvent,
-    /* TODO: tablet_manager
-    input::{
-        Device, DeviceCapability, PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-        TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+use smithay::{
+    backend::{
+        input::{
+            Device, DeviceCapability, PointerMotionEvent, ProximityState, TabletToolButtonEvent,
+            TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+        },
+        session::Session,
     },
-    */
-    session::Session,
+    wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait},
 };
 
 impl<Backend> AnvilState<Backend> {
@@ -534,16 +534,15 @@ impl AnvilState<UdevData> {
             InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(dh, event),
             InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(dh, event),
             InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(dh, event),
-            /*
             InputEvent::TabletToolAxis { event, .. } => self.on_tablet_tool_axis::<B>(event),
-            InputEvent::TabletToolProximity { event, .. } => self.on_tablet_tool_proximity::<B>(event),
-            InputEvent::TabletToolTip { event, .. } => self.on_tablet_tool_tip::<B>(event),
+            InputEvent::TabletToolProximity { event, .. } => self.on_tablet_tool_proximity::<B>(dh, event),
+            InputEvent::TabletToolTip { event, .. } => self.on_tablet_tool_tip::<B>(dh, event),
             InputEvent::TabletToolButton { event, .. } => self.on_tablet_button::<B>(event),
             InputEvent::DeviceAdded { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
                     self.seat
                         .tablet_seat()
-                        .add_tablet(&TabletDescriptor::from(&device));
+                        .add_tablet::<Self>(dh, &TabletDescriptor::from(&device));
                 }
             }
             InputEvent::DeviceRemoved { device } => {
@@ -558,7 +557,6 @@ impl AnvilState<UdevData> {
                     }
                 }
             }
-            */
             _ => {
                 // other events are not handled in anvil (yet)
             }
@@ -588,12 +586,14 @@ impl AnvilState<UdevData> {
         }
     }
 
-    /*
     fn on_tablet_tool_axis<B: InputBackend>(&mut self, evt: B::TabletToolAxisEvent) {
         let tablet_seat = self.seat.tablet_seat();
 
-        let space = self.space.borrow();
-        let output_geometry = space.outputs().next().map(|o| space.output_geometry(o).unwrap());
+        let output_geometry = self
+            .space
+            .outputs()
+            .next()
+            .map(|o| self.space.output_geometry(o).unwrap());
 
         if let Some(rect) = output_geometry {
             self.pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
@@ -633,15 +633,22 @@ impl AnvilState<UdevData> {
         }
     }
 
-    fn on_tablet_tool_proximity<B: InputBackend>(&mut self, evt: B::TabletToolProximityEvent) {
-        let space = self.space.borrow();
+    fn on_tablet_tool_proximity<B: InputBackend>(
+        &mut self,
+        dh: &DisplayHandle,
+        evt: B::TabletToolProximityEvent,
+    ) {
         let tablet_seat = self.seat.tablet_seat();
 
-        let output_geometry = space.outputs().next().map(|o| space.output_geometry(o).unwrap());
+        let output_geometry = self
+            .space
+            .outputs()
+            .next()
+            .map(|o| self.space.output_geometry(o).unwrap());
 
         if let Some(rect) = output_geometry {
             let tool = evt.tool();
-            tablet_seat.add_tool(&tool);
+            tablet_seat.add_tool::<Self>(dh, &tool);
 
             self.pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
 
@@ -664,7 +671,7 @@ impl AnvilState<UdevData> {
         }
     }
 
-    fn on_tablet_tool_tip<B: InputBackend>(&mut self, evt: B::TabletToolTipEvent) {
+    fn on_tablet_tool_tip<B: InputBackend>(&mut self, dh: &DisplayHandle, evt: B::TabletToolTipEvent) {
         let tool = self.seat.tablet_seat().get_tool(&evt.tool());
 
         if let Some(tool) = tool {
@@ -674,7 +681,7 @@ impl AnvilState<UdevData> {
                     tool.tip_down(serial, evt.time());
 
                     // change the keyboard focus
-                    self.update_keyboard_focus(serial);
+                    self.update_keyboard_focus(dh, serial);
                 }
                 TabletToolTipState::Up => {
                     tool.tip_up(evt.time());
@@ -695,7 +702,6 @@ impl AnvilState<UdevData> {
             );
         }
     }
-    */
 
     fn clamp_coords(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
         if self.space.outputs().next().is_none() {
