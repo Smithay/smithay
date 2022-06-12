@@ -7,9 +7,8 @@ use crate::udev::UdevData;
 
 use smithay::{
     backend::input::{
-        self, Device, DeviceCapability, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
-        PointerAxisEvent, PointerButtonEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-        TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+        self, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent,
+        PointerButtonEvent,
     },
     desktop::{layer_map_for_output, WindowSurfaceType},
     reexports::wayland_server::{
@@ -34,13 +33,10 @@ use smithay::{backend::input::PointerMotionAbsoluteEvent, wayland::output::Outpu
 use crate::state::Backend;
 #[cfg(feature = "udev")]
 use smithay::backend::{
-    input::PointerMotionEvent,
-    /* TODO: tablet_manager
     input::{
         Device, DeviceCapability, PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
         TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
     },
-    */
     session::Session,
 };
 
@@ -640,10 +636,13 @@ impl AnvilState<UdevData> {
         dh: &DisplayHandle,
         evt: B::TabletToolProximityEvent,
     ) {
-        let space = &self.space;
         let tablet_seat = self.seat.tablet_seat();
 
-        let output_geometry = space.outputs().next().map(|o| space.output_geometry(o).unwrap());
+        let output_geometry = self
+            .space
+            .outputs()
+            .next()
+            .map(|o| self.space.output_geometry(o).unwrap());
 
         if let Some(rect) = output_geometry {
             let tool = evt.tool();
