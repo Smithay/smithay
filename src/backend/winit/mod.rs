@@ -321,18 +321,11 @@ impl WinitGraphicsBackend {
     /// Submits the back buffer to the window by swapping, requires the window to be previously bound (see [`WinitGraphicsBackend::bind`]).
     pub fn submit(
         &mut self,
-        damage: Option<&[Rectangle<i32, Logical>]>,
-        scale: f64,
+        damage: Option<&[Rectangle<i32, Physical>]>,
     ) -> Result<(), crate::backend::SwapBuffersError> {
         let mut damage = match damage {
             Some(damage) if self.damage_tracking && !damage.is_empty() => {
-                let size = self
-                    .size
-                    .borrow()
-                    .physical_size
-                    .to_f64()
-                    .to_logical(scale)
-                    .to_i32_round::<i32>();
+                let size = self.size.borrow().physical_size;
                 let damage = damage
                     .iter()
                     .map(|rect| {
@@ -340,9 +333,6 @@ impl WinitGraphicsBackend {
                             (rect.loc.x, size.h - rect.loc.y - rect.size.h),
                             rect.size,
                         )
-                        .to_f64()
-                        .to_physical(scale)
-                        .to_i32_round::<i32>()
                     })
                     .collect::<Vec<_>>();
                 Some(damage)

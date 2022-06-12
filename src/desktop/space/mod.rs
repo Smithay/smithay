@@ -9,7 +9,7 @@ use crate::{
         utils::{output_leave, output_update},
         window::Window,
     },
-    utils::{Logical, Point, Rectangle, Transform},
+    utils::{Logical, Physical, Point, Rectangle, Transform},
     wayland::{
         compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
         output::Output,
@@ -140,7 +140,7 @@ impl Space {
     ) -> Option<(Window, WlSurface, Point<i32, Logical>)> {
         let point = point.into();
         for window in self.windows.iter().rev() {
-            let loc = window.elem_location(self.id);
+            let loc = window_loc(window, &self.id) - window.geometry().loc;
             let mut geo = window.bbox_with_popups();
             geo.loc += loc;
 
@@ -160,7 +160,7 @@ impl Space {
     pub fn window_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<&Window> {
         let point = point.into();
         self.windows.iter().rev().find(|w| {
-            let loc = w.elem_location(self.id);
+            let loc = window_loc(w, &self.id) - w.geometry().loc;
             let mut geo = w.bbox();
             geo.loc += loc;
             geo.to_f64().contains(point)
@@ -327,7 +327,7 @@ impl Space {
                     .transform_size(mode.size)
                     .to_f64()
                     .to_logical(o.current_scale().fractional_scale())
-                    .to_i32_round(),
+                    .to_i32_ceil(),
             )
         })
     }
@@ -471,7 +471,7 @@ impl Space {
         age: usize,
         clear_color: [f32; 4],
         custom_elements: &[E],
-    ) -> Result<Option<Vec<Rectangle<i32, Logical>>>, RenderError<R>>
+    ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, RenderError<R>>
     where
         R: Renderer + ImportAll,
         R::TextureId: 'static,
@@ -483,15 +483,13 @@ impl Space {
 
         let mut state = output_state(self.id, output);
         let output_size = output.current_mode().ok_or(RenderError::OutputNoMode)?.size;
+        let output_scale = output.current_scale().fractional_scale();
         // We explicitly use ceil for the output geometry size to make sure the damage
         // spans at least the output size. Round and floor would result in parts not drawn as the
         // frame size could be bigger than the maximum the output_geo would define.
         let output_geo = Rectangle::from_loc_and_size(
-            state.location,
-            output_size
-                .to_f64()
-                .to_logical(output.current_scale().fractional_scale())
-                .to_i32_ceil(),
+            state.location.to_physical_precise_round(output_scale),
+            output_size,
         );
         let layer_map = layer_map_for_output(output);
 
@@ -526,47 +524,55 @@ impl Space {
         render_elements.sort_by_key(|e| e.z_index());
 
         // This will hold all the damage we need for this rendering step
-        let mut damage = Vec::<Rectangle<i32, Logical>>::new();
-        // First add damage for windows gone
+        let mut damage = Vec::<Rectangle<i32, Physical>>::new();
 
+        // First add damage for windows gone
         for old_toplevel in state
-            .last_state
+            .last_toplevel_state
             .iter()
-            .filter_map(|(id, geo)| {
+            .filter_map(|(id, state)| {
                 if !render_elements.iter().any(|e| ToplevelId::from(e) == *id) {
-                    Some(*geo)
+                    Some(state.1)
                 } else {
                     None
                 }
             })
-            .collect::<Vec<Rectangle<i32, Logical>>>()
+            .collect::<Vec<Rectangle<i32, Physical>>>()
         {
             slog::trace!(self.logger, "Removing toplevel at: {:?}", old_toplevel);
             damage.push(old_toplevel);
         }
 
         // lets iterate front to back and figure out, what new windows or unmoved windows we have
-        for element in &render_elements {
-            let geo = element.geometry(self.id);
-            let old_geo = state.last_state.get(&ToplevelId::from(element)).cloned();
+        for (zindex, element) in render_elements.iter().enumerate() {
+            let geo = element.geometry(self.id, output_scale);
+            let old_state = state.last_toplevel_state.get(&ToplevelId::from(element)).cloned();
+
+            // add the damage as reported by the element
+            damage.extend(
+                element
+                    .accumulated_damage(self.id, output_scale, Some((self, output)))
+                    .into_iter(),
+            );
 
             // window was moved, resized or just appeared
-            if old_geo.map(|old_geo| old_geo != geo).unwrap_or(true) {
+            if old_state
+                .map(|(old_zindex, old_geo)| old_geo != geo || zindex != old_zindex)
+                .unwrap_or(true)
+            {
+                slog::trace!(self.logger, "Toplevel geometry changed, damaging previous and current geometry. previous geometry: {:?}, current geometry: {:?}", old_state, geo);
                 // Add damage for the old position of the window
-                if let Some(old_geo) = old_geo {
+                if let Some((_, old_geo)) = old_state {
                     damage.push(old_geo);
                 }
                 damage.push(geo);
-            } else {
-                // window stayed at its place
-                let loc = element.location(self.id);
-                damage.extend(element.accumulated_damage(Some((self, output))).into_iter().map(
-                    |mut rect| {
-                        rect.loc += loc;
-                        rect
-                    },
-                ));
             }
+        }
+
+        if state.last_output_geo.map(|geo| geo != output_geo).unwrap_or(true) {
+            // The output geometry changed, so just damage everything
+            slog::trace!(self.logger, "Output geometry changed, damaging whole output geometry. previous geometry: {:?}, current geometry: {:?}", state.last_output_geo, output_geo);
+            damage = vec![output_geo];
         }
 
         // That is all completely new damage, which we need to store for subsequent renders
@@ -603,7 +609,6 @@ impl Space {
         }
 
         let output_transform: Transform = output.current_transform().into();
-        let output_scale = output.current_scale().fractional_scale();
         let res = renderer.render(
             output_transform.transform_size(output_size),
             output_transform,
@@ -617,21 +622,14 @@ impl Space {
                         // Map from global space to output space
                         .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
                         // Map from logical to physical
-                        .map(|geo| geo.to_f64().to_physical(output_scale))
+                        .map(|geo| geo.to_f64())
                         .collect::<Vec<_>>(),
                 )?;
                 // Then re-draw all windows & layers overlapping with a damage rect.
-
                 for element in &render_elements {
-                    let geo = element.geometry(self.id);
+                    let geo = element.geometry(self.id, output_scale);
                     if damage.iter().any(|d| d.overlaps(geo)) {
-                        let loc = element.location(self.id);
-                        let damage = damage
-                            .iter()
-                            .flat_map(|d| d.intersection(geo))
-                            // Map from output space to surface-relative coordinates
-                            .map(|geo| Rectangle::from_loc_and_size(geo.loc - loc, geo.size))
-                            .collect::<Vec<_>>();
+                        let loc = element.location(self.id, output_scale);
                         slog::trace!(
                             self.logger,
                             "Rendering toplevel at {:?} with damage {:#?}",
@@ -643,8 +641,12 @@ impl Space {
                             renderer,
                             frame,
                             output_scale,
-                            loc - output_geo.loc,
-                            &damage,
+                            loc - output_geo.loc.to_f64(),
+                            &damage
+                                .iter()
+                                // Map from global space to output space
+                                .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
+                                .collect::<Vec<_>>(),
                             &self.logger,
                         )?;
                     }
@@ -658,19 +660,21 @@ impl Space {
             // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
             // thus clean our old states before returning
             state.old_damage = VecDeque::new();
-            state.last_state = IndexMap::new();
+            state.last_toplevel_state = IndexMap::new();
             return Err(RenderError::Rendering(err));
         }
 
         // If rendering was successful capture the state and add the damage
-        state.last_state = render_elements
+        state.last_toplevel_state = render_elements
             .iter()
-            .map(|elem| {
-                let geo = elem.geometry(self.id);
-                (ToplevelId::from(elem), geo)
+            .enumerate()
+            .map(|(zindex, elem)| {
+                let geo = elem.geometry(self.id, output_scale);
+                (ToplevelId::from(elem), (zindex, geo))
             })
             .collect();
         state.old_damage.push_front(new_damage.clone());
+        state.last_output_geo = Some(output_geo);
 
         Ok(Some(
             new_damage
@@ -786,25 +790,37 @@ macro_rules! custom_elements_internal {
             }
         }
 
-        fn geometry(&self) -> $crate::utils::Rectangle<i32, $crate::utils::Logical> {
+        fn location(&self, scale: impl Into<$crate::utils::Scale<f64>>) -> $crate::utils::Point<f64, $crate::utils::Physical> {
             match self {
                 $(
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; geometry; x)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; location; x, scale)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
 
-        fn accumulated_damage(&self, for_values: std::option::Option<$crate::desktop::space::SpaceOutputTuple<'_, '_>>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Logical>> {
+        fn geometry(&self, scale: impl Into<$crate::utils::Scale<f64>>) -> $crate::utils::Rectangle<i32, $crate::utils::Physical> {
             match self {
                 $(
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; accumulated_damage; x, for_values)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; geometry; x, scale)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn accumulated_damage(&self, scale: impl Into<$crate::utils::Scale<f64>>, for_values: Option<$crate::desktop::space::SpaceOutputTuple<'_, '_>>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>> {
+            match self {
+                $(
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; accumulated_damage; x, scale, for_values)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -827,9 +843,9 @@ macro_rules! custom_elements_internal {
             &self,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
-            scale: f64,
-            location: $crate::utils::Point<i32, $crate::utils::Logical>,
-            damage: &[$crate::utils::Rectangle<i32, $crate::utils::Logical>],
+            scale: impl Into<$crate::utils::Scale<f64>>,
+            location: $crate::utils::Point<f64, $crate::utils::Physical>,
+            damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             log: &slog::Logger,
         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
         where
@@ -857,9 +873,9 @@ macro_rules! custom_elements_internal {
             &self,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
-            scale: f64,
-            location: $crate::utils::Point<i32, $crate::utils::Logical>,
-            damage: &[$crate::utils::Rectangle<i32, $crate::utils::Logical>],
+            scale: impl Into<$crate::utils::Scale<f64>>,
+            location: $crate::utils::Point<f64, $crate::utils::Physical>,
+            damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             log: &slog::Logger,
         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
         {
@@ -941,7 +957,7 @@ macro_rules! custom_elements_internal {
 /// use smithay::{
 ///     backend::renderer::{Texture, Renderer, ImportAll},
 ///     desktop::space::{SurfaceTree, Space, SpaceOutputTuple, RenderElement},
-///     utils::{Point, Size, Rectangle, Transform, Logical},
+///     utils::{Point, Size, Rectangle, Transform, Logical, Scale},
 /// };
 /// use slog::Logger;
 ///
@@ -997,7 +1013,7 @@ macro_rules! custom_elements_internal {
 /// #       texture: &Self::TextureId,
 /// #       pos: Point<f64, Physical>,
 /// #       texture_scale: i32,
-/// #       output_scale: f64,
+/// #       output_scale: impl Into<Scale<f64>>,
 /// #       src_transform: Transform,
 /// #       damage: &[Rectangle<f64, Physical>],
 /// #       alpha: f32,
@@ -1007,7 +1023,7 @@ macro_rules! custom_elements_internal {
 /// #   fn render_texture_from_to(
 /// #       &mut self,
 /// #       texture: &Self::TextureId,
-/// #       src: Rectangle<i32, Buffer>,
+/// #       src: Rectangle<f64, Buffer>,
 /// #       dst: Rectangle<f64, Physical>,
 /// #       damage: &[Rectangle<f64, Physical>],
 /// #       src_transform: Transform,
@@ -1066,11 +1082,15 @@ macro_rules! custom_elements_internal {
 ///#        0
 ///#    }
 ///#
-///#    fn geometry(&self) -> Rectangle<i32, Logical> {
-///#        Rectangle::from_loc_and_size(self.position, self.size)
+///#    fn location(&self, scale: impl Into<Scale<f64>>) -> Point<f64, Physical> {
+///#        self.position.to_f64().to_physical(scale)
 ///#    }
 ///#
-///#    fn accumulated_damage(&self, _: Option<SpaceOutputTuple<'_, '_>>) -> Vec<Rectangle<i32, Logical>> {
+///#    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
+///#        Rectangle::from_loc_and_size(self.position, self.size).to_f64().to_physical(scale).to_i32_round()
+///#    }
+///#
+///#    fn accumulated_damage(&self, _: impl Into<Scale<f64>>, _: Option<SpaceOutputTuple<'_, '_>>) -> Vec<Rectangle<i32, Physical>> {
 ///#        vec![]
 ///#    }
 ///#
@@ -1078,9 +1098,9 @@ macro_rules! custom_elements_internal {
 ///#        &self,
 ///#        _renderer: &mut R,
 ///#        frame: &mut <R as Renderer>::Frame,
-///#        scale: f64,
-///#        location: Point<i32, Logical>,
-///#        damage: &[Rectangle<i32, Logical>],
+///#        scale: impl Into<Scale<f64>>,
+///#        location: Point<f64, Physical>,
+///#        damage: &[Rectangle<i32, Physical>],
 ///#        _log: &Logger,
 ///#    ) -> Result<(), <R as Renderer>::Error> {
 ///#        Ok(())

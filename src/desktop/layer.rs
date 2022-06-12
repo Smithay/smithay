@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager, Space},
-    utils::{user_data::UserDataMap, Logical, Point, Rectangle},
+    utils::{user_data::UserDataMap, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, TraversalAction},
         output::{Inner as OutputInner, Output},
@@ -550,6 +550,42 @@ impl LayerSurface {
         bounding_box
     }
 
+    /// Returns the [`Physical`] bounding box over this layer surface, it subsurfaces as well as any popups.
+    ///
+    /// This differs from using [`bbox_with_popups`] and translating the returned [`Rectangle`]
+    /// to [`Physical`] space as it rounds the subsurface and popup offsets.
+    /// See [`physical_bbox_from_surface_tree`] for more information.
+    ///
+    /// Note: You need to use a [`PopupManager`] to track popups, otherwise the bounding box
+    /// will not include the popups.
+    pub fn physical_bbox_with_popups(
+        &self,
+        location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
+    ) -> Rectangle<i32, Physical> {
+        let location = location.into();
+        let scale = scale.into();
+        let surface = match self.0.surface.get_surface() {
+            Some(surface) => surface,
+            None => return Rectangle::default(),
+        };
+        let mut geo = physical_bbox_from_surface_tree(surface, location, scale);
+        for (popup, p_location) in PopupManager::popups_for_surface(surface)
+            .ok()
+            .into_iter()
+            .flatten()
+        {
+            if let Some(surface) = popup.get_surface() {
+                geo = geo.merge(physical_bbox_from_surface_tree(
+                    surface,
+                    location + p_location.to_f64().to_physical(scale),
+                    scale,
+                ));
+            }
+        }
+        geo
+    }
+
     /// Finds the topmost surface under this point if any and returns it together with the location of this
     /// surface.
     ///
@@ -587,24 +623,28 @@ impl LayerSurface {
     /// Subsequent calls will return an empty vector until the buffer is updated again.
     pub(super) fn accumulated_damage(
         &self,
+        location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
         for_values: Option<(&Space, &Output)>,
-    ) -> Vec<Rectangle<i32, Logical>> {
+    ) -> Vec<Rectangle<i32, Physical>> {
+        let location = location.into();
+        let scale = scale.into();
         let mut damage = Vec::new();
         if let Some(surface) = self.get_surface() {
-            damage.extend(
-                damage_from_surface_tree(surface, (0, 0), for_values)
-                    .into_iter()
-                    .flat_map(|rect| rect.intersection(self.bbox())),
-            );
-            for (popup, location) in PopupManager::popups_for_surface(surface)
+            damage.extend(damage_from_surface_tree(surface, location, scale, for_values));
+            for (popup, p_location) in PopupManager::popups_for_surface(surface)
                 .ok()
                 .into_iter()
                 .flatten()
             {
                 if let Some(surface) = popup.get_surface() {
-                    let bbox = bbox_from_surface_tree(surface, location);
-                    let popup_damage = damage_from_surface_tree(surface, location, for_values);
-                    damage.extend(popup_damage.into_iter().flat_map(|rect| rect.intersection(bbox)));
+                    let popup_damage = damage_from_surface_tree(
+                        surface,
+                        location + p_location.to_f64().to_physical(scale),
+                        scale,
+                        for_values,
+                    );
+                    damage.extend(popup_damage);
                 }
             }
         }
@@ -643,21 +683,23 @@ impl LayerSurface {
 /// Note: This function will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn draw_layer_surface<R, P>(
+pub fn draw_layer_surface<R, P, S>(
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     layer: &LayerSurface,
-    scale: f64,
+    scale: S,
     location: P,
-    damage: &[Rectangle<i32, Logical>],
+    damage: &[Rectangle<i32, Physical>],
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
-    P: Into<Point<i32, Logical>>,
+    S: Into<Scale<f64>>,
+    P: Into<Point<f64, Physical>>,
 {
     let location = location.into();
+    let scale = scale.into();
     if let Some(surface) = layer.get_surface() {
         draw_surface_tree(renderer, frame, surface, scale, location, damage, log)?;
     }
@@ -673,19 +715,20 @@ where
 /// Note: This function will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn draw_layer_popups<R, P>(
+pub fn draw_layer_popups<R, S, P>(
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     layer: &LayerSurface,
-    scale: f64,
+    scale: S,
     location: P,
-    damage: &[Rectangle<i32, Logical>],
+    damage: &[Rectangle<i32, Physical>],
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
-    P: Into<Point<i32, Logical>>,
+    S: Into<Scale<f64>>,
+    P: Into<Point<f64, Physical>>,
 {
     let location = location.into();
     if let Some(surface) = layer.get_surface() {

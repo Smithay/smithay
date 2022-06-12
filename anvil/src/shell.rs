@@ -29,7 +29,7 @@ use smithay::{
                 XdgPopupSurfaceRoleAttributes, XdgRequest, XdgToplevelSurfaceRoleAttributes,
             },
         },
-        Serial,
+        viewporter, Serial,
     },
 };
 
@@ -332,6 +332,8 @@ pub fn init_shell<BackendData: Backend + 'static>(
         },
         log.clone(),
     );
+    // Enable viewporter
+    viewporter::viewporter_init(&mut *display.borrow_mut());
 
     let log_ref = log.clone();
     // init the xdg_shell

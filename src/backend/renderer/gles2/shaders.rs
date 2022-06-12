@@ -86,7 +86,8 @@ mat2 scale(vec2 scale_vec){
 void main() {
     vec2 transform_translation = position.xy;
     vec2 transform_scale = position.zw;
-    gl_Position = vec4(matrix * vec3((vert * scale(transform_scale)) + transform_translation, 1.0), 1.0);
+    vec3 position = vec3(vert * scale(transform_scale) + transform_translation, 1.0);
+    gl_Position = vec4(matrix * position, 1.0);
 }
 "#;
 

@@ -4,7 +4,7 @@ use crate::{
         layer::{layer_state as output_layer_state, *},
         space::Space,
     },
-    utils::{Logical, Point, Rectangle},
+    utils::{Physical, Point, Rectangle, Scale},
     wayland::{output::Output, shell::wlr_layer::Layer},
 };
 use std::{
@@ -38,18 +38,34 @@ impl LayerSurface {
         TypeId::of::<LayerSurface>()
     }
 
-    pub(super) fn elem_geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
-        let mut bbox = self.bbox_with_popups();
+    pub(super) fn elem_location(
+        &self,
+        _space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Point<f64, Physical> {
         let state = output_layer_state(self);
-        bbox.loc += state.location;
-        bbox
+        state.location.to_f64().to_physical(scale)
+    }
+
+    pub(super) fn elem_geometry(
+        &self,
+        _space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Rectangle<i32, Physical> {
+        let scale = scale.into();
+        let state = output_layer_state(self);
+        self.physical_bbox_with_popups(state.location.to_f64().to_physical(scale), scale)
     }
 
     pub(super) fn elem_accumulated_damage(
         &self,
+        _space_id: usize,
+        scale: impl Into<Scale<f64>>,
         for_values: Option<(&Space, &Output)>,
-    ) -> Vec<Rectangle<i32, Logical>> {
-        self.accumulated_damage(for_values)
+    ) -> Vec<Rectangle<i32, Physical>> {
+        let scale = scale.into();
+        let state = output_layer_state(self);
+        self.accumulated_damage(state.location.to_f64().to_physical(scale), scale, for_values)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -58,9 +74,9 @@ impl LayerSurface {
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
+        scale: impl Into<Scale<f64>>,
+        location: Point<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error>
     where

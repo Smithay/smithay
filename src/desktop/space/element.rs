@@ -2,7 +2,7 @@ use crate::desktop::space::popup::RenderPopup;
 use crate::{
     backend::renderer::{ImportAll, Renderer, Texture},
     desktop::{space::*, utils::*},
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::output::Output,
 };
 use std::{
@@ -43,8 +43,10 @@ where
     fn type_of(&self) -> TypeId {
         Any::type_id(self)
     }
+    /// Returns the location of this element
+    fn location(&self, scale: impl Into<Scale<f64>>) -> Point<f64, Physical>;
     /// Returns the bounding box of this element including its position in the space.
-    fn geometry(&self) -> Rectangle<i32, Logical>;
+    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical>;
     /// Returns the damage of the element since it's last update.
     /// It should be relative to the elements coordinates.
     ///
@@ -57,8 +59,9 @@ where
     /// correct, but very inefficient.
     fn accumulated_damage(
         &self,
+        scale: impl Into<Scale<f64>>,
         for_values: Option<SpaceOutputTuple<'_, '_>>,
-    ) -> Vec<Rectangle<i32, Logical>>;
+    ) -> Vec<Rectangle<i32, Physical>>;
     /// Draws the element using the provided `Frame` and `Renderer`.
     ///
     /// - `scale` provides the current fractional scale value to render as
@@ -71,9 +74,9 @@ where
         &self,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
+        scale: impl Into<Scale<f64>>,
+        location: Point<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error>;
 
@@ -116,29 +119,34 @@ where
             SpaceElement::Custom(custom, _) => custom.type_of(),
         }
     }
-    pub fn location(&self, space_id: usize) -> Point<i32, Logical> {
+    pub fn location(&self, space_id: usize, scale: impl Into<Scale<f64>>) -> Point<f64, Physical> {
         match self {
-            SpaceElement::Layer(layer) => layer.elem_geometry(space_id).loc,
-            SpaceElement::Window(window) => window.elem_location(space_id),
-            SpaceElement::Popup(popup) => popup.elem_geometry(space_id).loc,
-            SpaceElement::Custom(custom, _) => custom.geometry().loc,
+            SpaceElement::Layer(layer) => layer.elem_location(space_id, scale),
+            SpaceElement::Window(window) => window.elem_location(space_id, scale),
+            SpaceElement::Popup(popup) => popup.elem_location(space_id, scale),
+            SpaceElement::Custom(custom, _) => custom.location(scale),
         }
     }
-    pub fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
+    pub fn geometry(&self, space_id: usize, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
         match self {
-            SpaceElement::Layer(layer) => layer.elem_geometry(space_id),
-            SpaceElement::Window(window) => window.elem_geometry(space_id),
-            SpaceElement::Popup(popup) => popup.elem_geometry(space_id),
-            SpaceElement::Custom(custom, _) => custom.geometry(),
+            SpaceElement::Layer(layer) => layer.elem_geometry(space_id, scale),
+            SpaceElement::Window(window) => window.elem_geometry(space_id, scale),
+            SpaceElement::Popup(popup) => popup.elem_geometry(space_id, scale),
+            SpaceElement::Custom(custom, _) => custom.geometry(scale),
         }
     }
-    pub fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
+    pub fn accumulated_damage(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+        for_values: Option<(&Space, &Output)>,
+    ) -> Vec<Rectangle<i32, Physical>> {
         match self {
-            SpaceElement::Layer(layer) => layer.elem_accumulated_damage(for_values),
-            SpaceElement::Window(window) => window.elem_accumulated_damage(for_values),
-            SpaceElement::Popup(popup) => popup.elem_accumulated_damage(for_values),
+            SpaceElement::Layer(layer) => layer.elem_accumulated_damage(space_id, scale, for_values),
+            SpaceElement::Window(window) => window.elem_accumulated_damage(space_id, scale, for_values),
+            SpaceElement::Popup(popup) => popup.elem_accumulated_damage(space_id, scale, for_values),
             SpaceElement::Custom(custom, _) => {
-                custom.accumulated_damage(for_values.map(|(s, o)| SpaceOutputTuple(s, o)))
+                custom.accumulated_damage(scale, for_values.map(|(s, o)| SpaceOutputTuple(s, o)))
             }
         }
     }
@@ -148,9 +156,9 @@ where
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
+        scale: impl Into<Scale<f64>>,
+        location: Point<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
         match self {
@@ -203,26 +211,36 @@ where
         self.surface.as_ref().id() as usize
     }
 
-    fn geometry(&self) -> Rectangle<i32, Logical> {
-        let mut bbox = bbox_from_surface_tree(&self.surface, (0, 0));
-        bbox.loc += self.position;
-        bbox
+    fn location(&self, scale: impl Into<Scale<f64>>) -> Point<f64, Physical> {
+        self.position.to_f64().to_physical(scale)
+    }
+
+    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
+        let scale = scale.into();
+        physical_bbox_from_surface_tree(&self.surface, self.position.to_f64().to_physical(scale), scale)
     }
 
     fn accumulated_damage(
         &self,
+        scale: impl Into<Scale<f64>>,
         for_values: Option<SpaceOutputTuple<'_, '_>>,
-    ) -> Vec<Rectangle<i32, Logical>> {
-        damage_from_surface_tree(&self.surface, (0, 0), for_values.map(|x| (x.0, x.1)))
+    ) -> Vec<Rectangle<i32, Physical>> {
+        let scale = scale.into();
+        damage_from_surface_tree(
+            &self.surface,
+            self.position.to_f64().to_physical(scale),
+            scale,
+            for_values.map(|f| (f.0, f.1)),
+        )
     }
 
     fn draw(
         &self,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
+        scale: impl Into<Scale<f64>>,
+        location: Point<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
         crate::backend::renderer::utils::draw_surface_tree(

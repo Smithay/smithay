@@ -1850,21 +1850,19 @@ impl Frame for Gles2Frame {
         }
 
         let mut mat = Matrix3::<f32>::identity();
-        mat = mat * Matrix3::from_translation(Vector2::new(0.0, 0.0));
-        mat = mat * Matrix3::from_nonuniform_scale(self.size.w as f32, self.size.h as f32);
         mat = self.current_projection * mat;
 
         let damage = at
             .iter()
             .flat_map(|rect| {
                 [
-                    rect.loc.x as f32 / self.size.w as f32,
-                    rect.loc.y as f32 / self.size.h as f32,
-                    rect.size.w as f32 / self.size.w as f32,
-                    rect.size.h as f32 / self.size.h as f32,
+                    rect.loc.x as f32,
+                    rect.loc.y as f32,
+                    rect.size.w as f32,
+                    rect.size.h as f32,
                 ]
             })
-            .collect::<Vec<ffi::types::GLfloat>>();
+            .collect::<Vec<_>>();
 
         unsafe {
             self.gl.Disable(ffi::BLEND);
@@ -1970,19 +1968,16 @@ impl Frame for Gles2Frame {
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,
-        src: Rectangle<i32, Buffer>,
+        src: Rectangle<f64, Buffer>,
         dest: Rectangle<f64, Physical>,
         damage: &[Rectangle<f64, Physical>],
         transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
-        let src = src.to_f64();
-
         let mut mat = Matrix3::<f32>::identity();
 
         // dest position and scale
         mat = mat * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
-        mat = mat * Matrix3::from_nonuniform_scale(dest.size.w as f32, dest.size.h as f32);
 
         // src scale, position, tranform and y_inverted
         let tex_size = texture.size().to_f64();
@@ -2007,7 +2002,7 @@ impl Frame for Gles2Frame {
                 (src.loc.x / src_size.w) as f32,
                 (src.loc.y / src_size.h) as f32,
             ));
-        // at last apply the transform and if necessary invert the y axis
+        // then apply the transform and if necessary invert the y axis
         tex_mat = tex_mat * Matrix3::from_translation(Vector2::new(0.5, 0.5));
         if transform == Transform::Normal {
             assert_eq!(tex_mat, tex_mat * transform.invert().matrix());
@@ -2018,6 +2013,9 @@ impl Frame for Gles2Frame {
             tex_mat = tex_mat * Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
         }
         tex_mat = tex_mat * Matrix3::from_translation(Vector2::new(-0.5, -0.5));
+        // at last scale back to tex space
+        tex_mat = tex_mat
+            * Matrix3::from_nonuniform_scale((1.0f64 / dest.size.w) as f32, (1.0f64 / dest.size.h) as f32);
 
         let instances = damage
             .iter()
@@ -2034,10 +2032,10 @@ impl Frame for Gles2Frame {
 
                 let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
                 [
-                    (rect.loc.x / dest_size.w) as f32,
-                    (rect.loc.y / dest_size.h) as f32,
-                    (rect.size.w / dest_size.w) as f32,
-                    (rect.size.h / dest_size.h) as f32,
+                    rect.loc.x as f32,
+                    rect.loc.y as f32,
+                    rect.size.w as f32,
+                    rect.size.h as f32,
                 ]
             })
             .collect::<Vec<_>>();

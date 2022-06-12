@@ -4,7 +4,7 @@ use crate::{
         space::Space,
         window::{draw_window, Window},
     },
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::output::Output,
 };
 use std::{
@@ -37,11 +37,15 @@ pub fn window_rect(window: &Window, space_id: &usize) -> Rectangle<i32, Logical>
     wgeo
 }
 
-pub fn window_rect_with_popups(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
-    let loc = window_loc(window, space_id);
-    let mut wgeo = window.bbox_with_popups();
-    wgeo.loc += loc;
-    wgeo
+pub fn window_physical_geometry(
+    window: &Window,
+    space_id: &usize,
+    scale: impl Into<Scale<f64>>,
+) -> Rectangle<i32, Physical> {
+    let scale = scale.into();
+    let loc = window_loc(window, space_id) - window.geometry().loc;
+    let loc = loc.to_f64().to_physical(scale);
+    window.physical_bbox_with_popups(loc, scale)
 }
 
 pub fn window_loc(window: &Window, space_id: &usize) -> Point<i32, Logical> {
@@ -64,37 +68,49 @@ impl Window {
         TypeId::of::<Window>()
     }
 
-    pub(super) fn elem_location(&self, space_id: usize) -> Point<i32, Logical> {
-        window_loc(self, &space_id) - self.geometry().loc
+    pub(super) fn elem_location(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Point<f64, Physical> {
+        let loc = window_loc(self, &space_id) - self.geometry().loc;
+        loc.to_f64().to_physical(scale)
     }
 
-    pub(super) fn elem_geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
-        let mut geo = window_rect_with_popups(self, &space_id);
-        geo.loc -= self.geometry().loc;
-        geo
+    pub(super) fn elem_geometry(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Rectangle<i32, Physical> {
+        window_physical_geometry(self, &space_id, scale)
     }
 
     pub(super) fn elem_accumulated_damage(
         &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
         for_values: Option<(&Space, &Output)>,
-    ) -> Vec<Rectangle<i32, Logical>> {
-        self.accumulated_damage(for_values)
+    ) -> Vec<Rectangle<i32, Physical>> {
+        let scale = scale.into();
+        let loc = window_loc(self, &space_id) - self.geometry().loc;
+        self.accumulated_damage(loc.to_f64().to_physical(scale), scale, for_values)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn elem_draw<R>(
+    pub(super) fn elem_draw<R, S>(
         &self,
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
+        scale: S,
+        location: Point<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error>
     where
         R: Renderer + ImportAll,
         <R as Renderer>::TextureId: 'static,
+        S: Into<Scale<f64>>,
     {
         let res = draw_window(renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {
