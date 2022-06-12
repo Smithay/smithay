@@ -1,7 +1,7 @@
 //! Helper functions to ease dealing with surface trees
 
 use crate::{
-    backend::renderer::utils::SurfaceState,
+    backend::renderer::utils::RendererSurfaceState,
     desktop::Space,
     utils::{Logical, Point, Rectangle},
     wayland::{
@@ -18,7 +18,7 @@ use std::cell::RefCell;
 
 use super::WindowSurfaceType;
 
-impl SurfaceState {
+impl RendererSurfaceState {
     fn contains_point<P: Into<Point<f64, Logical>>>(&self, attrs: &SurfaceAttributes, point: P) -> bool {
         let point = point.into();
         let size = match self.surface_size() {
@@ -65,7 +65,7 @@ where
         location,
         |_, states, loc: &Point<i32, Logical>| {
             let mut loc = *loc;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(size) = data.and_then(|d| d.borrow().surface_size()) {
                 if states.role == Some("subsurface") {
@@ -121,7 +121,7 @@ where
         },
         |_surface, states, location| {
             let mut location = *location;
-            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+            if let Some(data) = states.data_map.get::<RefCell<RendererSurfaceState>>() {
                 let mut data = data.borrow_mut();
                 if key
                     .as_ref()
@@ -187,7 +187,7 @@ where
         location.into(),
         |wl_surface, states, location: &Point<i32, Logical>| {
             let mut location = *location;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if states.role == Some("subsurface") {
                 let current = states.cached_state.current::<SubsurfaceCachedState>();
@@ -257,7 +257,7 @@ pub(crate) fn output_update(
         location,
         |_, states, location| {
             let mut location = *location;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if data.is_some() {
                 if states.role == Some("subsurface") {
@@ -273,7 +273,7 @@ pub(crate) fn output_update(
             }
         },
         |wl_surface, states, &loc| {
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(size) = data.and_then(|d| d.borrow().surface_size()) {
                 let surface_rectangle = Rectangle { loc, size };
