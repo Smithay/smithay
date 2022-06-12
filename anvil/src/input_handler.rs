@@ -21,7 +21,6 @@ use smithay::{
         output::Scale,
         seat::{keysyms as xkb, AxisFrame, ButtonEvent, FilterResult, Keysym, ModifiersState, MotionEvent},
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
-        tablet_manager::{TabletDescriptor, TabletSeatTrait},
         Serial, SERIAL_COUNTER as SCOUNTER,
     },
 };
@@ -32,12 +31,15 @@ use smithay::{backend::input::PointerMotionAbsoluteEvent, wayland::output::Outpu
 #[cfg(feature = "udev")]
 use crate::state::Backend;
 #[cfg(feature = "udev")]
-use smithay::backend::{
-    input::{
-        Device, DeviceCapability, PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-        TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+use smithay::{
+    backend::{
+        input::{
+            Device, DeviceCapability, PointerMotionEvent, ProximityState, TabletToolButtonEvent,
+            TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+        },
+        session::Session,
     },
-    session::Session,
+    wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait},
 };
 
 impl<Backend> AnvilState<Backend> {
