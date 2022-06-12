@@ -164,9 +164,7 @@ impl RendererSurfaceState {
     ///
     /// Once delta is taken this method returns `None` to avoid processing it several times.
     pub fn take_accumulated_buffer_delta(&mut self) -> Point<i32, Logical> {
-        let accumulated_buffer_delta = self.accumulated_buffer_delta;
-        self.accumulated_buffer_delta = (0, 0).into();
-        accumulated_buffer_delta
+        std::mem::take(&mut self.accumulated_buffer_delta)
     }
 }
 
