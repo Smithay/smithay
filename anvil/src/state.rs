@@ -5,7 +5,8 @@ use std::{
 
 use smithay::{
     delegate_compositor, delegate_data_device, delegate_layer_shell, delegate_output, delegate_seat,
-    delegate_shm, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_shm, delegate_tablet_manager, delegate_xdg_activation, delegate_xdg_decoration,
+    delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
@@ -36,6 +37,7 @@ use smithay::{
         },
         shm::ShmState,
         socket::ListeningSocketSource,
+        tablet_manager::TabletSeatTrait,
         xdg_activation::{
             XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
         },
@@ -139,6 +141,8 @@ impl<BackendData> SeatHandler for AnvilState<BackendData> {
     }
 }
 delegate_seat!(@<BackendData: 'static> AnvilState<BackendData>);
+
+delegate_tablet_manager!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
     fn activation_state(&mut self) -> &mut XdgActivationState {
@@ -259,15 +263,11 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         })
         .expect("Failed to initialize the keyboard");
 
-        /*
-        init_tablet_manager_global(&mut display.borrow_mut());
-
         let cursor_status3 = cursor_status.clone();
         seat.tablet_seat().on_cursor_surface(move |_tool, new_status| {
             // TODO: tablet tools should have their own cursors
             *cursor_status3.lock().unwrap() = new_status;
         });
-        */
 
         #[cfg(feature = "xwayland")]
         let xwayland = {

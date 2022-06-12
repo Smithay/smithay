@@ -1,13 +1,21 @@
-use std::ops::Deref as _;
-use std::path::PathBuf;
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
-use wayland_protocols::unstable::tablet::v2::server::zwp_tablet_seat_v2::ZwpTabletSeatV2;
-use wayland_protocols::unstable::tablet::v2::server::zwp_tablet_v2::ZwpTabletV2;
-use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::Filter;
+use wayland_protocols::wp::tablet::zv2::server::{
+    zwp_tablet_seat_v2::ZwpTabletSeatV2,
+    zwp_tablet_v2::{self, ZwpTabletV2},
+};
+use wayland_server::{
+    backend::{ClientId, ObjectId},
+    protocol::wl_surface::WlSurface,
+    Client, DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource,
+};
 
 use crate::backend::input::Device;
+
+use super::TabletManagerState;
 
 /// Description of graphics tablet device
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -40,42 +48,39 @@ struct Tablet {
 /// Tablet represents one graphics tablet device
 #[derive(Debug, Default, Clone)]
 pub struct TabletHandle {
-    inner: Rc<RefCell<Tablet>>,
+    inner: Arc<Mutex<Tablet>>,
 }
 
 impl TabletHandle {
-    pub(super) fn new_instance(&mut self, seat: &ZwpTabletSeatV2, tablet: &TabletDescriptor) {
-        if let Some(client) = seat.as_ref().client() {
-            let wl_tablet = client
-                .create_resource::<ZwpTabletV2>(seat.as_ref().version())
-                .unwrap();
+    pub(super) fn new_instance<D>(
+        &mut self,
+        client: &Client,
+        dh: &DisplayHandle,
+        seat: &ZwpTabletSeatV2,
+        tablet: &TabletDescriptor,
+    ) where
+        D: Dispatch<ZwpTabletV2, TabletUserData>,
+        D: 'static,
+    {
+        let wl_tablet = client
+            .create_resource::<ZwpTabletV2, _, D>(dh, seat.version(), TabletUserData { handle: self.clone() })
+            .unwrap();
 
-            wl_tablet.quick_assign(|_, _req, _| {});
+        seat.tablet_added(&wl_tablet);
 
-            let inner = self.inner.clone();
-            wl_tablet.assign_destructor(Filter::new(move |instance: ZwpTabletV2, _, _| {
-                inner
-                    .borrow_mut()
-                    .instances
-                    .retain(|i| !i.as_ref().equals(instance.as_ref()));
-            }));
+        wl_tablet.name(tablet.name.clone());
 
-            seat.tablet_added(&wl_tablet);
-
-            wl_tablet.name(tablet.name.clone());
-
-            if let Some((id_product, id_vendor)) = tablet.usb_id {
-                wl_tablet.id(id_product, id_vendor);
-            }
-
-            if let Some(syspath) = tablet.syspath.as_ref().and_then(|p| p.to_str()) {
-                wl_tablet.path(syspath.to_owned());
-            }
-
-            wl_tablet.done();
-
-            self.inner.borrow_mut().instances.push(wl_tablet.deref().clone());
+        if let Some((id_product, id_vendor)) = tablet.usb_id {
+            wl_tablet.id(id_product, id_vendor);
         }
+
+        if let Some(syspath) = tablet.syspath.as_ref().and_then(|p| p.to_str()) {
+            wl_tablet.path(syspath.to_owned());
+        }
+
+        wl_tablet.done();
+
+        self.inner.lock().unwrap().instances.push(wl_tablet);
     }
 
     pub(super) fn with_focused_tablet<F>(&self, focus: &WlSurface, cb: F)
@@ -84,12 +89,45 @@ impl TabletHandle {
     {
         if let Some(instance) = self
             .inner
-            .borrow()
+            .lock()
+            .unwrap()
             .instances
             .iter()
-            .find(|i| i.as_ref().same_client_as(focus.as_ref()))
+            .find(|i| Resource::id(*i).same_client_as(&focus.id()))
         {
             cb(instance);
         }
+    }
+}
+
+/// User data of ZwpTabletV2 object
+#[derive(Debug)]
+pub struct TabletUserData {
+    handle: TabletHandle,
+}
+
+impl<D> DelegateDispatch<ZwpTabletV2, TabletUserData, D> for TabletManagerState
+where
+    D: Dispatch<ZwpTabletV2, TabletUserData>,
+    D: 'static,
+{
+    fn request(
+        _state: &mut D,
+        _client: &Client,
+        _tablet: &ZwpTabletV2,
+        _request: zwp_tablet_v2::Request,
+        _data: &TabletUserData,
+        _dh: &DisplayHandle,
+        _data_init: &mut DataInit<'_, D>,
+    ) {
+    }
+
+    fn destroyed(_state: &mut D, _client: ClientId, tablet: ObjectId, data: &TabletUserData) {
+        data.handle
+            .inner
+            .lock()
+            .unwrap()
+            .instances
+            .retain(|i| Resource::id(i) != tablet);
     }
 }
