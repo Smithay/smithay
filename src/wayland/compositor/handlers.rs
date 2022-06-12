@@ -109,6 +109,7 @@ impl Cacheable for SurfaceAttributes {
     fn commit(&mut self, _dh: &DisplayHandle) -> Self {
         SurfaceAttributes {
             buffer: self.buffer.take(),
+            buffer_delta: self.buffer_delta.take(),
             buffer_scale: self.buffer_scale,
             buffer_transform: self.buffer_transform,
             damage: std::mem::take(&mut self.damage),
@@ -119,12 +120,12 @@ impl Cacheable for SurfaceAttributes {
     }
     fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
         if self.buffer.is_some() {
-            if let Some(BufferAssignment::NewBuffer { buffer, .. }) =
+            if let Some(BufferAssignment::NewBuffer(buffer)) =
                 std::mem::replace(&mut into.buffer, self.buffer)
             {
                 let new_buffer = into.buffer.as_ref().and_then(|b| match b {
                     BufferAssignment::Removed => None,
-                    BufferAssignment::NewBuffer { buffer, .. } => Some(buffer),
+                    BufferAssignment::NewBuffer(buffer) => Some(buffer),
                 });
 
                 if Some(&buffer) != new_buffer {
@@ -132,6 +133,7 @@ impl Cacheable for SurfaceAttributes {
                 }
             }
         }
+        into.buffer_delta = self.buffer_delta;
         into.buffer_scale = self.buffer_scale;
         into.buffer_transform = self.buffer_transform;
         into.damage.extend(self.damage);
@@ -166,12 +168,34 @@ where
     ) {
         match request {
             wl_surface::Request::Attach { buffer, x, y } => {
+                let offset: Point<i32, Logical> = (x, y).into();
+                let offset = (x != 0 || y != 0).then(|| offset);
+
+                // If version predates 5 just use the offset
+                // Otherwise error out and use None
+                let offset = if surface.version() < 5 {
+                    offset
+                } else {
+                    if offset.is_some() {
+                        surface.post_error(
+                            wl_surface::Error::InvalidOffset,
+                            "Passing non-zero x,y is protocol violation since versions 5",
+                        );
+                    }
+
+                    None
+                };
+
                 PrivateSurfaceData::with_states(surface, |states| {
-                    states.cached_state.pending::<SurfaceAttributes>().buffer = Some(match buffer {
-                        Some(buffer) => BufferAssignment::NewBuffer {
-                            buffer,
-                            delta: (x, y).into(),
-                        },
+                    let mut pending = states.cached_state.pending::<SurfaceAttributes>();
+
+                    // Let's set the offset here in case it is supported and non-zero
+                    if offset.is_some() {
+                        pending.buffer_delta = offset;
+                    }
+
+                    pending.buffer = Some(match buffer {
+                        Some(buffer) => BufferAssignment::NewBuffer(buffer),
                         None => BufferAssignment::Removed,
                     })
                 });
@@ -256,6 +280,11 @@ where
                             (x, y),
                             (width, height),
                         )))
+                });
+            }
+            wl_surface::Request::Offset { x, y } => {
+                PrivateSurfaceData::with_states(surface, |states| {
+                    states.cached_state.pending::<SurfaceAttributes>().buffer_delta = Some((x, y).into());
                 });
             }
             wl_surface::Request::Destroy => {

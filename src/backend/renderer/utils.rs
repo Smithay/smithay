@@ -6,7 +6,7 @@ use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
     utils::{Buffer as BufferCoord, Logical, Point, Rectangle, Scale, Size, Transform},
     wayland::compositor::{
-        add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage,
+        self, add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage,
         SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
     },
 };
@@ -21,12 +21,23 @@ use wayland_server::{
     DisplayHandle,
 };
 
-#[derive(Default)]
-pub(crate) struct SurfaceState {
+/// Type stored in WlSurface states data_map
+///
+/// ```rs
+/// compositor::with_states(surface, |states| {
+///     let data = states.data_map.get::<RendererSurfaceStateUserData>();
+/// });
+/// ```
+pub type RendererSurfaceStateUserData = RefCell<RendererSurfaceState>;
+
+/// Surface state for rendering related data
+#[derive(Default, Debug)]
+pub struct RendererSurfaceState {
     pub(crate) commit_count: usize,
     pub(crate) buffer_dimensions: Option<Size<i32, BufferCoord>>,
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
+    pub(crate) buffer_delta: Option<Point<i32, Logical>>,
     pub(crate) buffer: Option<WlBuffer>,
     pub(crate) damage: VecDeque<Vec<Rectangle<i32, BufferCoord>>>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
@@ -34,14 +45,22 @@ pub(crate) struct SurfaceState {
     pub(crate) surface_view: Option<SurfaceView>,
     #[cfg(feature = "desktop")]
     pub(crate) space_seen: HashMap<crate::desktop::space::SpaceOutputHash, usize>,
+
+    accumulated_buffer_delta: Point<i32, Logical>,
 }
 
 const MAX_DAMAGE: usize = 4;
 
-impl SurfaceState {
-    pub fn update_buffer(&mut self, dh: &DisplayHandle, attrs: &mut SurfaceAttributes) {
+impl RendererSurfaceState {
+    pub(crate) fn update_buffer(&mut self, dh: &DisplayHandle, attrs: &mut SurfaceAttributes) {
+        self.buffer_delta = attrs.buffer_delta.take();
+
+        if let Some(delta) = self.buffer_delta {
+            self.accumulated_buffer_delta += delta;
+        }
+
         match attrs.buffer.take() {
-            Some(BufferAssignment::NewBuffer { buffer, .. }) => {
+            Some(BufferAssignment::NewBuffer(buffer)) => {
                 // new contents
                 self.buffer_dimensions = buffer_dimensions(dh, &buffer);
 
@@ -130,7 +149,7 @@ impl SurfaceState {
     }
 
     #[cfg(feature = "desktop")]
-    pub fn reset_space_damage(&mut self) {
+    pub(crate) fn reset_space_damage(&mut self) {
         self.space_seen.clear();
     }
 
@@ -139,6 +158,22 @@ impl SurfaceState {
         self.buffer_dimensions
             .as_ref()
             .map(|dim| dim.to_logical(self.buffer_scale, self.buffer_transform))
+    }
+
+    /// Get the attached buffer.
+    /// Can be used to check if surface is mapped
+    pub fn wl_buffer(&self) -> Option<&WlBuffer> {
+        self.buffer.as_ref()
+    }
+
+    /// Location of the buffer relative to the previous call of take_accumulated_buffer_delta
+    ///
+    /// In other words, the x and y, combined with the new surface size define in which directions
+    /// the surface's size changed since last call to this method.
+    ///
+    /// Once delta is taken this method returns `None` to avoid processing it several times.
+    pub fn take_accumulated_buffer_delta(&mut self) -> Point<i32, Logical> {
+        std::mem::take(&mut self.accumulated_buffer_delta)
     }
 }
 
@@ -161,13 +196,13 @@ pub fn on_commit_buffer_handler(dh: &DisplayHandle, surface: &WlSurface) {
             |surf, states, _| {
                 if states
                     .data_map
-                    .insert_if_missing(|| RefCell::new(SurfaceState::default()))
+                    .insert_if_missing(|| RefCell::new(RendererSurfaceState::default()))
                 {
                     new_surfaces.push(surf.clone());
                 }
                 let mut data = states
                     .data_map
-                    .get::<RefCell<SurfaceState>>()
+                    .get::<RendererSurfaceStateUserData>()
                     .unwrap()
                     .borrow_mut();
                 data.update_buffer(dh, &mut *states.cached_state.current::<SurfaceAttributes>());
@@ -178,7 +213,7 @@ pub fn on_commit_buffer_handler(dh: &DisplayHandle, surface: &WlSurface) {
             add_destruction_hook(surf, |data| {
                 if let Some(buffer) = data
                     .data_map
-                    .get::<RefCell<SurfaceState>>()
+                    .get::<RendererSurfaceStateUserData>()
                     .and_then(|s| s.borrow_mut().buffer.take())
                 {
                     buffer.release();
@@ -231,6 +266,23 @@ impl SurfaceView {
     }
 }
 
+/// Access the buffer related states associated to this surface
+///
+/// Calls [`compositor::with_states`] internally
+pub fn with_renderer_surface_state<F, T>(surface: &WlSurface, cb: F) -> T
+where
+    F: FnOnce(&mut RendererSurfaceState) -> T,
+{
+    compositor::with_states(surface, |states| {
+        let mut data = states
+            .data_map
+            .get::<RendererSurfaceStateUserData>()
+            .unwrap()
+            .borrow_mut();
+        cb(&mut data)
+    })
+}
+
 /// Imports buffers of a surface and its subsurfaces using a given [`Renderer`].
 ///
 /// This can be called early as an optimization, if `draw_surface_tree` is used later.
@@ -277,7 +329,8 @@ where
         location,
         |_surface, states, location| {
             let mut location = *location;
-            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+            let mut surface_offset = *surface_offset;
+            if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
                 let mut data_ref = data.borrow_mut();
                 let data = &mut *data_ref;
                 // Import a new buffer if necessary
@@ -358,7 +411,8 @@ where
         location,
         |_surface, states, location| {
             let mut location = *location;
-            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+            let mut surface_offset = *surface_offset;
+            if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
                 let mut data = data.borrow_mut();
                 let surface_view = data.surface_view;
                 let buffer_scale = data.buffer_scale;

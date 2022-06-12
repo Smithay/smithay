@@ -1,7 +1,7 @@
 //! Helper functions to ease dealing with surface trees
 
 use crate::{
-    backend::renderer::utils::SurfaceState,
+    backend::renderer::utils::RendererSurfaceState,
     desktop::Space,
     utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::{
@@ -17,7 +17,7 @@ use std::cell::RefCell;
 
 use super::WindowSurfaceType;
 
-impl SurfaceState {
+impl RendererSurfaceState {
     fn contains_point<P: Into<Point<f64, Logical>>>(&self, attrs: &SurfaceAttributes, point: P) -> bool {
         let point = point.into();
         let size = match self.surface_view.map(|view| view.dst) {
@@ -64,7 +64,7 @@ where
         location,
         |_, states, loc: &Point<i32, Logical>| {
             let mut loc = *loc;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
                 loc += surface_view.offset;
@@ -177,7 +177,7 @@ where
         },
         |_surface, states, location| {
             let mut location = *location;
-            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+            if let Some(data) = states.data_map.get::<RefCell<RendererSurfaceState>>() {
                 let mut data = data.borrow_mut();
                 if key
                     .as_ref()
@@ -277,7 +277,7 @@ where
         location.into(),
         |wl_surface, states, location: &Point<i32, Logical>| {
             let mut location = *location;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
                 location += surface_view.offset;
@@ -349,7 +349,7 @@ pub(crate) fn output_update(
         (location, false),
         |_, states, (location, parent_unmapped)| {
             let mut location = *location;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             // If the parent is unmapped we still have to traverse
             // our children to send a leave events
@@ -364,7 +364,7 @@ pub(crate) fn output_update(
                 TraversalAction::DoChildren((location, true))
             }
         },
-        |wl_surface, states, (location, parent_unmapped)| {
+        |wl_surface, states, (location, parent_unmapped| {
             let mut location = *location;
 
             if *parent_unmapped {
@@ -373,8 +373,7 @@ pub(crate) fn output_update(
                 output_leave(output, surface_list, wl_surface, logger);
                 return;
             }
-
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
                 location += surface_view.offset;
