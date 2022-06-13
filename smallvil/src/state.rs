@@ -53,7 +53,7 @@ impl Smallvil {
         let dh = display.handle();
 
         let compositor_state = CompositorState::new::<Self, _>(&dh, log.clone());
-        let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone()).0;
+        let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone());
         let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let seat_state = SeatState::new();

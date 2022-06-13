@@ -94,7 +94,6 @@ struct Inner<D> {
     keyboard: Option<KeyboardHandle>,
     touch: Option<TouchHandle>,
     known_seats: Vec<wl_seat::WlSeat>,
-
     global_id: Option<GlobalId>,
 }
 
@@ -103,7 +102,6 @@ struct SeatRc<D> {
     name: String,
     inner: Mutex<Inner<D>>,
     user_data_map: UserDataMap,
-
     log: ::slog::Logger,
 }
 
@@ -191,7 +189,6 @@ impl<D: 'static> Seat<D> {
                 keyboard: None,
                 touch: None,
                 known_seats: Default::default(),
-
                 global_id: None,
             }),
             user_data_map: UserDataMap::new(),
@@ -222,8 +219,8 @@ impl<D: 'static> Seat<D> {
         &self.arc.user_data_map
     }
 
-    /// Get the id of WlSeta global
-    pub fn global_id(&self) -> GlobalId {
+    /// Get the id of WlSeat global
+    pub fn global(&self) -> GlobalId {
         self.arc.inner.lock().unwrap().global_id.as_ref().unwrap().clone()
     }
 }

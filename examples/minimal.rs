@@ -123,7 +123,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let mut state = {
         App {
             compositor_state: CompositorState::new::<App, _>(&dh, None),
-            xdg_shell_state: XdgShellState::new::<App, _>(&dh, None).0,
+            xdg_shell_state: XdgShellState::new::<App, _>(&dh, None),
             shm_state: ShmState::new::<App, _>(&dh, vec![], None),
             seat_state,
             data_device_state: DataDeviceState::new::<App, _>(&dh, None),

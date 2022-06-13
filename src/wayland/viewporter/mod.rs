@@ -90,6 +90,11 @@ impl ViewporterState {
             ),
         }
     }
+
+    /// Returns the viewporter global.
+    pub fn global(&self) -> GlobalId {
+        self.global.clone()
+    }
 }
 
 impl<D> DelegateGlobalDispatch<wp_viewporter::WpViewporter, slog::Logger, D> for ViewporterState

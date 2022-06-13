@@ -163,7 +163,7 @@ pub trait ServerDndGrabHandler {
 #[derive(Debug)]
 pub struct DataDeviceState {
     log: slog::Logger,
-    manager_global_id: GlobalId,
+    manager_global: GlobalId,
 }
 
 impl DataDeviceState {
@@ -176,17 +176,14 @@ impl DataDeviceState {
     {
         let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "data_device_mgr"));
 
-        let manager_global_id = display.create_global::<D, WlDataDeviceManager, _>(3, ());
+        let manager_global = display.create_global::<D, WlDataDeviceManager, _>(3, ());
 
-        Self {
-            log,
-            manager_global_id,
-        }
+        Self { log, manager_global }
     }
 
     /// [WlDataDeviceManager] GlobalId getter
-    pub fn global_id(&self) -> GlobalId {
-        self.manager_global_id.clone()
+    pub fn global(&self) -> GlobalId {
+        self.manager_global.clone()
     }
 }
 

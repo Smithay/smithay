@@ -110,7 +110,7 @@ impl<D: 'static> TabletSeatTrait for Seat<D> {
 /// State of wp tablet protocol
 #[derive(Debug)]
 pub struct TabletManagerState {
-    global_id: GlobalId,
+    global: GlobalId,
 }
 
 impl TabletManagerState {
@@ -123,14 +123,14 @@ impl TabletManagerState {
         D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
         D: 'static,
     {
-        let global_id = display.create_global::<D, ZwpTabletManagerV2, _>(MANAGER_VERSION, ());
+        let global = display.create_global::<D, ZwpTabletManagerV2, _>(MANAGER_VERSION, ());
 
-        Self { global_id }
+        Self { global }
     }
 
     /// Get the id of ZwpTabletManagerV2 global
-    pub fn global_id(&self) -> GlobalId {
-        self.global_id.clone()
+    pub fn global(&self) -> GlobalId {
+        self.global.clone()
     }
 }
 
