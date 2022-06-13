@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::backend::input::{ButtonState, TabletToolCapabilitys, TabletToolDescriptor, TabletToolType};
 use crate::utils::{Logical, Point};
-use crate::wayland::seat::{CursorImageAttributes, CursorImageStatus};
+use crate::wayland::seat::{CursorImageAttributes, CursorImageStatus, CURSOR_IMAGE_ROLE};
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
     zwp_tablet_tool_v2::{self, ZwpTabletToolV2},
@@ -18,8 +18,6 @@ use crate::wayland::{compositor, Serial};
 
 use super::tablet::TabletHandle;
 use super::TabletManagerState;
-
-static CURSOR_IMAGE_ROLE: &str = "cursor_image";
 
 #[derive(Debug, Default)]
 struct TabletTool {

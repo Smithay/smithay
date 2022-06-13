@@ -70,7 +70,7 @@ pub use self::{
     pointer::{
         AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus,
         GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab, PointerHandle, PointerInnerHandle,
-        PointerUserData,
+        PointerUserData, CURSOR_IMAGE_ROLE,
     },
     touch::{TouchHandle, TouchUserData},
 };

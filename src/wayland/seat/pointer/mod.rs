@@ -24,7 +24,7 @@ use grab::{DefaultGrab, GrabStatus};
 pub use grab::{GrabStartData, PointerGrab};
 
 mod cursor_image;
-pub use cursor_image::{CursorImageAttributes, CursorImageStatus, CURSOR_IMAGE_ROLE};
+pub use cursor_image::{CursorImageAttributes, CursorImageStatus};
 
 mod events;
 pub use events::{AxisFrame, ButtonEvent, MotionEvent};
@@ -182,6 +182,9 @@ impl<D> PointerInternal<D> {
         }
     }
 }
+
+/// WlSurface role of a cursor image icon
+pub const CURSOR_IMAGE_ROLE: &str = "cursor_image";
 
 /// An handle to a pointer handler
 ///
