@@ -15,7 +15,7 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //!
 //! // Create the viewporter state:
-//! let viewporter_state = ViewporterState::new(
+//! let viewporter_state = ViewporterState::new::<State, _>(
 //!     &display.handle(), // the display
 //!     None // provide a logger, if you want
 //! );
