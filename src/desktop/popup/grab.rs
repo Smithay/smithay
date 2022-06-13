@@ -6,7 +6,7 @@ use wayland_server::{
 };
 
 use crate::{
-    utils::{DeadResource, IsAlive},
+    utils::{DeadResource, IsAlive, Logical, Point},
     wayland::{
         compositor::get_role,
         seat::{
@@ -444,6 +444,14 @@ impl PopupPointerGrab {
             popup_grab: popup_grab.clone(),
         }
     }
+
+    fn focus_client_equals(&self, focus: Option<&(WlSurface, Point<i32, Logical>)>) -> bool {
+        match (focus.as_ref().map(|f| &f.0), self.popup_grab.current_grab()) {
+            (Some(a), Some(b)) => a.id().same_client_as(&b.id()),
+            (None, Some(_)) | (Some(_), None) => false,
+            (None, None) => true,
+        }
+    }
 }
 
 impl<D> PointerGrab<D> for PopupPointerGrab {
@@ -462,13 +470,7 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
 
         // Check that the focus is of the same client as the grab
         // If yes allow it, if not unset the focus.
-        let same_client = match (event.focus.as_ref().map(|f| &f.0), self.popup_grab.current_grab()) {
-            (Some(a), Some(b)) => a.id().same_client_as(&b.id()),
-            (None, Some(_)) | (Some(_), None) => false,
-            (None, None) => true,
-        };
-
-        if same_client {
+        if self.focus_client_equals(event.focus.as_ref()) {
             handle.motion(event.location, event.focus.clone(), event.serial, event.time);
         } else {
             handle.motion(event.location, None, event.serial, event.time);
@@ -494,15 +496,14 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
             return;
         }
 
-        // Check if the the focused surface is still on the current grabbed surface,
+        // Check if the the client of the focused surface is still equal to the grabbed surface client
         // if not the popup will be dismissed
-        if state == ButtonState::Pressed
-            && handle.current_focus().map(|(surface, _)| surface) != self.popup_grab.current_grab().as_ref()
-        {
+        if state == ButtonState::Pressed && !self.focus_client_equals(handle.current_focus()) {
             let _ = self.popup_grab.ungrab(dh, PopupUngrabStrategy::All);
             handle.unset_grab(serial, time);
             handle.button(button, state, serial, time);
             self.popup_grab.unset_keyboard_grab(dh, serial);
+            return;
         }
 
         handle.button(button, state, serial, time);
