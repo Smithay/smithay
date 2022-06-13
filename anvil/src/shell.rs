@@ -25,7 +25,8 @@ use smithay::{
         },
         shell::{
             wlr_layer::{
-                LayerShellRequest, LayerSurfaceAttributes, WlrLayerShellHandler, WlrLayerShellState,
+                Layer, LayerSurface as WlrLayerSurface, LayerSurfaceAttributes, WlrLayerShellHandler,
+                WlrLayerShellState,
             },
             xdg::{
                 Configure, PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface,
@@ -715,23 +716,21 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
         &mut self.layer_shell_state
     }
-    fn request(&mut self, dh: &DisplayHandle, request: LayerShellRequest) {
-        match request {
-            LayerShellRequest::NewLayerSurface {
-                surface,
-                output: wl_output,
-                layer: _layer,
-                namespace,
-            } => {
-                let output = wl_output
-                    .as_ref()
-                    .and_then(Output::from_resource)
-                    .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
-                let mut map = layer_map_for_output(&output);
-                map.map_layer(dh, &LayerSurface::new(surface, namespace)).unwrap();
-            }
-            LayerShellRequest::AckConfigure { .. } => {}
-        }
+
+    fn new_layer_surface(
+        &mut self,
+        dh: &DisplayHandle,
+        surface: WlrLayerSurface,
+        wl_output: Option<wl_output::WlOutput>,
+        _layer: Layer,
+        namespace: String,
+    ) {
+        let output = wl_output
+            .as_ref()
+            .and_then(Output::from_resource)
+            .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
+        let mut map = layer_map_for_output(&output);
+        map.map_layer(dh, &LayerSurface::new(surface, namespace)).unwrap();
     }
 }
 
