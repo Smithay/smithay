@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager, Space},
-    utils::{IsAlive, user_data::UserDataMap, Logical, Physical, Point, Rectangle, Scale},
+    utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, TraversalAction},
         output::{Inner as OutputInner, Output, OutputData},
@@ -517,8 +517,7 @@ impl LayerSurface {
         let scale = scale.into();
         let surface = self.0.surface.wl_surface();
         let mut geo = physical_bbox_from_surface_tree(surface, location, scale);
-        for (popup, p_location) in PopupManager::popups_for_surface(surface)
-        {
+        for (popup, p_location) in PopupManager::popups_for_surface(surface) {
             geo = geo.merge(physical_bbox_from_surface_tree(
                 popup.wl_surface(),
                 location + p_location.to_f64().to_physical(scale),
@@ -564,16 +563,15 @@ impl LayerSurface {
         let scale = scale.into();
         let mut damage = Vec::new();
         let surface = self.wl_surface();
-        damage.extend(
-            damage_from_surface_tree(surface, location, scale, for_values),
-        );
+        damage.extend(damage_from_surface_tree(surface, location, scale, for_values));
         for (popup, p_location) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
             let popup_damage = damage_from_surface_tree(
                 surface,
                 location + p_location.to_f64().to_physical(scale),
                 scale,
-                for_values);
+                for_values,
+            );
             damage.extend(popup_damage);
         }
         damage

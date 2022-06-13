@@ -194,8 +194,7 @@ impl Window {
         let scale = scale.into();
         let surface = self.0.toplevel.wl_surface();
         let mut geo = physical_bbox_from_surface_tree(surface, location, scale);
-        for (popup, p_location) in PopupManager::popups_for_surface(surface)
-        {
+        for (popup, p_location) in PopupManager::popups_for_surface(surface) {
             let offset = (self.geometry().loc + p_location - popup.geometry().loc)
                 .to_f64()
                 .to_physical(scale)
@@ -287,9 +286,7 @@ impl Window {
     ) -> Vec<Rectangle<i32, Physical>> {
         let mut damage = Vec::new();
         let surface = self.0.toplevel.wl_surface();
-        damage.extend(
-            damage_from_surface_tree(surface, location, scale, for_values)
-        );
+        damage.extend(damage_from_surface_tree(surface, location, scale, for_values));
         damage
     }
 

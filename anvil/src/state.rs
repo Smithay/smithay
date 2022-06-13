@@ -5,8 +5,8 @@ use std::{
 
 use smithay::{
     delegate_compositor, delegate_data_device, delegate_layer_shell, delegate_output, delegate_seat,
-    delegate_shm, delegate_tablet_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
-    delegate_xdg_shell,
+    delegate_shm, delegate_tablet_manager, delegate_viewporter, delegate_xdg_activation,
+    delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},

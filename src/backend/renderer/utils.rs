@@ -4,11 +4,11 @@
 use crate::utils::Coordinate;
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
-    utils::{Buffer as BufferCoord, Physical, Logical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer as BufferCoord, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
-            self, add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage,
-            SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
+            self, add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment,
+            Damage, SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
         },
         viewporter,
     },

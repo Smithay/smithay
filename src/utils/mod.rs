@@ -15,7 +15,9 @@ pub(crate) mod alive_tracker;
 #[cfg(feature = "wayland_frontend")]
 pub use self::alive_tracker::IsAlive;
 
-pub use self::geometry::{Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Scale, Size, Transform};
+pub use self::geometry::{
+    Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Scale, Size, Transform,
+};
 
 /// This resource is not managed by Smithay
 #[derive(Debug)]

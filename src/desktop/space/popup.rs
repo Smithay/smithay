@@ -26,14 +26,13 @@ pub struct RenderPopup {
 impl Window {
     pub(super) fn popup_elements(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> {
         let loc = window_loc(self, &space_id);
-        PopupManager::popups_for_surface(self.toplevel().wl_surface())
-            .map(move |(popup, location)| {
-                let offset = loc + location - popup.geometry().loc;
-                RenderPopup {
-                    location: offset,
-                    popup,
-                    z_index: RenderZindex::Popups as u8,
-                }
+        PopupManager::popups_for_surface(self.toplevel().wl_surface()).map(move |(popup, location)| {
+            let offset = loc + location - popup.geometry().loc;
+            RenderPopup {
+                location: offset,
+                popup,
+                z_index: RenderZindex::Popups as u8,
+            }
         })
     }
 }
@@ -42,20 +41,19 @@ impl LayerSurface {
     pub(super) fn popup_elements(&self, _space_id: usize) -> impl Iterator<Item = RenderPopup> + '_ {
         let loc = layer_state(self).location;
 
-        PopupManager::popups_for_surface(self.wl_surface())
-            .map(move |(popup, location)| {
-                let offset = loc + location - popup.geometry().loc;
-                let z_index = if self.layer() == Layer::Overlay {
-                    RenderZindex::PopupsOverlay as u8
-                } else {
-                    RenderZindex::Popups as u8
-                };
+        PopupManager::popups_for_surface(self.wl_surface()).map(move |(popup, location)| {
+            let offset = loc + location - popup.geometry().loc;
+            let z_index = if self.layer() == Layer::Overlay {
+                RenderZindex::PopupsOverlay as u8
+            } else {
+                RenderZindex::Popups as u8
+            };
 
-                RenderPopup {
-                    location: offset,
-                    popup,
-                    z_index,
-                }
+            RenderPopup {
+                location: offset,
+                popup,
+                z_index,
+            }
         })
     }
 }
@@ -83,7 +81,11 @@ impl RenderPopup {
         scale: impl Into<Scale<f64>>,
     ) -> Rectangle<i32, Physical> {
         let scale = scale.into();
-        physical_bbox_from_surface_tree(self.popup.wl_surface(), self.location.to_f64().to_physical(scale), scale)
+        physical_bbox_from_surface_tree(
+            self.popup.wl_surface(),
+            self.location.to_f64().to_physical(scale),
+            scale,
+        )
     }
 
     pub(super) fn elem_accumulated_damage(

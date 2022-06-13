@@ -38,7 +38,10 @@
 use std::cell::RefCell;
 
 use wayland_protocols::wp::viewporter::server::{wp_viewport, wp_viewporter};
-use wayland_server::{protocol::wl_surface, DisplayHandle, Resource, backend::GlobalId, GlobalDispatch, Dispatch, DelegateDispatch, DelegateGlobalDispatch};
+use wayland_server::{
+    backend::GlobalId, protocol::wl_surface, DelegateDispatch, DelegateGlobalDispatch, Dispatch,
+    DisplayHandle, GlobalDispatch, Resource,
+};
 
 use crate::utils::{IsAlive, Logical, Rectangle, Size};
 
@@ -64,14 +67,17 @@ impl ViewporterState {
     pub fn new<D, L>(display: &DisplayHandle, log: L) -> ViewporterState
     where
         D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>
-        + Dispatch<wp_viewporter::WpViewporter, slog::Logger>
-        + Dispatch<wp_viewport::WpViewport, ViewportState>
-        + 'static,
+            + Dispatch<wp_viewporter::WpViewporter, slog::Logger>
+            + Dispatch<wp_viewport::WpViewport, ViewportState>
+            + 'static,
         L: Into<Option<slog::Logger>>,
     {
         ViewporterState {
             dh: display.clone(),
-            global: display.create_global::<D, wp_viewporter::WpViewporter, slog::Logger>(1, crate::slog_or_fallback(log).new(slog::o!("smithay_module" => "wp_viewporter"))),
+            global: display.create_global::<D, wp_viewporter::WpViewporter, slog::Logger>(
+                1,
+                crate::slog_or_fallback(log).new(slog::o!("smithay_module" => "wp_viewporter")),
+            ),
         }
     }
 }
@@ -141,10 +147,10 @@ where
                         .data_map
                         .insert_if_missing(|| RefCell::new(Some(ViewportMarker(viewport))));
                 })
-            },
+            }
             wp_viewporter::Request::Destroy => {
                 // All is already handled by our destructor
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -268,7 +274,11 @@ fn viewport_commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
         states
             .data_map
             .insert_if_missing(|| RefCell::new(Option::<ViewportMarker>::None));
-        let viewport = states.data_map.get::<RefCell<Option<ViewportMarker>>>().unwrap().borrow();
+        let viewport = states
+            .data_map
+            .get::<RefCell<Option<ViewportMarker>>>()
+            .unwrap()
+            .borrow();
         if let Some(viewport) = &*viewport {
             let viewport_state = states.cached_state.pending::<ViewportCachedState>();
 
@@ -295,7 +305,11 @@ pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logica
     states
         .data_map
         .insert_if_missing(|| RefCell::new(Option::<ViewportMarker>::None));
-    let viewport = states.data_map.get::<RefCell<Option<ViewportMarker>>>().unwrap().borrow();
+    let viewport = states
+        .data_map
+        .get::<RefCell<Option<ViewportMarker>>>()
+        .unwrap()
+        .borrow();
 
     if let Some(viewport) = &*viewport {
         let state = states.cached_state.pending::<ViewportCachedState>();
