@@ -44,7 +44,6 @@ impl Device for X11VirtualDevice {
 }
 
 /// X11-Backend internal event wrapping `X11`'s types into a [`KeyboardKeyEvent`].
-#[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub struct X11KeyboardInputEvent {
     pub(crate) time: u32,
@@ -88,7 +87,6 @@ impl KeyboardKeyEvent<X11Input> for X11KeyboardInputEvent {
 }
 
 /// X11-Backend internal event wrapping `X11`'s types into a [`PointerAxisEvent`]
-#[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub struct X11MouseWheelEvent {
     pub(crate) time: u32,
@@ -136,7 +134,6 @@ impl PointerAxisEvent<X11Input> for X11MouseWheelEvent {
 }
 
 /// X11-Backend internal event wrapping `X11`'s types into a [`PointerButtonEvent`]
-#[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub struct X11MouseInputEvent {
     pub(crate) time: u32,
@@ -175,7 +172,6 @@ impl PointerButtonEvent<X11Input> for X11MouseInputEvent {
 }
 
 /// X11-Backend internal event wrapping `X11`'s types into a [`PointerMotionAbsoluteEvent`]
-#[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub struct X11MouseMovedEvent {
     pub(crate) time: u32,
