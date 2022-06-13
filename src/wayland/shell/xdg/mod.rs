@@ -942,17 +942,21 @@ impl XdgShellState {
             .cloned()
     }
 
-    // /// Returns a reference to the toplevel surface mapped to the provided wl_surface.
-    // pub fn toplevel_surface(&self, surface: &wl_surface::WlSurface) -> Option<&ToplevelSurface> {
-    //     self.known_toplevels
-    //         .iter()
-    //         .find(|toplevel| toplevel.wl_surface == *surface)
-    // }
+    /// Access all the popup surfaces known by this handler
+    pub fn popup_surfaces<T, F: FnMut(&[PopupSurface]) -> T>(&self, mut cb: F) -> T {
+        cb(&self.inner.lock().unwrap().known_popups)
+    }
 
-    // /// Access all the popup surfaces known by this handler
-    // pub fn popup_surfaces(&self) -> &[PopupSurface] {
-    //     &self.known_popups[..]
-    // }
+    /// Returns a [`PopupSurface`] from an underlying popup surface.
+    pub fn get_popup(&self, popup: &xdg_popup::XdgPopup) -> Option<PopupSurface> {
+        self.inner
+            .lock()
+            .unwrap()
+            .known_popups
+            .iter()
+            .find(|surface| surface.xdg_popup() == popup)
+            .cloned()
+    }
 
     /// Returns the xdg shell global.
     pub fn global(&self) -> GlobalId {
@@ -1063,8 +1067,6 @@ impl ToplevelSurface {
     }
 
     /// Retrieve the shell client owning this toplevel surface
-    ///
-    /// Returns `None` if the surface does actually no longer exist.
     pub fn client(&self) -> ShellClient {
         let shell = {
             let data = self
@@ -1210,8 +1212,6 @@ impl ToplevelSurface {
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
-    ///
-    /// Returns `None` if the toplevel surface actually no longer exists.
     pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
     }
@@ -1249,9 +1249,6 @@ impl ToplevelSurface {
     }
 
     /// Gets a copy of the current state of this toplevel
-    ///
-    /// Returns `None` if the underlying surface has been
-    /// destroyed
     pub fn current_state(&self) -> ToplevelState {
         compositor::with_states(&self.wl_surface, |states| {
             let attributes = states
@@ -1343,8 +1340,6 @@ impl PopupSurface {
     }
 
     /// Retrieve the shell client owning this popup surface
-    ///
-    /// Returns `None` if the surface does actually no longer exist.
     pub fn client(&self) -> ShellClient {
         let shell = {
             let data = self
@@ -1535,11 +1530,14 @@ impl PopupSurface {
         self.shell_surface.popup_done();
     }
 
-    /// Access the underlying `wl_surface` of this toplevel surface
-    ///
-    /// Returns `None` if the popup surface actually no longer exists.
+    /// Access the underlying `wl_surface` of this popup surface
     pub fn wl_surface(&self) -> &wl_surface::WlSurface {
         &self.wl_surface
+    }
+
+    /// Access the underlying `xdg_popup` of this popup surface
+    pub fn xdg_popup(&self) -> &xdg_popup::XdgPopup {
+        &self.shell_surface
     }
 
     /// Allows the pending state of this popup to
