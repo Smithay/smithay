@@ -35,7 +35,7 @@ use smithay::{
                 ToplevelSurface, XdgShellState,
             },
         },
-        shm::ShmState,
+        shm::{ShmHandler, ShmState},
         socket::ListeningSocketSource,
         tablet_manager::TabletSeatTrait,
         viewporter::ViewporterState,
@@ -130,8 +130,8 @@ impl<BackendData> ServerDndGrabHandler for AnvilState<BackendData> {
 delegate_data_device!(@<BackendData: 'static> AnvilState<BackendData>);
 delegate_output!(@<BackendData: 'static> AnvilState<BackendData>);
 
-impl<BackendData> AsRef<ShmState> for AnvilState<BackendData> {
-    fn as_ref(&self) -> &ShmState {
+impl<BackendData> ShmHandler for AnvilState<BackendData> {
+    fn shm_state(&self) -> &ShmState {
         &self.shm_state
     }
 }

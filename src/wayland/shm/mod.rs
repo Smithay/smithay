@@ -20,7 +20,7 @@
 //! extern crate smithay;
 //!
 //! use smithay::wayland::buffer::BufferHandler;
-//! use smithay::wayland::shm::ShmState;
+//! use smithay::wayland::shm::{ShmState, ShmHandler};
 //! use smithay::delegate_shm;
 //! use wayland_server::protocol::wl_shm::Format;
 //!
@@ -45,8 +45,8 @@
 //!         // Some parts of window management may also use this function.
 //!     }
 //! }
-//! impl AsRef<ShmState> for State {
-//!     fn as_ref(&self) -> &ShmState {
+//! impl ShmHandler for State {
+//!     fn shm_state(&self) -> &ShmState {
 //!         &self.shm_state
 //!     }
 //! }
@@ -136,7 +136,7 @@ impl ShmState {
             + Dispatch<WlShm, ()>
             + Dispatch<WlShmPool, ShmPoolUserData>
             + BufferHandler
-            + AsRef<ShmState>
+            + ShmHandler
             + 'static,
         L: Into<Option<::slog::Logger>>,
     {
@@ -159,6 +159,12 @@ impl ShmState {
     pub fn global(&self) -> GlobalId {
         self.shm.clone()
     }
+}
+
+/// Shm global handler
+pub trait ShmHandler {
+    /// Return the Shm global state
+    fn shm_state(&self) -> &ShmState;
 }
 
 /// Error that can occur when accessing an SHM buffer

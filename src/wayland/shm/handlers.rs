@@ -2,7 +2,7 @@ use crate::wayland::{buffer::BufferHandler, shm::ShmBufferUserData};
 
 use super::{
     pool::{Pool, ResizeError},
-    BufferData, ShmPoolUserData, ShmState,
+    BufferData, ShmHandler, ShmPoolUserData, ShmState,
 };
 
 use std::sync::Arc;
@@ -21,7 +21,7 @@ where
     D: GlobalDispatch<WlShm, ()>,
     D: Dispatch<WlShm, ()>,
     D: Dispatch<WlShmPool, ShmPoolUserData>,
-    D: AsRef<ShmState>,
+    D: ShmHandler,
     D: 'static,
 {
     fn bind(
@@ -35,7 +35,7 @@ where
         let shm = data_init.init(resource, ());
 
         // send the formats
-        for &f in &state.as_ref().formats[..] {
+        for &f in &state.shm_state().formats[..] {
             shm.format(f);
         }
     }
@@ -43,7 +43,7 @@ where
 
 impl<D> DelegateDispatch<WlShm, (), D> for ShmState
 where
-    D: Dispatch<WlShm, ()> + Dispatch<WlShmPool, ShmPoolUserData> + AsRef<ShmState> + 'static,
+    D: Dispatch<WlShm, ()> + Dispatch<WlShmPool, ShmPoolUserData> + ShmHandler + 'static,
 {
     fn request(
         state: &mut D,
@@ -66,7 +66,7 @@ where
             return;
         }
 
-        let mmap_pool = match Pool::new(fd, size as usize, state.as_ref().log.clone()) {
+        let mmap_pool = match Pool::new(fd, size as usize, state.shm_state().log.clone()) {
             Ok(p) => p,
             Err(()) => {
                 shm.post_error(wl_shm::Error::InvalidFd, format!("Failed to mmap fd {}", fd));
@@ -92,7 +92,7 @@ where
     D: Dispatch<WlShmPool, ShmPoolUserData>
         + Dispatch<wl_buffer::WlBuffer, ShmBufferUserData>
         + BufferHandler
-        + AsRef<ShmState>
+        + ShmHandler
         + 'static,
 {
     fn request(
@@ -145,7 +145,7 @@ where
 
                 match format {
                     WEnum::Value(format) => {
-                        if !state.as_ref().formats.contains(&format) {
+                        if !state.shm_state().formats.contains(&format) {
                             pool.post_error(
                                 wl_shm::Error::InvalidFormat,
                                 format!("format {:?} not supported", format),

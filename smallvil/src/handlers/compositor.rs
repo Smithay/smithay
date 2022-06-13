@@ -9,7 +9,7 @@ use smithay::{
     wayland::{
         buffer::BufferHandler,
         compositor::{CompositorHandler, CompositorState},
-        shm::ShmState,
+        shm::{ShmHandler, ShmState},
     },
 };
 
@@ -30,8 +30,8 @@ impl BufferHandler for Smallvil {
     fn buffer_destroyed(&mut self, _buffer: &wl_buffer::WlBuffer) {}
 }
 
-impl AsRef<ShmState> for Smallvil {
-    fn as_ref(&self) -> &ShmState {
+impl ShmHandler for Smallvil {
+    fn shm_state(&self) -> &ShmState {
         &self.shm_state
     }
 }
