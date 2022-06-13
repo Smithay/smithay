@@ -2,8 +2,6 @@ use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::utils::{Logical, Point};
 
-pub static CURSOR_IMAGE_ROLE: &str = "cursor_image";
-
 /// The role representing a surface set as the pointer cursor
 #[derive(Debug, Default, Copy, Clone)]
 pub struct CursorImageAttributes {

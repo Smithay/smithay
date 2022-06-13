@@ -461,13 +461,13 @@ impl CompositorState {
         }
     }
 
-    /// Get id of WlCompositor globabl
-    pub fn compositor_globabl(&self) -> GlobalId {
+    /// Get id of compositor global
+    pub fn compositor_global(&self) -> GlobalId {
         self.compositor.clone()
     }
 
-    /// Get id of WlSubcompositor globabl
-    pub fn subcompositor_globabl(&self) -> GlobalId {
+    /// Get id of subcompositor global
+    pub fn subcompositor_global(&self) -> GlobalId {
         self.subcompositor.clone()
     }
 }

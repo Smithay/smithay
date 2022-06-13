@@ -80,13 +80,14 @@ use crate::wayland::shell::xdg::XdgShellSurfaceUserData;
 #[derive(Debug)]
 pub struct XdgDecorationState {
     _logger: ::slog::Logger,
+    global: GlobalId,
 }
 
 impl XdgDecorationState {
     /// Creates a new delegate type for handling xdg decoration events.
     ///
     /// A global id is also returned to allow destroying the global in the future.
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> (XdgDecorationState, GlobalId)
+    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> XdgDecorationState
     where
         D: GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
             + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
@@ -97,7 +98,12 @@ impl XdgDecorationState {
         let global =
             display.create_global::<D, zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _>(1, ());
 
-        (XdgDecorationState { _logger }, global)
+        XdgDecorationState { _logger, global }
+    }
+
+    /// Returns the xdg-decoration global.
+    pub fn global(&self) -> GlobalId {
+        self.global.clone()
     }
 }
 

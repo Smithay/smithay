@@ -160,7 +160,7 @@ impl XdgActivationTokenData {
 #[derive(Debug)]
 pub struct XdgActivationState {
     _logger: ::slog::Logger,
-    _global: GlobalId,
+    global: GlobalId,
     pending_tokens: HashMap<XdgActivationToken, XdgActivationTokenData>,
     activation_requests: HashMap<XdgActivationToken, (XdgActivationTokenData, WlSurface)>,
 }
@@ -182,7 +182,7 @@ impl XdgActivationState {
 
         XdgActivationState {
             _logger: logger.new(slog::o!("smithay_module" => "xdg_activation_handler")),
-            _global: global,
+            global,
             pending_tokens: HashMap::new(),
             activation_requests: HashMap::new(),
         }
@@ -223,6 +223,11 @@ impl XdgActivationState {
         F: FnMut(&XdgActivationToken, &XdgActivationTokenData) -> bool,
     {
         self.pending_tokens.retain(|k, v| f(k, v))
+    }
+
+    /// Returns the xdg activation global.
+    pub fn global(&self) -> GlobalId {
+        self.global.clone()
     }
 }
 

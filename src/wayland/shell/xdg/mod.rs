@@ -902,30 +902,28 @@ pub(crate) struct InnerState {
 #[derive(Debug)]
 pub struct XdgShellState {
     inner: Arc<Mutex<InnerState>>,
-
+    global: GlobalId,
     _log: slog::Logger,
 }
 
 impl XdgShellState {
     /// Create a new `xdg_shell` global
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> (XdgShellState, GlobalId)
+    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> XdgShellState
     where
         L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<XdgWmBase, ()> + 'static,
     {
         let log = crate::slog_or_fallback(logger);
-        let shell_state = XdgShellState {
+        let global = display.create_global::<D, XdgWmBase, _>(3, ());
+
+        XdgShellState {
             inner: Arc::new(Mutex::new(InnerState {
                 known_toplevels: Vec::new(),
                 known_popups: Vec::new(),
             })),
-
+            global,
             _log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
-        };
-
-        let xdg_shell_global = display.create_global::<D, XdgWmBase, _>(3, ());
-
-        (shell_state, xdg_shell_global)
+        }
     }
 
     /// Access all the shell surfaces known by this handler
@@ -955,6 +953,11 @@ impl XdgShellState {
     // pub fn popup_surfaces(&self) -> &[PopupSurface] {
     //     &self.known_popups[..]
     // }
+
+    /// Returns the xdg shell global.
+    pub fn global(&self) -> GlobalId {
+        self.global.clone()
+    }
 }
 
 #[derive(Default, Debug)]

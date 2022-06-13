@@ -251,8 +251,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
         let viewporter_state = ViewporterState::new::<Self, _>(&dh, log.clone());
         let xdg_activation_state = XdgActivationState::new::<Self, _>(&dh, log.clone());
-        let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&dh, log.clone()).0;
-        let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone()).0;
+        let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&dh, log.clone());
+        let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone());
 
         // init input
         let seat_name = backend_data.seat_name();
