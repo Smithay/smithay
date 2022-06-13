@@ -298,7 +298,7 @@ impl Output {
         D: GlobalDispatch<WlOutput, OutputData>,
         D: 'static,
     {
-        display.create_global::<D, WlOutput, _>(3, self.data.clone())
+        display.create_global::<D, WlOutput, _>(4, self.data.clone())
     }
 
     /// Attempt to retrieve a [`Output`] from an existing resource
