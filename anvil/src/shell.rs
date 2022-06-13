@@ -32,7 +32,7 @@ use smithay::{
                 XdgShellState, XdgToplevelSurfaceRoleAttributes,
             },
         },
-        viewporter, Serial,
+        Serial,
     },
 };
 

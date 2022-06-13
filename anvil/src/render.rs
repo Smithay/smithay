@@ -54,6 +54,7 @@ where
                     log,
                 )?;
                 draw_window_popups(
+                    dh,
                     renderer,
                     frame,
                     &window,

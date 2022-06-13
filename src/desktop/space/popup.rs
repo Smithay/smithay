@@ -39,7 +39,7 @@ impl Window {
 }
 
 impl LayerSurface {
-    pub(super) fn popup_elements(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> + '_ {
+    pub(super) fn popup_elements(&self, _space_id: usize) -> impl Iterator<Item = RenderPopup> + '_ {
         let loc = layer_state(self).location;
 
         PopupManager::popups_for_surface(self.wl_surface())
@@ -83,11 +83,7 @@ impl RenderPopup {
         scale: impl Into<Scale<f64>>,
     ) -> Rectangle<i32, Physical> {
         let scale = scale.into();
-        let surface = match self.popup.get_surface() {
-            Some(surface) => surface,
-            None => return Rectangle::default(),
-        };
-        physical_bbox_from_surface_tree(surface, self.location.to_f64().to_physical(scale), scale)
+        physical_bbox_from_surface_tree(self.popup.wl_surface(), self.location.to_f64().to_physical(scale), scale)
     }
 
     pub(super) fn elem_accumulated_damage(
@@ -97,16 +93,12 @@ impl RenderPopup {
         for_values: Option<(&Space, &Output)>,
     ) -> Vec<Rectangle<i32, Physical>> {
         let scale = scale.into();
-        if let Some(surface) = self.popup.get_surface() {
-            damage_from_surface_tree(
-                surface,
-                self.location.to_f64().to_physical(scale),
-                scale,
-                for_values,
-            )
-        } else {
-            Vec::new()
-        }
+        damage_from_surface_tree(
+            self.popup.wl_surface(),
+            self.location.to_f64().to_physical(scale),
+            scale,
+            for_values,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]

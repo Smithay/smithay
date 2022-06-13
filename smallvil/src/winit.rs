@@ -124,7 +124,7 @@ pub fn winit_dispatch(
             .unwrap()
     });
 
-    backend.submit(Some(&[damage.to_logical(1)]), 1.0).unwrap();
+    backend.submit(Some(&[damage])).unwrap();
 
     state
         .space

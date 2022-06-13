@@ -192,23 +192,15 @@ impl Window {
     ) -> Rectangle<i32, Physical> {
         let location = location.into();
         let scale = scale.into();
-        let surface = match self.0.toplevel.get_surface() {
-            Some(surface) => surface,
-            None => return Rectangle::default(),
-        };
+        let surface = self.0.toplevel.wl_surface();
         let mut geo = physical_bbox_from_surface_tree(surface, location, scale);
         for (popup, p_location) in PopupManager::popups_for_surface(surface)
-            .ok()
-            .into_iter()
-            .flatten()
         {
-            if let Some(surface) = popup.get_surface() {
-                let offset = (self.geometry().loc + p_location - popup.geometry().loc)
-                    .to_f64()
-                    .to_physical(scale)
-                    .to_i32_round();
-                geo = geo.merge(physical_bbox_from_surface_tree(surface, location + offset, scale));
-            }
+            let offset = (self.geometry().loc + p_location - popup.geometry().loc)
+                .to_f64()
+                .to_physical(scale)
+                .to_i32_round();
+            geo = geo.merge(physical_bbox_from_surface_tree(surface, location + offset, scale));
         }
         geo
     }

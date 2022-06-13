@@ -109,7 +109,7 @@ where
         location,
         |_, states, location: &Point<f64, Physical>| {
             let mut location = *location;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
                 location += surface_view.offset.to_f64().to_physical(scale);
@@ -166,7 +166,7 @@ where
 
             if let Some(surface_view) = states
                 .data_map
-                .get::<RefCell<SurfaceState>>()
+                .get::<RefCell<RendererSurfaceState>>()
                 .and_then(|d| d.borrow().surface_view)
             {
                 location += surface_view.offset.to_f64().to_physical(scale);
@@ -364,13 +364,13 @@ pub(crate) fn output_update(
                 TraversalAction::DoChildren((location, true))
             }
         },
-        |wl_surface, states, (location, parent_unmapped| {
+        |wl_surface, states, (location, parent_unmapped)| {
             let mut location = *location;
 
             if *parent_unmapped {
                 // The parent is unmapped, just send a leave event
                 // if we were previously mapped and exit early
-                output_leave(output, surface_list, wl_surface, logger);
+                output_leave(dh, output, surface_list, wl_surface, logger);
                 return;
             }
             let data = states.data_map.get::<RefCell<RendererSurfaceState>>();

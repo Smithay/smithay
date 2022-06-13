@@ -5,7 +5,7 @@ use std::{
 
 use smithay::{
     delegate_compositor, delegate_data_device, delegate_layer_shell, delegate_output, delegate_seat,
-    delegate_shm, delegate_tablet_manager, delegate_xdg_activation, delegate_xdg_decoration,
+    delegate_shm, delegate_tablet_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
     delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     reexports::{
@@ -38,6 +38,7 @@ use smithay::{
         shm::ShmState,
         socket::ListeningSocketSource,
         tablet_manager::TabletSeatTrait,
+        viewporter::ViewporterState,
         xdg_activation::{
             XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
         },
@@ -81,6 +82,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<AnvilState<BackendData>>,
     pub shm_state: ShmState,
+    pub viewporter_state: ViewporterState,
     pub xdg_activation_state: XdgActivationState,
     pub xdg_decoration_state: XdgDecorationManager,
     pub xdg_shell_state: XdgShellState,
@@ -143,6 +145,8 @@ impl<BackendData> SeatHandler for AnvilState<BackendData> {
 delegate_seat!(@<BackendData: 'static> AnvilState<BackendData>);
 
 delegate_tablet_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+
+delegate_viewporter!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
     fn activation_state(&mut self) -> &mut XdgActivationState {
@@ -245,6 +249,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let output_manager_state = OutputManagerState::new();
         let seat_state = SeatState::new();
         let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
+        let viewporter_state = ViewporterState::new::<Self, _>(&dh, log.clone());
         let xdg_activation_state = XdgActivationState::new::<Self, _>(&dh, log.clone());
         let xdg_decoration_state = XdgDecorationManager::new::<Self, _>(&dh, log.clone()).0;
         let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone()).0;
@@ -300,6 +305,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             output_manager_state,
             seat_state,
             shm_state,
+            viewporter_state,
             xdg_activation_state,
             xdg_decoration_state,
             xdg_shell_state,

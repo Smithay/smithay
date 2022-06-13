@@ -196,8 +196,8 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                             frame,
                             surface,
                             1.0,
-                            (0, 0).into(),
-                            &[damage.to_logical(1)],
+                            (0.0, 0.0).into(),
+                            &[damage],
                             &log,
                         )
                         .unwrap();
@@ -222,7 +222,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
         // It is important that all events on the display have been dispatched and flushed to clients before
         // swapping buffers because this operation may block.
-        backend.submit(Some(&[damage.to_logical(1)]), 1.0).unwrap();
+        backend.submit(Some(&[damage])).unwrap();
     }
 }
 

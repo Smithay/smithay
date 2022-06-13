@@ -1975,7 +1975,7 @@ impl Frame for Gles2Frame {
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,
-        src: Rectangle<f64, BufferCoords>,
+        src: Rectangle<f64, BufferCoord>,
         dest: Rectangle<f64, Physical>,
         damage: &[Rectangle<f64, Physical>],
         transform: Transform,

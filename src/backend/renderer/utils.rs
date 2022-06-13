@@ -4,10 +4,13 @@
 use crate::utils::Coordinate;
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
-    utils::{Buffer as BufferCoord, Logical, Point, Rectangle, Scale, Size, Transform},
-    wayland::compositor::{
-        self, add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage,
-        SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
+    utils::{Buffer as BufferCoord, Physical, Logical, Point, Rectangle, Scale, Size, Transform},
+    wayland::{
+        compositor::{
+            self, add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage,
+            SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
+        },
+        viewporter,
     },
 };
 use std::collections::VecDeque;
@@ -52,7 +55,8 @@ pub struct RendererSurfaceState {
 const MAX_DAMAGE: usize = 4;
 
 impl RendererSurfaceState {
-    pub(crate) fn update_buffer(&mut self, dh: &DisplayHandle, attrs: &mut SurfaceAttributes) {
+    pub(crate) fn update_buffer(&mut self, dh: &DisplayHandle, states: &SurfaceData) {
+        let mut attrs = states.cached_state.current::<SurfaceAttributes>();
         self.buffer_delta = attrs.buffer_delta.take();
 
         if let Some(delta) = self.buffer_delta {
@@ -205,7 +209,7 @@ pub fn on_commit_buffer_handler(dh: &DisplayHandle, surface: &WlSurface) {
                     .get::<RendererSurfaceStateUserData>()
                     .unwrap()
                     .borrow_mut();
-                data.update_buffer(dh, &mut *states.cached_state.current::<SurfaceAttributes>());
+                data.update_buffer(dh, states);
             },
             |_, _, _| true,
         );
@@ -329,7 +333,6 @@ where
         location,
         |_surface, states, location| {
             let mut location = *location;
-            let mut surface_offset = *surface_offset;
             if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
                 let mut data_ref = data.borrow_mut();
                 let data = &mut *data_ref;
@@ -390,7 +393,7 @@ pub fn draw_surface_tree<R, S>(
     frame: &mut <R as Renderer>::Frame,
     surface: &WlSurface,
     scale: S,
-    location: Point<f64, Logical>,
+    location: Point<f64, Physical>,
     damage: &[Rectangle<i32, Physical>],
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
@@ -411,7 +414,6 @@ where
         location,
         |_surface, states, location| {
             let mut location = *location;
-            let mut surface_offset = *surface_offset;
             if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
                 let mut data = data.borrow_mut();
                 let surface_view = data.surface_view;
@@ -423,7 +425,7 @@ where
                     .get_mut(&texture_id)
                     .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
                 {
-                    let surface_view = surface_view.unwrap();
+                    let surface_view = dbg!(surface_view.unwrap());
                     // Add the surface offset again to the location as
                     // with_surface_tree_upward only passes the updated
                     // location to its children

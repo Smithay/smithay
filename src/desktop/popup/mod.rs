@@ -9,7 +9,7 @@ use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
-    utils::{Logical, Physical, Point, Rectangle, Scale},
+    utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::with_states,
         shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceRoleAttributes},
@@ -118,27 +118,20 @@ where
 {
     let location = surface_location.into();
     let offset = offset.into();
+    let scale = scale.into();
     for (popup, p_location) in PopupManager::popups_for_surface(for_surface) {
         let surface = popup.wl_surface();
         let offset = (offset + p_location - popup.geometry().loc)
             .to_f64()
-            .to_physical();
-        let damage = damage
-            .iter()
-            .cloned()
-            .map(|mut geo| {
-                geo.loc -= offset;
-                geo
-            })
-            .collect::<Vec<_>>();
+            .to_physical(scale);
         draw_surface_tree(
             dh,
             renderer,
             frame,
             surface,
-            scale.into(),
+            scale,
             location + offset,
-            &damage,
+            damage,
             log,
         )?;
     }
