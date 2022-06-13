@@ -12,7 +12,7 @@
 //! use smithay::delegate_viewporter;
 //!
 //! # struct State;
-//! # let mut display = wayland_server::Display::<State>::new();
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //!
 //! // Create the viewporter state:
 //! let viewporter_state = ViewporterState::new(
