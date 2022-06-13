@@ -1,6 +1,6 @@
 use super::{
     InnerState, PopupConfigure, PositionerState, ShellClient, ShellClientData, SurfaceCachedState,
-    ToplevelConfigure, XdgPopupSurfaceRoleAttributes, XdgRequest, XdgShellHandler, XdgShellState,
+    ToplevelConfigure, XdgPopupSurfaceRoleAttributes, XdgShellHandler, XdgShellState,
     XdgToplevelSurfaceRoleAttributes,
 };
 

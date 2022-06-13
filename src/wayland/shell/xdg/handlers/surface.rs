@@ -27,7 +27,7 @@ use wayland_server::{
 
 use super::{
     InnerState, PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
-    XdgPositionerUserData, XdgRequest, XdgShellHandler, XdgToplevelSurfaceRoleAttributes,
+    XdgPositionerUserData, XdgShellHandler, XdgToplevelSurfaceRoleAttributes,
 };
 
 mod toplevel;
@@ -110,7 +110,7 @@ where
 
                 let handle = make_toplevel_handle(&toplevel);
 
-                XdgShellHandler::request(state, dh, XdgRequest::NewToplevel { surface: handle });
+                XdgShellHandler::new_toplevel(state, dh, handle);
             }
             xdg_surface::Request::GetPopup {
                 id,
@@ -186,14 +186,7 @@ where
 
                 let handle = make_popup_handle(&popup);
 
-                XdgShellHandler::request(
-                    state,
-                    dh,
-                    XdgRequest::NewPopup {
-                        surface: handle,
-                        positioner: positioner_data,
-                    },
-                );
+                XdgShellHandler::new_popup(state, dh, handle, positioner_data);
             }
             xdg_surface::Request::SetWindowGeometry { x, y, width, height } => {
                 // Check the role of the surface, this can be either xdg_toplevel
@@ -290,14 +283,7 @@ where
                     }
                 };
 
-                XdgShellHandler::request(
-                    state,
-                    dh,
-                    XdgRequest::AckConfigure {
-                        surface: surface.clone(),
-                        configure,
-                    },
-                );
+                XdgShellHandler::ack_configure(state, dh, surface.clone(), configure);
             }
             _ => unreachable!(),
         }

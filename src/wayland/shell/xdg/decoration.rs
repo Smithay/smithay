@@ -10,7 +10,9 @@
 //! #
 //! use smithay::{delegate_xdg_decoration, delegate_xdg_shell};
 //! use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellHandler};
-//! # use smithay::wayland::shell::xdg::{XdgShellState, XdgRequest};
+//! # use smithay::wayland::Serial;
+//! # use smithay::wayland::shell::xdg::{XdgShellState, PopupSurface, PositionerState};
+//! # use smithay::reexports::wayland_server::protocol::wl_seat;
 //! use smithay::wayland::shell::xdg::decoration::{XdgDecorationManager, XdgDecorationHandler};
 //! use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
 //!
@@ -29,7 +31,20 @@
 //! // implement the necessary traits
 //! impl XdgShellHandler for State {
 //!     # fn xdg_shell_state(&mut self) -> &mut XdgShellState { unimplemented!() }
-//!     # fn request(&mut self, dh: &wayland_server::DisplayHandle, request: XdgRequest) { unimplemented!() }
+//!     # fn new_toplevel(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) { unimplemented!() }
+//!     # fn new_popup(
+//!     #     &mut self,
+//!     #     dh: &wayland_server::DisplayHandle,
+//!     #     surface: PopupSurface,
+//!     #     positioner: PositionerState,
+//!     # ) { unimplemented!() }
+//!     # fn grab(
+//!     #     &mut self,
+//!     #     dh: &wayland_server::DisplayHandle,
+//!     #     surface: PopupSurface,
+//!     #     seat: wl_seat::WlSeat,
+//!     #     serial: Serial,
+//!     # ) { unimplemented!() }
 //!     // ...
 //! }
 //! impl XdgDecorationHandler for State {

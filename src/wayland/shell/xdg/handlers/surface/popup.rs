@@ -4,7 +4,7 @@ use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
 use wayland_server::{DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource};
 
-use super::{PopupConfigure, XdgRequest, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData};
+use super::{PopupConfigure, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData};
 
 impl<D> DelegateDispatch<XdgPopup, XdgShellSurfaceUserData, D> for XdgShellState
 where
@@ -33,15 +33,7 @@ where
 
                 let serial = Serial::from(serial);
 
-                XdgShellHandler::request(
-                    state,
-                    dh,
-                    XdgRequest::Grab {
-                        surface: handle,
-                        seat,
-                        serial,
-                    },
-                );
+                XdgShellHandler::grab(state, dh, handle, seat, serial);
             }
             xdg_popup::Request::Reposition { positioner, token } => {
                 let handle = crate::wayland::shell::xdg::PopupSurface {
@@ -56,15 +48,7 @@ where
                     .lock()
                     .unwrap();
 
-                XdgShellHandler::request(
-                    state,
-                    dh,
-                    XdgRequest::RePosition {
-                        surface: handle,
-                        positioner: positioner_data,
-                        token,
-                    },
-                );
+                XdgShellHandler::reposition_request(state, dh, handle, positioner_data, token);
             }
             _ => unreachable!(),
         }
