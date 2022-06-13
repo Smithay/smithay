@@ -502,7 +502,7 @@ impl LayerSurface {
 
     /// Returns the [`Physical`] bounding box over this layer surface, it subsurfaces as well as any popups.
     ///
-    /// This differs from using [`bbox_with_popups`] and translating the returned [`Rectangle`]
+    /// This differs from using [`bbox_with_popups`](LayerSurface::bbox_with_popups) and translating the returned [`Rectangle`]
     /// to [`Physical`] space as it rounds the subsurface and popup offsets.
     /// See [`physical_bbox_from_surface_tree`] for more information.
     ///

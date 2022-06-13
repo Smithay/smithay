@@ -179,7 +179,7 @@ impl Window {
 
     /// Returns the [`Physical`] bounding box over this window, it subsurfaces as well as any popups.
     ///
-    /// This differs from using [`bbox_with_popups`] and translating the returned [`Rectangle`]
+    /// This differs from using [`bbox_with_popups`](Window::bbox_with_popups) and translating the returned [`Rectangle`]
     /// to [`Physical`] space as it rounds the subsurface and popup offsets.
     /// See [`physical_bbox_from_surface_tree`] for more information.
     ///
