@@ -919,7 +919,7 @@ macro_rules! custom_elements_internal {
     };
 }
 
-/// Macro to collate multiple [`smithay::desktop::RenderElement`]-implementations
+/// Macro to collate multiple [`crate::desktop::space::RenderElement`]-implementations
 /// into one type to be used with [`Space::render_output`].
 /// ## Example
 ///

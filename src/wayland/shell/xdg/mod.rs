@@ -6,9 +6,7 @@
 //! ## Why use this implementation
 //!
 //! This implementation can track for you the various shell surfaces defined by the
-//! clients by handling the `xdg_shell` protocol. It also contains a compatibility
-//! layer handling its precursor, the unstable `zxdg_shell_v6` protocol, which is
-//! mostly identical.
+//! clients by handling the `xdg_shell` protocol.
 //!
 //! It allows you to easily access a list of all shell surfaces defined by your clients
 //! access their associated metadata and underlying `wl_surface`s.
@@ -21,9 +19,8 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this handler, simple use the [`xdg_shell_init`] function provided in this module.
-//! You need to provide a closure that will be invoked whenever some action is required from you,
-//! are represented by the [`XdgRequest`] enum.
+//! To initialize this handler, create [`XdgShellState`], store it in your `State` struct and
+//! implement the [`XdgShellHandler`], as shown in this example:
 //!
 //! ```no_run
 //! # extern crate wayland_server;
@@ -66,15 +63,14 @@
 //! - [`ToplevelSurface`]:
 //!   This is a handle representing a toplevel surface, you can
 //!   retrieve a list of all currently alive toplevel surface from the
-//!   [`ShellState`].
+//!   [`XdgShellState`].
 //! - [`PopupSurface`]:
 //!   This is a handle representing a popup/tooltip surface. Similarly,
 //!   you can get a list of all currently alive popup surface from the
-//!   [`ShellState`].
+//!   [`XdgShellState`].
 //!
 //! You'll obtain these objects though two means: either via the callback methods of
-//! the subhandler you provided, or via methods on the [`ShellState`]
-//! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
+//! the [`XdgShellHandler`], or via methods on the [`XdgShellState`].
 
 use crate::utils::alive_tracker::IsAlive;
 use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};

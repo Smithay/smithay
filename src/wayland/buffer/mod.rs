@@ -1,11 +1,12 @@
 //! Buffer management traits.
 //!
-//! This module provides the [`BufferHandler`] trait to notify compositors that a [`WlBuffer`] managed by
+//! This module provides the [`BufferHandler`] trait to notify compositors that a
+//! [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer) managed by
 //! Smithay has been destroyed.
 
 use wayland_server::protocol::wl_buffer;
 
-/// Handler trait for associating data with a [`WlBuffer`].
+/// Handler trait for associating data with a [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer).
 ///
 /// This trait primarily allows compositors to be told when a buffer is destroyed.
 ///

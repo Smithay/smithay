@@ -171,7 +171,7 @@ impl RendererSurfaceState {
 /// Handler to let smithay take over buffer management.
 ///
 /// Needs to be called first on the commit-callback of
-/// [`crate::wayland::compositor::compositor_init`].
+/// [`crate::wayland::compositor::CompositorHandler::commit`].
 ///
 /// Consumes the buffer of [`SurfaceAttributes`], the buffer will
 /// not be accessible anymore, but [`draw_surface_tree`] and other
