@@ -13,8 +13,8 @@ use crate::utils::alive_tracker::{AliveTracker, IsAlive};
 use crate::wayland::{compositor, shell::wlr_layer::Layer, Serial};
 
 use super::{
-    Anchor, KeyboardInteractivity, LayerShellRequest, LayerSurfaceAttributes, LayerSurfaceCachedState,
-    Margins, WlrLayerShellHandler, WlrLayerShellState,
+    Anchor, KeyboardInteractivity, LayerSurfaceAttributes, LayerSurfaceCachedState, Margins,
+    WlrLayerShellHandler, WlrLayerShellState,
 };
 
 use super::LAYER_SURFACE_ROLE;
@@ -145,16 +145,7 @@ where
                     .unwrap()
                     .push(handle.clone());
 
-                WlrLayerShellHandler::request(
-                    state,
-                    dh,
-                    LayerShellRequest::NewLayerSurface {
-                        surface: handle,
-                        output,
-                        layer,
-                        namespace,
-                    },
-                );
+                WlrLayerShellHandler::new_layer_surface(state, dh, handle, output, layer, namespace);
             }
             zwlr_layer_shell_v1::Request::Destroy => {
                 // Handled by destructor
@@ -303,14 +294,7 @@ where
                     }
                 };
 
-                WlrLayerShellHandler::request(
-                    state,
-                    dh,
-                    LayerShellRequest::AckConfigure {
-                        surface: data.wl_surface.clone(),
-                        configure,
-                    },
-                );
+                WlrLayerShellHandler::ack_configure(state, dh, data.wl_surface.clone(), configure);
             }
             _ => {}
         }

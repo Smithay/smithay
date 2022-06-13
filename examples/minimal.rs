@@ -10,7 +10,7 @@ use smithay::{
         winit::{self, WinitEvent},
     },
     delegate_compositor, delegate_data_device, delegate_seat, delegate_shm, delegate_xdg_shell,
-    reexports::wayland_server::Display,
+    reexports::wayland_server::{protocol::wl_seat, Display},
     utils::{Rectangle, Transform},
     wayland::{
         buffer::BufferHandler,
@@ -20,8 +20,9 @@ use smithay::{
         },
         data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
         seat::{FilterResult, Seat, SeatHandler, SeatState},
-        shell::xdg::{XdgRequest, XdgShellHandler, XdgShellState},
+        shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
         shm::ShmState,
+        Serial,
     },
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -44,21 +45,15 @@ impl XdgShellHandler for App {
         &mut self.xdg_shell_state
     }
 
-    fn request(&mut self, _dh: &DisplayHandle, request: XdgRequest) {
-        dbg!(&request);
+    fn new_toplevel(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+        surface.with_pending_state(|state| {
+            state.states.set(xdg_toplevel::State::Activated);
+        });
+        surface.send_configure();
+    }
 
-        match request {
-            XdgRequest::NewToplevel { surface } => {
-                surface.with_pending_state(|state| {
-                    state.states.set(xdg_toplevel::State::Activated);
-                });
-                surface.send_configure();
-            }
-            XdgRequest::Move { .. } => {
-                //
-            }
-            _ => {}
-        }
+    fn new_popup(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _positioner: PositionerState) {}
+    fn grab(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
     }
 }
 

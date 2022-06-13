@@ -15,9 +15,7 @@ use wayland_server::{
     Resource,
 };
 
-use super::{
-    ShellClient, ShellClientData, XdgPositionerUserData, XdgRequest, XdgShellHandler, XdgSurfaceUserData,
-};
+use super::{ShellClient, ShellClientData, XdgPositionerUserData, XdgShellHandler, XdgSurfaceUserData};
 
 impl<D> DelegateGlobalDispatch<XdgWmBase, (), D> for XdgShellState
 where
@@ -38,13 +36,7 @@ where
     ) {
         let shell = data_init.init(resource, XdgWmBaseUserData::default());
 
-        XdgShellHandler::request(
-            state,
-            dh,
-            XdgRequest::NewClient {
-                client: ShellClient::new(&shell),
-            },
-        );
+        XdgShellHandler::new_client(state, dh, ShellClient::new(&shell));
     }
 }
 
@@ -95,13 +87,7 @@ where
                     }
                 };
                 if valid {
-                    XdgShellHandler::request(
-                        state,
-                        dh,
-                        XdgRequest::ClientPong {
-                            client: ShellClient::new(wm_base),
-                        },
-                    );
+                    XdgShellHandler::client_pong(state, dh, ShellClient::new(wm_base));
                 }
             }
             xdg_wm_base::Request::Destroy => {

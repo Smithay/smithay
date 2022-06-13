@@ -3,12 +3,15 @@ use smithay::{
     desktop::{Kind, Window, WindowSurfaceType},
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
-        wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource},
+        wayland_server::{
+            protocol::{wl_seat, wl_surface::WlSurface},
+            DisplayHandle, Resource,
+        },
     },
     utils::Rectangle,
     wayland::{
         seat::{PointerGrabStartData, Seat},
-        shell::xdg::{XdgRequest, XdgShellHandler, XdgShellState},
+        shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
         Serial,
     },
 };
@@ -23,82 +26,87 @@ impl XdgShellHandler for Smallvil {
         &mut self.xdg_shell_state
     }
 
-    fn request(&mut self, _dh: &DisplayHandle, request: XdgRequest) {
-        match request {
-            XdgRequest::NewToplevel { surface } => {
-                let window = Window::new(Kind::Xdg(surface.clone()));
-                self.space.map_window(&window, (0, 0), false);
+    fn new_toplevel(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+        let window = Window::new(Kind::Xdg(surface.clone()));
+        self.space.map_window(&window, (0, 0), false);
 
-                surface.send_configure();
-            }
-            XdgRequest::Move {
-                serial,
-                surface,
-                seat,
-                ..
-            } => {
-                let seat = Seat::from_resource(&seat).unwrap();
+        surface.send_configure();
+    }
+    fn new_popup(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _positioner: PositionerState) {}
 
-                let wl_surface = surface.wl_surface();
+    fn move_request(
+        &mut self,
+        _dh: &DisplayHandle,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+    ) {
+        let seat = Seat::from_resource(&seat).unwrap();
 
-                if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
-                    let pointer = seat.get_pointer().unwrap();
+        let wl_surface = surface.wl_surface();
 
-                    let window = self
-                        .space
-                        .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
-                        .unwrap()
-                        .clone();
-                    let initial_window_location = self.space.window_location(&window).unwrap();
+        if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
+            let pointer = seat.get_pointer().unwrap();
 
-                    let grab = MoveSurfaceGrab {
-                        start_data,
-                        window,
-                        initial_window_location,
-                    };
+            let window = self
+                .space
+                .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                .unwrap()
+                .clone();
+            let initial_window_location = self.space.window_location(&window).unwrap();
 
-                    pointer.set_grab(grab, serial, 0);
-                }
-            }
-            XdgRequest::Resize {
-                surface,
-                seat,
-                serial,
-                edges,
-            } => {
-                let seat = Seat::from_resource(&seat).unwrap();
+            let grab = MoveSurfaceGrab {
+                start_data,
+                window,
+                initial_window_location,
+            };
 
-                let wl_surface = surface.wl_surface();
-
-                if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
-                    let pointer = seat.get_pointer().unwrap();
-
-                    let window = self
-                        .space
-                        .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
-                        .unwrap()
-                        .clone();
-                    let initial_window_location = self.space.window_location(&window).unwrap();
-                    let initial_window_size = window.geometry().size;
-
-                    surface.with_pending_state(|state| {
-                        state.states.set(xdg_toplevel::State::Resizing);
-                    });
-
-                    surface.send_configure();
-
-                    let grab = ResizeSurfaceGrab::start(
-                        start_data,
-                        window,
-                        edges.into(),
-                        Rectangle::from_loc_and_size(initial_window_location, initial_window_size),
-                    );
-
-                    pointer.set_grab(grab, serial, 0);
-                }
-            }
-            _ => {}
+            pointer.set_grab(grab, serial, 0);
         }
+    }
+
+    fn resize_request(
+        &mut self,
+        _dh: &DisplayHandle,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+        edges: xdg_toplevel::ResizeEdge,
+    ) {
+        let seat = Seat::from_resource(&seat).unwrap();
+
+        let wl_surface = surface.wl_surface();
+
+        if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
+            let pointer = seat.get_pointer().unwrap();
+
+            let window = self
+                .space
+                .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                .unwrap()
+                .clone();
+            let initial_window_location = self.space.window_location(&window).unwrap();
+            let initial_window_size = window.geometry().size;
+
+            surface.with_pending_state(|state| {
+                state.states.set(xdg_toplevel::State::Resizing);
+            });
+
+            surface.send_configure();
+
+            let grab = ResizeSurfaceGrab::start(
+                start_data,
+                window,
+                edges.into(),
+                Rectangle::from_loc_and_size(initial_window_location, initial_window_size),
+            );
+
+            pointer.set_grab(grab, serial, 0);
+        }
+    }
+
+    fn grab(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
+        // TODO popup grabs
     }
 }
 

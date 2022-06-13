@@ -11,7 +11,7 @@ use wayland_server::{
 };
 
 use super::{
-    SurfaceCachedState, SurfaceKind, ToplevelConfigure, XdgRequest, XdgShellHandler, XdgShellState,
+    SurfaceCachedState, SurfaceKind, ToplevelConfigure, XdgShellHandler, XdgShellState,
     XdgShellSurfaceUserData, XdgSurfaceUserData, XdgToplevelSurfaceRoleAttributes,
 };
 
@@ -63,31 +63,14 @@ where
                 let handle = make_toplevel_handle(toplevel);
                 let serial = Serial::from(serial);
 
-                XdgShellHandler::request(
-                    state,
-                    dh,
-                    XdgRequest::ShowWindowMenu {
-                        surface: handle,
-                        seat,
-                        serial,
-                        location: (x, y).into(),
-                    },
-                );
+                XdgShellHandler::show_window_menu(state, dh, handle, seat, serial, (x, y).into());
             }
             xdg_toplevel::Request::Move { seat, serial } => {
                 // This has to be handled by the compositor
                 let handle = make_toplevel_handle(toplevel);
                 let serial = Serial::from(serial);
 
-                XdgShellHandler::request(
-                    state,
-                    dh,
-                    XdgRequest::Move {
-                        surface: handle,
-                        seat,
-                        serial,
-                    },
-                );
+                XdgShellHandler::move_request(state, dh, handle, seat, serial);
             }
             xdg_toplevel::Request::Resize { seat, serial, edges } => {
                 if let WEnum::Value(edges) = edges {
@@ -95,16 +78,7 @@ where
                     let handle = make_toplevel_handle(toplevel);
                     let serial = Serial::from(serial);
 
-                    XdgShellHandler::request(
-                        state,
-                        dh,
-                        XdgRequest::Resize {
-                            surface: handle,
-                            seat,
-                            serial,
-                            edges,
-                        },
-                    );
+                    XdgShellHandler::resize_request(state, dh, handle, seat, serial, edges);
                 }
             }
             xdg_toplevel::Request::SetMaxSize { width, height } => {
@@ -119,32 +93,25 @@ where
             }
             xdg_toplevel::Request::SetMaximized => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::request(state, dh, XdgRequest::Maximize { surface: handle });
+                XdgShellHandler::maximize_request(state, dh, handle);
             }
             xdg_toplevel::Request::UnsetMaximized => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::request(state, dh, XdgRequest::UnMaximize { surface: handle });
+                XdgShellHandler::unmaximize_request(state, dh, handle);
             }
             xdg_toplevel::Request::SetFullscreen { output } => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::request(
-                    state,
-                    dh,
-                    XdgRequest::Fullscreen {
-                        surface: handle,
-                        output,
-                    },
-                );
+                XdgShellHandler::fullscreen_request(state, dh, handle, output);
             }
             xdg_toplevel::Request::UnsetFullscreen => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::request(state, dh, XdgRequest::UnFullscreen { surface: handle });
+                XdgShellHandler::unfullscreen_request(state, dh, handle);
             }
             xdg_toplevel::Request::SetMinimized => {
                 // This has to be handled by the compositor, may not be
                 // supported and just ignored
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::request(state, dh, XdgRequest::Minimize { surface: handle });
+                XdgShellHandler::minimize_request(state, dh, handle);
             }
             _ => unreachable!(),
         }

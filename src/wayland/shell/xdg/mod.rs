@@ -26,7 +26,11 @@
 //! # extern crate wayland_server;
 //! #
 //! use smithay::delegate_xdg_shell;
-//! use smithay::wayland::shell::xdg::{XdgShellState, XdgShellHandler, XdgRequest};
+//! use smithay::reexports::wayland_server::protocol::wl_seat;
+//! use smithay::wayland::{
+//!     shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState},
+//!     Serial,
+//! };
 //!
 //! # struct State { xdg_shell_state: XdgShellState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -44,8 +48,27 @@
 //!         &mut self.xdg_shell_state    
 //!     }
 //!
-//!     fn request(&mut self, dh: &wayland_server::DisplayHandle, request: XdgRequest) {
-//!         /* handle the shell requests here */
+//!     // handle the shell requests here.
+//!     // more optional methods can be used to further customized
+//!     fn new_toplevel(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {
+//!         // ...
+//!     }
+//!     fn new_popup(
+//!         &mut self,
+//!         dh: &wayland_server::DisplayHandle,
+//!         surface: PopupSurface,
+//!         positioner: PositionerState,
+//!     ) {
+//!         // ...
+//!     }
+//!     fn grab(
+//!         &mut self,
+//!         dh: &wayland_server::DisplayHandle,
+//!         surface: PopupSurface,
+//!         seat: wl_seat::WlSeat,
+//!         serial: Serial,
+//!     ) {
+//!         // ...
 //!     }
 //! }
 //! delegate_xdg_shell!(State);
@@ -726,12 +749,144 @@ impl Cacheable for SurfaceCachedState {
 }
 
 /// Xdg Shell handler type
+#[allow(unused_variables)]
 pub trait XdgShellHandler {
     /// [XdgShellState] getter
     fn xdg_shell_state(&mut self) -> &mut XdgShellState;
 
-    /// Xdg requests
-    fn request(&mut self, dh: &DisplayHandle, request: XdgRequest);
+    /// A new shell client was instantiated
+    fn new_client(&mut self, dh: &wayland_server::DisplayHandle, client: ShellClient) {}
+
+    /// The pong for a pending ping of this shell client was received
+    ///
+    /// The `ShellHandler` already checked for you that the serial matches the one
+    /// from the pending ping.
+    fn client_pong(&mut self, dh: &wayland_server::DisplayHandle, client: ShellClient) {}
+
+    /// A new toplevel surface was created
+    ///
+    /// You likely need to send a [`ToplevelConfigure`] to the surface, to hint the
+    /// client as to how its window should be sized.
+    fn new_toplevel(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface);
+
+    /// A new popup surface was created
+    ///
+    /// You likely need to send a [`PopupConfigure`] to the surface, to hint the
+    /// client as to how its popup should be sized.
+    ///
+    /// ## Arguments
+    ///
+    /// - `positioner` - The state of the positioner at the timethe popup was requested.
+    ///     The positioner state can be used by the compositor
+    ///     to calculate the best placement for the popup.
+    ///     For example the compositor should prevent that a popup
+    ///     is placed outside the visible rectangle of a output.
+    fn new_popup(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: PopupSurface,
+        positioner: PositionerState,
+    );
+
+    /// The client requested the start of an interactive move for this surface
+    fn move_request(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+    ) {
+    }
+
+    /// The client requested the start of an interactive resize for this surface
+    fn resize_request(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+        edges: xdg_toplevel::ResizeEdge,
+    ) {
+    }
+
+    /// This popup requests a grab of the pointer
+    ///
+    /// This means it requests to be sent a `popup_done` event when the pointer leaves
+    /// the grab area.
+    fn grab(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: PopupSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+    );
+
+    /// A toplevel surface requested to be maximized
+    fn maximize_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+
+    /// A toplevel surface requested to stop being maximized
+    fn unmaximize_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+
+    /// A toplevel surface requested to be set fullscreen
+    fn fullscreen_request(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: ToplevelSurface,
+        output: Option<wl_output::WlOutput>,
+    ) {
+    }
+
+    /// A toplevel surface request to stop being fullscreen
+    fn unfullscreen_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+
+    /// A toplevel surface requested to be minimized
+    fn minimize_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+
+    /// The client requests the window menu to be displayed on this surface at this location
+    ///
+    /// This menu belongs to the compositor. It is typically expected to contain options for
+    /// control of the window (maximize/minimize/close/move/etc...).
+    fn show_window_menu(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+        location: Point<i32, Logical>,
+    ) {
+    }
+
+    /// A surface has acknowledged a configure serial.
+    fn ack_configure(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: wl_surface::WlSurface,
+        configure: Configure,
+    ) {
+    }
+
+    /// A client requested a reposition, providing a new
+    /// positioner, of a popup.
+    ///
+    /// ## Arguments
+    ///
+    /// - `positioner` - The state of the positioner at the time the reposition request was made.
+    ///     The positioner state can be used by the compositor
+    ///     to calculate the best placement for the popup.
+    ///     For example the compositor should prevent that a popup
+    ///     is placed outside the visible rectangle of a output.
+    /// - `token` - The passed token will be sent in the corresponding xdg_popup.repositioned event.
+    ///     The new popup position will not take effect until the corresponding configure event
+    ///     is acknowledged by the client. See xdg_popup.repositioned for details.
+    ///     The token itself is opaque, and has no other special meaning.
+    fn reposition_request(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: PopupSurface,
+        positioner: PositionerState,
+        token: u32,
+    ) {
+    }
 }
 
 #[derive(Debug)]
@@ -1435,154 +1590,6 @@ impl From<PopupConfigure> for Configure {
     fn from(configure: PopupConfigure) -> Self {
         Configure::Popup(configure)
     }
-}
-
-/// Events generated by xdg shell surfaces
-///
-/// These are events that the provided implementation cannot process
-/// for you directly.
-///
-/// Depending on what you want to do, you might ignore some of them
-#[derive(Debug)]
-pub enum XdgRequest {
-    /// A new shell client was instantiated
-    NewClient {
-        /// the client
-        client: ShellClient,
-    },
-    /// The pong for a pending ping of this shell client was received
-    ///
-    /// The `ShellHandler` already checked for you that the serial matches the one
-    /// from the pending ping.
-    ClientPong {
-        /// the client
-        client: ShellClient,
-    },
-    /// A new toplevel surface was created
-    ///
-    /// You likely need to send a [`ToplevelConfigure`] to the surface, to hint the
-    /// client as to how its window should be sized.
-    NewToplevel {
-        /// the surface
-        surface: ToplevelSurface,
-    },
-    /// A new popup surface was created
-    ///
-    /// You likely need to send a [`PopupConfigure`] to the surface, to hint the
-    /// client as to how its popup should be sized.
-    NewPopup {
-        /// the surface
-        surface: PopupSurface,
-        /// The state of the positioner at the time
-        /// the popup was requested.
-        ///
-        /// The positioner state can be used by the compositor
-        /// to calculate the best placement for the popup.
-        ///
-        /// For example the compositor should prevent that a popup
-        /// is placed outside the visible rectangle of a output.
-        positioner: PositionerState,
-    },
-    /// The client requested the start of an interactive move for this surface
-    Move {
-        /// the surface
-        surface: ToplevelSurface,
-        /// the seat associated to this move
-        seat: wl_seat::WlSeat,
-        /// the grab serial
-        serial: Serial,
-    },
-    /// The client requested the start of an interactive resize for this surface
-    Resize {
-        /// The surface
-        surface: ToplevelSurface,
-        /// The seat associated with this resize
-        seat: wl_seat::WlSeat,
-        /// The grab serial
-        serial: Serial,
-        /// Specification of which part of the window's border is being dragged
-        edges: xdg_toplevel::ResizeEdge,
-    },
-    /// This popup requests a grab of the pointer
-    ///
-    /// This means it requests to be sent a `popup_done` event when the pointer leaves
-    /// the grab area.
-    Grab {
-        /// The surface
-        surface: PopupSurface,
-        /// The seat to grab
-        seat: wl_seat::WlSeat,
-        /// The grab serial
-        serial: Serial,
-    },
-    /// A toplevel surface requested to be maximized
-    Maximize {
-        /// The surface
-        surface: ToplevelSurface,
-    },
-    /// A toplevel surface requested to stop being maximized
-    UnMaximize {
-        /// The surface
-        surface: ToplevelSurface,
-    },
-    /// A toplevel surface requested to be set fullscreen
-    Fullscreen {
-        /// The surface
-        surface: ToplevelSurface,
-        /// The output (if any) on which the fullscreen is requested
-        output: Option<wl_output::WlOutput>,
-    },
-    /// A toplevel surface request to stop being fullscreen
-    UnFullscreen {
-        /// The surface
-        surface: ToplevelSurface,
-    },
-    /// A toplevel surface requested to be minimized
-    Minimize {
-        /// The surface
-        surface: ToplevelSurface,
-    },
-    /// The client requests the window menu to be displayed on this surface at this location
-    ///
-    /// This menu belongs to the compositor. It is typically expected to contain options for
-    /// control of the window (maximize/minimize/close/move/etc...).
-    ShowWindowMenu {
-        /// The surface
-        surface: ToplevelSurface,
-        /// The seat associated with this input grab
-        seat: wl_seat::WlSeat,
-        /// the grab serial
-        serial: Serial,
-        /// location of the menu request relative to the surface geometry
-        location: Point<i32, Logical>,
-    },
-    /// A surface has acknowledged a configure serial.
-    AckConfigure {
-        /// The surface.
-        surface: wl_surface::WlSurface,
-        /// The configure serial.
-        configure: Configure,
-    },
-    /// A client requested a reposition, providing a new
-    /// positioner, of a popup.
-    RePosition {
-        /// The popup for which a reposition has been requested
-        surface: PopupSurface,
-        /// The state of the positioner at the time
-        /// the reposition request was made.
-        ///
-        /// The positioner state can be used by the compositor
-        /// to calculate the best placement for the popup.
-        ///
-        /// For example the compositor should prevent that a popup
-        /// is placed outside the visible rectangle of a output.
-        positioner: PositionerState,
-        /// The passed token will be sent in the corresponding xdg_popup.repositioned event.
-        /// The new popup position will not take effect until the corresponding configure event
-        /// is acknowledged by the client. See xdg_popup.repositioned for details.
-        /// The token itself is opaque, and has no other special meaning.
-        token: u32,
-    },
 }
 
 #[allow(missing_docs)] // TODO
