@@ -31,11 +31,11 @@ use smithay::{
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{
-                decoration::{XdgDecorationHandler, XdgDecorationManager},
+                decoration::{XdgDecorationHandler, XdgDecorationState},
                 ToplevelSurface, XdgShellState,
             },
         },
-        shm::ShmState,
+        shm::{ShmHandler, ShmState},
         socket::ListeningSocketSource,
         tablet_manager::TabletSeatTrait,
         viewporter::ViewporterState,
@@ -84,7 +84,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub shm_state: ShmState,
     pub viewporter_state: ViewporterState,
     pub xdg_activation_state: XdgActivationState,
-    pub xdg_decoration_state: XdgDecorationManager,
+    pub xdg_decoration_state: XdgDecorationState,
     pub xdg_shell_state: XdgShellState,
 
     pub dnd_icon: Option<WlSurface>,
@@ -130,8 +130,8 @@ impl<BackendData> ServerDndGrabHandler for AnvilState<BackendData> {
 delegate_data_device!(@<BackendData: 'static> AnvilState<BackendData>);
 delegate_output!(@<BackendData: 'static> AnvilState<BackendData>);
 
-impl<BackendData> AsRef<ShmState> for AnvilState<BackendData> {
-    fn as_ref(&self) -> &ShmState {
+impl<BackendData> ShmHandler for AnvilState<BackendData> {
+    fn shm_state(&self) -> &ShmState {
         &self.shm_state
     }
 }
@@ -251,7 +251,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
         let viewporter_state = ViewporterState::new::<Self, _>(&dh, log.clone());
         let xdg_activation_state = XdgActivationState::new::<Self, _>(&dh, log.clone());
-        let xdg_decoration_state = XdgDecorationManager::new::<Self, _>(&dh, log.clone()).0;
+        let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&dh, log.clone()).0;
         let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone()).0;
 
         // init input

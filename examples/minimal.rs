@@ -21,7 +21,7 @@ use smithay::{
         data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
         seat::{FilterResult, Seat, SeatHandler, SeatState},
         shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
-        shm::ShmState,
+        shm::{ShmHandler, ShmState},
         Serial,
     },
 };
@@ -80,8 +80,8 @@ impl CompositorHandler for App {
     }
 }
 
-impl AsRef<ShmState> for App {
-    fn as_ref(&self) -> &ShmState {
+impl ShmHandler for App {
+    fn shm_state(&self) -> &ShmState {
         &self.shm_state
     }
 }
