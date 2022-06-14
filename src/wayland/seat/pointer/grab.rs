@@ -1,6 +1,9 @@
 use std::fmt;
 
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
+use wayland_server::{
+    protocol::{wl_pointer::ButtonState, wl_surface::WlSurface},
+    DisplayHandle,
+};
 
 use crate::{
     utils::{Logical, Point},
@@ -128,17 +131,19 @@ impl<D> PointerGrab<D> for DefaultGrab {
         event: &ButtonEvent,
     ) {
         handle.button(event.button, event.state, event.serial, event.time);
-        handle.set_grab(
-            event.serial,
-            event.time,
-            ClickGrab {
-                start_data: GrabStartData {
-                    focus: handle.current_focus().cloned(),
-                    button: event.button,
-                    location: handle.current_location(),
+        if event.state == ButtonState::Pressed {
+            handle.set_grab(
+                event.serial,
+                event.time,
+                ClickGrab {
+                    start_data: GrabStartData {
+                        focus: handle.current_focus().cloned(),
+                        button: event.button,
+                        location: handle.current_location(),
+                    },
                 },
-            },
-        );
+            );
+        }
     }
 
     fn axis(
