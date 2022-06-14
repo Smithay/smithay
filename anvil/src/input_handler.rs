@@ -594,10 +594,13 @@ impl AnvilState<UdevData> {
             .space
             .outputs()
             .fold(0, |acc, o| acc + self.space.output_geometry(o).unwrap().size.w);
-        let max_y = self
+
+        let max_h_output = self
             .space
             .outputs()
-            .fold(0, |acc, o| acc + self.space.output_geometry(o).unwrap().size.h);
+            .max_by_key(|o| self.space.output_geometry(o).unwrap().size.h).unwrap();
+
+        let max_y = self.space.output_geometry(max_h_output).unwrap().size.h;
 
         self.pointer_location.x = evt.x_transformed(max_x);
         self.pointer_location.y = evt.y_transformed(max_y);
