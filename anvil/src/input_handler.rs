@@ -587,7 +587,11 @@ impl AnvilState<UdevData> {
         }
     }
 
-    fn on_pointer_move_absolute<B: InputBackend>(&mut self, dh: &DisplayHandle, evt: B::PointerMotionAbsoluteEvent) {
+    fn on_pointer_move_absolute<B: InputBackend>(
+        &mut self,
+        dh: &DisplayHandle,
+        evt: B::PointerMotionAbsoluteEvent,
+    ) {
         let serial = SCOUNTER.next_serial();
 
         let max_x = self
@@ -598,7 +602,8 @@ impl AnvilState<UdevData> {
         let max_h_output = self
             .space
             .outputs()
-            .max_by_key(|o| self.space.output_geometry(o).unwrap().size.h).unwrap();
+            .max_by_key(|o| self.space.output_geometry(o).unwrap().size.h)
+            .unwrap();
 
         let max_y = self.space.output_geometry(max_h_output).unwrap().size.h;
 
