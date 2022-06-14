@@ -19,11 +19,7 @@ use wayland_protocols::{
     },
 };
 
-use wayland_server::{
-    backend::{ClientId, ObjectId},
-    protocol::wl_surface,
-    DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource,
-};
+use wayland_server::{protocol::wl_surface, DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource};
 
 use super::{
     InnerState, PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
@@ -65,7 +61,24 @@ where
     ) {
         match request {
             xdg_surface::Request::Destroy => {
-                // all is handled by our destructor
+                if !data.wl_surface.alive() {
+                    // the wl_surface is destroyed, this means the client is not
+                    // trying to change the role but it's a cleanup (possibly a
+                    // disconnecting client), ignore the protocol check.
+                    return;
+                }
+
+                if compositor::get_role(&data.wl_surface).is_none() {
+                    // No role assigned to the surface, we can exit early.
+                    return;
+                }
+
+                if data.has_active_role.load(Ordering::Acquire) {
+                    data.wm_base.post_error(
+                        xdg_wm_base::Error::Role,
+                        "xdg_surface was destroyed before its role object",
+                    );
+                }
             }
             xdg_surface::Request::GetToplevel { id } => {
                 // We now can assign a role to the surface
@@ -90,7 +103,6 @@ where
                 let toplevel = data_init.init(
                     id,
                     XdgShellSurfaceUserData {
-                        kind: SurfaceKind::Toplevel,
                         shell_data: state.xdg_shell_state().inner.clone(),
                         wl_surface: data.wl_surface.clone(),
                         xdg_surface: xdg_surface.clone(),
@@ -166,7 +178,6 @@ where
                 let popup = data_init.init(
                     id,
                     XdgShellSurfaceUserData {
-                        kind: SurfaceKind::Popup,
                         shell_data: state.xdg_shell_state().inner.clone(),
                         wl_surface: data.wl_surface.clone(),
                         xdg_surface: xdg_surface.clone(),
@@ -288,39 +299,11 @@ where
             _ => unreachable!(),
         }
     }
-
-    fn destroyed(_state: &mut D, _client_id: ClientId, _object_id: ObjectId, data: &XdgSurfaceUserData) {
-        if !data.wl_surface.alive() {
-            // the wl_surface is destroyed, this means the client is not
-            // trying to change the role but it's a cleanup (possibly a
-            // disconnecting client), ignore the protocol check.
-            return;
-        }
-
-        if compositor::get_role(&data.wl_surface).is_none() {
-            // No role assigned to the surface, we can exit early.
-            return;
-        }
-
-        if data.has_active_role.load(Ordering::Acquire) {
-            data.wm_base.post_error(
-                xdg_wm_base::Error::Role,
-                "xdg_surface was destroyed before its role object",
-            );
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum SurfaceKind {
-    Toplevel,
-    Popup,
 }
 
 /// User data of xdg toplevel surface
 #[derive(Debug)]
 pub struct XdgShellSurfaceUserData {
-    kind: SurfaceKind,
     pub(crate) shell_data: Arc<Mutex<InnerState>>,
     pub(crate) wl_surface: wl_surface::WlSurface,
     pub(crate) wm_base: xdg_wm_base::XdgWmBase,

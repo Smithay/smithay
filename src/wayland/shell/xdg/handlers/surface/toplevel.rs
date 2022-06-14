@@ -11,8 +11,8 @@ use wayland_server::{
 };
 
 use super::{
-    SurfaceCachedState, SurfaceKind, ToplevelConfigure, XdgShellHandler, XdgShellState,
-    XdgShellSurfaceUserData, XdgSurfaceUserData, XdgToplevelSurfaceRoleAttributes,
+    SurfaceCachedState, ToplevelConfigure, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData,
+    XdgSurfaceUserData, XdgToplevelSurfaceRoleAttributes,
 };
 
 impl<D> DelegateDispatch<XdgToplevel, XdgShellSurfaceUserData, D> for XdgShellState
@@ -32,7 +32,9 @@ where
     ) {
         match request {
             xdg_toplevel::Request::Destroy => {
-                // all it done by the destructor
+                if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
+                    surface_data.has_active_role.store(false, Ordering::Release);
+                }
             }
             xdg_toplevel::Request::SetParent { parent } => {
                 let parent_surface = parent.map(|toplevel_surface_parent| {
@@ -120,28 +122,12 @@ where
     fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
         data.alive_tracker.destroy_notify();
 
-        if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
-            surface_data.has_active_role.store(false, Ordering::Release);
-        }
-
-        match &data.kind {
-            SurfaceKind::Toplevel => {
-                // remove this surface from the known ones (as well as any leftover dead surface)
-                data.shell_data
-                    .lock()
-                    .unwrap()
-                    .known_toplevels
-                    .retain(|other| other.shell_surface.id() != object_id);
-            }
-            SurfaceKind::Popup => {
-                // remove this surface from the known ones (as well as any leftover dead surface)
-                data.shell_data
-                    .lock()
-                    .unwrap()
-                    .known_popups
-                    .retain(|other| other.shell_surface.id() != object_id);
-            }
-        }
+        // remove this surface from the known ones (as well as any leftover dead surface)
+        data.shell_data
+            .lock()
+            .unwrap()
+            .known_toplevels
+            .retain(|other| other.shell_surface.id() != object_id);
     }
 }
 

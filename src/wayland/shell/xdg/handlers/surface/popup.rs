@@ -1,10 +1,15 @@
+use std::sync::atomic::Ordering;
+
 use crate::wayland::{shell::xdg::XdgPositionerUserData, Serial};
 
 use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
-use wayland_server::{DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource};
+use wayland_server::{
+    backend::{ClientId, ObjectId},
+    DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource,
+};
 
-use super::{PopupConfigure, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData};
+use super::{PopupConfigure, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData, XdgSurfaceUserData};
 
 impl<D> DelegateDispatch<XdgPopup, XdgShellSurfaceUserData, D> for XdgShellState
 where
@@ -23,7 +28,9 @@ where
     ) {
         match request {
             xdg_popup::Request::Destroy => {
-                // all is handled by our destructor
+                if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
+                    surface_data.has_active_role.store(false, Ordering::Release);
+                }
             }
             xdg_popup::Request::Grab { seat, serial } => {
                 let handle = crate::wayland::shell::xdg::PopupSurface {
@@ -52,6 +59,17 @@ where
             }
             _ => unreachable!(),
         }
+    }
+
+    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
+        data.alive_tracker.destroy_notify();
+
+        // remove this surface from the known ones (as well as any leftover dead surface)
+        data.shell_data
+            .lock()
+            .unwrap()
+            .known_popups
+            .retain(|other| other.shell_surface.id() != object_id);
     }
 }
 
