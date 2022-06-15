@@ -25,8 +25,11 @@ use smithay::{
     },
 };
 
+#[cfg(any(feature = "winit", feature = "x11", feature = "udev"))]
+use smithay::backend::input::PointerMotionAbsoluteEvent;
+
 #[cfg(any(feature = "winit", feature = "x11"))]
-use smithay::{backend::input::PointerMotionAbsoluteEvent, wayland::output::Output};
+use smithay::wayland::output::Output;
 
 #[cfg(feature = "udev")]
 use crate::state::Backend;
