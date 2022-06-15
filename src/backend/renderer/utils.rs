@@ -425,7 +425,7 @@ where
                     .get_mut(&texture_id)
                     .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
                 {
-                    let surface_view = dbg!(surface_view.unwrap());
+                    let surface_view = surface_view.unwrap();
                     // Add the surface offset again to the location as
                     // with_surface_tree_upward only passes the updated
                     // location to its children
