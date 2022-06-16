@@ -58,11 +58,14 @@ jobs:
             ~/.cargo/git
           key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
           restore-keys: ${{ runner.os }}-cargo-registry-
+      - name: Get rustc version for caching
+        id: rustcversion
+        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
       - name: Build cache
         uses: actions/cache@v2
         with:
           path: target
-          key: ${{ runner.os }}-build-rust_stable-check-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
       - name: Downgrade log
@@ -200,11 +203,14 @@ jobs:
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
 
+      - name: Get rustc version for caching
+        id: rustcversion
+        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
       - name: Build cache
         uses: actions/cache@v2
         with:
           path: target
-          key: ${{ runner.os }}-build-rust_stable-smithay-feature_${{ matrix.features }}-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Build and install Libseat
         if: matrix.features == 'backend_session_libseat'
@@ -272,11 +278,14 @@ jobs:
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libxkbcommon-dev libegl1-mesa-dev libwayland-dev
 
+      - name: Get rustc version for caching
+        id: rustcversion
+        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
       - name: Build cache
         uses: actions/cache@v2
         with:
           path: target
-          key: ${{ runner.os }}-build-rust_stable-smallvil-feature_${{ matrix.features }}-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
       
       - name: Downgrade log
         uses: actions-rs/cargo@v1
@@ -343,11 +352,14 @@ jobs:
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
 
+      - name: Get rustc version for caching
+        id: rustcversion
+        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
       - name: Build cache
         uses: actions/cache@v2
         with:
           path: target
-          key: ${{ runner.os }}-build-rust_stable-anvil-feature_${{ matrix.features }}-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
       
       - name: Downgrade log
         uses: actions-rs/cargo@v1
@@ -472,3 +484,58 @@ jobs:
         uses: codecov/codecov-action@v1
         with:
           flags: wlcs-${{ matrix.flag }}
+
+  doc:
+    name: Documentation on Github Pages
+    runs-on: ubuntu-latest
+    needs:
+      - smithay-tests
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Get date for registry cache
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      - name: Cargo registry cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - name: Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: System dependencies
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+      
+      - name: Downgrade log
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+          args: -p log --precise 0.4.14
+      
+      - name: Build Documentation
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          # TODO: Update nix when drm-rs is updated
+          args: --no-deps --features "test_all_features" -p smithay -p calloop:0.10.0 -p dbus -p drm -p gbm -p input -p nix:0.22.3 -p udev -p slog -p wayland-server:0.30.0-beta.4 -p wayland-backend -p wayland-protocols:0.30.0-beta.4 -p winit -p x11rb
+
+      - name: Setup index
+        run: cp ./doc_index.html ./target/doc/index.html
+
+      - name: Deploy
+        if: ${{ github.event_name == 'push' }}
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/doc
