@@ -145,6 +145,10 @@ jobs:
       RUSTFLAGS: "-D warnings"
 
     runs-on: ubuntu-latest
+    needs:
+      - clippy-check
+      - format
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
