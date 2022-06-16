@@ -3,8 +3,8 @@
 [![Crates.io](https://img.shields.io/crates/v/smithay.svg)](https://crates.io/crates/smithay)
 [![docs.rs](https://docs.rs/smithay/badge.svg)](https://docs.rs/smithay)
 [![Build Status](https://github.com/Smithay/smithay/workflows/Continuous%20Integration/badge.svg)](https://github.com/Smithay/smithay/actions)
-[![Join the chat on matrix at @smithay:matrix.org](matrix_badge.svg)](https://matrix.to/#/#smithay:matrix.org)
-[![Join the chat via bridge on gitter at smithay/Lobby ](https://badges.gitter.im/smithay/Lobby.svg)](https://gitter.im/smithay/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Join the chat on matrix at #smithay:matrix.org](https://img.shields.io/badge/%5Bm%5D-%23smithay%3Amatrix.org-blue.svg)](https://matrix.to/#/#smithay:matrix.org)
+![Join the chat via bridge on #smithay on libera.chat](https://img.shields.io/badge/IRC-%23Smithay-blue.svg)
 
 A smithy for rusty wayland compositors
 
@@ -45,3 +45,7 @@ The currently available backends are:
 - `--tty-udev`: start anvil in a tty with udev support. This is the "traditional" launch of a Wayland
   compositor. Note that this requires you to start anvil as root if your system does not have logind
   available.
+
+## Contact us
+
+If you have questions or want to discuss the project with us, our main chatroom is on Matrix: [`#smithay:matrix.org`](https://matrix.to/#/#smithay:matrix.org). You can also join it via an IRC bridge, on `#smithay` on [libera.chat](https://libera.chat/).
