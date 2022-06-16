@@ -108,25 +108,37 @@ jobs:
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
+          args: --features "test_all_features" -- -D warnings
       - name: Clippy Smithay (ACT)
         if: ${{ env.ACT }} # on act lets just run clippy normally
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
+          args: --features "test_all_features" -- -D warnings
       - name: Clippy Anvil
         if: ${{ !env.ACT }} # act has no token
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
+          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" --no-deps -- -D warnings
       - name: Clippy Anvil (ACT)
         if: ${{ env.ACT }} # on act lets just run clippy normally
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
+          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" --no-deps -- -D warnings
+      - name: Clippy Smallvil
+        if: ${{ !env.ACT }} # act has no token
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --manifest-path "./smallvil/Cargo.toml" --no-deps -- -D warnings
+      - name: Clippy Smallvil (ACT)
+        if: ${{ env.ACT }} # on act lets just run clippy normally
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path "./smallvil/Cargo.toml" --no-deps -- -D warnings
   
   check-minimal:
     env:
