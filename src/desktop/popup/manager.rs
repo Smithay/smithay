@@ -1,5 +1,5 @@
 use crate::{
-    utils::{DeadResource, Logical, Point},
+    utils::{DeadResource, IsAlive, Logical, Point},
     wayland::{
         compositor::{get_role, with_states},
         seat::Seat,
@@ -8,7 +8,8 @@ use crate::{
     },
 };
 use std::sync::{Arc, Mutex};
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_wm_base};
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 use super::{PopupGrab, PopupGrabError, PopupGrabInner, PopupKind};
 
@@ -49,7 +50,7 @@ impl PopupManager {
             if let Some(i) = self
                 .unmapped_popups
                 .iter()
-                .position(|p| p.get_surface() == Some(surface))
+                .position(|p| p.wl_surface() == surface)
             {
                 slog::trace!(self.logger, "Popup got mapped");
                 let popup = self.unmapped_popups.swap_remove(i);
@@ -64,18 +65,19 @@ impl PopupManager {
     ///
     /// Returns a [`PopupGrab`] on success or an [`PopupGrabError`]
     /// if the grab has been denied.
-    pub fn grab_popup(
+    pub fn grab_popup<D: 'static>(
         &mut self,
+        dh: &DisplayHandle,
         popup: PopupKind,
-        seat: &Seat,
+        seat: &Seat<D>,
         serial: Serial,
     ) -> Result<PopupGrab, PopupGrabError> {
-        let surface = popup.get_surface().ok_or(DeadResource)?;
+        let surface = popup.wl_surface();
         let root = find_popup_root_surface(&popup)?;
 
         match popup {
             PopupKind::Xdg(ref xdg) => {
-                let surface = xdg.get_surface().ok_or(DeadResource)?;
+                let surface = xdg.wl_surface();
                 let committed = with_states(surface, |states| {
                     states
                         .data_map
@@ -84,13 +86,10 @@ impl PopupManager {
                         .lock()
                         .unwrap()
                         .committed
-                })?;
+                });
 
                 if committed {
-                    surface.as_ref().post_error(
-                        wayland_protocols::xdg_shell::server::xdg_popup::Error::InvalidGrab as u32,
-                        "xdg_popup already is mapped".to_string(),
-                    );
+                    surface.post_error(xdg_popup::Error::InvalidGrab, "xdg_popup already is mapped");
                     return Err(PopupGrabError::InvalidGrab);
                 }
             }
@@ -105,7 +104,7 @@ impl PopupManager {
         // that it either is new and have never been
         // added to the popupmanager or that it has been
         // cleaned up.
-        if !toplevel_popups.alive() {
+        if !toplevel_popups.active() {
             self.popup_grabs.push(toplevel_popups.clone());
         }
 
@@ -114,13 +113,12 @@ impl PopupManager {
             Err(err) => {
                 match err {
                     PopupGrabError::ParentDismissed => {
-                        let _ = PopupManager::dismiss_popup(&root, &popup);
+                        let _ = PopupManager::dismiss_popup(dh, &root, &popup);
                     }
                     PopupGrabError::NotTheTopmostPopup => {
-                        surface.as_ref().post_error(
-                            wayland_protocols::xdg_shell::server::xdg_wm_base::Error::NotTheTopmostPopup
-                                as u32,
-                            "xdg_popup was not created on the topmost popup".to_string(),
+                        surface.post_error(
+                            xdg_wm_base::Error::NotTheTopmostPopup,
+                            "xdg_popup was not created on the topmost popup",
                         );
                     }
                     _ => {}
@@ -154,28 +152,28 @@ impl PopupManager {
             }
             slog::trace!(self.logger, "Adding popup {:?} to root {:?}", popup, root);
             tree.insert(popup);
-        })
+        });
+
+        Ok(())
     }
 
     /// Finds the popup belonging to a given [`WlSurface`], if any.
     pub fn find_popup(&self, surface: &WlSurface) -> Option<PopupKind> {
         self.unmapped_popups
             .iter()
-            .find(|p| p.get_surface() == Some(surface))
+            .find(|p| p.wl_surface() == surface)
             .cloned()
             .or_else(|| {
                 self.popup_trees
                     .iter()
                     .flat_map(|tree| tree.iter_popups())
-                    .find(|(p, _)| p.get_surface() == Some(surface))
+                    .find(|(p, _)| p.wl_surface() == surface)
                     .map(|(p, _)| p)
             })
     }
 
     /// Returns the popups and their relative positions for a given toplevel surface, if any.
-    pub fn popups_for_surface(
-        surface: &WlSurface,
-    ) -> Result<impl Iterator<Item = (PopupKind, Point<i32, Logical>)>, DeadResource> {
+    pub fn popups_for_surface(surface: &WlSurface) -> impl Iterator<Item = (PopupKind, Point<i32, Logical>)> {
         with_states(surface, |states| {
             states
                 .data_map
@@ -186,14 +184,22 @@ impl PopupManager {
         })
     }
 
-    pub(crate) fn dismiss_popup(surface: &WlSurface, popup: &PopupKind) -> Result<(), DeadResource> {
+    pub(crate) fn dismiss_popup(
+        dh: &DisplayHandle,
+        surface: &WlSurface,
+        popup: &PopupKind,
+    ) -> Result<(), DeadResource> {
+        if !surface.alive() {
+            return Err(DeadResource);
+        }
         with_states(surface, |states| {
             let tree = states.data_map.get::<PopupTree>();
 
             if let Some(tree) = tree {
-                tree.dismiss_popup(popup);
+                tree.dismiss_popup(dh, popup);
             }
-        })
+        });
+        Ok(())
     }
 
     /// Needs to be called periodically (but not necessarily frequently)
@@ -201,7 +207,7 @@ impl PopupManager {
     pub fn cleanup(&mut self) {
         // retain_mut is sadly still unstable
         self.popup_grabs.iter_mut().for_each(|grabs| grabs.cleanup());
-        self.popup_grabs.retain(|grabs| grabs.alive());
+        self.popup_grabs.retain(|grabs| grabs.active());
         self.popup_trees.iter_mut().for_each(|tree| tree.cleanup());
         self.popup_trees.retain(|tree| tree.alive());
         self.unmapped_popups.retain(|surf| surf.alive());
@@ -222,7 +228,7 @@ fn find_popup_root_surface(popup: &PopupKind) -> Result<WlSurface, DeadResource>
                 .as_ref()
                 .cloned()
                 .unwrap()
-        })?;
+        });
     }
     Ok(parent)
 }
@@ -257,14 +263,14 @@ impl PopupTree {
         children.push(PopupNode::new(popup));
     }
 
-    fn dismiss_popup(&self, popup: &PopupKind) {
+    fn dismiss_popup(&self, dh: &DisplayHandle, popup: &PopupKind) {
         let mut children = self.0.lock().unwrap();
 
         let mut i = 0;
         while i < children.len() {
             let child = &mut children[i];
 
-            if child.dismiss_popup(popup) {
+            if child.dismiss_popup(dh, popup) {
                 let _ = children.remove(i);
                 break;
             } else {
@@ -307,7 +313,7 @@ impl PopupNode {
 
     fn insert(&mut self, popup: PopupKind) -> bool {
         let parent = popup.parent().unwrap();
-        if self.surface.get_surface() == Some(&parent) {
+        if self.surface.wl_surface() == &parent {
             self.children.push(PopupNode::new(popup));
             true
         } else {
@@ -320,17 +326,17 @@ impl PopupNode {
         }
     }
 
-    fn send_done(&self) {
+    fn send_done(&self, dh: &DisplayHandle) {
         for child in self.children.iter().rev() {
-            child.send_done();
+            child.send_done(dh);
         }
 
         self.surface.send_done();
     }
 
-    fn dismiss_popup(&mut self, popup: &PopupKind) -> bool {
-        if self.surface.get_surface() == popup.get_surface() {
-            self.send_done();
+    fn dismiss_popup(&mut self, dh: &DisplayHandle, popup: &PopupKind) -> bool {
+        if self.surface.wl_surface() == popup.wl_surface() {
+            self.send_done(dh);
             return true;
         }
 
@@ -338,7 +344,7 @@ impl PopupNode {
         while i < self.children.len() {
             let child = &mut self.children[i];
 
-            if child.dismiss_popup(popup) {
+            if child.dismiss_popup(dh, popup) {
                 let _ = self.children.remove(i);
                 return false;
             } else {

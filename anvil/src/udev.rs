@@ -13,14 +13,18 @@ use slog::Logger;
 
 use crate::{
     drawing::*,
-    state::{AnvilState, Backend},
+    state::{AnvilState, Backend, CalloopData},
 };
 #[cfg(feature = "debug")]
 use image::GenericImageView;
 #[cfg(feature = "egl")]
 use smithay::{
-    backend::renderer::{ImportDma, ImportEgl},
-    wayland::dmabuf::init_dmabuf_global,
+    backend::{
+        allocator::dmabuf::Dmabuf,
+        renderer::{ImportDma, ImportEgl},
+    },
+    delegate_dmabuf,
+    wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
 };
 use smithay::{
     backend::{
@@ -55,13 +59,14 @@ use smithay::{
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
         wayland_server::{
+            backend::GlobalId,
             protocol::{wl_output, wl_surface},
-            Display, Global,
+            Display, DisplayHandle,
         },
     },
     utils::{
         signaling::{Linkable, SignalToken, Signaler},
-        Logical, Point, Rectangle, Transform,
+        IsAlive, Logical, Point, Rectangle, Transform,
     },
     wayland::{
         output::{Mode, Output, PhysicalProperties},
@@ -94,6 +99,9 @@ struct UdevOutputId {
 
 pub struct UdevData {
     pub session: AutoSession,
+    dh: DisplayHandle,
+    #[cfg(feature = "egl")]
+    dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     primary_gpu: DrmNode,
     gpus: GpuManager<EglGlesBackend>,
     backends: HashMap<DrmNode, BackendData>,
@@ -104,6 +112,29 @@ pub struct UdevData {
     pointer_image: crate::cursor::Cursor,
     logger: slog::Logger,
 }
+
+#[cfg(feature = "egl")]
+impl DmabufHandler for AnvilState<UdevData> {
+    fn dmabuf_state(&mut self) -> &mut DmabufState {
+        &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
+    }
+
+    fn dmabuf_imported(
+        &mut self,
+        _dh: &DisplayHandle,
+        _global: &DmabufGlobal,
+        dmabuf: Dmabuf,
+    ) -> Result<(), ImportError> {
+        self.backend_data
+            .gpus
+            .renderer::<Gles2Renderbuffer>(&self.backend_data.primary_gpu, &self.backend_data.primary_gpu)
+            .and_then(|mut renderer| renderer.import_dmabuf(&dmabuf, None))
+            .map(|_| ())
+            .map_err(|_| ImportError::Failed)
+    }
+}
+#[cfg(feature = "egl")]
+delegate_dmabuf!(AnvilState<UdevData>);
 
 impl Backend for UdevData {
     fn seat_name(&self) -> String {
@@ -124,7 +155,7 @@ impl Backend for UdevData {
     fn early_import(&mut self, surface: &wl_surface::WlSurface) {
         if let Err(err) = self
             .gpus
-            .early_import(Some(self.primary_gpu), self.primary_gpu, surface)
+            .early_import(&self.dh, Some(self.primary_gpu), self.primary_gpu, surface)
         {
             warn!(self.logger, "Early buffer import failed: {}", err);
         }
@@ -133,7 +164,7 @@ impl Backend for UdevData {
 
 pub fn run_udev(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
-    let display = Rc::new(RefCell::new(Display::new()));
+    let mut display = Display::new().unwrap();
 
     /*
      * Initialize session
@@ -180,7 +211,7 @@ pub fn run_udev(log: Logger) {
             log,
             "Trying to initialize EGL Hardware Acceleration via {:?}", primary_gpu
         );
-        if renderer.bind_wl_display(&*display.borrow()).is_ok() {
+        if renderer.bind_wl_display(&display.handle()).is_ok() {
             info!(log, "EGL hardware-acceleration enabled");
         }
     }
@@ -199,10 +230,24 @@ pub fn run_udev(log: Logger) {
         )
         .expect("Unable to upload FPS texture");
 
+    // init dmabuf support with format list from our primary gpu
+    // TODO: This does not necessarily depend on egl, but mesa makes no use of it without wl_drm right now
     #[cfg(feature = "egl")]
-    let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+    let dmabuf_state = if renderer.bind_wl_display(&display.handle()).is_ok() {
+        info!(log, "EGL hardware-acceleration enabled");
+        let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+        let mut state = DmabufState::new();
+        let global =
+            state.create_global::<AnvilState<UdevData>, _>(&display.handle(), dmabuf_formats, log.clone());
+        Some((state, global))
+    } else {
+        None
+    };
 
     let data = UdevData {
+        dh: display.handle(),
+        #[cfg(feature = "egl")]
+        dmabuf_state,
         session,
         primary_gpu,
         gpus,
@@ -214,7 +259,7 @@ pub fn run_udev(log: Logger) {
         fps_texture,
         logger: log.clone(),
     };
-    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone(), true);
+    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
 
     /*
      * Initialize the udev backend
@@ -246,48 +291,27 @@ pub fn run_udev(log: Logger) {
      */
     event_loop
         .handle()
-        .insert_source(libinput_backend, move |event, _, anvil_state| {
-            anvil_state.process_input_event(event)
+        .insert_source(libinput_backend, move |event, _, data| {
+            let dh = data.state.backend_data.dh.clone();
+            data.state.process_input_event(&dh, event)
         })
         .unwrap();
     event_loop
         .handle()
-        .insert_source(notifier, |(), &mut (), _anvil_state| {})
+        .insert_source(notifier, |(), &mut (), _data| {})
         .unwrap();
     for (dev, path) in udev_backend.device_list() {
-        state.device_added(dev, path.into())
-    }
-
-    // init dmabuf support with format list from our primary gpu
-    // TODO: This does not necessarily depend on egl, but mesa makes no use of it without wl_drm right now
-    #[cfg(feature = "egl")]
-    {
-        init_dmabuf_global(
-            &mut *display.borrow_mut(),
-            dmabuf_formats,
-            |buffer, mut ddata| {
-                let anvil_state = ddata.get::<AnvilState<UdevData>>().unwrap();
-                anvil_state
-                    .backend_data
-                    .gpus
-                    .renderer::<Gles2Renderbuffer>(
-                        &anvil_state.backend_data.primary_gpu,
-                        &anvil_state.backend_data.primary_gpu,
-                    )
-                    .unwrap()
-                    .import_dmabuf(buffer, None)
-                    .is_ok()
-            },
-            log.clone(),
-        );
+        state.device_added(&mut display, dev, path.into())
     }
 
     event_loop
         .handle()
-        .insert_source(udev_backend, move |event, _, state| match event {
-            UdevEvent::Added { device_id, path } => state.device_added(device_id, path),
-            UdevEvent::Changed { device_id } => state.device_changed(device_id),
-            UdevEvent::Removed { device_id } => state.device_removed(device_id),
+        .insert_source(udev_backend, move |event, _, data| match event {
+            UdevEvent::Added { device_id, path } => {
+                data.state.device_added(&mut data.display, device_id, path)
+            }
+            UdevEvent::Changed { device_id } => data.state.device_changed(&mut data.display, device_id),
+            UdevEvent::Removed { device_id } => data.state.device_removed(device_id),
         })
         .unwrap();
 
@@ -302,15 +326,16 @@ pub fn run_udev(log: Logger) {
      */
 
     while state.running.load(Ordering::SeqCst) {
-        if event_loop
-            .dispatch(Some(Duration::from_millis(16)), &mut state)
-            .is_err()
-        {
+        let mut calloop_data = CalloopData { state, display };
+        let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
+        CalloopData { state, display } = calloop_data;
+
+        if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
-            state.space.borrow_mut().refresh();
-            state.popups.borrow_mut().cleanup();
-            display.borrow_mut().flush_clients(&mut state);
+            state.space.refresh(&display.handle());
+            state.popups.cleanup();
+            display.flush_clients().unwrap();
         }
     }
 }
@@ -318,10 +343,11 @@ pub fn run_udev(log: Logger) {
 pub type RenderSurface = GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd>;
 
 struct SurfaceData {
+    dh: DisplayHandle,
     device_id: DrmNode,
     render_node: DrmNode,
     surface: RenderSurface,
-    global: Option<Global<wl_output::WlOutput>>,
+    global: Option<GlobalId>,
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
 }
@@ -329,7 +355,7 @@ struct SurfaceData {
 impl Drop for SurfaceData {
     fn drop(&mut self) {
         if let Some(global) = self.global.take() {
-            global.destroy();
+            self.dh.remove_global(global);
         }
     }
 }
@@ -339,14 +365,14 @@ struct BackendData {
     surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>>>>,
     gbm: Rc<RefCell<GbmDevice<SessionFd>>>,
     registration_token: RegistrationToken,
-    event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, AnvilState<UdevData>>,
+    event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, CalloopData<UdevData>>,
 }
 
 fn scan_connectors(
     device_id: DrmNode,
     device: &DrmDevice<SessionFd>,
     gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
-    display: &mut Display,
+    display: &mut Display<AnvilState<UdevData>>,
     space: &mut Space,
     signaler: &Signaler<SessionSignal>,
     logger: &::slog::Logger,
@@ -456,7 +482,7 @@ fn scan_connectors(
                 },
                 None,
             );
-            let global = output.create_global(display);
+            let global = output.create_global::<AnvilState<UdevData>>(&display.handle());
             let position = (
                 space
                     .outputs()
@@ -473,6 +499,7 @@ fn scan_connectors(
                 .insert_if_missing(|| UdevOutputId { crtc, device_id });
 
             entry.insert(Rc::new(RefCell::new(SurfaceData {
+                dh: display.handle(),
                 device_id,
                 render_node,
                 surface: gbm_surface,
@@ -489,7 +516,7 @@ fn scan_connectors(
 }
 
 impl AnvilState<UdevData> {
-    fn device_added(&mut self, device_id: dev_t, path: PathBuf) {
+    fn device_added(&mut self, display: &mut Display<Self>, device_id: dev_t, path: PathBuf) {
         // Try to open the device
         let open_flags = OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK;
         let device_fd = self.backend_data.session.open(&path, open_flags).ok();
@@ -530,8 +557,8 @@ impl AnvilState<UdevData> {
             node,
             &device,
             &gbm,
-            &mut *self.display.borrow_mut(),
-            &mut *self.space.borrow_mut(),
+            display,
+            &mut self.space,
             &self.backend_data.signaler,
             &self.log,
         )));
@@ -539,22 +566,19 @@ impl AnvilState<UdevData> {
         let handle = self.handle.clone();
         let restart_token = self.backend_data.signaler.register(move |signal| match signal {
             SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
-                handle.insert_idle(move |anvil_state| anvil_state.render(node, None));
+                handle.insert_idle(move |data| data.state.render(node, None));
             }
             _ => {}
         });
 
         device.link(self.backend_data.signaler.clone());
         let event_dispatcher =
-            Dispatcher::new(
-                device,
-                move |event, _, anvil_state: &mut AnvilState<_>| match event {
-                    DrmEvent::VBlank(crtc) => anvil_state.render(node, Some(crtc)),
-                    DrmEvent::Error(error) => {
-                        error!(anvil_state.log, "{:?}", error);
-                    }
-                },
-            );
+            Dispatcher::new(device, move |event, _, data: &mut CalloopData<_>| match event {
+                DrmEvent::VBlank(crtc) => data.state.render(node, Some(crtc)),
+                DrmEvent::Error(error) => {
+                    error!(data.state.log, "{:?}", error);
+                }
+            });
         let registration_token = self.handle.register_dispatcher(event_dispatcher.clone()).unwrap();
 
         for backend in backends.borrow_mut().values() {
@@ -580,7 +604,7 @@ impl AnvilState<UdevData> {
         );
     }
 
-    fn device_changed(&mut self, device: dev_t) {
+    fn device_changed(&mut self, display: &mut Display<Self>, device: dev_t) {
         let node = match DrmNode::from_dev_id(device).ok() {
             Some(node) => node,
             None => return, // we already logged a warning on device_added
@@ -591,10 +615,10 @@ impl AnvilState<UdevData> {
             let logger = self.log.clone();
             let loop_handle = self.handle.clone();
             let signaler = self.backend_data.signaler.clone();
-            let mut space = self.space.borrow_mut();
 
             // scan_connectors will recreate the outputs (and sadly also reset the scales)
-            for output in space
+            for output in self
+                .space
                 .outputs()
                 .filter(|o| {
                     o.user_data()
@@ -606,7 +630,7 @@ impl AnvilState<UdevData> {
                 .collect::<Vec<_>>()
                 .into_iter()
             {
-                space.unmap_output(&output);
+                self.space.unmap_output(&output);
             }
 
             let source = backend_data.event_dispatcher.as_source_mut();
@@ -615,14 +639,14 @@ impl AnvilState<UdevData> {
                 node,
                 &source,
                 &backend_data.gbm,
-                &mut *self.display.borrow_mut(),
-                &mut *space,
+                display,
+                &mut self.space,
                 &signaler,
                 &logger,
             );
 
             // fixup window coordinates
-            crate::shell::fixup_positions(&mut *space);
+            crate::shell::fixup_positions(&display.handle(), &mut self.space);
 
             for surface in backends.values() {
                 let logger = logger.clone();
@@ -642,9 +666,9 @@ impl AnvilState<UdevData> {
             // drop surfaces
             backend_data.surfaces.borrow_mut().clear();
             debug!(self.log, "Surfaces dropped");
-            let mut space = self.space.borrow_mut();
 
-            for output in space
+            for output in self
+                .space
                 .outputs()
                 .filter(|o| {
                     o.user_data()
@@ -656,9 +680,9 @@ impl AnvilState<UdevData> {
                 .collect::<Vec<_>>()
                 .into_iter()
             {
-                space.unmap_output(&output);
+                self.space.unmap_output(&output);
             }
-            crate::shell::fixup_positions(&mut *space);
+            crate::shell::fixup_positions(&self.backend_data.dh, &mut self.space);
 
             let _device = self.handle.remove(backend_data.registration_token);
             let _device = backend_data.event_dispatcher.into_source_inner();
@@ -725,12 +749,12 @@ impl AnvilState<UdevData> {
                 &mut *surface.borrow_mut(),
                 &mut renderer,
                 crtc,
-                &mut *self.space.borrow_mut(),
+                &mut self.space,
                 self.pointer_location,
                 &pointer_image,
                 #[cfg(feature = "debug")]
                 &self.backend_data.fps_texture,
-                &*self.dnd_icon.lock().unwrap(),
+                &self.dnd_icon,
                 &mut *self.cursor_status.lock().unwrap(),
                 &self.log,
             );
@@ -758,8 +782,8 @@ impl AnvilState<UdevData> {
                     1000 /*a seconds*/ / 60, /*refresh rate*/
                 ));
                 self.handle
-                    .insert_source(timer, move |_, _, anvil_state| {
-                        anvil_state.render(dev_id, Some(crtc));
+                    .insert_source(timer, move |_, _, data| {
+                        data.state.render(dev_id, Some(crtc));
                         TimeoutAction::Drop
                     })
                     .expect("failed to schedule frame timer");
@@ -767,7 +791,6 @@ impl AnvilState<UdevData> {
 
             // Send frame events so that client start drawing their next frame
             self.space
-                .borrow()
                 .send_frames(self.start_time.elapsed().as_millis() as u32);
         }
     }
@@ -812,9 +835,9 @@ fn render_surface(
         let ptr_location = Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)); // - output_geometry.loc;
                                                                                       // draw the dnd icon if applicable
         {
-            if let Some(ref wl_surface) = dnd_icon.as_ref() {
-                if wl_surface.as_ref().is_alive() {
-                    elements.push(draw_dnd_icon((*wl_surface).clone(), ptr_location, logger).into());
+            if let Some(wl_surface) = dnd_icon.as_ref() {
+                if wl_surface.alive() {
+                    elements.push(draw_dnd_icon(wl_surface.clone(), ptr_location, logger).into());
                 }
             }
         }
@@ -824,7 +847,7 @@ fn render_surface(
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
             if let CursorImageStatus::Image(ref surface) = *cursor_status {
-                reset = !surface.as_ref().is_alive();
+                reset = !surface.alive();
             }
             if reset {
                 *cursor_status = CursorImageStatus::Default;
@@ -846,8 +869,16 @@ fn render_surface(
 
     // and draw to our buffer
     // TODO we can pass the damage rectangles inside a AtomicCommitRequest
-    let render_res = crate::render::render_output(&output, space, renderer, age.into(), &*elements, logger)
-        .map(|x| x.is_some());
+    let render_res = crate::render::render_output(
+        &surface.dh,
+        &output,
+        space,
+        renderer,
+        age.into(),
+        &*elements,
+        logger,
+    )
+    .map(|x| x.is_some());
 
     match render_res.map_err(|err| match err {
         RenderError::Rendering(err) => err.into(),
@@ -867,7 +898,7 @@ fn render_surface(
 fn schedule_initial_render(
     gpus: &mut GpuManager<EglGlesBackend>,
     surface: Rc<RefCell<SurfaceData>>,
-    evt_handle: &LoopHandle<'static, AnvilState<UdevData>>,
+    evt_handle: &LoopHandle<'static, CalloopData<UdevData>>,
     logger: ::slog::Logger,
 ) {
     let node = surface.borrow().render_node;
@@ -884,7 +915,7 @@ fn schedule_initial_render(
                 warn!(logger, "Failed to submit page_flip: {}", err);
                 let handle = evt_handle.clone();
                 evt_handle.insert_idle(move |data| {
-                    schedule_initial_render(&mut data.backend_data.gpus, surface, &handle, logger)
+                    schedule_initial_render(&mut data.state.backend_data.gpus, surface, &handle, logger)
                 });
             }
             SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),

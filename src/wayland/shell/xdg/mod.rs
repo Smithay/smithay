@@ -6,9 +6,7 @@
 //! ## Why use this implementation
 //!
 //! This implementation can track for you the various shell surfaces defined by the
-//! clients by handling the `xdg_shell` protocol. It also contains a compatibility
-//! layer handling its precursor, the unstable `zxdg_shell_v6` protocol, which is
-//! mostly identical.
+//! clients by handling the `xdg_shell` protocol.
 //!
 //! It allows you to easily access a list of all shell surfaces defined by your clients
 //! access their associated metadata and underlying `wl_surface`s.
@@ -21,22 +19,59 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this handler, simple use the [`xdg_shell_init`] function provided in this module.
-//! You need to provide a closure that will be invoked whenever some action is required from you,
-//! are represented by the [`XdgRequest`] enum.
+//! To initialize this handler, create [`XdgShellState`], store it in your `State` struct and
+//! implement the [`XdgShellHandler`], as shown in this example:
 //!
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::wayland::shell::xdg::{xdg_shell_init, XdgRequest};
+//! use smithay::delegate_xdg_shell;
+//! use smithay::reexports::wayland_server::protocol::wl_seat;
+//! use smithay::wayland::{
+//!     shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState},
+//!     Serial,
+//! };
 //!
-//! # let mut display = wayland_server::Display::new();
-//! let (shell_state, _) = xdg_shell_init(
-//!     &mut display,
-//!     // your implementation
-//!     |event: XdgRequest, dispatch_data| { /* handle the shell requests here */ },
+//! # struct State { xdg_shell_state: XdgShellState }
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! let xdg_shell_state = XdgShellState::new::<State, _>(
+//!     &display.handle(),
 //!     None  // put a logger if you want
 //! );
+//!
+//! // insert the xdg_shell_state into your state
+//! // ...
+//!
+//! // implement the necessary traits
+//! impl XdgShellHandler for State {
+//!     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
+//!         &mut self.xdg_shell_state    
+//!     }
+//!
+//!     // handle the shell requests here.
+//!     // more optional methods can be used to further customized
+//!     fn new_toplevel(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {
+//!         // ...
+//!     }
+//!     fn new_popup(
+//!         &mut self,
+//!         dh: &wayland_server::DisplayHandle,
+//!         surface: PopupSurface,
+//!         positioner: PositionerState,
+//!     ) {
+//!         // ...
+//!     }
+//!     fn grab(
+//!         &mut self,
+//!         dh: &wayland_server::DisplayHandle,
+//!         surface: PopupSurface,
+//!         seat: wl_seat::WlSeat,
+//!         serial: Serial,
+//!     ) {
+//!         // ...
+//!     }
+//! }
+//! delegate_xdg_shell!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -51,79 +86,47 @@
 //! - [`ToplevelSurface`]:
 //!   This is a handle representing a toplevel surface, you can
 //!   retrieve a list of all currently alive toplevel surface from the
-//!   [`ShellState`].
+//!   [`XdgShellState`].
 //! - [`PopupSurface`]:
 //!   This is a handle representing a popup/tooltip surface. Similarly,
 //!   you can get a list of all currently alive popup surface from the
-//!   [`ShellState`].
+//!   [`XdgShellState`].
 //!
 //! You'll obtain these objects though two means: either via the callback methods of
-//! the subhandler you provided, or via methods on the [`ShellState`]
-//! that you are given (in an `Arc<Mutex<_>>`) as return value of the `init` function.
+//! the [`XdgShellHandler`], or via methods on the [`XdgShellState`].
 
-use crate::utils::DeadResource;
-use crate::utils::{Logical, Point, Rectangle, Size};
+use crate::utils::alive_tracker::IsAlive;
+use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::shell::is_toplevel_equivalent;
 use crate::wayland::{Serial, SERIAL_COUNTER};
 use std::fmt::Debug;
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use wayland_protocols::unstable::xdg_decoration;
-use wayland_protocols::unstable::xdg_decoration::v1::server::zxdg_toplevel_decoration_v1;
-use wayland_protocols::xdg_shell::server::xdg_surface;
-use wayland_protocols::xdg_shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base};
-use wayland_server::DispatchData;
+use wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
+use wayland_protocols::xdg::shell::server::xdg_surface;
+use wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase;
+use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base};
+use wayland_server::backend::GlobalId;
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
-    Display, Filter, Global, UserDataMap,
+    DisplayHandle, GlobalDispatch, Resource,
 };
-
-use self::xdg_handlers::ShellSurfaceUserData;
 
 use super::PingError;
 
 pub mod decoration;
 
 // handlers for the xdg_shell protocol
-pub(super) mod xdg_handlers;
+pub(super) mod handlers;
+pub use handlers::{XdgPositionerUserData, XdgShellSurfaceUserData, XdgSurfaceUserData, XdgWmBaseUserData};
 
 /// The role of an XDG toplevel surface.
-///
-/// If you are checking if the surface role is an xdg_toplevel, you should also check if the surface
-/// is an [zxdg_toplevel] since the zxdg toplevel role is equivalent.
-///
-/// [zxdg_toplevel]: self::ZXDG_TOPLEVEL_ROLE
 pub const XDG_TOPLEVEL_ROLE: &str = "xdg_toplevel";
 
 /// The role of an XDG popup surface.
-///
-/// If you are checking if the surface role is an xdg_popup, you should also check if the surface
-/// is a [zxdg_popup] since the zxdg popup role is equivalent.
-///
-/// [zxdg_popup]: self::ZXDG_POPUP_ROLE
 pub const XDG_POPUP_ROLE: &str = "xdg_popup";
-
-/// The role of an ZXDG toplevel surface.
-///
-/// If you are checking if the surface role is an zxdg_toplevel, you should also check if the surface
-/// is an [xdg_toplevel] since the xdg toplevel role is equivalent.
-///
-/// [xdg_toplevel]: self::XDG_TOPLEVEL_ROLE
-pub const ZXDG_TOPLEVEL_ROLE: &str = "zxdg_toplevel";
-
-/// The role of an ZXDG popup surface.
-///
-/// If you are checking if the surface role is an zxdg_popup, you should also check if the surface
-/// is a [xdg_popup] since the xdg popup role is equivalent.
-///
-/// [xdg_popup]: self::XDG_POPUP_ROLE
-pub const ZXDG_POPUP_ROLE: &str = "zxdg_popup";
 
 /// Constant for toplevel state version checking
 const XDG_TOPLEVEL_STATE_TILED_SINCE: u32 = 2;
@@ -737,60 +740,159 @@ pub struct SurfaceCachedState {
 }
 
 impl Cacheable for SurfaceCachedState {
-    fn commit(&mut self) -> Self {
+    fn commit(&mut self, _dh: &DisplayHandle) -> Self {
         *self
     }
-    fn merge_into(self, into: &mut Self) {
+    fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
         *into = self;
     }
 }
 
-pub(crate) struct ShellData {
-    log: ::slog::Logger,
-    user_impl: Rc<RefCell<dyn FnMut(XdgRequest, DispatchData<'_>)>>,
-    shell_state: Arc<Mutex<ShellState>>,
-}
+/// Xdg Shell handler type
+#[allow(unused_variables)]
+pub trait XdgShellHandler {
+    /// [XdgShellState] getter
+    fn xdg_shell_state(&mut self) -> &mut XdgShellState;
 
-impl Clone for ShellData {
-    fn clone(&self) -> Self {
-        ShellData {
-            log: self.log.clone(),
-            user_impl: self.user_impl.clone(),
-            shell_state: self.shell_state.clone(),
-        }
+    /// A new shell client was instantiated
+    fn new_client(&mut self, dh: &wayland_server::DisplayHandle, client: ShellClient) {}
+
+    /// The pong for a pending ping of this shell client was received
+    ///
+    /// The `ShellHandler` already checked for you that the serial matches the one
+    /// from the pending ping.
+    fn client_pong(&mut self, dh: &wayland_server::DisplayHandle, client: ShellClient) {}
+
+    /// A new toplevel surface was created
+    ///
+    /// You likely need to send a [`ToplevelConfigure`] to the surface, to hint the
+    /// client as to how its window should be sized.
+    fn new_toplevel(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface);
+
+    /// A new popup surface was created
+    ///
+    /// You likely need to send a [`PopupConfigure`] to the surface, to hint the
+    /// client as to how its popup should be sized.
+    ///
+    /// ## Arguments
+    ///
+    /// - `positioner` - The state of the positioner at the timethe popup was requested.
+    ///     The positioner state can be used by the compositor
+    ///     to calculate the best placement for the popup.
+    ///     For example the compositor should prevent that a popup
+    ///     is placed outside the visible rectangle of a output.
+    fn new_popup(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: PopupSurface,
+        positioner: PositionerState,
+    );
+
+    /// The client requested the start of an interactive move for this surface
+    fn move_request(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+    ) {
+    }
+
+    /// The client requested the start of an interactive resize for this surface
+    fn resize_request(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+        edges: xdg_toplevel::ResizeEdge,
+    ) {
+    }
+
+    /// This popup requests a grab of the pointer
+    ///
+    /// This means it requests to be sent a `popup_done` event when the pointer leaves
+    /// the grab area.
+    fn grab(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: PopupSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+    );
+
+    /// A toplevel surface requested to be maximized
+    fn maximize_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+
+    /// A toplevel surface requested to stop being maximized
+    fn unmaximize_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+
+    /// A toplevel surface requested to be set fullscreen
+    fn fullscreen_request(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: ToplevelSurface,
+        output: Option<wl_output::WlOutput>,
+    ) {
+    }
+
+    /// A toplevel surface request to stop being fullscreen
+    fn unfullscreen_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+
+    /// A toplevel surface requested to be minimized
+    fn minimize_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+
+    /// The client requests the window menu to be displayed on this surface at this location
+    ///
+    /// This menu belongs to the compositor. It is typically expected to contain options for
+    /// control of the window (maximize/minimize/close/move/etc...).
+    fn show_window_menu(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+        location: Point<i32, Logical>,
+    ) {
+    }
+
+    /// A surface has acknowledged a configure serial.
+    fn ack_configure(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: wl_surface::WlSurface,
+        configure: Configure,
+    ) {
+    }
+
+    /// A client requested a reposition, providing a new
+    /// positioner, of a popup.
+    ///
+    /// ## Arguments
+    ///
+    /// - `positioner` - The state of the positioner at the time the reposition request was made.
+    ///     The positioner state can be used by the compositor
+    ///     to calculate the best placement for the popup.
+    ///     For example the compositor should prevent that a popup
+    ///     is placed outside the visible rectangle of a output.
+    /// - `token` - The passed token will be sent in the corresponding xdg_popup.repositioned event.
+    ///     The new popup position will not take effect until the corresponding configure event
+    ///     is acknowledged by the client. See xdg_popup.repositioned for details.
+    ///     The token itself is opaque, and has no other special meaning.
+    fn reposition_request(
+        &mut self,
+        dh: &wayland_server::DisplayHandle,
+        surface: PopupSurface,
+        positioner: PositionerState,
+        token: u32,
+    ) {
     }
 }
 
-/// Create a new `xdg_shell` global
-pub fn xdg_shell_init<L, Impl>(
-    display: &mut Display,
-    implementation: Impl,
-    logger: L,
-) -> (Arc<Mutex<ShellState>>, Global<xdg_wm_base::XdgWmBase>)
-where
-    L: Into<Option<::slog::Logger>>,
-    Impl: FnMut(XdgRequest, DispatchData<'_>) + 'static,
-{
-    let log = crate::slog_or_fallback(logger);
-    let shell_state = Arc::new(Mutex::new(ShellState {
-        known_toplevels: Vec::new(),
-        known_popups: Vec::new(),
-    }));
-
-    let shell_data = ShellData {
-        log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
-        user_impl: Rc::new(RefCell::new(implementation)),
-        shell_state: shell_state.clone(),
-    };
-
-    let xdg_shell_global = display.create_global(
-        3,
-        Filter::new(move |(shell, _version), _, dispatch_data| {
-            self::xdg_handlers::implement_wm_base(shell, &shell_data, dispatch_data);
-        }),
-    );
-
-    (shell_state, xdg_shell_global)
+#[derive(Debug)]
+pub(crate) struct InnerState {
+    known_toplevels: Vec<ToplevelSurface>,
+    known_popups: Vec<PopupSurface>,
 }
 
 /// Shell global state
@@ -798,40 +900,74 @@ where
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
 #[derive(Debug)]
-pub struct ShellState {
-    known_toplevels: Vec<ToplevelSurface>,
-    known_popups: Vec<PopupSurface>,
+pub struct XdgShellState {
+    inner: Arc<Mutex<InnerState>>,
+    global: GlobalId,
+    _log: slog::Logger,
 }
 
-impl ShellState {
-    /// Access all the shell surfaces known by this handler
-    pub fn toplevel_surfaces(&self) -> &[ToplevelSurface] {
-        &self.known_toplevels[..]
+impl XdgShellState {
+    /// Create a new `xdg_shell` global
+    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> XdgShellState
+    where
+        L: Into<Option<::slog::Logger>>,
+        D: GlobalDispatch<XdgWmBase, ()> + 'static,
+    {
+        let log = crate::slog_or_fallback(logger);
+        let global = display.create_global::<D, XdgWmBase, _>(3, ());
+
+        XdgShellState {
+            inner: Arc::new(Mutex::new(InnerState {
+                known_toplevels: Vec::new(),
+                known_popups: Vec::new(),
+            })),
+            global,
+            _log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
+        }
     }
 
-    /// Returns a reference to the toplevel surface mapped to the provided wl_surface.
-    pub fn toplevel_surface(&self, surface: &wl_surface::WlSurface) -> Option<&ToplevelSurface> {
-        self.known_toplevels
+    /// Access all the shell surfaces known by this handler
+    pub fn toplevel_surfaces<T, F: FnMut(&[ToplevelSurface]) -> T>(&self, mut cb: F) -> T {
+        cb(&self.inner.lock().unwrap().known_toplevels)
+    }
+
+    /// Returns a [`ToplevelSurface`] from an underlying toplevel surface.
+    pub fn get_toplevel(&self, toplevel: &xdg_toplevel::XdgToplevel) -> Option<ToplevelSurface> {
+        self.inner
+            .lock()
+            .unwrap()
+            .known_toplevels
             .iter()
-            .find(|toplevel| toplevel.wl_surface == *surface)
+            .find(|surface| surface.xdg_toplevel() == toplevel)
+            .cloned()
     }
 
     /// Access all the popup surfaces known by this handler
-    pub fn popup_surfaces(&self) -> &[PopupSurface] {
-        &self.known_popups[..]
+    pub fn popup_surfaces<T, F: FnMut(&[PopupSurface]) -> T>(&self, mut cb: F) -> T {
+        cb(&self.inner.lock().unwrap().known_popups)
+    }
+
+    /// Returns a [`PopupSurface`] from an underlying popup surface.
+    pub fn get_popup(&self, popup: &xdg_popup::XdgPopup) -> Option<PopupSurface> {
+        self.inner
+            .lock()
+            .unwrap()
+            .known_popups
+            .iter()
+            .find(|surface| surface.xdg_popup() == popup)
+            .cloned()
+    }
+
+    /// Returns the xdg shell global.
+    pub fn global(&self) -> GlobalId {
+        self.global.clone()
     }
 }
 
+#[derive(Default, Debug)]
 pub(crate) struct ShellClientData {
     pending_ping: Option<Serial>,
     data: UserDataMap,
-}
-
-fn make_shell_client_data() -> ShellClientData {
-    ShellClientData {
-        pending_ping: None,
-        data: UserDataMap::new(),
-    }
 }
 
 /// A shell client
@@ -856,9 +992,15 @@ impl std::cmp::PartialEq for ShellClient {
 }
 
 impl ShellClient {
+    fn new(resource: &xdg_wm_base::XdgWmBase) -> Self {
+        Self {
+            kind: resource.clone(),
+        }
+    }
+
     /// Is the shell client represented by this handle still connected?
     pub fn alive(&self) -> bool {
-        self.kind.as_ref().is_alive()
+        self.kind.alive()
     }
 
     /// Send a ping request to this shell client
@@ -874,12 +1016,7 @@ impl ShellClient {
         if !self.alive() {
             return Err(PingError::DeadSurface);
         }
-        let user_data = self
-            .kind
-            .as_ref()
-            .user_data()
-            .get::<self::xdg_handlers::ShellUserData>()
-            .unwrap();
+        let user_data = self.kind.data::<self::handlers::XdgWmBaseUserData>().unwrap();
         let mut guard = user_data.client_data.lock().unwrap();
         if let Some(pending_ping) = guard.pending_ping {
             return Err(PingError::PingAlreadyPending(pending_ping));
@@ -898,12 +1035,7 @@ impl ShellClient {
         if !self.alive() {
             return Err(crate::utils::DeadResource);
         }
-        let data = self
-            .kind
-            .as_ref()
-            .user_data()
-            .get::<self::xdg_handlers::ShellUserData>()
-            .unwrap();
+        let data = self.kind.data::<self::handlers::XdgWmBaseUserData>().unwrap();
         let mut guard = data.client_data.lock().unwrap();
         Ok(f(&mut guard.data))
     }
@@ -918,40 +1050,33 @@ pub struct ToplevelSurface {
 
 impl std::cmp::PartialEq for ToplevelSurface {
     fn eq(&self, other: &Self) -> bool {
-        self.alive() && other.alive() && self.wl_surface == other.wl_surface
+        // self.alive() && other.alive() &&
+        self.wl_surface == other.wl_surface
     }
 }
 
 impl ToplevelSurface {
     /// Is the toplevel surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
-        self.shell_surface.as_ref().is_alive() && self.wl_surface.as_ref().is_alive()
+        self.wl_surface.alive() && self.shell_surface.alive()
     }
 
     /// Supported XDG shell protocol version.
     pub fn version(&self) -> u32 {
-        self.shell_surface.as_ref().version()
+        self.shell_surface.version()
     }
 
     /// Retrieve the shell client owning this toplevel surface
-    ///
-    /// Returns `None` if the surface does actually no longer exist.
-    pub fn client(&self) -> Option<ShellClient> {
-        if !self.alive() {
-            return None;
-        }
-
+    pub fn client(&self) -> ShellClient {
         let shell = {
             let data = self
                 .shell_surface
-                .as_ref()
-                .user_data()
-                .get::<self::xdg_handlers::ShellSurfaceUserData>()
+                .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.wm_base.clone()
         };
 
-        Some(ShellClient { kind: shell })
+        ShellClient { kind: shell }
     }
 
     /// Gets the current pending state for a configure
@@ -985,57 +1110,50 @@ impl ToplevelSurface {
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
     pub fn send_configure(&self) {
-        if let Some(surface) = self.get_surface() {
-            let configure = compositor::with_states(surface, |states| {
-                let mut attributes = states
-                    .data_map
-                    .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
-                if let Some(pending) = self.get_pending_state(&mut *attributes) {
-                    // Retrieve the last configured decoration mode and test
-                    // if the mode has changed.
-                    // We have to do this check before adding the pending state
-                    // to the pending configures.
-                    let decoration_mode_changed =
-                        pending.decoration_mode != attributes.current_server_state().decoration_mode;
+        let configure = compositor::with_states(&self.wl_surface, |states| {
+            let mut attributes = states
+                .data_map
+                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
+            if let Some(pending) = self.get_pending_state(&mut *attributes) {
+                // Retrieve the last configured decoration mode and test
+                // if the mode has changed.
+                // We have to do this check before adding the pending state
+                // to the pending configures.
+                let decoration_mode_changed =
+                    pending.decoration_mode != attributes.current_server_state().decoration_mode;
 
-                    let configure = ToplevelConfigure {
-                        serial: SERIAL_COUNTER.next_serial(),
-                        state: pending,
-                    };
+                let configure = ToplevelConfigure {
+                    serial: SERIAL_COUNTER.next_serial(),
+                    state: pending,
+                };
 
-                    attributes.pending_configures.push(configure.clone());
-                    attributes.initial_configure_sent = true;
+                attributes.pending_configures.push(configure.clone());
+                attributes.initial_configure_sent = true;
 
-                    Some((configure, decoration_mode_changed))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(None);
-            if let Some((configure, decoration_mode_changed)) = configure {
-                if decoration_mode_changed {
-                    if let Some(data) = self
-                        .shell_surface
-                        .as_ref()
-                        .user_data()
-                        .get::<ShellSurfaceUserData>()
-                    {
-                        if let Some(decoration) = &*data.decoration.borrow() {
-                            self::decoration::send_decoration_configure(
-                                decoration,
-                                configure.state.decoration_mode.unwrap_or(
-                                    xdg_decoration::v1::server::zxdg_toplevel_decoration_v1::Mode::ClientSide,
-                                ),
-                            );
-                        }
+                Some((configure, decoration_mode_changed))
+            } else {
+                None
+            }
+        });
+        if let Some((configure, decoration_mode_changed)) = configure {
+            if decoration_mode_changed {
+                if let Some(data) = self.shell_surface.data::<XdgShellSurfaceUserData>() {
+                    if let Some(decoration) = &*data.decoration.lock().unwrap() {
+                        self::decoration::send_decoration_configure(
+                            decoration,
+                            configure
+                                .state
+                                .decoration_mode
+                                .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
+                        );
                     }
                 }
-
-                self::xdg_handlers::send_toplevel_configure(&self.shell_surface, configure)
             }
+
+            self::handlers::send_toplevel_configure(&self.shell_surface, configure)
         }
     }
 
@@ -1043,7 +1161,7 @@ impl ToplevelSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook(surface: &wl_surface::WlSurface) {
+    pub(crate) fn commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
         compositor::with_states(surface, |states| {
             let mut guard = states
                 .data_map
@@ -1054,8 +1172,7 @@ impl ToplevelSurface {
             if let Some(state) = guard.last_acked.clone() {
                 guard.current = state;
             }
-        })
-        .unwrap();
+        });
     }
 
     /// Make sure this surface was configured
@@ -1067,9 +1184,6 @@ impl ToplevelSurface {
     /// `xdg_shell` mandates that a client acks a configure before committing
     /// anything.
     pub fn ensure_configured(&self) -> bool {
-        if !self.alive() {
-            return false;
-        }
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -1078,18 +1192,15 @@ impl ToplevelSurface {
                 .lock()
                 .unwrap()
                 .configured
-        })
-        .unwrap();
+        });
         if !configured {
             let data = self
                 .shell_surface
-                .as_ref()
-                .user_data()
-                .get::<self::xdg_handlers::ShellSurfaceUserData>()
+                .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
-            data.xdg_surface.as_ref().post_error(
-                xdg_surface::Error::NotConstructed as u32,
-                "Surface has not been configured yet.".into(),
+            data.xdg_surface.post_error(
+                xdg_surface::Error::NotConstructed,
+                "Surface has not been configured yet.",
             );
         }
         configured
@@ -1101,14 +1212,13 @@ impl ToplevelSurface {
     }
 
     /// Access the underlying `wl_surface` of this toplevel surface
-    ///
-    /// Returns `None` if the toplevel surface actually no longer exists.
-    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
-        if self.alive() {
-            Some(&self.wl_surface)
-        } else {
-            None
-        }
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
+        &self.wl_surface
+    }
+
+    /// Access the underlying `xdg_toplevel` of this toplevel surface
+    pub fn xdg_toplevel(&self) -> &xdg_toplevel::XdgToplevel {
+        &self.shell_surface
     }
 
     /// Allows the pending state of this toplevel to
@@ -1118,15 +1228,11 @@ impl ToplevelSurface {
     /// for example after a resize request from the client.
     ///
     /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
-    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, DeadResource>
+    pub fn with_pending_state<F, T>(&self, f: F) -> T
     where
         F: FnOnce(&mut ToplevelState) -> T,
     {
-        if !self.alive() {
-            return Err(DeadResource);
-        }
-
-        Ok(compositor::with_states(&self.wl_surface, |states| {
+        compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
                 .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
@@ -1140,36 +1246,25 @@ impl ToplevelSurface {
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
         })
-        .unwrap())
     }
 
     /// Gets a copy of the current state of this toplevel
-    ///
-    /// Returns `None` if the underlying surface has been
-    /// destroyed
-    pub fn current_state(&self) -> Option<ToplevelState> {
-        if !self.alive() {
-            return None;
-        }
+    pub fn current_state(&self) -> ToplevelState {
+        compositor::with_states(&self.wl_surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
 
-        Some(
-            compositor::with_states(&self.wl_surface, |states| {
-                let attributes = states
-                    .data_map
-                    .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
-
-                attributes.current.clone()
-            })
-            .unwrap(),
-        )
+            attributes.current.clone()
+        })
     }
 
     /// Returns the parent of this toplevel surface.
     pub fn parent(&self) -> Option<wl_surface::WlSurface> {
-        xdg_handlers::get_parent(&self.shell_surface)
+        handlers::get_parent(&self.shell_surface)
     }
 
     /// Sets the parent of this toplevel surface and returns whether the parent was successfully set.
@@ -1184,7 +1279,8 @@ impl ToplevelSurface {
             }
         }
 
-        xdg_handlers::set_parent(&self.shell_surface, parent.cloned());
+        // Unset the parent
+        handlers::set_parent(&self.shell_surface, None);
 
         true
     }
@@ -1217,101 +1313,86 @@ pub struct PopupSurface {
 
 impl std::cmp::PartialEq for PopupSurface {
     fn eq(&self, other: &Self) -> bool {
-        self.alive() && other.alive() && self.wl_surface == other.wl_surface
+        // self.alive() && other.alive() &&
+        self.wl_surface == other.wl_surface
     }
 }
 
 impl PopupSurface {
-    /// Is the popup surface referred by this handle still alive?
+    /// Is the toplevel surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
-        self.shell_surface.as_ref().is_alive() && self.wl_surface.as_ref().is_alive()
+        self.wl_surface.alive() && self.shell_surface.alive()
     }
 
     /// Gets a reference of the parent WlSurface of
     /// this popup.
     pub fn get_parent_surface(&self) -> Option<wl_surface::WlSurface> {
-        if !self.alive() {
-            None
-        } else {
-            compositor::with_states(&self.wl_surface, |states| {
-                states
-                    .data_map
-                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .parent
-                    .clone()
-            })
-            .unwrap()
-        }
+        compositor::with_states(&self.wl_surface, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .parent
+                .clone()
+        })
     }
 
     /// Retrieve the shell client owning this popup surface
-    ///
-    /// Returns `None` if the surface does actually no longer exist.
-    pub fn client(&self) -> Option<ShellClient> {
-        if !self.alive() {
-            return None;
-        }
-
+    pub fn client(&self) -> ShellClient {
         let shell = {
             let data = self
                 .shell_surface
-                .as_ref()
-                .user_data()
-                .get::<self::xdg_handlers::ShellSurfaceUserData>()
+                .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
             data.wm_base.clone()
         };
 
-        Some(ShellClient { kind: shell })
+        ShellClient { kind: shell }
     }
 
     /// Get the version of the popup resource
     fn version(&self) -> u32 {
-        self.shell_surface.as_ref().version()
+        self.shell_surface.version()
     }
 
     /// Internal configure function to re-use the configure
     /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
     fn send_configure_internal(&self, reposition_token: Option<u32>) {
-        if let Some(surface) = self.get_surface() {
-            let next_configure = compositor::with_states(surface, |states| {
-                let mut attributes = states
-                    .data_map
-                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
+        let next_configure = compositor::with_states(&self.wl_surface, |states| {
+            let mut attributes = states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
 
-                if !attributes.initial_configure_sent
-                    || attributes.has_pending_changes()
-                    || reposition_token.is_some()
-                {
-                    let pending = attributes
-                        .server_pending
-                        .take()
-                        .unwrap_or_else(|| *attributes.current_server_state());
+            if !attributes.initial_configure_sent
+                || attributes.has_pending_changes()
+                || reposition_token.is_some()
+            {
+                let pending = attributes
+                    .server_pending
+                    .take()
+                    .unwrap_or_else(|| *attributes.current_server_state());
 
-                    let configure = PopupConfigure {
-                        state: pending,
-                        serial: SERIAL_COUNTER.next_serial(),
-                        reposition_token,
-                    };
+                let configure = PopupConfigure {
+                    state: pending,
+                    serial: SERIAL_COUNTER.next_serial(),
+                    reposition_token,
+                };
 
-                    attributes.pending_configures.push(configure);
-                    attributes.initial_configure_sent = true;
+                attributes.pending_configures.push(configure);
+                attributes.initial_configure_sent = true;
 
-                    Some(configure)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(None);
-            if let Some(configure) = next_configure {
-                self::xdg_handlers::send_popup_configure(&self.shell_surface, configure);
+                Some(configure)
+            } else {
+                None
             }
+        });
+        if let Some(configure) = next_configure {
+            self::handlers::send_popup_configure(&self.shell_surface, configure);
         }
     }
 
@@ -1326,35 +1407,32 @@ impl PopupSurface {
     /// the client protocol version disallows a re-configure or the current [`PositionerState`]
     /// is not reactive
     pub fn send_configure(&self) -> Result<(), PopupConfigureError> {
-        if let Some(surface) = self.get_surface() {
-            // Check if we are allowed to send a configure
-            compositor::with_states(surface, |states| {
-                let attributes = states
-                    .data_map
-                    .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
-                    .unwrap()
-                    .lock()
-                    .unwrap();
+        // Check if we are allowed to send a configure
+        compositor::with_states(&self.wl_surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
 
-                if attributes.initial_configure_sent && self.version() < xdg_popup::EVT_REPOSITIONED_SINCE {
-                    // Return error, initial configure already sent and client
-                    // does not support re-configure
-                    return Err(PopupConfigureError::AlreadyConfigured);
-                }
+            if attributes.initial_configure_sent && self.version() < xdg_popup::EVT_REPOSITIONED_SINCE {
+                // Return error, initial configure already sent and client
+                // does not support re-configure
+                return Err(PopupConfigureError::AlreadyConfigured);
+            }
 
-                let is_reactive = attributes.current.positioner.reactive;
+            let is_reactive = attributes.current.positioner.reactive;
 
-                if attributes.initial_configure_sent && !is_reactive {
-                    // Return error, the positioner does not allow re-configure
-                    return Err(PopupConfigureError::NotReactive);
-                }
+            if attributes.initial_configure_sent && !is_reactive {
+                // Return error, the positioner does not allow re-configure
+                return Err(PopupConfigureError::NotReactive);
+            }
 
-                Ok(())
-            })
-            .unwrap_or(Ok(()))?;
+            Ok(())
+        })?;
 
-            self.send_configure_internal(None);
-        }
+        self.send_configure_internal(None);
 
         Ok(())
     }
@@ -1371,7 +1449,7 @@ impl PopupSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook(surface: &wl_surface::WlSurface) {
+    pub(crate) fn commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
         let send_error_to = compositor::with_states(surface, |states| {
             let attributes = states
                 .data_map
@@ -1384,17 +1462,12 @@ impl PopupSurface {
             } else {
                 None
             }
-        })
-        .unwrap_or(None);
+        });
         if let Some(handle) = send_error_to {
-            let data = handle
-                .as_ref()
-                .user_data()
-                .get::<self::xdg_handlers::ShellSurfaceUserData>()
-                .unwrap();
-            data.xdg_surface.as_ref().post_error(
-                xdg_surface::Error::NotConstructed as u32,
-                "Surface has not been configured yet.".into(),
+            let data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
+            data.xdg_surface.post_error(
+                xdg_surface::Error::NotConstructed,
+                "Surface has not been configured yet.",
             );
             return;
         }
@@ -1415,8 +1488,7 @@ impl PopupSurface {
                 }
             }
             !attributes.initial_configure_sent
-        })
-        .unwrap();
+        });
     }
 
     /// Make sure this surface was configured
@@ -1428,9 +1500,6 @@ impl PopupSurface {
     /// xdg_shell mandates that a client acks a configure before committing
     /// anything.
     pub fn ensure_configured(&self) -> bool {
-        if !self.alive() {
-            return false;
-        }
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
@@ -1439,18 +1508,15 @@ impl PopupSurface {
                 .lock()
                 .unwrap()
                 .configured
-        })
-        .unwrap();
+        });
         if !configured {
             let data = self
                 .shell_surface
-                .as_ref()
-                .user_data()
-                .get::<self::xdg_handlers::ShellSurfaceUserData>()
+                .data::<self::handlers::XdgShellSurfaceUserData>()
                 .unwrap();
-            data.xdg_surface.as_ref().post_error(
-                xdg_surface::Error::NotConstructed as u32,
-                "Surface has not been configured yet.".into(),
+            data.xdg_surface.post_error(
+                xdg_surface::Error::NotConstructed,
+                "Surface has not been configured yet.",
             );
         }
         configured
@@ -1461,22 +1527,17 @@ impl PopupSurface {
     /// It means that the use has dismissed the popup surface, or that
     /// the pointer has left the area of popup grab if there was a grab.
     pub fn send_popup_done(&self) {
-        if !self.alive() {
-            return;
-        }
-
         self.shell_surface.popup_done();
     }
 
-    /// Access the underlying `wl_surface` of this toplevel surface
-    ///
-    /// Returns `None` if the popup surface actually no longer exists.
-    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
-        if self.alive() {
-            Some(&self.wl_surface)
-        } else {
-            None
-        }
+    /// Access the underlying `wl_surface` of this popup surface
+    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
+        &self.wl_surface
+    }
+
+    /// Access the underlying `xdg_popup` of this popup surface
+    pub fn xdg_popup(&self) -> &xdg_popup::XdgPopup {
+        &self.shell_surface
     }
 
     /// Allows the pending state of this popup to
@@ -1486,15 +1547,11 @@ impl PopupSurface {
     /// for example after a move of the parent toplevel.
     ///
     /// The state will be sent to the client when calling [`send_configure`](#method.send_configure).
-    pub fn with_pending_state<F, T>(&self, f: F) -> Result<T, DeadResource>
+    pub fn with_pending_state<F, T>(&self, f: F) -> T
     where
         F: FnOnce(&mut PopupState) -> T,
     {
-        if !self.alive() {
-            return Err(DeadResource);
-        }
-
-        Ok(compositor::with_states(&self.wl_surface, |states| {
+        compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
                 .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
@@ -1508,7 +1565,6 @@ impl PopupSurface {
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
         })
-        .unwrap())
     }
 }
 
@@ -1537,150 +1593,28 @@ impl From<PopupConfigure> for Configure {
     }
 }
 
-/// Events generated by xdg shell surfaces
-///
-/// These are events that the provided implementation cannot process
-/// for you directly.
-///
-/// Depending on what you want to do, you might ignore some of them
-#[derive(Debug)]
-pub enum XdgRequest {
-    /// A new shell client was instantiated
-    NewClient {
-        /// the client
-        client: ShellClient,
-    },
-    /// The pong for a pending ping of this shell client was received
-    ///
-    /// The `ShellHandler` already checked for you that the serial matches the one
-    /// from the pending ping.
-    ClientPong {
-        /// the client
-        client: ShellClient,
-    },
-    /// A new toplevel surface was created
-    ///
-    /// You likely need to send a [`ToplevelConfigure`] to the surface, to hint the
-    /// client as to how its window should be sized.
-    NewToplevel {
-        /// the surface
-        surface: ToplevelSurface,
-    },
-    /// A new popup surface was created
-    ///
-    /// You likely need to send a [`PopupConfigure`] to the surface, to hint the
-    /// client as to how its popup should be sized.
-    NewPopup {
-        /// the surface
-        surface: PopupSurface,
-        /// The state of the positioner at the time
-        /// the popup was requested.
-        ///
-        /// The positioner state can be used by the compositor
-        /// to calculate the best placement for the popup.
-        ///
-        /// For example the compositor should prevent that a popup
-        /// is placed outside the visible rectangle of a output.
-        positioner: PositionerState,
-    },
-    /// The client requested the start of an interactive move for this surface
-    Move {
-        /// the surface
-        surface: ToplevelSurface,
-        /// the seat associated to this move
-        seat: wl_seat::WlSeat,
-        /// the grab serial
-        serial: Serial,
-    },
-    /// The client requested the start of an interactive resize for this surface
-    Resize {
-        /// The surface
-        surface: ToplevelSurface,
-        /// The seat associated with this resize
-        seat: wl_seat::WlSeat,
-        /// The grab serial
-        serial: Serial,
-        /// Specification of which part of the window's border is being dragged
-        edges: xdg_toplevel::ResizeEdge,
-    },
-    /// This popup requests a grab of the pointer
-    ///
-    /// This means it requests to be sent a `popup_done` event when the pointer leaves
-    /// the grab area.
-    Grab {
-        /// The surface
-        surface: PopupSurface,
-        /// The seat to grab
-        seat: wl_seat::WlSeat,
-        /// The grab serial
-        serial: Serial,
-    },
-    /// A toplevel surface requested to be maximized
-    Maximize {
-        /// The surface
-        surface: ToplevelSurface,
-    },
-    /// A toplevel surface requested to stop being maximized
-    UnMaximize {
-        /// The surface
-        surface: ToplevelSurface,
-    },
-    /// A toplevel surface requested to be set fullscreen
-    Fullscreen {
-        /// The surface
-        surface: ToplevelSurface,
-        /// The output (if any) on which the fullscreen is requested
-        output: Option<wl_output::WlOutput>,
-    },
-    /// A toplevel surface request to stop being fullscreen
-    UnFullscreen {
-        /// The surface
-        surface: ToplevelSurface,
-    },
-    /// A toplevel surface requested to be minimized
-    Minimize {
-        /// The surface
-        surface: ToplevelSurface,
-    },
-    /// The client requests the window menu to be displayed on this surface at this location
-    ///
-    /// This menu belongs to the compositor. It is typically expected to contain options for
-    /// control of the window (maximize/minimize/close/move/etc...).
-    ShowWindowMenu {
-        /// The surface
-        surface: ToplevelSurface,
-        /// The seat associated with this input grab
-        seat: wl_seat::WlSeat,
-        /// the grab serial
-        serial: Serial,
-        /// location of the menu request relative to the surface geometry
-        location: Point<i32, Logical>,
-    },
-    /// A surface has acknowledged a configure serial.
-    AckConfigure {
-        /// The surface.
-        surface: wl_surface::WlSurface,
-        /// The configure serial.
-        configure: Configure,
-    },
-    /// A client requested a reposition, providing a new
-    /// positioner, of a popup.
-    RePosition {
-        /// The popup for which a reposition has been requested
-        surface: PopupSurface,
-        /// The state of the positioner at the time
-        /// the reposition request was made.
-        ///
-        /// The positioner state can be used by the compositor
-        /// to calculate the best placement for the popup.
-        ///
-        /// For example the compositor should prevent that a popup
-        /// is placed outside the visible rectangle of a output.
-        positioner: PositionerState,
-        /// The passed token will be sent in the corresponding xdg_popup.repositioned event.
-        /// The new popup position will not take effect until the corresponding configure event
-        /// is acknowledged by the client. See xdg_popup.repositioned for details.
-        /// The token itself is opaque, and has no other special meaning.
-        token: u32,
-    },
+#[allow(missing_docs)] // TODO
+#[macro_export]
+macro_rules! delegate_xdg_shell {
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase: ()
+        ] => $crate::wayland::shell::xdg::XdgShellState);
+
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase: $crate::wayland::shell::xdg::XdgWmBaseUserData
+        ] => $crate::wayland::shell::xdg::XdgShellState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::XdgPositioner: $crate::wayland::shell::xdg::XdgPositionerUserData
+        ] => $crate::wayland::shell::xdg::XdgShellState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_popup::XdgPopup: $crate::wayland::shell::xdg::XdgShellSurfaceUserData
+        ] => $crate::wayland::shell::xdg::XdgShellState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_surface::XdgSurface: $crate::wayland::shell::xdg::XdgSurfaceUserData
+        ] => $crate::wayland::shell::xdg::XdgShellState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel: $crate::wayland::shell::xdg::XdgShellSurfaceUserData
+        ] => $crate::wayland::shell::xdg::XdgShellState);
+    };
 }

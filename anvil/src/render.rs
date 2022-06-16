@@ -4,6 +4,7 @@ use smithay::{
         draw_window, draw_window_popups,
         space::{RenderElement, RenderError, Space},
     },
+    reexports::wayland_server::DisplayHandle,
     utils::{Physical, Rectangle},
     wayland::output::Output,
 };
@@ -11,6 +12,7 @@ use smithay::{
 use crate::{drawing::*, shell::FullscreenSurface};
 
 pub fn render_output<R, E>(
+    dh: &DisplayHandle,
     output: &Output,
     space: &mut Space,
     renderer: &mut R,
@@ -42,6 +44,7 @@ where
                     &[Rectangle::from_loc_and_size((0, 0), mode.size).to_f64()],
                 )?;
                 draw_window(
+                    dh,
                     renderer,
                     frame,
                     &window,
@@ -51,6 +54,7 @@ where
                     log,
                 )?;
                 draw_window_popups(
+                    dh,
                     renderer,
                     frame,
                     &window,
@@ -63,6 +67,7 @@ where
                     let geo = elem.geometry(scale);
                     let location = elem.location(scale) - output_geo.loc.to_physical_precise_round(scale);
                     elem.draw(
+                        dh,
                         renderer,
                         frame,
                         scale,
@@ -77,6 +82,6 @@ where
             .and_then(std::convert::identity)
             .map_err(RenderError::<R>::Rendering)
     } else {
-        space.render_output(&mut *renderer, output, age as usize, CLEAR_COLOR, &*elements)
+        space.render_output(dh, &mut *renderer, output, age as usize, CLEAR_COLOR, &*elements)
     }
 }

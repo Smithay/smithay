@@ -10,13 +10,16 @@
 use std::collections::HashSet;
 use std::error::Error;
 
-use crate::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
+use crate::utils::{Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform};
+use cgmath::Matrix3;
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::compositor::SurfaceData;
-use cgmath::Matrix3;
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_buffer, wl_shm};
+use wayland_server::{
+    protocol::{wl_buffer, wl_shm},
+    DisplayHandle,
+};
 
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
@@ -105,7 +108,7 @@ pub trait Unbind: Renderer {
 /// A two dimensional texture
 pub trait Texture {
     /// Size of the texture plane
-    fn size(&self) -> Size<i32, Buffer> {
+    fn size(&self) -> Size<i32, BufferCoord> {
         Size::from((self.width() as i32, self.height() as i32))
     }
 
@@ -154,7 +157,7 @@ pub trait Frame {
     ) -> Result<(), Self::Error> {
         self.render_texture_from_to(
             texture,
-            Rectangle::from_loc_and_size(Point::<i32, Buffer>::from((0, 0)), texture.size()).to_f64(),
+            Rectangle::from_loc_and_size(Point::<i32, BufferCoord>::from((0, 0)), texture.size()).to_f64(),
             Rectangle::from_loc_and_size(
                 pos,
                 texture
@@ -174,7 +177,7 @@ pub trait Frame {
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,
-        src: Rectangle<f64, Buffer>,
+        src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<f64, Physical>,
         damage: &[Rectangle<f64, Physical>],
         src_transform: Transform,
@@ -229,7 +232,7 @@ pub trait Offscreen<Target>: Renderer + Bind<Target> {
     /// This call *may* fail, if (but not limited to):
     /// - The maximum amount of framebuffers for this renderer would be exceeded
     /// - The size is too large for a framebuffer
-    fn create_buffer(&mut self, size: Size<i32, Buffer>) -> Result<Target, <Self as Renderer>::Error>;
+    fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Target, <Self as Renderer>::Error>;
 }
 
 /// Trait for Renderers supporting importing wl_buffers using shared memory.
@@ -254,7 +257,7 @@ pub trait ImportMemWl: ImportMem {
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
-        damage: &[Rectangle<i32, Buffer>],
+        damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 
     /// Returns supported formats for shared memory buffers.
@@ -286,7 +289,7 @@ pub trait ImportMem: Renderer {
     fn import_memory(
         &mut self,
         data: &[u8],
-        size: Size<i32, Buffer>,
+        size: Size<i32, BufferCoord>,
         flipped: bool,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 
@@ -298,7 +301,7 @@ pub trait ImportMem: Renderer {
     /// Anything beyond will be truncated, if the buffer is too small an error will be returned.
     ///
     /// This function *may* error, if (but not limited to):
-    /// - The texture was not created using either [`ImportMem::import_shm_buffer`] or [`ImportMem::import_memory`].
+    /// - The texture was not created using either [`ImportMemWl::import_shm_buffer`] or [`ImportMem::import_memory`].
     ///   External textures imported by other means (e.g. via ImportDma) may not be writable. This property is defined
     ///   by the implementation.
     /// - The region is out of bounds of the initial size the texture was created with. Implementations are not required
@@ -307,7 +310,7 @@ pub trait ImportMem: Renderer {
         &mut self,
         texture: &<Self as Renderer>::TextureId,
         data: &[u8],
-        region: Rectangle<i32, Buffer>,
+        region: Rectangle<i32, BufferCoord>,
     ) -> Result<(), <Self as Renderer>::Error>;
 }
 
@@ -331,7 +334,7 @@ pub trait ImportEgl: Renderer {
     /// This might return [`OtherEGLDisplayAlreadyBound`](super::egl::Error::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`](wayland_server::Display) multiple times, as only one egl
     /// display may be bound at any given time.
-    fn bind_wl_display(&mut self, display: &wayland_server::Display) -> Result<(), EglError>;
+    fn bind_wl_display(&mut self, display: &wayland_server::DisplayHandle) -> Result<(), EglError>;
 
     /// Unbinds a previously bound egl display, if existing.
     ///
@@ -360,9 +363,10 @@ pub trait ImportEgl: Renderer {
     /// to avoid relying on implementation details, keep the buffer alive, until you destroyed this texture again.
     fn import_egl_buffer(
         &mut self,
+        dh: &DisplayHandle,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
-        damage: &[Rectangle<i32, Buffer>],
+        damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 }
 
@@ -371,7 +375,7 @@ pub trait ImportEgl: Renderer {
 pub trait ImportDmaWl: ImportDma {
     /// Import a given dmabuf-based buffer into the renderer (see [`buffer_type`]).
     ///
-    /// Returns a texture_id, which can be used with [`Frame::render_texture`] (or [`Frame::render_texture_at`])
+    /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
     /// or implementation-specific functions.
     ///
     /// If not otherwise defined by the implementation, this texture id is only valid for the renderer, that created it.
@@ -383,16 +387,12 @@ pub trait ImportDmaWl: ImportDma {
     fn import_dma_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
-        surface: Option<&crate::wayland::compositor::SurfaceData>,
-        damage: &[Rectangle<i32, Buffer>],
+        _surface: Option<&crate::wayland::compositor::SurfaceData>,
+        damage: &[Rectangle<i32, BufferCoord>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        let _ = surface;
-        let dmabuf = buffer
-            .as_ref()
-            .user_data()
-            .get::<Dmabuf>()
+        let dmabuf = crate::wayland::dmabuf::get_dmabuf(buffer)
             .expect("import_dma_buffer without checking buffer type?");
-        self.import_dmabuf(dmabuf, Some(damage))
+        self.import_dmabuf(&dmabuf, Some(damage))
     }
 }
 
@@ -417,7 +417,7 @@ pub trait ImportDma: Renderer {
     fn import_dmabuf(
         &mut self,
         dmabuf: &Dmabuf,
-        damage: Option<&[Rectangle<i32, Buffer>]>,
+        damage: Option<&[Rectangle<i32, BufferCoord>]>,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 }
 
@@ -447,9 +447,10 @@ pub trait ImportAll: Renderer {
     /// Returns `None`, if the buffer type cannot be determined.
     fn import_buffer(
         &mut self,
+        dh: &DisplayHandle,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
-        damage: &[Rectangle<i32, Buffer>],
+        damage: &[Rectangle<i32, BufferCoord>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>>;
 }
 
@@ -462,13 +463,14 @@ pub trait ImportAll: Renderer {
 impl<R: Renderer + ImportMemWl + ImportEgl + ImportDmaWl> ImportAll for R {
     fn import_buffer(
         &mut self,
+        dh: &DisplayHandle,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceData>,
-        damage: &[Rectangle<i32, Buffer>],
+        damage: &[Rectangle<i32, BufferCoord>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
-        match buffer_type(buffer) {
+        match buffer_type(dh, buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
-            Some(BufferType::Egl) => Some(self.import_egl_buffer(buffer, surface, damage)),
+            Some(BufferType::Egl) => Some(self.import_egl_buffer(dh, buffer, surface, damage)),
             Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer, surface, damage)),
             _ => None,
         }
@@ -482,11 +484,12 @@ impl<R: Renderer + ImportMemWl + ImportEgl + ImportDmaWl> ImportAll for R {
 impl<R: Renderer + ImportMemWl + ImportDmaWl> ImportAll for R {
     fn import_buffer(
         &mut self,
+        dh: &DisplayHandle,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&SurfaceData>,
-        damage: &[Rectangle<i32, Buffer>],
+        damage: &[Rectangle<i32, BufferCoord>],
     ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> {
-        match buffer_type(buffer) {
+        match buffer_type(dh, buffer) {
             Some(BufferType::Shm) => Some(self.import_shm_buffer(buffer, surface, damage)),
             Some(BufferType::Dma) => Some(self.import_dma_buffer(buffer, surface, damage)),
             _ => None,
@@ -509,7 +512,7 @@ pub trait ExportMem: Renderer {
     /// - There is not enough space to create the mapping
     fn copy_framebuffer(
         &mut self,
-        region: Rectangle<i32, Buffer>,
+        region: Rectangle<i32, BufferCoord>,
     ) -> Result<Self::TextureMapping, <Self as Renderer>::Error>;
     /// Copies the contents of the passed texture.
     /// *Note*: This function may change or invalidate the current bind.
@@ -522,7 +525,7 @@ pub trait ExportMem: Renderer {
     fn copy_texture(
         &mut self,
         texture: &Self::TextureId,
-        region: Rectangle<i32, Buffer>,
+        region: Rectangle<i32, BufferCoord>,
     ) -> Result<Self::TextureMapping, Self::Error>;
     /// Returns a read-only pointer to a previously created texture mapping.
     ///
@@ -546,7 +549,10 @@ pub trait ExportDma: Renderer {
     /// - The framebuffer is not readable
     /// - The size is larger than the framebuffer
     /// - There is not enough space to create a copy
-    fn export_framebuffer(&mut self, size: Size<i32, Buffer>) -> Result<Dmabuf, <Self as Renderer>::Error>;
+    fn export_framebuffer(
+        &mut self,
+        size: Size<i32, BufferCoord>,
+    ) -> Result<Dmabuf, <Self as Renderer>::Error>;
     /// Exports the given texture as a dmabuf.
     ///
     /// This operation is not destructive, the contents of the texture keep being valid.
@@ -578,25 +584,26 @@ pub enum BufferType {
 /// Returns `None` if the type is not known to smithay
 /// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
 #[cfg(feature = "wayland_frontend")]
-pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
-    if buffer.as_ref().user_data().get::<Dmabuf>().is_some() {
+pub fn buffer_type(_dh: &DisplayHandle, buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
+    if crate::wayland::dmabuf::get_dmabuf(buffer).is_ok() {
         return Some(BufferType::Dma);
     }
 
+    if crate::wayland::shm::with_buffer_contents(buffer, |_, _| ()).is_ok() {
+        return Some(BufferType::Shm);
+    }
+
+    // Not managed, check if this is an EGLBuffer
     #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
     if BUFFER_READER
         .lock()
         .unwrap()
         .as_ref()
         .and_then(|x| x.upgrade())
-        .and_then(|x| x.egl_buffer_dimensions(buffer))
+        .and_then(|x| x.egl_buffer_dimensions(_dh, buffer))
         .is_some()
     {
         return Some(BufferType::Egl);
-    }
-
-    if crate::wayland::shm::with_buffer_contents(buffer, |_, _| ()).is_ok() {
-        return Some(BufferType::Shm);
     }
 
     None
@@ -606,23 +613,33 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
 ///
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
 #[cfg(feature = "wayland_frontend")]
-pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffer>> {
-    use crate::backend::allocator::Buffer;
+pub fn buffer_dimensions(
+    _dh: &DisplayHandle,
+    buffer: &wl_buffer::WlBuffer,
+) -> Option<Size<i32, BufferCoord>> {
+    use crate::{backend::allocator::Buffer, wayland::shm};
 
-    if let Some(buf) = buffer.as_ref().user_data().get::<Dmabuf>() {
+    if let Ok(buf) = crate::wayland::dmabuf::get_dmabuf(buffer) {
         return Some((buf.width() as i32, buf.height() as i32).into());
     }
 
-    #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
-    if let Some(dim) = BUFFER_READER
-        .lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|x| x.upgrade())
-        .and_then(|x| x.egl_buffer_dimensions(buffer))
-    {
-        return Some(dim);
-    }
+    match shm::with_buffer_contents(buffer, |_, data| (data.width, data.height).into()) {
+        Ok(data) => Some(data),
 
-    crate::wayland::shm::with_buffer_contents(buffer, |_, data| (data.width, data.height).into()).ok()
+        Err(_) => {
+            // Not managed, check if this is an EGLBuffer
+            #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
+            if let Some(dim) = BUFFER_READER
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|x| x.upgrade())
+                .and_then(|x| x.egl_buffer_dimensions(_dh, buffer))
+            {
+                return Some(dim);
+            }
+
+            None
+        }
+    }
 }

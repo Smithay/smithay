@@ -5,11 +5,11 @@ use std::sync::Mutex;
 
 pub use grab::*;
 pub use manager::*;
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
-    utils::{Logical, Physical, Point, Rectangle, Scale},
+    utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::with_states,
         shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceRoleAttributes},
@@ -23,17 +23,19 @@ pub enum PopupKind {
     Xdg(PopupSurface),
 }
 
-impl PopupKind {
+impl IsAlive for PopupKind {
     fn alive(&self) -> bool {
-        match *self {
-            PopupKind::Xdg(ref t) => t.alive(),
+        match self {
+            PopupKind::Xdg(ref p) => p.alive(),
         }
     }
+}
 
+impl PopupKind {
     /// Retrieves the underlying [`WlSurface`]
-    pub fn get_surface(&self) -> Option<&WlSurface> {
+    pub fn wl_surface(&self) -> &WlSurface {
         match *self {
-            PopupKind::Xdg(ref t) => t.get_surface(),
+            PopupKind::Xdg(ref t) => t.wl_surface(),
         }
     }
 
@@ -45,10 +47,7 @@ impl PopupKind {
 
     /// Returns the surface geometry as set by the client using `xdg_surface::set_window_geometry`
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        let wl_surface = match self.get_surface() {
-            Some(s) => s,
-            None => return Rectangle::from_loc_and_size((0, 0), (0, 0)),
-        };
+        let wl_surface = self.wl_surface();
 
         with_states(wl_surface, |states| {
             states
@@ -57,24 +56,17 @@ impl PopupKind {
                 .geometry
                 .unwrap_or_default()
         })
-        .unwrap()
     }
 
     fn send_done(&self) {
-        if !self.alive() {
-            return;
-        }
-
         match *self {
             PopupKind::Xdg(ref t) => t.send_popup_done(),
         }
     }
 
     fn location(&self) -> Point<i32, Logical> {
-        let wl_surface = match self.get_surface() {
-            Some(s) => s,
-            None => return (0, 0).into(),
-        };
+        let wl_surface = self.wl_surface();
+
         with_states(wl_surface, |states| {
             states
                 .data_map
@@ -85,7 +77,6 @@ impl PopupKind {
                 .current
                 .geometry
         })
-        .unwrap_or_default()
         .loc
     }
 }
@@ -108,6 +99,7 @@ impl From<PopupSurface> for PopupKind {
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_popups<R, P1, P2, S>(
+    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     for_surface: &WlSurface,
@@ -127,17 +119,21 @@ where
     let location = surface_location.into();
     let offset = offset.into();
     let scale = scale.into();
-    for (popup, p_location) in PopupManager::popups_for_surface(for_surface)
-        .ok()
-        .into_iter()
-        .flatten()
-    {
-        if let Some(surface) = popup.get_surface() {
-            let offset = (offset + p_location - popup.geometry().loc)
-                .to_f64()
-                .to_physical(scale);
-            draw_surface_tree(renderer, frame, surface, scale, location + offset, damage, log)?;
-        }
+    for (popup, p_location) in PopupManager::popups_for_surface(for_surface) {
+        let surface = popup.wl_surface();
+        let offset = (offset + p_location - popup.geometry().loc)
+            .to_f64()
+            .to_physical(scale);
+        draw_surface_tree(
+            dh,
+            renderer,
+            frame,
+            surface,
+            scale,
+            location + offset,
+            damage,
+            log,
+        )?;
     }
     Ok(())
 }

@@ -1,21 +1,30 @@
 use std::{
-    cell::RefCell,
-    rc::Rc,
     sync::{atomic::Ordering, Arc, Mutex},
+    time::Duration,
 };
 
-use crate::{drawing::*, state::Backend, AnvilState};
+use crate::{
+    drawing::*,
+    state::{AnvilState, Backend, CalloopData},
+};
 #[cfg(feature = "debug")]
 use image::GenericImageView;
 use slog::Logger;
 #[cfg(feature = "debug")]
 use smithay::backend::renderer::{gles2::Gles2Texture, ImportMem};
 #[cfg(feature = "egl")]
-use smithay::{backend::renderer::ImportDma, wayland::dmabuf::init_dmabuf_global};
+use smithay::{
+    backend::{
+        allocator::dmabuf::Dmabuf,
+        renderer::{ImportDma, ImportEgl},
+    },
+    delegate_dmabuf,
+    wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
+};
 use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
-        renderer::{gles2::Gles2Renderer, Bind, ImportEgl},
+        renderer::{gles2::Gles2Renderer, Bind},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
     reexports::{
@@ -23,9 +32,10 @@ use smithay::{
         gbm,
         wayland_server::{
             protocol::{wl_output, wl_surface},
-            Display,
+            Display, DisplayHandle,
         },
     },
+    utils::IsAlive,
     wayland::{
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
@@ -39,11 +49,36 @@ pub struct X11Data {
     render: bool,
     mode: Mode,
     surface: X11Surface,
+    renderer: Gles2Renderer,
+    #[cfg(feature = "egl")]
+    dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     #[cfg(feature = "debug")]
     fps_texture: Gles2Texture,
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
 }
+
+#[cfg(feature = "egl")]
+impl DmabufHandler for AnvilState<X11Data> {
+    fn dmabuf_state(&mut self) -> &mut DmabufState {
+        &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
+    }
+
+    fn dmabuf_imported(
+        &mut self,
+        _dh: &DisplayHandle,
+        _global: &DmabufGlobal,
+        dmabuf: Dmabuf,
+    ) -> Result<(), ImportError> {
+        self.backend_data
+            .renderer
+            .import_dmabuf(&dmabuf, None)
+            .map(|_| ())
+            .map_err(|_| ImportError::Failed)
+    }
+}
+#[cfg(feature = "egl")]
+delegate_dmabuf!(AnvilState<X11Data>);
 
 impl Backend for X11Data {
     fn seat_name(&self) -> String {
@@ -57,7 +92,7 @@ impl Backend for X11Data {
 
 pub fn run_x11(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
-    let display = Rc::new(RefCell::new(Display::new()));
+    let mut display = Display::new().unwrap();
 
     let backend = X11Backend::new(log.clone()).expect("Failed to initilize X11 backend");
     let handle = backend.handle();
@@ -93,28 +128,20 @@ pub fn run_x11(log: Logger) {
         )
         .expect("Failed to create X11 surface");
 
-    let renderer =
+    let mut renderer =
         unsafe { Gles2Renderer::new(context, log.clone()) }.expect("Failed to initialize renderer");
-    let renderer = Rc::new(RefCell::new(renderer));
 
     #[cfg(feature = "egl")]
-    {
-        if renderer.borrow_mut().bind_wl_display(&*display.borrow()).is_ok() {
-            info!(log, "EGL hardware-acceleration enabled");
-            let dmabuf_formats = renderer
-                .borrow_mut()
-                .dmabuf_formats()
-                .cloned()
-                .collect::<Vec<_>>();
-            let renderer = renderer.clone();
-            init_dmabuf_global(
-                &mut *display.borrow_mut(),
-                dmabuf_formats,
-                move |buffer, _| renderer.borrow_mut().import_dmabuf(buffer, None).is_ok(),
-                log.clone(),
-            );
-        }
-    }
+    let dmabuf_state = if renderer.bind_wl_display(&display.handle()).is_ok() {
+        info!(log, "EGL hardware-acceleration enabled");
+        let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+        let mut state = DmabufState::new();
+        let global =
+            state.create_global::<AnvilState<X11Data>, _>(&display.handle(), dmabuf_formats, log.clone());
+        Some((state, global))
+    } else {
+        None
+    };
 
     let size = {
         let s = window.size();
@@ -132,26 +159,29 @@ pub fn run_x11(log: Logger) {
         image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
             .decode()
             .unwrap();
+    #[cfg(feature = "debug")]
+    let fps_texture = renderer
+        .import_memory(
+            &fps_image.to_rgba8(),
+            (fps_image.width() as i32, fps_image.height() as i32).into(),
+            false,
+        )
+        .expect("Unable to upload FPS texture");
+
     let data = X11Data {
         render: true,
         mode,
         surface,
+        renderer,
+        #[cfg(feature = "egl")]
+        dmabuf_state,
         #[cfg(feature = "debug")]
-        fps_texture: {
-            renderer
-                .borrow_mut()
-                .import_memory(
-                    &fps_image.to_rgba8(),
-                    (fps_image.width() as i32, fps_image.height() as i32).into(),
-                    false,
-                )
-                .expect("Unable to upload FPS texture")
-        },
+        fps_texture,
         #[cfg(feature = "debug")]
         fps: fps_ticker::Fps::default(),
     };
 
-    let mut state = AnvilState::init(display.clone(), event_loop.handle(), data, log.clone(), true);
+    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
     let output = Output::new(
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
@@ -162,37 +192,40 @@ pub fn run_x11(log: Logger) {
         },
         log.clone(),
     );
-    let _global = output.create_global(&mut *display.borrow_mut());
+    let _global = output.create_global::<AnvilState<X11Data>>(&display.handle());
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
-    state.space.borrow_mut().map_output(&output, (0, 0));
+    state.space.map_output(&output, (0, 0));
 
     let output_clone = output.clone();
     event_loop
         .handle()
-        .insert_source(backend, move |event, _, state| match event {
+        .insert_source(backend, move |event, _, data| match event {
             X11Event::CloseRequested { .. } => {
-                state.running.store(false, Ordering::SeqCst);
+                data.state.running.store(false, Ordering::SeqCst);
             }
             X11Event::Resized { new_size, .. } => {
                 let output = &output_clone;
                 let size = { (new_size.w as i32, new_size.h as i32).into() };
 
-                state.backend_data.mode = Mode {
+                data.state.backend_data.mode = Mode {
                     size,
                     refresh: 60_000,
                 };
                 output.delete_mode(output.current_mode().unwrap());
-                output.change_current_state(Some(state.backend_data.mode), None, None, None);
-                output.set_preferred(state.backend_data.mode);
-                crate::shell::fixup_positions(&mut *state.space.borrow_mut());
+                output.change_current_state(Some(data.state.backend_data.mode), None, None, None);
+                output.set_preferred(data.state.backend_data.mode);
+                crate::shell::fixup_positions(&data.display.handle(), &mut data.state.space);
 
-                state.backend_data.render = true;
+                data.state.backend_data.render = true;
             }
             X11Event::PresentCompleted { .. } | X11Event::Refresh { .. } => {
-                state.backend_data.render = true;
+                data.state.backend_data.render = true;
             }
-            X11Event::Input(event) => state.process_input_event_windowed(event, OUTPUT_NAME),
+            X11Event::Input(event) => {
+                data.state
+                    .process_input_event_windowed(&data.display.handle(), event, OUTPUT_NAME)
+            }
         })
         .expect("Failed to insert X11 Backend into event loop");
 
@@ -205,15 +238,10 @@ pub fn run_x11(log: Logger) {
     info!(log, "Initialization completed, starting the main loop.");
 
     while state.running.load(Ordering::SeqCst) {
-        let mut space = state.space.borrow_mut();
-
         if state.backend_data.render {
             let backend_data = &mut state.backend_data;
-            let mut renderer = renderer.borrow_mut();
-
             // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
             let (x, y) = state.pointer_location.into();
-            let dnd_icon = &state.dnd_icon;
             let cursor_status = &state.cursor_status;
             #[cfg(feature = "debug")]
             let fps = backend_data.fps.avg().round() as u32;
@@ -221,19 +249,20 @@ pub fn run_x11(log: Logger) {
             let fps_texture = &backend_data.fps_texture;
 
             let (buffer, age) = backend_data.surface.buffer().expect("gbm device was destroyed");
-            if let Err(err) = renderer.bind(buffer) {
+            if let Err(err) = backend_data.renderer.bind(buffer) {
                 error!(log, "Error while binding buffer: {}", err);
                 continue;
             }
 
             let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();
-            let dnd_guard = dnd_icon.lock().unwrap();
             let mut cursor_guard = cursor_status.lock().unwrap();
 
             // draw the dnd icon if any
-            if let Some(ref surface) = *dnd_guard {
-                if surface.as_ref().is_alive() {
-                    elements.push(draw_dnd_icon(surface.clone(), (x as i32, y as i32), &log).into());
+            if let Some(surface) = state.dnd_icon.as_ref() {
+                if surface.alive() {
+                    elements.push(
+                        draw_dnd_icon(surface.clone(), state.pointer_location.to_i32_round(), &log).into(),
+                    );
                 }
             }
 
@@ -241,7 +270,7 @@ pub fn run_x11(log: Logger) {
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
             if let CursorImageStatus::Image(ref surface) = *cursor_guard {
-                reset = !surface.as_ref().is_alive();
+                reset = !surface.alive();
             }
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
@@ -260,9 +289,10 @@ pub fn run_x11(log: Logger) {
             }
 
             let render_res = crate::render::render_output(
+                &display.handle(),
                 &output,
-                &mut *space,
-                &mut *renderer,
+                &mut state.space,
+                &mut backend_data.renderer,
                 age.into(),
                 &*elements,
                 &log,
@@ -290,15 +320,18 @@ pub fn run_x11(log: Logger) {
         }
 
         // Send frame events so that client start drawing their next frame
-        space.send_frames(start_time.elapsed().as_millis() as u32);
-        std::mem::drop(space);
+        state.space.send_frames(start_time.elapsed().as_millis() as u32);
 
-        if event_loop.dispatch(None, &mut state).is_err() {
+        let mut calloop_data = CalloopData { state, display };
+        let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
+        CalloopData { state, display } = calloop_data;
+
+        if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
-            state.space.borrow_mut().refresh();
-            state.popups.borrow_mut().cleanup();
-            display.borrow_mut().flush_clients(&mut state);
+            state.space.refresh(&display.handle());
+            state.popups.cleanup();
+            display.flush_clients().unwrap();
         }
     }
 }

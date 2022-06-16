@@ -46,41 +46,109 @@ jobs:
           profile: minimal
           components: clippy
           default: true
-      - name: Cargo cache
+      - name: Get date for registry cache
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      - name: Cargo registry cache
         uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/registry
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+      - name: Get cargo-cache latest version
+        id: cargocacheversion
+        run: echo "::set-output name=version::$(cargo search 'cargo-cache' --limit 1 | head -n 1 | cut -d ' ' -f 3 | cut -d '"' -f 2)"
+      - name: Cargo binaries cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/cargo-cache
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: ${{ runner.os }}-cargo-binaries-${{ steps.cargocacheversion.outputs.version }}
+      - name: Install cargo-cache
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-cache --version ${{ steps.cargocacheversion.outputs.version }}
+      - name: Clean cargo cache of old items
+        uses: actions-rs/cargo@v1
+        with:
+          command: cache
+          args: clean-unref
+      - name: Get rustc version for caching
+        id: rustcversion
+        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
       - name: Build cache
         uses: actions/cache@v2
         with:
           path: target
-          key: ${{ runner.os }}-build-rust_stable-check-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
       - name: Downgrade log
         uses: actions-rs/cargo@v1
         with:
           command: update
           args: -p log --precise 0.4.14
+      # build everything to properly populate the cache for future builds
+      - name: Build all
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --workspace --features "test_all_features"
+      # touch src/lib.rs so that clippy actually runs on smithay and anvil
+      - name: Touch
+        run: touch src/lib.rs
       - name: Clippy Smithay
+        if: ${{ !env.ACT }} # act has no token
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
+          args: --features "test_all_features" -- -D warnings
+      - name: Clippy Smithay (ACT)
+        if: ${{ env.ACT }} # on act lets just run clippy normally
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --features "test_all_features" -- -D warnings
       - name: Clippy Anvil
+        if: ${{ !env.ACT }} # act has no token
         uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" -- -D warnings -A clippy::non-send-fields-in-send-ty
+          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" --no-deps -- -D warnings
+      - name: Clippy Anvil (ACT)
+        if: ${{ env.ACT }} # on act lets just run clippy normally
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path "./anvil/Cargo.toml" --features "test_all_features" --no-deps -- -D warnings
+      - name: Clippy Smallvil
+        if: ${{ !env.ACT }} # act has no token
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --manifest-path "./smallvil/Cargo.toml" --no-deps -- -D warnings
+      - name: Clippy Smallvil (ACT)
+        if: ${{ env.ACT }} # on act lets just run clippy normally
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --manifest-path "./smallvil/Cargo.toml" --no-deps -- -D warnings
   
   check-minimal:
     env:
       RUSTFLAGS: "-D warnings"
 
     runs-on: ubuntu-latest
+    needs:
+      - clippy-check
+      - format
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -91,15 +159,20 @@ jobs:
           override: true
           profile: minimal
           default: true
-      - name: Cargo cache
+      - name: Get date for registry cache
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      - name: Cargo registry cache
         uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/registry
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-rust_nightly-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
       - name: Downgrade to minimal dependencies
         uses: actions-rs/cargo@v1
         with:
@@ -109,7 +182,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: update
-          args: -p libdbus-sys
+          args: -p libdbus-sys -p arrayref -p freetype-sys
       - name: Check
         uses: actions-rs/cargo@v1
         with:
@@ -152,13 +225,18 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Cargo cache
+      - name: Get date for registry cache
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      - name: Cargo registry cache
         uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/registry
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
 
       - name: Rust toolchain
         uses: actions-rs/toolchain@v1
@@ -169,18 +247,21 @@ jobs:
           profile: minimal
       
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
 
+      - name: Get rustc version for caching
+        id: rustcversion
+        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
       - name: Build cache
         uses: actions/cache@v2
         with:
           path: target
-          key: ${{ runner.os }}-build-rust_stable-smithay-feature_${{ matrix.features }}-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Build and install Libseat
         if: matrix.features == 'backend_session_libseat'
         run: |
-          sudo apt-get install meson ninja-build
+          sudo apt-get install -y meson ninja-build
           wget https://git.sr.ht/~kennylevinsen/seatd/archive/0.5.0.tar.gz -O libseat-source.tar.gz
           tar xf libseat-source.tar.gz
           cd seatd-0.5.0
@@ -201,7 +282,71 @@ jobs:
         with:
           command: test
           args: --no-default-features --features "${{ matrix.features }}"
-  
+
+  smallvil:
+    needs:
+      - format
+      - clippy-check
+      - smithay-tests
+    strategy:
+      fail-fast: false
+
+    env:
+      RUSTFLAGS: "-D warnings"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Get date for registry cache
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      - name: Cargo registry cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - name: Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          default: true
+          profile: minimal
+
+      - name: System dependencies
+        run: sudo apt-get update; sudo apt-get install -y libxkbcommon-dev libegl1-mesa-dev libwayland-dev
+
+      - name: Get rustc version for caching
+        id: rustcversion
+        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
+      - name: Build cache
+        uses: actions/cache@v2
+        with:
+          path: target
+          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
+      
+      - name: Downgrade log
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+          args: -p log --precise 0.4.14
+      
+      - name: Test smallvil
+        uses: actions-rs/cargo@v1
+        env:
+          RUST_BACKTRACE: full
+        with:
+          command: test
+          args: --manifest-path "./smallvil/Cargo.toml""
+
   anvil-tests:
     needs:
       - format
@@ -229,13 +374,18 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Cargo cache
+      - name: Get date for registry cache
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      - name: Cargo registry cache
         uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/registry
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
 
       - name: Rust toolchain
         uses: actions-rs/toolchain@v1
@@ -246,13 +396,16 @@ jobs:
           profile: minimal
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
 
+      - name: Get rustc version for caching
+        id: rustcversion
+        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
       - name: Build cache
         uses: actions/cache@v2
         with:
           path: target
-          key: ${{ runner.os }}-build-rust_stable-anvil-feature_${{ matrix.features }}-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
       
       - name: Downgrade log
         uses: actions-rs/cargo@v1
@@ -281,15 +434,19 @@ jobs:
         include:
           - job_name: "Core tests"
             gtest_filter: "SelfTest*:FrameSubmission*"
+            flag: core
           - job_name: "Output tests"
             gtest_filter: "XdgOutputV1Test*"
+            flag: output
           - job_name: "Pointer input tests"
             gtest_filter: "*/SurfacePointerMotionTest*"
+            flag: pointer-input
 
     name: "WLCS: ${{ matrix.job_name }}"
 
     env:
       RUSTFLAGS: "-D warnings"
+      GRCOV_VERSION: "0.8.10"
 
     runs-on: ubuntu-latest
 
@@ -297,30 +454,45 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Cargo cache
+      - name: Get date for registry cache
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      - name: Cargo registry cache
         uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/registry
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-rust_stable-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
 
       - name: Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: nightly
           override: true
           default: true
           profile: minimal
+          components: llvm-tools-preview
 
-      - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install cmake libgtest-dev google-mock libboost-dev libxkbcommon-dev libwayland-dev
-
-      - name: Build cache
+      - name: grcov cache
         uses: actions/cache@v2
         with:
-          path: target
-          key: ${{ runner.os }}-build-rust_stable-wlcs-${{ hashFiles('**/Cargo.toml') }}
+          path: |
+            ~/.cargo/bin/grcov
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: ${{ runner.os }}-grcov-${{ env.GRCOV_VERSION }}
+
+      - name: Install grcov
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: grcov --version ${{ env.GRCOV_VERSION }}
+
+      - name: System dependencies
+        run: sudo apt-get update; sudo apt-get install -y cmake libgtest-dev google-mock libboost-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
 
       - name: WLCS build cache
         uses: actions/cache@v2
@@ -341,9 +513,75 @@ jobs:
         uses: actions-rs/cargo@v1
         env:
           RUST_BACKTRACE: full
+          RUSTFLAGS: "-Cinstrument-coverage --cfg coverage"
         with:
           command: build
           args: --manifest-path "./wlcs_anvil/Cargo.toml"
 
       - name: Run test suite
         run: ./wlcs/wlcs ./target/debug/libwlcs_anvil.so --gtest_filter="${{ matrix.gtest_filter }}"
+        env:
+          LLVM_PROFILE_FILE: "anvil-wlcs-%p-%m.profraw"
+
+      - name: Coverage
+        run: grcov . --binary-path ./target/debug -s . -t lcov --branch --llvm --ignore-not-existing --ignore '*/examples/*' --ignore '*/tests/*' --ignore '*/.cargo/registry/*' --excl-br-start "mod tests \{" --excl-start "mod tests \{" --excl-br-line "#\[derive\(" --excl-line "#\[derive\(" -o lcov.info
+
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v1
+        with:
+          flags: wlcs-${{ matrix.flag }}
+
+  doc:
+    name: Documentation on Github Pages
+    runs-on: ubuntu-latest
+    needs:
+      - smithay-tests
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Get date for registry cache
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      - name: Cargo registry cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - name: Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: System dependencies
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+      
+      - name: Downgrade log
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+          args: -p log --precise 0.4.14
+      
+      - name: Build Documentation
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          # TODO: Update nix when drm-rs is updated
+          args: --no-deps --features "test_all_features" -p smithay -p calloop:0.10.0 -p dbus -p drm -p gbm -p input -p nix:0.22.3 -p udev -p slog -p wayland-server:0.30.0-beta.4 -p wayland-backend -p wayland-protocols:0.30.0-beta.4 -p winit -p x11rb
+
+      - name: Setup index
+        run: cp ./doc_index.html ./target/doc/index.html
+
+      - name: Deploy
+        if: ${{ github.event_name == 'push' }}
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/doc

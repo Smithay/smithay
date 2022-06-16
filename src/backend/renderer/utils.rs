@@ -4,11 +4,11 @@
 use crate::utils::Coordinate;
 use crate::{
     backend::renderer::{buffer_dimensions, Frame, ImportAll, Renderer},
-    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer as BufferCoord, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
-            is_sync_subsurface, with_surface_tree_upward, BufferAssignment, Damage, SubsurfaceCachedState,
-            SurfaceAttributes, SurfaceData, TraversalAction,
+            self, add_destruction_hook, is_sync_subsurface, with_surface_tree_upward, BufferAssignment,
+            Damage, SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
         },
         viewporter,
     },
@@ -19,33 +19,54 @@ use std::{
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},
 };
-use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
+use wayland_server::{
+    protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface},
+    DisplayHandle,
+};
 
-#[derive(Default)]
-pub(crate) struct SurfaceState {
+/// Type stored in WlSurface states data_map
+///
+/// ```rs
+/// compositor::with_states(surface, |states| {
+///     let data = states.data_map.get::<RendererSurfaceStateUserData>();
+/// });
+/// ```
+pub type RendererSurfaceStateUserData = RefCell<RendererSurfaceState>;
+
+/// Surface state for rendering related data
+#[derive(Default, Debug)]
+pub struct RendererSurfaceState {
     pub(crate) commit_count: usize,
-    pub(crate) buffer_dimensions: Option<Size<i32, Buffer>>,
+    pub(crate) buffer_dimensions: Option<Size<i32, BufferCoord>>,
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
+    pub(crate) buffer_delta: Option<Point<i32, Logical>>,
     pub(crate) buffer: Option<WlBuffer>,
-    pub(crate) damage: VecDeque<Vec<Rectangle<i32, Buffer>>>,
+    pub(crate) damage: VecDeque<Vec<Rectangle<i32, BufferCoord>>>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
     #[cfg(feature = "desktop")]
     pub(crate) space_seen: HashMap<crate::desktop::space::SpaceOutputHash, usize>,
+
+    accumulated_buffer_delta: Point<i32, Logical>,
 }
 
 const MAX_DAMAGE: usize = 4;
 
-impl SurfaceState {
-    pub fn update_buffer(&mut self, states: &SurfaceData) {
+impl RendererSurfaceState {
+    pub(crate) fn update_buffer(&mut self, dh: &DisplayHandle, states: &SurfaceData) {
         let mut attrs = states.cached_state.current::<SurfaceAttributes>();
+        self.buffer_delta = attrs.buffer_delta.take();
+
+        if let Some(delta) = self.buffer_delta {
+            self.accumulated_buffer_delta += delta;
+        }
 
         match attrs.buffer.take() {
-            Some(BufferAssignment::NewBuffer { buffer, .. }) => {
+            Some(BufferAssignment::NewBuffer(buffer)) => {
                 // new contents
-                self.buffer_dimensions = buffer_dimensions(&buffer);
+                self.buffer_dimensions = buffer_dimensions(dh, &buffer);
 
                 #[cfg(feature = "desktop")]
                 if self.buffer_scale != attrs.buffer_scale
@@ -85,7 +106,7 @@ impl SurfaceState {
                             self.buffer_dimensions.unwrap(),
                         ))
                     })
-                    .collect::<Vec<Rectangle<i32, Buffer>>>();
+                    .collect::<Vec<Rectangle<i32, BufferCoord>>>();
                 buffer_damage.dedup();
                 self.damage.push_front(buffer_damage);
                 self.damage.truncate(MAX_DAMAGE);
@@ -105,7 +126,7 @@ impl SurfaceState {
         }
     }
 
-    pub(crate) fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, Buffer>> {
+    pub(crate) fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, BufferCoord>> {
         // on overflow the wrapping_sub should end up
         let recent_enough = commit
             // if commit > commit_count we have overflown, in that case the following map might result
@@ -132,39 +153,77 @@ impl SurfaceState {
     }
 
     #[cfg(feature = "desktop")]
-    pub fn reset_space_damage(&mut self) {
+    pub(crate) fn reset_space_damage(&mut self) {
         self.space_seen.clear();
+    }
+
+    /// Returns the size of the surface.
+    pub fn surface_size(&self) -> Option<Size<i32, Logical>> {
+        self.buffer_dimensions
+            .as_ref()
+            .map(|dim| dim.to_logical(self.buffer_scale, self.buffer_transform))
+    }
+
+    /// Get the attached buffer.
+    /// Can be used to check if surface is mapped
+    pub fn wl_buffer(&self) -> Option<&WlBuffer> {
+        self.buffer.as_ref()
+    }
+
+    /// Location of the buffer relative to the previous call of take_accumulated_buffer_delta
+    ///
+    /// In other words, the x and y, combined with the new surface size define in which directions
+    /// the surface's size changed since last call to this method.
+    ///
+    /// Once delta is taken this method returns `None` to avoid processing it several times.
+    pub fn take_accumulated_buffer_delta(&mut self) -> Point<i32, Logical> {
+        std::mem::take(&mut self.accumulated_buffer_delta)
     }
 }
 
 /// Handler to let smithay take over buffer management.
 ///
 /// Needs to be called first on the commit-callback of
-/// [`crate::wayland::compositor::compositor_init`].
+/// [`crate::wayland::compositor::CompositorHandler::commit`].
 ///
 /// Consumes the buffer of [`SurfaceAttributes`], the buffer will
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
-pub fn on_commit_buffer_handler(surface: &WlSurface) {
+pub fn on_commit_buffer_handler(dh: &DisplayHandle, surface: &WlSurface) {
     if !is_sync_subsurface(surface) {
+        let mut new_surfaces = Vec::new();
         with_surface_tree_upward(
             surface,
             (),
             |_, _, _| TraversalAction::DoChildren(()),
-            |_surf, states, _| {
-                states
+            |surf, states, _| {
+                if states
                     .data_map
-                    .insert_if_missing(|| RefCell::new(SurfaceState::default()));
+                    .insert_if_missing(|| RefCell::new(RendererSurfaceState::default()))
+                {
+                    new_surfaces.push(surf.clone());
+                }
                 let mut data = states
                     .data_map
-                    .get::<RefCell<SurfaceState>>()
+                    .get::<RendererSurfaceStateUserData>()
                     .unwrap()
                     .borrow_mut();
-                data.update_buffer(states);
+                data.update_buffer(dh, states);
             },
             |_, _, _| true,
         );
+        for surf in &new_surfaces {
+            add_destruction_hook(surf, |data| {
+                if let Some(buffer) = data
+                    .data_map
+                    .get::<RendererSurfaceStateUserData>()
+                    .and_then(|s| s.borrow_mut().buffer.take())
+                {
+                    buffer.release();
+                }
+            });
+        }
     }
 }
 
@@ -211,6 +270,23 @@ impl SurfaceView {
     }
 }
 
+/// Access the buffer related states associated to this surface
+///
+/// Calls [`compositor::with_states`] internally
+pub fn with_renderer_surface_state<F, T>(surface: &WlSurface, cb: F) -> T
+where
+    F: FnOnce(&mut RendererSurfaceState) -> T,
+{
+    compositor::with_states(surface, |states| {
+        let mut data = states
+            .data_map
+            .get::<RendererSurfaceStateUserData>()
+            .unwrap()
+            .borrow_mut();
+        cb(&mut data)
+    })
+}
+
 /// Imports buffers of a surface and its subsurfaces using a given [`Renderer`].
 ///
 /// This can be called early as an optimization, if `draw_surface_tree` is used later.
@@ -222,6 +298,7 @@ impl SurfaceView {
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 pub fn import_surface_tree<R>(
+    dh: &DisplayHandle,
     renderer: &mut R,
     surface: &WlSurface,
     log: &slog::Logger,
@@ -230,10 +307,11 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
 {
-    import_surface_tree_and(renderer, surface, 1.0, log, (0.0, 0.0).into(), |_, _, _| {})
+    import_surface_tree_and(dh, renderer, surface, 1.0, log, (0.0, 0.0).into(), |_, _, _| {})
 }
 
 fn import_surface_tree_and<F, R, S>(
+    dh: &DisplayHandle,
     renderer: &mut R,
     surface: &WlSurface,
     scale: S,
@@ -255,7 +333,7 @@ where
         location,
         |_surface, states, location| {
             let mut location = *location;
-            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+            if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
                 let mut data_ref = data.borrow_mut();
                 let data = &mut *data_ref;
                 // Import a new buffer if necessary
@@ -263,7 +341,7 @@ where
                 let buffer_damage = data.damage_since(last_commit.copied());
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
-                        match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
+                        match renderer.import_buffer(dh, buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 e.insert(Box::new(m));
                                 data.renderer_seen.insert(texture_id, data.commit_count);
@@ -308,7 +386,9 @@ where
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_surface_tree<R, S>(
+    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     surface: &WlSurface,
@@ -326,6 +406,7 @@ where
     let mut result = Ok(());
     let scale = scale.into();
     let _ = import_surface_tree_and(
+        dh,
         renderer,
         surface,
         scale,
@@ -333,7 +414,7 @@ where
         location,
         |_surface, states, location| {
             let mut location = *location;
-            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+            if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
                 let mut data = data.borrow_mut();
                 let surface_view = data.surface_view;
                 let buffer_scale = data.buffer_scale;

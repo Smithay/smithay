@@ -1,11 +1,15 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::rc::Rc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
-use wayland_server::protocol::wl_touch::WlTouch;
-use wayland_server::{Filter, Main};
+use wayland_server::{
+    backend::{ClientId, ObjectId},
+    protocol::wl_touch::{self, WlTouch},
+    DelegateDispatch, Dispatch, DisplayHandle, Resource,
+};
 
+use super::{SeatHandler, SeatState};
 use crate::backend::input::TouchSlot;
 use crate::utils::{Logical, Point};
 use crate::wayland::seat::wl_surface::WlSurface;
@@ -19,7 +23,7 @@ use crate::wayland::Serial;
 /// clients.
 #[derive(Debug, Clone)]
 pub struct TouchHandle {
-    inner: Rc<RefCell<TouchInternal>>,
+    inner: Arc<Mutex<TouchInternal>>,
 }
 
 impl TouchHandle {
@@ -33,9 +37,11 @@ impl TouchHandle {
     ///
     /// This should be done first, before anything else is done with this touch handle.
     pub(crate) fn new_touch(&self, touch: WlTouch) {
-        self.inner.borrow_mut().known_handles.push(touch);
+        self.inner.lock().unwrap().known_handles.push(touch);
     }
 
+    // TODO: Any ideas how to group some of those args?
+    #[allow(clippy::too_many_arguments)]
     /// Notify clients about new touch points.
     pub fn down(
         &mut self,
@@ -47,28 +53,29 @@ impl TouchHandle {
         location: Point<f64, Logical>,
     ) {
         self.inner
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .down(serial, time, surface, surface_offset, slot, location);
     }
 
     /// Notify clients about touch point removal.
     pub fn up(&self, serial: Serial, time: u32, slot: TouchSlot) {
-        self.inner.borrow_mut().up(serial, time, slot);
+        self.inner.lock().unwrap().up(serial, time, slot);
     }
 
     /// Notify clients about touch motion.
     pub fn motion(&self, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
-        self.inner.borrow_mut().motion(time, slot, location);
+        self.inner.lock().unwrap().motion(time, slot, location);
     }
 
     /// Notify clients about touch shape changes.
     pub fn shape(&self, slot: TouchSlot, major: f64, minor: f64) {
-        self.inner.borrow_mut().shape(slot, major, minor);
+        self.inner.lock().unwrap().shape(slot, major, minor);
     }
 
     /// Notify clients about touch shape orientation.
     pub fn orientation(&self, slot: TouchSlot, orientation: f64) {
-        self.inner.borrow_mut().orientation(slot, orientation);
+        self.inner.lock().unwrap().orientation(slot, orientation);
     }
 
     /// Notify clients about touch cancellation.
@@ -76,7 +83,7 @@ impl TouchHandle {
     /// This should be sent by the compositor when the currently active touch
     /// slot was recognized as a gesture.
     pub fn cancel(&self) {
-        self.inner.borrow_mut().cancel();
+        self.inner.lock().unwrap().cancel();
     }
 }
 
@@ -94,6 +101,8 @@ struct TouchInternal {
 }
 
 impl TouchInternal {
+    // TODO: Any ideas how to group some of those args?
+    #[allow(clippy::too_many_arguments)]
     fn down(
         &mut self,
         serial: Serial,
@@ -110,7 +119,7 @@ impl TouchInternal {
 
         // Select all WlTouch instances associated to the active WlSurface.
         for handle in &self.known_handles {
-            if handle.as_ref().same_client_as(surface.as_ref()) {
+            if handle.id().same_client_as(&surface.id()) {
                 focus.handles.push(handle.clone());
             }
         }
@@ -137,7 +146,7 @@ impl TouchInternal {
 
     fn shape(&self, slot: TouchSlot, major: f64, minor: f64) {
         self.with_focused_handles(slot, |handle| {
-            if handle.as_ref().version() >= 6 {
+            if handle.version() >= 6 {
                 handle.shape(slot.into(), major, minor);
             }
         });
@@ -145,7 +154,7 @@ impl TouchInternal {
 
     fn orientation(&self, slot: TouchSlot, orientation: f64) {
         self.with_focused_handles(slot, |handle| {
-            if handle.as_ref().version() >= 6 {
+            if handle.version() >= 6 {
                 handle.orientation(slot.into(), orientation);
             }
         });
@@ -173,20 +182,37 @@ impl TouchInternal {
     }
 }
 
-pub(crate) fn implement_touch(touch: Main<WlTouch>, handle: Option<&TouchHandle>) -> WlTouch {
-    // The sole `Release` request is already handled by our destructor.
-    touch.quick_assign(|_touch, _request, _data| {});
+/// User data for keyboard
+#[derive(Debug)]
+pub struct TouchUserData {
+    pub(crate) handle: Option<TouchHandle>,
+}
 
-    // Remove from touch handles on destroy.
-    if let Some(handle) = handle {
-        let inner = handle.inner.clone();
-        touch.assign_destructor(Filter::new(move |touch: WlTouch, _, _| {
-            inner
-                .borrow_mut()
-                .known_handles
-                .retain(|t| !t.as_ref().equals(touch.as_ref()))
-        }));
+impl<D> DelegateDispatch<WlTouch, TouchUserData, D> for SeatState<D>
+where
+    D: Dispatch<WlTouch, TouchUserData>,
+    D: SeatHandler,
+    D: 'static,
+{
+    fn request(
+        _state: &mut D,
+        _client: &wayland_server::Client,
+        _resource: &WlTouch,
+        _request: wl_touch::Request,
+        _data: &TouchUserData,
+        _dhandle: &DisplayHandle,
+        _data_init: &mut wayland_server::DataInit<'_, D>,
+    ) {
     }
 
-    touch.deref().clone()
+    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &TouchUserData) {
+        if let Some(ref handle) = data.handle {
+            handle
+                .inner
+                .lock()
+                .unwrap()
+                .known_handles
+                .retain(|k| k.id() != object_id)
+        }
+    }
 }

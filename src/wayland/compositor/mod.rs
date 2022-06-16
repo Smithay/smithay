@@ -24,26 +24,38 @@
 //!
 //! ### Initialization
 //!
-//! To initialize this implementation, use the [`compositor_init`]
-//! method provided by this module. It'll require you to first define as few things, as shown in
-//! this example:
+//! To initialize this implementation create the [`CompositorState`], store it inside your `State` struct
+//! and implement the [`CompositorHandler`], as shown in this example:
 //!
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
-//! use smithay::wayland::compositor::compositor_init;
+//! use smithay::delegate_compositor;
+//! use smithay::wayland::compositor::{CompositorState, CompositorHandler};
 //!
-//! # let mut display = wayland_server::Display::new();
-//! // Call the init function:
-//! compositor_init(
-//!     &mut display,
-//!     |surface, dispatch_data| {
-//!         /*
-//!           Your handling of surface commits
-//!          */
-//!     },
-//!     None // put a logger here
+//! # struct State { compositor_state: CompositorState }
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! // Create the compositor state
+//! let compositor_state = CompositorState::new::<State, _>(
+//!     &display.handle(),
+//!     None // We don't add a logger in this example
 //! );
+//!
+//! // insert the CompositorState into your state
+//! // ..
+//!
+//! // implement the necessary traits
+//! impl CompositorHandler for State {
+//!    fn compositor_state(&mut self) -> &mut CompositorState {
+//!        &mut self.compositor_state
+//!    }
+//!
+//!    fn commit(&mut self, dh: &wayland_server::DisplayHandle, surface: &wayland_server::protocol::wl_surface::WlSurface) {
+//!        // called on every buffer commit.
+//!        // .. your implementation ..
+//!    }
+//! }
+//! delegate_compositor!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -60,19 +72,25 @@
 //! On commit of a surface several steps are taken to update the state of the surface. Actions
 //! are taken by smithay in the following order:
 //!
-//! 1. Commit hooks registered to this surface are invoked. Such hooks can be registered using
-//!    the [`add_commit_hook`] function. They are typically used by protocol extensions that
+//! 1. Pre Commit hooks registered to this surface are invoked. Such hooks can be registered using
+//!    the [`add_pre_commit_hook`] function. They are typically used by protocol extensions that
 //!    add state to a surface and need to check on commit that client did not request an
 //!    illegal state before it is applied on commit.
 //! 2. The pending state is either applied and made current, or cached for later application
 //!    is the surface is a synchronize subsurface. If the current state is applied, state
 //!    of the synchronized children subsurface are applied as well at this point.
-//! 3. Your user callback provided to [`compositor_init`] is invoked, so that you can access
+//! 3. Post Commit hooks registered to this surface are invoked. Such hooks can be registered using
+//!    the [`add_post_commit_hook`] function. They are typically used by abstractions that further process
+//!    the state.
+//! 4. Your implementation of [`CompositorHandler::commit`] is invoked, so that you can access
 //!    the new current state of the surface. The state of sync children subsurfaces of your
 //!    surface may have changed as well, so this is the place to check it, using functions
 //!    like [`with_surface_tree_upward`] or [`with_surface_tree_downward`]. On the other hand,
 //!    if the surface is a sync subsurface, its current state will note have changed as
 //!    the result of that commit. You can check if it is using [`is_sync_subsurface`].
+//! 5. If the surface is destroyed, destruction hooks are invoked. Such hooks can be registered
+//!    using the [`add_destruction_hook`] function. They are typically used to cleanup associated
+//!    state.
 //!
 //! ### Surface roles
 //!
@@ -82,24 +100,21 @@
 //! on a surface. See [`give_role`] and [`get_role`] for details. This module manages the
 //! subsurface role, which is identified by the string `"subsurface"`.
 
-use std::{cell::RefCell, rc::Rc, sync::Mutex};
-
 mod cache;
 mod handlers;
 mod transaction;
 mod tree;
 
 pub use self::cache::{Cacheable, MultiCache};
-pub use self::handlers::SubsurfaceCachedState;
+pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
 use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
-use crate::utils::{Buffer, DeadResource, Logical, Point, Rectangle};
-use wayland_server::{
-    protocol::{
-        wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_subcompositor, wl_surface::WlSurface,
-    },
-    DispatchData, Display, Filter, Global, UserDataMap,
-};
+use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
+use wayland_server::backend::GlobalId;
+use wayland_server::protocol::wl_compositor::WlCompositor;
+use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
+use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
+use wayland_server::{DisplayHandle, GlobalDispatch, Resource};
 
 /// Description of a part of a surface that
 /// should be considered damaged and needs to be redrawn
@@ -151,12 +166,7 @@ pub enum BufferAssignment {
     /// The surface no longer has a buffer attached to it
     Removed,
     /// A new buffer has been attached
-    NewBuffer {
-        /// The buffer object
-        buffer: wl_buffer::WlBuffer,
-        /// location of the new buffer relative to the previous one
-        delta: Point<i32, Logical>,
-    },
+    NewBuffer(wl_buffer::WlBuffer),
 }
 
 /// General state associated with a surface
@@ -172,6 +182,18 @@ pub struct SurfaceAttributes {
     /// times. It'll be set to `Some(...)` if the user attaches a buffer (or `NULL`) to
     /// the surface, and be left to `None` if the user does not attach anything.
     pub buffer: Option<BufferAssignment>,
+
+    /// Location of the new buffer relative to the previous one
+    ///
+    /// The x and y arguments specify the location of the new pending buffer's upper left corner,
+    /// relative to the current buffer's upper left corner, in surface-local coordinates.
+    ///
+    /// In other words, the x and y, combined with the new surface size define in which directions
+    /// the surface's size changes.
+    ///
+    /// You are free to set this field to `None` to avoid processing it several times.
+    pub buffer_delta: Option<Point<i32, Logical>>,
+
     /// Scale of the contents of the buffer, for higher-resolution contents.
     ///
     /// If it matches the one of the output displaying this surface, no change
@@ -217,6 +239,7 @@ impl Default for SurfaceAttributes {
     fn default() -> SurfaceAttributes {
         SurfaceAttributes {
             buffer: None,
+            buffer_delta: None,
             buffer_scale: 1,
             buffer_transform: wl_output::Transform::Normal,
             opaque_region: None,
@@ -331,35 +354,21 @@ pub fn with_surface_tree_downward<F1, F2, F3, T>(
 ///
 /// Returns `None` is this surface is a root surface
 pub fn get_parent(surface: &WlSurface) -> Option<WlSurface> {
-    if !surface.as_ref().is_alive() {
-        return None;
-    }
     PrivateSurfaceData::get_parent(surface)
 }
 
 /// Retrieve the children of this surface
 pub fn get_children(surface: &WlSurface) -> Vec<WlSurface> {
-    if !surface.as_ref().is_alive() {
-        return Vec::new();
-    }
     PrivateSurfaceData::get_children(surface)
 }
 
 /// Check if this subsurface is a synchronized subsurface
-///
-/// Returns false if the surface is already dead
 pub fn is_sync_subsurface(surface: &WlSurface) -> bool {
-    if !surface.as_ref().is_alive() {
-        return false;
-    }
     self::handlers::is_effectively_sync(surface)
 }
 
 /// Get the current role of this surface
 pub fn get_role(surface: &WlSurface) -> Option<&'static str> {
-    if !surface.as_ref().is_alive() {
-        return None;
-    }
     PrivateSurfaceData::get_role(surface)
 }
 
@@ -367,21 +376,15 @@ pub fn get_role(surface: &WlSurface) -> Option<&'static str> {
 ///
 /// Fails if the surface already has a role.
 pub fn give_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {
-    if !surface.as_ref().is_alive() {
-        return Ok(());
-    }
     PrivateSurfaceData::set_role(surface, role)
 }
 
 /// Access the states associated to this surface
-pub fn with_states<F, T>(surface: &WlSurface, f: F) -> Result<T, DeadResource>
+pub fn with_states<F, T>(surface: &WlSurface, f: F) -> T
 where
     F: FnOnce(&SurfaceData) -> T,
 {
-    if !surface.as_ref().is_alive() {
-        return Err(DeadResource);
-    }
-    Ok(PrivateSurfaceData::with_states(surface, f))
+    PrivateSurfaceData::with_states(surface, f)
 }
 
 /// Retrieve the metadata associated with a `wl_region`
@@ -389,57 +392,117 @@ where
 /// If the region is not managed by the `CompositorGlobal` that provided this token, this
 /// will panic (having more than one compositor is not supported).
 pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
-    match region.as_ref().user_data().get::<Mutex<RegionAttributes>>() {
-        Some(mutex) => mutex.lock().unwrap().clone(),
+    match region.data::<RegionUserData>() {
+        Some(data) => data.inner.lock().unwrap().clone(),
         None => panic!("Accessing the data of foreign regions is not supported."),
     }
 }
 
-/// Register a commit hook to be invoked on surface commit
+/// Register a pre-commit hook to be invoked on surface commit
 ///
-/// For its precise semantics, see module-level documentation.
-pub fn add_commit_hook(surface: &WlSurface, hook: fn(&WlSurface)) {
-    if !surface.as_ref().is_alive() {
-        return;
-    }
-    PrivateSurfaceData::add_commit_hook(surface, hook)
+/// It'll be invoked on surface commit, *before* the new state is merged into the current state.
+pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
+    PrivateSurfaceData::add_pre_commit_hook(surface, hook)
 }
 
-/// Create new [`wl_compositor`](wayland_server::protocol::wl_compositor)
-/// and [`wl_subcompositor`](wayland_server::protocol::wl_subcompositor) globals.
+/// Register a post-commit hook to be invoked on surface commit
 ///
-/// It returns the two global handles, in case you wish to remove these globals from
-/// the event loop in the future.
-pub fn compositor_init<Impl, L>(
-    display: &mut Display,
-    implem: Impl,
-    logger: L,
-) -> (
-    Global<wl_compositor::WlCompositor>,
-    Global<wl_subcompositor::WlSubcompositor>,
-)
-where
-    L: Into<Option<::slog::Logger>>,
-    Impl: for<'a> FnMut(WlSurface, DispatchData<'a>) + 'static,
-{
-    let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
-    let implem = Rc::new(RefCell::new(implem));
+/// It'll be invoked on surface commit, *after* the new state is merged into the current state.
+pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
+    PrivateSurfaceData::add_post_commit_hook(surface, hook)
+}
 
-    let compositor = display.create_global(
-        4,
-        Filter::new(move |(new_compositor, _version), _, _| {
-            self::handlers::implement_compositor::<Impl>(new_compositor, log.clone(), implem.clone());
-        }),
-    );
+/// Register a destruction hook to be invoked on surface destruction
+///
+/// It'll be invoked when the surface is destroyed (either explicitly by the client or on
+/// client disconnect).
+pub fn add_destruction_hook(surface: &WlSurface, hook: fn(&SurfaceData)) {
+    PrivateSurfaceData::add_destruction_hook(surface, hook)
+}
 
-    let subcompositor = display.create_global(
-        1,
-        Filter::new(move |(new_subcompositor, _version), _, _| {
-            self::handlers::implement_subcompositor(new_subcompositor);
-        }),
-    );
+/// Handler trait for compositor
+pub trait CompositorHandler {
+    /// [CompositorState] getter
+    fn compositor_state(&mut self) -> &mut CompositorState;
 
-    (compositor, subcompositor)
+    /// Surface commit handler
+    fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface);
+}
+
+/// State of a compositor
+#[derive(Debug)]
+pub struct CompositorState {
+    log: slog::Logger,
+    compositor: GlobalId,
+    subcompositor: GlobalId,
+}
+
+#[doc(hidden)]
+impl CompositorState {
+    /// Create new [`wl_compositor`](wayland_server::protocol::wl_compositor)
+    /// and [`wl_subcompositor`](wayland_server::protocol::wl_subcompositor) globals.
+    ///
+    /// It returns the two global handles, in case you wish to remove these globals from
+    /// the event loop in the future.
+    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> Self
+    where
+        L: Into<Option<::slog::Logger>>,
+        D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
+    {
+        let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
+
+        let compositor = display.create_global::<D, WlCompositor, ()>(5, ());
+        let subcompositor = display.create_global::<D, WlSubcompositor, ()>(1, ());
+
+        CompositorState {
+            log,
+            compositor,
+            subcompositor,
+        }
+    }
+
+    /// Get id of compositor global
+    pub fn compositor_global(&self) -> GlobalId {
+        self.compositor.clone()
+    }
+
+    /// Get id of subcompositor global
+    pub fn subcompositor_global(&self) -> GlobalId {
+        self.subcompositor.clone()
+    }
+}
+
+#[allow(missing_docs)] // TODO
+#[macro_export]
+macro_rules! delegate_compositor {
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor: ()
+        ] => $crate::wayland::compositor::CompositorState);
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor: ()
+        ] => $crate::wayland::compositor::CompositorState);
+
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor: ()
+        ] => $crate::wayland::compositor::CompositorState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_surface::WlSurface: $crate::wayland::compositor::SurfaceUserData
+        ] => $crate::wayland::compositor::CompositorState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_region::WlRegion: $crate::wayland::compositor::RegionUserData
+        ] => $crate::wayland::compositor::CompositorState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_callback::WlCallback: ()
+        ] => $crate::wayland::compositor::CompositorState);
+            // WlSubcompositor
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor: ()
+        ] => $crate::wayland::compositor::CompositorState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            $crate::reexports::wayland_server::protocol::wl_subsurface::WlSubsurface: $crate::wayland::compositor::SubsurfaceUserData
+        ] => $crate::wayland::compositor::CompositorState);
+    };
 }
 
 #[cfg(test)]

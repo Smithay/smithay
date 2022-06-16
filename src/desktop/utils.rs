@@ -1,7 +1,7 @@
 //! Helper functions to ease dealing with surface trees
 
 use crate::{
-    backend::renderer::utils::SurfaceState,
+    backend::renderer::utils::RendererSurfaceState,
     desktop::Space,
     utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::{
@@ -11,13 +11,13 @@ use crate::{
         output::Output,
     },
 };
-use wayland_server::protocol::wl_surface;
+use wayland_server::{protocol::wl_surface, DisplayHandle};
 
 use std::cell::RefCell;
 
 use super::WindowSurfaceType;
 
-impl SurfaceState {
+impl RendererSurfaceState {
     fn contains_point<P: Into<Point<f64, Logical>>>(&self, attrs: &SurfaceAttributes, point: P) -> bool {
         let point = point.into();
         let size = match self.surface_view.map(|view| view.dst) {
@@ -64,7 +64,7 @@ where
         location,
         |_, states, loc: &Point<i32, Logical>| {
             let mut loc = *loc;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
                 loc += surface_view.offset;
@@ -109,7 +109,7 @@ where
         location,
         |_, states, location: &Point<f64, Physical>| {
             let mut location = *location;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
                 location += surface_view.offset.to_f64().to_physical(scale);
@@ -166,7 +166,7 @@ where
 
             if let Some(surface_view) = states
                 .data_map
-                .get::<RefCell<SurfaceState>>()
+                .get::<RefCell<RendererSurfaceState>>()
                 .and_then(|d| d.borrow().surface_view)
             {
                 location += surface_view.offset.to_f64().to_physical(scale);
@@ -177,7 +177,7 @@ where
         },
         |_surface, states, location| {
             let mut location = *location;
-            if let Some(data) = states.data_map.get::<RefCell<SurfaceState>>() {
+            if let Some(data) = states.data_map.get::<RefCell<RendererSurfaceState>>() {
                 let mut data = data.borrow_mut();
                 if key
                     .as_ref()
@@ -277,7 +277,7 @@ where
         location.into(),
         |wl_surface, states, location: &Point<i32, Logical>| {
             let mut location = *location;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
                 location += surface_view.offset;
@@ -336,6 +336,7 @@ pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
 }
 
 pub(crate) fn output_update(
+    dh: &DisplayHandle,
     output: &Output,
     output_geometry: Rectangle<i32, Logical>,
     surface_list: &mut Vec<wl_surface::WlSurface>,
@@ -348,7 +349,7 @@ pub(crate) fn output_update(
         (location, false),
         |_, states, (location, parent_unmapped)| {
             let mut location = *location;
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             // If the parent is unmapped we still have to traverse
             // our children to send a leave events
@@ -369,26 +370,25 @@ pub(crate) fn output_update(
             if *parent_unmapped {
                 // The parent is unmapped, just send a leave event
                 // if we were previously mapped and exit early
-                output_leave(output, surface_list, wl_surface, logger);
+                output_leave(dh, output, surface_list, wl_surface, logger);
                 return;
             }
-
-            let data = states.data_map.get::<RefCell<SurfaceState>>();
+            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
 
             if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
                 location += surface_view.offset;
                 let surface_rectangle = Rectangle::from_loc_and_size(location, surface_view.dst);
                 if output_geometry.overlaps(surface_rectangle) {
                     // We found a matching output, check if we already sent enter
-                    output_enter(output, surface_list, wl_surface, logger);
+                    output_enter(dh, output, surface_list, wl_surface, logger);
                 } else {
                     // Surface does not match output, if we sent enter earlier
                     // we should now send leave
-                    output_leave(output, surface_list, wl_surface, logger);
+                    output_leave(dh, output, surface_list, wl_surface, logger);
                 }
             } else {
                 // Maybe the the surface got unmapped, send leave on output
-                output_leave(output, surface_list, wl_surface, logger);
+                output_leave(dh, output, surface_list, wl_surface, logger);
             }
         },
         |_, _, _| true,
@@ -396,6 +396,7 @@ pub(crate) fn output_update(
 }
 
 pub(crate) fn output_enter(
+    dh: &DisplayHandle,
     output: &Output,
     surface_list: &mut Vec<wl_surface::WlSurface>,
     surface: &wl_surface::WlSurface,
@@ -408,12 +409,13 @@ pub(crate) fn output_enter(
             surface,
             output.name()
         );
-        output.enter(surface);
+        output.enter(dh, surface);
         surface_list.push(surface.clone());
     }
 }
 
 pub(crate) fn output_leave(
+    dh: &DisplayHandle,
     output: &Output,
     surface_list: &mut Vec<wl_surface::WlSurface>,
     surface: &wl_surface::WlSurface,
@@ -426,7 +428,7 @@ pub(crate) fn output_leave(
             surface,
             output.name()
         );
-        output.leave(surface);
+        output.leave(dh, surface);
         surface_list.retain(|s| s != surface);
     }
 }

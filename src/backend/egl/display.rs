@@ -11,7 +11,7 @@ use std::sync::{Mutex, Weak};
 use libc::c_void;
 use nix::libc::c_int;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
-use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
+use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
@@ -19,7 +19,7 @@ use wayland_sys::server::wl_display;
 use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Buffer, Format as DrmFormat, Fourcc, Modifier},
+        allocator::{dmabuf::Dmabuf, Buffer as _, Format as DrmFormat, Fourcc, Modifier},
         egl::{
             context::{GlAttributes, PixelFormatRequirements},
             ffi,
@@ -418,7 +418,6 @@ impl EGLDisplay {
         y_inverted: bool,
     ) -> Result<Dmabuf, Error> {
         use crate::backend::allocator::dmabuf::DmabufFlags;
-        use std::convert::TryFrom;
 
         if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
             && !self
@@ -614,15 +613,14 @@ impl EGLDisplay {
     /// This might return [`OtherEGLDisplayAlreadyBound`](Error::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`] multiple times, as only one egl display may be bound at any given time.
     #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
-    pub fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, Error> {
+    pub fn bind_wl_display(&self, display: &DisplayHandle) -> Result<EGLBufferReader, Error> {
+        let display_ptr = display.backend_handle().display_ptr();
         if !self.extensions.iter().any(|s| s == "EGL_WL_bind_wayland_display") {
             return Err(Error::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
-        wrap_egl_call(|| unsafe {
-            ffi::egl::BindWaylandDisplayWL(**self.display, display.c_ptr() as *mut _)
-        })
-        .map_err(Error::OtherEGLDisplayAlreadyBound)?;
-        let reader = EGLBufferReader::new(self.display.clone(), display.c_ptr(), self.logger.clone());
+        wrap_egl_call(|| unsafe { ffi::egl::BindWaylandDisplayWL(**self.display, display_ptr as *mut _) })
+            .map_err(Error::OtherEGLDisplayAlreadyBound)?;
+        let reader = EGLBufferReader::new(self.display.clone(), display_ptr, self.logger.clone());
         let mut global = BUFFER_READER.lock().unwrap();
         if global.as_ref().and_then(|x| x.upgrade()).is_some() {
             warn!(
@@ -643,8 +641,6 @@ fn get_dmabuf_formats(
     extensions: &[String],
     log: &::slog::Logger,
 ) -> Result<(HashSet<DrmFormat>, HashSet<DrmFormat>), EGLError> {
-    use std::convert::TryFrom;
-
     if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import") {
         warn!(log, "Dmabuf import extension not available");
         return Ok((HashSet::new(), HashSet::new()));
@@ -804,9 +800,10 @@ impl EGLBufferReader {
     /// a [`BufferAccessError::NotManaged`](crate::backend::egl::BufferAccessError::NotManaged) is returned.
     pub fn egl_buffer_contents(
         &self,
+        dh: &DisplayHandle,
         buffer: &WlBuffer,
     ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
-        if !buffer.as_ref().is_alive() {
+        if dh.get_object_data(buffer.id()).is_err() {
             debug!(self.logger, "Suplied buffer is no longer alive");
             return Err(BufferAccessError::NotManaged(EGLError::BadParameter));
         }
@@ -815,7 +812,7 @@ impl EGLBufferReader {
         let query = wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.as_ref().c_ptr() as _,
+                buffer.id().as_ptr() as _,
                 ffi::egl::EGL_TEXTURE_FORMAT,
                 &mut format,
             )
@@ -845,7 +842,7 @@ impl EGLBufferReader {
         wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.as_ref().c_ptr() as _,
+                buffer.id().as_ptr() as _,
                 ffi::egl::WIDTH as i32,
                 &mut width,
             )
@@ -856,7 +853,7 @@ impl EGLBufferReader {
         wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.as_ref().c_ptr() as _,
+                buffer.id().as_ptr() as _,
                 ffi::egl::HEIGHT as i32,
                 &mut height,
             )
@@ -877,7 +874,7 @@ impl EGLBufferReader {
             match wrap_egl_call(|| unsafe {
                 ffi::egl::QueryWaylandBufferWL(
                     **self.display,
-                    buffer.as_ref().c_ptr() as _,
+                    buffer.id().as_ptr() as _,
                     ffi::egl::WAYLAND_Y_INVERTED_WL,
                     &mut inverted,
                 )
@@ -900,7 +897,7 @@ impl EGLBufferReader {
                         **self.display,
                         ffi::egl::NO_CONTEXT,
                         ffi::egl::WAYLAND_BUFFER_WL,
-                        buffer.as_ref().c_ptr() as *mut _,
+                        buffer.id().as_ptr() as *mut _,
                         out.as_ptr(),
                     )
                 })
@@ -925,10 +922,11 @@ impl EGLBufferReader {
     /// context has been lost, `None` is returned.
     pub fn egl_buffer_dimensions(
         &self,
+        dh: &DisplayHandle,
         buffer: &WlBuffer,
     ) -> Option<crate::utils::Size<i32, crate::utils::Buffer>> {
-        if !buffer.as_ref().is_alive() {
-            debug!(self.logger, "Suplied buffer is no longer alive");
+        if dh.get_object_data(buffer.id()).is_err() {
+            debug!(self.logger, "Supplied buffer is no longer alive");
             return None;
         }
 
@@ -936,7 +934,7 @@ impl EGLBufferReader {
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.as_ref().c_ptr() as _,
+                buffer.id().as_ptr() as _,
                 ffi::egl::WIDTH as _,
                 &mut width,
             ) == 0
@@ -948,7 +946,7 @@ impl EGLBufferReader {
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.as_ref().c_ptr() as _,
+                buffer.id().as_ptr() as _,
                 ffi::egl::HEIGHT as _,
                 &mut height,
             ) == 0

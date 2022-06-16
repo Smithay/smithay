@@ -5,7 +5,7 @@ authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victor Brekenfeld
 license = "MIT"
 description = "Smithay is a library for writing wayland compositors."
 repository = "https://github.com/Smithay/smithay"
-edition = "2018"
+edition = "2021"
 readme = "README.md"
 homepage = "https://smithay.github.io/"
 keywords = ["wayland", "compositor", "graphics", "server"]
@@ -16,14 +16,18 @@ features = ["test_all_features"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
-members = [ "anvil", "wlcs_anvil" ]
+members = [
+    "smallvil",
+    "anvil",
+    "wlcs_anvil"
+]
 
 [dependencies]
 appendlist = "1.4"
 bitflags = "1"
 calloop = "0.10.0"
 cgmath = "0.18.0"
-dbus = { version = "0.9.0", optional = true }
+dbus = { version = "0.9.4", optional = true }
 downcast-rs = "1.2.0"
 drm-fourcc = "^2.1.1"
 drm = { version = "0.6.1", optional = true }
@@ -43,15 +47,19 @@ slog-stdlog = { version = "4", optional = true }
 tempfile = { version = "3.0", optional = true }
 thiserror = "1.0.25"
 udev = { version = "0.6", optional = true }
-wayland-commons = { version = "0.29.0", optional = true }
-wayland-egl = { version = "0.29.0", optional = true }
-wayland-protocols = { version = "0.29.0", features = ["unstable_protocols", "staging_protocols", "server"], optional = true }
-wayland-server = { version = "0.29.0", optional = true }
-wayland-sys = { version = "0.29.0", optional = true }
+wayland-egl = { version = "=0.30.0-beta.4", optional = true }
+wayland-protocols = { version = "=0.30.0-beta.4", features = ["unstable", "staging", "server"], optional = true }
+wayland-protocols-wlr = { version = "=0.1.0-beta.4", features = ["server"]}
+wayland-server = { version = "=0.30.0-beta.4", optional = true }
+wayland-sys = { version = "=0.30.0-beta.4", optional = true }
+wayland-backend = { version = "=0.1.0-beta.4", optional = true }
 winit = { version = "0.26", optional = true }
 x11rb = { version = "0.9.0", optional = true }
 xkbcommon = "0.4.0"
 scan_fmt = { version = "0.2.3", default-features = false }
+
+[patch.crates-io]
+winit = { git = "https://github.com/rust-windowing/winit", rev = "4c39b3188cee29548761b57f38e4aa046cbe31ea" }
 
 [dev-dependencies]
 slog-term = "2.3"
@@ -62,7 +70,7 @@ pkg-config = { version = "0.3.17", optional = true }
 
 [features]
 default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_multi", "xwayland", "wayland_frontend", "slog-stdlog"]
-backend_winit = ["winit", "wayland-server/dlopen", "backend_egl", "wayland-egl", "renderer_gl"]
+backend_winit = ["winit", "backend_egl", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
 backend_gbm = ["gbm"]
@@ -76,12 +84,24 @@ backend_session_libseat = ["backend_session", "libseat"]
 desktop = ["indexmap", "wayland_frontend"]
 renderer_gl = ["gl_generator", "backend_egl"]
 renderer_multi = ["backend_drm"]
-use_system_lib = ["wayland_frontend", "wayland-sys", "wayland-server/use_system_lib"]
-wayland_frontend = ["wayland-server", "wayland-commons", "wayland-protocols", "tempfile"]
+use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys"]
+wayland_frontend = ["wayland-server", "wayland-protocols", "tempfile"]
 x11rb_event_source = ["x11rb"]
 xwayland = ["wayland_frontend"]
-test_all_features = ["default", "use_system_lib", "wayland-server/dlopen"]
+test_all_features = ["default"]
 
 [[example]]
 name = "raw_drm"
 required-features = ["backend_drm"]
+
+[[example]]
+name = "minimal"
+required-features = ["backend_winit", "renderer_gl", "wayland_frontend"]
+
+[[example]]
+name = "seat"
+required-features = ["wayland_frontend"]
+
+[[example]]
+name = "compositor"
+required-features = ["wayland_frontend"]

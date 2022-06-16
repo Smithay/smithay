@@ -4,6 +4,10 @@
 
 ### Breaking Changes
 
+**`wayland-server` was updated to 0.30:**
+- Most of the wayland frontend API is changed to follow the new request dispatching mechanism built around the `Dispatch` trait from `wayland-server`
+- Modules that provide handlers for Wayland globals now provide `DelegateDispatch` implementations, as well as macros to simplify the dispatching from your main state
+
 #### Clients & Protocols
 
 - Remove `xdg-shell-unstable-v6` backwards compatibility
@@ -64,6 +68,10 @@
 - `wayland::shell::wlr_layer::KeyboardInteractivity` now implements `PartialEq` and `Eq`.
 - Added `TouchHandle` for Wayland client touch support (see `Seat::get_touch`)
 - `wayland::output::Scale` was introduced to handle fractional scale values better
+- Support for `wl_output` global version 4
+- Support for `wl_seat` global version 7
+- Support for `wl_compositor` global version 5
+- Support for the `wp_viewporter` protocol
 
 #### Backends
 
@@ -102,7 +110,7 @@
 - `wl_keyboard` rewind the `keymap` file before passing it to the client
 - `wl_shm` properly validates parameters when creating a `wl_buffer`.
 - `ServerDnDGrab` and `DnDGrab` now correctly send data device `leave` event on button release
-
+- Client are now allowed to reassign the same role to a surface
 
 #### Backends
 
@@ -114,6 +122,8 @@
 
 - Anvil now implements the x11 backend in smithay. Run by passing `--x11` into the arguments when launching.
 - Passing `ANVIL_MUTEX_LOG` in environment variables now uses the slower `Mutex` logging drain.
+- Only toplevel surfaces now get implicit keyboard focus
+- Fix popup drawing for fullscreen windows
 
 ## version 0.3.0 (2021-07-25)
 

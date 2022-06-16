@@ -9,7 +9,7 @@ use crate::{
         utils::{output_leave, output_update},
         window::Window,
     },
-    utils::{Logical, Physical, Point, Rectangle, Transform},
+    utils::{IsAlive, Logical, Physical, Point, Rectangle, Transform},
     wayland::{
         compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
         output::Output,
@@ -17,7 +17,7 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{collections::VecDeque, fmt};
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 
 mod element;
 mod layer;
@@ -184,16 +184,12 @@ impl Space {
         surface: &WlSurface,
         surface_type: WindowSurfaceType,
     ) -> Option<&Window> {
-        if !surface.as_ref().is_alive() {
+        if !surface.alive() {
             return None;
         }
 
         if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
-            if let Some(window) = self
-                .windows
-                .iter()
-                .find(|w| w.toplevel().get_surface().map(|x| x == surface).unwrap_or(false))
-            {
+            if let Some(window) = self.windows.iter().find(|w| w.toplevel().wl_surface() == surface) {
                 return Some(window);
             }
         }
@@ -202,7 +198,7 @@ impl Space {
             use std::sync::atomic::{AtomicBool, Ordering};
 
             if let Some(window) = self.windows.iter().find(|w| {
-                let toplevel = w.toplevel().get_surface().unwrap();
+                let toplevel = w.toplevel().wl_surface();
                 let found = AtomicBool::new(false);
                 with_surface_tree_downward(
                     toplevel,
@@ -221,12 +217,8 @@ impl Space {
 
         if surface_type.contains(WindowSurfaceType::POPUP) {
             if let Some(window) = self.windows.iter().find(|w| {
-                PopupManager::popups_for_surface(w.toplevel().get_surface().unwrap())
-                    .ok()
-                    .map(|mut popups| {
-                        popups.any(|(p, _)| p.get_surface().map(|s| s == surface).unwrap_or(false))
-                    })
-                    .unwrap_or(false)
+                PopupManager::popups_for_surface(w.toplevel().wl_surface())
+                    .any(|(p, _)| p.wl_surface() == surface)
             }) {
                 return Some(window);
             }
@@ -235,7 +227,7 @@ impl Space {
         None
     }
 
-    /// Returns the layer matching a given surface, if any.
+    /// Returns the layer matching a given surface, if any
     ///
     /// `surface_type` can be used to limit the types of surfaces queried for equality.
     pub fn layer_for_surface(
@@ -243,9 +235,6 @@ impl Space {
         surface: &WlSurface,
         surface_type: WindowSurfaceType,
     ) -> Option<LayerSurface> {
-        if !surface.as_ref().is_alive() {
-            return None;
-        }
         self.outputs.iter().find_map(|o| {
             let map = layer_map_for_output(o);
             map.layer_for_surface(surface, surface_type).cloned()
@@ -368,13 +357,11 @@ impl Space {
     ///
     /// Needs to be called periodically, at best before every
     /// wayland socket flush.
-    pub fn refresh(&mut self) {
-        self.windows.retain(|w| w.toplevel().alive());
+    pub fn refresh(&mut self, dh: &DisplayHandle) {
+        self.windows.retain(|w| w.alive());
 
         for output in &mut self.outputs {
-            output_state(self.id, output)
-                .surfaces
-                .retain(|s| s.as_ref().is_alive());
+            output_state(self.id, output).surfaces.retain(|s| s.alive());
         }
 
         for window in &self.windows {
@@ -391,40 +378,35 @@ impl Space {
                 // the output, if not no surface in the tree can intersect with
                 // the output.
                 if !output_geometry.overlaps(bbox) {
-                    if let Some(surface) = kind.get_surface() {
-                        output_leave(output, &mut output_state.surfaces, surface, &self.logger);
-                    }
+                    let surface = kind.wl_surface();
+                    output_leave(dh, output, &mut output_state.surfaces, surface, &self.logger);
                     continue;
                 }
 
-                if let Some(surface) = kind.get_surface() {
+                let surface = kind.wl_surface();
+                output_update(
+                    dh,
+                    output,
+                    output_geometry,
+                    &mut output_state.surfaces,
+                    surface,
+                    window_loc(window, &self.id),
+                    &self.logger,
+                );
+
+                for (popup, location) in PopupManager::popups_for_surface(surface) {
+                    let surface = popup.wl_surface();
+                    let location = window_loc(window, &self.id) + window.geometry().loc + location
+                        - popup.geometry().loc;
                     output_update(
+                        dh,
                         output,
                         output_geometry,
                         &mut output_state.surfaces,
                         surface,
-                        window_loc(window, &self.id),
+                        location,
                         &self.logger,
                     );
-
-                    for (popup, location) in PopupManager::popups_for_surface(surface)
-                        .ok()
-                        .into_iter()
-                        .flatten()
-                    {
-                        if let Some(surface) = popup.get_surface() {
-                            let location = window_loc(window, &self.id) + window.geometry().loc + location
-                                - popup.geometry().loc;
-                            output_update(
-                                output,
-                                output_geometry,
-                                &mut output_state.surfaces,
-                                surface,
-                                location,
-                                &self.logger,
-                            );
-                        }
-                    }
                 }
             }
         }
@@ -440,7 +422,7 @@ impl Space {
         while let Some(parent) = get_parent(&root) {
             root = parent;
         }
-        if let Some(window) = self.windows().find(|w| w.toplevel().get_surface() == Some(&root)) {
+        if let Some(window) = self.windows().find(|w| w.toplevel().wl_surface() == &root) {
             window.refresh();
         }
     }
@@ -466,6 +448,7 @@ impl Space {
     /// (or `None` if that list would be empty) in case of success.
     pub fn render_output<R, E>(
         &mut self,
+        dh: &DisplayHandle,
         renderer: &mut R,
         output: &Output,
         age: usize,
@@ -637,6 +620,7 @@ impl Space {
                             damage
                         );
                         element.draw(
+                            dh,
                             self.id,
                             renderer,
                             frame,
@@ -841,6 +825,7 @@ macro_rules! custom_elements_internal {
     (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
+            dh: &$crate::reexports::wayland_server::DisplayHandle,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
             scale: impl Into<$crate::utils::Scale<f64>>,
@@ -862,7 +847,7 @@ macro_rules! custom_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, dh, renderer, frame, scale, location, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -871,6 +856,7 @@ macro_rules! custom_elements_internal {
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
+            dh: &$crate::reexports::wayland_server::DisplayHandle,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
             scale: impl Into<$crate::utils::Scale<f64>>,
@@ -884,7 +870,7 @@ macro_rules! custom_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, dh, renderer, frame, scale, location, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -949,11 +935,12 @@ macro_rules! custom_elements_internal {
     };
 }
 
-/// Macro to collate multiple [`smithay::desktop::RenderElement`]-implementations
+/// Macro to collate multiple [`crate::desktop::space::RenderElement`]-implementations
 /// into one type to be used with [`Space::render_output`].
 /// ## Example
 ///
 /// ```no_run
+/// # use wayland_server::{Display, DisplayHandle};
 /// use smithay::{
 ///     backend::renderer::{Texture, Renderer, ImportAll},
 ///     desktop::space::{SurfaceTree, Space, SpaceOutputTuple, RenderElement},
@@ -994,6 +981,7 @@ macro_rules! custom_elements_internal {
 /// # impl ImportAll for DummyRenderer {
 /// #    fn import_buffer(
 /// #        &mut self,
+/// #        dh: &DisplayHandle,
 /// #        buffer: &wl_buffer::WlBuffer,
 /// #        surface: Option<&SurfaceData>,
 /// #        damage: &[Rectangle<i32, Buffer>],
@@ -1096,6 +1084,7 @@ macro_rules! custom_elements_internal {
 ///#
 ///#    fn draw(
 ///#        &self,
+///#        dh: &DisplayHandle,
 ///#        _renderer: &mut R,
 ///#        frame: &mut <R as Renderer>::Frame,
 ///#        scale: impl Into<Scale<f64>>,
@@ -1113,9 +1102,11 @@ macro_rules! custom_elements_internal {
 ///# let surface_tree: SurfaceTree = unsafe { std::mem::zeroed() };
 ///# let mut space = Space::new(None);
 ///# let age = 0;
+///# let display = Display::<()>::new().unwrap();
+///# let dh = display.handle();
 ///
 /// let elements = [CustomElem::from(surface_tree)];
-/// space.render_output(&mut renderer, &output, age, [0.0, 0.0, 0.0, 1.0], &elements);
+/// space.render_output(&dh, &mut renderer, &output, age, [0.0, 0.0, 0.0, 1.0], &elements);
 /// ```
 #[macro_export]
 macro_rules! custom_elements {

@@ -20,11 +20,19 @@ thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr:
 static SIGBUS_INIT: Once = Once::new();
 static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
 
+#[derive(Debug)]
 pub struct Pool {
+    // TODO: We may need to change this to a Mutex in order to support protocols like wlr screencopy which may
+    // require we write to a memmap.
     map: RwLock<MemMap>,
     fd: RawFd,
     log: ::slog::Logger,
 }
+
+// SAFETY: The memmap is owned by the pool and content is only accessible via a reference.
+unsafe impl Send for Pool {}
+// SAFETY: The memmap is guarded by a RwLock, meaning no writers may mutate the memmap when it is being read.
+unsafe impl Sync for Pool {}
 
 pub enum ResizeError {
     InvalidSize,
@@ -45,10 +53,13 @@ impl Pool {
     pub fn resize(&self, newsize: i32) -> Result<(), ResizeError> {
         let mut guard = self.map.write().unwrap();
         let oldsize = guard.size();
+
         if newsize <= 0 || oldsize > (newsize as usize) {
             return Err(ResizeError::InvalidSize);
         }
+
         trace!(self.log, "Resizing shm pool"; "fd" => self.fd as i32, "oldsize" => oldsize, "newsize" => newsize);
+
         guard.remap(newsize as usize).map_err(|()| {
             debug!(self.log, "SHM pool resize failed"; "fd" => self.fd as i32, "oldsize" => oldsize, "newsize" => newsize);
             ResizeError::MremapFailed
@@ -103,6 +114,7 @@ impl Drop for Pool {
     }
 }
 
+#[derive(Debug)]
 struct MemMap {
     ptr: *mut u8,
     fd: RawFd,
@@ -169,7 +181,6 @@ impl Drop for MemMap {
     }
 }
 
-// mman::mmap should really be unsafe... why isn't it?
 unsafe fn map(fd: RawFd, size: usize) -> Result<*mut u8, ()> {
     let ret = mman::mmap(
         ptr::null_mut(),
@@ -182,7 +193,6 @@ unsafe fn map(fd: RawFd, size: usize) -> Result<*mut u8, ()> {
     ret.map(|p| p as *mut u8).map_err(|_| ())
 }
 
-// mman::munmap should really be unsafe... why isn't it?
 unsafe fn unmap(ptr: *mut u8, size: usize) -> Result<(), ()> {
     let ret = mman::munmap(ptr as *mut _, size);
     ret.map_err(|_| ())
@@ -245,7 +255,7 @@ extern "C" fn sigbus_handler(_signum: libc::c_int, info: *mut libc::siginfo_t, _
 }
 
 // This was shamelessly stolen from rustc's source
-// so I expect it to work whevener rust works
+// so I expect it to work whenever rust works
 // I guess it's good enough?
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
