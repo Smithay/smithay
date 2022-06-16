@@ -99,7 +99,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --workspace --features "test_all_features"
+          args: --workspace --features "test_all_features" --exclude wlcs_anvil
       # touch src/lib.rs so that clippy actually runs on smithay and anvil
       - name: Touch
         run: touch src/lib.rs
@@ -492,7 +492,7 @@ jobs:
           args: grcov --version ${{ env.GRCOV_VERSION }}
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y cmake libgtest-dev google-mock libboost-dev libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y cmake libgtest-dev google-mock libboost-dev libxkbcommon-dev libwayland-dev
 
       - name: WLCS build cache
         uses: actions/cache@v2

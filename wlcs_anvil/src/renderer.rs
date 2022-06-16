@@ -3,10 +3,7 @@ use std::cell::Cell;
 use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
-        renderer::{
-            Frame, ImportDma, ImportDmaWl, ImportEgl, ImportMem, ImportMemWl, Renderer, Texture,
-            TextureFilter,
-        },
+        renderer::{Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture, TextureFilter},
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::wl_buffer,
@@ -121,32 +118,6 @@ impl ImportDma for DummyRenderer {
 
 impl ImportDmaWl for DummyRenderer {}
 
-impl ImportEgl for DummyRenderer {
-    fn bind_wl_display(
-        &mut self,
-        _: &smithay::reexports::wayland_server::DisplayHandle,
-    ) -> Result<(), smithay::backend::egl::Error> {
-        unimplemented!()
-    }
-
-    fn unbind_wl_display(&mut self) {
-        unimplemented!()
-    }
-
-    fn egl_reader(&self) -> Option<&smithay::backend::egl::display::EGLBufferReader> {
-        unimplemented!()
-    }
-
-    fn import_egl_buffer(
-        &mut self,
-        _: &smithay::reexports::wayland_server::DisplayHandle,
-        _: &wl_buffer::WlBuffer,
-        _: Option<&smithay::wayland::compositor::SurfaceData>,
-        _: &[Rectangle<i32, Buffer>],
-    ) -> Result<Self::TextureId, Self::Error> {
-        unimplemented!()
-    }
-}
 pub struct DummyFrame {}
 
 impl Frame for DummyFrame {
