@@ -58,6 +58,27 @@ jobs:
             ~/.cargo/git
           key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
           restore-keys: ${{ runner.os }}-cargo-registry-
+      - name: Get cargo-cache latest version
+        id: cargocacheversion
+        run: echo "::set-output name=version::$(cargo search 'cargo-cache' --limit 1 | head -n 1 | cut -d ' ' -f 3 | cut -d '"' -f 2)"
+      - name: Cargo binaries cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/cargo-cache
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: ${{ runner.os }}-cargo-binaries-${{ steps.cargocacheversion.outputs.version }}
+      - name: Install cargo-cache
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-cache --version ${{ steps.cargocacheversion.outputs.version }}
+      - name: Clean cargo cache of old items
+        uses: actions-rs/cargo@v1
+        with:
+          command: cache
+          args: clean-unref
       - name: Get rustc version for caching
         id: rustcversion
         run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
