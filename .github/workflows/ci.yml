@@ -94,6 +94,15 @@ jobs:
         with:
           command: update
           args: -p log --precise 0.4.14
+      # build everything to properly populate the cache for future builds
+      - name: Build all
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --workspace --features "test_all_features"
+      # touch src/lib.rs so that clippy actually runs on smithay and anvil
+      - name: Touch
+        run: touch src/lib.rs
       - name: Clippy Smithay
         if: ${{ !env.ACT }} # act has no token
         uses: actions-rs/clippy-check@v1
