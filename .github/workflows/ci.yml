@@ -79,14 +79,6 @@ jobs:
         with:
           command: cache
           args: clean-unref
-      - name: Get rustc version for caching
-        id: rustcversion
-        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
-      - name: Build cache
-        uses: actions/cache@v2
-        with:
-          path: target
-          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
       - name: Downgrade log
@@ -94,15 +86,6 @@ jobs:
         with:
           command: update
           args: -p log --precise 0.4.14
-      # build everything to properly populate the cache for future builds
-      - name: Build all
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --workspace --features "test_all_features" --exclude wlcs_anvil
-      # touch src/lib.rs so that clippy actually runs on smithay and anvil
-      - name: Touch
-        run: touch src/lib.rs
       - name: Clippy Smithay
         if: ${{ !env.ACT }} # act has no token
         uses: actions-rs/clippy-check@v1
@@ -249,15 +232,6 @@ jobs:
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
 
-      - name: Get rustc version for caching
-        id: rustcversion
-        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
-      - name: Build cache
-        uses: actions/cache@v2
-        with:
-          path: target
-          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
-
       - name: Build and install Libseat
         if: matrix.features == 'backend_session_libseat'
         run: |
@@ -323,15 +297,6 @@ jobs:
 
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libxkbcommon-dev libegl1-mesa-dev libwayland-dev
-
-      - name: Get rustc version for caching
-        id: rustcversion
-        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
-      - name: Build cache
-        uses: actions/cache@v2
-        with:
-          path: target
-          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
       
       - name: Downgrade log
         uses: actions-rs/cargo@v1
@@ -397,15 +362,6 @@ jobs:
 
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
-
-      - name: Get rustc version for caching
-        id: rustcversion
-        run: echo "::set-output name=version::$(rustc --version | cut -d ' ' -f 2)"
-      - name: Build cache
-        uses: actions/cache@v2
-        with:
-          path: target
-          key: ${{ runner.os }}-test-${{ steps.rustcversion.outputs.version }}-${{ hashFiles('**/Cargo.toml') }}
       
       - name: Downgrade log
         uses: actions-rs/cargo@v1
