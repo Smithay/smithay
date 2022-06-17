@@ -54,7 +54,7 @@ wayland-server = { version = "=0.30.0-beta.4", optional = true }
 wayland-sys = { version = "=0.30.0-beta.4", optional = true }
 wayland-backend = { version = "=0.1.0-beta.4", optional = true }
 winit = { version = "0.26", optional = true }
-x11rb = { version = "0.9.0", optional = true }
+x11rb = { version = "0.10.0", optional = true }
 xkbcommon = "0.4.0"
 scan_fmt = { version = "0.2.3", default-features = false }
 
