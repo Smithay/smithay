@@ -20,6 +20,13 @@ slog-stdlog = "4.1.0"
 slog-scope = "4.4.0"
 xkbcommon = "0.4.0"
 
+[lib]
+crate-type = ["lib", "cdylib"]
+
+# This dependency will only be included when targeting Android
+[target.'cfg(target_os = "android")'.dependencies]
+ndk-glue = "0.6.2" # Substitute this with the latest ndk-glue version you wish to use
+
 [dependencies.smithay]
 path = ".."
 default-features = false
