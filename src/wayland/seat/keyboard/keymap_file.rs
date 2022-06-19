@@ -6,9 +6,10 @@ use std::{
     path::PathBuf,
 };
 
+
 use nix::{
-    fcntl::{FcntlArg, SealFlag},
-    sys::memfd::MemFdCreateFlag,
+    fcntl::{open, OFlag},
+    sys::{stat::{Mode, fchmod}},
 };
 use slog::error;
 
@@ -63,12 +64,14 @@ struct SealedFile {
 
 impl SealedFile {
     fn new(keymap: &CStr) -> Result<Self, std::io::Error> {
-        let name = CString::new("smithay-keymap").expect("File name should not contain interior nul byte");
+        /* Previously we use memfd_create()  
+         */
+        let name ="smithay-keymap";
         let keymap = keymap.to_bytes_with_nul();
-
-        let fd = nix::sys::memfd::memfd_create(
-            &name,
-            MemFdCreateFlag::MFD_CLOEXEC | MemFdCreateFlag::MFD_ALLOW_SEALING,
+        let fd = open(
+            name,
+            OFlag::O_TMPFILE | OFlag::O_WRONLY | OFlag::O_CLOEXEC,
+            Mode::S_IRUSR | Mode::S_IWUSR | Mode::S_IRGRP | Mode::S_IROTH,
         )?;
 
         let mut file = unsafe { File::from_raw_fd(fd) };
@@ -77,14 +80,9 @@ impl SealedFile {
 
         file.seek(std::io::SeekFrom::Start(0))?;
 
-        nix::fcntl::fcntl(
+        fchmod(
             file.as_raw_fd(),
-            FcntlArg::F_ADD_SEALS(
-                SealFlag::F_SEAL_SEAL
-                    | SealFlag::F_SEAL_SHRINK
-                    | SealFlag::F_SEAL_GROW
-                    | SealFlag::F_SEAL_WRITE,
-            ),
+            Mode::S_IRUSR | Mode::S_IRGRP | Mode::S_IROTH
         )?;
 
         Ok(Self {
