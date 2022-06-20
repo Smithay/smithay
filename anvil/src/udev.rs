@@ -15,8 +15,6 @@ use crate::{
     drawing::*,
     state::{AnvilState, Backend, CalloopData},
 };
-#[cfg(feature = "debug")]
-use image::GenericImageView;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{

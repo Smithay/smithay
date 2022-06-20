@@ -1,7 +1,5 @@
 use std::{sync::atomic::Ordering, time::Duration};
 
-#[cfg(feature = "debug")]
-use image::GenericImageView;
 use slog::Logger;
 #[cfg(feature = "debug")]
 use smithay::backend::renderer::{gles2::Gles2Texture, ImportMem};
