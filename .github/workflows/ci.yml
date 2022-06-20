@@ -389,8 +389,8 @@ jobs:
       matrix:
         include:
           - job_name: "Core tests"
-            # TODO when they pass: "BadBufferTest*:SecondBadBufferTest*:ClientSurfaceEventsTest*"
-            gtest_filter: "SelfTest*:FrameSubmission*"
+            # TODO when they pass: "SecondBadBufferTest*:ClientSurfaceEventsTest*"
+            gtest_filter: "SelfTest*:FrameSubmission*:BadBufferTest*"
             flag: wlcs-core
           - job_name: "Output tests"
             gtest_filter: "XdgOutputV1Test*:WlOutputTest*"
