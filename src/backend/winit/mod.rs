@@ -41,9 +41,11 @@ use winit::{
     event::{ElementState, Event, KeyboardInput, Touch, TouchPhase, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     platform::run_return::EventLoopExtRunReturn,
-    platform::unix::WindowExtUnix,
     window::{Window as WinitWindow, WindowBuilder},
 };
+
+#[cfg(not(target_os = "android"))]
+use winit::platform::unix::WindowExtUnix;
 
 use slog::{debug, error, info, o, trace, warn};
 use std::cell::Cell;
@@ -179,25 +181,30 @@ where
         let display = EGLDisplay::new(&winit_window, log.clone())?;
         let context = EGLContext::new_with_config(&display, attributes, reqs, log.clone())?;
 
-        let (surface, is_x11) = if let Some(wl_surface) = winit_window.wayland_surface() {
-            debug!(log, "Winit backend: Wayland");
-            let size = winit_window.inner_size();
-            let surface = unsafe {
-                wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
-            }
-            .map_err(|err| Error::Surface(err.into()))?;
-            (
-                EGLSurface::new(
-                    &display,
-                    context.pixel_format().unwrap(),
-                    context.config_id(),
-                    surface,
-                    log.clone(),
-                )
+        let surface: EGLSurface;
+        let is_x11: bool;
+        cfg_if::cfg_if! {
+
+            if #[cfg(not(target_os = "android"))] {
+                (surface, is_x11) = if let Some(wl_surface) = winit_window.wayland_surface() {
+                    debug!(log, "Winit backend: Wayland");
+                let size = winit_window.inner_size();
+                let surface = unsafe {
+                    wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
+                }
+                .map_err(|err| Error::Surface(err.into()))?;
+                (
+                    EGLSurface::new(
+                        &display,
+                        context.pixel_format().unwrap(),
+                        context.config_id(),
+                        surface,
+                        log.clone(),
+                    )
                 .map_err(EGLError::CreationFailed)?,
                 false,
             )
-        } else if let Some(xlib_window) = winit_window.xlib_window().map(native::XlibWindow) {
+            } else if let Some(xlib_window) = winit_window.xlib_window().map(native::XlibWindow) {
             debug!(log, "Winit backend: X11");
             (
                 EGLSurface::new(
@@ -210,9 +217,24 @@ where
                 .map_err(EGLError::CreationFailed)?,
                 true,
             )
-        } else {
-            unreachable!("No backends for winit other then Wayland and X11 are supported")
-        };
+            } else {
+                            unreachable!("No backends for winit other then Wayland and X11 are supported on desktop Unix")
+
+            };
+            } else {
+                debug!(log, "Winit backend: Android");
+
+                surface = EGLSurface::new(
+                    &display,
+                    context.pixel_format().unwrap(),
+                    context.config_id(),
+                    ndk_glue::native_window().as_ref().unwrap().clone(),
+                    log.clone()
+                ).map_err(EGLError::CreationFailed)?;
+
+                is_x11 = false;
+          }
+        }
 
         let _ = context.unbind();
 
