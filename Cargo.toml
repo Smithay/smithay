@@ -25,7 +25,7 @@ members = [
 [dependencies]
 appendlist = "1.4"
 bitflags = "1"
-calloop = "0.10.0"
+calloop = "0.10.1"
 cgmath = "0.18.0"
 dbus = { version = "0.9.4", optional = true }
 downcast-rs = "1.2.0"
