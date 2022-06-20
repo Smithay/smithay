@@ -1,18 +1,26 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, EGLDevice, SwapBuffersError};
+use super::{
+    display::EGLDisplayHandle,
+    ffi,
+    wrap_egl_call, EGLDevice, SwapBuffersError,
+};
 use crate::utils::{Physical, Rectangle};
+use cfg_if::cfg_if;
+use lazy_static::__Deref;
 #[cfg(feature = "backend_winit")]
 use std::os::raw::c_int;
 use std::os::raw::c_void;
 #[cfg(feature = "backend_gbm")]
 use std::os::unix::io::AsRawFd;
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+#[cfg(not(target_os = "android"))]
+use winit::platform::unix::WindowExtUnix;
 
 #[cfg(feature = "backend_winit")]
 use wayland_egl as wegl;
 #[cfg(feature = "backend_winit")]
-use winit::{platform::unix::WindowExtUnix, window::Window as WinitWindow};
+use winit::window::Window as WinitWindow;
 
 #[cfg(feature = "backend_gbm")]
 use gbm::{AsRaw, Device as GbmDevice};
@@ -146,7 +154,9 @@ impl<A: AsRawFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
 #[cfg(feature = "backend_winit")]
 impl EGLNativeDisplay for WinitWindow {
     fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
-        if let Some(display) = self.wayland_display() {
+        cfg_if! {
+            if #[cfg(not(target_os = "android"))] {
+            if let Some(display) = self.wayland_display() {
             vec![
                 // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_wayland.txt
                 egl_platform!(PLATFORM_WAYLAND_KHR, display, &["EGL_KHR_platform_wayland"]),
@@ -161,8 +171,18 @@ impl EGLNativeDisplay for WinitWindow {
                 egl_platform!(PLATFORM_X11_EXT, display, &["EGL_EXT_platform_x11"]),
             ]
         } else {
-            unreachable!("No backends for winit other then Wayland and X11 are supported")
+            unreachable!("No backends for winit on desktop Unix other then Wayland and X11 are supported")
+        }} else {
+            vec! [
+                egl_platform!(
+                    PLATFORM_ANDROID_KHR, 
+                    ndk_glue::native_window()
+                    .deref().as_ref().unwrap().ptr().as_ptr(), 
+                    &["EGL_KHR_platform_android"]
+                )
+            ]
         }
+            }
     }
 }
 
@@ -316,5 +336,23 @@ unsafe impl EGLNativeSurface for wegl::WlEglSurface {
     fn resize(&self, width: i32, height: i32, dx: i32, dy: i32) -> bool {
         wegl::WlEglSurface::resize(self, width, height, dx, dy);
         true
+    }
+}
+
+#[cfg(target_os = "android")]
+unsafe impl EGLNativeSurface for ndk::native_window::NativeWindow {
+    fn create(
+        &self,
+        display: &Arc<EGLDisplayHandle>,
+        config_id: ffi::egl::types::EGLConfig,
+    ) -> Result<*const c_void, super::EGLError> {
+        wrap_egl_call(|| unsafe {
+            ffi::egl::CreateWindowSurface(
+                display.handle,
+                config_id,
+                self.ptr().as_ptr() as *const _,
+                WINIT_SURFACE_ATTRIBUTES.as_ptr(),
+            )
+        })
     }
 }
