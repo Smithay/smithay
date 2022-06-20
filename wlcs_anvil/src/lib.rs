@@ -24,12 +24,17 @@ macro_rules! extension_list {
 }
 
 static SUPPORTED_EXTENSIONS: &[WlcsExtensionDescriptor] = extension_list!(
-    ("wl_compositor", 4),
+    ("wl_compositor", 5),
     ("wl_subcompositor", 1),
+    ("wl_shm", 1),
     ("wl_data_device_manager", 3),
     ("wl_seat", 7),
     ("wl_output", 4),
     ("xdg_wm_base", 3),
+    ("zwlr_layer_shell_v1", 4),
+    ("xdg_activation_v1", 1),
+    ("zxdg_decoration_manager_v1", 1),
+    ("wp_viewporter", 1),
 );
 
 static DESCRIPTOR: WlcsIntegrationDescriptor = WlcsIntegrationDescriptor {
