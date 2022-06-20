@@ -95,10 +95,11 @@ impl LibSeatSession {
             // In some cases enable_seat event is avalible right after startup
             // so, we can dispatch it
             seat.dispatch(0).unwrap();
+            let active = matches!(rx.try_recv(), Ok(SeatEvent::Enable));
 
             let internal = Rc::new(LibSeatSessionImpl {
                 seat: RefCell::new(seat),
-                active: Arc::new(AtomicBool::new(false)),
+                active: Arc::new(AtomicBool::new(active)),
                 devices: RefCell::new(HashMap::new()),
                 logger,
             });
