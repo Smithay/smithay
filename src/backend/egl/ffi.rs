@@ -150,6 +150,9 @@ pub mod egl {
     pub const DEBUG_MSG_INFO_KHR: types::EGLenum = 0x33BC;
     #[allow(dead_code, non_upper_case_globals)]
     pub const DEBUG_MSG_WARN_KHR: types::EGLenum = 0x33BB;
+    
+    #[cfg(target_os = "android")]
+    pub const PLATFORM_ANDROID_KHR: types::EGLenum = 0x314;
 
     #[allow(non_snake_case, unused_variables, dead_code)]
     #[inline]
