@@ -107,6 +107,11 @@ where
 
 impl Cacheable for SurfaceAttributes {
     fn commit(&mut self, _dh: &DisplayHandle) -> Self {
+        self.has_commited_buffer = match self.buffer {
+            Some(BufferAssignment::NewBuffer(_)) => true,
+            Some(BufferAssignment::Removed) => false,
+            None => self.has_commited_buffer,
+        };
         SurfaceAttributes {
             buffer: self.buffer.take(),
             buffer_delta: self.buffer_delta.take(),
@@ -116,6 +121,7 @@ impl Cacheable for SurfaceAttributes {
             opaque_region: self.opaque_region.clone(),
             input_region: self.input_region.clone(),
             frame_callbacks: std::mem::take(&mut self.frame_callbacks),
+            has_commited_buffer: self.has_commited_buffer,
         }
     }
     fn merge_into(self, into: &mut Self, _dh: &DisplayHandle) {
@@ -168,6 +174,10 @@ where
     ) {
         match request {
             wl_surface::Request::Attach { buffer, x, y } => {
+                if !crate::wayland::shell::xdg::ensure_configured_if_xdg(surface) {
+                    return;
+                }
+
                 let offset: Point<i32, Logical> = (x, y).into();
                 let offset = (x != 0 || y != 0).then(|| offset);
 

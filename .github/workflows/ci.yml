@@ -412,8 +412,8 @@ jobs:
             gtest_filter: ""
             flag: wlcs-input-region
           - job_name: "xdg shell tests"
-            # TODO when they pass: "XdgSurfaceStableTest*:XdgToplevelStableTest*:XdgToplevelStableConfigurationTest*"
-            gtest_filter: ""
+            # TODO when they pass: "XdgToplevelStableTest*:XdgToplevelStableConfigurationTest*"
+            gtest_filter: "XdgSurfaceStableTest*"
             flags: wlcs-xdg-shell
           - job_name: "layer shell tests"
             # TODO when they pass: "LayerSurfaceTest*:*/LayerSurfaceLayoutTest*:*/LayerSurfaceLayerTest*"
