@@ -202,8 +202,9 @@ impl DmabufState {
     /// It is highly recommended you disable the global before destroying it and ensure all child objects have
     /// been destroyed.
     pub fn destroy_global<D: 'static>(&mut self, display: &DisplayHandle, global: DmabufGlobal) {
-        display.remove_global(self.globals.remove(&global.id).unwrap());
-        DMABUF_GLOBAL_IDS.lock().unwrap().remove(&global.id);
+        if DMABUF_GLOBAL_IDS.lock().unwrap().remove(&global.id) {
+            display.remove_global(self.globals.remove(&global.id).unwrap());
+        }
     }
 }
 
@@ -244,10 +245,9 @@ pub struct DmabufParamsData {
 /// A handle to a registered dmabuf global.
 ///
 /// This type may be used in equitability checks to determine which global a dmabuf is being imported to.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 pub struct DmabufGlobal {
     id: usize,
-    // note this type should never be `Clone` or `Copy`
 }
 
 /// Handler trait for [`Dmabuf`] import from the compositor.
