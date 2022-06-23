@@ -1,7 +1,7 @@
 [package]
 name = "anvil"
 version = "0.0.1"
-authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victor Brekenfeld)"]
+authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victoria Brekenfeld)"]
 license = "MIT"
 publish = false
 edition = "2018"

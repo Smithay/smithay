@@ -1,7 +1,7 @@
 [package]
 name = "smithay"
 version = "0.3.0"
-authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victor Brekenfeld)"]
+authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victoria Brekenfeld)"]
 license = "MIT"
 description = "Smithay is a library for writing wayland compositors."
 repository = "https://github.com/Smithay/smithay"
@@ -47,12 +47,12 @@ slog-stdlog = { version = "4", optional = true }
 tempfile = { version = "3.0", optional = true }
 thiserror = "1.0.25"
 udev = { version = "0.6", optional = true }
-wayland-egl = { version = "=0.30.0-beta.4", optional = true }
-wayland-protocols = { version = "=0.30.0-beta.4", features = ["unstable", "staging", "server"], optional = true }
-wayland-protocols-wlr = { version = "=0.1.0-beta.4", features = ["server"]}
-wayland-server = { version = "=0.30.0-beta.4", optional = true }
-wayland-sys = { version = "=0.30.0-beta.4", optional = true }
-wayland-backend = { version = "=0.1.0-beta.4", optional = true }
+wayland-egl = { version = "=0.30.0-beta.5", optional = true }
+wayland-protocols = { version = "=0.30.0-beta.5", features = ["unstable", "staging", "server"], optional = true }
+wayland-protocols-wlr = { version = "=0.1.0-beta.5", features = ["server"]}
+wayland-server = { version = "=0.30.0-beta.5", optional = true }
+wayland-sys = { version = "=0.30.0-beta.5", optional = true }
+wayland-backend = { version = "=0.1.0-beta.5", optional = true }
 winit = { version = "0.26", optional = true }
 x11rb = { version = "0.10.0", optional = true }
 xkbcommon = "0.4.0"
