@@ -179,7 +179,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         backend
             .renderer()
             .render(size, Transform::Flipped180, |renderer, frame| {
-                frame.clear([0.1, 0.0, 0.0, 1.0], &[damage.to_f64()]).unwrap();
+                frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
 
                 state.xdg_shell_state.toplevel_surfaces(|surfaces| {
                     for surface in surfaces {
