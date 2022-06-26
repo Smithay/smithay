@@ -21,7 +21,8 @@ use smithay::{
         },
         output::Output,
         seat::{
-            AxisFrame, ButtonEvent, MotionEvent, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat,
+            AxisFrame, ButtonEvent, Focus, MotionEvent, PointerGrab, PointerGrabStartData,
+            PointerInnerHandle, Seat,
         },
         shell::{
             wlr_layer::{
@@ -51,12 +52,9 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab {
         &mut self,
         data: &mut AnvilState<BackendData>,
         _dh: &DisplayHandle,
-        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        _handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &MotionEvent,
     ) {
-        // While the grab is active, no client has pointer focus
-        handle.motion(event.location, None, event.serial, event.time);
-
         let delta = event.location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
 
@@ -145,9 +143,6 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
             handle.unset_grab(event.serial, event.time);
             return;
         }
-
-        // While the grab is active, no client has pointer focus
-        handle.motion(event.location, None, event.serial, event.time);
 
         let (mut dx, mut dy) = (event.location - self.start_data.location).into();
 
@@ -473,7 +468,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             initial_window_location,
         };
 
-        pointer.set_grab(grab, serial, 0);
+        pointer.set_grab(grab, serial, Focus::Clear);
     }
 
     fn resize_request(
@@ -539,7 +534,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             last_window_size: initial_window_size,
         };
 
-        pointer.set_grab(grab, serial, 0);
+        pointer.set_grab(grab, serial, Focus::Clear);
     }
 
     fn ack_configure(&mut self, _dh: &DisplayHandle, surface: WlSurface, configure: Configure) {
@@ -706,7 +701,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     grab.ungrab(dh, PopupUngrabStrategy::All);
                     return;
                 }
-                pointer.set_grab(PopupPointerGrab::new(&grab), serial, 0);
+                pointer.set_grab(PopupPointerGrab::new(&grab), serial, Focus::Keep);
             }
         }
     }

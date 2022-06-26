@@ -68,7 +68,7 @@ use wayland_server::{
 };
 
 use super::{
-    seat::{PointerGrabStartData, Seat},
+    seat::{Focus, PointerGrabStartData, Seat},
     Serial,
 };
 
@@ -264,7 +264,7 @@ pub fn start_dnd<D, C>(
         pointer.set_grab(
             server_dnd_grab::ServerDnDGrab::new(start_data, metadata, seat.clone()),
             serial,
-            0,
+            Focus::Keep,
         );
     }
 }

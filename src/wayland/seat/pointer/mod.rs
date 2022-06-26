@@ -54,6 +54,15 @@ impl<D> fmt::Debug for PointerInternal<D> {
     }
 }
 
+/// Defines the focus behavior for [`PointerHandle::set_grab`]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum Focus {
+    /// Keep the current focus
+    Keep,
+    /// Clear the current focus
+    Clear,
+}
+
 impl<D> PointerInternal<D> {
     fn new(image_callback: Box<dyn FnMut(CursorImageStatus) + Send + Sync>) -> Self {
         Self {
@@ -67,12 +76,12 @@ impl<D> PointerInternal<D> {
         }
     }
 
-    fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, grab: G, time: u32) {
+    fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, grab: G, focus: Focus) {
         self.grab = GrabStatus::Active(serial, Box::new(grab));
-        // generate a move to let the grab change the focus or move the pointer as result of its initialization
-        let location = self.location;
-        let focus = self.focus.clone();
-        self.motion(location, focus, serial, time);
+
+        if matches!(focus, Focus::Clear) {
+            self.motion(self.location, None, serial, 0);
+        }
     }
 
     fn unset_grab(&mut self, serial: Serial, time: u32) {
@@ -225,9 +234,11 @@ impl<D> PointerHandle<D> {
 
     /// Change the current grab on this pointer to the provided grab
     ///
+    /// If focus is set to [`Focus::Clear`] any currently focused surface will be unfocused.
+    ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<D> + 'static>(&self, grab: G, serial: Serial, time: u32) {
-        self.inner.lock().unwrap().set_grab(serial, grab, time);
+    pub fn set_grab<G: PointerGrab<D> + 'static>(&self, grab: G, serial: Serial, focus: Focus) {
+        self.inner.lock().unwrap().set_grab(serial, grab, focus);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
@@ -324,8 +335,8 @@ impl<'a, D> PointerInnerHandle<'a, D> {
     /// Change the current grab on this pointer to the provided grab
     ///
     /// Overwrites any current grab.
-    pub fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, time: u32, grab: G) {
-        self.inner.set_grab(serial, grab, time);
+    pub fn set_grab<G: PointerGrab<D> + 'static>(&mut self, serial: Serial, focus: Focus, grab: G) {
+        self.inner.set_grab(serial, grab, focus);
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior

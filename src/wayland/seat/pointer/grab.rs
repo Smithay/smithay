@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     events::{ButtonEvent, MotionEvent},
-    AxisFrame, PointerInnerHandle,
+    AxisFrame, Focus, PointerInnerHandle,
 };
 
 /// A trait to implement a pointer grab
@@ -134,7 +134,7 @@ impl<D> PointerGrab<D> for DefaultGrab {
         if event.state == ButtonState::Pressed {
             handle.set_grab(
                 event.serial,
-                event.time,
+                Focus::Keep,
                 ClickGrab {
                     start_data: GrabStartData {
                         focus: handle.current_focus().cloned(),

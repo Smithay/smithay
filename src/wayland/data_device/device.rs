@@ -12,7 +12,7 @@ use wayland_server::{
 use crate::wayland::{
     compositor,
     data_device::seat_data::{SeatData, Selection},
-    seat::Seat,
+    seat::{Focus, Seat},
     Serial,
 };
 
@@ -71,7 +71,7 @@ where
                             pointer.set_grab(
                                 dnd_grab::DnDGrab::new(start_data, source, origin, seat, icon),
                                 serial,
-                                0,
+                                Focus::Clear,
                             );
                             return;
                         }
