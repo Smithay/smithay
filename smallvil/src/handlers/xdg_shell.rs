@@ -10,7 +10,7 @@ use smithay::{
     },
     utils::Rectangle,
     wayland::{
-        seat::{PointerGrabStartData, Seat},
+        seat::{Focus, PointerGrabStartData, Seat},
         shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
         Serial,
     },
@@ -61,7 +61,7 @@ impl XdgShellHandler for Smallvil {
                 initial_window_location,
             };
 
-            pointer.set_grab(grab, serial, 0);
+            pointer.set_grab(grab, serial, Focus::Clear);
         }
     }
 
@@ -101,7 +101,7 @@ impl XdgShellHandler for Smallvil {
                 Rectangle::from_loc_and_size(initial_window_location, initial_window_size),
             );
 
-            pointer.set_grab(grab, serial, 0);
+            pointer.set_grab(grab, serial, Focus::Clear);
         }
     }
 

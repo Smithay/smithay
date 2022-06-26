@@ -20,6 +20,7 @@
 - `GrabStartData` has been renamed to `PointerGrabStartData`
 - The `slot` method on touch events no longer returns an `Option` and multi-touch capability is thus opaque to the compositor
 - `wayland::output::Output` now is created separately from it's `Global` as reflected by [`Output::new`] and the new [`Output::create_global] method.
+- `PointerHandle` no longer sends an implicit motion event when a grab is set, `time` has been replaced by an explicit `focus` parameter in [`PointerHandle::set_grab`]
 
 #### Backends
 

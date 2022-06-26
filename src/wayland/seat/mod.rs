@@ -68,7 +68,7 @@ pub use self::{
         XkbConfig,
     },
     pointer::{
-        AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus,
+        AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus, Focus,
         GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab, PointerHandle, PointerInnerHandle,
         PointerUserData, CURSOR_IMAGE_ROLE,
     },
