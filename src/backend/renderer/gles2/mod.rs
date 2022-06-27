@@ -1851,7 +1851,7 @@ impl Frame for Gles2Frame {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
 
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<f64, Physical>]) -> Result<(), Self::Error> {
+    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
         if at.is_empty() {
             return Ok(());
         }
@@ -1976,8 +1976,8 @@ impl Frame for Gles2Frame {
         &mut self,
         texture: &Self::TextureId,
         src: Rectangle<f64, BufferCoord>,
-        dest: Rectangle<f64, Physical>,
-        damage: &[Rectangle<f64, Physical>],
+        dest: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
@@ -2022,7 +2022,10 @@ impl Frame for Gles2Frame {
         tex_mat = tex_mat * Matrix3::from_translation(Vector2::new(-0.5, -0.5));
         // at last scale back to tex space
         tex_mat = tex_mat
-            * Matrix3::from_nonuniform_scale((1.0f64 / dest.size.w) as f32, (1.0f64 / dest.size.h) as f32);
+            * Matrix3::from_nonuniform_scale(
+                (1.0f64 / dest.size.w as f64) as f32,
+                (1.0f64 / dest.size.h as f64) as f32,
+            );
 
         let instances = damage
             .iter()
@@ -2031,11 +2034,10 @@ impl Frame for Gles2Frame {
 
                 let rect_constrained_loc = rect
                     .loc
-                    .constrain(Rectangle::from_extemities((0f64, 0f64), dest_size.to_point()));
-                let rect_clamped_size = rect.size.clamp(
-                    (0f64, 0f64),
-                    (dest_size.to_point() - rect_constrained_loc).to_size(),
-                );
+                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                let rect_clamped_size = rect
+                    .size
+                    .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
 
                 let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
                 [
@@ -2094,13 +2096,6 @@ impl Gles2Frame {
         unsafe {
             self.gl.ActiveTexture(ffi::TEXTURE0);
             self.gl.BindTexture(target, tex.0.texture);
-            self.gl
-                .TexParameteri(target, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_BORDER as i32);
-            self.gl
-                .TexParameteri(target, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_BORDER as i32);
-            let border_color = [0.0f32, 0.0f32, 0.0f32, 0.0f32];
-            self.gl
-                .TexParameterfv(target, ffi::TEXTURE_BORDER_COLOR, border_color.as_ptr());
             self.gl.TexParameteri(
                 target,
                 ffi::TEXTURE_MIN_FILTER,

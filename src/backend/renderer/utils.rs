@@ -441,16 +441,13 @@ where
                     let damage = damage
                         .iter()
                         .cloned()
-                        // first move the damage by the surface offset in logical space
-                        .map(|geo| geo.to_f64())
-                        // then clamp to surface size again in logical space
+                        // clamp to surface size
                         .flat_map(|geo| geo.intersection(dst))
-                        // lastly transform it into physical space
+                        // move relative to surface
                         .map(|mut geo| {
                             geo.loc -= dst.loc;
                             geo
                         })
-                        .map(|geo| geo.to_f64())
                         .collect::<Vec<_>>();
 
                     if damage.is_empty() {
@@ -465,14 +462,9 @@ where
                             .to_logical(buffer_scale, buffer_transform)
                             .to_f64(),
                     );
-                    if let Err(err) = frame.render_texture_from_to(
-                        texture,
-                        src,
-                        dst.to_f64(),
-                        &damage,
-                        buffer_transform,
-                        1.0,
-                    ) {
+                    if let Err(err) =
+                        frame.render_texture_from_to(texture, src, dst, &damage, buffer_transform, 1.0)
+                    {
                         result = Err(err);
                     }
                 }

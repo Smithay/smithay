@@ -604,8 +604,6 @@ impl Space {
                         .iter()
                         // Map from global space to output space
                         .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
-                        // Map from logical to physical
-                        .map(|geo| geo.to_f64())
                         .collect::<Vec<_>>(),
                 )?;
                 // Then re-draw all windows & layers overlapping with a damage rect.
@@ -994,16 +992,16 @@ macro_rules! custom_elements_internal {
 /// # impl Frame for DummyFrame {
 /// #   type Error = SwapBuffersError;
 /// #   type TextureId = DummyTexture;
-/// #   fn clear(&mut self, color: [f32; 4], at: &[Rectangle<f64, Physical>]) -> Result<(), Self::Error> { Ok(()) }
+/// #   fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> { Ok(()) }
 /// #   #[allow(clippy::too_many_arguments)]
 /// #   fn render_texture_at(
 /// #       &mut self,
 /// #       texture: &Self::TextureId,
-/// #       pos: Point<f64, Physical>,
+/// #       pos: Point<i32, Physical>,
 /// #       texture_scale: i32,
 /// #       output_scale: impl Into<Scale<f64>>,
 /// #       src_transform: Transform,
-/// #       damage: &[Rectangle<f64, Physical>],
+/// #       damage: &[Rectangle<i32, Physical>],
 /// #       alpha: f32,
 /// #   ) -> Result<(), Self::Error> {
 /// #       Ok(())
@@ -1012,8 +1010,8 @@ macro_rules! custom_elements_internal {
 /// #       &mut self,
 /// #       texture: &Self::TextureId,
 /// #       src: Rectangle<f64, Buffer>,
-/// #       dst: Rectangle<f64, Physical>,
-/// #       damage: &[Rectangle<f64, Physical>],
+/// #       dst: Rectangle<i32, Physical>,
+/// #       damage: &[Rectangle<i32, Physical>],
 /// #       src_transform: Transform,
 /// #       alpha: f32,
 /// #   ) -> Result<(), Self::Error> {

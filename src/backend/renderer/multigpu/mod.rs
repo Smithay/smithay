@@ -677,7 +677,7 @@ pub struct MultiFrame<R: GraphicsApi, T: GraphicsApi> {
     node: DrmNode,
     // FIXME: With GAT this would not need to be a raw-pointer
     frame: *mut <<R::Device as ApiDevice>::Renderer as Renderer>::Frame,
-    damage: Vec<Rectangle<f64, Physical>>,
+    damage: Vec<Rectangle<i32, Physical>>,
     // We need this for the associated Error type of the Frame implementation
     _target: std::marker::PhantomData<T>,
     log: ::slog::Logger,
@@ -894,9 +894,8 @@ where
         let mut damage = damage
             .into_iter()
             .map(|rect| {
-                rect.to_logical(1.0)
-                    .to_buffer(1.0, dst_transform, &size.to_logical(1).to_f64())
-                    .to_i32_up()
+                rect.to_logical(1)
+                    .to_buffer(1, dst_transform, &size.to_logical(1))
             })
             .collect::<Vec<_>>();
 
@@ -918,11 +917,7 @@ where
                             // import successful
                             let damage = damage
                                 .iter()
-                                .map(|rect| {
-                                    rect.to_logical(1, dst_transform, &buffer_size)
-                                        .to_physical(1)
-                                        .to_f64()
-                                })
+                                .map(|rect| rect.to_logical(1, dst_transform, &buffer_size).to_physical(1))
                                 .collect::<Vec<_>>();
                             target
                                 .renderer_mut()
@@ -930,7 +925,7 @@ where
                                     frame.render_texture_from_to(
                                         &texture,
                                         Rectangle::from_loc_and_size((0, 0), buffer_size).to_f64(),
-                                        Rectangle::from_loc_and_size((0, 0), size).to_f64(),
+                                        Rectangle::from_loc_and_size((0, 0), size),
                                         &damage,
                                         dst_transform.invert(),
                                         1.0,
@@ -1017,8 +1012,8 @@ where
                             .render_texture_from_to(
                                 &texture,
                                 Rectangle::from_loc_and_size((0, 0), mapping.1.size).to_f64(),
-                                dst.to_f64(),
-                                &[Rectangle::from_loc_and_size((0, 0), dst.size).to_f64()],
+                                dst,
+                                &[Rectangle::from_loc_and_size((0, 0), dst.size)],
                                 Transform::Normal,
                                 1.0,
                             )
@@ -1199,7 +1194,7 @@ where
     type Error = Error<R, T>;
     type TextureId = MultiTexture;
 
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<f64, Physical>]) -> Result<(), Self::Error> {
+    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
         self.damage.extend(at);
         unsafe { &mut *self.frame }
             .clear(color, at)
@@ -1210,13 +1205,15 @@ where
         &mut self,
         texture: &Self::TextureId,
         src: Rectangle<f64, BufferCoords>,
-        dst: Rectangle<f64, Physical>,
-        damage: &[Rectangle<f64, Physical>],
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
         if let Some(texture) = texture.get::<R>(&self.node) {
             self.damage.extend(damage.iter().map(|rect| {
+                let rect = rect.to_f64();
+                let dst = dst.to_f64();
                 let (x, y, w, h) = (rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
                 Rectangle::from_loc_and_size(
                     (
@@ -1225,6 +1222,7 @@ where
                     ),
                     (w / src.size.w * dst.size.w, h / src.size.h * dst.size.h),
                 )
+                .to_i32_up()
             }));
             unsafe { &mut *self.frame }
                 .render_texture_from_to(&*texture, src, dst, damage, src_transform, alpha)

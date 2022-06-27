@@ -127,7 +127,7 @@ where
             scale,
             Transform::Normal,
             &[Rectangle::from_loc_and_size(
-                (0.0, 0.0),
+                (0, 0),
                 self.size.to_physical_precise_round(scale),
             )],
             1.0,
@@ -207,7 +207,6 @@ where
                     x.loc -= dst.loc;
                     x
                 })
-                .map(|x| x.to_f64())
                 .collect::<Vec<_>>();
             let src: Rectangle<i32, Buffer> = match digit {
                 9 => Rectangle::from_loc_and_size((0, 0), (22, 35)),
@@ -225,7 +224,7 @@ where
             frame.render_texture_from_to(
                 &self.texture,
                 src.to_f64(),
-                dst.to_f64(),
+                dst,
                 &damage,
                 Transform::Normal,
                 1.0,
