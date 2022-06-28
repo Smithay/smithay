@@ -343,29 +343,11 @@ impl Space {
         if !self.windows.contains(w) {
             return Vec::new();
         }
-
-        let w_geo = window_rect(w, &self.id);
-        let mut outputs = self
-            .outputs
-            .iter()
-            .cloned()
-            .filter(|o| {
-                let o_geo = self.output_geometry(o).unwrap();
-                w_geo.overlaps(o_geo)
-            })
-            .collect::<Vec<Output>>();
-        outputs.sort_by(|o1, o2| {
-            let overlap = |rect1: Rectangle<i32, Logical>, rect2: Rectangle<i32, Logical>| -> i32 {
-                // x overlap
-                std::cmp::max(0, std::cmp::min(rect1.loc.x + rect1.size.w, rect2.loc.x + rect2.size.w) - std::cmp::max(rect1.loc.x, rect2.loc.x))
-                // y overlap
-                * std::cmp::max(0, std::cmp::min(rect1.loc.y + rect1.size.h, rect2.loc.y + rect2.size.h) - std::cmp::max(rect1.loc.y, rect2.loc.y))
-            };
-            let o1_area = overlap(self.output_geometry(o1).unwrap(), w_geo);
-            let o2_area = overlap(self.output_geometry(o2).unwrap(), w_geo);
-            o1_area.cmp(&o2_area)
-        });
-        outputs
+        
+        self.outputs.iter().filter(|o| {
+            let output_state = output_state(self.id, o);
+            output_state.surfaces.contains(w.toplevel().wl_surface())
+        }).cloned().collect()
     }
 
     /// Refresh some internal values and update client state,
