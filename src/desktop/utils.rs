@@ -11,9 +11,9 @@ use crate::{
         output::Output,
     },
 };
-use wayland_server::{protocol::wl_surface, DisplayHandle};
+use wayland_server::{backend::ObjectId, protocol::wl_surface, DisplayHandle, Resource};
 
-use std::cell::RefCell;
+use std::{cell::RefCell, collections::HashSet};
 
 use super::WindowSurfaceType;
 
@@ -414,7 +414,7 @@ pub(crate) fn output_update(
     dh: &DisplayHandle,
     output: &Output,
     output_geometry: Rectangle<i32, Logical>,
-    surface_list: &mut Vec<wl_surface::WlSurface>,
+    surface_list: &mut HashSet<ObjectId>,
     surface: &wl_surface::WlSurface,
     location: Point<i32, Logical>,
     logger: &slog::Logger,
@@ -473,11 +473,11 @@ pub(crate) fn output_update(
 pub(crate) fn output_enter(
     dh: &DisplayHandle,
     output: &Output,
-    surface_list: &mut Vec<wl_surface::WlSurface>,
+    surface_list: &mut HashSet<ObjectId>,
     surface: &wl_surface::WlSurface,
     logger: &slog::Logger,
 ) {
-    if !surface_list.contains(surface) {
+    if !surface_list.contains(&surface.id()) {
         slog::debug!(
             logger,
             "surface ({:?}) entering output {:?}",
@@ -485,18 +485,18 @@ pub(crate) fn output_enter(
             output.name()
         );
         output.enter(dh, surface);
-        surface_list.push(surface.clone());
+        surface_list.insert(surface.id());
     }
 }
 
 pub(crate) fn output_leave(
     dh: &DisplayHandle,
     output: &Output,
-    surface_list: &mut Vec<wl_surface::WlSurface>,
+    surface_list: &mut HashSet<ObjectId>,
     surface: &wl_surface::WlSurface,
     logger: &slog::Logger,
 ) {
-    if surface_list.contains(surface) {
+    if surface_list.contains(&surface.id()) {
         slog::debug!(
             logger,
             "surface ({:?}) leaving output {:?}",
@@ -504,6 +504,6 @@ pub(crate) fn output_leave(
             output.name()
         );
         output.leave(dh, surface);
-        surface_list.retain(|s| s != surface);
+        surface_list.remove(&surface.id());
     }
 }

@@ -17,7 +17,7 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{collections::VecDeque, fmt};
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 mod element;
 mod layer;
@@ -288,7 +288,7 @@ impl Space {
             location: location.into(),
             // keep surfaces, we still need to inform them of leaving,
             // if they don't overlap anymore during refresh.
-            surfaces: state.surfaces.drain(..).collect::<Vec<_>>(),
+            surfaces: std::mem::take(&mut state.surfaces),
             // resets last_seen and old_damage, if remapped
             ..Default::default()
         };
@@ -343,11 +343,15 @@ impl Space {
         if !self.windows.contains(w) {
             return Vec::new();
         }
-        
-        self.outputs.iter().filter(|o| {
-            let output_state = output_state(self.id, o);
-            output_state.surfaces.contains(w.toplevel().wl_surface())
-        }).cloned().collect()
+
+        self.outputs
+            .iter()
+            .filter(|o| {
+                let output_state = output_state(self.id, o);
+                output_state.surfaces.contains(&w.toplevel().wl_surface().id())
+            })
+            .cloned()
+            .collect()
     }
 
     /// Refresh some internal values and update client state,
@@ -360,7 +364,9 @@ impl Space {
         self.windows.retain(|w| w.alive());
 
         for output in &mut self.outputs {
-            output_state(self.id, output).surfaces.retain(|s| s.alive());
+            output_state(self.id, output)
+                .surfaces
+                .retain(|i| dh.backend_handle().object_info(i.clone()).is_ok());
         }
 
         for window in &self.windows {
