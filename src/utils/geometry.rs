@@ -1146,7 +1146,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     pub fn contains_rect<R: Into<Rectangle<N, Kind>>>(self, rect: R) -> bool {
         let r: Rectangle<N, Kind> = rect.into();
         r.loc.x >= self.loc.x
-            && r.loc.y >= self.loc.x
+            && r.loc.y >= self.loc.y
             && r.loc.x.saturating_add(r.size.w) <= self.loc.x.saturating_add(self.size.w)
             && r.loc.y.saturating_add(r.size.h) <= self.loc.y.saturating_add(self.size.h)
     }
