@@ -55,3 +55,20 @@ x11 = [ "smithay/backend_x11", "x11rb", "egl", "smithay/renderer_gl" ]
 debug = [ "fps_ticker", "image/png" ]
 test_all_features = ["default", "debug"]
 
+[package.metadata.android]
+# Specifies the package property of the manifest.
+package = "com.github.lovelyyfiaaa.Waylovely"
+
+# Specifies the array of targets to build for.
+build_targets = [ "aarch64-linux-android" ] # For now we'll just build for Aarch64 <3
+
+# Name for final APK file.
+# Defaults to package name.
+apk_name = "waylovely"
+runtime_libs = "../../app/libs"
+
+# See https://developer.android.com/guide/topics/manifest/uses-sdk-element
+
+[package.metadata.android.sdk]
+min_sdk_version = 29
+target_sdk_version = 32
