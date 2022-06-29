@@ -945,6 +945,17 @@ impl EGLBufferReader {
 
         Some((width, height).into())
     }
+
+    /// Returns if the [`EGLBuffer`] has an alpha channel
+    ///
+    /// Note: This will always return `true` for buffers with a
+    /// `TEXTURE_EXTERNAL_WL` format
+    pub fn egl_buffer_has_alpha(format: Format) -> bool {
+        !matches!(
+            format,
+            Format::RGB | Format::Y_UV | Format::Y_U_V | Format::Y_XUXV
+        )
+    }
 }
 
 #[cfg(feature = "use_system_lib")]

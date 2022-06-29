@@ -602,6 +602,41 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
     None
 }
 
+/// Returns if the buffer has an alpha channel
+///
+/// Returns `None` if the type is not known to smithay
+/// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
+///
+/// Note: This is on a best-effort, but will never return false for a buffer
+/// with a format that supports alpha.
+#[cfg(feature = "wayland_frontend")]
+pub fn buffer_has_alpha(buffer: &wl_buffer::WlBuffer) -> Option<bool> {
+    if let Ok(dmabuf) = crate::wayland::dmabuf::get_dmabuf(buffer) {
+        return Some(crate::backend::allocator::format::has_alpha(dmabuf.0.format));
+    }
+
+    if let Ok(has_alpha) = crate::wayland::shm::with_buffer_contents(buffer, |_, data| {
+        crate::wayland::shm::has_alpha(data.format)
+    }) {
+        return Some(has_alpha);
+    }
+
+    // Not managed, check if this is an EGLBuffer
+    #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
+    if let Some(format) = BUFFER_READER
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|x| x.upgrade())
+        .and_then(|x| x.egl_buffer_contents(buffer).ok())
+        .map(|b| b.format)
+    {
+        return Some(crate::backend::egl::display::EGLBufferReader::egl_buffer_has_alpha(format));
+    }
+
+    None
+}
+
 /// Returns the dimensions of a wl_buffer
 ///
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
