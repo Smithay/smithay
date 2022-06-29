@@ -159,11 +159,19 @@ impl RendererSurfaceState {
         self.space_seen.clear();
     }
 
-    /// Returns the size of the surface.
-    pub fn surface_size(&self) -> Option<Size<i32, Logical>> {
+    /// Returns the logical size of the current attached buffer
+    pub fn buffer_size(&self) -> Option<Size<i32, Logical>> {
         self.buffer_dimensions
             .as_ref()
             .map(|dim| dim.to_logical(self.buffer_scale, self.buffer_transform))
+    }
+
+    /// Returns the logical size of the surface.
+    ///
+    /// Note: The surface size may not be equal to the buffer size in case
+    /// a viewport has been attached to the surface.
+    pub fn surface_size(&self) -> Option<Size<i32, Logical>> {
+        self.surface_view.map(|view| view.dst)
     }
 
     /// Get the attached buffer.
