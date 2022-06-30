@@ -682,7 +682,7 @@ impl AnvilState<UdevData> {
             }
             crate::shell::fixup_positions(&self.backend_data.dh, &mut self.space);
 
-            let _device = self.handle.remove(backend_data.registration_token);
+            self.handle.remove(backend_data.registration_token);
             let _device = backend_data.event_dispatcher.into_source_inner();
 
             debug!(self.log, "Dropping device");

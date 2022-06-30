@@ -40,6 +40,7 @@
  */
 use std::{
     env,
+    fmt::Write,
     io::{self, Read},
     os::unix::{
         io::{AsRawFd, RawFd},
@@ -387,7 +388,8 @@ fn spawn_xwayland(
 
     let mut xwayland_args = format!(":{} -rootless -terminate -wm {}", display, wm_socket.as_raw_fd());
     for socket in listen_sockets {
-        xwayland_args.push_str(&format!(" -listenfd {}", socket.as_raw_fd()));
+        // Will only fail to write on OOM, so this panic is fine.
+        write!(xwayland_args, " -listenfd {}", socket.as_raw_fd()).unwrap();
     }
     // This command let sh to:
     // * Set up signal handler for USR1

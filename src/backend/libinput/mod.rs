@@ -153,7 +153,7 @@ impl backend::KeyboardKeyEvent<LibinputInputBackend> for event::keyboard::Keyboa
     }
 }
 
-impl<'a> backend::Event<LibinputInputBackend> for event::pointer::PointerAxisEvent {
+impl backend::Event<LibinputInputBackend> for event::pointer::PointerAxisEvent {
     fn time(&self) -> u32 {
         event::pointer::PointerEventTrait::time(self)
     }
