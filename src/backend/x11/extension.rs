@@ -5,7 +5,7 @@ use super::{MissingExtensionError, X11Error};
 /// This macro generates a struct which checks for the presence of some X11 extensions and stores
 /// the version supplied by the X server.
 ///
-/// ```rust
+/// ```ignore(cannot-test-this-because-non-exported-macro)
 /// extensions! {
 ///     // The extension to check for. This should correspond to the name of the extension inside x11rb's `x11rb::protocol::xproto::<name>` module path.
 ///     xfixes {
