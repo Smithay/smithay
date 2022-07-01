@@ -13,7 +13,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
-use wayland_server::{protocol::wl_surface, DisplayHandle};
+use wayland_server::protocol::wl_surface;
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
@@ -324,7 +324,6 @@ impl Window {
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_window<R, P, S>(
-    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     window: &Window,
@@ -341,7 +340,7 @@ where
 {
     let location = location.into();
     let surface = window.toplevel().wl_surface();
-    draw_surface_tree(dh, renderer, frame, surface, scale.into(), location, damage, log)
+    draw_surface_tree(renderer, frame, surface, scale.into(), location, damage, log)
 }
 
 /// Renders popups of a given [`Window`] using a provided renderer and frame
@@ -355,7 +354,6 @@ where
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_window_popups<R, S, P>(
-    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     window: &Window,
@@ -373,7 +371,6 @@ where
     let location = location.into();
     let surface = window.toplevel().wl_surface();
     super::popup::draw_popups(
-        dh,
         renderer,
         frame,
         surface,

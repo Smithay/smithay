@@ -10,7 +10,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{DisplayHandle, Resource};
+use wayland_server::Resource;
 
 /// Indicates default values for some zindexs inside smithay
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -74,7 +74,6 @@ where
     #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
-        dh: &DisplayHandle,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
         scale: impl Into<Scale<f64>>,
@@ -156,7 +155,6 @@ where
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &self,
-        dh: &DisplayHandle,
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
@@ -167,15 +165,15 @@ where
     ) -> Result<(), R::Error> {
         match self {
             SpaceElement::Layer(layer) => {
-                layer.elem_draw(dh, space_id, renderer, frame, scale, location, damage, log)
+                layer.elem_draw(space_id, renderer, frame, scale, location, damage, log)
             }
             SpaceElement::Window(window) => {
-                window.elem_draw(dh, space_id, renderer, frame, scale, location, damage, log)
+                window.elem_draw(space_id, renderer, frame, scale, location, damage, log)
             }
             SpaceElement::Popup(popup) => {
-                popup.elem_draw(dh, space_id, renderer, frame, scale, location, damage, log)
+                popup.elem_draw(space_id, renderer, frame, scale, location, damage, log)
             }
-            SpaceElement::Custom(custom, _) => custom.draw(dh, renderer, frame, scale, location, damage, log),
+            SpaceElement::Custom(custom, _) => custom.draw(renderer, frame, scale, location, damage, log),
         }
     }
     pub fn z_index(&self) -> u8 {
@@ -240,7 +238,6 @@ where
 
     fn draw(
         &self,
-        dh: &DisplayHandle,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
         scale: impl Into<Scale<f64>>,
@@ -249,7 +246,6 @@ where
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
         crate::backend::renderer::utils::draw_surface_tree(
-            dh,
             renderer,
             frame,
             &self.surface,

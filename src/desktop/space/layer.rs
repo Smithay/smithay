@@ -1,5 +1,3 @@
-use wayland_server::DisplayHandle;
-
 use crate::{
     backend::renderer::{ImportAll, Renderer},
     desktop::{
@@ -73,7 +71,6 @@ impl LayerSurface {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn elem_draw<R>(
         &self,
-        dh: &DisplayHandle,
         space_id: usize,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
@@ -86,7 +83,7 @@ impl LayerSurface {
         R: Renderer + ImportAll,
         <R as Renderer>::TextureId: 'static,
     {
-        let res = draw_layer_surface(dh, renderer, frame, self, scale, location, damage, log);
+        let res = draw_layer_surface(renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {
             layer_state(space_id, self).drawn = true;
         }

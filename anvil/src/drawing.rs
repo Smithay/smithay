@@ -8,7 +8,7 @@ use smithay::utils::Buffer;
 use smithay::{
     backend::renderer::{Frame, ImportAll, Renderer, Texture},
     desktop::space::{RenderElement, SpaceOutputTuple, SurfaceTree},
-    reexports::wayland_server::{protocol::wl_surface, DisplayHandle},
+    reexports::wayland_server::protocol::wl_surface,
     utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{get_role, with_states},
@@ -111,7 +111,6 @@ where
 
     fn draw(
         &self,
-        _dh: &DisplayHandle,
         _renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
         scale: impl Into<Scale<f64>>,
@@ -180,7 +179,6 @@ where
 
     fn draw(
         &self,
-        _dh: &DisplayHandle,
         _renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
         scale: impl Into<Scale<f64>>,

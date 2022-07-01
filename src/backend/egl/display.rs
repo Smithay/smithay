@@ -801,7 +801,6 @@ impl EGLBufferReader {
     /// a [`BufferAccessError::NotManaged`](crate::backend::egl::BufferAccessError::NotManaged) is returned.
     pub fn egl_buffer_contents(
         &self,
-        _dh: &DisplayHandle,
         buffer: &WlBuffer,
     ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
         let mut format: i32 = 0;
@@ -918,7 +917,6 @@ impl EGLBufferReader {
     /// context has been lost, `None` is returned.
     pub fn egl_buffer_dimensions(
         &self,
-        dh: &DisplayHandle,
         buffer: &WlBuffer,
     ) -> Option<crate::utils::Size<i32, crate::utils::Buffer>> {
         let mut width: i32 = 0;

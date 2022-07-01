@@ -133,15 +133,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 ));
             }
 
-            let _ = render_output(
-                &dh,
-                &output,
-                &mut state.space,
-                &mut renderer,
-                0,
-                &*elements,
-                &logger,
-            );
+            let _ = render_output(&output, &mut state.space, &mut renderer, 0, &*elements, &logger);
         }
 
         // Send frame events so that client start drawing their next frame

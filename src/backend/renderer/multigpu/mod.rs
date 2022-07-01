@@ -338,7 +338,6 @@ impl<A: GraphicsApi> GpuManager<A> {
     #[cfg(feature = "wayland_frontend")]
     pub fn early_import(
         &mut self,
-        dh: &DisplayHandle,
         source: Option<DrmNode>,
         target: DrmNode,
         surface: &WlSurface,
@@ -398,7 +397,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                             });
 
                         if let Err(err) =
-                            self.early_import_buffer(dh, source, target, buffer, states, &*buffer_damage)
+                            self.early_import_buffer(source, target, buffer, states, &*buffer_damage)
                         {
                             result = Err(err);
                         }
@@ -424,7 +423,6 @@ impl<A: GraphicsApi> GpuManager<A> {
     #[cfg(feature = "wayland_frontend")]
     fn early_import_buffer(
         &mut self,
-        dh: &DisplayHandle,
         source: Option<DrmNode>,
         target: DrmNode,
         buffer: &wl_buffer::WlBuffer,
@@ -436,7 +434,7 @@ impl<A: GraphicsApi> GpuManager<A> {
         <A::Device as ApiDevice>::Renderer: ImportMemWl + ImportDmaWl + ExportMem,
         <<A::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
     {
-        match buffer_type(dh, buffer) {
+        match buffer_type(buffer) {
             Some(BufferType::Dma) => {
                 let (mut target_device, others) = self
                     .devices

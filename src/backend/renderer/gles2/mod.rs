@@ -16,12 +16,6 @@ use std::{
         mpsc::{channel, Receiver, Sender},
     },
 };
-#[cfg(all(
-    feature = "wayland_frontend",
-    feature = "backend_egl",
-    feature = "use_system_lib"
-))]
-use wayland_server::DisplayHandle;
 
 #[cfg(feature = "wayland_frontend")]
 use std::{cell::RefCell, collections::HashMap};
@@ -1026,7 +1020,6 @@ impl ImportEgl for Gles2Renderer {
 
     fn import_egl_buffer(
         &mut self,
-        dh: &DisplayHandle,
         buffer: &wl_buffer::WlBuffer,
         _surface: Option<&crate::wayland::compositor::SurfaceData>,
         _damage: &[Rectangle<i32, BufferCoord>],
@@ -1052,7 +1045,7 @@ impl ImportEgl for Gles2Renderer {
             .egl_reader
             .as_ref()
             .unwrap()
-            .egl_buffer_contents(dh, buffer)
+            .egl_buffer_contents(buffer)
             .map_err(Gles2Error::EGLBufferAccessError)?;
 
         let tex = self.import_egl_image(egl.image(0).unwrap(), egl.format == EGLFormat::External, None)?;

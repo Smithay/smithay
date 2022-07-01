@@ -605,7 +605,6 @@ impl LayerSurface {
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_layer_surface<R, P, S>(
-    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     layer: &LayerSurface,
@@ -622,7 +621,7 @@ where
 {
     let location = location.into();
     let surface = layer.wl_surface();
-    draw_surface_tree(dh, renderer, frame, surface, scale.into(), location, damage, log)
+    draw_surface_tree(renderer, frame, surface, scale.into(), location, damage, log)
 }
 
 /// Renders popups of a given [`LayerSurface`] using a provided renderer and frame
@@ -636,7 +635,6 @@ where
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_layer_popups<R, S, P>(
-    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     layer: &LayerSurface,
@@ -653,5 +651,5 @@ where
 {
     let location = location.into();
     let surface = layer.wl_surface();
-    super::popup::draw_popups(dh, renderer, frame, surface, location, (0, 0), scale, damage, log)
+    super::popup::draw_popups(renderer, frame, surface, location, (0, 0), scale, damage, log)
 }

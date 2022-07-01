@@ -448,7 +448,6 @@ impl Space {
     /// (or `None` if that list would be empty) in case of success.
     pub fn render_output<R, E>(
         &mut self,
-        dh: &DisplayHandle,
         renderer: &mut R,
         output: &Output,
         age: usize,
@@ -618,7 +617,6 @@ impl Space {
                             damage
                         );
                         element.draw(
-                            dh,
                             self.id,
                             renderer,
                             frame,
@@ -823,7 +821,6 @@ macro_rules! custom_elements_internal {
     (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
-            dh: &$crate::reexports::wayland_server::DisplayHandle,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
             scale: impl Into<$crate::utils::Scale<f64>>,
@@ -845,7 +842,7 @@ macro_rules! custom_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, dh, renderer, frame, scale, location, damage, log)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -854,7 +851,6 @@ macro_rules! custom_elements_internal {
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
             &self,
-            dh: &$crate::reexports::wayland_server::DisplayHandle,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
             scale: impl Into<$crate::utils::Scale<f64>>,
@@ -868,7 +864,7 @@ macro_rules! custom_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, dh, renderer, frame, scale, location, damage, log)
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -979,7 +975,6 @@ macro_rules! custom_elements_internal {
 /// # impl ImportAll for DummyRenderer {
 /// #    fn import_buffer(
 /// #        &mut self,
-/// #        dh: &DisplayHandle,
 /// #        buffer: &wl_buffer::WlBuffer,
 /// #        surface: Option<&SurfaceData>,
 /// #        damage: &[Rectangle<i32, Buffer>],
@@ -1082,7 +1077,6 @@ macro_rules! custom_elements_internal {
 ///#
 ///#    fn draw(
 ///#        &self,
-///#        dh: &DisplayHandle,
 ///#        _renderer: &mut R,
 ///#        frame: &mut <R as Renderer>::Frame,
 ///#        scale: impl Into<Scale<f64>>,
@@ -1104,7 +1098,7 @@ macro_rules! custom_elements_internal {
 ///# let dh = display.handle();
 ///
 /// let elements = [CustomElem::from(surface_tree)];
-/// space.render_output(&dh, &mut renderer, &output, age, [0.0, 0.0, 0.0, 1.0], &elements);
+/// space.render_output(&mut renderer, &output, age, [0.0, 0.0, 0.0, 1.0], &elements);
 /// ```
 #[macro_export]
 macro_rules! custom_elements {

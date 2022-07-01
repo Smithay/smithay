@@ -153,7 +153,7 @@ impl Backend for UdevData {
     fn early_import(&mut self, surface: &wl_surface::WlSurface) {
         if let Err(err) = self
             .gpus
-            .early_import(&self.dh, Some(self.primary_gpu), self.primary_gpu, surface)
+            .early_import(Some(self.primary_gpu), self.primary_gpu, surface)
         {
             warn!(self.logger, "Early buffer import failed: {}", err);
         }
@@ -867,16 +867,8 @@ fn render_surface(
 
     // and draw to our buffer
     // TODO we can pass the damage rectangles inside a AtomicCommitRequest
-    let render_res = crate::render::render_output(
-        &surface.dh,
-        &output,
-        space,
-        renderer,
-        age.into(),
-        &*elements,
-        logger,
-    )
-    .map(|x| x.is_some());
+    let render_res = crate::render::render_output(&output, space, renderer, age.into(), &*elements, logger)
+        .map(|x| x.is_some());
 
     match render_res.map_err(|err| match err {
         RenderError::Rendering(err) => err.into(),

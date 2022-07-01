@@ -75,8 +75,8 @@ impl CompositorHandler for App {
         &mut self.compositor_state
     }
 
-    fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
-        on_commit_buffer_handler(dh, surface);
+    fn commit(&mut self, _dh: &DisplayHandle, surface: &WlSurface) {
+        on_commit_buffer_handler(surface);
     }
 }
 
@@ -183,19 +183,9 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
                 state.xdg_shell_state.toplevel_surfaces(|surfaces| {
                     for surface in surfaces {
-                        let dh = &mut display.handle();
                         let surface = surface.wl_surface();
-                        draw_surface_tree(
-                            dh,
-                            renderer,
-                            frame,
-                            surface,
-                            1.0,
-                            (0.0, 0.0).into(),
-                            &[damage],
-                            &log,
-                        )
-                        .unwrap();
+                        draw_surface_tree(renderer, frame, surface, 1.0, (0.0, 0.0).into(), &[damage], &log)
+                            .unwrap();
 
                         send_frames_surface_tree(surface, start_time.elapsed().as_millis() as u32);
                     }
