@@ -105,11 +105,12 @@ use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
 use wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
-use wayland_protocols::xdg::shell::server::xdg_surface;
-use wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase;
-use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_positioner, xdg_toplevel, xdg_wm_base};
-use wayland_server::backend::GlobalId;
+use wayland_protocols::xdg::shell::server::__interfaces::XDG_SURFACE_INTERFACE;
+use wayland_protocols::xdg::shell::server::{
+    xdg_popup, xdg_positioner, xdg_surface, xdg_toplevel, xdg_wm_base, xdg_wm_base::XdgWmBase,
+};
 use wayland_server::{
+    backend::{protocol::ProtocolError, GlobalId, ObjectId},
     protocol::{wl_output, wl_seat, wl_surface},
     DisplayHandle, GlobalDispatch, Resource,
 };
@@ -1565,6 +1566,56 @@ impl PopupSurface {
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
         })
+    }
+}
+
+struct XdgSurfaceId(ObjectId);
+
+// Returns false and kills the client if the surface is a not-yet-configured xdg_surface,
+// returns true otherwise.
+pub(crate) fn ensure_configured_if_xdg(surface: &wl_surface::WlSurface) -> bool {
+    let xdg_surface_id = compositor::with_states(surface, |states| {
+        let xdg_surface_id = states
+            .data_map
+            .get::<Mutex<XdgSurfaceId>>()
+            .map(|m| m.lock().unwrap().0.clone())?;
+        let configured = if let Some(mutex) = states.data_map.get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+        {
+            mutex.lock().unwrap().configured
+        } else if let Some(mutex) = states.data_map.get::<Mutex<XdgPopupSurfaceRoleAttributes>>() {
+            mutex.lock().unwrap().configured
+        } else {
+            false
+        };
+        if configured {
+            None
+        } else {
+            Some(xdg_surface_id)
+        }
+    });
+    if let Some(xdg_surface_id) = xdg_surface_id {
+        let handle = match surface.handle().upgrade() {
+            Some(h) => DisplayHandle::from(h),
+            None => return false,
+        };
+        let client = match handle.get_client(surface.id()) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        client.kill(
+            &handle,
+            ProtocolError {
+                code: xdg_surface::Error::NotConstructed as u32,
+                object_id: xdg_surface_id.protocol_id(),
+                object_interface: XDG_SURFACE_INTERFACE.name.into(),
+                message: "Surface has not been configured yet.".into(),
+            },
+        );
+
+        false
+    } else {
+        true
     }
 }
 

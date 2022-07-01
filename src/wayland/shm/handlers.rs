@@ -1,4 +1,7 @@
-use crate::wayland::{buffer::BufferHandler, shm::ShmBufferUserData};
+use crate::{
+    backend::allocator::{format::get_bpp, Fourcc},
+    wayland::{buffer::BufferHandler, shm::ShmBufferUserData},
+};
 
 use super::{
     pool::{Pool, ResizeError},
@@ -118,14 +121,26 @@ where
                 format,
             } => {
                 // Validate client parameters
+                let fourcc = match Into::<u32>::into(format) {
+                    0 => Some(Fourcc::Argb8888),
+                    1 => Some(Fourcc::Xrgb8888),
+                    v => Fourcc::try_from(v).ok(),
+                };
+                let width_bits = (width as usize) * fourcc.and_then(get_bpp).unwrap_or(8);
+                // min_stride = ceil(width_bits / 8)
+                let min_stride = if width_bits % 8 == 0 {
+                    width_bits / 8
+                } else {
+                    width_bits / 8 + 1
+                };
                 let message = if offset < 0 {
                     Some("offset must not be negative".to_string())
                 } else if width <= 0 || height <= 0 {
                     Some(format!("invalid width or height ({}x{})", width, height))
-                } else if stride < width {
+                } else if (stride as usize) < min_stride {
                     Some(format!(
-                        "width must not be larger than stride (width {}, stride {})",
-                        width, stride
+                        "stride is too small compared to width (minimum stride for width {} is {} with this format)",
+                        stride, min_stride,
                     ))
                 } else if (i32::MAX / stride) < height {
                     Some(format!(

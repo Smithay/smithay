@@ -2,7 +2,11 @@ use std::sync::{atomic::AtomicBool, Mutex};
 
 use crate::{
     utils::{alive_tracker::AliveTracker, IsAlive},
-    wayland::{shell::xdg::XdgShellState, Serial},
+    wayland::{
+        compositor::{self, SurfaceAttributes},
+        shell::xdg::{XdgShellState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE},
+        Serial,
+    },
 };
 
 use wayland_protocols::xdg::shell::server::{
@@ -15,7 +19,10 @@ use wayland_server::{
     Resource,
 };
 
-use super::{ShellClient, ShellClientData, XdgPositionerUserData, XdgShellHandler, XdgSurfaceUserData};
+use super::{
+    super::XdgSurfaceId, ShellClient, ShellClientData, XdgPositionerUserData, XdgShellHandler,
+    XdgSurfaceUserData,
+};
 
 impl<D> DelegateGlobalDispatch<XdgWmBase, (), D> for XdgShellState
 where
@@ -66,14 +73,62 @@ where
                 // xdg_surface is not role, only xdg_toplevel and
                 // xdg_popup are defined as roles
 
-                data_init.init(
+                // However, if the surface already has a role or an attached or commited buffer,
+                // that is a problem
+                compositor::with_states(&surface, |states| {
+                    if !matches!(states.role, None | Some(XDG_TOPLEVEL_ROLE) | Some(XDG_POPUP_ROLE)) {
+                        wm_base.post_error(xdg_wm_base::Error::Role, "surface already has a role");
+                    }
+                    let pending_state = states.cached_state.pending::<SurfaceAttributes>();
+                    if pending_state.buffer.is_some() {
+                        wm_base.post_error(
+                            xdg_wm_base::Error::InvalidSurfaceState,
+                            "surface has a buffer attached",
+                        );
+                    }
+                    if pending_state.has_commited_buffer {
+                        wm_base.post_error(
+                            xdg_wm_base::Error::InvalidSurfaceState,
+                            "surface has a buffer committed",
+                        );
+                    }
+                    if let Some(mutex) = states.data_map.get::<Mutex<XdgSurfaceId>>() {
+                        let guard = mutex.lock().unwrap();
+                        if !guard.0.is_null() {
+                            // there is already an xdg_surface associated with this object!
+                            wm_base.post_error(
+                                xdg_wm_base::Error::Role,
+                                "and xdg_surface already exists for this surface",
+                            );
+                        }
+                    }
+                });
+
+                // Creating an xdg_surface from a wl_surface with an attached or commited buffer is an error
+
+                let xdg_surface = data_init.init(
                     id,
                     XdgSurfaceUserData {
-                        wl_surface: surface,
+                        wl_surface: surface.clone(),
                         wm_base: wm_base.clone(),
                         has_active_role: AtomicBool::new(false),
                     },
                 );
+
+                compositor::with_states(&surface, |states| {
+                    let created = states
+                        .data_map
+                        .insert_if_missing_threadsafe(|| Mutex::new(XdgSurfaceId(xdg_surface.id())));
+                    if !created {
+                        states
+                            .data_map
+                            .get::<Mutex<XdgSurfaceId>>()
+                            .unwrap()
+                            .lock()
+                            .unwrap()
+                            .0 = xdg_surface.id();
+                    }
+                })
             }
             xdg_wm_base::Request::Pong { serial } => {
                 let serial = Serial::from(serial);

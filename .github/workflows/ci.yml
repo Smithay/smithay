@@ -389,14 +389,52 @@ jobs:
       matrix:
         include:
           - job_name: "Core tests"
-            gtest_filter: "SelfTest*:FrameSubmission*"
-            flag: core
+            # TODO when they pass: "SecondBadBufferTest*:ClientSurfaceEventsTest*"
+            gtest_filter: "SelfTest*:FrameSubmission*:BadBufferTest*"
+            flag: wlcs-core
           - job_name: "Output tests"
-            gtest_filter: "XdgOutputV1Test*"
-            flag: output
+            gtest_filter: "XdgOutputV1Test*:WlOutputTest*"
+            flag: wlcs-output
+          - job_name: "Subsurface tests"
+            # TODO when they pass: "*/SubsurfaceTest*:*/SubsurfaceMultilevelTest*"
+            gtest_filter: ""
+            flag: wlcs-subsurfaces
           - job_name: "Pointer input tests"
+            # TODO when they pass: "PointerConstraints*:RelativePointer*"
             gtest_filter: "*/SurfacePointerMotionTest*"
-            flag: pointer-input
+            flag: wlcs-pointer-input
+          - job_name: "Touch input tests"
+            # TODO when they pass: "AllSurfaceTypes/TouchTest*"
+            gtest_filter: ""
+            flag: wlcs-touch-input
+          - job_name: "Input region tests"
+            # TODO when they pass: "*/RegionSurfaceInputCombinations*:*/SurfaceInputCombinations*"
+            gtest_filter: ""
+            flag: wlcs-input-region
+          - job_name: "xdg shell tests"
+            # TODO when they pass: "XdgToplevelStableTest*:XdgToplevelStableConfigurationTest*"
+            gtest_filter: "XdgSurfaceStableTest*"
+            flags: wlcs-xdg-shell
+          - job_name: "layer shell tests"
+            # TODO when they pass: "LayerSurfaceTest*:*/LayerSurfaceLayoutTest*:*/LayerSurfaceLayerTest*"
+            gtest_filter: "*/LayerSurfaceErrorsTest*"
+            flags: wlcs-layer-shell
+          - job_name: "Popups tests"
+            # TODO when they pass: "*/XdgPopupPositionerTest*:*/XdgPopupTest*:XdgPopupTest*"
+            gtest_filter: "*/XdgPopupPositionerTest*"
+            flag: wlcs-popups
+          - job_name: "Data device tests"
+            # TODO when they pass: "CopyCutPaste*:GtkPrimarySelection*:PrimarySelection*"
+            gtest_filter: ""
+            flag: wlcs-data-device
+          - job_name: "Foreign surface tests"
+            # TODO when they pass: "ForeignToplevelManagerTest*:ForeignToplevelHandleTest*"
+            gtest_filter: ""
+            flag: wlcs-foreign-surfaces
+          - job_name: "Input methods tests"
+            # TODO when they pass: "TextInputV3WithInputMethodV2Test*"
+            gtest_filter: ""
+            flag: wlcs-input-methods
 
     name: "WLCS: ${{ matrix.job_name }}"
 

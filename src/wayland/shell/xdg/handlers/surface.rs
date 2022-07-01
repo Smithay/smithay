@@ -22,8 +22,8 @@ use wayland_protocols::{
 use wayland_server::{protocol::wl_surface, DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource};
 
 use super::{
-    InnerState, PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
-    XdgPositionerUserData, XdgShellHandler, XdgToplevelSurfaceRoleAttributes,
+    super::XdgSurfaceId, InnerState, PopupConfigure, SurfaceCachedState, ToplevelConfigure,
+    XdgPopupSurfaceRoleAttributes, XdgPositionerUserData, XdgShellHandler, XdgToplevelSurfaceRoleAttributes,
 };
 
 mod toplevel;
@@ -67,6 +67,17 @@ where
                     // disconnecting client), ignore the protocol check.
                     return;
                 }
+
+                // reset the XdgSurfaceId
+                compositor::with_states(&data.wl_surface, |states| {
+                    states
+                        .data_map
+                        .get::<Mutex<XdgSurfaceId>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .0 = wayland_server::backend::Handle::null_id();
+                });
 
                 if compositor::get_role(&data.wl_surface).is_none() {
                     // No role assigned to the surface, we can exit early.

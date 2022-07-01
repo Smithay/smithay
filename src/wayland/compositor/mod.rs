@@ -233,6 +233,12 @@ pub struct SurfaceAttributes {
     /// An example possibility would be to trigger it once the frame
     /// associated with this commit has been displayed on the screen.
     pub frame_callbacks: Vec<wl_callback::WlCallback>,
+    /// The commmit state of this surface from the point of view of
+    /// the protocol
+    ///
+    /// Contains true if the surface has received a commited buffer which
+    /// has not yet been cleared by the client by attaching a null buffer.
+    pub has_commited_buffer: bool,
 }
 
 impl Default for SurfaceAttributes {
@@ -246,6 +252,7 @@ impl Default for SurfaceAttributes {
             input_region: None,
             damage: Vec::new(),
             frame_callbacks: Vec::new(),
+            has_commited_buffer: false,
         }
     }
 }
