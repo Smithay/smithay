@@ -67,6 +67,10 @@ impl RendererSurfaceState {
             Some(BufferAssignment::NewBuffer(buffer)) => {
                 // new contents
                 self.buffer_dimensions = buffer_dimensions(dh, &buffer);
+                if self.buffer_dimensions.is_none() {
+                    // egl sometimes behaves like this, just ignore the buffer for now
+                    return;
+                }
 
                 #[cfg(feature = "desktop")]
                 if self.buffer_scale != attrs.buffer_scale
