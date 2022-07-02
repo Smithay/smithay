@@ -237,7 +237,7 @@ fn handle_event(
                     .surface_under(pointer.current_location(), WindowSurfaceType::ALL)
                     .map(|(window, surface, _)| (window, surface));
                 if let Some((window, _)) = under.as_ref() {
-                    state.space.raise_window(&window, true);
+                    state.space.raise_window(window, true);
                 }
                 state.seat.get_keyboard().unwrap().set_focus(
                     &display.handle(),

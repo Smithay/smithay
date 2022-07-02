@@ -78,7 +78,7 @@ impl ImportMemWl for DummyRenderer {
         _damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         use smithay::wayland::shm::with_buffer_contents;
-        let ret = with_buffer_contents(&buffer, |slice, data| {
+        let ret = with_buffer_contents(buffer, |slice, data| {
             let offset = data.offset as u32;
             let width = data.width as u32;
             let height = data.height as u32;
