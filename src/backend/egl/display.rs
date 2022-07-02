@@ -756,6 +756,7 @@ fn get_dmabuf_formats(
 pub struct EGLBufferReader {
     display: Arc<EGLDisplayHandle>,
     wayland: Option<Arc<*mut wl_display>>,
+    #[allow(dead_code)]
     logger: ::slog::Logger,
 }
 
@@ -800,14 +801,8 @@ impl EGLBufferReader {
     /// a [`BufferAccessError::NotManaged`](crate::backend::egl::BufferAccessError::NotManaged) is returned.
     pub fn egl_buffer_contents(
         &self,
-        dh: &DisplayHandle,
         buffer: &WlBuffer,
     ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
-        if dh.get_object_data(buffer.id()).is_err() {
-            debug!(self.logger, "Suplied buffer is no longer alive");
-            return Err(BufferAccessError::NotManaged(EGLError::BadParameter));
-        }
-
         let mut format: i32 = 0;
         let query = wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
@@ -922,14 +917,8 @@ impl EGLBufferReader {
     /// context has been lost, `None` is returned.
     pub fn egl_buffer_dimensions(
         &self,
-        dh: &DisplayHandle,
         buffer: &WlBuffer,
     ) -> Option<crate::utils::Size<i32, crate::utils::Buffer>> {
-        if dh.get_object_data(buffer.id()).is_err() {
-            debug!(self.logger, "Supplied buffer is no longer alive");
-            return None;
-        }
-
         let mut width: i32 = 0;
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(

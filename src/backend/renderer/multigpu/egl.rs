@@ -2,7 +2,7 @@
 //! EGL for device enumeration and OpenGL ES for rendering.
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-use wayland_server::{protocol::wl_buffer, DisplayHandle};
+use wayland_server::protocol::wl_buffer;
 
 use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode},
@@ -155,13 +155,12 @@ where
 
     fn import_egl_buffer(
         &mut self,
-        dh: &DisplayHandle,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         if let Some(ref mut renderer) = self.target.as_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), buffer) {
+            if let Ok(dmabuf) = Self::try_import_egl(renderer.renderer_mut(), buffer) {
                 let node = *renderer.node();
                 let texture = MultiTexture::from_surface(surface, dmabuf.size());
                 let texture_ref = texture.0.clone();
@@ -175,7 +174,7 @@ where
             }
         }
         for renderer in self.other_renderers.iter_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(dh, renderer.renderer_mut(), buffer) {
+            if let Ok(dmabuf) = Self::try_import_egl(renderer.renderer_mut(), buffer) {
                 let node = *renderer.node();
                 let texture = MultiTexture::from_surface(surface, dmabuf.size());
                 let texture_ref = texture.0.clone();
@@ -195,7 +194,6 @@ where
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl<'a, 'b, Target> MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Target> {
     fn try_import_egl(
-        dh: &DisplayHandle,
         renderer: &mut Gles2Renderer,
         buffer: &wl_buffer::WlBuffer,
     ) -> Result<Dmabuf, MultigpuError<EglGlesBackend, EglGlesBackend>> {
@@ -219,7 +217,7 @@ impl<'a, 'b, Target> MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Targe
             .egl_reader()
             .as_ref()
             .unwrap()
-            .egl_buffer_contents(dh, buffer)
+            .egl_buffer_contents(buffer)
             .map_err(Gles2Error::EGLBufferAccessError)
             .map_err(MultigpuError::Render)?;
         renderer

@@ -287,7 +287,6 @@ pub fn run_x11(log: Logger) {
             }
 
             let render_res = crate::render::render_output(
-                &display.handle(),
                 &output,
                 &mut state.space,
                 &mut backend_data.renderer,

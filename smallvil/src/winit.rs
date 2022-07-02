@@ -114,7 +114,6 @@ pub fn winit_dispatch(
         state
             .space
             .render_output::<Gles2Renderer, SurfaceTree>(
-                &display.handle(),
                 backend.renderer(),
                 output,
                 0,

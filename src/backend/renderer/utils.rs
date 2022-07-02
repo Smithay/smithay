@@ -19,10 +19,7 @@ use std::{
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},
 };
-use wayland_server::{
-    protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface},
-    DisplayHandle,
-};
+use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -55,7 +52,7 @@ pub struct RendererSurfaceState {
 const MAX_DAMAGE: usize = 4;
 
 impl RendererSurfaceState {
-    pub(crate) fn update_buffer(&mut self, dh: &DisplayHandle, states: &SurfaceData) {
+    pub(crate) fn update_buffer(&mut self, states: &SurfaceData) {
         let mut attrs = states.cached_state.current::<SurfaceAttributes>();
         self.buffer_delta = attrs.buffer_delta.take();
 
@@ -66,7 +63,12 @@ impl RendererSurfaceState {
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer(buffer)) => {
                 // new contents
-                self.buffer_dimensions = buffer_dimensions(dh, &buffer);
+                self.buffer_dimensions = buffer_dimensions(&buffer);
+                if self.buffer_dimensions.is_none() {
+                    // This results in us rendering nothing (can happen e.g. for failed egl-buffer-calls),
+                    // but it is better than crashing the compositor for a bad buffer
+                    return;
+                }
 
                 #[cfg(feature = "desktop")]
                 if self.buffer_scale != attrs.buffer_scale
@@ -190,7 +192,7 @@ impl RendererSurfaceState {
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
-pub fn on_commit_buffer_handler(dh: &DisplayHandle, surface: &WlSurface) {
+pub fn on_commit_buffer_handler(surface: &WlSurface) {
     if !is_sync_subsurface(surface) {
         let mut new_surfaces = Vec::new();
         with_surface_tree_upward(
@@ -209,7 +211,7 @@ pub fn on_commit_buffer_handler(dh: &DisplayHandle, surface: &WlSurface) {
                     .get::<RendererSurfaceStateUserData>()
                     .unwrap()
                     .borrow_mut();
-                data.update_buffer(dh, states);
+                data.update_buffer(states);
             },
             |_, _, _| true,
         );
@@ -298,7 +300,6 @@ where
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 pub fn import_surface_tree<R>(
-    dh: &DisplayHandle,
     renderer: &mut R,
     surface: &WlSurface,
     log: &slog::Logger,
@@ -307,11 +308,10 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
 {
-    import_surface_tree_and(dh, renderer, surface, 1.0, log, (0.0, 0.0).into(), |_, _, _| {})
+    import_surface_tree_and(renderer, surface, 1.0, log, (0.0, 0.0).into(), |_, _, _| {})
 }
 
 fn import_surface_tree_and<F, R, S>(
-    dh: &DisplayHandle,
     renderer: &mut R,
     surface: &WlSurface,
     scale: S,
@@ -341,7 +341,7 @@ where
                 let buffer_damage = data.damage_since(last_commit.copied());
                 if let Entry::Vacant(e) = data.textures.entry(texture_id) {
                     if let Some(buffer) = data.buffer.as_ref() {
-                        match renderer.import_buffer(dh, buffer, Some(states), &buffer_damage) {
+                        match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 e.insert(Box::new(m));
                                 data.renderer_seen.insert(texture_id, data.commit_count);
@@ -388,7 +388,6 @@ where
 /// to let smithay handle buffer management.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_surface_tree<R, S>(
-    dh: &DisplayHandle,
     renderer: &mut R,
     frame: &mut <R as Renderer>::Frame,
     surface: &WlSurface,
@@ -406,7 +405,6 @@ where
     let mut result = Ok(());
     let scale = scale.into();
     let _ = import_surface_tree_and(
-        dh,
         renderer,
         surface,
         scale,

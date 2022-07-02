@@ -253,18 +253,11 @@ pub fn run_winit(log: Logger) {
             let space = &mut state.space;
             let render_res = backend.bind().and_then(|_| {
                 let renderer = backend.renderer();
-                crate::render::render_output(
-                    &display.handle(),
-                    &output,
-                    space,
-                    renderer,
-                    age,
-                    &*elements,
-                    &log,
-                )
-                .map_err(|err| match err {
-                    RenderError::Rendering(err) => err.into(),
-                    _ => unreachable!(),
+                crate::render::render_output(&output, space, renderer, age, &*elements, &log).map_err(|err| {
+                    match err {
+                        RenderError::Rendering(err) => err.into(),
+                        _ => unreachable!(),
+                    }
                 })
             });
 

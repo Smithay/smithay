@@ -339,7 +339,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
         &mut self.compositor_state
     }
     fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
-        on_commit_buffer_handler(dh, surface);
+        on_commit_buffer_handler(surface);
         self.backend_data.early_import(surface);
 
         #[cfg(feature = "xwayland")]
