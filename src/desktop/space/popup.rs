@@ -6,7 +6,9 @@ use crate::{
         layer::{layer_state, LayerSurface},
         popup::{PopupKind, PopupManager},
         space::Space,
-        utils::{damage_from_surface_tree, physical_bbox_from_surface_tree},
+        utils::{
+            damage_from_surface_tree, opaque_regions_from_surface_tree, physical_bbox_from_surface_tree,
+        },
         window::Window,
     },
     utils::{Logical, Physical, Point, Rectangle, Scale},
@@ -100,6 +102,19 @@ impl RenderPopup {
             self.location.to_f64().to_physical(scale),
             scale,
             for_values,
+        )
+    }
+
+    pub(super) fn elem_opaque_regions(
+        &self,
+        _space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Option<Vec<Rectangle<i32, Physical>>> {
+        let scale = scale.into();
+        opaque_regions_from_surface_tree(
+            self.popup.wl_surface(),
+            self.location.to_f64().to_physical(scale),
+            scale,
         )
     }
 

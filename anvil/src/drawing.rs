@@ -109,6 +109,10 @@ where
         vec![Rectangle::from_loc_and_size(self.position, self.size).to_physical_precise_up(scale)]
     }
 
+    fn opaque_regions(&self, _scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>> {
+        None
+    }
+
     fn draw(
         &self,
         _renderer: &mut R,
@@ -175,6 +179,10 @@ where
         _: Option<SpaceOutputTuple<'_, '_>>,
     ) -> Vec<Rectangle<i32, Physical>> {
         vec![Rectangle::from_loc_and_size((0, 0), (24 * 3, 35)).to_physical_precise_up(scale)]
+    }
+
+    fn opaque_regions(&self, _scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>> {
+        None
     }
 
     fn draw(

@@ -68,6 +68,16 @@ impl LayerSurface {
         self.accumulated_damage(state.location.to_f64().to_physical(scale), scale, for_values)
     }
 
+    pub(super) fn elem_opaque_regions(
+        &self,
+        _space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Option<Vec<Rectangle<i32, Physical>>> {
+        let scale = scale.into();
+        let state = output_layer_state(self);
+        self.opaque_regions(state.location.to_f64().to_physical(scale), scale)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn elem_draw<R>(
         &self,
