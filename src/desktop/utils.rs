@@ -137,6 +137,81 @@ where
     bounding_box
 }
 
+/// Returns the opaque regions of a given surface and all its subsurfaces.
+///
+/// - `location` can be set to offset the returned bounding box.
+pub fn opaque_regions_from_surface_tree<P>(
+    surface: &wl_surface::WlSurface,
+    location: P,
+    scale: impl Into<Scale<f64>>,
+) -> Option<Vec<Rectangle<i32, Physical>>>
+where
+    P: Into<Point<f64, Physical>>,
+{
+    let scale = scale.into();
+    let mut opaque_regions: Option<Vec<Rectangle<i32, Physical>>> = None;
+
+    with_surface_tree_downward(
+        surface,
+        location.into(),
+        |_surface, states, location: &Point<f64, Physical>| {
+            let mut location = *location;
+
+            if let Some(surface_view) = states
+                .data_map
+                .get::<RefCell<RendererSurfaceState>>()
+                .and_then(|d| d.borrow().surface_view)
+            {
+                location += surface_view.offset.to_f64().to_physical(scale);
+                TraversalAction::DoChildren(location)
+            } else {
+                TraversalAction::SkipChildren
+            }
+        },
+        |_surface, states, location| {
+            let mut location = *location;
+            if let Some(data) = states.data_map.get::<RefCell<RendererSurfaceState>>() {
+                let data = data.borrow();
+                if let Some(surface_view) = data.surface_view {
+                    // Add the surface offset again to the location as
+                    // with_surface_tree_upward only passes the updated
+                    // location to its children
+                    location += surface_view.offset.to_f64().to_physical(scale);
+
+                    if let Some(regions) = data.opaque_regions() {
+                        let mut tree_regions = opaque_regions.take().unwrap_or_default();
+                        let new_regions = tree_regions.iter().fold(
+                            regions
+                                .iter()
+                                .map(|r| {
+                                    let loc = (r.loc.to_f64().to_physical(scale) + location).to_i32_round();
+                                    let size = ((r.size.to_f64().to_physical(scale).to_point() + location)
+                                        .to_i32_round()
+                                        - location.to_i32_round())
+                                    .to_size();
+                                    Rectangle::<i32, Physical>::from_loc_and_size(loc, size)
+                                })
+                                .collect::<Vec<_>>(),
+                            |new_regions, region| {
+                                new_regions
+                                    .into_iter()
+                                    .flat_map(|r| r.subtract_rect(*region))
+                                    .collect::<Vec<_>>()
+                            },
+                        );
+
+                        tree_regions.extend(new_regions);
+                        opaque_regions = Some(tree_regions);
+                    }
+                }
+            }
+        },
+        |_, _, _| true,
+    );
+
+    opaque_regions
+}
+
 /// Returns the damage rectangles of the current buffer for a given surface and its subsurfaces.
 ///
 /// - `location` can be set to offset the returned bounding box.

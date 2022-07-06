@@ -159,15 +159,10 @@ impl RendererSurfaceState {
                                         new_regions.extend(added_regions);
                                     }
                                     RectangleKind::Subtract => {
-                                        let mut i = 0;
-                                        while i < new_regions.len() {
-                                            if new_regions[i].overlaps(rect) {
-                                                let val = new_regions.remove(i);
-                                                new_regions.extend(val.subtract_rect(rect));
-                                            } else {
-                                                i += 1;
-                                            }
-                                        }
+                                        new_regions = new_regions
+                                            .into_iter()
+                                            .flat_map(|r| r.subtract_rect(rect))
+                                            .collect::<Vec<_>>();
                                     }
                                 }
 

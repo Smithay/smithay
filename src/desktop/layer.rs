@@ -559,22 +559,18 @@ impl LayerSurface {
         scale: impl Into<Scale<f64>>,
         for_values: Option<(&Space, &Output)>,
     ) -> Vec<Rectangle<i32, Physical>> {
-        let location = location.into();
-        let scale = scale.into();
-        let mut damage = Vec::new();
         let surface = self.wl_surface();
-        damage.extend(damage_from_surface_tree(surface, location, scale, for_values));
-        for (popup, p_location) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
-            let popup_damage = damage_from_surface_tree(
-                surface,
-                location + p_location.to_f64().to_physical(scale),
-                scale,
-                for_values,
-            );
-            damage.extend(popup_damage);
-        }
-        damage
+        damage_from_surface_tree(surface, location, scale, for_values)
+    }
+
+    /// Returns the opaque regions of all the surfaces of this layer surface.
+    pub fn opaque_regions(
+        &self,
+        location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
+    ) -> Option<Vec<Rectangle<i32, Physical>>> {
+        let surface = self.wl_surface();
+        opaque_regions_from_surface_tree(surface, location, scale)
     }
 
     /// Sends the frame callback to all the subsurfaces in this

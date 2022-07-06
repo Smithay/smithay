@@ -63,6 +63,11 @@ where
         scale: impl Into<Scale<f64>>,
         for_values: Option<SpaceOutputTuple<'_, '_>>,
     ) -> Vec<Rectangle<i32, Physical>>;
+    /// Returns the opaque regions of the element.
+    /// It should be relative to the elements coordinates.
+    ///  
+    /// Returning `None` means there are not opaque regions for the element.
+    fn opaque_regions(&self, scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>>;
     /// Draws the element using the provided `Frame` and `Renderer`.
     ///
     /// - `scale` provides the current fractional scale value to render as
@@ -152,6 +157,18 @@ where
             }
         }
     }
+    pub fn opaque_regions(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Option<Vec<Rectangle<i32, Physical>>> {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_opaque_regions(space_id, scale),
+            SpaceElement::Window(window) => window.elem_opaque_regions(space_id, scale),
+            SpaceElement::Popup(popup) => popup.elem_opaque_regions(space_id, scale),
+            SpaceElement::Custom(custom, _) => custom.opaque_regions(scale),
+        }
+    }
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &self,
@@ -234,6 +251,11 @@ where
             scale,
             for_values.map(|f| (f.0, f.1)),
         )
+    }
+
+    fn opaque_regions(&self, scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>> {
+        let scale = scale.into();
+        opaque_regions_from_surface_tree(&self.surface, self.position.to_f64().to_physical(scale), scale)
     }
 
     fn draw(

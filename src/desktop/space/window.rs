@@ -96,6 +96,16 @@ impl Window {
         self.accumulated_damage(loc.to_f64().to_physical(scale), scale, for_values)
     }
 
+    pub(super) fn elem_opaque_regions(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Option<Vec<Rectangle<i32, Physical>>> {
+        let scale = scale.into();
+        let loc = window_loc(self, &space_id) - self.geometry().loc;
+        self.opaque_regions(loc.to_f64().to_physical(scale), scale)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn elem_draw<R, S>(
         &self,

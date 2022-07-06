@@ -505,6 +505,16 @@ impl Space {
 
         render_elements.sort_by_key(|e| e.z_index());
 
+        let opaque_regions = render_elements
+            .iter()
+            .enumerate()
+            .filter_map(|(zindex, element)| {
+                element
+                    .opaque_regions(self.id, output_scale)
+                    .map(|regions| (zindex, regions))
+            })
+            .collect::<Vec<_>>();
+
         // This will hold all the damage we need for this rendering step
         let mut damage = Vec::<Rectangle<i32, Physical>>::new();
 
@@ -530,12 +540,7 @@ impl Space {
             let geo = element.geometry(self.id, output_scale);
             let old_state = state.last_toplevel_state.get(&ToplevelId::from(element)).cloned();
 
-            // add the damage as reported by the element
-            damage.extend(
-                element
-                    .accumulated_damage(self.id, output_scale, Some((self, output)))
-                    .into_iter(),
-            );
+            let mut element_damage = element.accumulated_damage(self.id, output_scale, Some((self, output)));
 
             // window was moved, resized or just appeared
             if old_state
@@ -545,10 +550,26 @@ impl Space {
                 slog::trace!(self.logger, "Toplevel geometry changed, damaging previous and current geometry. previous geometry: {:?}, current geometry: {:?}", old_state, geo);
                 // Add damage for the old position of the window
                 if let Some((_, old_geo)) = old_state {
-                    damage.push(old_geo);
+                    element_damage.push(old_geo);
                 }
-                damage.push(geo);
+                element_damage.push(geo);
             }
+
+            let element_damage = opaque_regions
+                .iter()
+                .filter(|(index, _)| *index > zindex)
+                .flat_map(|(_, regions)| regions)
+                .fold(element_damage, |damage, region| {
+                    damage
+                        .into_iter()
+                        .flat_map(|geo| geo.subtract_rect(*region))
+                        .collect::<Vec<_>>()
+                })
+                .into_iter()
+                .collect::<Vec<_>>();
+
+            // add the damage as reported by the element
+            damage.extend(element_damage);
         }
 
         if state.last_output_geo.map(|geo| geo != output_geo).unwrap_or(true) {
@@ -572,19 +593,22 @@ impl Space {
         // Optimize the damage for rendering
         damage.dedup();
         damage.retain(|rect| rect.overlaps(output_geo));
-        damage.retain(|rect| rect.size.h > 0 && rect.size.w > 0);
-        // merge overlapping rectangles
-        damage = damage.into_iter().fold(Vec::new(), |new_damage, mut rect| {
-            // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                new_damage.into_iter().partition(|other| other.overlaps(rect));
+        damage.retain(|rect| !rect.is_empty());
+        // filter damage outside of the output gep and merge overlapping rectangles
+        damage = damage
+            .into_iter()
+            .filter_map(|rect| rect.intersection(output_geo))
+            .fold(Vec::new(), |new_damage, mut rect| {
+                // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
+                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
+                    new_damage.into_iter().partition(|other| other.overlaps(rect));
 
-            for overlap in overlapping {
-                rect = rect.merge(overlap);
-            }
-            new_damage.push(rect);
-            new_damage
-        });
+                for overlap in overlapping {
+                    rect = rect.merge(overlap);
+                }
+                new_damage.push(rect);
+                new_damage
+            });
 
         if damage.is_empty() {
             return Ok(None);
@@ -595,26 +619,49 @@ impl Space {
             output_transform.transform_size(output_size),
             output_transform,
             |renderer, frame| {
+                let clear_damage = opaque_regions
+                    .iter()
+                    .flat_map(|(_, regions)| regions)
+                    .fold(damage.clone(), |damage, region| {
+                        damage
+                            .into_iter()
+                            .flat_map(|geo| geo.subtract_rect(*region))
+                            .collect::<Vec<_>>()
+                    })
+                    .into_iter()
+                    .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
+                    .collect::<Vec<_>>();
+
                 // First clear all damaged regions
-                slog::trace!(self.logger, "Clearing at {:#?}", damage);
-                frame.clear(
-                    clear_color,
-                    &damage
-                        .iter()
-                        // Map from global space to output space
-                        .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
-                        .collect::<Vec<_>>(),
-                )?;
+                slog::trace!(self.logger, "Clearing at {:#?}", clear_damage);
+                frame.clear(clear_color, &clear_damage)?;
                 // Then re-draw all windows & layers overlapping with a damage rect.
-                for element in &render_elements {
+                for (zindex, element) in render_elements.iter().enumerate() {
                     let geo = element.geometry(self.id, output_scale);
-                    if damage.iter().any(|d| d.overlaps(geo)) {
+
+                    let element_damage = opaque_regions
+                        .iter()
+                        .filter(|(index, _)| *index > zindex)
+                        .flat_map(|(_, regions)| regions)
+                        .fold(damage.clone(), |damage, region| {
+                            damage
+                                .into_iter()
+                                .flat_map(|geo| geo.subtract_rect(*region))
+                                .collect::<Vec<_>>()
+                        })
+                        .into_iter()
+                        .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
+                        .collect::<Vec<_>>();
+
+                    let element_geo = Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size);
+                    if element_damage.iter().any(|d| d.overlaps(element_geo)) {
                         let loc = element.location(self.id, output_scale);
                         slog::trace!(
                             self.logger,
-                            "Rendering toplevel at {:?} with damage {:#?}",
-                            Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size),
-                            damage
+                            "Rendering toplevel with index {} at {:?} with damage {:#?}",
+                            zindex,
+                            element_geo,
+                            element_damage
                         );
                         element.draw(
                             self.id,
@@ -622,11 +669,7 @@ impl Space {
                             frame,
                             output_scale,
                             loc - output_geo.loc.to_f64(),
-                            &damage
-                                .iter()
-                                // Map from global space to output space
-                                .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
-                                .collect::<Vec<_>>(),
+                            &element_damage,
                             &self.logger,
                         )?;
                     }
@@ -801,6 +844,18 @@ macro_rules! custom_elements_internal {
                         #[$meta]
                     )*
                     Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; accumulated_damage; x, scale, for_values)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn opaque_regions(&self, scale: impl Into<$crate::utils::Scale<f64>>) -> Option<Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>>> {
+            match self {
+                $(
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; opaque_regions; x, scale)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1073,6 +1128,10 @@ macro_rules! custom_elements_internal {
 ///#
 ///#    fn accumulated_damage(&self, _: impl Into<Scale<f64>>, _: Option<SpaceOutputTuple<'_, '_>>) -> Vec<Rectangle<i32, Physical>> {
 ///#        vec![]
+///#    }
+///#
+///#    fn opaque_regions(&self, scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>> {
+///#        None
 ///#    }
 ///#
 ///#    fn draw(

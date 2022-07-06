@@ -284,10 +284,18 @@ impl Window {
         scale: impl Into<Scale<f64>>,
         for_values: Option<(&Space, &Output)>,
     ) -> Vec<Rectangle<i32, Physical>> {
-        let mut damage = Vec::new();
         let surface = self.0.toplevel.wl_surface();
-        damage.extend(damage_from_surface_tree(surface, location, scale, for_values));
-        damage
+        damage_from_surface_tree(surface, location, scale, for_values)
+    }
+
+    /// Returns the opaque regions of this window
+    pub fn opaque_regions(
+        &self,
+        location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
+    ) -> Option<Vec<Rectangle<i32, Physical>>> {
+        let surface = self.0.toplevel.wl_surface();
+        opaque_regions_from_surface_tree(surface, location, scale)
     }
 
     /// Returns the underlying toplevel
