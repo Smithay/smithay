@@ -28,7 +28,7 @@ impl XdgShellHandler for Smallvil {
 
     fn new_toplevel(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
         let window = Window::new(Kind::Xdg(surface.clone()));
-        self.space.map_window(&window, (0, 0), false);
+        self.space.map_window(&window, (0, 0), None, false);
 
         surface.send_configure();
     }

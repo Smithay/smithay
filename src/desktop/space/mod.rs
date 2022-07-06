@@ -71,15 +71,27 @@ impl Space {
 
     /// Map a [`Window`] and move it to top of the stack
     ///
+    /// If a z_index is provided it will override the default
+    /// z_index of [`RenderZindex::Shell`] for the mapped window.
+    ///
     /// This can safely be called on an already mapped window
-    /// to update its location inside the space.
+    /// to update its location or z_index inside the space.
     ///
     /// If activate is true it will set the new windows state
     /// to be activate and removes that state from every
     /// other mapped window.
-    pub fn map_window<P: Into<Point<i32, Logical>>>(&mut self, window: &Window, location: P, activate: bool) {
+    pub fn map_window<P, Z>(&mut self, window: &Window, location: P, z_index: Z, activate: bool)
+    where
+        P: Into<Point<i32, Logical>>,
+        Z: Into<Option<u8>>,
+    {
+        let z_index = z_index.into().unwrap_or(RenderZindex::Shell as u8);
+        {
+            let mut state = window_state(self.id, window);
+            state.location = location.into();
+            state.z_index = z_index;
+        }
         self.insert_window(window, activate);
-        window_state(self.id, window).location = location.into();
     }
 
     /// Moves an already mapped [`Window`] to top of the stack
@@ -97,6 +109,11 @@ impl Space {
 
     fn insert_window(&mut self, window: &Window, activate: bool) {
         self.windows.insert(window.clone());
+        self.windows.sort_by(|w1, w2| {
+            window_state(self.id, w2)
+                .z_index
+                .cmp(&window_state(self.id, w1).z_index)
+        });
 
         if activate {
             window.set_activated(true);
@@ -503,7 +520,7 @@ impl Space {
         render_elements.extend(layer_map.layers().map(SpaceElement::Layer));
         render_elements.extend(layer_popups.iter().map(SpaceElement::Popup));
 
-        render_elements.sort_by_key(|e| e.z_index());
+        render_elements.sort_by_key(|e| e.z_index(self.id));
 
         // This will hold all the damage we need for this rendering step
         let mut damage = Vec::<Rectangle<i32, Physical>>::new();

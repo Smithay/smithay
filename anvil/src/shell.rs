@@ -61,7 +61,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab {
         let new_location = self.initial_window_location.to_f64() + delta;
 
         data.space
-            .map_window(&self.window, new_location.to_i32_round(), true);
+            .map_window(&self.window, new_location.to_i32_round(), None, true);
     }
 
     fn button(
@@ -248,7 +248,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
                             self.initial_window_location.y + (self.initial_window_size.h - geometry.size.h);
                     }
 
-                    data.space.map_window(&self.window, location, true);
+                    data.space.map_window(&self.window, location, None, true);
                 }
 
                 with_states(self.window.toplevel().wl_surface(), |states| {
@@ -666,7 +666,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         let output = &self.space.outputs_for_window(&window)[0];
         let geometry = self.space.output_geometry(output).unwrap();
 
-        self.space.map_window(&window, geometry.loc, true);
+        self.space.map_window(&window, geometry.loc, None, true);
         surface.with_pending_state(|state| {
             state.states.set(xdg_toplevel::State::Maximized);
             state.size = Some(geometry.size);
@@ -896,7 +896,7 @@ fn place_new_window(space: &mut Space, window: &Window, activate: bool) {
     let x = x_range.sample(&mut rng);
     let y = y_range.sample(&mut rng);
 
-    space.map_window(window, (x, y), activate);
+    space.map_window(window, (x, y), None, activate);
 }
 
 pub fn fixup_positions(dh: &DisplayHandle, space: &mut Space) {

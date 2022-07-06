@@ -32,6 +32,18 @@ pub enum RenderZindex {
     PopupsOverlay = 70,
 }
 
+impl From<RenderZindex> for u8 {
+    fn from(idx: RenderZindex) -> u8 {
+        idx as u8
+    }
+}
+
+impl From<RenderZindex> for Option<u8> {
+    fn from(idx: RenderZindex) -> Option<u8> {
+        Some(idx as u8)
+    }
+}
+
 /// Trait for custom elements to be rendered during [`Space::render_output`].
 pub trait RenderElement<R>
 where
@@ -176,10 +188,10 @@ where
             SpaceElement::Custom(custom, _) => custom.draw(renderer, frame, scale, location, damage, log),
         }
     }
-    pub fn z_index(&self) -> u8 {
+    pub fn z_index(&self, space_id: usize) -> u8 {
         match self {
             SpaceElement::Layer(layer) => layer.elem_z_index(),
-            SpaceElement::Window(window) => window.elem_z_index(),
+            SpaceElement::Window(window) => window.elem_z_index(space_id),
             SpaceElement::Popup(popup) => popup.elem_z_index(),
             SpaceElement::Custom(custom, _) => custom.z_index(),
         }
