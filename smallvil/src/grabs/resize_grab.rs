@@ -268,7 +268,7 @@ pub fn handle_commit(space: &mut Space, surface: &WlSurface) -> Option<()> {
 
     if new_loc.x.is_some() || new_loc.y.is_some() {
         // If TOP or LEFT side of the window got resized, we have to move it
-        space.map_window(&window, window_loc, false);
+        space.map_window(&window, window_loc, None, false);
     }
 
     Some(())

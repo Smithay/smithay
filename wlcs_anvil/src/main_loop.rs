@@ -183,7 +183,7 @@ fn handle_event(
             });
             if let Some(toplevel) = toplevel.cloned() {
                 // set its location
-                state.space.map_window(&toplevel, location, false);
+                state.space.map_window(&toplevel, location, None, false);
             }
         }
         // pointer inputs

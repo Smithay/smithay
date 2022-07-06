@@ -13,12 +13,11 @@ use std::{
     collections::HashMap,
 };
 
-use super::RenderZindex;
-
 #[derive(Default)]
 pub struct WindowState {
     pub location: Point<i32, Logical>,
     pub drawn: bool,
+    pub z_index: u8,
 }
 
 pub type WindowUserdata = RefCell<HashMap<usize, WindowState>>;
@@ -119,11 +118,7 @@ impl Window {
         res
     }
 
-    pub(super) fn elem_z_index(&self) -> u8 {
-        self.0
-            .z_index
-            .lock()
-            .unwrap()
-            .unwrap_or(RenderZindex::Shell as u8)
+    pub(super) fn elem_z_index(&self, space_id: usize) -> u8 {
+        window_state(space_id, self).z_index
     }
 }

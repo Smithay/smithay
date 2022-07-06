@@ -226,7 +226,7 @@ impl X11State {
         }
 
         let x11surface = X11Surface { surface };
-        space.map_window(&Window::new(Kind::X11(x11surface)), location, true);
+        space.map_window(&Window::new(Kind::X11(x11surface)), location, None, true);
     }
 }
 

@@ -83,7 +83,6 @@ pub(super) struct WindowInner {
     pub(super) id: usize,
     toplevel: Kind,
     bbox: Mutex<Rectangle<i32, Logical>>,
-    pub(super) z_index: Mutex<Option<u8>>,
     user_data: UserDataMap,
 }
 
@@ -142,7 +141,6 @@ impl Window {
             toplevel,
             bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
             user_data: UserDataMap::new(),
-            z_index: Mutex::new(None),
         }))
     }
 
@@ -298,18 +296,6 @@ impl Window {
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
-    }
-
-    /// Overrides the default z-index of this window.
-    /// (Default is [`RenderZindex::Shell`](crate::desktop::space::RenderZindex))
-    pub fn override_z_index(&self, index: u8) {
-        *self.0.z_index.lock().unwrap() = Some(index);
-    }
-
-    /// Resets a previously overriden z-index to the default of
-    /// [`RenderZindex::Shell`](crate::desktop::space::RenderZindex).
-    pub fn clear_z_index(&self) {
-        self.0.z_index.lock().unwrap().take();
     }
 }
 
