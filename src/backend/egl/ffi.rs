@@ -119,9 +119,17 @@ pub mod egl {
     use super::*;
     use libloading::Library;
     use std::sync::Once;
+    cfg_if::cfg_if! {
+        if #[cfg(target_os = "android")]{
+            pub static LIBEGL_NAME: &'static str = "libEGL.so";
+        } else {
+            pub static LIBEGL_NAME: &'static str = "libEGL.so.1";
+        }
+    }
 
     lazy_static::lazy_static! {
-        pub static ref LIB: Library = unsafe { Library::new("libEGL.so.1") }.expect("Failed to load LibEGL");
+
+        pub static ref LIB: Library = unsafe { Library::new(LIBEGL_NAME) }.expect("Failed to load LibEGL");
     }
 
     pub static LOAD: Once = Once::new();
@@ -150,7 +158,7 @@ pub mod egl {
     pub const DEBUG_MSG_INFO_KHR: types::EGLenum = 0x33BC;
     #[allow(dead_code, non_upper_case_globals)]
     pub const DEBUG_MSG_WARN_KHR: types::EGLenum = 0x33BB;
-    
+
     #[cfg(target_os = "android")]
     pub const PLATFORM_ANDROID_KHR: types::EGLenum = 0x314;
 
