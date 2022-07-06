@@ -1201,6 +1201,74 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     pub fn merge(self, other: Self) -> Self {
         Self::bounding_box([self.loc, self.loc + self.size, other.loc, other.loc + other.size])
     }
+
+    /// Subtracts another [`Rectangle`] from this [`Rectangle`]
+    ///
+    /// If the rectangles to not overlap the original rectangle will
+    /// be returned.
+    /// If the other rectangle contains self no rectangle will be returned,
+    /// otherwise up to 4 rectangles will be returned.
+    pub fn subtract_rect(self, other: Self) -> Vec<Self> {
+        // If there is no overlap there is nothing to subtract
+        if !self.overlaps(other) {
+            return vec![self];
+        }
+
+        // If we are completely contained then nothing is left
+        if other.contains_rect(self) {
+            return vec![];
+        }
+
+        // we already checked that there is an overlap so the unwrap should be safe
+        let intersection = self.intersection(other).unwrap();
+
+        let top_rect = Rectangle::from_loc_and_size(
+            self.loc,
+            (self.size.w, intersection.loc.y.saturating_sub(self.loc.y)),
+        );
+        let left_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
+            (self.loc.x, intersection.loc.y),
+            (intersection.loc.x.saturating_sub(self.loc.x), intersection.size.h),
+        );
+        let right_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
+            (
+                intersection.loc.x.saturating_add(intersection.size.w),
+                intersection.loc.y,
+            ),
+            (
+                (self.loc.x.saturating_add(self.size.w))
+                    .saturating_sub(intersection.loc.x.saturating_add(intersection.size.w)),
+                intersection.size.h,
+            ),
+        );
+        let bottom_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
+            (self.loc.x, intersection.loc.y.saturating_add(intersection.size.h)),
+            (
+                self.size.w,
+                (self.loc.y.saturating_add(self.size.h))
+                    .saturating_sub(intersection.loc.y.saturating_add(intersection.size.h)),
+            ),
+        );
+
+        let mut vec = Vec::with_capacity(4);
+        if !top_rect.is_empty() {
+            vec.push(top_rect);
+        }
+
+        if !left_rect.is_empty() {
+            vec.push(left_rect);
+        }
+
+        if !right_rect.is_empty() {
+            vec.push(right_rect);
+        }
+
+        if !bottom_rect.is_empty() {
+            vec.push(bottom_rect);
+        }
+
+        vec
+    }
 }
 
 impl<N: Coordinate> Rectangle<N, Logical> {
@@ -1659,5 +1727,95 @@ mod tests {
         let first = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
         let second = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 45));
         assert!(!first.contains_rect(second));
+    }
+
+    #[test]
+    fn rectangle_subtract_full() {
+        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::from_loc_and_size((-10, -10), (1000, 1000));
+
+        let rects = outer.subtract_rect(inner);
+        assert_eq!(rects, vec![])
+    }
+
+    #[test]
+    fn rectangle_subtract_center_hole() {
+        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::from_loc_and_size((10, 10), (80, 80));
+
+        let rects = outer.subtract_rect(inner);
+        assert_eq!(
+            rects,
+            vec![
+                // Top rect
+                Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 10)),
+                // Left rect
+                Rectangle::<i32, Logical>::from_loc_and_size((0, 10), (10, 80)),
+                // Right rect
+                Rectangle::<i32, Logical>::from_loc_and_size((90, 10), (10, 80)),
+                // Bottom rect
+                Rectangle::<i32, Logical>::from_loc_and_size((0, 90), (100, 10)),
+            ]
+        )
+    }
+
+    #[test]
+    fn rectangle_subtract_full_top() {
+        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::from_loc_and_size((0, -20), (100, 100));
+
+        let rects = outer.subtract_rect(inner);
+        assert_eq!(
+            rects,
+            vec![
+                // Bottom rect
+                Rectangle::<i32, Logical>::from_loc_and_size((0, 80), (100, 20)),
+            ]
+        )
+    }
+
+    #[test]
+    fn rectangle_subtract_full_bottom() {
+        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::from_loc_and_size((0, 20), (100, 100));
+
+        let rects = outer.subtract_rect(inner);
+        assert_eq!(
+            rects,
+            vec![
+                // Top rect
+                Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 20)),
+            ]
+        )
+    }
+
+    #[test]
+    fn rectangle_subtract_full_left() {
+        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::from_loc_and_size((-20, 0), (100, 100));
+
+        let rects = outer.subtract_rect(inner);
+        assert_eq!(
+            rects,
+            vec![
+                // Right rect
+                Rectangle::<i32, Logical>::from_loc_and_size((80, 0), (20, 100)),
+            ]
+        )
+    }
+
+    #[test]
+    fn rectangle_subtract_full_right() {
+        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::from_loc_and_size((20, 0), (100, 100));
+
+        let rects = outer.subtract_rect(inner);
+        assert_eq!(
+            rects,
+            vec![
+                // Left rect
+                Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (20, 100)),
+            ]
+        )
     }
 }
