@@ -110,9 +110,9 @@ impl Space {
     fn insert_window(&mut self, window: &Window, activate: bool) {
         self.windows.insert(window.clone());
         self.windows.sort_by(|w1, w2| {
-            window_state(self.id, w2)
+            window_state(self.id, w1)
                 .z_index
-                .cmp(&window_state(self.id, w1).z_index)
+                .cmp(&window_state(self.id, w2).z_index)
         });
 
         if activate {
