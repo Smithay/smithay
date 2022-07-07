@@ -617,7 +617,16 @@ where
 {
     let location = location.into();
     let surface = layer.wl_surface();
-    draw_surface_tree(renderer, frame, surface, scale.into(), location, damage, log)
+    draw_surface_tree(
+        renderer,
+        frame,
+        surface,
+        scale.into(),
+        location,
+        damage,
+        None,
+        log,
+    )
 }
 
 /// Renders popups of a given [`LayerSurface`] using a provided renderer and frame

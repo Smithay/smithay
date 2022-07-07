@@ -123,7 +123,16 @@ where
         let offset = (offset + p_location - popup.geometry().loc)
             .to_f64()
             .to_physical(scale);
-        draw_surface_tree(renderer, frame, surface, scale, location + offset, damage, log)?;
+        draw_surface_tree(
+            renderer,
+            frame,
+            surface,
+            scale,
+            location + offset,
+            damage,
+            None,
+            log,
+        )?;
     }
     Ok(())
 }

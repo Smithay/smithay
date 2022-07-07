@@ -286,6 +286,7 @@ where
             scale,
             location,
             damage,
+            None,
             log,
         )
     }

@@ -334,7 +334,16 @@ where
 {
     let location = location.into();
     let surface = window.toplevel().wl_surface();
-    draw_surface_tree(renderer, frame, surface, scale.into(), location, damage, log)
+    draw_surface_tree(
+        renderer,
+        frame,
+        surface,
+        scale.into(),
+        location,
+        damage,
+        None,
+        log,
+    )
 }
 
 /// Renders popups of a given [`Window`] using a provided renderer and frame

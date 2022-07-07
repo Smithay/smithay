@@ -1,10 +1,8 @@
 //! Utility module for helpers around drawing [`WlSurface`]s with [`Renderer`]s.
 
-#[cfg(feature = "desktop")]
-use crate::utils::Coordinate;
 use crate::{
     backend::renderer::{buffer_dimensions, buffer_has_alpha, Frame, ImportAll, Renderer},
-    utils::{Buffer as BufferCoord, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
             self, add_destruction_hook, is_sync_subsurface, with_surface_tree_downward,
@@ -348,7 +346,14 @@ impl SurfaceView {
         rect.upscale(scale)
     }
 
-    #[cfg(feature = "desktop")]
+    pub(crate) fn downscale_rect<N: Coordinate>(
+        &self,
+        rect: Rectangle<N, Logical>,
+    ) -> Rectangle<f64, Logical> {
+        let scale = self.scale();
+        rect.to_f64().downscale(scale)
+    }
+
     fn scale(&self) -> Scale<f64> {
         Scale::from((
             self.dst.w as f64 / self.src.size.w,
@@ -393,7 +398,7 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
 {
-    import_surface_tree_and(renderer, surface, 1.0, log, (0.0, 0.0).into(), |_, _, _| {})
+    import_surface_tree_and(renderer, surface, 1.0, log, (0.0, 0.0).into(), None, |_, _, _| {})
 }
 
 fn import_surface_tree_and<F, R, S>(
@@ -402,22 +407,32 @@ fn import_surface_tree_and<F, R, S>(
     scale: S,
     log: &slog::Logger,
     location: Point<f64, Physical>,
+    src: Option<Rectangle<i32, Logical>>,
     processor: F,
 ) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
     S: Into<Scale<f64>>,
-    F: FnMut(&WlSurface, &SurfaceData, &Point<f64, Physical>),
+    F: FnMut(
+        &WlSurface,
+        &SurfaceData,
+        &(
+            Point<f64, Physical>,
+            Point<i32, Logical>,
+            Option<Point<i32, Logical>>,
+        ),
+    ),
 {
     let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
     let mut result = Ok(());
     let scale = scale.into();
     with_surface_tree_downward(
         surface,
-        location,
-        |_surface, states, location| {
+        (location, (0, 0).into(), None),
+        |_surface, states, (location, surface_offset, parent_crop)| {
             let mut location = *location;
+            let mut surface_offset = *surface_offset;
             if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
                 let mut data_ref = data.borrow_mut();
                 let data = &mut *data_ref;
@@ -445,8 +460,35 @@ where
                 if data.textures.contains_key(&texture_id) {
                     // if yes, also process the children
                     let surface_view = data.surface_view.unwrap();
-                    location += surface_view.offset.to_f64().to_physical(scale);
-                    TraversalAction::DoChildren(location)
+
+                    let surface_rect = Rectangle::from_loc_and_size((0, 0), surface_view.dst);
+                    let src = src
+                        .map(|mut src| {
+                            // Move the src rect relative to the surface
+                            src.loc -= surface_offset + surface_view.offset;
+                            src
+                        })
+                        .unwrap_or(surface_rect);
+
+                    if let Some(intersection) = surface_rect.intersection(src) {
+                        let mut offset = surface_view.offset;
+
+                        // Correct the offset by the (parent)crop
+                        if let Some(parent_crop) = *parent_crop {
+                            offset = (offset + intersection.loc) - parent_crop;
+                        }
+
+                        surface_offset += offset;
+                        location += offset.to_f64().to_physical(scale);
+
+                        TraversalAction::DoChildren((location, surface_offset, Some(intersection.loc)))
+                    } else {
+                        // We are completely cropped, so are our children
+                        TraversalAction::SkipChildren
+                    }
+
+                    // location += surface_view.offset.to_f64().to_physical(scale);
+                    // TraversalAction::DoChildren(location)
                 } else {
                     // we are not displayed, so our children are neither
                     TraversalAction::SkipChildren
@@ -474,6 +516,7 @@ struct RenderOp {
 /// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
 /// - `location` is the position the surface should be drawn at.
 /// - `damage` is the set of regions that should be drawn relative to the same origin as the location.
+/// - `src` defines an optional rectangle that can be used for cropping the whole surface tree
 ///
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
@@ -486,6 +529,7 @@ pub fn draw_surface_tree<R, S>(
     scale: S,
     location: Point<f64, Physical>,
     damage: &[Rectangle<i32, Physical>],
+    src: Option<Rectangle<i32, Logical>>,
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where
@@ -513,8 +557,10 @@ where
         scale,
         log,
         location,
-        |_surface, states, location| {
+        src,
+        |_surface, states, (location, surface_offset, parent_crop)| {
             let mut location = *location;
+            let surface_offset = *surface_offset;
             if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
                 let mut data = data.borrow_mut();
                 let surface_view = data.surface_view;
@@ -529,14 +575,34 @@ where
                     .is_some()
                 {
                     let surface_view = surface_view.unwrap();
+
+                    let surface_rect = Rectangle::from_loc_and_size((0, 0), surface_view.dst);
+                    let src = src
+                        .map(|mut src| {
+                            // Move the src rect relative to the surface
+                            src.loc -= surface_offset + surface_view.offset;
+                            src
+                        })
+                        .unwrap_or(surface_rect);
+
+                    let intersection = surface_rect.intersection(src).unwrap_or_default();
+
+                    let mut offset = surface_view.offset;
+
+                    // Correct the offset by the (parent)crop
+                    if let Some(parent_crop) = *parent_crop {
+                        offset = (offset + intersection.loc) - parent_crop;
+                    }
+
                     // Add the surface offset again to the location as
                     // with_surface_tree_upward only passes the updated
                     // location to its children
-                    location += surface_view.offset.to_f64().to_physical(scale);
+                    location += offset.to_f64().to_physical(scale);
 
                     let dst = Rectangle::from_loc_and_size(
                         location.to_i32_round(),
-                        ((surface_view.dst.to_f64().to_physical(scale).to_point() + location).to_i32_round()
+                        ((intersection.size.to_f64().to_physical(scale).to_point() + location)
+                            .to_i32_round()
                             - location.to_i32_round())
                         .to_size(),
                     );
@@ -560,24 +626,18 @@ where
                             }),
                     );
 
-                    let src = surface_view.src.to_buffer(
-                        buffer_scale as f64,
-                        buffer_transform,
-                        &buffer_dimensions
-                            .unwrap()
-                            .to_logical(buffer_scale, buffer_transform)
-                            .to_f64(),
-                    );
-
-                    render_op.src = src;
-                    render_op.dst = dst;
-
                     // Now that we know the damage of the current surface we can
                     // remove all opaque regions from it so that any surface below
                     // us will only receive damage outside of the opaque regions
                     if let Some(opaque_regions) = opaque_regions {
                         damage = opaque_regions
                             .iter()
+                            .filter_map(|r| {
+                                r.intersection(src).map(|mut r| {
+                                    r.loc -= intersection.loc;
+                                    r
+                                })
+                            })
                             .map(|r| {
                                 let loc = (r.loc.to_f64().to_physical(scale) + location).to_i32_round();
                                 let size = ((r.size.to_f64().to_physical(scale).to_point() + location)
@@ -595,6 +655,22 @@ where
                             .into_iter()
                             .collect::<Vec<_>>();
                     }
+
+                    // Bring the intersection into the src size and keep original src loc from viewporter
+                    let mut src = surface_view.downscale_rect(intersection);
+                    src.loc += surface_view.src.loc;
+
+                    let src = src.to_buffer(
+                        buffer_scale as f64,
+                        buffer_transform,
+                        &buffer_dimensions
+                            .unwrap()
+                            .to_logical(buffer_scale, buffer_transform)
+                            .to_f64(),
+                    );
+
+                    render_op.src = src;
+                    render_op.dst = dst;
                 }
             }
         },
@@ -634,7 +710,7 @@ where
                     let render_op = states.data_map.get::<RefCell<RenderOp>>().unwrap();
                     let render_op = render_op.borrow();
 
-                    if render_op.damage.is_empty() {
+                    if render_op.damage.is_empty() || render_op.src.is_empty() || render_op.dst.is_empty() {
                         return;
                     }
 

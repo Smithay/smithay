@@ -135,7 +135,7 @@ impl RenderPopup {
         S: Into<Scale<f64>>,
     {
         let surface = self.popup.wl_surface();
-        draw_surface_tree(renderer, frame, surface, scale, location, damage, log)
+        draw_surface_tree(renderer, frame, surface, scale, location, damage, None, log)
     }
 
     pub(super) fn elem_z_index(&self) -> u8 {
