@@ -10,6 +10,7 @@ use crate::{
             damage_from_surface_tree, opaque_regions_from_surface_tree, physical_bbox_from_surface_tree,
         },
         window::Window,
+        WindowTransform,
     },
     utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::{output::Output, shell::wlr_layer::Layer},
@@ -23,17 +24,24 @@ pub struct RenderPopup {
     location: Point<i32, Logical>,
     popup: PopupKind,
     z_index: u8,
+    transform: WindowTransform,
 }
 
 impl Window {
     pub(super) fn popup_elements(&self, space_id: usize) -> impl Iterator<Item = RenderPopup> {
         let loc = window_loc(self, &space_id);
+        let transform = *self.0.transform.lock().unwrap();
         PopupManager::popups_for_surface(self.toplevel().wl_surface()).map(move |(popup, location)| {
-            let offset = loc + location - popup.geometry().loc;
+            let popup_offset = location - popup.geometry().loc;
+            let offset = loc + popup_offset.to_f64().upscale(transform.scale).to_i32_round();
             RenderPopup {
                 location: offset,
                 popup,
                 z_index: RenderZindex::Popups as u8,
+                transform: WindowTransform {
+                    scale: transform.scale,
+                    ..Default::default()
+                },
             }
         })
     }
@@ -55,6 +63,7 @@ impl LayerSurface {
                 location: offset,
                 popup,
                 z_index,
+                transform: WindowTransform::default(),
             }
         })
     }
@@ -86,8 +95,8 @@ impl RenderPopup {
         physical_bbox_from_surface_tree(
             self.popup.wl_surface(),
             self.location.to_f64().to_physical(scale),
-            scale,
-            None,
+            scale * self.transform.scale,
+            self.transform.src,
         )
     }
 
@@ -101,8 +110,8 @@ impl RenderPopup {
         damage_from_surface_tree(
             self.popup.wl_surface(),
             self.location.to_f64().to_physical(scale),
-            scale,
-            None,
+            scale * self.transform.scale,
+            self.transform.src,
             for_values,
         )
     }
@@ -116,8 +125,8 @@ impl RenderPopup {
         opaque_regions_from_surface_tree(
             self.popup.wl_surface(),
             self.location.to_f64().to_physical(scale),
-            scale,
-            None,
+            scale * self.transform.scale,
+            self.transform.src,
         )
     }
 
@@ -138,7 +147,17 @@ impl RenderPopup {
         S: Into<Scale<f64>>,
     {
         let surface = self.popup.wl_surface();
-        draw_surface_tree(renderer, frame, surface, scale, location, damage, None, log)
+        let scale = scale.into() * self.transform.scale;
+        draw_surface_tree(
+            renderer,
+            frame,
+            surface,
+            scale,
+            location,
+            damage,
+            self.transform.src,
+            log,
+        )
     }
 
     pub(super) fn elem_z_index(&self) -> u8 {

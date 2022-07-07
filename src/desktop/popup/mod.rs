@@ -106,6 +106,7 @@ pub fn draw_popups<R, P1, P2, S>(
     offset: P2,
     scale: S,
     damage: &[Rectangle<i32, Physical>],
+    src: Option<Rectangle<i32, Logical>>,
     log: &slog::Logger,
 ) -> Result<(), <R as Renderer>::Error>
 where
@@ -130,7 +131,7 @@ where
             scale,
             location + offset,
             damage,
-            None,
+            src,
             log,
         )?;
     }

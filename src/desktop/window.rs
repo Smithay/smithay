@@ -78,11 +78,42 @@ impl IsAlive for Kind {
     }
 }
 
+/// A transform that can be attached to a surface
+/// to change how it will be presented on screen
+/// Can be used to crop and scale on compositor side.
+///
+/// This applies to the whole surface tree and will
+/// override all transforms on it's children.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowTransform {
+    /// Defines an optional source [`Rectangle`] that can
+    /// be used for cropping a window
+    pub src: Option<Rectangle<i32, Logical>>,
+
+    /// Defines an optional scale which will be used for
+    /// the window
+    pub scale: Scale<f64>,
+
+    /// Defines an optional offset for the window
+    pub offset: Point<i32, Logical>,
+}
+
+impl Default for WindowTransform {
+    fn default() -> Self {
+        Self {
+            src: Default::default(),
+            scale: Scale::from(1.0),
+            offset: Default::default(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct WindowInner {
     pub(super) id: usize,
     toplevel: Kind,
     bbox: Mutex<Rectangle<i32, Logical>>,
+    pub(super) transform: Mutex<WindowTransform>,
     user_data: UserDataMap,
 }
 
@@ -140,23 +171,39 @@ impl Window {
             id,
             toplevel,
             bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
+            transform: Mutex::new(WindowTransform::default()),
             user_data: UserDataMap::new(),
         }))
     }
 
     /// Returns the geometry of this window.
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        let surface = self.0.toplevel.wl_surface();
-        // It's the set geometry with the full bounding box as the fallback.
-        with_states(surface, |states| {
-            states.cached_state.current::<SurfaceCachedState>().geometry
-        })
-        .unwrap_or_else(|| self.bbox())
+        let mut geometry = self.real_geometry();
+        let transform = *self.0.transform.lock().unwrap();
+        if let Some(src) = transform.src {
+            geometry = geometry.intersection(src).unwrap_or_default();
+            let pos_rect = Rectangle::from_extemities(
+                (0, 0),
+                (i32::max(geometry.loc.x, 0), i32::max(geometry.loc.y, 0)),
+            );
+            geometry.loc -= src.loc.constrain(pos_rect);
+        }
+
+        let mut geometry = geometry.to_f64().upscale(transform.scale);
+        geometry.loc -= transform.offset.to_f64();
+        geometry.to_i32_round()
     }
 
     /// Returns a bounding box over this window and its children.
     pub fn bbox(&self) -> Rectangle<i32, Logical> {
-        *self.0.bbox.lock().unwrap()
+        let mut bbox = *self.0.bbox.lock().unwrap();
+        let transform = *self.0.transform.lock().unwrap();
+        if let Some(src) = transform.src {
+            bbox = bbox.intersection(src).unwrap_or_default();
+            bbox.loc = Point::from((i32::min(bbox.loc.x, 0), i32::min(bbox.loc.y, 0)));
+        }
+
+        bbox.to_f64().upscale(transform.scale).to_i32_round()
     }
 
     /// Returns a bounding box over this window and children including popups.
@@ -166,10 +213,15 @@ impl Window {
     pub fn bbox_with_popups(&self) -> Rectangle<i32, Logical> {
         let mut bounding_box = self.bbox();
         let surface = self.0.toplevel.wl_surface();
+        let transform = *self.0.transform.lock().unwrap();
         for (popup, location) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
-            let offset = self.geometry().loc + location - popup.geometry().loc;
-            bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset, 1.0, None));
+            let popup_offset = (location - popup.geometry().loc)
+                .to_f64()
+                .upscale(transform.scale)
+                .to_i32_round();
+            let offset = self.geometry().loc + popup_offset;
+            bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset, transform.scale, None));
         }
 
         bounding_box
@@ -189,9 +241,10 @@ impl Window {
         scale: impl Into<Scale<f64>>,
     ) -> Rectangle<i32, Physical> {
         let location = location.into();
-        let scale = scale.into();
+        let transform = *self.0.transform.lock().unwrap();
+        let scale = scale.into() * transform.scale;
         let surface = self.0.toplevel.wl_surface();
-        let mut geo = physical_bbox_from_surface_tree(surface, location, scale, None);
+        let mut geo = physical_bbox_from_surface_tree(surface, location, scale, transform.src);
         for (popup, p_location) in PopupManager::popups_for_surface(surface) {
             let offset = (self.geometry().loc + p_location - popup.geometry().loc)
                 .to_f64()
@@ -263,19 +316,36 @@ impl Window {
         surface_type: WindowSurfaceType,
     ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
         let point = point.into();
+        let transform = *self.0.transform.lock().unwrap();
         let surface = self.0.toplevel.wl_surface();
         if surface_type.contains(WindowSurfaceType::POPUP) {
             for (popup, location) in PopupManager::popups_for_surface(surface) {
-                let offset = self.geometry().loc + location - popup.geometry().loc;
-                if let Some(result) =
-                    under_from_surface_tree(popup.wl_surface(), point, offset, 1.0, None, surface_type)
-                {
+                let popup_offset = (location - popup.geometry().loc)
+                    .to_f64()
+                    .upscale(transform.scale)
+                    .to_i32_round();
+                let offset = self.geometry().loc + popup_offset;
+                if let Some(result) = under_from_surface_tree(
+                    popup.wl_surface(),
+                    point,
+                    offset,
+                    transform.scale,
+                    None,
+                    surface_type,
+                ) {
                     return Some(result);
                 }
             }
         }
 
-        under_from_surface_tree(surface, point, (0, 0), 1.0, None, surface_type)
+        under_from_surface_tree(
+            surface,
+            point,
+            (0, 0),
+            transform.scale,
+            transform.src,
+            surface_type,
+        )
     }
 
     /// Damage of all the surfaces of this window.
@@ -290,7 +360,9 @@ impl Window {
         for_values: Option<(&Space, &Output)>,
     ) -> Vec<Rectangle<i32, Physical>> {
         let surface = self.0.toplevel.wl_surface();
-        damage_from_surface_tree(surface, location, scale, None, for_values)
+        let transform = *self.0.transform.lock().unwrap();
+        let scale = scale.into() * transform.scale;
+        damage_from_surface_tree(surface, location, scale, transform.src, for_values)
     }
 
     /// Returns the opaque regions of this window
@@ -300,7 +372,9 @@ impl Window {
         scale: impl Into<Scale<f64>>,
     ) -> Option<Vec<Rectangle<i32, Physical>>> {
         let surface = self.0.toplevel.wl_surface();
-        opaque_regions_from_surface_tree(surface, location, scale, None)
+        let transform = *self.0.transform.lock().unwrap();
+        let scale = scale.into() * transform.scale;
+        opaque_regions_from_surface_tree(surface, location, scale, transform.src)
     }
 
     /// Returns the underlying toplevel
@@ -311,6 +385,26 @@ impl Window {
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
+    }
+
+    /// Returns the real geometry of this window without
+    /// applying the crop and scale
+    fn real_geometry(&self) -> Rectangle<i32, Logical> {
+        let surface = self.0.toplevel.wl_surface();
+        let bbox = *self.0.bbox.lock().unwrap();
+        let geometry = with_states(surface, |states| {
+            states.cached_state.current::<SurfaceCachedState>().geometry
+        });
+
+        if let Some(geometry) = geometry {
+            // When applied, the effective window geometry will be the set window geometry clamped to the
+            // bounding rectangle of the combined geometry of the surface of the xdg_surface and the associated subsurfaces.
+            geometry.intersection(bbox).unwrap_or_default()
+        } else {
+            // If never set, the value is the full bounds of the surface, including any subsurfaces.
+            // This updates dynamically on every commit. This unset is meant for extremely simple clients.
+            bbox
+        }
     }
 }
 
@@ -341,14 +435,16 @@ where
 {
     let location = location.into();
     let surface = window.toplevel().wl_surface();
+    let transform = *window.0.transform.lock().unwrap();
+    let scale = scale.into() * transform.scale;
     draw_surface_tree(
         renderer,
         frame,
         surface,
-        scale.into(),
+        scale,
         location,
         damage,
-        None,
+        transform.src,
         log,
     )
 }
@@ -380,14 +476,17 @@ where
 {
     let location = location.into();
     let surface = window.toplevel().wl_surface();
+    let transform = *window.0.transform.lock().unwrap();
+    let scale = scale.into() * transform.scale;
     super::popup::draw_popups(
         renderer,
         frame,
         surface,
         location,
         window.geometry().loc,
-        scale.into(),
+        scale,
         damage,
+        None,
         log,
     )
 }

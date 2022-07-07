@@ -658,5 +658,15 @@ where
 {
     let location = location.into();
     let surface = layer.wl_surface();
-    super::popup::draw_popups(renderer, frame, surface, location, (0, 0), scale, damage, log)
+    super::popup::draw_popups(
+        renderer,
+        frame,
+        surface,
+        location,
+        (0, 0),
+        scale,
+        damage,
+        None,
+        log,
+    )
 }
