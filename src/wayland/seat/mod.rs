@@ -54,11 +54,12 @@ mod pointer;
 mod touch;
 
 use std::{
+    cell::RefCell,
     marker::PhantomData,
     sync::{Arc, Mutex},
 };
 
-use crate::utils::user_data::UserDataMap;
+use crate::utils::{user_data::UserDataMap, Logical, Point, Scale};
 
 // TODO: Just make the keyboard, pointer and touch modules public.
 pub use self::{
@@ -87,6 +88,68 @@ use wayland_server::{
     DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
     Resource,
 };
+
+use super::compositor;
+
+/// A transform that can be attached to a surface
+/// which can be used to alter the position of
+/// input events. This is mostly useful if the on screen
+/// surface differs from the actual surface size. For example
+/// compositor driven crop & scale can use this to transform
+/// the input positions back to actual surface logical coordinates.
+///
+/// Note: The scale will be applied before adding the offset.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct InputTransform {
+    /// Defines a offset that should be applied to
+    /// the input coordinate before sending it to
+    /// the client surface.
+    ///
+    /// This could be for example the top/left crop
+    /// of a surface
+    pub offset: Point<f64, Logical>,
+
+    /// Defines the scale that should be applied to
+    /// the input coordinate before sending it to
+    /// the client surface.
+    ///
+    /// This can be used if the surface size and
+    /// the size used for rendering is different.
+    pub scale: Scale<f64>,
+}
+
+impl InputTransform {
+    fn apply(&self, point: Point<f64, Logical>) -> Point<f64, Logical> {
+        point.upscale(self.scale) + self.offset
+    }
+}
+
+impl Default for InputTransform {
+    fn default() -> Self {
+        Self {
+            offset: Default::default(),
+            scale: Scale::from(1.0),
+        }
+    }
+}
+
+/// Access the [`InputTransform`] for the specified surface
+pub fn with_input_transform<F, R>(surface: &wl_surface::WlSurface, f: F) -> R
+where
+    F: Fn(&mut InputTransform) -> R,
+{
+    compositor::with_states(surface, |states| {
+        states
+            .data_map
+            .insert_if_missing(|| RefCell::new(InputTransform::default()));
+        let mut input_transform = states
+            .data_map
+            .get::<RefCell<InputTransform>>()
+            .unwrap()
+            .borrow_mut();
+        f(&mut *input_transform)
+    })
+}
 
 #[derive(Debug)]
 struct Inner<D> {

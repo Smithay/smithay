@@ -17,7 +17,7 @@ use crate::{
     wayland::{compositor, Serial},
 };
 
-use super::{SeatHandler, SeatState};
+use super::{with_input_transform, SeatHandler, SeatState};
 
 mod grab;
 use grab::{DefaultGrab, GrabStatus};
@@ -125,11 +125,18 @@ impl<D> PointerInternal<D> {
             let entered = self.focus.is_none();
             // in all cases, update the focus, the coordinates of the surface
             // might have changed
-            self.focus = Some((surface, surface_location));
-            let (x, y) = (location - surface_location.to_f64()).into();
+            self.focus = Some((surface.clone(), surface_location));
+            let surface_local_location = location - surface_location.to_f64();
+            let surface_local_location =
+                with_input_transform(&surface, |transform| transform.apply(surface_local_location));
             if entered {
                 self.with_focused_pointers(|pointer, surface| {
-                    pointer.enter(serial.into(), surface, x, y);
+                    pointer.enter(
+                        serial.into(),
+                        surface,
+                        surface_local_location.x,
+                        surface_local_location.y,
+                    );
                     if pointer.version() >= 5 {
                         pointer.frame();
                     }
@@ -137,7 +144,7 @@ impl<D> PointerInternal<D> {
             } else {
                 // we were on top of a surface and remained on it
                 self.with_focused_pointers(|pointer, _| {
-                    pointer.motion(time, x, y);
+                    pointer.motion(time, surface_local_location.x, surface_local_location.y);
                     if pointer.version() >= 5 {
                         pointer.frame();
                     }
