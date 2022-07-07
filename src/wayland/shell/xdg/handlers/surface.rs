@@ -31,8 +31,7 @@ use toplevel::make_toplevel_handle;
 pub use toplevel::{get_parent, send_toplevel_configure, set_parent};
 
 mod popup;
-use popup::make_popup_handle;
-pub use popup::send_popup_configure;
+pub use popup::{make_popup_handle, send_popup_configure};
 
 /// User data of XdgSurface
 #[derive(Debug)]
