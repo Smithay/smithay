@@ -1,14 +1,19 @@
 use crate::{
-    backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
+    backend::renderer::{
+        utils::{draw_surface_tree, RendererSurfaceState},
+        ImportAll, Renderer,
+    },
     desktop::{utils::*, PopupManager, Space},
-    utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
+    utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Size},
     wayland::{
-        compositor::with_states,
+        compositor::{with_states, with_surface_tree_downward, TraversalAction},
         output::Output,
+        seat::InputTransform,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
 };
 use std::{
+    cell::RefCell,
     hash::{Hash, Hasher},
     sync::{Arc, Mutex},
 };
@@ -108,11 +113,147 @@ impl Default for WindowTransform {
     }
 }
 
+/// Defines the reference size for
+/// the constrain behavior.
+#[derive(Debug, Copy, Clone)]
+pub enum Reference {
+    /// Use the bounding box as the reference
+    BoundingBox,
+    /// Use the geometry as the reference
+    Geometry,
+}
+
+/// Defines the scale behavior
+/// for the constrain behavior
+#[derive(Debug, Copy, Clone)]
+pub enum ScaleBehavior {
+    /// Fit the window into the size, nothing will be cropped
+    Fit,
+    /// Zoom the window into the size, crops if the aspect ratio
+    /// of the window does not match the aspect of the constrain
+    /// size
+    Zoom,
+    /// Always stretch the window to the constrain size
+    Stretch,
+    /// Do not scale, but cut off at the constrain size
+    CutOff,
+}
+
+/// Defines how the constrain size will be enforced
+#[derive(Debug, Copy, Clone)]
+pub struct ConstrainBehavior {
+    /// Defines the reference to use for enforcing the constrain size
+    pub reference: Reference,
+    /// Defines the behavior to use for enforcing the constrain size
+    pub behavior: ScaleBehavior,
+}
+
+impl Default for ConstrainBehavior {
+    fn default() -> Self {
+        Self {
+            reference: Reference::BoundingBox,
+            behavior: ScaleBehavior::Fit,
+        }
+    }
+}
+
+impl ConstrainBehavior {
+    fn constrain(
+        &self,
+        constrain_size: Size<i32, Logical>,
+        bbox: Rectangle<i32, Logical>,
+        geometry: Rectangle<i32, Logical>,
+    ) -> WindowTransform {
+        let reference = match self.reference {
+            Reference::BoundingBox => bbox,
+            Reference::Geometry => geometry,
+        };
+
+        let rect: Rectangle<i32, Logical> = match self.behavior {
+            ScaleBehavior::Fit => {
+                let constrain_size = constrain_size.to_f64();
+                let reference = reference.to_f64();
+
+                // Scale the window into the size while keeping the
+                // aspect ratio and center it
+                let width_scale = constrain_size.w / reference.size.w;
+                let height_scale = constrain_size.h / reference.size.h;
+
+                let scale_for_fit = f64::min(width_scale, height_scale);
+
+                let size = Size::from((reference.size.w * scale_for_fit, reference.size.h * scale_for_fit));
+
+                // Then we center the window within the defined size
+                let left = (constrain_size.w - size.w) / 2.0;
+                let top = (constrain_size.h - size.h) / 2.0;
+
+                Rectangle::from_loc_and_size((left, top), size).to_i32_round()
+            }
+            ScaleBehavior::Zoom => {
+                let constrain_size = constrain_size.to_f64();
+                let reference = reference.to_f64();
+
+                // Scale the window into the size while keeping the
+                // aspect ratio and center it
+                let width_scale = constrain_size.w / reference.size.w;
+                let height_scale = constrain_size.h / reference.size.h;
+
+                let scale_for_fit = f64::max(width_scale, height_scale);
+
+                let size = Size::from((reference.size.w * scale_for_fit, reference.size.h * scale_for_fit));
+
+                // Then we center the window within the defined size
+                let left = (constrain_size.w - size.w) / 2.0;
+                let top = (constrain_size.h - size.h) / 2.0;
+
+                Rectangle::from_loc_and_size((left, top), size).to_i32_round()
+            }
+            ScaleBehavior::Stretch => Rectangle::from_loc_and_size((0, 0), constrain_size),
+            ScaleBehavior::CutOff => Rectangle::from_loc_and_size((0, 0), reference.size),
+        };
+
+        let constrain_rect = Rectangle::from_loc_and_size((0, 0), constrain_size);
+        if let Some(intersection) = rect.intersection(constrain_rect) {
+            let constrain_scale: Scale<f64> = Scale::from((
+                reference.size.w as f64 / rect.size.w as f64,
+                reference.size.h as f64 / rect.size.h as f64,
+            ));
+
+            // Calculate how much the constraint wants to crop from
+            // the size it selected
+            let left_top_crop: Point<i32, Logical> =
+                Point::from((-i32::min(rect.loc.x, 0), -i32::min(rect.loc.y, 0)))
+                    .to_f64()
+                    .upscale(constrain_scale)
+                    .to_i32_round();
+
+            let crop_size = intersection.size.to_f64().upscale(constrain_scale).to_i32_round();
+
+            let src = Rectangle::from_loc_and_size(reference.loc + left_top_crop, crop_size);
+            let scale = Scale::from((
+                intersection.size.w as f64 / src.size.w as f64,
+                intersection.size.h as f64 / src.size.h as f64,
+            ));
+            let offset = intersection.loc;
+
+            WindowTransform {
+                src: Some(src),
+                scale,
+                offset,
+            }
+        } else {
+            WindowTransform::default()
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct WindowInner {
     pub(super) id: usize,
     toplevel: Kind,
     bbox: Mutex<Rectangle<i32, Logical>>,
+    constrain_behavior: Mutex<ConstrainBehavior>,
+    constrain_size: Mutex<Option<Size<i32, Logical>>>,
     pub(super) transform: Mutex<WindowTransform>,
     user_data: UserDataMap,
 }
@@ -171,6 +312,8 @@ impl Window {
             id,
             toplevel,
             bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
+            constrain_behavior: Mutex::new(ConstrainBehavior::default()),
+            constrain_size: Mutex::new(None),
             transform: Mutex::new(WindowTransform::default()),
             user_data: UserDataMap::new(),
         }))
@@ -297,11 +440,97 @@ impl Window {
 
     /// Updates internal values
     ///
-    /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
-    /// to correctly update the bounding box of this window.
+    /// Needs to be called whenever the toplevel surface, any unsynchronized subsurfaces of this window or
+    /// popups of this surface are updated to correctly update the bounding box of this window.
     pub fn refresh(&self) {
-        *self.0.bbox.lock().unwrap() =
-            bbox_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0), 1.0, None);
+        let bbox = bbox_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0), 1.0, None);
+        *self.0.bbox.lock().unwrap() = bbox;
+
+        if bbox.is_empty() {
+            return;
+        }
+
+        let transform = if let Some(constrain_size) = *self.0.constrain_size.lock().unwrap() {
+            let geometry = self.real_geometry();
+            self.0
+                .constrain_behavior
+                .lock()
+                .unwrap()
+                .constrain(constrain_size, bbox, geometry)
+        } else {
+            WindowTransform::default()
+        };
+
+        *self.0.transform.lock().unwrap() = transform;
+
+        with_surface_tree_downward(
+            self.toplevel().wl_surface(),
+            (Point::from((0, 0)), None),
+            |_, states, (surface_offset, parent_crop)| {
+                let mut surface_offset = *surface_offset;
+
+                let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
+
+                if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
+                    let surface_rect = Rectangle::from_loc_and_size((0, 0), surface_view.dst);
+                    let src = transform
+                        .src
+                        .map(|mut src| {
+                            // Move the src rect relative to the surface
+                            src.loc -= surface_offset + surface_view.offset;
+                            src
+                        })
+                        .unwrap_or(surface_rect);
+
+                    let intersection = surface_rect.intersection(src).unwrap_or_default();
+
+                    let mut offset = surface_view.offset;
+
+                    // Correct the offset by the (parent)crop
+                    if let Some(parent_crop) = *parent_crop {
+                        offset = (offset + intersection.loc) - parent_crop;
+                    }
+
+                    surface_offset += offset;
+
+                    states
+                        .data_map
+                        .insert_if_missing(|| RefCell::new(InputTransform::default()));
+                    let mut input_transform = states
+                        .data_map
+                        .get::<RefCell<InputTransform>>()
+                        .unwrap()
+                        .borrow_mut();
+                    input_transform.scale = (1.0 / transform.scale.x, 1.0 / transform.scale.y).into();
+                    input_transform.offset = intersection.loc.to_f64();
+                    TraversalAction::DoChildren((surface_offset, Some(intersection.loc)))
+                } else {
+                    TraversalAction::SkipChildren
+                }
+            },
+            |_, _, _| {},
+            |_, _, _| true,
+        );
+
+        for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
+            with_surface_tree_downward(
+                popup.wl_surface(),
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |_, states, _| {
+                    states
+                        .data_map
+                        .insert_if_missing(|| RefCell::new(InputTransform::default()));
+                    let mut input_transform = states
+                        .data_map
+                        .get::<RefCell<InputTransform>>()
+                        .unwrap()
+                        .borrow_mut();
+                    input_transform.scale = (1.0 / transform.scale.x, 1.0 / transform.scale.y).into();
+                },
+                |_, _, _| true,
+            )
+        }
     }
 
     /// Finds the topmost surface under this point matching the input regions of the surface and returns
@@ -385,6 +614,18 @@ impl Window {
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
+    }
+
+    /// Set or unset the constrain size
+    pub fn set_constrain_size(&self, size: Option<Size<i32, Logical>>) {
+        *self.0.constrain_size.lock().unwrap() = size;
+        self.refresh();
+    }
+
+    /// Sets the constrain behavior
+    pub fn set_constrain_behavior(&self, behavior: ConstrainBehavior) {
+        *self.0.constrain_behavior.lock().unwrap() = behavior;
+        self.refresh();
     }
 
     /// Returns the real geometry of this window without

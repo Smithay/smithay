@@ -1,13 +1,16 @@
 use crate::{
     utils::{DeadResource, IsAlive, Logical, Point},
     wayland::{
-        compositor::{get_role, with_states},
-        seat::Seat,
+        compositor::{get_role, with_states, with_surface_tree_downward, TraversalAction},
+        seat::{InputTransform, Seat},
         shell::xdg::{XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
         Serial,
     },
 };
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    sync::{Arc, Mutex},
+};
 use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_wm_base};
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
@@ -45,6 +48,8 @@ impl PopupManager {
     }
 
     /// Needs to be called for [`PopupManager`] to correctly update its internal state.
+    ///
+    /// Returns the toplevel surface of the popup if any
     pub fn commit(&mut self, surface: &WlSurface) {
         if get_role(surface) == Some(XDG_POPUP_ROLE) {
             if let Some(i) = self
@@ -57,6 +62,37 @@ impl PopupManager {
                 // at this point the popup must have a parent,
                 // or it would have raised a protocol error
                 let _ = self.add_popup(popup);
+            }
+
+            if let Some(popup) = self.find_popup(surface) {
+                if let Ok(root) = find_popup_root_surface(&popup) {
+                    let root_transform = with_states(&root, |states| {
+                        states
+                            .data_map
+                            .get::<RefCell<InputTransform>>()
+                            .map(|t| *t.borrow())
+                    });
+
+                    if let Some(transform) = root_transform {
+                        with_surface_tree_downward(
+                            popup.wl_surface(),
+                            (),
+                            |_, _, _| TraversalAction::DoChildren(()),
+                            |_, states, _| {
+                                states
+                                    .data_map
+                                    .insert_if_missing(|| RefCell::new(InputTransform::default()));
+                                let mut input_transform = states
+                                    .data_map
+                                    .get::<RefCell<InputTransform>>()
+                                    .unwrap()
+                                    .borrow_mut();
+                                input_transform.scale = transform.scale;
+                            },
+                            |_, _, _| true,
+                        );
+                    }
+                }
             }
         }
     }
