@@ -359,6 +359,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         // of a xdg_surface has to be sent during the commit if
         // the surface is not already configured
         let window = Window::new(SurfaceKind::Xdg(surface));
+        window.set_constrain_size(Some(Size::from((800, 600))));
         place_new_window(&mut self.space, &window, true);
     }
 
