@@ -1,6 +1,8 @@
+use std::sync::Mutex;
+
 use smithay::{
     delegate_xdg_shell,
-    desktop::{Kind, Window, WindowSurfaceType},
+    desktop::{Kind, Space, Window, WindowSurfaceType},
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
@@ -10,8 +12,12 @@ use smithay::{
     },
     utils::Rectangle,
     wayland::{
+        compositor::with_states,
         seat::{Focus, PointerGrabStartData, Seat},
-        shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
+        shell::xdg::{
+            PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
+            XdgToplevelSurfaceRoleAttributes,
+        },
         Serial,
     },
 };
@@ -27,10 +33,8 @@ impl XdgShellHandler for Smallvil {
     }
 
     fn new_toplevel(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
-        let window = Window::new(Kind::Xdg(surface.clone()));
+        let window = Window::new(Kind::Xdg(surface));
         self.space.map_window(&window, (0, 0), None, false);
-
-        surface.send_configure();
     }
     fn new_popup(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _positioner: PositionerState) {}
 
@@ -130,4 +134,29 @@ fn check_grab(seat: &Seat<Smallvil>, surface: &WlSurface, serial: Serial) -> Opt
     }
 
     Some(start_data)
+}
+
+/// Should be called on `WlSurface::commit`
+pub fn handle_commit(space: &Space, surface: &WlSurface) -> Option<()> {
+    let window = space
+        .window_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+        .cloned()?;
+
+    if let Kind::Xdg(_) = window.toplevel() {
+        let initial_configure_sent = with_states(surface, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .initial_configure_sent
+        });
+
+        if !initial_configure_sent {
+            window.configure();
+        }
+    }
+
+    Some(())
 }

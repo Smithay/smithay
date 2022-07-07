@@ -13,6 +13,8 @@ use smithay::{
     },
 };
 
+use super::xdg_shell;
+
 impl CompositorHandler for Smallvil {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.compositor_state
@@ -22,6 +24,7 @@ impl CompositorHandler for Smallvil {
         on_commit_buffer_handler(surface);
         self.space.commit(surface);
 
+        xdg_shell::handle_commit(&self.space, surface);
         resize_grab::handle_commit(&mut self.space, surface);
     }
 }
