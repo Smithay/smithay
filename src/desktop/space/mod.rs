@@ -408,6 +408,8 @@ impl Space {
                     &mut output_state.surfaces,
                     surface,
                     window_loc(window, &self.id),
+                    1.0,
+                    None,
                     &self.logger,
                 );
 
@@ -422,6 +424,8 @@ impl Space {
                         &mut output_state.surfaces,
                         surface,
                         location,
+                        1.0,
+                        None,
                         &self.logger,
                     );
                 }

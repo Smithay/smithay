@@ -169,7 +169,7 @@ impl Window {
         for (popup, location) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
             let offset = self.geometry().loc + location - popup.geometry().loc;
-            bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset));
+            bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset, 1.0, None));
         }
 
         bounding_box
@@ -191,13 +191,18 @@ impl Window {
         let location = location.into();
         let scale = scale.into();
         let surface = self.0.toplevel.wl_surface();
-        let mut geo = physical_bbox_from_surface_tree(surface, location, scale);
+        let mut geo = physical_bbox_from_surface_tree(surface, location, scale, None);
         for (popup, p_location) in PopupManager::popups_for_surface(surface) {
             let offset = (self.geometry().loc + p_location - popup.geometry().loc)
                 .to_f64()
                 .to_physical(scale)
                 .to_i32_round();
-            geo = geo.merge(physical_bbox_from_surface_tree(surface, location + offset, scale));
+            geo = geo.merge(physical_bbox_from_surface_tree(
+                surface,
+                location + offset,
+                scale,
+                None,
+            ));
         }
         geo
     }
@@ -242,7 +247,8 @@ impl Window {
     /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
     /// to correctly update the bounding box of this window.
     pub fn refresh(&self) {
-        *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0));
+        *self.0.bbox.lock().unwrap() =
+            bbox_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0), 1.0, None);
     }
 
     /// Finds the topmost surface under this point matching the input regions of the surface and returns
@@ -261,14 +267,15 @@ impl Window {
         if surface_type.contains(WindowSurfaceType::POPUP) {
             for (popup, location) in PopupManager::popups_for_surface(surface) {
                 let offset = self.geometry().loc + location - popup.geometry().loc;
-                if let Some(result) = under_from_surface_tree(popup.wl_surface(), point, offset, surface_type)
+                if let Some(result) =
+                    under_from_surface_tree(popup.wl_surface(), point, offset, 1.0, None, surface_type)
                 {
                     return Some(result);
                 }
             }
         }
 
-        under_from_surface_tree(surface, point, (0, 0), surface_type)
+        under_from_surface_tree(surface, point, (0, 0), 1.0, None, surface_type)
     }
 
     /// Damage of all the surfaces of this window.
@@ -283,7 +290,7 @@ impl Window {
         for_values: Option<(&Space, &Output)>,
     ) -> Vec<Rectangle<i32, Physical>> {
         let surface = self.0.toplevel.wl_surface();
-        damage_from_surface_tree(surface, location, scale, for_values)
+        damage_from_surface_tree(surface, location, scale, None, for_values)
     }
 
     /// Returns the opaque regions of this window
@@ -293,7 +300,7 @@ impl Window {
         scale: impl Into<Scale<f64>>,
     ) -> Option<Vec<Rectangle<i32, Physical>>> {
         let surface = self.0.toplevel.wl_surface();
-        opaque_regions_from_surface_tree(surface, location, scale)
+        opaque_regions_from_surface_tree(surface, location, scale, None)
     }
 
     /// Returns the underlying toplevel

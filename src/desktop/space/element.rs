@@ -248,7 +248,12 @@ where
 
     fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
         let scale = scale.into();
-        physical_bbox_from_surface_tree(&self.surface, self.position.to_f64().to_physical(scale), scale)
+        physical_bbox_from_surface_tree(
+            &self.surface,
+            self.position.to_f64().to_physical(scale),
+            scale,
+            None,
+        )
     }
 
     fn accumulated_damage(
@@ -261,13 +266,19 @@ where
             &self.surface,
             self.position.to_f64().to_physical(scale),
             scale,
+            None,
             for_values.map(|f| (f.0, f.1)),
         )
     }
 
     fn opaque_regions(&self, scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>> {
         let scale = scale.into();
-        opaque_regions_from_surface_tree(&self.surface, self.position.to_f64().to_physical(scale), scale)
+        opaque_regions_from_surface_tree(
+            &self.surface,
+            self.position.to_f64().to_physical(scale),
+            scale,
+            None,
+        )
     }
 
     fn draw(

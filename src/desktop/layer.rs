@@ -483,7 +483,7 @@ impl LayerSurface {
 
     /// Returns the bounding box over this layer surface and its subsurfaces.
     pub fn bbox(&self) -> Rectangle<i32, Logical> {
-        bbox_from_surface_tree(self.0.surface.wl_surface(), (0, 0))
+        bbox_from_surface_tree(self.0.surface.wl_surface(), (0, 0), 1.0, None)
     }
 
     /// Returns the bounding box over this layer surface, it subsurfaces as well as any popups.
@@ -494,7 +494,8 @@ impl LayerSurface {
         let mut bounding_box = self.bbox();
         let surface = self.0.surface.wl_surface();
         for (popup, location) in PopupManager::popups_for_surface(surface) {
-            bounding_box = bounding_box.merge(bbox_from_surface_tree(popup.wl_surface(), location));
+            bounding_box =
+                bounding_box.merge(bbox_from_surface_tree(popup.wl_surface(), location, 1.0, None));
         }
 
         bounding_box
@@ -516,12 +517,13 @@ impl LayerSurface {
         let location = location.into();
         let scale = scale.into();
         let surface = self.0.surface.wl_surface();
-        let mut geo = physical_bbox_from_surface_tree(surface, location, scale);
+        let mut geo = physical_bbox_from_surface_tree(surface, location, scale, None);
         for (popup, p_location) in PopupManager::popups_for_surface(surface) {
             geo = geo.merge(physical_bbox_from_surface_tree(
                 popup.wl_surface(),
                 location + p_location.to_f64().to_physical(scale),
                 scale,
+                None,
             ));
         }
         geo
@@ -540,12 +542,12 @@ impl LayerSurface {
         let surface = self.wl_surface();
         for (popup, location) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
-            if let Some(result) = under_from_surface_tree(surface, point, location, surface_type) {
+            if let Some(result) = under_from_surface_tree(surface, point, location, 1.0, None, surface_type) {
                 return Some(result);
             }
         }
 
-        under_from_surface_tree(surface, point, (0, 0), surface_type)
+        under_from_surface_tree(surface, point, (0, 0), 1.0, None, surface_type)
     }
 
     /// Returns the damage of all the surfaces of this layer surface.
@@ -560,7 +562,7 @@ impl LayerSurface {
         for_values: Option<(&Space, &Output)>,
     ) -> Vec<Rectangle<i32, Physical>> {
         let surface = self.wl_surface();
-        damage_from_surface_tree(surface, location, scale, for_values)
+        damage_from_surface_tree(surface, location, scale, None, for_values)
     }
 
     /// Returns the opaque regions of all the surfaces of this layer surface.
@@ -570,7 +572,7 @@ impl LayerSurface {
         scale: impl Into<Scale<f64>>,
     ) -> Option<Vec<Rectangle<i32, Physical>>> {
         let surface = self.wl_surface();
-        opaque_regions_from_surface_tree(surface, location, scale)
+        opaque_regions_from_surface_tree(surface, location, scale, None)
     }
 
     /// Sends the frame callback to all the subsurfaces in this

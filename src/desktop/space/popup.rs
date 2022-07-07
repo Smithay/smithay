@@ -87,6 +87,7 @@ impl RenderPopup {
             self.popup.wl_surface(),
             self.location.to_f64().to_physical(scale),
             scale,
+            None,
         )
     }
 
@@ -101,6 +102,7 @@ impl RenderPopup {
             self.popup.wl_surface(),
             self.location.to_f64().to_physical(scale),
             scale,
+            None,
             for_values,
         )
     }
@@ -115,6 +117,7 @@ impl RenderPopup {
             self.popup.wl_surface(),
             self.location.to_f64().to_physical(scale),
             scale,
+            None,
         )
     }
 
