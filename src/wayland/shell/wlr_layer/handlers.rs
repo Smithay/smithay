@@ -268,6 +268,13 @@ where
                         .unwrap()
                         .parent = Some(parent_surface);
                 });
+
+                WlrLayerShellHandler::new_popup(
+                    state,
+                    dh,
+                    make_surface_handle(layer_surface),
+                    crate::wayland::shell::xdg::handlers::make_popup_handle(&popup),
+                );
             }
             zwlr_layer_surface_v1::Request::AckConfigure { serial } => {
                 let serial = Serial::from(serial);
@@ -324,4 +331,14 @@ where
     compositor::with_states(&data.wl_surface, |states| {
         f(&mut *states.cached_state.pending::<LayerSurfaceCachedState>())
     })
+}
+
+pub fn make_surface_handle(
+    resource: &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+) -> crate::wayland::shell::wlr_layer::LayerSurface {
+    let data = resource.data::<WlrLayerSurfaceUserData>().unwrap();
+    crate::wayland::shell::wlr_layer::LayerSurface {
+        wl_surface: data.wl_surface.clone(),
+        shell_surface: resource.clone(),
+    }
 }

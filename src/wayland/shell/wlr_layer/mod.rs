@@ -63,6 +63,7 @@ use crate::{
     utils::{alive_tracker::IsAlive, Logical, Size},
     wayland::{
         compositor::{self, Cacheable},
+        shell::xdg,
         Serial, SERIAL_COUNTER,
     },
 };
@@ -229,6 +230,9 @@ pub trait WlrLayerShellHandler {
         layer: Layer,
         namespace: String,
     );
+
+    /// A new popup was assigned a layer surface as it's parent
+    fn new_popup(&mut self, dh: &DisplayHandle, parent: LayerSurface, popup: xdg::PopupSurface) {}
 
     /// A surface has acknowledged a configure serial.
     fn ack_configure(
