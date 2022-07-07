@@ -21,6 +21,8 @@ pub mod dumb;
 pub mod format;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
+#[cfg(feature = "backend_vulkan")]
+pub mod vulkan;
 
 mod swapchain;
 use std::{
