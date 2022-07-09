@@ -12,10 +12,11 @@ use crate::{
     },
 };
 use indexmap::IndexSet;
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
+use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle};
 
 use std::{
     cell::{RefCell, RefMut},
+    collections::HashSet,
     hash::{Hash, Hasher},
     rc::Rc,
     sync::{Arc, Mutex, Weak},
@@ -32,7 +33,7 @@ pub struct LayerMap {
     output: Weak<(Mutex<OutputInner>, UserDataMap)>,
     zone: Rectangle<i32, Logical>,
     // surfaces for tracking enter and leave events
-    surfaces: Vec<WlSurface>,
+    surfaces: HashSet<ObjectId>,
     logger: ::slog::Logger,
 }
 
@@ -63,7 +64,7 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
                     })
                     .unwrap_or_else(|| (0, 0).into()),
             ),
-            surfaces: Vec::new(),
+            surfaces: HashSet::new(),
             logger: (*o.data.inner.0.lock().unwrap())
                 .log
                 .new(slog::o!("smithay_module" => "layer_map")),
@@ -360,9 +361,10 @@ impl LayerMap {
     ///
     /// This function needs to be called periodically (though not necessarily frequently)
     /// to be able cleanup internally used resources.
-    pub fn cleanup(&mut self) {
+    pub fn cleanup(&mut self, dh: &DisplayHandle) {
         self.layers.retain(|layer| layer.alive());
-        self.surfaces.retain(|s| s.alive());
+        self.surfaces
+            .retain(|i| dh.backend_handle().object_info(i.clone()).is_ok());
     }
 
     /// Returns layers count

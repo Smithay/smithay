@@ -5,12 +5,12 @@ use crate::{
     wayland::output::Output,
 };
 use indexmap::IndexMap;
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::backend::ObjectId;
 
 use std::{
     any::TypeId,
     cell::{RefCell, RefMut},
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -49,7 +49,7 @@ pub struct OutputState {
     pub last_output_geo: Option<Rectangle<i32, Physical>>,
 
     // surfaces for tracking enter and leave events
-    pub surfaces: Vec<WlSurface>,
+    pub surfaces: HashSet<ObjectId>,
 }
 
 pub type OutputUserdata = RefCell<HashMap<usize, OutputState>>;

@@ -17,7 +17,7 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{collections::VecDeque, fmt};
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
+use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 mod element;
 mod layer;
@@ -288,7 +288,7 @@ impl Space {
             location: location.into(),
             // keep surfaces, we still need to inform them of leaving,
             // if they don't overlap anymore during refresh.
-            surfaces: state.surfaces.drain(..).collect::<Vec<_>>(),
+            surfaces: std::mem::take(&mut state.surfaces),
             // resets last_seen and old_damage, if remapped
             ..Default::default()
         };
@@ -344,28 +344,14 @@ impl Space {
             return Vec::new();
         }
 
-        let w_geo = window_rect(w, &self.id);
-        let mut outputs = self
-            .outputs
+        self.outputs
             .iter()
-            .cloned()
             .filter(|o| {
-                let o_geo = self.output_geometry(o).unwrap();
-                w_geo.overlaps(o_geo)
+                let output_state = output_state(self.id, o);
+                output_state.surfaces.contains(&w.toplevel().wl_surface().id())
             })
-            .collect::<Vec<Output>>();
-        outputs.sort_by(|o1, o2| {
-            let overlap = |rect1: Rectangle<i32, Logical>, rect2: Rectangle<i32, Logical>| -> i32 {
-                // x overlap
-                std::cmp::max(0, std::cmp::min(rect1.loc.x + rect1.size.w, rect2.loc.x + rect2.size.w) - std::cmp::max(rect1.loc.x, rect2.loc.x))
-                // y overlap
-                * std::cmp::max(0, std::cmp::min(rect1.loc.y + rect1.size.h, rect2.loc.y + rect2.size.h) - std::cmp::max(rect1.loc.y, rect2.loc.y))
-            };
-            let o1_area = overlap(self.output_geometry(o1).unwrap(), w_geo);
-            let o2_area = overlap(self.output_geometry(o2).unwrap(), w_geo);
-            o1_area.cmp(&o2_area)
-        });
-        outputs
+            .cloned()
+            .collect()
     }
 
     /// Refresh some internal values and update client state,
@@ -378,7 +364,9 @@ impl Space {
         self.windows.retain(|w| w.alive());
 
         for output in &mut self.outputs {
-            output_state(self.id, output).surfaces.retain(|s| s.alive());
+            output_state(self.id, output)
+                .surfaces
+                .retain(|i| dh.backend_handle().object_info(i.clone()).is_ok());
         }
 
         for window in &self.windows {
