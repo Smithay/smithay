@@ -4,10 +4,7 @@ use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::{self, 
 use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1;
 use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
 use wayland_server::protocol::wl_surface;
-use wayland_server::{
-    Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch,
-    Resource,
-};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, Resource};
 
 use crate::utils::alive_tracker::{AliveTracker, IsAlive};
 use crate::wayland::{compositor, shell::wlr_layer::Layer, Serial};
@@ -23,7 +20,7 @@ use super::LAYER_SURFACE_ROLE;
  * layer_shell
  */
 
-impl<D> DelegateGlobalDispatch<ZwlrLayerShellV1, (), D> for WlrLayerShellState
+impl<D> GlobalDispatch<ZwlrLayerShellV1, (), D> for WlrLayerShellState
 where
     D: GlobalDispatch<ZwlrLayerShellV1, ()>,
     D: Dispatch<ZwlrLayerShellV1, ()>,
@@ -43,7 +40,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<ZwlrLayerShellV1, (), D> for WlrLayerShellState
+impl<D> Dispatch<ZwlrLayerShellV1, (), D> for WlrLayerShellState
 where
     D: Dispatch<ZwlrLayerShellV1, ()>,
     D: Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData>,
@@ -174,7 +171,7 @@ impl IsAlive for ZwlrLayerSurfaceV1 {
     }
 }
 
-impl<D> DelegateDispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData, D> for WlrLayerShellState
+impl<D> Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData, D> for WlrLayerShellState
 where
     D: Dispatch<ZwlrLayerSurfaceV1, WlrLayerSurfaceUserData>,
     D: WlrLayerShellHandler,

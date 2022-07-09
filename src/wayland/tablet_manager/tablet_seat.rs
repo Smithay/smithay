@@ -5,7 +5,7 @@ use wayland_protocols::wp::tablet::zv2::server::{
 };
 use wayland_server::{
     backend::{ClientId, ObjectId},
-    Client, DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::backend::input::TabletToolDescriptor;
@@ -217,7 +217,7 @@ pub struct TabletSeatUserData {
     pub(super) handle: TabletSeatHandle,
 }
 
-impl<D> DelegateDispatch<ZwpTabletSeatV2, TabletSeatUserData, D> for TabletManagerState
+impl<D> Dispatch<ZwpTabletSeatV2, TabletSeatUserData, D> for TabletManagerState
 where
     D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
     D: 'static,

@@ -15,7 +15,7 @@ use wayland_server::{
         wl_keyboard::{self, KeyState as WlKeyState, KeymapFormat, WlKeyboard},
         wl_surface::WlSurface,
     },
-    DelegateDispatch, Dispatch, DisplayHandle, Resource,
+    Dispatch, DisplayHandle, Resource,
 };
 use xkbcommon::xkb;
 pub use xkbcommon::xkb::{keysyms, Keysym};
@@ -582,7 +582,7 @@ pub struct KeyboardUserData {
     pub(crate) handle: Option<KeyboardHandle>,
 }
 
-impl<D> DelegateDispatch<WlKeyboard, KeyboardUserData, D> for SeatState<D>
+impl<D> Dispatch<WlKeyboard, KeyboardUserData, D> for SeatState<D>
 where
     D: 'static + Dispatch<WlKeyboard, KeyboardUserData>,
     D: SeatHandler,

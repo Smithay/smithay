@@ -6,7 +6,7 @@ use std::{
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::wl_touch::{self, WlTouch},
-    DelegateDispatch, Dispatch, DisplayHandle, Resource,
+    Dispatch, DisplayHandle, Resource,
 };
 
 use super::{SeatHandler, SeatState};
@@ -188,7 +188,7 @@ pub struct TouchUserData {
     pub(crate) handle: Option<TouchHandle>,
 }
 
-impl<D> DelegateDispatch<WlTouch, TouchUserData, D> for SeatState<D>
+impl<D> Dispatch<WlTouch, TouchUserData, D> for SeatState<D>
 where
     D: Dispatch<WlTouch, TouchUserData>,
     D: SeatHandler,

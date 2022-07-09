@@ -49,7 +49,7 @@ use std::{ffi::OsStr, io, os::unix::net::UnixStream};
 use calloop::{
     generic::Generic, EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory,
 };
-use wayland_server::socket::{BindError, ListeningSocket};
+use wayland_server::{BindError, ListeningSocket};
 
 /// A Wayland listening socket event source.
 ///
@@ -72,8 +72,9 @@ impl ListeningSocketSource {
         // should be connecting based off the WAYLAND_DISPLAY or WAYLAND_SOCKET environment variables.
         let socket = ListeningSocket::bind_auto("wayland", 1..33)?;
 
-        let logger = crate::slog_or_fallback(logger)
-            .new(slog::o!("wayland_socket" => format!("{}", socket.socket_name().to_string_lossy())));
+        let logger = crate::slog_or_fallback(logger).new(
+            slog::o!("wayland_socket" => format!("{}", socket.socket_name().unwrap().to_string_lossy())),
+        );
         slog::info!(logger, "Created new socket");
 
         Ok(ListeningSocketSource {
@@ -88,8 +89,9 @@ impl ListeningSocketSource {
         L: Into<Option<::slog::Logger>>,
     {
         let socket = ListeningSocket::bind(name)?;
-        let logger = crate::slog_or_fallback(logger)
-            .new(slog::o!("wayland_socket" => format!("{}", socket.socket_name().to_string_lossy())));
+        let logger = crate::slog_or_fallback(logger).new(
+            slog::o!("wayland_socket" => format!("{}", socket.socket_name().unwrap().to_string_lossy())),
+        );
         slog::info!(logger, "Created new socket");
 
         Ok(ListeningSocketSource {
@@ -100,7 +102,7 @@ impl ListeningSocketSource {
 
     /// Returns the name of the listening socket.
     pub fn socket_name(&self) -> &OsStr {
-        self.socket.file.socket_name()
+        self.socket.file.socket_name().unwrap()
     }
 }
 

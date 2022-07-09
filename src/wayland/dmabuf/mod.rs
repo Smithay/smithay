@@ -194,7 +194,7 @@ impl DmabufState {
     ///
     /// This operation is permanent and there is no way to re-enable a global.
     pub fn disable_global<D: 'static>(&mut self, display: &DisplayHandle, global: &DmabufGlobal) {
-        display.disable_global(self.globals.get(&global.id).unwrap().clone())
+        display.disable_global::<D>(self.globals.get(&global.id).unwrap().clone())
     }
 
     /// Destroys a dmabuf global.
@@ -203,7 +203,7 @@ impl DmabufState {
     /// been destroyed.
     pub fn destroy_global<D: 'static>(&mut self, display: &DisplayHandle, global: DmabufGlobal) {
         if DMABUF_GLOBAL_IDS.lock().unwrap().remove(&global.id) {
-            display.remove_global(self.globals.remove(&global.id).unwrap());
+            display.remove_global::<D>(self.globals.remove(&global.id).unwrap());
         }
     }
 }

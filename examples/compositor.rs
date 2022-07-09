@@ -7,7 +7,7 @@ use smithay::wayland::compositor::{CompositorHandler, CompositorState};
 
 use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{socket::ListeningSocket, DisplayHandle};
+use wayland_server::{DisplayHandle, ListeningSocket};
 
 struct App {
     compositor_state: CompositorState,

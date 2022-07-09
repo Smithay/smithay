@@ -12,8 +12,7 @@ use wayland_server::{
         wl_subsurface::{self, WlSubsurface},
         wl_surface::{self, WlSurface},
     },
-    DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource, WEnum,
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
 use crate::utils::{
@@ -34,7 +33,7 @@ use slog::trace;
  * wl_compositor
  */
 
-impl<D> DelegateGlobalDispatch<WlCompositor, (), D> for CompositorState
+impl<D> GlobalDispatch<WlCompositor, (), D> for CompositorState
 where
     D: GlobalDispatch<WlCompositor, ()>,
     D: Dispatch<WlCompositor, ()>,
@@ -55,7 +54,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<WlCompositor, (), D> for CompositorState
+impl<D> Dispatch<WlCompositor, (), D> for CompositorState
 where
     D: Dispatch<WlCompositor, ()>,
     D: Dispatch<WlSurface, SurfaceUserData>,
@@ -150,7 +149,7 @@ pub struct SurfaceUserData {
     alive_tracker: AliveTracker,
 }
 
-impl<D> DelegateDispatch<WlSurface, SurfaceUserData, D> for CompositorState
+impl<D> Dispatch<WlSurface, SurfaceUserData, D> for CompositorState
 where
     D: Dispatch<WlSurface, SurfaceUserData>,
     D: Dispatch<WlCallback, ()>,
@@ -322,7 +321,7 @@ pub struct RegionUserData {
     pub(crate) inner: Mutex<RegionAttributes>,
 }
 
-impl<D> DelegateDispatch<WlRegion, RegionUserData, D> for CompositorState
+impl<D> Dispatch<WlRegion, RegionUserData, D> for CompositorState
 where
     D: Dispatch<WlRegion, RegionUserData>,
     D: CompositorHandler,
@@ -358,7 +357,7 @@ where
  * wl_subcompositor
  */
 
-impl<D> DelegateGlobalDispatch<WlSubcompositor, (), D> for CompositorState
+impl<D> GlobalDispatch<WlSubcompositor, (), D> for CompositorState
 where
     D: GlobalDispatch<WlSubcompositor, ()>,
     D: Dispatch<WlSubcompositor, ()>,
@@ -378,7 +377,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<WlSubcompositor, (), D> for CompositorState
+impl<D> Dispatch<WlSubcompositor, (), D> for CompositorState
 where
     D: Dispatch<WlSubcompositor, ()>,
     D: Dispatch<WlSubsurface, SubsurfaceUserData>,
@@ -487,7 +486,7 @@ pub fn is_effectively_sync(surface: &wl_surface::WlSurface) -> bool {
     }
 }
 
-impl<D> DelegateDispatch<WlSubsurface, SubsurfaceUserData, D> for CompositorState
+impl<D> Dispatch<WlSubsurface, SubsurfaceUserData, D> for CompositorState
 where
     D: Dispatch<WlSubsurface, SubsurfaceUserData>,
     D: CompositorHandler,
@@ -560,7 +559,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<WlCallback, (), D> for CompositorState
+impl<D> Dispatch<WlCallback, (), D> for CompositorState
 where
     D: Dispatch<WlCallback, ()>,
     D: CompositorHandler,

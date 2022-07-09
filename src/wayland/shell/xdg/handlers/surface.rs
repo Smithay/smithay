@@ -19,7 +19,7 @@ use wayland_protocols::{
     },
 };
 
-use wayland_server::{protocol::wl_surface, DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource};
+use wayland_server::{protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource};
 
 use super::{
     InnerState, PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
@@ -41,7 +41,7 @@ pub struct XdgSurfaceUserData {
     pub(crate) has_active_role: AtomicBool,
 }
 
-impl<D> DelegateDispatch<XdgSurface, XdgSurfaceUserData, D> for XdgShellState
+impl<D> Dispatch<XdgSurface, XdgSurfaceUserData, D> for XdgShellState
 where
     D: Dispatch<XdgSurface, XdgSurfaceUserData>,
     D: Dispatch<XdgToplevel, XdgShellSurfaceUserData>,

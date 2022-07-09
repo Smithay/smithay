@@ -5,8 +5,7 @@ use wayland_protocols::xdg::xdg_output::zv1::server::{
 };
 use wayland_server::{
     protocol::wl_output::{self, Mode as WMode, WlOutput},
-    Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use super::{xdg::XdgOutput, Output, OutputData, OutputManagerState, OutputUserData};
@@ -15,7 +14,7 @@ use super::{xdg::XdgOutput, Output, OutputData, OutputManagerState, OutputUserDa
  * Wl Output
  */
 
-impl<D> DelegateGlobalDispatch<WlOutput, OutputData, D> for OutputManagerState
+impl<D> GlobalDispatch<WlOutput, OutputData, D> for OutputManagerState
 where
     D: GlobalDispatch<WlOutput, OutputData>,
     D: Dispatch<WlOutput, OutputUserData>,
@@ -77,7 +76,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<WlOutput, OutputUserData, D> for OutputManagerState
+impl<D> Dispatch<WlOutput, OutputUserData, D> for OutputManagerState
 where
     D: Dispatch<WlOutput, OutputUserData>,
 {
@@ -112,7 +111,7 @@ where
  * XDG Output
  */
 
-impl<D> DelegateGlobalDispatch<ZxdgOutputManagerV1, (), D> for OutputManagerState
+impl<D> GlobalDispatch<ZxdgOutputManagerV1, (), D> for OutputManagerState
 where
     D: GlobalDispatch<ZxdgOutputManagerV1, ()>,
     D: Dispatch<ZxdgOutputManagerV1, ()>,
@@ -131,7 +130,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<ZxdgOutputManagerV1, (), D> for OutputManagerState
+impl<D> Dispatch<ZxdgOutputManagerV1, (), D> for OutputManagerState
 where
     D: Dispatch<ZxdgOutputManagerV1, ()>,
     D: Dispatch<ZxdgOutputV1, XdgOutputUserData>,
@@ -176,7 +175,7 @@ pub struct XdgOutputUserData {
     xdg_output: XdgOutput,
 }
 
-impl<D> DelegateDispatch<ZxdgOutputV1, XdgOutputUserData, D> for OutputManagerState
+impl<D> Dispatch<ZxdgOutputV1, XdgOutputUserData, D> for OutputManagerState
 where
     D: Dispatch<ZxdgOutputV1, XdgOutputUserData>,
 {

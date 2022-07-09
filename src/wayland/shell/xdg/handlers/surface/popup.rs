@@ -6,12 +6,12 @@ use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
 use wayland_server::{
     backend::{ClientId, ObjectId},
-    DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource,
+    DataInit, Dispatch, DisplayHandle, Resource,
 };
 
 use super::{PopupConfigure, XdgShellHandler, XdgShellState, XdgShellSurfaceUserData, XdgSurfaceUserData};
 
-impl<D> DelegateDispatch<XdgPopup, XdgShellSurfaceUserData, D> for XdgShellState
+impl<D> Dispatch<XdgPopup, XdgShellSurfaceUserData, D> for XdgShellState
 where
     D: Dispatch<XdgPopup, XdgShellSurfaceUserData>,
     D: XdgShellHandler,

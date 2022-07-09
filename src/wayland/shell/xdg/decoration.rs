@@ -69,8 +69,7 @@ use wayland_protocols::xdg::decoration::zv1::server::{
     zxdg_toplevel_decoration_v1::{self, Mode},
 };
 use wayland_server::{
-    backend::GlobalId, Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle,
-    GlobalDispatch, New, Resource, WEnum,
+    backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
 use super::{ToplevelSurface, XdgShellHandler};
@@ -145,8 +144,7 @@ pub(super) fn send_decoration_configure(
     id.configure(mode)
 }
 
-impl<D> DelegateGlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, (), D>
-    for XdgDecorationState
+impl<D> GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, (), D> for XdgDecorationState
 where
     D: GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
         + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
@@ -167,7 +165,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, (), D> for XdgDecorationState
+impl<D> Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, (), D> for XdgDecorationState
 where
     D: Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
         + Dispatch<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ToplevelSurface>
@@ -218,7 +216,7 @@ where
 
 // zxdg_toplevel_decoration_v1
 
-impl<D> DelegateDispatch<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ToplevelSurface, D>
+impl<D> Dispatch<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ToplevelSurface, D>
     for XdgDecorationState
 where
     D: Dispatch<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ToplevelSurface>

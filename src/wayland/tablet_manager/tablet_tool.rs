@@ -11,7 +11,7 @@ use wayland_protocols::wp::tablet::zv2::server::{
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{
     backend::{ClientId, ObjectId},
-    Client, DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::wayland::{compositor, Serial};
@@ -434,7 +434,7 @@ impl fmt::Debug for TabletToolUserData {
     }
 }
 
-impl<D> DelegateDispatch<ZwpTabletToolV2, TabletToolUserData, D> for TabletManagerState
+impl<D> Dispatch<ZwpTabletToolV2, TabletToolUserData, D> for TabletManagerState
 where
     D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
     D: 'static,

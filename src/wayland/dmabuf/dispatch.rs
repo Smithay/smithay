@@ -2,8 +2,7 @@ use std::sync::{atomic::AtomicBool, Mutex};
 
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{zwp_linux_buffer_params_v1, zwp_linux_dmabuf_v1};
 use wayland_server::{
-    protocol::wl_buffer, Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle,
-    GlobalDispatch, New, Resource,
+    protocol::wl_buffer, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use crate::{
@@ -16,7 +15,7 @@ use super::{
     Modifier,
 };
 
-impl<D> DelegateDispatch<wl_buffer::WlBuffer, Dmabuf, D> for DmabufState
+impl<D> Dispatch<wl_buffer::WlBuffer, Dmabuf, D> for DmabufState
 where
     D: Dispatch<wl_buffer::WlBuffer, Dmabuf> + BufferHandler,
 {
@@ -39,7 +38,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData, D> for DmabufState
+impl<D> Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData, D> for DmabufState
 where
     D: Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData>
         + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
@@ -79,7 +78,7 @@ where
     }
 }
 
-impl<D> DelegateGlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData, D> for DmabufState
+impl<D> GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData, D> for DmabufState
 where
     D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
         + Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData>
@@ -124,8 +123,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData, D>
-    for DmabufState
+impl<D> Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData, D> for DmabufState
 where
     D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
         + Dispatch<wl_buffer::WlBuffer, Dmabuf>
