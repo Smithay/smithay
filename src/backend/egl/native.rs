@@ -1,6 +1,6 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, EGLDevice, SwapBuffersError};
+use super::{display::EGLDisplayHandle, ffi::{self, egl::DEFAULT_DISPLAY}, wrap_egl_call, EGLDevice, SwapBuffersError};
 use crate::utils::{Physical, Rectangle};
 use cfg_if::cfg_if;
 
@@ -172,7 +172,7 @@ impl EGLNativeDisplay for WinitWindow {
             vec! [
                     egl_platform!(
                         PLATFORM_ANDROID_KHR,
-                        std::ptr::null_mut::<c_void>(),
+                        DEFAULT_DISPLAY,
                         &["EGL_KHR_platform_android"]
                     )
             ]
