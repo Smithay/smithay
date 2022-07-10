@@ -1,13 +1,9 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{
-    display::EGLDisplayHandle,
-    ffi,
-    wrap_egl_call, EGLDevice, SwapBuffersError,
-};
+use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, EGLDevice, SwapBuffersError};
 use crate::utils::{Physical, Rectangle};
 use cfg_if::cfg_if;
-use lazy_static::__Deref;
+
 #[cfg(feature = "backend_winit")]
 use std::os::raw::c_int;
 use std::os::raw::c_void;
@@ -174,12 +170,11 @@ impl EGLNativeDisplay for WinitWindow {
             unreachable!("No backends for winit on desktop Unix other then Wayland and X11 are supported")
         }} else {
             vec! [
-                egl_platform!(
-                    PLATFORM_ANDROID_KHR, 
-                    ndk_glue::native_window()
-                    .deref().as_ref().unwrap().ptr().as_ptr(), 
-                    &["EGL_KHR_platform_android"]
-                )
+                    egl_platform!(
+                        PLATFORM_ANDROID_KHR,
+                        std::ptr::null_mut::<c_void>(),
+                        &["EGL_KHR_platform_android"]
+                    )
             ]
         }
             }

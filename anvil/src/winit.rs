@@ -1,4 +1,4 @@
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{cell::RefCell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 use slog::Logger;
 #[cfg(feature = "debug")]
@@ -43,7 +43,7 @@ use crate::{
 pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData {
-    backend: WinitGraphicsBackend,
+    backend: Rc<RefCell<WinitGraphicsBackend>>,
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     full_redraw: u8,
@@ -67,6 +67,7 @@ impl DmabufHandler for AnvilState<WinitData> {
     ) -> Result<(), ImportError> {
         self.backend_data
             .backend
+            .borrow_mut()
             .renderer()
             .import_dmabuf(&dmabuf, None)
             .map(|_| ())
@@ -91,20 +92,30 @@ pub fn run_winit(log: Logger) {
     let mut display = Display::new().unwrap();
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let (mut backend, mut winit) = match winit::init(log.clone()) {
+    let (backend, mut winit) = match winit::init(log.clone()) {
         Ok(ret) => ret,
         Err(err) => {
             slog::crit!(log, "Failed to initialize Winit backend: {}", err);
             return;
         }
     };
-    let size = backend.window_size().physical_size;
+    let size = backend.borrow().window_size().physical_size;
 
     let data = {
         #[cfg(feature = "egl")]
-        let dmabuf_state = if backend.renderer().bind_wl_display(&display.handle()).is_ok() {
+        let dmabuf_state = if backend
+            .borrow_mut()
+            .renderer()
+            .bind_wl_display(&display.handle())
+            .is_ok()
+        {
             info!(log, "EGL hardware-acceleration enabled");
-            let dmabuf_formats = backend.renderer().dmabuf_formats().cloned().collect::<Vec<_>>();
+            let dmabuf_formats = backend
+                .borrow_mut()
+                .renderer()
+                .dmabuf_formats()
+                .cloned()
+                .collect::<Vec<_>>();
             let mut state = DmabufState::new();
             let global = state.create_global::<AnvilState<WinitData>, _>(
                 &display.handle(),
@@ -123,6 +134,7 @@ pub fn run_winit(log: Logger) {
 
         #[cfg(feature = "debug")]
         let fps_texture = backend
+            .borrow_mut()
             .renderer()
             .import_memory(
                 &fps_image.to_rgba8(),
@@ -203,8 +215,8 @@ pub fn run_winit(log: Logger) {
         }
 
         // drawing logic
-        {
-            let backend = &mut state.backend_data.backend;
+        let backend = &mut state.backend_data.backend;
+        if backend.borrow().is_surface_available() {
             let cursor_visible: bool;
 
             let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();
@@ -265,9 +277,10 @@ pub fn run_winit(log: Logger) {
             let age = if *full_redraw > 0 {
                 0
             } else {
-                backend.buffer_age().unwrap_or(0)
+                backend.borrow().buffer_age().unwrap_or(0)
             };
             let space = &mut state.space;
+            let mut backend = backend.borrow_mut();
             let render_res = backend.bind().and_then(|_| {
                 let renderer = backend.renderer();
                 crate::render::render_output(&output, space, renderer, age, &*elements, &log).map_err(|err| {

@@ -29,11 +29,14 @@ pub fn init_winit(
     let display = &mut data.display;
     let state = &mut data.state;
 
-    let (mut backend, mut winit) = winit::init(log.clone())?;
+    let (backend, mut winit) = winit::init(log.clone())?;
 
-    let mode = Mode {
-        size: backend.window_size().physical_size,
-        refresh: 60_000,
+    let mode = {
+        let backend = backend.borrow_mut();
+        Mode {
+            size: backend.window_size().physical_size,
+            refresh: 60_000,
+        }
     };
 
     let output = Output::new::<_>(
@@ -63,7 +66,7 @@ pub fn init_winit(
 
     let timer = Timer::immediate();
     event_loop.handle().insert_source(timer, move |_, _, data| {
-        winit_dispatch(&mut backend, &mut winit, data, &output, &mut full_redraw).unwrap();
+        winit_dispatch(&mut backend.borrow_mut(), &mut winit, data, &output, &mut full_redraw).unwrap();
         TimeoutAction::ToDuration(Duration::from_millis(16))
     })?;
 
