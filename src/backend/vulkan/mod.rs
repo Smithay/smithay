@@ -510,6 +510,11 @@ impl PhysicalDevice {
         self.info.maintenance_3
     }
 
+    /// Information about universally unique identifiers (UUIDs) that identify this device.
+    pub fn id_properties(&self) -> vk::PhysicalDeviceIDProperties {
+        self.info.id
+    }
+
     /// Returns the physical device limits.
     pub fn limits(&self) -> vk::PhysicalDeviceLimits {
         self.info.properties.limits
@@ -631,6 +636,7 @@ struct PhdInfo {
     properties: vk::PhysicalDeviceProperties,
     features: vk::PhysicalDeviceFeatures,
     maintenance_3: vk::PhysicalDeviceMaintenance3Properties,
+    id: vk::PhysicalDeviceIDProperties,
     properties_1_1: Option<vk::PhysicalDeviceVulkan11Properties>,
     features_1_1: Option<vk::PhysicalDeviceVulkan11Features>,
     properties_1_2: Option<vk::PhysicalDeviceVulkan12Properties>,
