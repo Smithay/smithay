@@ -165,11 +165,21 @@ impl backend::Event<LibinputInputBackend> for event::pointer::PointerAxisEvent {
 
 impl backend::PointerAxisEvent<LibinputInputBackend> for event::pointer::PointerAxisEvent {
     fn amount(&self, axis: Axis) -> Option<f64> {
-        Some(self.axis_value(axis.into()))
+        let axis = axis.into();
+        if self.has_axis(axis) {
+            Some(self.axis_value(axis))
+        } else {
+            None
+        }
     }
 
     fn amount_discrete(&self, axis: Axis) -> Option<f64> {
-        self.axis_value_discrete(axis.into())
+        let axis = axis.into();
+        if self.has_axis(axis) {
+            self.axis_value_discrete(axis)
+        } else {
+            None
+        }
     }
 
     fn source(&self) -> backend::AxisSource {
