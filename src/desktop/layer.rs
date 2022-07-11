@@ -362,7 +362,10 @@ impl LayerMap {
     /// This function needs to be called periodically (though not necessarily frequently)
     /// to be able cleanup internally used resources.
     pub fn cleanup(&mut self, dh: &DisplayHandle) {
-        self.layers.retain(|layer| layer.alive());
+        if self.layers.iter().any(|l| !l.alive()) {
+            self.layers.retain(|layer| layer.alive());
+            self.arrange(dh);
+        }
         self.surfaces
             .retain(|i| dh.backend_handle().object_info(i.clone()).is_ok());
     }
