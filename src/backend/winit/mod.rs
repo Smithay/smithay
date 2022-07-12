@@ -229,8 +229,8 @@ where
     let egl = Rc::new(surface);
     let renderer = unsafe { Gles2Renderer::new(context, log.clone())? };
     let resize_notification = Rc::new(Cell::new(None));
-    let damage_tracking = display.extensions.iter().any(|ext| ext == "EGL_EXT_buffer_age")
-        && display.extensions.iter().any(|ext| {
+    let damage_tracking = display.extensions().iter().any(|ext| ext == "EGL_EXT_buffer_age")
+        && display.extensions().iter().any(|ext| {
             ext == "EGL_KHR_swap_buffers_with_damage" || ext == "EGL_EXT_swap_buffers_with_damage"
         });
 

@@ -23,7 +23,7 @@ use slog::{info, o, trace};
 #[derive(Debug)]
 pub struct EGLContext {
     context: ffi::egl::types::EGLContext,
-    pub(crate) display: EGLDisplay,
+    display: EGLDisplay,
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: Option<PixelFormat>,
     user_data: Arc<UserDataMap>,
@@ -98,15 +98,15 @@ impl EGLContext {
             }
             None => {
                 if !display
-                    .extensions
+                    .extensions()
                     .iter()
                     .any(|x| x == "EGL_KHR_no_config_context")
                     && !display
-                        .extensions
+                        .extensions()
                         .iter()
                         .any(|x| x == "EGL_MESA_configless_context")
                     && !display
-                        .extensions
+                        .extensions()
                         .iter()
                         .any(|x| x == "EGL_KHR_surfaceless_context")
                 {
@@ -125,8 +125,8 @@ impl EGLContext {
         if let Some((attributes, _)) = config {
             let version = attributes.version;
 
-            if display.egl_version >= (1, 5)
-                || display.extensions.iter().any(|s| s == "EGL_KHR_create_context")
+            if display.get_egl_version() >= (1, 5)
+                || display.extensions().iter().any(|s| s == "EGL_KHR_create_context")
             {
                 trace!(log, "Setting CONTEXT_MAJOR_VERSION to {}", version.0);
                 context_attributes.push(ffi::egl::CONTEXT_MAJOR_VERSION as i32);
@@ -135,7 +135,7 @@ impl EGLContext {
                 context_attributes.push(ffi::egl::CONTEXT_MINOR_VERSION as i32);
                 context_attributes.push(version.1 as i32);
 
-                if attributes.debug && display.egl_version >= (1, 5) {
+                if attributes.debug && display.get_egl_version() >= (1, 5) {
                     trace!(log, "Setting CONTEXT_OPENGL_DEBUG to TRUE");
                     context_attributes.push(ffi::egl::CONTEXT_OPENGL_DEBUG as i32);
                     context_attributes.push(ffi::egl::TRUE as i32);
@@ -143,7 +143,7 @@ impl EGLContext {
 
                 context_attributes.push(ffi::egl::CONTEXT_FLAGS_KHR as i32);
                 context_attributes.push(0);
-            } else if display.egl_version >= (1, 3) {
+            } else if display.get_egl_version() >= (1, 3) {
                 trace!(log, "Setting CONTEXT_CLIENT_VERSION to {}", version.0);
                 context_attributes.push(ffi::egl::CONTEXT_CLIENT_VERSION as i32);
                 context_attributes.push(version.0 as i32);
@@ -159,7 +159,7 @@ impl EGLContext {
         trace!(log, "Creating EGL context...");
         let context = wrap_egl_call(|| unsafe {
             ffi::egl::CreateContext(
-                **display.display,
+                **display.get_display_handle(),
                 config_id,
                 shared
                     .map(|context| context.context)
@@ -194,7 +194,12 @@ impl EGLContext {
     pub unsafe fn make_current_with_surface(&self, surface: &EGLSurface) -> Result<(), MakeCurrentError> {
         let surface_ptr = surface.surface.load(Ordering::SeqCst);
         wrap_egl_call(|| {
-            ffi::egl::MakeCurrent(**self.display.display, surface_ptr, surface_ptr, self.context)
+            ffi::egl::MakeCurrent(
+                **self.display.get_display_handle(),
+                surface_ptr,
+                surface_ptr,
+                self.context,
+            )
         })
         .map(|_| ())
         .map_err(Into::into)
@@ -209,7 +214,7 @@ impl EGLContext {
     pub unsafe fn make_current(&self) -> Result<(), MakeCurrentError> {
         wrap_egl_call(|| {
             ffi::egl::MakeCurrent(
-                **self.display.display,
+                **self.display.get_display_handle(),
                 ffi::egl::NO_SURFACE,
                 ffi::egl::NO_SURFACE,
                 self.context,
@@ -241,7 +246,7 @@ impl EGLContext {
         if self.is_current() {
             wrap_egl_call(|| unsafe {
                 ffi::egl::MakeCurrent(
-                    **self.display.display,
+                    **self.display.get_display_handle(),
                     ffi::egl::NO_SURFACE,
                     ffi::egl::NO_SURFACE,
                     ffi::egl::NO_CONTEXT,
@@ -251,14 +256,19 @@ impl EGLContext {
         Ok(())
     }
 
+    /// Returns the display which created this context.
+    pub fn display(&self) -> &EGLDisplay {
+        &self.display
+    }
+
     /// Returns a list of formats for dmabufs that can be rendered to.
     pub fn dmabuf_render_formats(&self) -> &HashSet<DrmFormat> {
-        &self.display.dmabuf_render_formats
+        self.display.dmabuf_render_formats()
     }
 
     /// Returns a list of formats for dmabufs that can be used as textures.
     pub fn dmabuf_texture_formats(&self) -> &HashSet<DrmFormat> {
-        &self.display.dmabuf_import_formats
+        self.display.dmabuf_texture_formats()
     }
 
     /// Retrieve user_data associated with this context
@@ -283,7 +293,7 @@ impl Drop for EGLContext {
             // We need to ensure the context is unbound, otherwise it egl stalls the destroy call
             // ignore failures at this point
             let _ = self.unbind();
-            ffi::egl::DestroyContext(**self.display.display, self.context);
+            ffi::egl::DestroyContext(**self.display.get_display_handle(), self.context);
         }
     }
 }

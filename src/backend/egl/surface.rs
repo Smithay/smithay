@@ -65,13 +65,13 @@ impl EGLSurface {
     {
         let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "renderer_egl"));
 
-        let surface = native.create(&display.display, config)?;
+        let surface = native.create(&display.get_display_handle(), config)?;
         if surface == ffi::egl::NO_SURFACE {
             return Err(EGLError::BadSurface);
         }
 
         Ok(EGLSurface {
-            display: display.display.clone(),
+            display: display.get_display_handle(),
             native: Box::new(native),
             surface: AtomicPtr::new(surface as *mut _),
             config_id: config,
