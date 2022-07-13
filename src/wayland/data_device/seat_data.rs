@@ -62,6 +62,14 @@ impl SeatData {
         D: DataDeviceHandler,
         D: 'static,
     {
+        if let Selection::Client(data_source) = &self.selection {
+            match &new_selection {
+                Selection::Client(new_data_source) if new_data_source == data_source => {}
+                _ => {
+                    data_source.cancelled();
+                }
+            }
+        }
         self.selection = new_selection;
         self.send_selection::<D>(dh);
     }
