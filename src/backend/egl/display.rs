@@ -104,11 +104,17 @@ fn select_platform_display<N: EGLNativeDisplay + 'static>(
 
         let display = unsafe {
             wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplayEXT(
-                    platform.platform,
-                    platform.native_display,
-                    platform.attrib_list.as_ptr(),
-                )
+                cfg_if::cfg_if! {
+                    if #[cfg(target_os = "android")] {
+                        ffi::egl::GetDisplay(ffi::egl::DEFAULT_DISPLAY)
+                    } else {
+                        ffi::egl::GetPlatformDisplayEXT(
+                            platform.platform,
+                            platform.native_display,
+                            platform.attrib_list.as_ptr() as *const isize,
+                        )
+                    }
+                }
             })
             .map_err(Error::DisplayCreationError)
         };
@@ -162,7 +168,10 @@ impl EGLDisplay {
             let mut minor: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
             wrap_egl_call(|| unsafe {
-                ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr())
+                println!(
+                    "Initialized EGL with result {:?}",
+                    ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr())
+                );
             })
             .map_err(Error::InitFailed)?;
 
