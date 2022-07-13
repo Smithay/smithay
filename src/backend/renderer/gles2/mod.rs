@@ -730,7 +730,7 @@ impl Gles2Renderer {
                 unsafe {
                     self.gl.DeleteFramebuffers(1, &old.fbo as *const _);
                     self.gl.DeleteRenderbuffers(1, &old.rbo as *const _);
-                    ffi_egl::DestroyImageKHR(**self.egl.display.display, old.image);
+                    ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), old.image);
                 }
             } else {
                 i += 1;
@@ -742,7 +742,7 @@ impl Gles2Renderer {
                     self.gl.DeleteTextures(1, &texture);
                 },
                 CleanupResource::EGLImage(image) => unsafe {
-                    ffi_egl::DestroyImageKHR(**self.egl.display.display, image);
+                    ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
                 },
                 CleanupResource::FramebufferObject(fbo) => unsafe {
                     self.gl.DeleteFramebuffers(1, &fbo);
@@ -1006,7 +1006,7 @@ impl ImportEgl for Gles2Renderer {
         &mut self,
         display: &wayland_server::DisplayHandle,
     ) -> Result<(), crate::backend::egl::Error> {
-        self.egl_reader = Some(self.egl.display.bind_wl_display(display)?);
+        self.egl_reader = Some(self.egl.display().bind_wl_display(display)?);
         Ok(())
     }
 
@@ -1085,7 +1085,7 @@ impl ImportDma for Gles2Renderer {
             let is_external = !self.egl.dmabuf_render_formats().contains(&buffer.format());
             let image = self
                 .egl
-                .display
+                .display()
                 .create_image_from_dmabuf(buffer)
                 .map_err(Gles2Error::BindBufferEGLError)?;
 
@@ -1287,8 +1287,8 @@ impl ExportDma for Gles2Renderer {
 
         if !self
             .egl
-            .display
-            .extensions
+            .display()
+            .extensions()
             .iter()
             .any(|s| s == "EGL_KHR_gl_texture_2D_image")
         {
@@ -1303,7 +1303,7 @@ impl ExportDma for Gles2Renderer {
             unsafe {
                 let attributes = [ffi_egl::IMAGE_PRESERVED, ffi_egl::TRUE, ffi_egl::NONE];
                 let img = ffi_egl::CreateImage(
-                    **self.egl.display.display,
+                    **self.egl.display().get_display_handle(),
                     self.egl.get_context_handle(),
                     ffi_egl::GL_TEXTURE_2D,
                     texture.0.texture as ffi_egl::types::EGLClientBuffer,
@@ -1320,10 +1320,10 @@ impl ExportDma for Gles2Renderer {
 
         let res = self
             .egl
-            .display
+            .display()
             .create_dmabuf_from_image(image, texture.size(), true)
             .map_err(Gles2Error::BindBufferEGLError);
-        unsafe { ffi_egl::DestroyImageKHR(**self.egl.display.display, image) };
+        unsafe { ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image) };
         res
     }
 
@@ -1332,8 +1332,8 @@ impl ExportDma for Gles2Renderer {
 
         if !self
             .egl
-            .display
-            .extensions
+            .display()
+            .extensions()
             .iter()
             .any(|s| s == "EGL_KHR_gl_renderbuffer_image")
         {
@@ -1359,7 +1359,7 @@ impl ExportDma for Gles2Renderer {
 
         let image = unsafe {
             let img = ffi_egl::CreateImage(
-                **self.egl.display.display,
+                **self.egl.display().get_display_handle(),
                 self.egl.get_context_handle(),
                 ffi_egl::GL_RENDERBUFFER,
                 rbo as ffi_egl::types::EGLClientBuffer,
@@ -1418,11 +1418,11 @@ impl ExportDma for Gles2Renderer {
 
         let res = self
             .egl
-            .display
+            .display()
             .create_dmabuf_from_image(image, size, true)
             .map_err(Gles2Error::BindBufferEGLError);
         unsafe {
-            ffi_egl::DestroyImageKHR(**self.egl.display.display, image);
+            ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
         }
         res
     }
@@ -1457,7 +1457,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
                 trace!(self.logger, "Creating EGLImage for Dmabuf: {:?}", dmabuf);
                 let image = self
                     .egl
-                    .display
+                    .display()
                     .create_image_from_dmabuf(&dmabuf)
                     .map_err(Gles2Error::BindBufferEGLError)?;
 
@@ -1505,7 +1505,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
     }
 
     fn supported_formats(&self) -> Option<HashSet<Format>> {
-        Some(self.egl.display.dmabuf_render_formats.clone())
+        Some(self.egl.display().dmabuf_render_formats().clone())
     }
 }
 

@@ -69,11 +69,11 @@ impl Drop for EGLDisplayHandle {
 /// [`EGLDisplay`] represents an initialised EGL environment
 #[derive(Debug, Clone)]
 pub struct EGLDisplay {
-    pub(crate) display: Arc<EGLDisplayHandle>,
-    pub(crate) egl_version: (i32, i32),
-    pub(crate) extensions: Vec<String>,
-    pub(crate) dmabuf_import_formats: HashSet<DrmFormat>,
-    pub(crate) dmabuf_render_formats: HashSet<DrmFormat>,
+    display: Arc<EGLDisplayHandle>,
+    egl_version: (i32, i32),
+    extensions: Vec<String>,
+    dmabuf_import_formats: HashSet<DrmFormat>,
+    dmabuf_render_formats: HashSet<DrmFormat>,
     surface_type: ffi::EGLint,
     logger: slog::Logger,
 }
@@ -405,8 +405,18 @@ impl EGLDisplay {
     }
 
     /// Returns the supported extensions of this display
-    pub fn get_extensions(&self) -> Vec<String> {
-        self.extensions.clone()
+    pub fn extensions(&self) -> &[String] {
+        &self.extensions[..]
+    }
+
+    /// Returns a list of formats for dmabufs that can be rendered to.
+    pub fn dmabuf_render_formats(&self) -> &HashSet<DrmFormat> {
+        &self.dmabuf_render_formats
+    }
+
+    /// Returns a list of formats for dmabufs that can be used as textures.
+    pub fn dmabuf_texture_formats(&self) -> &HashSet<DrmFormat> {
+        &self.dmabuf_import_formats
     }
 
     /// Exports an [`EGLImage`] as a [`Dmabuf`]

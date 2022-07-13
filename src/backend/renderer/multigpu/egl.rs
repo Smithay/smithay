@@ -222,7 +222,7 @@ impl<'a, 'b, Target> MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Targe
             .map_err(MultigpuError::Render)?;
         renderer
             .egl_context()
-            .display
+            .display()
             .create_dmabuf_from_image(egl.image(0).unwrap(), egl.size, egl.y_inverted)
             .map_err(Gles2Error::BindBufferEGLError)
             .map_err(MultigpuError::Render)

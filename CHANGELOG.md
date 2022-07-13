@@ -49,6 +49,7 @@
 - `ImportShm` was renamed to `ImportMem`
 - `ImportMem` and `ImportDma` were split and do now have accompanying traits `ImportMemWl` and `ImportDmaWl` to import wayland buffers.
 - Added `EGLSurface::get_size`
+- `EGLDisplay::get_extensions` was renamed to `extensions` and now returns a `&[String]`.
 
 ### Additions
 
@@ -91,6 +92,8 @@
 - Added `ExportMem` trait to copy framebuffers and textures into memory
 - Added `multigpu`-module to the renderer, which makes handling multi-gpu setups easier!
 - Added `backend::renderer::utils::import_surface_tree` to be able to import buffers before rendering
+- Added `EGLContext::display` to allow getting the underlying display of some context.
+- Make `EGLContext::dmabuf_render_formats` and `EGLContext::dmabuf_texture_formats` also accessible from `EGLDisplay`.
 
 #### Desktop
 
