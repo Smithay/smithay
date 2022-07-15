@@ -4,9 +4,9 @@ use std::{
 };
 
 use smithay::{
-    delegate_compositor, delegate_data_device, delegate_layer_shell, delegate_output, delegate_seat,
-    delegate_shm, delegate_tablet_manager, delegate_viewporter, delegate_xdg_activation,
-    delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_compositor, delegate_data_device, delegate_layer_shell, delegate_output,
+    delegate_primary_selection, delegate_seat, delegate_shm, delegate_tablet_manager, delegate_viewporter,
+    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
@@ -27,6 +27,7 @@ use smithay::{
             ServerDndGrabHandler,
         },
         output::{Output, OutputManagerState},
+        primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         seat::{CursorImageStatus, Seat, SeatHandler, SeatState, XkbConfig},
         shell::{
             wlr_layer::WlrLayerShellState,
@@ -80,6 +81,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub data_device_state: DataDeviceState,
     pub layer_shell_state: WlrLayerShellState,
     pub output_manager_state: OutputManagerState,
+    pub primary_selection_state: PrimarySelectionState,
     pub seat_state: SeatState<AnvilState<BackendData>>,
     pub shm_state: ShmState,
     pub viewporter_state: ViewporterState,
@@ -128,7 +130,15 @@ impl<BackendData> ServerDndGrabHandler for AnvilState<BackendData> {
     }
 }
 delegate_data_device!(@<BackendData: 'static> AnvilState<BackendData>);
+
 delegate_output!(@<BackendData: 'static> AnvilState<BackendData>);
+
+impl<BackendData> PrimarySelectionHandler for AnvilState<BackendData> {
+    fn primary_selection_state(&self) -> &PrimarySelectionState {
+        &self.primary_selection_state
+    }
+}
+delegate_primary_selection!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> ShmHandler for AnvilState<BackendData> {
     fn shm_state(&self) -> &ShmState {
@@ -247,6 +257,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let data_device_state = DataDeviceState::new::<Self, _>(&dh, log.clone());
         let layer_shell_state = WlrLayerShellState::new::<Self, _>(&dh, log.clone());
         let output_manager_state = OutputManagerState::new();
+        let primary_selection_state = PrimarySelectionState::new::<Self, _>(&dh, log.clone());
         let seat_state = SeatState::new();
         let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
         let viewporter_state = ViewporterState::new::<Self, _>(&dh, log.clone());
@@ -262,9 +273,11 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let cursor_status2 = cursor_status.clone();
         seat.add_pointer(move |new_status| *cursor_status2.lock().unwrap() = new_status);
 
-        seat.add_keyboard(XkbConfig::default(), 200, 25, move |seat, focus| {
-            let focus = focus.and_then(|s| dh.get_client(s.id()).ok());
-            set_data_device_focus(&dh, seat, focus)
+        seat.add_keyboard(XkbConfig::default(), 200, 25, move |seat, surface| {
+            let focus = surface.and_then(|s| dh.get_client(s.id()).ok());
+            let focus2 = surface.and_then(|s| dh.get_client(s.id()).ok());
+            set_data_device_focus(&dh, seat, focus);
+            set_primary_focus(&dh, seat, focus2);
         })
         .expect("Failed to initialize the keyboard");
 
@@ -303,6 +316,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             data_device_state,
             layer_shell_state,
             output_manager_state,
+            primary_selection_state,
             seat_state,
             shm_state,
             viewporter_state,
