@@ -7,7 +7,7 @@ use wayland_protocols::xdg::shell::server::xdg_toplevel::{self, XdgToplevel};
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::wl_surface,
-    DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource, WEnum,
+    DataInit, Dispatch, DisplayHandle, Resource, WEnum,
 };
 
 use super::{
@@ -15,7 +15,7 @@ use super::{
     XdgSurfaceUserData, XdgToplevelSurfaceRoleAttributes,
 };
 
-impl<D> DelegateDispatch<XdgToplevel, XdgShellSurfaceUserData, D> for XdgShellState
+impl<D> Dispatch<XdgToplevel, XdgShellSurfaceUserData, D> for XdgShellState
 where
     D: Dispatch<XdgToplevel, XdgShellSurfaceUserData>,
     D: XdgShellHandler,

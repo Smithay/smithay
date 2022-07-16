@@ -12,11 +12,10 @@ use wayland_server::{
         wl_shm::{self, WlShm},
         wl_shm_pool::{self, WlShmPool},
     },
-    DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource, WEnum,
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
-impl<D> DelegateGlobalDispatch<WlShm, (), D> for ShmState
+impl<D> GlobalDispatch<WlShm, (), D> for ShmState
 where
     D: GlobalDispatch<WlShm, ()>,
     D: Dispatch<WlShm, ()>,
@@ -41,7 +40,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<WlShm, (), D> for ShmState
+impl<D> Dispatch<WlShm, (), D> for ShmState
 where
     D: Dispatch<WlShm, ()> + Dispatch<WlShmPool, ShmPoolUserData> + ShmHandler + 'static,
 {
@@ -87,7 +86,7 @@ where
  * wl_shm_pool
  */
 
-impl<D> DelegateDispatch<WlShmPool, ShmPoolUserData, D> for ShmState
+impl<D> Dispatch<WlShmPool, ShmPoolUserData, D> for ShmState
 where
     D: Dispatch<WlShmPool, ShmPoolUserData>
         + Dispatch<wl_buffer::WlBuffer, ShmBufferUserData>
@@ -198,7 +197,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<wl_buffer::WlBuffer, ShmBufferUserData, D> for ShmState
+impl<D> Dispatch<wl_buffer::WlBuffer, ShmBufferUserData, D> for ShmState
 where
     D: Dispatch<wl_buffer::WlBuffer, ShmBufferUserData> + BufferHandler,
 {

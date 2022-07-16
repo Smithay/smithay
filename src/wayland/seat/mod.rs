@@ -84,8 +84,7 @@ use wayland_server::{
         wl_surface,
         wl_touch::WlTouch,
     },
-    DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource,
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 #[derive(Debug)]
@@ -470,7 +469,7 @@ macro_rules! delegate_seat {
     };
 }
 
-impl<D> DelegateDispatch<WlSeat, SeatUserData<D>, D> for SeatState<D>
+impl<D> Dispatch<WlSeat, SeatUserData<D>, D> for SeatState<D>
 where
     D: Dispatch<WlSeat, SeatUserData<D>>,
     D: Dispatch<WlKeyboard, KeyboardUserData>,
@@ -555,7 +554,7 @@ where
     }
 }
 
-impl<D> DelegateGlobalDispatch<WlSeat, SeatGlobalData<D>, D> for SeatState<D>
+impl<D> GlobalDispatch<WlSeat, SeatGlobalData<D>, D> for SeatState<D>
 where
     D: GlobalDispatch<WlSeat, SeatGlobalData<D>>,
     D: Dispatch<WlSeat, SeatUserData<D>>,

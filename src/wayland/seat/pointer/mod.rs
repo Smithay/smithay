@@ -9,7 +9,7 @@ use wayland_server::{
         wl_pointer::{self, Axis, ButtonState, Request, WlPointer},
         wl_surface::WlSurface,
     },
-    DelegateDispatch, Dispatch, DisplayHandle, Resource,
+    Dispatch, DisplayHandle, Resource,
 };
 
 use crate::{
@@ -458,7 +458,7 @@ pub struct PointerUserData<D> {
     pub(crate) handle: Option<PointerHandle<D>>,
 }
 
-impl<D> DelegateDispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
+impl<D> Dispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
 where
     D: Dispatch<WlPointer, PointerUserData<D>>,
     D: SeatHandler,

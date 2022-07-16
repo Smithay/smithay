@@ -161,11 +161,6 @@ jobs:
         with:
           command: update
           args: -Z minimal-versions
-      - name: Update exceptions
-        uses: actions-rs/cargo@v1
-        with:
-          command: update
-          args: -p libdbus-sys -p arrayref -p freetype-sys
       - name: Check
         uses: actions-rs/cargo@v1
         with:
@@ -531,7 +526,7 @@ jobs:
         with:
           command: doc
           # TODO: Update nix when drm-rs is updated
-          args: --no-deps --features "test_all_features" -p smithay -p calloop:0.10.1 -p dbus -p drm -p gbm -p input -p nix:0.22.3 -p udev -p slog -p wayland-server:0.30.0-beta.7 -p wayland-backend -p wayland-protocols:0.30.0-beta.7 -p winit -p x11rb
+          args: --no-deps --features "test_all_features" -p smithay -p calloop:0.10.1 -p dbus -p drm -p gbm -p input -p nix:0.22.3 -p udev -p slog -p wayland-server:0.30.0-beta.8 -p wayland-backend -p wayland-protocols:0.30.0-beta.8 -p winit -p x11rb
 
       - name: Setup index
         run: cp ./doc_index.html ./target/doc/index.html

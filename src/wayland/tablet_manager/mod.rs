@@ -78,10 +78,7 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_tool_v2::ZwpTabletToolV2,
     zwp_tablet_v2::ZwpTabletV2,
 };
-use wayland_server::{
-    backend::GlobalId, Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle,
-    GlobalDispatch, New,
-};
+use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
 const MANAGER_VERSION: u32 = 1;
 
@@ -134,7 +131,7 @@ impl TabletManagerState {
     }
 }
 
-impl<D> DelegateGlobalDispatch<ZwpTabletManagerV2, (), D> for TabletManagerState
+impl<D> GlobalDispatch<ZwpTabletManagerV2, (), D> for TabletManagerState
 where
     D: GlobalDispatch<ZwpTabletManagerV2, ()>,
     D: Dispatch<ZwpTabletManagerV2, ()>,
@@ -153,7 +150,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<ZwpTabletManagerV2, (), D> for TabletManagerState
+impl<D> Dispatch<ZwpTabletManagerV2, (), D> for TabletManagerState
 where
     D: Dispatch<ZwpTabletManagerV2, ()>,
     D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,

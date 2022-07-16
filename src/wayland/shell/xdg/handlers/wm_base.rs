@@ -11,13 +11,12 @@ use wayland_protocols::xdg::shell::server::{
 
 use wayland_server::{
     backend::{ClientId, ObjectId},
-    DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource,
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use super::{ShellClient, ShellClientData, XdgPositionerUserData, XdgShellHandler, XdgSurfaceUserData};
 
-impl<D> DelegateGlobalDispatch<XdgWmBase, (), D> for XdgShellState
+impl<D> GlobalDispatch<XdgWmBase, (), D> for XdgShellState
 where
     D: GlobalDispatch<XdgWmBase, ()>,
     D: Dispatch<XdgWmBase, XdgWmBaseUserData>,
@@ -40,7 +39,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<XdgWmBase, XdgWmBaseUserData, D> for XdgShellState
+impl<D> Dispatch<XdgWmBase, XdgWmBaseUserData, D> for XdgShellState
 where
     D: Dispatch<XdgWmBase, XdgWmBaseUserData>,
     D: Dispatch<XdgSurface, XdgSurfaceUserData>,

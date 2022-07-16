@@ -7,7 +7,7 @@ use smithay::wayland::seat::{self as seat, Seat, SeatHandler};
 use seat::SeatState;
 
 use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
-use wayland_server::socket::ListeningSocket;
+use wayland_server::ListeningSocket;
 
 struct App {
     seat_state: SeatState<Self>,

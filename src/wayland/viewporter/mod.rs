@@ -48,8 +48,7 @@ use std::cell::RefCell;
 
 use wayland_protocols::wp::viewporter::server::{wp_viewport, wp_viewporter};
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface, DelegateDispatch, DelegateGlobalDispatch, Dispatch,
-    DisplayHandle, GlobalDispatch, Resource,
+    backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource,
 };
 
 use crate::utils::{IsAlive, Logical, Rectangle, Size};
@@ -59,14 +58,7 @@ use super::compositor::{self, with_states, Cacheable, SurfaceData};
 /// State of the wp_viewporter Global
 #[derive(Debug)]
 pub struct ViewporterState {
-    dh: DisplayHandle,
     global: GlobalId,
-}
-
-impl Drop for ViewporterState {
-    fn drop(&mut self) {
-        self.dh.remove_global(self.global.clone())
-    }
 }
 
 impl ViewporterState {
@@ -83,7 +75,6 @@ impl ViewporterState {
         L: Into<Option<slog::Logger>>,
     {
         ViewporterState {
-            dh: display.clone(),
             global: display.create_global::<D, wp_viewporter::WpViewporter, slog::Logger>(
                 1,
                 crate::slog_or_fallback(log).new(slog::o!("smithay_module" => "wp_viewporter")),
@@ -97,7 +88,7 @@ impl ViewporterState {
     }
 }
 
-impl<D> DelegateGlobalDispatch<wp_viewporter::WpViewporter, slog::Logger, D> for ViewporterState
+impl<D> GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger, D> for ViewporterState
 where
     D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>,
     D: Dispatch<wp_viewporter::WpViewporter, slog::Logger>,
@@ -115,7 +106,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<wp_viewporter::WpViewporter, slog::Logger, D> for ViewporterState
+impl<D> Dispatch<wp_viewporter::WpViewporter, slog::Logger, D> for ViewporterState
 where
     D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>,
     D: Dispatch<wp_viewporter::WpViewporter, slog::Logger>,
@@ -171,7 +162,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<wp_viewport::WpViewport, ViewportState, D> for ViewportState
+impl<D> Dispatch<wp_viewport::WpViewport, ViewportState, D> for ViewportState
 where
     D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>,
     D: Dispatch<wp_viewporter::WpViewporter, slog::Logger>,

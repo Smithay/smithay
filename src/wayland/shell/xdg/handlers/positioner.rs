@@ -4,7 +4,7 @@ use crate::{utils::Rectangle, wayland::Serial};
 
 use wayland_protocols::xdg::shell::server::{xdg_positioner, xdg_positioner::XdgPositioner};
 
-use wayland_server::{DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource, WEnum};
+use wayland_server::{DataInit, Dispatch, DisplayHandle, Resource, WEnum};
 
 use super::{PositionerState, XdgShellHandler, XdgShellState};
 
@@ -18,7 +18,7 @@ pub struct XdgPositionerUserData {
     pub(crate) inner: Mutex<PositionerState>,
 }
 
-impl<D> DelegateDispatch<XdgPositioner, XdgPositionerUserData, D> for XdgShellState
+impl<D> Dispatch<XdgPositioner, XdgPositionerUserData, D> for XdgShellState
 where
     D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,

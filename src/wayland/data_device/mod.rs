@@ -279,7 +279,7 @@ mod handlers {
             wl_data_device_manager::{self, WlDataDeviceManager},
             wl_data_source::WlDataSource,
         },
-        DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch,
+        Dispatch, DisplayHandle, GlobalDispatch,
     };
 
     use crate::wayland::seat::Seat;
@@ -287,7 +287,7 @@ mod handlers {
     use super::{device::DataDeviceUserData, seat_data::SeatData, source::DataSourceUserData};
     use super::{DataDeviceHandler, DataDeviceState};
 
-    impl<D> DelegateGlobalDispatch<WlDataDeviceManager, (), D> for DataDeviceState
+    impl<D> GlobalDispatch<WlDataDeviceManager, (), D> for DataDeviceState
     where
         D: GlobalDispatch<WlDataDeviceManager, ()>,
         D: Dispatch<WlDataDeviceManager, ()>,
@@ -308,7 +308,7 @@ mod handlers {
         }
     }
 
-    impl<D> DelegateDispatch<WlDataDeviceManager, (), D> for DataDeviceState
+    impl<D> Dispatch<WlDataDeviceManager, (), D> for DataDeviceState
     where
         D: Dispatch<WlDataDeviceManager, ()>,
         D: Dispatch<WlDataSource, DataSourceUserData>,

@@ -6,15 +6,14 @@ use std::sync::{
 use wayland_protocols::xdg::activation::v1::server::{xdg_activation_token_v1, xdg_activation_v1};
 use wayland_server::{
     backend::{ClientId, ObjectId},
-    Client, DataInit, DelegateDispatch, DelegateGlobalDispatch, Dispatch, DisplayHandle, GlobalDispatch, New,
-    Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use super::{
     ActivationTokenData, TokenBuilder, XdgActivationHandler, XdgActivationState, XdgActivationTokenData,
 };
 
-impl<D> DelegateDispatch<xdg_activation_v1::XdgActivationV1, (), D> for XdgActivationState
+impl<D> Dispatch<xdg_activation_v1::XdgActivationV1, (), D> for XdgActivationState
 where
     D: Dispatch<xdg_activation_v1::XdgActivationV1, ()>
         + Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData>
@@ -66,7 +65,7 @@ where
     }
 }
 
-impl<D> DelegateGlobalDispatch<xdg_activation_v1::XdgActivationV1, (), D> for XdgActivationState
+impl<D> GlobalDispatch<xdg_activation_v1::XdgActivationV1, (), D> for XdgActivationState
 where
     D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, ()>
         + Dispatch<xdg_activation_v1::XdgActivationV1, ()>
@@ -86,8 +85,7 @@ where
     }
 }
 
-impl<D> DelegateDispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, D>
-    for XdgActivationState
+impl<D> Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData, D> for XdgActivationState
 where
     D: Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ActivationTokenData> + XdgActivationHandler,
 {

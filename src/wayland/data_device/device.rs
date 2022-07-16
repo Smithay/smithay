@@ -6,7 +6,7 @@ use wayland_server::{
         wl_data_device::{self, WlDataDevice},
         wl_seat::WlSeat,
     },
-    Client, DataInit, DelegateDispatch, Dispatch, DisplayHandle, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::wayland::{
@@ -27,7 +27,7 @@ pub struct DataDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
-impl<D> DelegateDispatch<WlDataDevice, DataDeviceUserData, D> for DataDeviceState
+impl<D> Dispatch<WlDataDevice, DataDeviceUserData, D> for DataDeviceState
 where
     D: Dispatch<WlDataDevice, DataDeviceUserData>,
     D: DataDeviceHandler,

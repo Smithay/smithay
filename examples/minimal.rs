@@ -32,8 +32,7 @@ use wayland_server::{
         wl_buffer,
         wl_surface::{self, WlSurface},
     },
-    socket::ListeningSocket,
-    DisplayHandle,
+    DisplayHandle, ListeningSocket,
 };
 
 impl BufferHandler for App {

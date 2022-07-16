@@ -5,7 +5,7 @@ use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::wl_data_source::{self},
     protocol::{wl_data_device_manager::DndAction, wl_data_source::WlDataSource},
-    DelegateDispatch, Dispatch, DisplayHandle, Resource,
+    Dispatch, DisplayHandle, Resource,
 };
 
 use crate::utils::{alive_tracker::AliveTracker, IsAlive};
@@ -46,7 +46,7 @@ impl DataSourceUserData {
     }
 }
 
-impl<D> DelegateDispatch<WlDataSource, DataSourceUserData, D> for DataDeviceState
+impl<D> Dispatch<WlDataSource, DataSourceUserData, D> for DataDeviceState
 where
     D: Dispatch<WlDataSource, DataSourceUserData>,
     D: DataDeviceHandler,
