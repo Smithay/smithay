@@ -169,6 +169,7 @@ impl EGLNativeDisplay for WinitWindow {
         } else {
             unreachable!("No backends for winit on desktop Unix other then Wayland and X11 are supported")
         }} else {
+                // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_android.txt
             vec! [
                     egl_platform!(
                         PLATFORM_ANDROID_KHR,
