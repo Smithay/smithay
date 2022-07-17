@@ -111,7 +111,7 @@ fn select_platform_display<N: EGLNativeDisplay + 'static>(
                         ffi::egl::GetPlatformDisplayEXT(
                             platform.platform,
                             platform.native_display,
-                            platform.attrib_list.as_ptr() as *const isize,
+                            platform.attrib_list.as_ptr() as *const i32,
                         )
                     }
                 }
