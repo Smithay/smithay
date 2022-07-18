@@ -1,7 +1,10 @@
-use std::ops::Deref;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU8, Ordering},
-    Arc,
+use std::{
+    fmt,
+    ops::Deref,
+    sync::{
+        atomic::{AtomicBool, AtomicU8, Ordering},
+        Arc,
+    },
 };
 
 use crate::backend::allocator::{Allocator, Buffer, Fourcc, Modifier};
@@ -36,7 +39,6 @@ pub const SLOT_CAP: usize = 4;
 /// If you have associated resources for each buffer that can be reused (e.g. framebuffer `Handle`s for a `DrmDevice`),
 /// you can store then in the `Slot`s userdata field. If a buffer is re-used, its userdata is preserved for the next time
 /// it is returned by `acquire()`.
-#[derive(Debug)]
 pub struct Swapchain<A: Allocator<B>, B: Buffer> {
     /// Allocator used by the swapchain
     pub allocator: A,
@@ -47,6 +49,17 @@ pub struct Swapchain<A: Allocator<B>, B: Buffer> {
     modifiers: Vec<Modifier>,
 
     slots: [Arc<InternalSlot<B>>; SLOT_CAP],
+}
+
+impl<A: Allocator<B>, B: Buffer> fmt::Debug for Swapchain<A, B> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("Swapchain")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("fourcc", &self.fourcc)
+            .field("modifiers", &self.modifiers)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Slot of a swapchain containing an allocated buffer and its userdata.
@@ -160,25 +173,28 @@ where
     /// Buffers can always just be safely discarded by dropping them, but not
     /// calling this function before may affect performance characteristics
     /// (e.g. by not tracking the buffer age).
-    pub fn submitted(&self, slot: &Slot<B>) {
+    pub fn submitted(&mut self, slot: &Slot<B>) {
         // don't mess up the state, if the user submitted and old buffer, after e.g. a resize
         if !self.slots.iter().any(|other| Arc::ptr_eq(&slot.0, other)) {
             return;
         }
 
         slot.0.age.store(1, Ordering::SeqCst);
-        for other_slot in &self.slots {
+        for other_slot in &mut self.slots {
             if !Arc::ptr_eq(other_slot, &slot.0) && other_slot.buffer.is_some() {
                 let res = other_slot
                     .age
                     .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |age| {
                         if age > 0 {
-                            Some(age + 1)
+                            age.checked_add(1)
                         } else {
                             Some(0)
                         }
                     });
-                assert!(res.is_ok());
+                // If the age overflows the slot was not used for a long time. Lets clear it
+                if res.is_err() {
+                    *other_slot = Default::default();
+                }
             }
         }
     }

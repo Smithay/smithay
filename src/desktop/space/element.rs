@@ -1,7 +1,8 @@
+use crate::desktop::space::popup::RenderPopup;
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer, Texture},
+    backend::renderer::{ImportAll, Renderer, Texture},
     desktop::{space::*, utils::*},
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::output::Output,
 };
 use std::{
@@ -9,6 +10,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::Resource;
 
 /// Indicates default values for some zindexs inside smithay
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -30,30 +32,34 @@ pub enum RenderZindex {
     PopupsOverlay = 70,
 }
 
-/// Elements rendered by [`Space::render_output`] in addition to windows, layers and popups.
-pub type DynamicRenderElements<R> =
-    Box<dyn RenderElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>>;
+impl From<RenderZindex> for u8 {
+    fn from(idx: RenderZindex) -> u8 {
+        idx as u8
+    }
+}
 
-pub(super) type SpaceElem<R> =
-    dyn SpaceElement<R, <R as Renderer>::Frame, <R as Renderer>::Error, <R as Renderer>::TextureId>;
+impl From<RenderZindex> for Option<u8> {
+    fn from(idx: RenderZindex) -> Option<u8> {
+        Some(idx as u8)
+    }
+}
 
 /// Trait for custom elements to be rendered during [`Space::render_output`].
-pub trait RenderElement<R, F, E, T>
+pub trait RenderElement<R>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
     Self: Any + 'static,
 {
     /// Returns an id unique to this element for the type of Self.
     fn id(&self) -> usize;
     #[doc(hidden)]
     fn type_of(&self) -> TypeId {
-        std::any::Any::type_id(self)
+        Any::type_id(self)
     }
+    /// Returns the location of this element
+    fn location(&self, scale: impl Into<Scale<f64>>) -> Point<f64, Physical>;
     /// Returns the bounding box of this element including its position in the space.
-    fn geometry(&self) -> Rectangle<i32, Logical>;
+    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical>;
     /// Returns the damage of the element since it's last update.
     /// It should be relative to the elements coordinates.
     ///
@@ -66,8 +72,14 @@ where
     /// correct, but very inefficient.
     fn accumulated_damage(
         &self,
+        scale: impl Into<Scale<f64>>,
         for_values: Option<SpaceOutputTuple<'_, '_>>,
-    ) -> Vec<Rectangle<i32, Logical>>;
+    ) -> Vec<Rectangle<i32, Physical>>;
+    /// Returns the opaque regions of the element.
+    /// It should be relative to the elements coordinates.
+    ///  
+    /// Returning `None` means there are not opaque regions for the element.
+    fn opaque_regions(&self, scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>>;
     /// Draws the element using the provided `Frame` and `Renderer`.
     ///
     /// - `scale` provides the current fractional scale value to render as
@@ -76,15 +88,16 @@ where
     /// - `damage` provides the regions you need to re-draw and *may* not
     ///   be equivalent to the damage returned by `accumulated_damage`.
     ///   Redrawing other parts of the element is not valid and may cause rendering artifacts.
+    #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
         renderer: &mut R,
-        frame: &mut F,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
+        frame: &mut <R as Renderer>::Frame,
+        scale: impl Into<Scale<f64>>,
+        location: Point<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
-    ) -> Result<(), R::Error>;
+    ) -> Result<(), <R as Renderer>::Error>;
 
     /// Returns z_index of RenderElement, reverf too [`RenderZindex`] for default values
     fn z_index(&self) -> u8 {
@@ -92,68 +105,113 @@ where
     }
 }
 
-pub(crate) trait SpaceElement<R, F, E, T>
+pub(crate) enum SpaceElement<'a, R, E>
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture,
+    R: Renderer + ImportAll,
+    E: RenderElement<R>,
 {
-    fn id(&self) -> usize;
-    fn type_of(&self) -> TypeId;
-    fn location(&self, space_id: usize) -> Point<i32, Logical> {
-        self.geometry(space_id).loc
+    Layer(&'a LayerSurface),
+    Window(&'a Window),
+    Popup(&'a RenderPopup),
+    Custom(&'a E, std::marker::PhantomData<R>),
+}
+
+impl<'a, R, E> SpaceElement<'a, R, E>
+where
+    R: Renderer + ImportAll,
+    E: RenderElement<R>,
+    <R as Renderer>::TextureId: 'static,
+{
+    pub fn id(&self) -> usize {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_id(),
+            SpaceElement::Window(window) => window.elem_id(),
+            SpaceElement::Popup(popup) => popup.elem_id(),
+            SpaceElement::Custom(custom, _) => custom.id(),
+        }
     }
-    fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical>;
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>>;
+    pub fn type_of(&self) -> TypeId {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_type_of(),
+            SpaceElement::Window(window) => window.elem_type_of(),
+            SpaceElement::Popup(popup) => popup.elem_type_of(),
+            SpaceElement::Custom(custom, _) => custom.type_of(),
+        }
+    }
+    pub fn location(&self, space_id: usize, scale: impl Into<Scale<f64>>) -> Point<f64, Physical> {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_location(space_id, scale),
+            SpaceElement::Window(window) => window.elem_location(space_id, scale),
+            SpaceElement::Popup(popup) => popup.elem_location(space_id, scale),
+            SpaceElement::Custom(custom, _) => custom.location(scale),
+        }
+    }
+    pub fn geometry(&self, space_id: usize, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_geometry(space_id, scale),
+            SpaceElement::Window(window) => window.elem_geometry(space_id, scale),
+            SpaceElement::Popup(popup) => popup.elem_geometry(space_id, scale),
+            SpaceElement::Custom(custom, _) => custom.geometry(scale),
+        }
+    }
+    pub fn accumulated_damage(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+        for_values: Option<(&Space, &Output)>,
+    ) -> Vec<Rectangle<i32, Physical>> {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_accumulated_damage(space_id, scale, for_values),
+            SpaceElement::Window(window) => window.elem_accumulated_damage(space_id, scale, for_values),
+            SpaceElement::Popup(popup) => popup.elem_accumulated_damage(space_id, scale, for_values),
+            SpaceElement::Custom(custom, _) => {
+                custom.accumulated_damage(scale, for_values.map(|(s, o)| SpaceOutputTuple(s, o)))
+            }
+        }
+    }
+    pub fn opaque_regions(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Option<Vec<Rectangle<i32, Physical>>> {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_opaque_regions(space_id, scale),
+            SpaceElement::Window(window) => window.elem_opaque_regions(space_id, scale),
+            SpaceElement::Popup(popup) => popup.elem_opaque_regions(space_id, scale),
+            SpaceElement::Custom(custom, _) => custom.opaque_regions(scale),
+        }
+    }
     #[allow(clippy::too_many_arguments)]
-    fn draw(
+    pub fn draw(
         &self,
         space_id: usize,
         renderer: &mut R,
-        frame: &mut F,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
-        log: &slog::Logger,
-    ) -> Result<(), R::Error>;
-    fn z_index(&self) -> u8;
-}
-
-impl<R, F, E, T> SpaceElement<R, F, E, T> for Box<dyn RenderElement<R, F, E, T>>
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll + 'static,
-    F: Frame<Error = E, TextureId = T> + 'static,
-    E: std::error::Error + 'static,
-    T: Texture + 'static,
-{
-    fn id(&self) -> usize {
-        (&**self as &dyn RenderElement<R, F, E, T>).id()
-    }
-    fn type_of(&self) -> TypeId {
-        (&**self as &dyn RenderElement<R, F, E, T>).type_of()
-    }
-    fn geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
-        (&**self as &dyn RenderElement<R, F, E, T>).geometry()
-    }
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
-        (&**self as &dyn RenderElement<R, F, E, T>).accumulated_damage(for_values.map(SpaceOutputTuple::from))
-    }
-    fn draw(
-        &self,
-        _space_id: usize,
-        renderer: &mut R,
-        frame: &mut F,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
+        frame: &mut <R as Renderer>::Frame,
+        scale: impl Into<Scale<f64>>,
+        location: Point<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        (&**self as &dyn RenderElement<R, F, E, T>).draw(renderer, frame, scale, location, damage, log)
+        match self {
+            SpaceElement::Layer(layer) => {
+                layer.elem_draw(space_id, renderer, frame, scale, location, damage, log)
+            }
+            SpaceElement::Window(window) => {
+                window.elem_draw(space_id, renderer, frame, scale, location, damage, log)
+            }
+            SpaceElement::Popup(popup) => {
+                popup.elem_draw(space_id, renderer, frame, scale, location, damage, log)
+            }
+            SpaceElement::Custom(custom, _) => custom.draw(renderer, frame, scale, location, damage, log),
+        }
     }
-
-    fn z_index(&self) -> u8 {
-        RenderElement::z_index(self.as_ref())
+    pub fn z_index(&self, space_id: usize) -> u8 {
+        match self {
+            SpaceElement::Layer(layer) => layer.elem_z_index(),
+            SpaceElement::Window(window) => window.elem_z_index(space_id),
+            SpaceElement::Popup(popup) => popup.elem_z_index(),
+            SpaceElement::Custom(custom, _) => custom.z_index(),
+        }
     }
 }
 
@@ -171,41 +229,56 @@ pub struct SurfaceTree {
     pub surface: WlSurface,
     /// Position to draw add
     pub position: Point<i32, Logical>,
+    /// Z-Index to draw at
+    pub z_index: u8,
 }
 
-impl<R, F, E, T> RenderElement<R, F, E, T> for SurfaceTree
+impl<R> RenderElement<R> for SurfaceTree
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: Texture + 'static,
 {
     fn id(&self) -> usize {
-        self.surface.as_ref().id() as usize
+        self.surface.id().protocol_id() as usize
     }
 
-    fn geometry(&self) -> Rectangle<i32, Logical> {
-        let mut bbox = bbox_from_surface_tree(&self.surface, (0, 0));
-        bbox.loc += self.position;
-        bbox
+    fn location(&self, scale: impl Into<Scale<f64>>) -> Point<f64, Physical> {
+        self.position.to_f64().to_physical(scale)
+    }
+
+    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
+        let scale = scale.into();
+        physical_bbox_from_surface_tree(&self.surface, self.position.to_f64().to_physical(scale), scale)
     }
 
     fn accumulated_damage(
         &self,
+        scale: impl Into<Scale<f64>>,
         for_values: Option<SpaceOutputTuple<'_, '_>>,
-    ) -> Vec<Rectangle<i32, Logical>> {
-        damage_from_surface_tree(&self.surface, (0, 0), for_values.map(|x| (x.0, x.1)))
+    ) -> Vec<Rectangle<i32, Physical>> {
+        let scale = scale.into();
+        damage_from_surface_tree(
+            &self.surface,
+            self.position.to_f64().to_physical(scale),
+            scale,
+            for_values.map(|f| (f.0, f.1)),
+        )
+    }
+
+    fn opaque_regions(&self, scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>> {
+        let scale = scale.into();
+        opaque_regions_from_surface_tree(&self.surface, self.position.to_f64().to_physical(scale), scale)
     }
 
     fn draw(
         &self,
         renderer: &mut R,
-        frame: &mut F,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
+        frame: &mut <R as Renderer>::Frame,
+        scale: impl Into<Scale<f64>>,
+        location: Point<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
-    ) -> Result<(), R::Error> {
+    ) -> Result<(), <R as Renderer>::Error> {
         crate::backend::renderer::utils::draw_surface_tree(
             renderer,
             frame,
@@ -216,6 +289,10 @@ where
             log,
         )
     }
+
+    fn z_index(&self) -> u8 {
+        self.z_index
+    }
 }
 
 /// Newtype for (&Space, &Output) to provide a `Hash` implementation for damage tracking
@@ -225,7 +302,7 @@ pub struct SpaceOutputTuple<'a, 'b>(pub &'a Space, pub &'b Output);
 impl<'a, 'b> Hash for SpaceOutputTuple<'a, 'b> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.id.hash(state);
-        (std::sync::Arc::as_ptr(&self.1.inner) as *const () as usize).hash(state);
+        (std::sync::Arc::as_ptr(&self.1.data.inner) as *const () as usize).hash(state);
     }
 }
 
@@ -234,7 +311,7 @@ impl<'a, 'b> SpaceOutputTuple<'a, 'b> {
     pub fn owned_hash(&self) -> SpaceOutputHash {
         SpaceOutputHash(
             self.0.id,
-            std::sync::Arc::as_ptr(&self.1.inner) as *const () as usize,
+            std::sync::Arc::as_ptr(&self.1.data.inner) as *const () as usize,
         )
     }
 }

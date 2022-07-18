@@ -5,6 +5,9 @@ use super::{
     wrap_egl_call, EGLDisplay, EGLError, Error,
 };
 
+#[cfg(feature = "backend_drm")]
+use crate::backend::drm::{DrmNode, NodeType};
+
 /// safe EGLDevice wrapper
 #[derive(Debug)]
 pub struct EGLDevice {
@@ -154,9 +157,10 @@ impl EGLDevice {
                     ffi::egl::DRM_DEVICE_FILE_EXT as ffi::egl::types::EGLint,
                 )
             })
-            .expect("TODO: Add error variant");
-
-            // FIXME: Ensure EGL_FALSE is not returned.
+            .map_err(Error::QueryDeviceProperty)?;
+            if raw_path.is_null() {
+                return Err(Error::EmptyDeviceProperty);
+            }
 
             // This is safe because of the following:
             // 1) The string returned by `eglQueryDeviceStringEXT` is string which will exist as long
@@ -169,6 +173,74 @@ impl EGLDevice {
                 .expect("Non-UTF8 device path name");
 
             Ok(PathBuf::from(device_path))
+        }
+    }
+
+    /// Returns the path to the render node of this EGLDevice.
+    ///
+    /// This function will return an error if the following extensions are not available:
+    /// - [`EGL_EXT_device_drm_render_node`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_device_drm_render_node.txt)
+    pub fn render_device_path(&self) -> Result<PathBuf, Error> {
+        if !self
+            .extensions()
+            .contains(&"EGL_EXT_device_drm_render_node".to_owned())
+        {
+            Err(Error::EglExtensionNotSupported(&[
+                "EGL_EXT_device_drm_render_node",
+            ]))
+        } else {
+            let raw_path = wrap_egl_call(|| unsafe {
+                ffi::egl::QueryDeviceStringEXT(
+                    self.inner,
+                    ffi::egl::DRM_RENDER_NODE_FILE_EXT as ffi::egl::types::EGLint,
+                )
+            })
+            .map_err(Error::QueryDeviceProperty)?;
+            if raw_path.is_null() {
+                return Err(Error::EmptyDeviceProperty);
+            }
+
+            // This is safe because of the following:
+            // 1) The string returned by `eglQueryDeviceStringEXT` is string which will exist as long
+            //    as the EGLDisplay is valid. Since the pointer is only used in this function, the
+            //    lifetime of the pointer will fulfil Rust's CStr requirements on lifetime.
+            // 2) The string returned by EGL is null terminated.
+            let device_path = unsafe { CStr::from_ptr(raw_path) }
+                .to_str()
+                // EGL ensures the string is valid UTF-8
+                .expect("Non-UTF8 device path name");
+
+            Ok(PathBuf::from(device_path))
+        }
+    }
+
+    /// Returns the drm node beloging to this device.
+    /// Tries to optain a render_node first through `EGL_EXT_device_drm_render_node`
+    /// (see also [`EGLDevice::render_device_path`]) and then falls back to
+    /// get a render_node from `EGL_EXT_device_drm` (see also [`EGLDevice::drm_device_path`]).
+    /// If both fail to produce a render node, whichever device returned by
+    /// `EGL_EXT_device_drm` is returned.
+    #[cfg(feature = "backend_drm")]
+    pub fn try_get_render_node(&self) -> Result<Option<DrmNode>, Error> {
+        // first lets try to get a render_node directly
+        match self
+            .render_device_path()
+            .ok()
+            .and_then(|path| DrmNode::from_path(path).ok())
+        {
+            Some(node) => Ok(Some(node)),
+            // else we take a drm_path
+            None => {
+                let path = self.drm_device_path()?;
+                let node = DrmNode::from_path(path).ok();
+                // and try to convert it to a render_node
+                Ok(node.map(|node| {
+                    node.node_with_type(NodeType::Render)
+                        .and_then(Result::ok)
+                        // and otherwise go with whatever we got initially
+                        .unwrap_or(node)
+                }))
+            }
         }
     }
 

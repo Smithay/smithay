@@ -56,6 +56,9 @@ pub enum Error {
     /// Failed to initialize a window
     #[error("Failed to initialize a window")]
     InitFailed(#[from] winit::error::OsError),
+    #[error("Failed to create a surface for the window")]
+    /// Surface creation error
+    Surface(Box<dyn std::error::Error>),
     /// Context creation is not supported on the current window system
     #[error("Context creation is not supported on the current window system")]
     NotSupported,
@@ -181,7 +184,8 @@ where
             let size = winit_window.inner_size();
             let surface = unsafe {
                 wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
-            };
+            }
+            .map_err(|err| Error::Surface(err.into()))?;
             (
                 EGLSurface::new(
                     &display,
@@ -225,8 +229,8 @@ where
     let egl = Rc::new(surface);
     let renderer = unsafe { Gles2Renderer::new(context, log.clone())? };
     let resize_notification = Rc::new(Cell::new(None));
-    let damage_tracking = display.extensions.iter().any(|ext| ext == "EGL_EXT_buffer_age")
-        && display.extensions.iter().any(|ext| {
+    let damage_tracking = display.extensions().iter().any(|ext| ext == "EGL_EXT_buffer_age")
+        && display.extensions().iter().any(|ext| {
             ext == "EGL_KHR_swap_buffers_with_damage" || ext == "EGL_EXT_swap_buffers_with_damage"
         });
 
@@ -321,18 +325,11 @@ impl WinitGraphicsBackend {
     /// Submits the back buffer to the window by swapping, requires the window to be previously bound (see [`WinitGraphicsBackend::bind`]).
     pub fn submit(
         &mut self,
-        damage: Option<&[Rectangle<i32, Logical>]>,
-        scale: f64,
+        damage: Option<&[Rectangle<i32, Physical>]>,
     ) -> Result<(), crate::backend::SwapBuffersError> {
         let mut damage = match damage {
             Some(damage) if self.damage_tracking && !damage.is_empty() => {
-                let size = self
-                    .size
-                    .borrow()
-                    .physical_size
-                    .to_f64()
-                    .to_logical(scale)
-                    .to_i32_round::<i32>();
+                let size = self.size.borrow().physical_size;
                 let damage = damage
                     .iter()
                     .map(|rect| {
@@ -340,9 +337,6 @@ impl WinitGraphicsBackend {
                             (rect.loc.x, size.h - rect.loc.y - rect.size.h),
                             rect.size,
                         )
-                        .to_f64()
-                        .to_physical(scale)
-                        .to_i32_round::<i32>()
                     })
                     .collect::<Vec<_>>();
                 Some(damage)

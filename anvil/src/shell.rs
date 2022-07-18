@@ -1,32 +1,38 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-};
+use std::{cell::RefCell, sync::Mutex};
 
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
         layer_map_for_output, Kind as SurfaceKind, LayerSurface, PopupKeyboardGrab, PopupKind, PopupManager,
-        PopupPointerGrab, PopupUngrabStrategy, Space, Window,
+        PopupPointerGrab, PopupUngrabStrategy, Space, Window, WindowSurfaceType,
     },
     reexports::{
-        wayland_protocols::xdg_shell::server::xdg_toplevel,
+        wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
-            protocol::{wl_output, wl_pointer::ButtonState, wl_shell_surface, wl_surface},
-            Display,
+            protocol::{wl_buffer::WlBuffer, wl_output, wl_seat, wl_surface::WlSurface},
+            DisplayHandle, Resource,
         },
     },
-    utils::{Logical, Point, Rectangle, Size},
+    utils::{IsAlive, Logical, Point, Rectangle, Size},
     wayland::{
-        compositor::{compositor_init, with_states, with_surface_tree_upward, TraversalAction},
+        buffer::BufferHandler,
+        compositor::{
+            with_states, with_surface_tree_upward, CompositorHandler, CompositorState, TraversalAction,
+        },
         output::Output,
-        seat::{AxisFrame, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat},
+        seat::{
+            AxisFrame, ButtonEvent, Focus, MotionEvent, PointerGrab, PointerGrabStartData,
+            PointerInnerHandle, Seat,
+        },
         shell::{
-            wlr_layer::{LayerShellRequest, LayerShellState, LayerSurfaceAttributes},
+            wlr_layer::{
+                Layer, LayerSurface as WlrLayerSurface, LayerSurfaceAttributes, WlrLayerShellHandler,
+                WlrLayerShellState,
+            },
             xdg::{
-                xdg_shell_init, Configure, ShellState as XdgShellState, SurfaceCachedState,
-                XdgPopupSurfaceRoleAttributes, XdgRequest, XdgToplevelSurfaceRoleAttributes,
+                Configure, PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface,
+                XdgPopupSurfaceRoleAttributes, XdgShellHandler, XdgShellState,
+                XdgToplevelSurfaceRoleAttributes,
             },
         },
         Serial,
@@ -37,47 +43,46 @@ use crate::state::{AnvilState, Backend};
 
 struct MoveSurfaceGrab {
     start_data: PointerGrabStartData,
-    space: Rc<RefCell<Space>>,
     window: Window,
     initial_window_location: Point<i32, Logical>,
 }
 
-impl PointerGrab for MoveSurfaceGrab {
+impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab {
     fn motion(
         &mut self,
-        handle: &mut PointerInnerHandle<'_>,
-        location: Point<f64, Logical>,
-        _focus: Option<(wl_surface::WlSurface, Point<i32, Logical>)>,
-        serial: Serial,
-        time: u32,
+        data: &mut AnvilState<BackendData>,
+        _dh: &DisplayHandle,
+        _handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        event: &MotionEvent,
     ) {
-        // While the grab is active, no client has pointer focus
-        handle.motion(location, None, serial, time);
-
-        let delta = location - self.start_data.location;
+        let delta = event.location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
 
-        self.space
-            .borrow_mut()
-            .map_window(&self.window, new_location.to_i32_round(), true);
+        data.space
+            .map_window(&self.window, new_location.to_i32_round(), None, true);
     }
 
     fn button(
         &mut self,
-        handle: &mut PointerInnerHandle<'_>,
-        button: u32,
-        state: ButtonState,
-        serial: Serial,
-        time: u32,
+        _data: &mut AnvilState<BackendData>,
+        _dh: &DisplayHandle,
+        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        event: &ButtonEvent,
     ) {
-        handle.button(button, state, serial, time);
+        handle.button(event.button, event.state, event.serial, event.time);
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(serial, time);
+            handle.unset_grab(event.serial, event.time);
         }
     }
 
-    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+    fn axis(
+        &mut self,
+        _data: &mut AnvilState<BackendData>,
+        _dh: &DisplayHandle,
+        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        details: AxisFrame,
+    ) {
         handle.axis(details)
     }
 
@@ -100,31 +105,19 @@ bitflags::bitflags! {
     }
 }
 
-impl From<wl_shell_surface::Resize> for ResizeEdge {
-    #[inline]
-    fn from(x: wl_shell_surface::Resize) -> Self {
-        Self::from_bits(x.bits()).unwrap()
-    }
-}
-
-impl From<ResizeEdge> for wl_shell_surface::Resize {
-    #[inline]
-    fn from(x: ResizeEdge) -> Self {
-        Self::from_bits(x.bits()).unwrap()
-    }
-}
-
 impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
     #[inline]
     fn from(x: xdg_toplevel::ResizeEdge) -> Self {
-        Self::from_bits(x.to_raw()).unwrap()
+        Self::from_bits(x as u32).unwrap()
     }
 }
 
 impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
     #[inline]
     fn from(x: ResizeEdge) -> Self {
-        Self::from_raw(x.bits()).unwrap()
+        use std::convert::TryFrom;
+
+        Self::try_from(x.bits()).unwrap()
     }
 }
 
@@ -132,29 +125,26 @@ struct ResizeSurfaceGrab {
     start_data: PointerGrabStartData,
     window: Window,
     edges: ResizeEdge,
+    initial_window_location: Point<i32, Logical>,
     initial_window_size: Size<i32, Logical>,
     last_window_size: Size<i32, Logical>,
 }
 
-impl PointerGrab for ResizeSurfaceGrab {
+impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
     fn motion(
         &mut self,
-        handle: &mut PointerInnerHandle<'_>,
-        location: Point<f64, Logical>,
-        _focus: Option<(wl_surface::WlSurface, Point<i32, Logical>)>,
-        serial: Serial,
-        time: u32,
+        _data: &mut AnvilState<BackendData>,
+        _dh: &DisplayHandle,
+        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        event: &MotionEvent,
     ) {
         // It is impossible to get `min_size` and `max_size` of dead toplevel, so we return early.
-        if !self.window.toplevel().alive() | self.window.toplevel().get_surface().is_none() {
-            handle.unset_grab(serial, time);
+        if !self.window.toplevel().alive() {
+            handle.unset_grab(event.serial, event.time);
             return;
         }
 
-        // While the grab is active, no client has pointer focus
-        handle.motion(location, None, serial, time);
-
-        let (mut dx, mut dy) = (location - self.start_data.location).into();
+        let (mut dx, mut dy) = (event.location - self.start_data.location).into();
 
         let mut new_window_width = self.initial_window_size.w;
         let mut new_window_height = self.initial_window_size.h;
@@ -178,11 +168,10 @@ impl PointerGrab for ResizeSurfaceGrab {
             new_window_height = (self.initial_window_size.h as f64 + dy) as i32;
         }
 
-        let (min_size, max_size) = with_states(self.window.toplevel().get_surface().unwrap(), |states| {
+        let (min_size, max_size) = with_states(self.window.toplevel().wl_surface(), |states| {
             let data = states.cached_state.current::<SurfaceCachedState>();
             (data.min_size, data.max_size)
-        })
-        .unwrap();
+        });
 
         let min_width = min_size.w.max(1);
         let min_height = min_size.h.max(1);
@@ -204,13 +193,11 @@ impl PointerGrab for ResizeSurfaceGrab {
 
         match &self.window.toplevel() {
             SurfaceKind::Xdg(xdg) => {
-                let ret = xdg.with_pending_state(|state| {
+                xdg.with_pending_state(|state| {
                     state.states.set(xdg_toplevel::State::Resizing);
                     state.size = Some(self.last_window_size);
                 });
-                if ret.is_ok() {
-                    xdg.send_configure();
-                }
+                xdg.send_configure();
             }
             #[cfg(feature = "xwayland")]
             SurfaceKind::X11(_) => {
@@ -221,47 +208,58 @@ impl PointerGrab for ResizeSurfaceGrab {
 
     fn button(
         &mut self,
-        handle: &mut PointerInnerHandle<'_>,
-        button: u32,
-        state: ButtonState,
-        serial: Serial,
-        time: u32,
+        data: &mut AnvilState<BackendData>,
+        _dh: &DisplayHandle,
+        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        event: &ButtonEvent,
     ) {
-        handle.button(button, state, serial, time);
+        handle.button(event.button, event.state, event.serial, event.time);
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(serial, time);
+            handle.unset_grab(event.serial, event.time);
 
             // If toplevel is dead, we can't resize it, so we return early.
-            if !self.window.toplevel().alive() | self.window.toplevel().get_surface().is_none() {
+            if !self.window.toplevel().alive() {
                 return;
             }
 
             #[cfg_attr(not(feature = "xwayland"), allow(irrefutable_let_patterns))]
             if let SurfaceKind::Xdg(xdg) = &self.window.toplevel() {
-                let ret = xdg.with_pending_state(|state| {
+                xdg.with_pending_state(|state| {
                     state.states.unset(xdg_toplevel::State::Resizing);
                     state.size = Some(self.last_window_size);
                 });
-                if ret.is_ok() {
-                    xdg.send_configure();
+                xdg.send_configure();
+                if self.edges.intersects(ResizeEdge::TOP_LEFT) {
+                    let geometry = self.window.geometry();
+                    let mut location = data.space.window_location(&self.window).unwrap();
+
+                    if self.edges.intersects(ResizeEdge::LEFT) {
+                        location.x =
+                            self.initial_window_location.x + (self.initial_window_size.w - geometry.size.w);
+                    }
+                    if self.edges.intersects(ResizeEdge::TOP) {
+                        location.y =
+                            self.initial_window_location.y + (self.initial_window_size.h - geometry.size.h);
+                    }
+
+                    data.space.map_window(&self.window, location, None, true);
                 }
 
-                with_states(self.window.toplevel().get_surface().unwrap(), |states| {
+                with_states(self.window.toplevel().wl_surface(), |states| {
                     let mut data = states
                         .data_map
                         .get::<RefCell<SurfaceData>>()
                         .unwrap()
                         .borrow_mut();
                     if let ResizeState::Resizing(resize_data) = data.resize_state {
-                        data.resize_state = ResizeState::WaitingForFinalAck(resize_data, serial);
+                        data.resize_state = ResizeState::WaitingForFinalAck(resize_data, event.serial);
                     } else {
                         panic!("invalid resize state: {:?}", data.resize_state);
                     }
-                })
-                .unwrap();
+                });
             } else {
-                with_states(self.window.toplevel().get_surface().unwrap(), |states| {
+                with_states(self.window.toplevel().wl_surface(), |states| {
                     let mut data = states
                         .data_map
                         .get::<RefCell<SurfaceData>>()
@@ -272,13 +270,18 @@ impl PointerGrab for ResizeSurfaceGrab {
                     } else {
                         panic!("invalid resize state: {:?}", data.resize_state);
                     }
-                })
-                .unwrap();
+                });
             }
         }
     }
 
-    fn axis(&mut self, handle: &mut PointerInnerHandle<'_>, details: AxisFrame) {
+    fn axis(
+        &mut self,
+        _data: &mut AnvilState<BackendData>,
+        _dh: &DisplayHandle,
+        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        details: AxisFrame,
+    ) {
         handle.axis(details)
     }
 
@@ -287,15 +290,8 @@ impl PointerGrab for ResizeSurfaceGrab {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ShellHandles {
-    pub xdg_state: Arc<Mutex<XdgShellState>>,
-    //pub wl_state: Arc<Mutex<WlShellState>>,
-    pub layer_state: Arc<Mutex<LayerShellState>>,
-}
-
 fn fullscreen_output_geometry(
-    wl_surface: &wl_surface::WlSurface,
+    wl_surface: &WlSurface,
     wl_output: Option<&wl_output::WlOutput>,
     space: &mut Space,
 ) -> Option<Rectangle<i32, Logical>> {
@@ -304,7 +300,9 @@ fn fullscreen_output_geometry(
     wl_output
         .and_then(Output::from_resource)
         .or_else(|| {
-            let w = space.window_for_surface(wl_surface).cloned();
+            let w = space
+                .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                .cloned();
             w.and_then(|w| space.outputs_for_window(&w).get(0).cloned())
         })
         .and_then(|o| space.output_geometry(&o))
@@ -327,450 +325,407 @@ impl FullscreenSurface {
     }
 }
 
-pub fn init_shell<BackendData: Backend + 'static>(
-    display: Rc<RefCell<Display>>,
-    log: ::slog::Logger,
-) -> ShellHandles {
-    // Create the compositor
-    compositor_init(
-        &mut *display.borrow_mut(),
-        move |surface, mut ddata| {
-            on_commit_buffer_handler(&surface);
-            let anvil_state = ddata.get::<AnvilState<BackendData>>().unwrap();
-            let mut popups = anvil_state.popups.borrow_mut();
-            let space = anvil_state.space.as_ref();
-            space.borrow_mut().commit(&surface);
-            surface_commit(&surface, &*space, &mut *popups)
-        },
-        log.clone(),
-    );
+impl<BackendData> BufferHandler for AnvilState<BackendData> {
+    fn buffer_destroyed(&mut self, _buffer: &WlBuffer) {}
+}
 
-    let log_ref = log.clone();
-    // init the xdg_shell
-    let (xdg_shell_state, _) = xdg_shell_init(
-        &mut *display.borrow_mut(),
-        move |shell_event, mut ddata| {
-            let state = ddata.get::<AnvilState<BackendData>>().unwrap();
+impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
+    fn compositor_state(&mut self) -> &mut CompositorState {
+        &mut self.compositor_state
+    }
+    fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
+        on_commit_buffer_handler(surface);
+        self.backend_data.early_import(surface);
 
-            match shell_event {
-                XdgRequest::NewToplevel { surface } => {
-                    // Do not send a configure here, the initial configure
-                    // of a xdg_surface has to be sent during the commit if
-                    // the surface is not already configured
-                    let window = Window::new(SurfaceKind::Xdg(surface));
-                    place_new_window(&mut *state.space.borrow_mut(), &window, true);
-                }
+        #[cfg(feature = "xwayland")]
+        if let Some(x11) = self.x11_state.as_mut() {
+            super::xwayland::commit_hook(surface, dh, x11, &mut self.space);
+        }
 
-                XdgRequest::NewPopup { surface, positioner } => {
-                    // Do not send a configure here, the initial configure
-                    // of a xdg_surface has to be sent during the commit if
-                    // the surface is not already configured
+        self.space.commit(surface);
+        self.popups.commit(surface);
 
-                    // TODO: properly recompute the geometry with the whole of positioner state
-                    surface
-                        .with_pending_state(|state| {
-                            // NOTE: This is not really necessary as the default geometry
-                            // is already set the same way, but for demonstrating how
-                            // to set the initial popup geometry this code is left as
-                            // an example
-                            state.geometry = positioner.get_geometry();
-                        })
-                        .unwrap();
-                    if let Err(err) = state.popups.borrow_mut().track_popup(PopupKind::from(surface)) {
-                        slog::warn!(log_ref, "Failed to track popup: {}", err);
+        ensure_initial_configure(dh, surface, &self.space, &mut self.popups)
+    }
+}
+
+impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
+    fn xdg_shell_state(&mut self) -> &mut XdgShellState {
+        &mut self.xdg_shell_state
+    }
+
+    fn new_toplevel(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+        // Do not send a configure here, the initial configure
+        // of a xdg_surface has to be sent during the commit if
+        // the surface is not already configured
+        let window = Window::new(SurfaceKind::Xdg(surface));
+        place_new_window(&mut self.space, &window, true);
+    }
+
+    fn new_popup(&mut self, _dh: &DisplayHandle, surface: PopupSurface, positioner: PositionerState) {
+        // Do not send a configure here, the initial configure
+        // of a xdg_surface has to be sent during the commit if
+        // the surface is not already configured
+
+        // TODO: properly recompute the geometry with the whole of positioner state
+        surface.with_pending_state(|state| {
+            // NOTE: This is not really necessary as the default geometry
+            // is already set the same way, but for demonstrating how
+            // to set the initial popup geometry this code is left as
+            // an example
+            state.geometry = positioner.get_geometry();
+        });
+        if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
+            slog::warn!(self.log, "Failed to track popup: {}", err);
+        }
+    }
+
+    fn reposition_request(
+        &mut self,
+        _dh: &DisplayHandle,
+        surface: PopupSurface,
+        positioner: PositionerState,
+        token: u32,
+    ) {
+        surface.with_pending_state(|state| {
+            // NOTE: This is again a simplification, a proper compositor would
+            // calculate the geometry of the popup here. For simplicity we just
+            // use the default implementation here that does not take the
+            // window position and output constraints into account.
+            let geometry = positioner.get_geometry();
+            state.geometry = geometry;
+            state.positioner = positioner;
+        });
+        surface.send_repositioned(token);
+    }
+
+    fn move_request(
+        &mut self,
+        _dh: &DisplayHandle,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+    ) {
+        let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
+        // TODO: touch move.
+        let pointer = seat.get_pointer().unwrap();
+
+        // Check that this surface has a click grab.
+        if !pointer.has_grab(serial) {
+            return;
+        }
+
+        let start_data = pointer.grab_start_data().unwrap();
+
+        // If the focus was for a different surface, ignore the request.
+        if start_data.focus.is_none()
+            || !start_data
+                .focus
+                .as_ref()
+                .unwrap()
+                .0
+                .id()
+                .same_client_as(&surface.wl_surface().id())
+        {
+            return;
+        }
+
+        let window = self
+            .space
+            .window_for_surface(surface.wl_surface(), WindowSurfaceType::TOPLEVEL)
+            .unwrap()
+            .clone();
+        let mut initial_window_location = self.space.window_location(&window).unwrap();
+
+        // If surface is maximized then unmaximize it
+        let current_state = surface.current_state();
+        if current_state.states.contains(xdg_toplevel::State::Maximized) {
+            surface.with_pending_state(|state| {
+                state.states.unset(xdg_toplevel::State::Maximized);
+                state.size = None;
+            });
+
+            surface.send_configure();
+
+            // NOTE: In real compositor mouse location should be mapped to a new window size
+            // For example, you could:
+            // 1) transform mouse pointer position from compositor space to window space (location relative)
+            // 2) divide the x coordinate by width of the window to get the percentage
+            //   - 0.0 would be on the far left of the window
+            //   - 0.5 would be in middle of the window
+            //   - 1.0 would be on the far right of the window
+            // 3) multiply the percentage by new window width
+            // 4) by doing that, drag will look a lot more natural
+            //
+            // but for anvil needs setting location to pointer location is fine
+            let pos = pointer.current_location();
+            initial_window_location = (pos.x as i32, pos.y as i32).into();
+        }
+
+        let grab = MoveSurfaceGrab {
+            start_data,
+            window,
+            initial_window_location,
+        };
+
+        pointer.set_grab(grab, serial, Focus::Clear);
+    }
+
+    fn resize_request(
+        &mut self,
+        _dh: &DisplayHandle,
+        surface: ToplevelSurface,
+        seat: wl_seat::WlSeat,
+        serial: Serial,
+        edges: xdg_toplevel::ResizeEdge,
+    ) {
+        let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
+        // TODO: touch resize.
+        let pointer = seat.get_pointer().unwrap();
+
+        // Check that this surface has a click grab.
+        if !pointer.has_grab(serial) {
+            return;
+        }
+
+        let start_data = pointer.grab_start_data().unwrap();
+
+        // If the focus was for a different surface, ignore the request.
+        if start_data.focus.is_none()
+            || !start_data
+                .focus
+                .as_ref()
+                .unwrap()
+                .0
+                .id()
+                .same_client_as(&surface.wl_surface().id())
+        {
+            return;
+        }
+
+        let window = self
+            .space
+            .window_for_surface(surface.wl_surface(), WindowSurfaceType::TOPLEVEL)
+            .unwrap()
+            .clone();
+        let geometry = window.geometry();
+        let loc = self.space.window_location(&window).unwrap();
+        let (initial_window_location, initial_window_size) = (loc, geometry.size);
+
+        with_states(surface.wl_surface(), move |states| {
+            states
+                .data_map
+                .get::<RefCell<SurfaceData>>()
+                .unwrap()
+                .borrow_mut()
+                .resize_state = ResizeState::Resizing(ResizeData {
+                edges: edges.into(),
+                initial_window_location,
+                initial_window_size,
+            });
+        });
+
+        let grab = ResizeSurfaceGrab {
+            start_data,
+            window,
+            edges: edges.into(),
+            initial_window_location,
+            initial_window_size,
+            last_window_size: initial_window_size,
+        };
+
+        pointer.set_grab(grab, serial, Focus::Clear);
+    }
+
+    fn ack_configure(&mut self, _dh: &DisplayHandle, surface: WlSurface, configure: Configure) {
+        if let Configure::Toplevel(configure) = configure {
+            if let Some(serial) = with_states(&surface, |states| {
+                if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
+                    if let ResizeState::WaitingForFinalAck(_, serial) = data.borrow().resize_state {
+                        return Some(serial);
                     }
                 }
 
-                XdgRequest::RePosition {
-                    surface,
-                    positioner,
-                    token,
-                } => {
-                    let result = surface.with_pending_state(|state| {
-                        // NOTE: This is again a simplification, a proper compositor would
-                        // calculate the geometry of the popup here. For simplicity we just
-                        // use the default implementation here that does not take the
-                        // window position and output constraints into account.
-                        let geometry = positioner.get_geometry();
-                        state.geometry = geometry;
-                        state.positioner = positioner;
-                    });
-
-                    if result.is_ok() {
-                        surface.send_repositioned(token);
-                    }
-                }
-
-                XdgRequest::Move {
-                    surface,
-                    seat,
-                    serial,
-                } => {
-                    let seat = Seat::from_resource(&seat).unwrap();
-                    // TODO: touch move.
-                    let pointer = seat.get_pointer().unwrap();
-
-                    // Check that this surface has a click grab.
-                    if !pointer.has_grab(serial) {
-                        return;
-                    }
-
-                    let start_data = pointer.grab_start_data().unwrap();
-
-                    // If the focus was for a different surface, ignore the request.
-                    if start_data.focus.is_none()
-                        || !start_data
-                            .focus
-                            .as_ref()
-                            .unwrap()
-                            .0
-                            .as_ref()
-                            .same_client_as(surface.get_surface().unwrap().as_ref())
-                    {
-                        return;
-                    }
-
-                    let space = state.space.clone();
-                    let window = space
-                        .borrow_mut()
-                        .window_for_surface(surface.get_surface().unwrap())
+                None
+            }) {
+                // When the resize grab is released the surface
+                // resize state will be set to WaitingForFinalAck
+                // and the client will receive a configure request
+                // without the resize state to inform the client
+                // resizing has finished. Here we will wait for
+                // the client to acknowledge the end of the
+                // resizing. To check if the surface was resizing
+                // before sending the configure we need to use
+                // the current state as the received acknowledge
+                // will no longer have the resize state set
+                let is_resizing = with_states(&surface, |states| {
+                    states
+                        .data_map
+                        .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
                         .unwrap()
-                        .clone();
-                    let mut initial_window_location = space.borrow().window_location(&window).unwrap();
-
-                    // If surface is maximized then unmaximize it
-                    if let Some(current_state) = surface.current_state() {
-                        if current_state.states.contains(xdg_toplevel::State::Maximized) {
-                            let fs_changed = surface.with_pending_state(|state| {
-                                state.states.unset(xdg_toplevel::State::Maximized);
-                                state.size = None;
-                            });
-
-                            if fs_changed.is_ok() {
-                                surface.send_configure();
-
-                                // NOTE: In real compositor mouse location should be mapped to a new window size
-                                // For example, you could:
-                                // 1) transform mouse pointer position from compositor space to window space (location relative)
-                                // 2) divide the x coordinate by width of the window to get the percentage
-                                //   - 0.0 would be on the far left of the window
-                                //   - 0.5 would be in middle of the window
-                                //   - 1.0 would be on the far right of the window
-                                // 3) multiply the percentage by new window width
-                                // 4) by doing that, drag will look a lot more natural
-                                //
-                                // but for anvil needs setting location to pointer location is fine
-                                let pos = pointer.current_location();
-                                initial_window_location = (pos.x as i32, pos.y as i32).into();
-                            }
-                        }
-                    }
-
-                    let grab = MoveSurfaceGrab {
-                        start_data,
-                        space,
-                        window,
-                        initial_window_location,
-                    };
-
-                    pointer.set_grab(grab, serial, 0);
-                }
-
-                XdgRequest::Resize {
-                    surface,
-                    seat,
-                    serial,
-                    edges,
-                } => {
-                    let seat = Seat::from_resource(&seat).unwrap();
-                    // TODO: touch resize.
-                    let pointer = seat.get_pointer().unwrap();
-
-                    // Check that this surface has a click grab.
-                    if !pointer.has_grab(serial) {
-                        return;
-                    }
-
-                    let start_data = pointer.grab_start_data().unwrap();
-
-                    // If the focus was for a different surface, ignore the request.
-                    if start_data.focus.is_none()
-                        || !start_data
-                            .focus
-                            .as_ref()
-                            .unwrap()
-                            .0
-                            .as_ref()
-                            .same_client_as(surface.get_surface().unwrap().as_ref())
-                    {
-                        return;
-                    }
-
-                    let space = state.space.clone();
-                    let window = space
-                        .borrow_mut()
-                        .window_for_surface(surface.get_surface().unwrap())
+                        .lock()
                         .unwrap()
-                        .clone();
-                    let geometry = window.geometry();
-                    let loc = space.borrow().window_location(&window).unwrap();
-                    let (initial_window_location, initial_window_size) = (loc, geometry.size);
+                        .current
+                        .states
+                        .contains(xdg_toplevel::State::Resizing)
+                });
 
-                    with_states(surface.get_surface().unwrap(), move |states| {
-                        states
+                if configure.serial >= serial && is_resizing {
+                    with_states(&surface, |states| {
+                        let mut data = states
                             .data_map
                             .get::<RefCell<SurfaceData>>()
                             .unwrap()
-                            .borrow_mut()
-                            .resize_state = ResizeState::Resizing(ResizeData {
-                            edges: edges.into(),
-                            initial_window_location,
-                            initial_window_size,
-                        });
-                    })
-                    .unwrap();
-
-                    let grab = ResizeSurfaceGrab {
-                        start_data,
-                        window,
-                        edges: edges.into(),
-                        initial_window_size,
-                        last_window_size: initial_window_size,
-                    };
-
-                    pointer.set_grab(grab, serial, 0);
-                }
-
-                XdgRequest::AckConfigure {
-                    surface,
-                    configure: Configure::Toplevel(configure),
-                    ..
-                } => {
-                    let waiting_for_serial = with_states(&surface, |states| {
-                        if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
-                            if let ResizeState::WaitingForFinalAck(_, serial) = data.borrow().resize_state {
-                                return Some(serial);
-                            }
+                            .borrow_mut();
+                        if let ResizeState::WaitingForFinalAck(resize_data, _) = data.resize_state {
+                            data.resize_state = ResizeState::WaitingForCommit(resize_data);
+                        } else {
+                            unreachable!()
                         }
-
-                        None
-                    })
-                    .unwrap();
-
-                    if let Some(serial) = waiting_for_serial {
-                        // When the resize grab is released the surface
-                        // resize state will be set to WaitingForFinalAck
-                        // and the client will receive a configure request
-                        // without the resize state to inform the client
-                        // resizing has finished. Here we will wait for
-                        // the client to acknowledge the end of the
-                        // resizing. To check if the surface was resizing
-                        // before sending the configure we need to use
-                        // the current state as the received acknowledge
-                        // will no longer have the resize state set
-                        let is_resizing = with_states(&surface, |states| {
-                            states
-                                .data_map
-                                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
-                                .unwrap()
-                                .lock()
-                                .unwrap()
-                                .current
-                                .states
-                                .contains(xdg_toplevel::State::Resizing)
-                        })
-                        .unwrap();
-
-                        if configure.serial >= serial && is_resizing {
-                            with_states(&surface, |states| {
-                                let mut data = states
-                                    .data_map
-                                    .get::<RefCell<SurfaceData>>()
-                                    .unwrap()
-                                    .borrow_mut();
-                                if let ResizeState::WaitingForFinalAck(resize_data, _) = data.resize_state {
-                                    data.resize_state = ResizeState::WaitingForCommit(resize_data);
-                                } else {
-                                    unreachable!()
-                                }
-                            })
-                            .unwrap();
-                        }
-                    }
-                }
-
-                XdgRequest::Fullscreen {
-                    surface,
-                    output: mut wl_output,
-                    ..
-                } => {
-                    // NOTE: This is only one part of the solution. We can set the
-                    // location and configure size here, but the surface should be rendered fullscreen
-                    // independently from its buffer size
-                    let wl_surface = if let Some(surface) = surface.get_surface() {
-                        surface
-                    } else {
-                        // If there is no underlying surface just ignore the request
-                        return;
-                    };
-
-                    let output_geometry = fullscreen_output_geometry(
-                        wl_surface,
-                        wl_output.as_ref(),
-                        &mut *state.space.borrow_mut(),
-                    );
-
-                    if let Some(geometry) = output_geometry {
-                        let space = state.space.borrow_mut();
-                        let output = wl_output
-                            .as_ref()
-                            .and_then(Output::from_resource)
-                            .unwrap_or_else(|| space.outputs().next().unwrap().clone());
-                        output.with_client_outputs(wl_surface.as_ref().client().unwrap(), |output| {
-                            wl_output = Some(output.clone());
-                        });
-
-                        let ret = surface.with_pending_state(|state| {
-                            state.states.set(xdg_toplevel::State::Fullscreen);
-                            state.size = Some(geometry.size);
-                            state.fullscreen_output = wl_output;
-                        });
-
-                        if ret.is_ok() {
-                            let window = space.window_for_surface(wl_surface).unwrap();
-                            window.configure();
-                            output.user_data().insert_if_missing(FullscreenSurface::default);
-                            output
-                                .user_data()
-                                .get::<FullscreenSurface>()
-                                .unwrap()
-                                .set(window.clone());
-                            slog::trace!(log_ref, "Fullscreening: {:?}", window);
-                        }
-                    }
-                }
-
-                XdgRequest::UnFullscreen { surface } => {
-                    let ret = surface.with_pending_state(|state| {
-                        state.states.unset(xdg_toplevel::State::Fullscreen);
-                        state.size = None;
-                        state.fullscreen_output.take()
                     });
-                    if let Ok(output) = ret {
-                        if let Some(output) = output {
-                            let output = Output::from_resource(&output).unwrap();
-                            if let Some(fullscreen) = output.user_data().get::<FullscreenSurface>() {
-                                slog::trace!(log_ref, "Unfullscreening: {:?}", fullscreen.get());
-                                fullscreen.clear();
-                                state.backend_data.reset_buffers(&output);
-                            }
-                        }
-
-                        surface.send_configure();
-                    }
                 }
-
-                XdgRequest::Maximize { surface } => {
-                    // NOTE: This should use layer-shell when it is implemented to
-                    // get the correct maximum size
-                    let mut space = state.space.borrow_mut();
-                    let window = space
-                        .window_for_surface(surface.get_surface().unwrap())
-                        .unwrap()
-                        .clone();
-                    let output = &space.outputs_for_window(&window)[0];
-                    let geometry = space.output_geometry(output).unwrap();
-
-                    space.map_window(&window, geometry.loc, true);
-                    let ret = surface.with_pending_state(|state| {
-                        state.states.set(xdg_toplevel::State::Maximized);
-                        state.size = Some(geometry.size);
-                    });
-
-                    if ret.is_ok() {
-                        window.configure();
-                    }
-                }
-                XdgRequest::UnMaximize { surface } => {
-                    let ret = surface.with_pending_state(|state| {
-                        state.states.unset(xdg_toplevel::State::Maximized);
-                        state.size = None;
-                    });
-
-                    if ret.is_ok() {
-                        surface.send_configure();
-                    }
-                }
-                XdgRequest::Grab {
-                    serial,
-                    surface,
-                    seat,
-                } => {
-                    let seat = Seat::from_resource(&seat).unwrap();
-                    let ret = state
-                        .popups
-                        .borrow_mut()
-                        .grab_popup(surface.into(), &seat, serial);
-
-                    if let Ok(mut grab) = ret {
-                        if let Some(keyboard) = seat.get_keyboard() {
-                            if keyboard.is_grabbed()
-                                && !(keyboard.has_grab(serial)
-                                    || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
-                            {
-                                grab.ungrab(PopupUngrabStrategy::All);
-                                return;
-                            }
-                            keyboard.set_focus(grab.current_grab().as_ref(), serial);
-                            keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
-                        }
-                        if let Some(pointer) = seat.get_pointer() {
-                            if pointer.is_grabbed()
-                                && !(pointer.has_grab(serial)
-                                    || pointer
-                                        .has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
-                            {
-                                grab.ungrab(PopupUngrabStrategy::All);
-                                return;
-                            }
-                            pointer.set_grab(PopupPointerGrab::new(&grab), serial, 0);
-                        }
-                    }
-                }
-                _ => (),
             }
-        },
-        log.clone(),
-    );
+        }
+    }
 
-    let (layer_shell_state, _) = smithay::wayland::shell::wlr_layer::wlr_layer_shell_init(
-        &mut *display.borrow_mut(),
-        move |event, mut ddata| match event {
-            LayerShellRequest::NewLayerSurface {
-                surface,
-                output: wl_output,
-                namespace,
-                ..
-            } => {
-                let state = ddata.get::<AnvilState<BackendData>>().unwrap();
-                let space = state.space.borrow();
-                let output = wl_output
-                    .as_ref()
-                    .and_then(Output::from_resource)
-                    .unwrap_or_else(|| space.outputs().next().unwrap().clone());
+    fn fullscreen_request(
+        &mut self,
+        dh: &DisplayHandle,
+        surface: ToplevelSurface,
+        mut wl_output: Option<wl_output::WlOutput>,
+    ) {
+        // NOTE: This is only one part of the solution. We can set the
+        // location and configure size here, but the surface should be rendered fullscreen
+        // independently from its buffer size
+        let wl_surface = surface.wl_surface();
 
-                let mut map = layer_map_for_output(&output);
-                map.map_layer(&LayerSurface::new(surface, namespace)).unwrap();
+        let output_geometry = fullscreen_output_geometry(wl_surface, wl_output.as_ref(), &mut self.space);
+
+        if let Some(geometry) = output_geometry {
+            let output = wl_output
+                .as_ref()
+                .and_then(Output::from_resource)
+                .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
+            let client = dh.get_client(wl_surface.id()).unwrap();
+            output.with_client_outputs(dh, &client, |_dh, output| {
+                wl_output = Some(output.clone());
+            });
+
+            surface.with_pending_state(|state| {
+                state.states.set(xdg_toplevel::State::Fullscreen);
+                state.size = Some(geometry.size);
+                state.fullscreen_output = wl_output;
+            });
+
+            let window = self
+                .space
+                .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                .unwrap();
+            window.configure();
+            output.user_data().insert_if_missing(FullscreenSurface::default);
+            output
+                .user_data()
+                .get::<FullscreenSurface>()
+                .unwrap()
+                .set(window.clone());
+            slog::trace!(self.log, "Fullscreening: {:?}", window);
+        }
+    }
+
+    fn unfullscreen_request(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+        let ret = surface.with_pending_state(|state| {
+            state.states.unset(xdg_toplevel::State::Fullscreen);
+            state.size = None;
+            state.fullscreen_output.take()
+        });
+        if let Some(output) = ret {
+            let output = Output::from_resource(&output).unwrap();
+            if let Some(fullscreen) = output.user_data().get::<FullscreenSurface>() {
+                slog::trace!(self.log, "Unfullscreening: {:?}", fullscreen.get());
+                fullscreen.clear();
+                self.backend_data.reset_buffers(&output);
             }
 
-            LayerShellRequest::AckConfigure { .. } => {}
-        },
-        log.clone(),
-    );
+            surface.send_configure();
+        }
+    }
 
-    ShellHandles {
-        xdg_state: xdg_shell_state,
-        layer_state: layer_shell_state,
+    fn maximize_request(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+        // NOTE: This should use layer-shell when it is implemented to
+        // get the correct maximum size
+        let window = self
+            .space
+            .window_for_surface(surface.wl_surface(), WindowSurfaceType::TOPLEVEL)
+            .unwrap()
+            .clone();
+        let output = &self.space.outputs_for_window(&window)[0];
+        let geometry = self.space.output_geometry(output).unwrap();
+
+        self.space.map_window(&window, geometry.loc, None, true);
+        surface.with_pending_state(|state| {
+            state.states.set(xdg_toplevel::State::Maximized);
+            state.size = Some(geometry.size);
+        });
+        window.configure();
+    }
+
+    fn unmaximize_request(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+        surface.with_pending_state(|state| {
+            state.states.unset(xdg_toplevel::State::Maximized);
+            state.size = None;
+        });
+        surface.send_configure();
+    }
+
+    fn grab(&mut self, dh: &DisplayHandle, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
+        let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
+        let ret = self.popups.grab_popup(dh, surface.into(), &seat, serial);
+
+        if let Ok(mut grab) = ret {
+            if let Some(keyboard) = seat.get_keyboard() {
+                if keyboard.is_grabbed()
+                    && !(keyboard.has_grab(serial)
+                        || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
+                {
+                    grab.ungrab(dh, PopupUngrabStrategy::All);
+                    return;
+                }
+                keyboard.set_focus(dh, grab.current_grab().as_ref(), serial);
+                keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
+            }
+            if let Some(pointer) = seat.get_pointer() {
+                if pointer.is_grabbed()
+                    && !(pointer.has_grab(serial)
+                        || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
+                {
+                    grab.ungrab(dh, PopupUngrabStrategy::All);
+                    return;
+                }
+                pointer.set_grab(PopupPointerGrab::new(&grab), serial, Focus::Keep);
+            }
+        }
+    }
+}
+
+impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
+    fn shell_state(&mut self) -> &mut WlrLayerShellState {
+        &mut self.layer_shell_state
+    }
+
+    fn new_layer_surface(
+        &mut self,
+        dh: &DisplayHandle,
+        surface: WlrLayerSurface,
+        wl_output: Option<wl_output::WlOutput>,
+        _layer: Layer,
+        namespace: String,
+    ) {
+        let output = wl_output
+            .as_ref()
+            .and_then(Output::from_resource)
+            .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
+        let mut map = layer_map_for_output(&output);
+        map.map_layer(dh, &LayerSurface::new(surface, namespace)).unwrap();
     }
 }
 
@@ -810,13 +765,12 @@ pub struct SurfaceData {
     pub resize_state: ResizeState,
 }
 
-fn surface_commit(surface: &wl_surface::WlSurface, space: &RefCell<Space>, popups: &mut PopupManager) {
-    #[cfg(feature = "xwayland")]
-    super::xwayland::commit_hook(surface);
-
-    popups.commit(surface);
-    let mut space = space.borrow_mut();
-
+fn ensure_initial_configure(
+    dh: &DisplayHandle,
+    surface: &WlSurface,
+    space: &Space,
+    popups: &mut PopupManager,
+) {
     with_surface_tree_upward(
         surface,
         (),
@@ -829,7 +783,10 @@ fn surface_commit(surface: &wl_surface::WlSurface, space: &RefCell<Space>, popup
         |_, _, _| true,
     );
 
-    if let Some(window) = space.window_for_surface(surface).cloned() {
+    if let Some(window) = space
+        .window_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+        .cloned()
+    {
         // send the initial configure if relevant
         #[cfg_attr(not(feature = "xwayland"), allow(irrefutable_let_patterns))]
         if let SurfaceKind::Xdg(ref toplevel) = window.toplevel() {
@@ -841,66 +798,24 @@ fn surface_commit(surface: &wl_surface::WlSurface, space: &RefCell<Space>, popup
                     .lock()
                     .unwrap()
                     .initial_configure_sent
-            })
-            .unwrap();
+            });
             if !initial_configure_sent {
                 toplevel.send_configure();
             }
         }
 
-        let geometry = window.geometry();
-        let window_loc = space.window_location(&window).unwrap();
-        let new_location = with_states(surface, |states| {
+        with_states(surface, |states| {
             let mut data = states
                 .data_map
                 .get::<RefCell<SurfaceData>>()
                 .unwrap()
                 .borrow_mut();
 
-            let mut new_location = None;
-
-            // If the window is being resized by top or left, its location must be adjusted
-            // accordingly.
-            match data.resize_state {
-                ResizeState::Resizing(resize_data)
-                | ResizeState::WaitingForFinalAck(resize_data, _)
-                | ResizeState::WaitingForCommit(resize_data) => {
-                    let ResizeData {
-                        edges,
-                        initial_window_location,
-                        initial_window_size,
-                    } = resize_data;
-
-                    if edges.intersects(ResizeEdge::TOP_LEFT) {
-                        let mut location = window_loc;
-
-                        if edges.intersects(ResizeEdge::LEFT) {
-                            location.x =
-                                initial_window_location.x + (initial_window_size.w - geometry.size.w);
-                        }
-                        if edges.intersects(ResizeEdge::TOP) {
-                            location.y =
-                                initial_window_location.y + (initial_window_size.h - geometry.size.h);
-                        }
-
-                        new_location = Some(location);
-                    }
-                }
-                ResizeState::NotResizing => (),
-            }
-
             // Finish resizing.
             if let ResizeState::WaitingForCommit(_) = data.resize_state {
                 data.resize_state = ResizeState::NotResizing;
             }
-
-            new_location
-        })
-        .unwrap();
-
-        if let Some(location) = new_location {
-            space.map_window(&window, location, true);
-        }
+        });
 
         return;
     }
@@ -915,8 +830,7 @@ fn surface_commit(surface: &wl_surface::WlSurface, space: &RefCell<Space>, popup
                 .lock()
                 .unwrap()
                 .initial_configure_sent
-        })
-        .unwrap();
+        });
         if !initial_configure_sent {
             // NOTE: This should never fail as the initial configure is always
             // allowed.
@@ -928,10 +842,13 @@ fn surface_commit(surface: &wl_surface::WlSurface, space: &RefCell<Space>, popup
 
     if let Some(output) = space.outputs().find(|o| {
         let map = layer_map_for_output(o);
-        map.layer_for_surface(surface).is_some()
+        map.layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+            .is_some()
     }) {
         let mut map = layer_map_for_output(output);
-        let layer = map.layer_for_surface(surface).unwrap();
+        let layer = map
+            .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+            .unwrap();
 
         // send the initial configure if relevant
         let initial_configure_sent = with_states(surface, |states| {
@@ -942,13 +859,12 @@ fn surface_commit(surface: &wl_surface::WlSurface, space: &RefCell<Space>, popup
                 .lock()
                 .unwrap()
                 .initial_configure_sent
-        })
-        .unwrap();
+        });
         if !initial_configure_sent {
             layer.layer_surface().send_configure();
         }
 
-        map.arrange();
+        map.arrange(dh);
     };
 }
 
@@ -975,10 +891,10 @@ fn place_new_window(space: &mut Space, window: &Window, activate: bool) {
     let x = x_range.sample(&mut rng);
     let y = y_range.sample(&mut rng);
 
-    space.map_window(window, (x, y), activate);
+    space.map_window(window, (x, y), None, activate);
 }
 
-pub fn fixup_positions(space: &mut Space) {
+pub fn fixup_positions(dh: &DisplayHandle, space: &mut Space) {
     // fixup outputs
     let mut offset = Point::<i32, Logical>::from((0, 0));
     for output in space.outputs().cloned().collect::<Vec<_>>().into_iter() {
@@ -986,9 +902,8 @@ pub fn fixup_positions(space: &mut Space) {
             .output_geometry(&output)
             .map(|geo| geo.size)
             .unwrap_or_else(|| Size::from((0, 0)));
-        let scale = space.output_scale(&output).unwrap_or(1.0);
-        space.map_output(&output, scale, offset);
-        layer_map_for_output(&output).arrange();
+        space.map_output(&output, offset);
+        layer_map_for_output(&output).arrange(dh);
         offset.x += size.w;
     }
 

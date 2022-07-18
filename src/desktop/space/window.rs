@@ -1,10 +1,10 @@
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer, Texture},
+    backend::renderer::{ImportAll, Renderer},
     desktop::{
-        space::{Space, SpaceElement},
+        space::Space,
         window::{draw_window, Window},
     },
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::output::Output,
 };
 use std::{
@@ -13,12 +13,11 @@ use std::{
     collections::HashMap,
 };
 
-use super::RenderZindex;
-
 #[derive(Default)]
 pub struct WindowState {
     pub location: Point<i32, Logical>,
     pub drawn: bool,
+    pub z_index: u8,
 }
 
 pub type WindowUserdata = RefCell<HashMap<usize, WindowState>>;
@@ -37,11 +36,15 @@ pub fn window_rect(window: &Window, space_id: &usize) -> Rectangle<i32, Logical>
     wgeo
 }
 
-pub fn window_rect_with_popups(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
-    let loc = window_loc(window, space_id);
-    let mut wgeo = window.bbox_with_popups();
-    wgeo.loc += loc;
-    wgeo
+pub fn window_physical_geometry(
+    window: &Window,
+    space_id: &usize,
+    scale: impl Into<Scale<f64>>,
+) -> Rectangle<i32, Physical> {
+    let scale = scale.into();
+    let loc = window_loc(window, space_id) - window.geometry().loc;
+    let loc = loc.to_f64().to_physical(scale);
+    window.physical_bbox_with_popups(loc, scale)
 }
 
 pub fn window_loc(window: &Window, space_id: &usize) -> Point<i32, Logical> {
@@ -55,43 +58,69 @@ pub fn window_loc(window: &Window, space_id: &usize) -> Point<i32, Logical> {
         .location
 }
 
-impl<R, F, E, T> SpaceElement<R, F, E, T> for Window
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
-{
-    fn id(&self) -> usize {
+impl Window {
+    pub(super) fn elem_id(&self) -> usize {
         self.0.id
     }
 
-    fn type_of(&self) -> TypeId {
+    pub(super) fn elem_type_of(&self) -> TypeId {
         TypeId::of::<Window>()
     }
 
-    fn location(&self, space_id: usize) -> Point<i32, Logical> {
-        window_loc(self, &space_id)
+    pub(super) fn elem_location(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Point<f64, Physical> {
+        let loc = window_loc(self, &space_id) - self.geometry().loc;
+        loc.to_f64().to_physical(scale)
     }
 
-    fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
-        window_rect_with_popups(self, &space_id)
+    pub(super) fn elem_geometry(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Rectangle<i32, Physical> {
+        window_physical_geometry(self, &space_id, scale)
     }
 
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
-        self.accumulated_damage(for_values)
+    pub(super) fn elem_accumulated_damage(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+        for_values: Option<(&Space, &Output)>,
+    ) -> Vec<Rectangle<i32, Physical>> {
+        let scale = scale.into();
+        let loc = window_loc(self, &space_id) - self.geometry().loc;
+        self.accumulated_damage(loc.to_f64().to_physical(scale), scale, for_values)
     }
 
-    fn draw(
+    pub(super) fn elem_opaque_regions(
+        &self,
+        space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Option<Vec<Rectangle<i32, Physical>>> {
+        let scale = scale.into();
+        let loc = window_loc(self, &space_id) - self.geometry().loc;
+        self.opaque_regions(loc.to_f64().to_physical(scale), scale)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn elem_draw<R, S>(
         &self,
         space_id: usize,
         renderer: &mut R,
-        frame: &mut F,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
+        frame: &mut <R as Renderer>::Frame,
+        scale: S,
+        location: Point<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
-    ) -> Result<(), R::Error> {
+    ) -> Result<(), <R as Renderer>::Error>
+    where
+        R: Renderer + ImportAll,
+        <R as Renderer>::TextureId: 'static,
+        S: Into<Scale<f64>>,
+    {
         let res = draw_window(renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {
             window_state(space_id, self).drawn = true;
@@ -99,7 +128,7 @@ where
         res
     }
 
-    fn z_index(&self) -> u8 {
-        RenderZindex::Shell as u8
+    pub(super) fn elem_z_index(&self, space_id: usize) -> u8 {
+        window_state(space_id, self).z_index
     }
 }

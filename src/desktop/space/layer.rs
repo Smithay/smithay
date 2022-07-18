@@ -1,10 +1,10 @@
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer, Texture},
+    backend::renderer::{ImportAll, Renderer},
     desktop::{
         layer::{layer_state as output_layer_state, *},
-        space::{Space, SpaceElement},
+        space::Space,
     },
-    utils::{Logical, Point, Rectangle},
+    utils::{Physical, Point, Rectangle, Scale},
     wayland::{output::Output, shell::wlr_layer::Layer},
 };
 use std::{
@@ -29,42 +29,70 @@ pub fn layer_state(space: usize, l: &LayerSurface) -> RefMut<'_, LayerState> {
     })
 }
 
-impl<R, F, E, T> SpaceElement<R, F, E, T> for LayerSurface
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll,
-    F: Frame<Error = E, TextureId = T>,
-    E: std::error::Error,
-    T: Texture + 'static,
-{
-    fn id(&self) -> usize {
+impl LayerSurface {
+    pub(super) fn elem_id(&self) -> usize {
         self.0.id
     }
 
-    fn type_of(&self) -> TypeId {
+    pub(super) fn elem_type_of(&self) -> TypeId {
         TypeId::of::<LayerSurface>()
     }
 
-    fn geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
-        let mut bbox = self.bbox_with_popups();
+    pub(super) fn elem_location(
+        &self,
+        _space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Point<f64, Physical> {
         let state = output_layer_state(self);
-        bbox.loc += state.location;
-        bbox
+        state.location.to_f64().to_physical(scale)
     }
 
-    fn accumulated_damage(&self, for_values: Option<(&Space, &Output)>) -> Vec<Rectangle<i32, Logical>> {
-        self.accumulated_damage(for_values)
+    pub(super) fn elem_geometry(
+        &self,
+        _space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Rectangle<i32, Physical> {
+        let scale = scale.into();
+        let state = output_layer_state(self);
+        self.physical_bbox_with_popups(state.location.to_f64().to_physical(scale), scale)
     }
 
-    fn draw(
+    pub(super) fn elem_accumulated_damage(
+        &self,
+        _space_id: usize,
+        scale: impl Into<Scale<f64>>,
+        for_values: Option<(&Space, &Output)>,
+    ) -> Vec<Rectangle<i32, Physical>> {
+        let scale = scale.into();
+        let state = output_layer_state(self);
+        self.accumulated_damage(state.location.to_f64().to_physical(scale), scale, for_values)
+    }
+
+    pub(super) fn elem_opaque_regions(
+        &self,
+        _space_id: usize,
+        scale: impl Into<Scale<f64>>,
+    ) -> Option<Vec<Rectangle<i32, Physical>>> {
+        let scale = scale.into();
+        let state = output_layer_state(self);
+        self.opaque_regions(state.location.to_f64().to_physical(scale), scale)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn elem_draw<R>(
         &self,
         space_id: usize,
         renderer: &mut R,
-        frame: &mut F,
-        scale: f64,
-        location: Point<i32, Logical>,
-        damage: &[Rectangle<i32, Logical>],
+        frame: &mut <R as Renderer>::Frame,
+        scale: impl Into<Scale<f64>>,
+        location: Point<f64, Physical>,
+        damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
-    ) -> Result<(), R::Error> {
+    ) -> Result<(), <R as Renderer>::Error>
+    where
+        R: Renderer + ImportAll,
+        <R as Renderer>::TextureId: 'static,
+    {
         let res = draw_layer_surface(renderer, frame, self, scale, location, damage, log);
         if res.is_ok() {
             layer_state(space_id, self).drawn = true;
@@ -72,17 +100,14 @@ where
         res
     }
 
-    fn z_index(&self) -> u8 {
-        if let Some(layer) = self.layer() {
-            let z_index = match layer {
-                Layer::Background => RenderZindex::Background,
-                Layer::Bottom => RenderZindex::Bottom,
-                Layer::Top => RenderZindex::Top,
-                Layer::Overlay => RenderZindex::Overlay,
-            };
-            z_index as u8
-        } else {
-            0
-        }
+    pub(super) fn elem_z_index(&self) -> u8 {
+        let layer = self.layer();
+        let z_index = match layer {
+            Layer::Background => RenderZindex::Background,
+            Layer::Bottom => RenderZindex::Bottom,
+            Layer::Top => RenderZindex::Top,
+            Layer::Overlay => RenderZindex::Overlay,
+        };
+        z_index as u8
     }
 }

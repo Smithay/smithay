@@ -4,6 +4,10 @@
 
 ### Breaking Changes
 
+**`wayland-server` was updated to 0.30:**
+- Most of the wayland frontend API is changed to follow the new request dispatching mechanism built around the `Dispatch` trait from `wayland-server`
+- Modules that provide handlers for Wayland globals now provide `DelegateDispatch` implementations, as well as macros to simplify the dispatching from your main state
+
 #### Clients & Protocols
 
 - Remove `xdg-shell-unstable-v6` backwards compatibility
@@ -15,6 +19,8 @@
 - Remove `Other` and add `Forward` and `Back` variants to `MouseButton`. Use the new `PointerButtonEvent::button_code` in place of `Other`.
 - `GrabStartData` has been renamed to `PointerGrabStartData`
 - The `slot` method on touch events no longer returns an `Option` and multi-touch capability is thus opaque to the compositor
+- `wayland::output::Output` now is created separately from it's `Global` as reflected by [`Output::new`] and the new [`Output::create_global] method.
+- `PointerHandle` no longer sends an implicit motion event when a grab is set, `time` has been replaced by an explicit `focus` parameter in [`PointerHandle::set_grab`]
 
 #### Backends
 
@@ -40,6 +46,10 @@
 - `EGLNativeSurface` implementations overriding `swap_buffers` now receive and additional `damage` attribute to be used with `eglSwapBuffersWithDamageEXT` if desired
 - `EGLSurface::swap_buffers` now accepts an optional `damage` parameter
 - `WinitGraphicsBackend` does no longer provide a `render`-method and exposes its `Renderer` directly instead including new functions `bind` and `submit` to handle swapping buffers.
+- `ImportShm` was renamed to `ImportMem`
+- `ImportMem` and `ImportDma` were split and do now have accompanying traits `ImportMemWl` and `ImportDmaWl` to import wayland buffers.
+- Added `EGLSurface::get_size`
+- `EGLDisplay::get_extensions` was renamed to `extensions` and now returns a `&[String]`.
 
 ### Additions
 
@@ -61,6 +71,11 @@
 - `zwp_text_input_v3` support
 - `zwp_input_method_v2` support
 - Added `TouchHandle` for Wayland client touch support (see `Seat::get_touch`)
+- `wayland::output::Scale` was introduced to handle fractional scale values better
+- Support for `wl_output` global version 4
+- Support for `wl_seat` global version 7
+- Support for `wl_compositor` global version 5
+- Support for the `wp_viewporter` protocol
 
 #### Backends
 
@@ -73,6 +88,14 @@
 - `backend::renderer` has a new `utils`-module that can take care of client buffer management for you.
 - `EGLSurface::buffer_age` can be used to query the surface buffer age.
 - `GbmBufferedSurface::reset_buffers` can now be used to reset underlying buffers.
+- Added new `Offscreen` trait to create offscreen surfaces for `Renderer`s
+- Added functions to `ImportMem` to upload bitmaps from memory
+- Added `ExportDma` trait to export framebuffers and textures into dmabufs
+- Added `ExportMem` trait to copy framebuffers and textures into memory
+- Added `multigpu`-module to the renderer, which makes handling multi-gpu setups easier!
+- Added `backend::renderer::utils::import_surface_tree` to be able to import buffers before rendering
+- Added `EGLContext::display` to allow getting the underlying display of some context.
+- Make `EGLContext::dmabuf_render_formats` and `EGLContext::dmabuf_texture_formats` also accessible from `EGLDisplay`.
 
 #### Desktop
 
@@ -96,6 +119,8 @@
 - `xdg_shell` had an issue where it was possible that configured state gets overwritten before it was acked/committed.
 - `wl_keyboard` rewind the `keymap` file before passing it to the client
 - `wl_shm` properly validates parameters when creating a `wl_buffer`.
+- `ServerDnDGrab` and `DnDGrab` now correctly send data device `leave` event on button release
+- Client are now allowed to reassign the same role to a surface
 
 #### Backends
 
@@ -107,6 +132,8 @@
 
 - Anvil now implements the x11 backend in smithay. Run by passing `--x11` into the arguments when launching.
 - Passing `ANVIL_MUTEX_LOG` in environment variables now uses the slower `Mutex` logging drain.
+- Only toplevel surfaces now get implicit keyboard focus
+- Fix popup drawing for fullscreen windows
 
 ## version 0.3.0 (2021-07-25)
 

@@ -49,7 +49,7 @@
 use super::{AsErrno, Session, Signal as SessionSignal};
 use crate::utils::signaling::Signaler;
 
-use calloop::signals::{Signal, Signals};
+use calloop::signals::{Signal, SignalError, Signals};
 use nix::{
     fcntl::{self, open, OFlag},
     libc::c_int,
@@ -444,13 +444,14 @@ impl calloop::EventSource for DirectSessionNotifier {
     type Event = ();
     type Metadata = ();
     type Ret = ();
+    type Error = Error;
 
     fn process_events<F>(
         &mut self,
         readiness: calloop::Readiness,
         token: calloop::Token,
         _: F,
-    ) -> std::io::Result<calloop::PostAction>
+    ) -> Result<calloop::PostAction, Error>
     where
         F: FnMut((), &mut ()),
     {
@@ -466,12 +467,13 @@ impl calloop::EventSource for DirectSessionNotifier {
         &mut self,
         poll: &mut calloop::Poll,
         factory: &mut calloop::TokenFactory,
-    ) -> std::io::Result<()> {
+    ) -> calloop::Result<()> {
         if self.source.is_some() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
                 "This DirectSessionNotifier is already registered.",
-            ));
+            )
+            .into());
         }
         let mut source = Signals::new(&[self.signal])?;
         source.register(poll, factory)?;
@@ -483,25 +485,27 @@ impl calloop::EventSource for DirectSessionNotifier {
         &mut self,
         poll: &mut calloop::Poll,
         factory: &mut calloop::TokenFactory,
-    ) -> std::io::Result<()> {
+    ) -> calloop::Result<()> {
         if let Some(ref mut source) = self.source {
             source.reregister(poll, factory)
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "This DirectSessionNotifier is not currently registered.",
-            ))
+            )
+            .into())
         }
     }
 
-    fn unregister(&mut self, poll: &mut calloop::Poll) -> std::io::Result<()> {
+    fn unregister(&mut self, poll: &mut calloop::Poll) -> calloop::Result<()> {
         if let Some(mut source) = self.source.take() {
             source.unregister(poll)
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "This DirectSessionNotifier is not currently registered.",
-            ))
+            )
+            .into())
         }
     }
 }
@@ -536,4 +540,7 @@ pub enum Error {
     /// Failed to set tty in process mode
     #[error("Failed to take control of tty {0}")]
     FailedToTakeControlOfTTY(i32, #[source] nix::Error),
+    /// Signal error
+    #[error(transparent)]
+    Signal(#[from] SignalError),
 }

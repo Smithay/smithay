@@ -11,20 +11,25 @@ use std::sync::{Mutex, Weak};
 use libc::c_void;
 use nix::libc::c_int;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
-use wayland_server::{protocol::wl_buffer::WlBuffer, Display};
+use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
-use crate::backend::allocator::{dmabuf::Dmabuf, Buffer, Format as DrmFormat, Fourcc, Modifier};
-use crate::backend::egl::{
-    context::{GlAttributes, PixelFormatRequirements},
-    ffi,
-    ffi::egl::types::EGLImage,
-    native::EGLNativeDisplay,
-    wrap_egl_call, EGLError, Error,
-};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
+use crate::{
+    backend::{
+        allocator::{dmabuf::Dmabuf, Buffer as _, Format as DrmFormat, Fourcc, Modifier},
+        egl::{
+            context::{GlAttributes, PixelFormatRequirements},
+            ffi,
+            ffi::egl::types::EGLImage,
+            native::EGLNativeDisplay,
+            wrap_egl_call, EGLError, Error,
+        },
+    },
+    utils::{Buffer as BufferCoords, Size},
+};
 
 use slog::{debug, error, info, o, trace, warn};
 
@@ -64,11 +69,11 @@ impl Drop for EGLDisplayHandle {
 /// [`EGLDisplay`] represents an initialised EGL environment
 #[derive(Debug, Clone)]
 pub struct EGLDisplay {
-    pub(crate) display: Arc<EGLDisplayHandle>,
-    pub(crate) egl_version: (i32, i32),
-    pub(crate) extensions: Vec<String>,
-    pub(crate) dmabuf_import_formats: HashSet<DrmFormat>,
-    pub(crate) dmabuf_render_formats: HashSet<DrmFormat>,
+    display: Arc<EGLDisplayHandle>,
+    egl_version: (i32, i32),
+    extensions: Vec<String>,
+    dmabuf_import_formats: HashSet<DrmFormat>,
+    dmabuf_render_formats: HashSet<DrmFormat>,
     surface_type: ffi::EGLint,
     logger: slog::Logger,
 }
@@ -400,8 +405,99 @@ impl EGLDisplay {
     }
 
     /// Returns the supported extensions of this display
-    pub fn get_extensions(&self) -> Vec<String> {
-        self.extensions.clone()
+    pub fn extensions(&self) -> &[String] {
+        &self.extensions[..]
+    }
+
+    /// Returns a list of formats for dmabufs that can be rendered to.
+    pub fn dmabuf_render_formats(&self) -> &HashSet<DrmFormat> {
+        &self.dmabuf_render_formats
+    }
+
+    /// Returns a list of formats for dmabufs that can be used as textures.
+    pub fn dmabuf_texture_formats(&self) -> &HashSet<DrmFormat> {
+        &self.dmabuf_import_formats
+    }
+
+    /// Exports an [`EGLImage`] as a [`Dmabuf`]
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    pub fn create_dmabuf_from_image(
+        &self,
+        image: EGLImage,
+        size: Size<i32, BufferCoords>,
+        y_inverted: bool,
+    ) -> Result<Dmabuf, Error> {
+        use crate::backend::allocator::dmabuf::DmabufFlags;
+
+        if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
+            && !self
+                .extensions
+                .iter()
+                .any(|s| s == "EGL_MESA_image_dma_buf_export")
+        {
+            return Err(Error::EglExtensionNotSupported(&[
+                "EGL_KHR_image_base",
+                "EGL_MESA_image_dma_buf_export",
+            ]));
+        }
+
+        let mut format: nix::libc::c_int = 0;
+        let mut num_planes: nix::libc::c_int = 0;
+        let mut modifier: ffi::egl::types::EGLuint64KHR = 0;
+        if unsafe {
+            // TODO: clippy warns us here that we might dereference a raw pointer in a non unsafe public function
+            // For now we add a allow rule, but this should be addressed in the future
+            ffi::egl::ExportDMABUFImageQueryMESA(
+                **self.display,
+                image,
+                &mut format as *mut _,
+                &mut num_planes as *mut _,
+                &mut modifier as *mut _,
+            ) == ffi::egl::FALSE
+        } {
+            EGLError::from_last_call().map_err(Error::DmabufExportFailed)?;
+        }
+
+        let mut fds: Vec<nix::libc::c_int> = Vec::with_capacity(num_planes as usize);
+        let mut strides: Vec<ffi::egl::types::EGLint> = Vec::with_capacity(num_planes as usize);
+        let mut offsets: Vec<ffi::egl::types::EGLint> = Vec::with_capacity(num_planes as usize);
+        unsafe {
+            // TODO: clippy warns us here that we might dereference a raw pointer in a non unsafe public function
+            // For now we add a allow rule, but this should be addressed in the future
+            if ffi::egl::ExportDMABUFImageMESA(
+                **self.display,
+                image,
+                fds.as_mut_ptr(),
+                strides.as_mut_ptr(),
+                offsets.as_mut_ptr(),
+            ) == ffi::egl::FALSE
+            {
+                EGLError::from_last_call().map_err(Error::DmabufExportFailed)?;
+            }
+            fds.set_len(num_planes as usize);
+            strides.set_len(num_planes as usize);
+            offsets.set_len(num_planes as usize);
+        }
+
+        let mut dma = Dmabuf::builder(
+            size,
+            Fourcc::try_from(format as u32).expect("Unknown format"),
+            if y_inverted {
+                DmabufFlags::Y_INVERT
+            } else {
+                DmabufFlags::empty()
+            },
+        );
+        for i in 0..num_planes {
+            dma.add_plane(
+                fds[i as usize],
+                i as u32,
+                offsets[i as usize] as u32,
+                strides[i as usize] as u32,
+                Modifier::from(modifier),
+            );
+        }
+        dma.build().ok_or(Error::DmabufExportFailed(EGLError::BadAlloc))
     }
 
     /// Imports a [`Dmabuf`] as an [`EGLImage`]
@@ -527,15 +623,14 @@ impl EGLDisplay {
     /// This might return [`OtherEGLDisplayAlreadyBound`](Error::OtherEGLDisplayAlreadyBound)
     /// if called for the same [`Display`] multiple times, as only one egl display may be bound at any given time.
     #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
-    pub fn bind_wl_display(&self, display: &Display) -> Result<EGLBufferReader, Error> {
+    pub fn bind_wl_display(&self, display: &DisplayHandle) -> Result<EGLBufferReader, Error> {
+        let display_ptr = display.backend_handle().display_ptr();
         if !self.extensions.iter().any(|s| s == "EGL_WL_bind_wayland_display") {
             return Err(Error::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
-        wrap_egl_call(|| unsafe {
-            ffi::egl::BindWaylandDisplayWL(**self.display, display.c_ptr() as *mut _)
-        })
-        .map_err(Error::OtherEGLDisplayAlreadyBound)?;
-        let reader = EGLBufferReader::new(self.display.clone(), display.c_ptr(), self.logger.clone());
+        wrap_egl_call(|| unsafe { ffi::egl::BindWaylandDisplayWL(**self.display, display_ptr as *mut _) })
+            .map_err(Error::OtherEGLDisplayAlreadyBound)?;
+        let reader = EGLBufferReader::new(self.display.clone(), display_ptr, self.logger.clone());
         let mut global = BUFFER_READER.lock().unwrap();
         if global.as_ref().and_then(|x| x.upgrade()).is_some() {
             warn!(
@@ -556,8 +651,6 @@ fn get_dmabuf_formats(
     extensions: &[String],
     log: &::slog::Logger,
 ) -> Result<(HashSet<DrmFormat>, HashSet<DrmFormat>), EGLError> {
-    use std::convert::TryFrom;
-
     if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import") {
         warn!(log, "Dmabuf import extension not available");
         return Ok((HashSet::new(), HashSet::new()));
@@ -673,6 +766,7 @@ fn get_dmabuf_formats(
 pub struct EGLBufferReader {
     display: Arc<EGLDisplayHandle>,
     wayland: Option<Arc<*mut wl_display>>,
+    #[allow(dead_code)]
     logger: ::slog::Logger,
 }
 
@@ -719,16 +813,11 @@ impl EGLBufferReader {
         &self,
         buffer: &WlBuffer,
     ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
-        if !buffer.as_ref().is_alive() {
-            debug!(self.logger, "Suplied buffer is no longer alive");
-            return Err(BufferAccessError::NotManaged(EGLError::BadParameter));
-        }
-
         let mut format: i32 = 0;
         let query = wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.as_ref().c_ptr() as _,
+                buffer.id().as_ptr() as _,
                 ffi::egl::EGL_TEXTURE_FORMAT,
                 &mut format,
             )
@@ -758,7 +847,7 @@ impl EGLBufferReader {
         wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.as_ref().c_ptr() as _,
+                buffer.id().as_ptr() as _,
                 ffi::egl::WIDTH as i32,
                 &mut width,
             )
@@ -769,7 +858,7 @@ impl EGLBufferReader {
         wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.as_ref().c_ptr() as _,
+                buffer.id().as_ptr() as _,
                 ffi::egl::HEIGHT as i32,
                 &mut height,
             )
@@ -790,7 +879,7 @@ impl EGLBufferReader {
             match wrap_egl_call(|| unsafe {
                 ffi::egl::QueryWaylandBufferWL(
                     **self.display,
-                    buffer.as_ref().c_ptr() as _,
+                    buffer.id().as_ptr() as _,
                     ffi::egl::WAYLAND_Y_INVERTED_WL,
                     &mut inverted,
                 )
@@ -813,7 +902,7 @@ impl EGLBufferReader {
                         **self.display,
                         ffi::egl::NO_CONTEXT,
                         ffi::egl::WAYLAND_BUFFER_WL,
-                        buffer.as_ref().c_ptr() as *mut _,
+                        buffer.id().as_ptr() as *mut _,
                         out.as_ptr(),
                     )
                 })
@@ -840,16 +929,11 @@ impl EGLBufferReader {
         &self,
         buffer: &WlBuffer,
     ) -> Option<crate::utils::Size<i32, crate::utils::Buffer>> {
-        if !buffer.as_ref().is_alive() {
-            debug!(self.logger, "Suplied buffer is no longer alive");
-            return None;
-        }
-
         let mut width: i32 = 0;
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.as_ref().c_ptr() as _,
+                buffer.id().as_ptr() as _,
                 ffi::egl::WIDTH as _,
                 &mut width,
             ) == 0
@@ -861,7 +945,7 @@ impl EGLBufferReader {
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
-                buffer.as_ref().c_ptr() as _,
+                buffer.id().as_ptr() as _,
                 ffi::egl::HEIGHT as _,
                 &mut height,
             ) == 0
@@ -870,6 +954,17 @@ impl EGLBufferReader {
         }
 
         Some((width, height).into())
+    }
+
+    /// Returns if the [`EGLBuffer`] has an alpha channel
+    ///
+    /// Note: This will always return `true` for buffers with a
+    /// `TEXTURE_EXTERNAL_WL` format
+    pub fn egl_buffer_has_alpha(format: Format) -> bool {
+        !matches!(
+            format,
+            Format::RGB | Format::Y_UV | Format::Y_U_V | Format::Y_XUXV
+        )
     }
 }
 

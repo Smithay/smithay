@@ -1,55 +1,81 @@
 //! Utilities for handling activation requests with the `xdg_activation` protocol
 //!
-//!
 //! ### Example
+//!
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::wayland::xdg_activation::{init_xdg_activation_global, XdgActivationEvent};
+//! use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
+//! use smithay::{
+//!     delegate_xdg_activation,
+//!     wayland::xdg_activation::{XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData}
+//! };
 //!
-//! # let mut display = wayland_server::Display::new();
-//! let (state, _) = init_xdg_activation_global(
-//!     &mut display,
-//!     // your implementation
-//!     |state, req, dispatch_data| {
-//!         match req{
-//!             XdgActivationEvent::RequestActivation { token, token_data, surface } => {
-//!                 if token_data.timestamp.elapsed().as_secs() < 10 {
-//!                     // Request surface activation
-//!                 } else{
-//!                     // Discard the request
-//!                     state.lock().unwrap().remove_request(&token);
-//!                 }
-//!             },
-//!             XdgActivationEvent::DestroyActivationRequest {..} => {
-//!                 // The request is canceled
-//!             },
+//! pub struct State {
+//!     activation_state: XdgActivationState,
+//! }
+//!
+//! impl XdgActivationHandler for State {
+//!     fn activation_state(&mut self) -> &mut XdgActivationState {
+//!         &mut self.activation_state
+//!     }
+//!
+//!     fn request_activation(
+//!         &mut self,
+//!         dh: &DisplayHandle,
+//!         token: XdgActivationToken,
+//!         token_data: XdgActivationTokenData,
+//!         surface: WlSurface
+//!     ) {
+//!         if token_data.timestamp.elapsed().as_secs() < 10 {
+//!             // Request surface activation
+//!         } else{
+//!             // Discard the request
+//!             self.activation_state.remove_request(&token);
 //!         }
-//!     },
-//!     None  // put a logger if you want
-//! );
+//!     }
+//!
+//!     fn destroy_activation(
+//!         &mut self,
+//!         token: XdgActivationToken,
+//!         token_data: XdgActivationTokenData,
+//!         surface: WlSurface
+//!     ) {
+//!         // The request is cancelled
+//!     }
+//! }
+//!
+//! // Delegate xdg activation handling for State to XdgActivationState.
+//! delegate_xdg_activation!(State);
+//!
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! # let display_handle = display.handle();
+//! let state = State {
+//!     activation_state: XdgActivationState::new::<State, _>(&display_handle, None),
+//! };
+//!
+//! // Rest of the compositor goes here...
 //! ```
 
 use std::{
-    cell::RefCell,
     collections::HashMap,
     ops,
-    rc::Rc,
-    sync::{Arc, Mutex},
+    sync::{atomic::AtomicBool, Mutex},
     time::Instant,
 };
 
-use wayland_protocols::staging::xdg_activation::v1::server::xdg_activation_v1;
+use wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;
 use wayland_server::{
+    backend::GlobalId,
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
-    DispatchData, Display, Filter, Global, Main, UserDataMap,
+    Dispatch, DisplayHandle, GlobalDispatch,
 };
 
 use rand::distributions::{Alphanumeric, DistString};
 
 use crate::wayland::Serial;
 
-mod handlers;
+mod dispatch;
 
 /// Contains the unique string token of activation request
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -133,18 +159,38 @@ impl XdgActivationTokenData {
 /// Tracks the list of pending and current activation requests
 #[derive(Debug)]
 pub struct XdgActivationState {
-    _log: ::slog::Logger,
-    user_data: UserDataMap,
-
+    _logger: ::slog::Logger,
+    global: GlobalId,
     pending_tokens: HashMap<XdgActivationToken, XdgActivationTokenData>,
-
     activation_requests: HashMap<XdgActivationToken, (XdgActivationTokenData, WlSurface)>,
 }
 
 impl XdgActivationState {
+    /// Creates a new xdg activation global.
+    ///
+    /// In order to use this abstraction, your `D` type needs to implement [`XdgActivationHandler`].
+    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> XdgActivationState
+    where
+        D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, ()>
+            + Dispatch<xdg_activation_v1::XdgActivationV1, ()>
+            + XdgActivationHandler
+            + 'static,
+        L: Into<Option<::slog::Logger>>,
+    {
+        let logger = crate::slog_or_fallback(logger);
+        let global = display.create_global::<D, xdg_activation_v1::XdgActivationV1, _>(1, ());
+
+        XdgActivationState {
+            _logger: logger.new(slog::o!("smithay_module" => "xdg_activation_handler")),
+            global,
+            pending_tokens: HashMap::new(),
+            activation_requests: HashMap::new(),
+        }
+    }
+
     /// Get current activation requests
     ///
-    /// HashMap contains token data and target surface
+    /// HashMap contains token data and target surface.
     pub fn requests(&self) -> &HashMap<XdgActivationToken, (XdgActivationTokenData, WlSurface)> {
         &self.activation_requests
     }
@@ -179,79 +225,83 @@ impl XdgActivationState {
         self.pending_tokens.retain(|k, v| f(k, v))
     }
 
-    /// Access the `UserDataMap` associated with this `XdgActivationState `
-    pub fn user_data(&self) -> &UserDataMap {
-        &self.user_data
+    /// Returns the xdg activation global.
+    pub fn global(&self) -> GlobalId {
+        self.global.clone()
     }
 }
 
-/// Creates new `xdg-activation` global.
-pub fn init_xdg_activation_global<L, Impl>(
-    display: &mut Display,
-    implementation: Impl,
-    logger: L,
-) -> (
-    Arc<Mutex<XdgActivationState>>,
-    Global<xdg_activation_v1::XdgActivationV1>,
-)
-where
-    L: Into<Option<::slog::Logger>>,
-    Impl: FnMut(&Mutex<XdgActivationState>, XdgActivationEvent, DispatchData<'_>) + 'static,
-{
-    let log = crate::slog_or_fallback(logger);
+/// A trait implemented to be notified of activation requests using the xdg activation protocol.
+pub trait XdgActivationHandler {
+    /// Returns the activation state.
+    fn activation_state(&mut self) -> &mut XdgActivationState;
 
-    let implementation = Rc::new(RefCell::new(implementation));
-
-    let activation_state = Arc::new(Mutex::new(XdgActivationState {
-        _log: log.new(slog::o!("smithay_module" => "xdg_activation_handler")),
-        user_data: UserDataMap::new(),
-        pending_tokens: HashMap::new(),
-        activation_requests: HashMap::new(),
-    }));
-
-    let state = activation_state.clone();
-    let global = display.create_global(
-        1,
-        Filter::new(
-            move |(global, _version): (Main<xdg_activation_v1::XdgActivationV1>, _), _, _| {
-                handlers::implement_activation_global(global, state.clone(), implementation.clone());
-            },
-        ),
+    /// A client has requested surface activation.
+    ///
+    /// The compositor may know which client requested this by checking the token data and may decide whether
+    /// or not to follow through with the activation if it's considered unwanted.
+    ///
+    /// If a request is unwanted, you can discard the request using [`XdgActivationState::remove_request`] to
+    /// ignore any future requests.
+    fn request_activation(
+        &mut self,
+        dh: &DisplayHandle,
+        token: XdgActivationToken,
+        token_data: XdgActivationTokenData,
+        surface: WlSurface,
     );
 
-    (activation_state, global)
+    /// The activation token was destroyed.
+    ///
+    /// The compositor may cancel any activation requests coming from the token.
+    ///
+    /// For example if your compositor blinks or highlights a window when it requests activation then the
+    /// animation should stop when this function is called.
+    fn destroy_activation(
+        &mut self,
+        token: XdgActivationToken,
+        token_data: XdgActivationTokenData,
+        surface: WlSurface,
+    );
 }
 
-/// Xdg activation related events
+/// Data assoicated with an activation token protocol object.
 #[derive(Debug)]
-pub enum XdgActivationEvent {
-    /// Requests surface activation.
-    ///
-    /// The compositor may know who requested this by checking the token data
-    /// and might decide not to follow through with the activation if it's considered unwanted.
-    ///
-    /// If you consider a request to be unwanted you can use [`XdgActivationState::remove_request`]
-    /// to discard it and don't track it any futher.
-    RequestActivation {
-        /// Token of the request
-        token: XdgActivationToken,
-        /// Data asosiated with the token
-        token_data: XdgActivationTokenData,
-        /// Target surface
-        surface: WlSurface,
-    },
-    /// The activation token just got destroyed
-    ///
-    /// In response to that activation request should be canceled.
-    ///
-    /// For example if your compostior blinks a window when it requests activation,
-    /// after this request the animation should stop.
-    DestroyActivationRequest {
-        /// Token of the request that just died
-        token: XdgActivationToken,
-        /// Data asosiated with the token
-        token_data: XdgActivationTokenData,
-        /// Target surface
-        surface: WlSurface,
-    },
+pub struct ActivationTokenData {
+    constructed: AtomicBool,
+    build: Mutex<TokenBuilder>,
+    token: Mutex<Option<XdgActivationToken>>,
+}
+
+/// Macro to delegate implementation of the xdg activation to [`XdgActivationState`].
+///
+/// You must also implement [`XdgActivationHandler`] to use this.
+#[macro_export]
+macro_rules! delegate_xdg_activation {
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
+        type __XdgActivationV1 =
+            $crate::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_v1::XdgActivationV1;
+        type __XdgActivationTokenV1 =
+            $crate::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_token_v1::XdgActivationTokenV1;
+
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __XdgActivationV1: ()
+        ] => $crate::wayland::xdg_activation::XdgActivationState);
+        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
+            __XdgActivationTokenV1: $crate::wayland::xdg_activation::ActivationTokenData
+        ] => $crate::wayland::xdg_activation::XdgActivationState);
+
+        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
+            [
+                __XdgActivationV1: ()
+            ] => $crate::wayland::xdg_activation::XdgActivationState
+        );
+    };
+}
+
+#[derive(Debug)]
+struct TokenBuilder {
+    serial: Option<(Serial, WlSeat)>,
+    app_id: Option<String>,
+    surface: Option<WlSurface>,
 }

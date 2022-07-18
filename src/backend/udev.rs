@@ -59,7 +59,7 @@ use slog::{debug, info, o, warn};
 pub struct UdevBackend {
     devices: HashMap<dev_t, PathBuf>,
     monitor: MonitorSocket,
-    token: Token,
+    token: Option<Token>,
     logger: ::slog::Logger,
 }
 
@@ -110,7 +110,7 @@ impl UdevBackend {
         Ok(UdevBackend {
             devices,
             monitor,
-            token: Token::invalid(),
+            token: None,
             logger: log,
         })
     }
@@ -128,6 +128,7 @@ impl EventSource for UdevBackend {
     type Event = UdevEvent;
     type Metadata = ();
     type Ret = ();
+    type Error = io::Error;
 
     fn process_events<F>(
         &mut self,
@@ -138,7 +139,7 @@ impl EventSource for UdevBackend {
     where
         F: FnMut(UdevEvent, &mut ()),
     {
-        if token != self.token {
+        if Some(token) != self.token {
             return Ok(PostAction::Continue);
         }
         let monitor = self.monitor.clone();
@@ -190,18 +191,18 @@ impl EventSource for UdevBackend {
         Ok(PostAction::Continue)
     }
 
-    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
-        self.token = factory.token();
-        poll.register(self.as_raw_fd(), Interest::READ, Mode::Level, self.token)
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
+        self.token = Some(factory.token());
+        poll.register(self.as_raw_fd(), Interest::READ, Mode::Level, self.token.unwrap())
     }
 
-    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
-        self.token = factory.token();
-        poll.reregister(self.as_raw_fd(), Interest::READ, Mode::Level, self.token)
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
+        self.token = Some(factory.token());
+        poll.reregister(self.as_raw_fd(), Interest::READ, Mode::Level, self.token.unwrap())
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {
-        self.token = Token::invalid();
+    fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
+        self.token = None;
         poll.unregister(self.as_raw_fd())
     }
 }

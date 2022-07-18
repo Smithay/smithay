@@ -1,6 +1,6 @@
 use std::{
     mem,
-    sync::{mpsc::Receiver, Arc, Mutex, MutexGuard, Weak},
+    sync::{mpsc::Receiver, Weak},
 };
 
 use drm_fourcc::DrmFourcc;
@@ -11,9 +11,8 @@ use crate::{
     backend::{
         allocator::{
             dmabuf::{AsDmabuf, Dmabuf},
-            Slot, Swapchain,
+            Allocator, Slot, Swapchain,
         },
-        drm::DrmNode,
         x11::{buffer::PixmapWrapperExt, window_inner::WindowInner, AllocateBuffersError, Window},
     },
     utils::{Logical, Size},
@@ -43,7 +42,8 @@ pub struct X11Surface {
     pub(crate) connection: Weak<RustConnection>,
     pub(crate) window: Weak<WindowInner>,
     pub(crate) resize: Receiver<Size<u16, Logical>>,
-    pub(crate) swapchain: Swapchain<Arc<Mutex<gbm::Device<DrmNode>>>, BufferObject<()>>,
+    pub(crate) swapchain:
+        Swapchain<Box<dyn Allocator<BufferObject<()>, Error = std::io::Error> + 'static>, BufferObject<()>>,
     pub(crate) format: DrmFourcc,
     pub(crate) width: u16,
     pub(crate) height: u16,
@@ -56,11 +56,6 @@ impl X11Surface {
     /// This will return [`None`] if the window has been destroyed.
     pub fn window(&self) -> Option<impl AsRef<Window> + '_> {
         self.window.upgrade().map(Window).map(WindowTemporary)
-    }
-
-    /// Returns a handle to the GBM device used to allocate buffers.
-    pub fn device(&self) -> MutexGuard<'_, gbm::Device<DrmNode>> {
-        self.swapchain.allocator.lock().unwrap()
     }
 
     /// Returns the format of the buffers the surface accepts.
@@ -114,15 +109,17 @@ impl X11Surface {
                 mem::swap(&mut next, current);
             }
 
-            let window = self.window().ok_or(AllocateBuffersError::WindowDestroyed)?;
-            let pixmap = PixmapWrapper::with_dmabuf(
-                &*connection,
-                window.as_ref(),
-                next.userdata().get::<Dmabuf>().unwrap(),
-            )?;
+            {
+                let window = self.window().ok_or(AllocateBuffersError::WindowDestroyed)?;
+                let pixmap = PixmapWrapper::with_dmabuf(
+                    &*connection,
+                    window.as_ref(),
+                    next.userdata().get::<Dmabuf>().unwrap(),
+                )?;
 
-            // Now present the current buffer
-            let _ = pixmap.present(&*connection, window.as_ref())?;
+                // Now present the current buffer
+                let _ = pixmap.present(&*connection, window.as_ref())?;
+            }
             self.swapchain.submitted(&next);
 
             // Flush the connection after presenting to the window to ensure we don't run out of buffer space in the X11 connection.

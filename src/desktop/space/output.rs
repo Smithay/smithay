@@ -1,16 +1,16 @@
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer, Texture},
-    desktop::space::SpaceElement,
-    utils::{Logical, Point, Rectangle},
+    backend::renderer::{ImportAll, Renderer},
+    desktop::space::{RenderElement, SpaceElement},
+    utils::{Logical, Physical, Point, Rectangle},
     wayland::output::Output,
 };
 use indexmap::IndexMap;
-use wayland_server::protocol::wl_surface::WlSurface;
+use wayland_server::backend::ObjectId;
 
 use std::{
     any::TypeId,
     cell::{RefCell, RefMut},
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
 };
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -19,14 +19,13 @@ pub struct ToplevelId {
     id: usize,
 }
 
-impl<R, F, E, T> From<&dyn SpaceElement<R, F, E, T>> for ToplevelId
+impl<'a, R, E> From<&SpaceElement<'a, R, E>> for ToplevelId
 where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll + 'static,
-    F: Frame<Error = E, TextureId = T> + 'static,
-    E: std::error::Error + 'static,
-    T: Texture + 'static,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+    E: RenderElement<R>,
 {
-    fn from(elem: &dyn SpaceElement<R, F, E, T>) -> ToplevelId {
+    fn from(elem: &SpaceElement<'a, R, E>) -> ToplevelId {
         ToplevelId {
             t_id: elem.type_of(),
             id: elem.id(),
@@ -37,14 +36,20 @@ where
 #[derive(Clone, Default)]
 pub struct OutputState {
     pub location: Point<i32, Logical>,
-    pub render_scale: f64,
 
-    // damage and last_state are in space coordinate space
-    pub old_damage: VecDeque<Vec<Rectangle<i32, Logical>>>,
-    pub last_state: IndexMap<ToplevelId, Rectangle<i32, Logical>>,
+    // damage and last_toplevel_state are in space coordinate space
+    // old_damage represents the damage from the last n render iterations
+    // used to track the damage for different buffer ages
+    pub old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
+    // z_index and physical geometry of the toplevels from the last render iteration
+    pub last_toplevel_state: IndexMap<ToplevelId, (usize, Rectangle<i32, Physical>)>,
+    // output geometry from the last render iteration
+    // used to react on output geometry changes, like damaging
+    // the whole output
+    pub last_output_geo: Option<Rectangle<i32, Physical>>,
 
     // surfaces for tracking enter and leave events
-    pub surfaces: Vec<WlSurface>,
+    pub surfaces: HashSet<ObjectId>,
 }
 
 pub type OutputUserdata = RefCell<HashMap<usize, OutputState>>;

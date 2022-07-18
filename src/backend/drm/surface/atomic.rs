@@ -1,7 +1,7 @@
 use drm::control::atomic::AtomicModeReq;
 use drm::control::Device as ControlDevice;
 use drm::control::{
-    connector, crtc, dumbbuffer::DumbBuffer, framebuffer, plane, property, AtomicCommitFlags, Mode,
+    connector, crtc, dumbbuffer::DumbBuffer, framebuffer, plane, property, AtomicCommitFlags, Mode, PlaneType,
 };
 
 use std::collections::HashSet;
@@ -11,10 +11,14 @@ use std::sync::{
     Arc, Mutex, RwLock,
 };
 
-use crate::backend::drm::{
-    device::atomic::Mapping,
-    device::{DevPath, DrmDeviceInternal},
-    error::Error,
+use crate::backend::{
+    allocator::format::{get_bpp, get_depth},
+    drm::{
+        device::atomic::Mapping,
+        device::{DevPath, DrmDeviceInternal},
+        error::Error,
+        plane_type,
+    },
 };
 
 use slog::{debug, info, o, trace, warn};
@@ -173,15 +177,22 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
     // we need a framebuffer to do test commits, which we use to verify our pending state.
     // here we create a dumbbuffer for that purpose.
-    fn create_test_buffer(&self, size: (u16, u16)) -> Result<framebuffer::Handle, Error> {
+    fn create_test_buffer(
+        &self,
+        size: (u16, u16),
+        plane: plane::Handle,
+    ) -> Result<framebuffer::Handle, Error> {
         let (w, h) = size;
+        let needs_alpha = plane_type(&*self.fd, plane)? != PlaneType::Primary;
+        let format = if needs_alpha {
+            crate::backend::allocator::Fourcc::Argb8888
+        } else {
+            crate::backend::allocator::Fourcc::Xrgb8888
+        };
+
         let db = self
             .fd
-            .create_dumb_buffer(
-                (w as u32, h as u32),
-                crate::backend::allocator::Fourcc::Argb8888,
-                32,
-            )
+            .create_dumb_buffer((w as u32, h as u32), format, get_bpp(format).unwrap() as u32)
             .map_err(|source| Error::Access {
                 errmsg: "Failed to create dumb buffer",
                 dev: self.fd.dev_path(),
@@ -189,7 +200,11 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             })?;
         let fb = self
             .fd
-            .add_framebuffer(&db, 32, 32)
+            .add_framebuffer(
+                &db,
+                get_depth(format).unwrap() as u32,
+                get_bpp(format).unwrap() as u32,
+            )
             .map_err(|source| Error::Access {
                 errmsg: "Failed to create framebuffer",
                 dev: self.fd.dev_path(),
@@ -243,7 +258,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 &mut [].iter(),
                 self.plane,
                 &[],
-                Some([(self.create_test_buffer(pending.mode.size())?, self.plane)].iter()),
+                Some(
+                    [(
+                        self.create_test_buffer(pending.mode.size(), self.plane)?,
+                        self.plane,
+                    )]
+                    .iter(),
+                ),
                 Some(pending.mode),
                 Some(pending.blob),
             )?;
@@ -281,7 +302,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             &mut [conn].iter(),
             self.plane,
             &[],
-            Some([(self.create_test_buffer(pending.mode.size())?, self.plane)].iter()),
+            Some(
+                [(
+                    self.create_test_buffer(pending.mode.size(), self.plane)?,
+                    self.plane,
+                )]
+                .iter(),
+            ),
             Some(pending.mode),
             Some(pending.blob),
         )?;
@@ -320,7 +347,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             &mut removed,
             self.plane,
             &[],
-            Some([(self.create_test_buffer(pending.mode.size())?, self.plane)].iter()),
+            Some(
+                [(
+                    self.create_test_buffer(pending.mode.size(), self.plane)?,
+                    self.plane,
+                )]
+                .iter(),
+            ),
             Some(pending.mode),
             Some(pending.blob),
         )?;
@@ -354,7 +387,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 source,
             })?;
 
-        let test_fb = self.create_test_buffer(mode.size())?;
+        let test_fb = self.create_test_buffer(mode.size(), self.plane)?;
         let req = self.build_request(
             &mut pending.connectors.iter(),
             &mut [].iter(),
@@ -408,20 +441,23 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             self.plane,
             &new_planes,
             Some(
-                [(self.create_test_buffer(pending.mode.size())?, self.plane)]
-                    .iter()
-                    .chain(
-                        new_planes
-                            .iter()
-                            .map(
-                                |info| match self.create_test_buffer((info.w as u16, info.h as u16)) {
-                                    Ok(test_buff) => Ok((test_buff, info.handle)),
-                                    Err(err) => Err(err),
-                                },
-                            )
-                            .collect::<Result<Vec<_>, _>>()?
-                            .iter(),
-                    ),
+                [(
+                    self.create_test_buffer(pending.mode.size(), self.plane)?,
+                    self.plane,
+                )]
+                .iter()
+                .chain(
+                    new_planes
+                        .iter()
+                        .map(|info| {
+                            match self.create_test_buffer((info.w as u16, info.h as u16), info.handle) {
+                                Ok(test_buff) => Ok((test_buff, info.handle)),
+                                Err(err) => Err(err),
+                            }
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                        .iter(),
+                ),
             ),
             Some(pending.mode),
             Some(pending.blob),
@@ -862,6 +898,9 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 self.plane_prop_handle(primary, "CRTC_H")?,
                 property::Value::UnsignedRange(mode.size().1 as u64),
             );
+            if let Ok(prop) = self.plane_prop_handle(primary, "rotation") {
+                req.add_property(primary, prop, property::Value::Bitmask(1u64));
+            }
         }
 
         // and finally the others
@@ -908,6 +947,9 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 self.plane_prop_handle(plane_info.handle, "CRTC_H")?,
                 property::Value::UnsignedRange(plane_info.h as u64),
             );
+            if let Ok(prop) = self.plane_prop_handle(plane_info.handle, "rotation") {
+                req.add_property(plane_info.handle, prop, property::Value::Bitmask(1u64));
+            }
         }
 
         Ok(req)

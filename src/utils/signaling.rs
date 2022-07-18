@@ -166,7 +166,7 @@ impl<S> SignalInner<S> {
                     // Send the message, cleaning up defunct callbacks in the process
                     guard.retain(|weak| {
                         if let Some(cb) = Weak::upgrade(weak) {
-                            (&mut *cb.borrow_mut())(&event);
+                            (*cb.borrow_mut())(&event);
                             true
                         } else {
                             false

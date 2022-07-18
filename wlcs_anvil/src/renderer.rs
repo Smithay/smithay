@@ -3,7 +3,7 @@ use std::cell::Cell;
 use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
-        renderer::{Frame, ImportDma, ImportShm, Renderer, Texture, TextureFilter},
+        renderer::{Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture, TextureFilter},
         SwapBuffersError,
     },
     reexports::wayland_server::protocol::wl_buffer,
@@ -23,6 +23,10 @@ impl Renderer for DummyRenderer {
     type Error = SwapBuffersError;
     type TextureId = DummyTexture;
     type Frame = DummyFrame;
+
+    fn id(&self) -> usize {
+        0
+    }
 
     fn render<F, R>(
         &mut self,
@@ -46,7 +50,27 @@ impl Renderer for DummyRenderer {
     }
 }
 
-impl ImportShm for DummyRenderer {
+impl ImportMem for DummyRenderer {
+    fn import_memory(
+        &mut self,
+        _data: &[u8],
+        _size: Size<i32, Buffer>,
+        _flipped: bool,
+    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+        unimplemented!()
+    }
+
+    fn update_memory(
+        &mut self,
+        _texture: &<Self as Renderer>::TextureId,
+        _data: &[u8],
+        _region: Rectangle<i32, Buffer>,
+    ) -> Result<(), <Self as Renderer>::Error> {
+        unimplemented!()
+    }
+}
+
+impl ImportMemWl for DummyRenderer {
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -54,7 +78,7 @@ impl ImportShm for DummyRenderer {
         _damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         use smithay::wayland::shm::with_buffer_contents;
-        let ret = with_buffer_contents(&buffer, |slice, data| {
+        let ret = with_buffer_contents(buffer, |slice, data| {
             let offset = data.offset as u32;
             let width = data.width as u32;
             let height = data.height as u32;
@@ -86,10 +110,13 @@ impl ImportDma for DummyRenderer {
     fn import_dmabuf(
         &mut self,
         _dmabuf: &Dmabuf,
+        _damage: Option<&[Rectangle<i32, Buffer>]>,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         unimplemented!()
     }
 }
+
+impl ImportDmaWl for DummyRenderer {}
 
 pub struct DummyFrame {}
 
@@ -104,9 +131,9 @@ impl Frame for DummyFrame {
     fn render_texture_from_to(
         &mut self,
         _texture: &Self::TextureId,
-        _src: Rectangle<i32, Buffer>,
-        _dst: Rectangle<f64, Physical>,
-        _damage: &[Rectangle<i32, Buffer>],
+        _src: Rectangle<f64, Buffer>,
+        _dst: Rectangle<i32, Physical>,
+        _damage: &[Rectangle<i32, Physical>],
         _src_transform: Transform,
         _alpha: f32,
     ) -> Result<(), Self::Error> {

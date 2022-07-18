@@ -6,11 +6,18 @@ pub mod signaling;
 #[cfg(feature = "x11rb_event_source")]
 pub mod x11rb;
 
-#[cfg(feature = "desktop")]
+#[cfg(any(feature = "desktop", feature = "wayland_frontend", feature = "renderer_gl"))]
 pub(crate) mod ids;
 pub mod user_data;
 
-pub use self::geometry::{Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Size, Transform};
+#[cfg(feature = "wayland_frontend")]
+pub(crate) mod alive_tracker;
+#[cfg(feature = "wayland_frontend")]
+pub use self::alive_tracker::IsAlive;
+
+pub use self::geometry::{
+    Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Scale, Size, Transform,
+};
 
 /// This resource is not managed by Smithay
 #[derive(Debug)]

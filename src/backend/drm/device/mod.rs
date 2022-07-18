@@ -1,5 +1,6 @@
 #[cfg(feature = "backend_session")]
 use std::cell::RefCell;
+use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::PathBuf;
 use std::sync::{atomic::AtomicBool, Arc};
@@ -31,7 +32,7 @@ pub struct DrmDevice<A: AsRawFd + 'static> {
     has_monotonic_timestamps: bool,
     resources: ResourceHandles,
     pub(super) logger: ::slog::Logger,
-    token: Token,
+    token: Option<Token>,
 }
 
 impl<A: AsRawFd + 'static> AsRawFd for DrmDevice<A> {
@@ -163,7 +164,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             has_monotonic_timestamps,
             resources,
             logger: log,
-            token: Token::invalid(),
+            token: None,
         })
     }
 
@@ -343,17 +344,13 @@ where
     type Event = DrmEvent;
     type Metadata = Option<EventMetadata>;
     type Ret = ();
+    type Error = io::Error;
 
-    fn process_events<F>(
-        &mut self,
-        _: Readiness,
-        token: Token,
-        mut callback: F,
-    ) -> std::io::Result<PostAction>
+    fn process_events<F>(&mut self, _: Readiness, token: Token, mut callback: F) -> io::Result<PostAction>
     where
         F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
-        if token != self.token {
+        if Some(token) != self.token {
             return Ok(PostAction::Continue);
         }
         match self.receive_events() {
@@ -400,18 +397,28 @@ where
         Ok(PostAction::Continue)
     }
 
-    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
-        self.token = factory.token();
-        poll.register(self.as_raw_fd(), Interest::READ, calloop::Mode::Level, self.token)
+    fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
+        self.token = Some(factory.token());
+        poll.register(
+            self.as_raw_fd(),
+            Interest::READ,
+            calloop::Mode::Level,
+            self.token.unwrap(),
+        )
     }
 
-    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> std::io::Result<()> {
-        self.token = factory.token();
-        poll.reregister(self.as_raw_fd(), Interest::READ, calloop::Mode::Level, self.token)
+    fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
+        self.token = Some(factory.token());
+        poll.reregister(
+            self.as_raw_fd(),
+            Interest::READ,
+            calloop::Mode::Level,
+            self.token.unwrap(),
+        )
     }
 
-    fn unregister(&mut self, poll: &mut Poll) -> std::io::Result<()> {
-        self.token = Token::invalid();
+    fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
+        self.token = None;
         poll.unregister(self.as_raw_fd())
     }
 }

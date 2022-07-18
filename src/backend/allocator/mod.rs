@@ -18,8 +18,11 @@
 pub mod dmabuf;
 #[cfg(feature = "backend_drm")]
 pub mod dumb;
+pub mod format;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
+#[cfg(feature = "backend_vulkan")]
+pub mod vulkan;
 
 mod swapchain;
 use std::{
@@ -95,5 +98,19 @@ impl<A: Allocator<B>, B: Buffer> Allocator<B> for Rc<RefCell<A>> {
         modifiers: &[Modifier],
     ) -> Result<B, Self::Error> {
         self.borrow_mut().create_buffer(width, height, fourcc, modifiers)
+    }
+}
+
+impl<B: Buffer, E: std::error::Error> Allocator<B> for Box<dyn Allocator<B, Error = E> + 'static> {
+    type Error = E;
+
+    fn create_buffer(
+        &mut self,
+        width: u32,
+        height: u32,
+        fourcc: Fourcc,
+        modifiers: &[Modifier],
+    ) -> Result<B, E> {
+        (**self).create_buffer(width, height, fourcc, modifiers)
     }
 }
