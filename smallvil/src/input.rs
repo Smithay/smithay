@@ -41,14 +41,15 @@ impl Smallvil {
                 let output_geo = self.space.output_geometry(output).unwrap();
 
                 let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
-                self.pointer_location = pos;
 
                 let serial = SERIAL_COUNTER.next_serial();
 
-                let under = self.surface_under_pointer();
+                let pointer = self.seat.get_pointer().unwrap();
+
+                let under = self.surface_under_pointer(&pointer);
 
                 let dh = &mut display.handle();
-                self.seat.get_pointer().unwrap().motion(
+                pointer.motion(
                     self,
                     dh,
                     &MotionEvent {
@@ -71,7 +72,7 @@ impl Smallvil {
                 let button_state = wl_pointer::ButtonState::from(event.state());
 
                 if wl_pointer::ButtonState::Pressed == button_state && !pointer.is_grabbed() {
-                    if let Some(window) = self.space.window_under(self.pointer_location).cloned() {
+                    if let Some(window) = self.space.window_under(pointer.current_location()).cloned() {
                         self.space.raise_window(&window, true);
                         keyboard.set_focus(dh, Some(window.toplevel().wl_surface()), serial);
                         window.set_activated(true);

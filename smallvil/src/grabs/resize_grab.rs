@@ -77,6 +77,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
         handle: &mut PointerInnerHandle<'_, Smallvil>,
         event: &MotionEvent,
     ) {
+        // While the grab is active, no client has pointer focus
         handle.motion(event.location, None, event.serial, event.time);
 
         let mut delta = event.location - self.start_data.location;
