@@ -750,31 +750,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             .map(|x| *x)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn fb_prop_handle(
-        &self,
-        handle: framebuffer::Handle,
-        name: &'static str,
-    ) -> Result<property::Handle, Error> {
-        self.prop_mapping
-            .2
-            .get(&handle)
-            .expect("Unknown handle")
-            .get(name)
-            .ok_or_else(|| Error::UnknownProperty {
-                handle: handle.into(),
-                name,
-            })
-            .map(|x| *x)
-    }
-
     pub(crate) fn plane_prop_handle(
         &self,
         handle: plane::Handle,
         name: &'static str,
     ) -> Result<property::Handle, Error> {
         self.prop_mapping
-            .3
+            .2
             .get(&handle)
             .expect("Unknown handle")
             .get(name)

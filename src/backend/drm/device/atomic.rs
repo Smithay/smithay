@@ -26,7 +26,6 @@ type OldState = (
 pub type Mapping = (
     HashMap<connector::Handle, HashMap<String, property::Handle>>,
     HashMap<crtc::Handle, HashMap<String, property::Handle>>,
-    HashMap<framebuffer::Handle, HashMap<String, property::Handle>>,
     HashMap<plane::Handle, HashMap<String, property::Handle>>,
 );
 #[derive(Debug)]
@@ -49,7 +48,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             fd,
             active,
             old_state: (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
-            prop_mapping: (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new()),
+            prop_mapping: (HashMap::new(), HashMap::new(), HashMap::new()),
             logger: logger.new(o!("smithay_module" => "backend_drm_atomic", "drm_module" => "device")),
         };
 
@@ -82,8 +81,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         // And we do this a fair bit, so lets cache that mapping.
         dev.map_props(res_handles.connectors(), &mut mapping.0)?;
         dev.map_props(res_handles.crtcs(), &mut mapping.1)?;
-        dev.map_props(res_handles.framebuffers(), &mut mapping.2)?;
-        dev.map_props(planes, &mut mapping.3)?;
+        dev.map_props(planes, &mut mapping.2)?;
 
         dev.old_state = old_state;
         dev.prop_mapping = mapping;
@@ -205,7 +203,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         for plane in plane_handles.planes() {
             let prop = self
                 .prop_mapping
-                .3
+                .2
                 .get(plane)
                 .expect("Unknown handle")
                 .get("CRTC_ID")
@@ -214,7 +212,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
 
             let prop = self
                 .prop_mapping
-                .3
+                .2
                 .get(plane)
                 .expect("Unknown handle")
                 .get("FB_ID")
