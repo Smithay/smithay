@@ -52,9 +52,12 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab {
         &mut self,
         data: &mut AnvilState<BackendData>,
         _dh: &DisplayHandle,
-        _handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &MotionEvent,
     ) {
+        // While the grab is active, no client has pointer focus
+        handle.motion(event.location, None, event.serial, event.time);
+
         let delta = event.location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
 
@@ -138,6 +141,9 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &MotionEvent,
     ) {
+        // While the grab is active, no client has pointer focus
+        handle.motion(event.location, None, event.serial, event.time);
+
         // It is impossible to get `min_size` and `max_size` of dead toplevel, so we return early.
         if !self.window.toplevel().alive() {
             handle.unset_grab(event.serial, event.time);

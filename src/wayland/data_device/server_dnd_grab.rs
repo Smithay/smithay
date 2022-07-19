@@ -54,13 +54,16 @@ where
         &mut self,
         _data: &mut D,
         dh: &DisplayHandle,
-        _handle: &mut PointerInnerHandle<'_, D>,
+        handle: &mut PointerInnerHandle<'_, D>,
         event: &MotionEvent,
     ) {
         let focus = event.focus.clone();
         let location = event.location;
         let serial = event.serial;
         let time = event.time;
+
+        // While the grab is active, no client has pointer focus
+        handle.motion(location, None, serial, time);
 
         let seat_data = self
             .seat
