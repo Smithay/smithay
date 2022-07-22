@@ -38,7 +38,7 @@
 
 use std::{cell::RefCell, convert::TryInto, rc::Rc};
 
-use wayland_protocols::unstable::text_input::v3::server::{
+use wayland_protocols::wp::text_input::zev3::server::{
     zwp_text_input_manager_v3::{self, ZwpTextInputManagerV3},
     zwp_text_input_v3::{self, ZwpTextInputV3},
 };
@@ -49,7 +49,7 @@ use crate::{
     wayland::seat::Seat,
 };
 
-use super::input_method::InputMethodHandle;
+use super::_input_method::InputMethodHandle;
 
 const TEXT_INPUT_VERSION: u32 = 1;
 

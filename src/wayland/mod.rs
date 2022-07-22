@@ -51,7 +51,7 @@ pub mod buffer;
 pub mod compositor;
 pub mod data_device;
 pub mod dmabuf;
-pub mod input_method;
+pub mod _input_method;
 pub mod output;
 pub mod seat;
 pub mod shell;

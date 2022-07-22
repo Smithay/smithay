@@ -53,6 +53,7 @@ udev = { version = "0.6", optional = true }
 wayland-egl = { version = "=0.30.0-beta.8", optional = true }
 wayland-protocols = { version = "=0.30.0-beta.8", features = ["unstable", "staging", "server"], optional = true }
 wayland-protocols-wlr = { version = "=0.1.0-beta.8", features = ["server"]}
+wayland-protocols-misc = { version = "=0.1.0-beta.8", features = ["server"]}
 wayland-server = { version = "=0.30.0-beta.8", optional = true }
 wayland-sys = { version = "=0.30.0-beta.8", optional = true }
 wayland-backend = { version = "=0.1.0-beta.8", optional = true }
