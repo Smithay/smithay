@@ -46,8 +46,10 @@ pub const OUTPUT_NAME: &str = "x11";
 pub struct X11Data {
     render: bool,
     mode: Mode,
-    surface: X11Surface,
+    // FIXME: If Gles2Renderer is dropped before X11Surface, then the MakeCurrent call inside Gles2Renderer will
+    // fail because the X11Surface is keeping gbm alive.
     renderer: Gles2Renderer,
+    surface: X11Surface,
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     #[cfg(feature = "debug")]
