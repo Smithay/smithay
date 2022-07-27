@@ -14,7 +14,7 @@ use std::sync::{
 use crate::backend::{
     allocator::format::{get_bpp, get_depth},
     drm::{
-        device::atomic::Mapping,
+        device::atomic::{map_props, Mapping},
         device::{DevPath, DrmDeviceInternal},
         error::Error,
         plane_type,
@@ -34,7 +34,7 @@ impl State {
     fn current_state<A: AsRawFd + ControlDevice>(
         fd: &A,
         crtc: crtc::Handle,
-        prop_mapping: &Mapping,
+        prop_mapping: &mut Mapping,
     ) -> Result<Self, Error> {
         let crtc_info = fd.get_crtc(crtc).map_err(|source| Error::Access {
             errmsg: "Error loading crtc info",
@@ -67,6 +67,8 @@ impl State {
         //
         // If they don't match, `commit_pending` will return true and they will be changed on the next `commit`.
         let mut current_connectors = HashSet::new();
+        // make sure the mapping is up to date
+        map_props(fd, res_handles.connectors(), &mut prop_mapping.0)?;
         for conn in res_handles.connectors() {
             let crtc_prop = prop_mapping
                 .0
@@ -113,12 +115,12 @@ pub struct PlaneInfo {
 
 #[derive(Debug)]
 pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
-    pub(super) fd: Arc<DrmDeviceInternal<A>>,
+    pub(in crate::backend::drm) fd: Arc<DrmDeviceInternal<A>>,
     pub(super) active: Arc<AtomicBool>,
     crtc: crtc::Handle,
     plane: plane::Handle,
     additional_planes: Mutex<Vec<PlaneInfo>>,
-    prop_mapping: Mapping,
+    prop_mapping: RwLock<Mapping>,
     state: RwLock<State>,
     pending: RwLock<State>,
     test_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
@@ -132,7 +134,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         active: Arc<AtomicBool>,
         crtc: crtc::Handle,
         plane: plane::Handle,
-        prop_mapping: Mapping,
+        mut prop_mapping: Mapping,
         mode: Mode,
         connectors: &[connector::Handle],
         logger: ::slog::Logger,
@@ -147,7 +149,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             connectors
         );
 
-        let state = State::current_state(&*fd, crtc, &prop_mapping)?;
+        let state = State::current_state(&*fd, crtc, &mut prop_mapping)?;
         let blob = fd.create_property_blob(&mode).map_err(|source| Error::Access {
             errmsg: "Failed to create Property Blob for mode",
             dev: fd.dev_path(),
@@ -165,7 +167,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             crtc,
             plane,
             additional_planes: Mutex::new(Vec::new()),
-            prop_mapping,
+            prop_mapping: RwLock::new(prop_mapping),
             state: RwLock::new(state),
             pending: RwLock::new(pending),
             test_buffer: Mutex::new(None),
@@ -237,11 +239,34 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         self.pending.read().unwrap().mode
     }
 
+    fn ensure_props_known(&self, conns: &[connector::Handle]) -> Result<(), Error> {
+        let mapping_exists = {
+            let prop_mapping = self.prop_mapping.read().unwrap();
+            conns.iter().all(|conn| prop_mapping.0.get(conn).is_some())
+        };
+        if !mapping_exists {
+            map_props(
+                &*self.fd,
+                self.fd
+                    .resource_handles()
+                    .map_err(|source| Error::Access {
+                        errmsg: "Error loading connector info",
+                        dev: self.fd.dev_path(),
+                        source,
+                    })?
+                    .connectors(),
+                &mut self.prop_mapping.write().unwrap().0,
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
 
+        self.ensure_props_known(&[conn])?;
         let info = self.fd.get_connector(conn).map_err(|source| Error::Access {
             errmsg: "Error loading connector info",
             dev: self.fd.dev_path(),
@@ -338,6 +363,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         let current = self.state.write().unwrap();
         let mut pending = self.pending.write().unwrap();
 
+        self.ensure_props_known(connectors)?;
         let conns = connectors.iter().cloned().collect::<HashSet<_>>();
         let mut added = conns.difference(&current.connectors);
         let mut removed = current.connectors.difference(&conns);
@@ -716,75 +742,6 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         Ok(result)
     }
 
-    pub(crate) fn conn_prop_handle(
-        &self,
-        handle: connector::Handle,
-        name: &'static str,
-    ) -> Result<property::Handle, Error> {
-        self.prop_mapping
-            .0
-            .get(&handle)
-            .expect("Unknown handle")
-            .get(name)
-            .ok_or_else(|| Error::UnknownProperty {
-                handle: handle.into(),
-                name,
-            })
-            .map(|x| *x)
-    }
-
-    pub(crate) fn crtc_prop_handle(
-        &self,
-        handle: crtc::Handle,
-        name: &'static str,
-    ) -> Result<property::Handle, Error> {
-        self.prop_mapping
-            .1
-            .get(&handle)
-            .expect("Unknown handle")
-            .get(name)
-            .ok_or_else(|| Error::UnknownProperty {
-                handle: handle.into(),
-                name,
-            })
-            .map(|x| *x)
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn fb_prop_handle(
-        &self,
-        handle: framebuffer::Handle,
-        name: &'static str,
-    ) -> Result<property::Handle, Error> {
-        self.prop_mapping
-            .2
-            .get(&handle)
-            .expect("Unknown handle")
-            .get(name)
-            .ok_or_else(|| Error::UnknownProperty {
-                handle: handle.into(),
-                name,
-            })
-            .map(|x| *x)
-    }
-
-    pub(crate) fn plane_prop_handle(
-        &self,
-        handle: plane::Handle,
-        name: &'static str,
-    ) -> Result<property::Handle, Error> {
-        self.prop_mapping
-            .3
-            .get(&handle)
-            .expect("Unknown handle")
-            .get(name)
-            .ok_or_else(|| Error::UnknownProperty {
-                handle: handle.into(),
-                name,
-            })
-            .map(|x| *x)
-    }
-
     // If a mode is set a matching blob needs to be set (the inverse is not true)
     #[allow(clippy::too_many_arguments)]
     pub fn build_request<'a>(
@@ -797,6 +754,8 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         mode: Option<Mode>,
         blob: Option<property::Value<'static>>,
     ) -> Result<AtomicModeReq, Error> {
+        let prop_mapping = self.prop_mapping.read().unwrap();
+
         // okay, here we build the actual requests used by the surface.
         let mut req = AtomicModeReq::new();
 
@@ -807,7 +766,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         for conn in new_connectors {
             req.add_property(
                 *conn,
-                self.conn_prop_handle(*conn, "CRTC_ID")?,
+                conn_prop_handle(&*prop_mapping, *conn, "CRTC_ID")?,
                 property::Value::CRTC(Some(self.crtc)),
             );
         }
@@ -819,20 +778,24 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         for conn in removed_connectors {
             req.add_property(
                 *conn,
-                self.conn_prop_handle(*conn, "CRTC_ID")?,
+                conn_prop_handle(&*prop_mapping, *conn, "CRTC_ID")?,
                 property::Value::CRTC(None),
             );
         }
 
         // we need to set the new mode, if there is one
         if let Some(blob) = blob {
-            req.add_property(self.crtc, self.crtc_prop_handle(self.crtc, "MODE_ID")?, blob);
+            req.add_property(
+                self.crtc,
+                crtc_prop_handle(&*prop_mapping, self.crtc, "MODE_ID")?,
+                blob,
+            );
         }
 
         // we also need to set this crtc active
         req.add_property(
             self.crtc,
-            self.crtc_prop_handle(self.crtc, "ACTIVE")?,
+            crtc_prop_handle(&*prop_mapping, self.crtc, "ACTIVE")?,
             property::Value::Boolean(true),
         );
 
@@ -841,7 +804,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             for (fb, plane) in fbs {
                 req.add_property(
                     *plane,
-                    self.plane_prop_handle(*plane, "FB_ID")?,
+                    plane_prop_handle(&*prop_mapping, *plane, "FB_ID")?,
                     property::Value::Framebuffer(Some(*fb)),
                 );
             }
@@ -850,7 +813,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         // we also need to connect the primary plane
         req.add_property(
             primary,
-            self.plane_prop_handle(primary, "CRTC_ID")?,
+            plane_prop_handle(&*prop_mapping, primary, "CRTC_ID")?,
             property::Value::CRTC(Some(self.crtc)),
         );
 
@@ -858,47 +821,47 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         if let Some(mode) = mode {
             req.add_property(
                 primary,
-                self.plane_prop_handle(primary, "SRC_X")?,
+                plane_prop_handle(&*prop_mapping, primary, "SRC_X")?,
                 property::Value::UnsignedRange(0),
             );
             req.add_property(
                 primary,
-                self.plane_prop_handle(primary, "SRC_Y")?,
+                plane_prop_handle(&*prop_mapping, primary, "SRC_Y")?,
                 property::Value::UnsignedRange(0),
             );
             req.add_property(
                 primary,
-                self.plane_prop_handle(primary, "SRC_W")?,
+                plane_prop_handle(&*prop_mapping, primary, "SRC_W")?,
                 // these are 16.16. fixed point
                 property::Value::UnsignedRange((mode.size().0 as u64) << 16),
             );
             req.add_property(
                 primary,
-                self.plane_prop_handle(primary, "SRC_H")?,
+                plane_prop_handle(&*prop_mapping, primary, "SRC_H")?,
                 property::Value::UnsignedRange((mode.size().1 as u64) << 16),
             );
             // we can map parts of the plane onto different coordinated on the crtc, but we just use a 1:1 mapping.
             req.add_property(
                 primary,
-                self.plane_prop_handle(primary, "CRTC_X")?,
+                plane_prop_handle(&*prop_mapping, primary, "CRTC_X")?,
                 property::Value::SignedRange(0),
             );
             req.add_property(
                 primary,
-                self.plane_prop_handle(primary, "CRTC_Y")?,
+                plane_prop_handle(&*prop_mapping, primary, "CRTC_Y")?,
                 property::Value::SignedRange(0),
             );
             req.add_property(
                 primary,
-                self.plane_prop_handle(primary, "CRTC_W")?,
+                plane_prop_handle(&*prop_mapping, primary, "CRTC_W")?,
                 property::Value::UnsignedRange(mode.size().0 as u64),
             );
             req.add_property(
                 primary,
-                self.plane_prop_handle(primary, "CRTC_H")?,
+                plane_prop_handle(&*prop_mapping, primary, "CRTC_H")?,
                 property::Value::UnsignedRange(mode.size().1 as u64),
             );
-            if let Ok(prop) = self.plane_prop_handle(primary, "rotation") {
+            if let Ok(prop) = plane_prop_handle(&*prop_mapping, primary, "rotation") {
                 req.add_property(primary, prop, property::Value::Bitmask(1u64));
             }
         }
@@ -907,47 +870,47 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         for plane_info in planes {
             req.add_property(
                 plane_info.handle,
-                self.plane_prop_handle(plane_info.handle, "SRC_X")?,
+                plane_prop_handle(&*prop_mapping, plane_info.handle, "SRC_X")?,
                 property::Value::UnsignedRange(0),
             );
             req.add_property(
                 plane_info.handle,
-                self.plane_prop_handle(plane_info.handle, "SRC_Y")?,
+                plane_prop_handle(&*prop_mapping, plane_info.handle, "SRC_Y")?,
                 property::Value::UnsignedRange(0),
             );
             req.add_property(
                 plane_info.handle,
-                self.plane_prop_handle(plane_info.handle, "SRC_W")?,
+                plane_prop_handle(&*prop_mapping, plane_info.handle, "SRC_W")?,
                 // these are 16.16. fixed point
                 property::Value::UnsignedRange((plane_info.w as u64) << 16),
             );
             req.add_property(
                 plane_info.handle,
-                self.plane_prop_handle(plane_info.handle, "SRC_H")?,
+                plane_prop_handle(&*prop_mapping, plane_info.handle, "SRC_H")?,
                 property::Value::UnsignedRange((plane_info.h as u64) << 16),
             );
             // we can map parts of the plane onto different coordinated on the crtc, but we just use a 1:1 mapping.
             req.add_property(
                 plane_info.handle,
-                self.plane_prop_handle(plane_info.handle, "CRTC_X")?,
+                plane_prop_handle(&*prop_mapping, plane_info.handle, "CRTC_X")?,
                 property::Value::SignedRange(plane_info.x as i64),
             );
             req.add_property(
                 plane_info.handle,
-                self.plane_prop_handle(plane_info.handle, "CRTC_Y")?,
+                plane_prop_handle(&*prop_mapping, plane_info.handle, "CRTC_Y")?,
                 property::Value::SignedRange(plane_info.y as i64),
             );
             req.add_property(
                 plane_info.handle,
-                self.plane_prop_handle(plane_info.handle, "CRTC_W")?,
+                plane_prop_handle(&*prop_mapping, plane_info.handle, "CRTC_W")?,
                 property::Value::UnsignedRange(plane_info.w as u64),
             );
             req.add_property(
                 plane_info.handle,
-                self.plane_prop_handle(plane_info.handle, "CRTC_H")?,
+                plane_prop_handle(&*prop_mapping, plane_info.handle, "CRTC_H")?,
                 property::Value::UnsignedRange(plane_info.h as u64),
             );
-            if let Ok(prop) = self.plane_prop_handle(plane_info.handle, "rotation") {
+            if let Ok(prop) = plane_prop_handle(&*prop_mapping, plane_info.handle, "rotation") {
                 req.add_property(plane_info.handle, prop, property::Value::Bitmask(1u64));
             }
         }
@@ -960,17 +923,18 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
     // as other compositors might not make use of other planes,
     // leaving our e.g. cursor or overlays as a relict of a better time on the screen.
     pub fn clear_plane(&self, plane: plane::Handle) -> Result<(), Error> {
+        let prop_mapping = self.prop_mapping.read().unwrap();
         let mut req = AtomicModeReq::new();
 
         req.add_property(
             self.plane,
-            self.plane_prop_handle(self.plane, "CRTC_ID")?,
+            plane_prop_handle(&*prop_mapping, self.plane, "CRTC_ID")?,
             property::Value::CRTC(None),
         );
 
         req.add_property(
             self.plane,
-            self.plane_prop_handle(self.plane, "FB_ID")?,
+            plane_prop_handle(&*prop_mapping, self.plane, "FB_ID")?,
             property::Value::Framebuffer(None),
         );
 
@@ -998,9 +962,9 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         fd: Option<&B>,
     ) -> Result<(), Error> {
         *self.state.write().unwrap() = if let Some(fd) = fd {
-            State::current_state(fd, self.crtc, &self.prop_mapping)?
+            State::current_state(fd, self.crtc, &mut *self.prop_mapping.write().unwrap())?
         } else {
-            State::current_state(&*self.fd, self.crtc, &self.prop_mapping)?
+            State::current_state(&*self.fd, self.crtc, &mut *self.prop_mapping.write().unwrap())?
         };
         Ok(())
     }
@@ -1041,9 +1005,9 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
         // disable connectors again
         let current = self.state.read().unwrap();
         let mut req = AtomicModeReq::new();
+        let prop_mapping = self.prop_mapping.read().unwrap();
         for conn in current.connectors.iter() {
-            let prop = self
-                .prop_mapping
+            let prop = prop_mapping
                 .0
                 .get(conn)
                 .expect("Unknown Handle")
@@ -1051,15 +1015,13 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
                 .expect("Unknown property CRTC_ID");
             req.add_property(*conn, *prop, property::Value::CRTC(None));
         }
-        let active_prop = self
-            .prop_mapping
+        let active_prop = prop_mapping
             .1
             .get(&self.crtc)
             .expect("Unknown Handle")
             .get("ACTIVE")
             .expect("Unknown property ACTIVE");
-        let mode_prop = self
-            .prop_mapping
+        let mode_prop = prop_mapping
             .1
             .get(&self.crtc)
             .expect("Unknown Handle")
@@ -1074,6 +1036,56 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
     }
 }
 
+pub(crate) fn conn_prop_handle(
+    prop_mapping: &Mapping,
+    handle: connector::Handle,
+    name: &'static str,
+) -> Result<property::Handle, Error> {
+    prop_mapping
+        .0
+        .get(&handle)
+        .expect("Unknown handle")
+        .get(name)
+        .ok_or_else(|| Error::UnknownProperty {
+            handle: handle.into(),
+            name,
+        })
+        .map(|x| *x)
+}
+
+pub(crate) fn crtc_prop_handle(
+    prop_mapping: &Mapping,
+    handle: crtc::Handle,
+    name: &'static str,
+) -> Result<property::Handle, Error> {
+    prop_mapping
+        .1
+        .get(&handle)
+        .expect("Unknown handle")
+        .get(name)
+        .ok_or_else(|| Error::UnknownProperty {
+            handle: handle.into(),
+            name,
+        })
+        .map(|x| *x)
+}
+
+pub(crate) fn plane_prop_handle(
+    prop_mapping: &Mapping,
+    handle: plane::Handle,
+    name: &'static str,
+) -> Result<property::Handle, Error> {
+    prop_mapping
+        .2
+        .get(&handle)
+        .expect("Unknown handle")
+        .get(name)
+        .ok_or_else(|| Error::UnknownProperty {
+            handle: handle.into(),
+            name,
+        })
+        .map(|x| *x)
+}
 #[cfg(test)]
 mod test {
     use super::AtomicDrmSurface;
