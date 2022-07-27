@@ -123,7 +123,6 @@ pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
     prop_mapping: RwLock<Mapping>,
     state: RwLock<State>,
     pending: RwLock<State>,
-    test_buffer: Mutex<Option<(DumbBuffer, framebuffer::Handle)>>,
     pub(crate) logger: ::slog::Logger,
 }
 
@@ -170,7 +169,6 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
             prop_mapping: RwLock::new(prop_mapping),
             state: RwLock::new(state),
             pending: RwLock::new(pending),
-            test_buffer: Mutex::new(None),
             logger,
         };
 
@@ -179,11 +177,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
     // we need a framebuffer to do test commits, which we use to verify our pending state.
     // here we create a dumbbuffer for that purpose.
-    fn create_test_buffer(
-        &self,
-        size: (u16, u16),
-        plane: plane::Handle,
-    ) -> Result<framebuffer::Handle, Error> {
+    fn create_test_buffer(&self, size: (u16, u16), plane: plane::Handle) -> Result<TestBuffer<A>, Error> {
         let (w, h) = size;
         let needs_alpha = plane_type(&*self.fd, plane)? != PlaneType::Primary;
         let format = if needs_alpha {
@@ -200,7 +194,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 dev: self.fd.dev_path(),
                 source,
             })?;
-        let fb = self
+        let fb_result = self
             .fd
             .add_framebuffer(
                 &db,
@@ -211,16 +205,19 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 errmsg: "Failed to create framebuffer",
                 dev: self.fd.dev_path(),
                 source,
-            })?;
+            });
 
-        let mut test_buffer = self.test_buffer.lock().unwrap();
-        if let Some((old_db, old_fb)) = test_buffer.take() {
-            let _ = self.fd.destroy_framebuffer(old_fb);
-            let _ = self.fd.destroy_dumb_buffer(old_db);
-        };
-        *test_buffer = Some((db, fb));
-
-        Ok(fb)
+        match fb_result {
+            Ok(fb) => Ok(TestBuffer {
+                fd: self.fd.clone(),
+                db,
+                fb,
+            }),
+            Err(err) => {
+                let _ = self.fd.destroy_dumb_buffer(db);
+                Err(err)
+            }
+        }
     }
 
     pub fn current_connectors(&self) -> HashSet<connector::Handle> {
@@ -277,19 +274,15 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
         // check if the connector can handle the current mode
         if info.modes().contains(&pending.mode) {
+            let test_buffer = self.create_test_buffer(pending.mode.size(), self.plane)?;
+
             // check if config is supported
             let req = self.build_request(
                 &mut [conn].iter(),
                 &mut [].iter(),
                 self.plane,
                 &[],
-                Some(
-                    [(
-                        self.create_test_buffer(pending.mode.size(), self.plane)?,
-                        self.plane,
-                    )]
-                    .iter(),
-                ),
+                Some([(test_buffer.fb, self.plane)].iter()),
                 Some(pending.mode),
                 Some(pending.blob),
             )?;
@@ -322,18 +315,14 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         }
 
         // check if new config is supported (should be)
+        let test_buffer = self.create_test_buffer(pending.mode.size(), self.plane)?;
+
         let req = self.build_request(
             &mut [].iter(),
             &mut [conn].iter(),
             self.plane,
             &[],
-            Some(
-                [(
-                    self.create_test_buffer(pending.mode.size(), self.plane)?,
-                    self.plane,
-                )]
-                .iter(),
-            ),
+            Some([(test_buffer.fb, self.plane)].iter()),
             Some(pending.mode),
             Some(pending.blob),
         )?;
@@ -368,18 +357,14 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         let mut added = conns.difference(&current.connectors);
         let mut removed = current.connectors.difference(&conns);
 
+        let test_buffer = self.create_test_buffer(pending.mode.size(), self.plane)?;
+
         let req = self.build_request(
             &mut added,
             &mut removed,
             self.plane,
             &[],
-            Some(
-                [(
-                    self.create_test_buffer(pending.mode.size(), self.plane)?,
-                    self.plane,
-                )]
-                .iter(),
-            ),
+            Some([(test_buffer.fb, self.plane)].iter()),
             Some(pending.mode),
             Some(pending.blob),
         )?;
@@ -413,13 +398,13 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
                 source,
             })?;
 
-        let test_fb = self.create_test_buffer(mode.size(), self.plane)?;
+        let test_buffer = self.create_test_buffer(mode.size(), self.plane)?;
         let req = self.build_request(
             &mut pending.connectors.iter(),
             &mut [].iter(),
             self.plane,
             &[],
-            Some([(test_fb, self.plane)].iter()),
+            Some([(test_buffer.fb, self.plane)].iter()),
             Some(mode),
             Some(new_blob),
         )?;
@@ -461,27 +446,27 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         new_planes.push(info);
 
         let pending = self.pending.write().unwrap();
+        let primary_test_buffer = self.create_test_buffer(pending.mode.size(), self.plane)?;
+        let additional_test_buffers = new_planes
+            .iter()
+            .map(
+                |info| match self.create_test_buffer((info.w as u16, info.h as u16), info.handle) {
+                    Ok(test_buff) => Ok((test_buff, info.handle)),
+                    Err(err) => Err(err),
+                },
+            )
+            .collect::<Result<Vec<_>, _>>()?;
         let req = self.build_request(
             &mut pending.connectors.iter(),
             &mut [].iter(),
             self.plane,
             &new_planes,
             Some(
-                [(
-                    self.create_test_buffer(pending.mode.size(), self.plane)?,
-                    self.plane,
-                )]
-                .iter()
-                .chain(
-                    new_planes
+                [(primary_test_buffer.fb, self.plane)].iter().chain(
+                    additional_test_buffers
                         .iter()
-                        .map(|info| {
-                            match self.create_test_buffer((info.w as u16, info.h as u16), info.handle) {
-                                Ok(test_buff) => Ok((test_buff, info.handle)),
-                                Err(err) => Err(err),
-                            }
-                        })
-                        .collect::<Result<Vec<_>, _>>()?
+                        .map(|(b, p)| (b.fb, *p))
+                        .collect::<Vec<_>>()
                         .iter(),
                 ),
             ),
@@ -970,13 +955,21 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
     }
 }
 
+struct TestBuffer<A: AsRawFd + 'static> {
+    fd: Arc<DrmDeviceInternal<A>>,
+    db: DumbBuffer,
+    fb: framebuffer::Handle,
+}
+
+impl<A: AsRawFd + 'static> Drop for TestBuffer<A> {
+    fn drop(&mut self) {
+        let _ = self.fd.destroy_framebuffer(self.fb);
+        let _ = self.fd.destroy_dumb_buffer(self.db);
+    }
+}
+
 impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
     fn drop(&mut self) {
-        if let Some((db, fb)) = self.test_buffer.lock().unwrap().take() {
-            let _ = self.fd.destroy_framebuffer(fb);
-            let _ = self.fd.destroy_dumb_buffer(db);
-        }
-
         if !self.active.load(Ordering::SeqCst) {
             // the device is gone or we are on another tty
             // old state has been restored, we shouldn't touch it.
