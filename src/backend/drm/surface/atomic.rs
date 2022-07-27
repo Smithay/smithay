@@ -855,6 +855,11 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         for plane_info in planes {
             req.add_property(
                 plane_info.handle,
+                plane_prop_handle(&*prop_mapping, plane_info.handle, "CRTC_ID")?,
+                property::Value::CRTC(Some(self.crtc)),
+            );
+            req.add_property(
+                plane_info.handle,
                 plane_prop_handle(&*prop_mapping, plane_info.handle, "SRC_X")?,
                 property::Value::UnsignedRange(0),
             );
