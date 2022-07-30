@@ -664,14 +664,13 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             .window_for_surface(surface.wl_surface(), WindowSurfaceType::TOPLEVEL)
             .unwrap()
             .clone();
-        let output = self.space.outputs_for_window(&window).into_iter().next();
-        let mut output = output.as_ref();
-        if output.is_none() {
+        let outputs_for_window = self.space.outputs_for_window(&window);
+        let output = outputs_for_window
+            .first()
             // The window hasn't been mapped yet, use the primary output instead
-            output = self.space.outputs().next();
-        }
-        // Assumes that at least one output exists
-        let output = output.unwrap();
+            .or_else(|| self.space.outputs().next())
+            // Assumes that at least one output exists
+            .expect("No outputs found");
         let geometry = self.space.output_geometry(output).unwrap();
 
         self.space.map_window(&window, geometry.loc, None, true);
