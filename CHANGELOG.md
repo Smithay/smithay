@@ -68,14 +68,14 @@
 - Added a `KeyboardGrab` similar to the existing `PointerGrab`
 - `wayland::output::Output` now has a `current_scale` method to quickly retrieve its set scale.
 - `wayland::shell::wlr_layer::KeyboardInteractivity` now implements `PartialEq` and `Eq`.
-- `zwp_text_input_v3` support
-- `zwp_input_method_v2` support
 - Added `TouchHandle` for Wayland client touch support (see `Seat::get_touch`)
 - `wayland::output::Scale` was introduced to handle fractional scale values better
 - Support for `wl_output` global version 4
 - Support for `wl_seat` global version 7
 - Support for `wl_compositor` global version 5
 - Support for the `wp_viewporter` protocol
+- Support for the `zwp_input_method_v2` protocol
+- Support for the `zwp_text_input_v3` protocol
 
 #### Backends
 
@@ -100,10 +100,6 @@
 #### Desktop
 
 - New `desktop` module to handle window placement, tracks popups, layer surface and various rendering helpers including automatic damage-tracking! (+so much more)
-
-### Anvil
-
-- Support for text input and input methods
 
 #### Utils
 

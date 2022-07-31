@@ -29,7 +29,7 @@ mod xkb_config;
 pub use xkb_config::XkbConfig;
 
 mod keymap_file;
-use keymap_file::KeymapFile;
+pub use keymap_file::KeymapFile;
 
 enum GrabStatus {
     None,
@@ -75,8 +75,8 @@ unsafe impl Send for KbdInternal {}
 impl KbdInternal {
     fn new(
         xkb_config: XkbConfig<'_>,
-        repeat_delay: i32,
         repeat_rate: i32,
+        repeat_delay: i32,
         focus_hook: Box<dyn FnMut(Option<&WlSurface>)>,
     ) -> Result<KbdInternal, ()> {
         // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe

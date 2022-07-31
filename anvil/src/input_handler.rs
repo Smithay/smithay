@@ -18,6 +18,7 @@ use smithay::{
     utils::{Logical, Point},
     wayland::{
         compositor::with_states,
+        input_method_manager::InputMethodSeatTrait,
         output::Scale,
         seat::{keysyms as xkb, AxisFrame, ButtonEvent, FilterResult, Keysym, ModifiersState, MotionEvent},
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
@@ -100,45 +101,43 @@ impl<Backend> AnvilState<Backend> {
                 return KeyAction::None;
             }
         }
-        if self.input_method.keyboard_grabbed() {
-            self.input_method.input(keycode, state, serial, time);
-            KeyAction::None
-        } else {
-            self.keyboard
-                .input(keycode, state, serial, time, |modifiers, handle| {
-                    let keysym = handle.modified_sym();
 
         keyboard
             .input(dh, keycode, state, serial, time, |modifiers, handle| {
                 let keysym = handle.modified_sym();
 
-                    // If the key is pressed and triggered an action
-                    // we will not forward the key to the client.
-                    // Additionally add the key to the suppressed keys
-                    // so that we can decide on a release if the key
-                    // should be forwarded to the client or not.
-                    if let KeyState::Pressed = state {
-                        let action = process_keyboard_shortcut(*modifiers, keysym);
+                debug!(log, "keysym";
+                    "state" => format!("{:?}", state),
+                    "mods" => format!("{:?}", modifiers),
+                    "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
+                );
 
-                        if action.is_some() {
-                            suppressed_keys.push(keysym);
-                        }
+                // If the key is pressed and triggered a action
+                // we will not forward the key to the client.
+                // Additionally add the key to the suppressed keys
+                // so that we can decide on a release if the key
+                // should be forwarded to the client or not.
+                if let KeyState::Pressed = state {
+                    let action = process_keyboard_shortcut(*modifiers, keysym);
 
-                        action
-                            .map(FilterResult::Intercept)
-                            .unwrap_or(FilterResult::Forward)
-                    } else {
-                        let suppressed = suppressed_keys.contains(&keysym);
-                        if suppressed {
-                            suppressed_keys.retain(|k| *k != keysym);
-                            FilterResult::Intercept(KeyAction::None)
-                        } else {
-                            FilterResult::Forward
-                        }
+                    if action.is_some() {
+                        suppressed_keys.push(keysym);
                     }
-                })
-                .unwrap_or(KeyAction::None)
-        }
+
+                    action
+                        .map(FilterResult::Intercept)
+                        .unwrap_or(FilterResult::Forward)
+                } else {
+                    let suppressed = suppressed_keys.contains(&keysym);
+                    if suppressed {
+                        suppressed_keys.retain(|k| *k != keysym);
+                        FilterResult::Intercept(KeyAction::None)
+                    } else {
+                        FilterResult::Forward
+                    }
+                }
+            })
+            .unwrap_or(KeyAction::None)
     }
 
     fn on_pointer_button<B: InputBackend>(&mut self, dh: &DisplayHandle, evt: B::PointerButtonEvent) {
@@ -165,6 +164,7 @@ impl<Backend> AnvilState<Backend> {
     fn update_keyboard_focus(&mut self, dh: &DisplayHandle, serial: Serial) {
         let pointer = self.seat.get_pointer().unwrap();
         let keyboard = self.seat.get_keyboard().unwrap();
+        let input_method = self.seat.input_method();
         // change the keyboard focus unless the pointer or keyboard is grabbed
         // We test for any matching surface type here but always use the root
         // (in case of a window the toplevel) surface for the focus.
@@ -174,7 +174,7 @@ impl<Backend> AnvilState<Backend> {
         // subsurface menus (for example firefox-wayland).
         // see here for a discussion about that issue:
         // https://gitlab.freedesktop.org/wayland/wayland/-/issues/294
-        if !pointer.is_grabbed() && !keyboard.is_grabbed() {
+        if !pointer.is_grabbed() && (!keyboard.is_grabbed() || input_method.keyboard_grabbed()) {
             if let Some(output) = self.space.output_under(self.pointer_location).next() {
                 let output_geo = self.space.output_geometry(output).unwrap();
                 if let Some(window) = output
@@ -289,6 +289,10 @@ impl<Backend> AnvilState<Backend> {
                 )
                 .map(|(s, loc)| (s, loc + layer_loc));
         };
+        let mut input_method = self.seat.input_method();
+        if let Some((_, point)) = under {
+            input_method.set_point(&point);
+        }
         under
     }
 

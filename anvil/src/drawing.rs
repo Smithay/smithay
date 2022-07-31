@@ -66,19 +66,14 @@ pub fn draw_dnd_icon(
     }
 }
 
-pub fn draw_input_popup_surface<R, E, F, T>(
+pub fn draw_input_popup_surface(
     surface: wl_surface::WlSurface,
-    location: Point<i32, Logical>,
-) -> impl RenderElement<R, F, E, T>
-where
-    R: Renderer<Error = E, TextureId = T, Frame = F> + ImportAll + 'static,
-    F: Frame<Error = E, TextureId = T> + 'static,
-    E: std::error::Error + Into<SwapBuffersError> + 'static,
-    T: Texture + 'static,
-{
+    location: impl Into<Point<i32, Logical>>,
+) -> SurfaceTree {
     SurfaceTree {
         surface,
-        position: location,
+        position: location.into(),
+        z_index: 99, /* Cursor should always be on-top */
     }
 }
 

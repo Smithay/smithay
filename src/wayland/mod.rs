@@ -51,7 +51,7 @@ pub mod buffer;
 pub mod compositor;
 pub mod data_device;
 pub mod dmabuf;
-pub mod _input_method;
+pub mod input_method_manager;
 pub mod output;
 pub mod primary_selection;
 pub mod seat;
@@ -59,7 +59,7 @@ pub mod shell;
 pub mod shm;
 pub mod socket;
 pub mod tablet_manager;
-pub mod text_input;
+pub mod text_input_manager;
 pub mod viewporter;
 pub mod xdg_activation;
 

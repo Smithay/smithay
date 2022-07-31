@@ -18,6 +18,7 @@ use smithay::{
     },
     utils::IsAlive,
     wayland::{
+        input_method_manager::InputMethodSeatTrait,
         output::{Mode, Output, PhysicalProperties},
         seat::{ButtonEvent, CursorImageStatus, MotionEvent},
         SERIAL_COUNTER as SCOUNTER,
@@ -25,7 +26,7 @@ use smithay::{
 };
 
 use anvil::{
-    drawing::{draw_cursor, draw_dnd_icon},
+    drawing::{draw_cursor, draw_dnd_icon, draw_input_popup_surface},
     render::render_output,
     state::Backend,
     AnvilState, CalloopData, ClientState,
@@ -115,6 +116,15 @@ pub fn run(channel: Channel<WlcsEvent>) {
                     ));
                 }
             }
+
+            // draw input method square if any
+            let input_method = state.seat.input_method();
+            let (x, y, _, height) = input_method.coordinates();
+            input_method.with_surface(|surface| {
+                if surface.alive() {
+                    elements.push(draw_input_popup_surface(surface.clone(), (x, (y + height))).into());
+                }
+            });
 
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
@@ -235,10 +245,6 @@ fn handle_event(
                     &display.handle(),
                     under.as_ref().map(|&(ref w, _)| w.toplevel().wl_surface()),
                     serial,
-                );
-                state.text_input.set_focus(
-                    under.as_ref().map(|&(ref s, _)| s),
-                    under.as_ref().map(|(_, p)| p),
                 );
             }
             let time = state.start_time.elapsed().as_millis() as u32;
