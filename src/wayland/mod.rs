@@ -53,6 +53,7 @@ pub mod data_device;
 pub mod dmabuf;
 pub mod _input_method;
 pub mod output;
+pub mod primary_selection;
 pub mod seat;
 pub mod shell;
 pub mod shm;

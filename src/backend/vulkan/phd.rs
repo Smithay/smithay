@@ -87,6 +87,16 @@ impl super::PhdInfo {
             maintenance_3
         };
 
+        // IDProperties
+        //
+        // SAFETY: Core in Vulkan 1.1
+        let id = unsafe {
+            let mut id = vk::PhysicalDeviceIDProperties::default();
+            let mut props = vk::PhysicalDeviceProperties2::builder().push_next(&mut id);
+            instance.get_physical_device_properties2(phd, &mut props);
+            id
+        };
+
         // Vulkan 1.1 features
         //
         // Confusingly these types were not added until Vulkan 1.2
@@ -198,6 +208,7 @@ impl super::PhdInfo {
             properties,
             features,
             maintenance_3,
+            id,
             properties_1_1,
             features_1_1,
             properties_1_2,

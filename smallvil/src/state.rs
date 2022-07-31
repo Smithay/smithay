@@ -16,7 +16,7 @@ use smithay::{
         compositor::CompositorState,
         data_device::DataDeviceState,
         output::OutputManagerState,
-        seat::{Seat, SeatState},
+        seat::{PointerHandle, Seat, SeatState},
         shell::xdg::XdgShellState,
         shm::ShmState,
         socket::ListeningSocketSource,
@@ -26,8 +26,6 @@ use smithay::{
 use crate::CalloopData;
 
 pub struct Smallvil {
-    pub pointer_location: Point<f64, Logical>,
-
     pub start_time: std::time::Instant,
     pub socket_name: OsString,
 
@@ -84,8 +82,6 @@ impl Smallvil {
         let loop_signal = event_loop.get_signal();
 
         Self {
-            pointer_location: Default::default(),
-
             start_time,
 
             space,
@@ -145,8 +141,11 @@ impl Smallvil {
         socket_name
     }
 
-    pub fn surface_under_pointer(&self) -> Option<(WlSurface, Point<i32, Logical>)> {
-        let pos = self.pointer_location;
+    pub fn surface_under_pointer(
+        &self,
+        pointer: &PointerHandle<Self>,
+    ) -> Option<(WlSurface, Point<i32, Logical>)> {
+        let pos = pointer.current_location();
         self.space
             .surface_under(pos, WindowSurfaceType::all())
             .map(|(_, surface, location)| (surface, location))

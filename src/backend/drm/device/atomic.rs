@@ -26,7 +26,6 @@ type OldState = (
 pub type Mapping = (
     HashMap<connector::Handle, HashMap<String, property::Handle>>,
     HashMap<crtc::Handle, HashMap<String, property::Handle>>,
-    HashMap<framebuffer::Handle, HashMap<String, property::Handle>>,
     HashMap<plane::Handle, HashMap<String, property::Handle>>,
 );
 #[derive(Debug)]
@@ -49,7 +48,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             fd,
             active,
             old_state: (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
-            prop_mapping: (HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new()),
+            prop_mapping: (HashMap::new(), HashMap::new(), HashMap::new()),
             logger: logger.new(o!("smithay_module" => "backend_drm_atomic", "drm_module" => "device")),
         };
 
@@ -72,18 +71,17 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
 
         // This helper function takes a snapshot of the current device properties.
         // (everything in the atomic api is set via properties.)
-        dev.add_props(res_handles.connectors(), &mut old_state.0)?;
-        dev.add_props(res_handles.crtcs(), &mut old_state.1)?;
-        dev.add_props(res_handles.framebuffers(), &mut old_state.2)?;
-        dev.add_props(planes, &mut old_state.3)?;
+        add_props(&*dev.fd, res_handles.connectors(), &mut old_state.0)?;
+        add_props(&*dev.fd, res_handles.crtcs(), &mut old_state.1)?;
+        add_props(&*dev.fd, res_handles.framebuffers(), &mut old_state.2)?;
+        add_props(&*dev.fd, planes, &mut old_state.3)?;
 
         // And because the mapping is not consistent across devices,
         // we also need to lookup the handle for a property name.
         // And we do this a fair bit, so lets cache that mapping.
-        dev.map_props(res_handles.connectors(), &mut mapping.0)?;
-        dev.map_props(res_handles.crtcs(), &mut mapping.1)?;
-        dev.map_props(res_handles.framebuffers(), &mut mapping.2)?;
-        dev.map_props(planes, &mut mapping.3)?;
+        map_props(&*dev.fd, res_handles.connectors(), &mut mapping.0)?;
+        map_props(&*dev.fd, res_handles.crtcs(), &mut mapping.1)?;
+        map_props(&*dev.fd, planes, &mut mapping.2)?;
 
         dev.old_state = old_state;
         dev.prop_mapping = mapping;
@@ -105,69 +103,6 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         }
 
         Ok(dev)
-    }
-
-    // Add all properties of given handles to a given drm resource type to state.
-    // You may use this to snapshot the current state of the drm device (fully or partially).
-    fn add_props<T>(&self, handles: &[T], state: &mut Vec<(T, PropertyValueSet)>) -> Result<(), Error>
-    where
-        T: ResourceHandle,
-    {
-        let iter = handles.iter().map(|x| (x, self.fd.get_properties(*x)));
-        if let Some(len) = iter.size_hint().1 {
-            state.reserve_exact(len)
-        }
-
-        iter.map(|(x, y)| (*x, y))
-            .try_for_each(|(x, y)| match y {
-                Ok(y) => {
-                    state.push((x, y));
-                    Ok(())
-                }
-                Err(err) => Err(err),
-            })
-            .map_err(|source| Error::Access {
-                errmsg: "Error reading properties",
-                dev: self.fd.dev_path(),
-                source,
-            })
-    }
-
-    /// Create a mapping of property names and handles for given handles of a given drm resource type.
-    /// You may use this to easily lookup properties by name instead of going through this procedure manually.
-    fn map_props<T>(
-        &self,
-        handles: &[T],
-        mapping: &mut HashMap<T, HashMap<String, property::Handle>>,
-    ) -> Result<(), Error>
-    where
-        T: ResourceHandle + Eq + std::hash::Hash,
-    {
-        handles
-            .iter()
-            .map(|x| (x, self.fd.get_properties(*x)))
-            .try_for_each(|(handle, props)| {
-                let mut map = HashMap::new();
-                match props {
-                    Ok(props) => {
-                        let (prop_handles, _) = props.as_props_and_values();
-                        for prop in prop_handles {
-                            if let Ok(info) = self.fd.get_property(*prop) {
-                                let name = info.name().to_string_lossy().into_owned();
-                                map.insert(name, *prop);
-                            }
-                        }
-                        mapping.insert(*handle, map);
-                        Ok(())
-                    }
-                    Err(err) => Err(err),
-                }
-            })
-            .map_err(|source| Error::Access {
-                errmsg: "Error reading properties on {:?}",
-                dev: self.fd.dev_path(),
-                source,
-            })
     }
 
     pub(super) fn reset_state(&self) -> Result<(), Error> {
@@ -205,7 +140,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         for plane in plane_handles.planes() {
             let prop = self
                 .prop_mapping
-                .3
+                .2
                 .get(plane)
                 .expect("Unknown handle")
                 .get("CRTC_ID")
@@ -214,7 +149,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
 
             let prop = self
                 .prop_mapping
-                .3
+                .2
                 .get(plane)
                 .expect("Unknown handle")
                 .get("FB_ID")
@@ -287,4 +222,69 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmDevice<A> {
             }
         }
     }
+}
+
+// Add all properties of given handles to a given drm resource type to state.
+// You may use this to snapshot the current state of the drm device (fully or partially).
+fn add_props<D, T>(fd: &D, handles: &[T], state: &mut Vec<(T, PropertyValueSet)>) -> Result<(), Error>
+where
+    D: ControlDevice,
+    T: ResourceHandle,
+{
+    let iter = handles.iter().map(|x| (x, fd.get_properties(*x)));
+    if let Some(len) = iter.size_hint().1 {
+        state.reserve_exact(len)
+    }
+
+    iter.map(|(x, y)| (*x, y))
+        .try_for_each(|(x, y)| match y {
+            Ok(y) => {
+                state.push((x, y));
+                Ok(())
+            }
+            Err(err) => Err(err),
+        })
+        .map_err(|source| Error::Access {
+            errmsg: "Error reading properties",
+            dev: fd.dev_path(),
+            source,
+        })
+}
+
+/// Create a mapping of property names and handles for given handles of a given drm resource type.
+/// You may use this to easily lookup properties by name instead of going through this procedure manually.
+pub(in crate::backend::drm) fn map_props<D, T>(
+    fd: &D,
+    handles: &[T],
+    mapping: &mut HashMap<T, HashMap<String, property::Handle>>,
+) -> Result<(), Error>
+where
+    D: ControlDevice,
+    T: ResourceHandle + Eq + std::hash::Hash,
+{
+    handles
+        .iter()
+        .map(|x| (x, fd.get_properties(*x)))
+        .try_for_each(|(handle, props)| {
+            let mut map = HashMap::new();
+            match props {
+                Ok(props) => {
+                    let (prop_handles, _) = props.as_props_and_values();
+                    for prop in prop_handles {
+                        if let Ok(info) = fd.get_property(*prop) {
+                            let name = info.name().to_string_lossy().into_owned();
+                            map.insert(name, *prop);
+                        }
+                    }
+                    mapping.insert(*handle, map);
+                    Ok(())
+                }
+                Err(err) => Err(err),
+            }
+        })
+        .map_err(|source| Error::Access {
+            errmsg: "Error reading properties on {:?}",
+            dev: fd.dev_path(),
+            source,
+        })
 }

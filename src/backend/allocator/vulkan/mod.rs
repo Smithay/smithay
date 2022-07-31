@@ -281,6 +281,15 @@ impl VulkanAllocator {
             return Err(Error::InvalidSize);
         }
 
+        // VUID-VkImageCreateInfo-usage-00964, VUID-VkImageCreateInfo-usage-00965
+        if usage.contains(ImageUsageFlags::COLOR_ATTACHMENT) {
+            let limits = self.phd.limits();
+
+            if width > limits.max_framebuffer_width || height > limits.max_framebuffer_height {
+                return Err(Error::InvalidSize);
+            }
+        }
+
         // Filter out any format + modifier combinations that are not supported
         let modifiers = self.filter_modifiers(width, height, vk_usage, fourcc, modifiers);
 
