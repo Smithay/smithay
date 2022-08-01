@@ -14,10 +14,7 @@
 //!     InputMethodManagerState,
 //!     InputMethodSeat
 //! };
-//! use smithay::wayland::text_input::{
-//!     TextInputManagerState,
-//!     TextInputSeat
-//! };
+//! use smithay::wayland::text_input::TextInputManagerState;
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //!
@@ -40,6 +37,7 @@
 //!
 //! // Add the seat state to your state and create manager globals
 //! InputMethodManagerState::new::<State>(&display_handle);
+//! // Add text input capabilities, needed for the input method to work
 //! TextInputManagerState::new::<State>(&display_handle);
 //!
 //! // create the seat
@@ -49,8 +47,6 @@
 //!     None                      // insert a logger here
 //! );
 //!
-//! seat.init_text_input();
-//! // Add text input capabilities to a seat, needed for the input method to work
 //! seat.add_input_method(XkbConfig::default(), 200, 25);
 //! // Add input method capabilities to a seat
 //!

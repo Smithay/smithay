@@ -41,7 +41,7 @@ use smithay::{
         shm::{ShmHandler, ShmState},
         socket::ListeningSocketSource,
         tablet_manager::TabletSeatTrait,
-        text_input::{TextInputManagerState, TextInputSeat},
+        text_input::TextInputManagerState,
         viewporter::ViewporterState,
         xdg_activation::{
             XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
@@ -296,7 +296,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             *cursor_status3.lock().unwrap() = new_status;
         });
 
-        seat.init_text_input();
         seat.add_input_method(XkbConfig::default(), 200, 25);
 
         #[cfg(feature = "xwayland")]

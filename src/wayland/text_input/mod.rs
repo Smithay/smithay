@@ -1,28 +1,19 @@
 //! Utilities for text input support
 //!
 //! This module provides you with utilities to handle text input surfaces,
-//! it must be used in conjunction with the input method module to work.
+//! it is usually used in conjunction with the input method module.
 //!
 //! ```
 //! # extern crate wayland_server;
 //! use smithay::{
-//!     delegate_seat, delegate_tablet_manager, delegate_input_method_manager,
-//!     delegate_text_input_manager,
+//!     delegate_seat, delegate_tablet_manager, delegate_text_input_manager,
 //! };
 //! use smithay::wayland::seat::{Seat, SeatState, SeatHandler, XkbConfig};
-//! use smithay::wayland::input_method::{
-//!     InputMethodManagerState,
-//!     InputMethodSeat
-//! };
-//! use smithay::wayland::text_input::{
-//!     TextInputManagerState,
-//!     TextInputSeat
-//! };
+//! use smithay::wayland::text_input::TextInputManagerState;
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //!
 //! delegate_seat!(State);
-//! delegate_input_method_manager!(State);
 //! // Delegate text input handling for State to TextInputManagerState.
 //! delegate_text_input_manager!(State);
 //!
@@ -38,21 +29,8 @@
 //!     }
 //! }
 //!
-//! // Add the seat state to your state and create manager globals
-//! InputMethodManagerState::new::<State>(&display_handle);
+//! // Add the seat state to your state and create manager global
 //! TextInputManagerState::new::<State>(&display_handle);
-//!
-//! // create the seat
-//! let seat = Seat::<State>::new(
-//!     &display_handle,          // the display
-//!     "seat-0",                 // the name of the seat, will be advertized to clients
-//!     None                      // insert a logger here
-//! );
-//!
-//! seat.init_text_input();
-//! // Add text input capabilities to a seat
-//! seat.add_input_method(XkbConfig::default(), 200, 25);
-//! // Add input method capabilities to a seat, needed for text input to work
 //!
 //! ```
 //!
@@ -73,19 +51,6 @@ use super::input_method::InputMethodHandle;
 const MANAGER_VERSION: u32 = 1;
 
 mod text_input_handle;
-
-/// Extends [Seat] with text input functionality
-pub trait TextInputSeat {
-    /// Get text input associated with this seat
-    fn init_text_input(&self);
-}
-
-impl<D: 'static> TextInputSeat for Seat<D> {
-    fn init_text_input(&self) {
-        let user_data = self.user_data();
-        user_data.insert_if_missing(TextInputHandle::default);
-    }
-}
 
 /// State of wp text input protocol
 #[derive(Debug)]
@@ -152,6 +117,7 @@ where
                 let seat = Seat::<D>::from_resource(&seat).unwrap();
 
                 let user_data = seat.user_data();
+                user_data.insert_if_missing(TextInputHandle::default);
                 user_data.insert_if_missing(InputMethodHandle::default);
                 let handle = user_data.get::<TextInputHandle>().unwrap();
                 let input_method_handle = user_data.get::<InputMethodHandle>().unwrap();
