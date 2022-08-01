@@ -91,7 +91,7 @@ pub trait InputMethodSeat {
     fn add_input_method(&self, xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32);
 
     /// Get an input method associated with this seat
-    fn input_method(&self) -> InputMethodHandle;
+    fn input_method(&self) -> Option<&InputMethodHandle>;
 }
 
 impl<D: 'static> InputMethodSeat for Seat<D> {
@@ -102,9 +102,9 @@ impl<D: 'static> InputMethodSeat for Seat<D> {
         input_method.configure_keyboard(xkb_config, repeat_delay, repeat_rate);
     }
 
-    fn input_method(&self) -> InputMethodHandle {
+    fn input_method(&self) -> Option<&InputMethodHandle> {
         let user_data = self.user_data();
-        user_data.get::<InputMethodHandle>().unwrap().clone()
+        user_data.get::<InputMethodHandle>()
     }
 }
 

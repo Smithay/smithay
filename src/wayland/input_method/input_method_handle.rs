@@ -118,7 +118,7 @@ impl InputMethodHandle {
     }
 
     /// Sets the point of the upper left corner of the surface in focus
-    pub fn set_point(&mut self, point: &Point<i32, Logical>) {
+    pub fn set_point(&self, point: &Point<i32, Logical>) {
         let mut inner = self.inner.lock().unwrap();
         inner.popup.set_point(point);
     }
