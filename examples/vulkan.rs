@@ -37,8 +37,8 @@ fn main() {
         .next()
         .expect("No physical devices");
 
-    // We don't actually use any buffers created by the allocator in this example.
-    let mut allocator = VulkanAllocator::new(&physical_device, ImageUsageFlags::empty()).unwrap();
+    // The allocator should create buffers that are suitable as render targets.
+    let mut allocator = VulkanAllocator::new(&physical_device, ImageUsageFlags::COLOR_ATTACHMENT).unwrap();
 
     let image = allocator
         .create_buffer(100, 200, DrmFourcc::Argb8888, &[DrmModifier::Linear])
