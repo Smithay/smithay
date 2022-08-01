@@ -49,10 +49,10 @@
 //!     None                      // insert a logger here
 //! );
 //!
-//! seat.text_input();
+//! seat.init_text_input();
 //! // Add text input capabilities to a seat
 //! seat.add_input_method(XkbConfig::default(), 200, 25);
-//! // Add input method capabilities to a seat, , needed for text input to work
+//! // Add input method capabilities to a seat, needed for text input to work
 //!
 //! ```
 //!
@@ -77,14 +77,13 @@ mod text_input_handle;
 /// Extends [Seat] with text input functionality
 pub trait TextInputSeat {
     /// Get text input associated with this seat
-    fn text_input(&self) -> TextInputHandle;
+    fn init_text_input(&self);
 }
 
 impl<D: 'static> TextInputSeat for Seat<D> {
-    fn text_input(&self) -> TextInputHandle {
+    fn init_text_input(&self) {
         let user_data = self.user_data();
         user_data.insert_if_missing(TextInputHandle::default);
-        user_data.get::<TextInputHandle>().unwrap().clone()
     }
 }
 
@@ -154,7 +153,6 @@ where
 
                 let user_data = seat.user_data();
                 user_data.insert_if_missing(InputMethodHandle::default);
-
                 let handle = user_data.get::<TextInputHandle>().unwrap();
                 let input_method_handle = user_data.get::<InputMethodHandle>().unwrap();
                 let instance = data_init.init(

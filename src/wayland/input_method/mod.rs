@@ -49,7 +49,7 @@
 //!     None                      // insert a logger here
 //! );
 //!
-//! seat.text_input();
+//! seat.init_text_input();
 //! // Add text input capabilities to a seat, needed for the input method to work
 //! seat.add_input_method(XkbConfig::default(), 200, 25);
 //! // Add input method capabilities to a seat
@@ -177,7 +177,7 @@ where
                 let seat = Seat::<D>::from_resource(&seat).unwrap();
 
                 let user_data = seat.user_data();
-
+                user_data.insert_if_missing(TextInputHandle::default);
                 let handle = user_data.get::<InputMethodHandle>().unwrap();
                 let text_input_handle = user_data.get::<TextInputHandle>().unwrap();
                 let keyboard_handle = seat.get_keyboard().unwrap();

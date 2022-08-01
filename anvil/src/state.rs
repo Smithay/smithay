@@ -296,7 +296,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             *cursor_status3.lock().unwrap() = new_status;
         });
 
-        seat.text_input();
+        seat.init_text_input();
         seat.add_input_method(XkbConfig::default(), 200, 25);
 
         #[cfg(feature = "xwayland")]
