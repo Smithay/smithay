@@ -10,13 +10,13 @@
 //!     delegate_text_input_manager,
 //! };
 //! use smithay::wayland::seat::{Seat, SeatState, SeatHandler, XkbConfig};
-//! use smithay::wayland::input_method_manager::{
+//! use smithay::wayland::input_method::{
 //!     InputMethodManagerState,
-//!     InputMethodSeatTrait
+//!     InputMethodSeat
 //! };
-//! use smithay::wayland::text_input_manager::{
+//! use smithay::wayland::text_input::{
 //!     TextInputManagerState,
-//!     TextInputSeatTrait
+//!     TextInputSeat
 //! };
 //!
 //! # struct State { seat_state: SeatState<Self> };
@@ -74,20 +74,20 @@ use wayland_protocols_misc::zwp_input_method_v2::server::{
 
 use crate::wayland::seat::Seat;
 
-pub use input_method::{InputMethodHandle, InputMethodUserData};
+pub use input_method_handle::{InputMethodHandle, InputMethodUserData};
 pub use input_method_keyboard_grab::InputMethodKeyboardUserData;
 pub use input_method_popup_surface::InputMethodPopupSurfaceUserData;
 
-use super::{seat::XkbConfig, text_input_manager::TextInputHandle};
+use super::{seat::XkbConfig, text_input::TextInputHandle};
 
 const MANAGER_VERSION: u32 = 1;
 
-mod input_method;
+mod input_method_handle;
 mod input_method_keyboard_grab;
 mod input_method_popup_surface;
 
 /// Extends [Seat] with input method functionality
-pub trait InputMethodSeatTrait {
+pub trait InputMethodSeat {
     /// Add an input method to this seat, and configures the associated keyboard.
     /// Input methods need different keyboard languages for different input methods.
     /// E.g a pinyin user will want to use their native keyboard layout, but a
@@ -98,7 +98,7 @@ pub trait InputMethodSeatTrait {
     fn input_method(&self) -> InputMethodHandle;
 }
 
-impl<D: 'static> InputMethodSeatTrait for Seat<D> {
+impl<D: 'static> InputMethodSeat for Seat<D> {
     fn add_input_method(&self, xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32) {
         let user_data = self.user_data();
         user_data.insert_if_missing(InputMethodHandle::default);
@@ -205,19 +205,19 @@ macro_rules! delegate_input_method_manager {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_manager_v2::ZwpInputMethodManagerV2: ()
-        ] => $crate::wayland::input_method_manager::InputMethodManagerState);
+        ] => $crate::wayland::input_method::InputMethodManagerState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_manager_v2::ZwpInputMethodManagerV2: ()
-        ] => $crate::wayland::input_method_manager::InputMethodManagerState);
+        ] => $crate::wayland::input_method::InputMethodManagerState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_v2::ZwpInputMethodV2: $crate::wayland::input_method_manager::InputMethodUserData
-        ] => $crate::wayland::input_method_manager::InputMethodManagerState);
+            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_v2::ZwpInputMethodV2: $crate::wayland::input_method::InputMethodUserData
+        ] => $crate::wayland::input_method::InputMethodManagerState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2: $crate::wayland::input_method_manager::InputMethodKeyboardUserData
-        ] => $crate::wayland::input_method_manager::InputMethodManagerState);
+            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2: $crate::wayland::input_method::InputMethodKeyboardUserData
+        ] => $crate::wayland::input_method::InputMethodManagerState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2: $crate::wayland::input_method_manager::InputMethodPopupSurfaceUserData
-        ] => $crate::wayland::input_method_manager::InputMethodManagerState);
+            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2: $crate::wayland::input_method::InputMethodPopupSurfaceUserData
+        ] => $crate::wayland::input_method::InputMethodManagerState);
     };
 }

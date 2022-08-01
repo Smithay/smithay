@@ -27,7 +27,7 @@ use smithay::{
             set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
             ServerDndGrabHandler,
         },
-        input_method_manager::{InputMethodManagerState, InputMethodSeatTrait},
+        input_method::{InputMethodManagerState, InputMethodSeat},
         output::{Output, OutputManagerState},
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         seat::{CursorImageStatus, Seat, SeatHandler, SeatState, XkbConfig},
@@ -41,7 +41,7 @@ use smithay::{
         shm::{ShmHandler, ShmState},
         socket::ListeningSocketSource,
         tablet_manager::TabletSeatTrait,
-        text_input_manager::{TextInputManagerState, TextInputSeatTrait},
+        text_input::{TextInputManagerState, TextInputSeat},
         viewporter::ViewporterState,
         xdg_activation::{
             XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,

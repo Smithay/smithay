@@ -10,7 +10,7 @@ use wayland_server::Dispatch;
 use crate::wayland::seat::keyboard::KeymapFile;
 use crate::wayland::seat::KeyboardGrabStartData;
 use crate::wayland::seat::{KeyboardGrab, KeyboardHandle, KeyboardInnerHandle};
-use crate::wayland::text_input_manager::TextInputHandle;
+use crate::wayland::text_input::TextInputHandle;
 
 use super::InputMethodManagerState;
 

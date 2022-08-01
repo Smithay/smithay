@@ -18,7 +18,7 @@ use smithay::{
     },
     utils::IsAlive,
     wayland::{
-        input_method_manager::InputMethodSeatTrait,
+        input_method::InputMethodSeat,
         output::{Mode, Output, PhysicalProperties},
         seat::{ButtonEvent, CursorImageStatus, MotionEvent},
         SERIAL_COUNTER as SCOUNTER,
@@ -121,9 +121,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
             let input_method = state.seat.input_method();
             let (x, y, _, height) = input_method.coordinates();
             input_method.with_surface(|surface| {
-                if surface.alive() {
-                    elements.push(draw_input_popup_surface(surface.clone(), (x, (y + height))).into());
-                }
+                elements.push(draw_input_popup_surface(surface.clone(), (x, (y + height))).into());
             });
 
             // draw the cursor as relevant

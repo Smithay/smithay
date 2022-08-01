@@ -16,10 +16,10 @@ use wayland_server::{
 use xkbcommon::xkb;
 
 use crate::{
-    utils::{Logical, Point},
+    utils::{IsAlive, Logical, Point},
     wayland::{
         seat::{keyboard::KeymapFile, KeyboardHandle, XkbConfig},
-        text_input_manager::TextInputHandle,
+        text_input::TextInputHandle,
         SERIAL_COUNTER,
     },
 };
@@ -104,7 +104,9 @@ impl InputMethodHandle {
         let popup = inner.popup.inner.lock().unwrap();
         if popup.surface_role.is_some() {
             if let Some(surface) = &popup.surface {
-                f(surface);
+                if surface.alive() {
+                    f(surface);
+                }
             }
         }
     }

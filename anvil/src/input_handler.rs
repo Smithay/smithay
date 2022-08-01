@@ -18,7 +18,7 @@ use smithay::{
     utils::{Logical, Point},
     wayland::{
         compositor::with_states,
-        input_method_manager::InputMethodSeatTrait,
+        input_method::InputMethodSeat,
         output::Scale,
         seat::{keysyms as xkb, AxisFrame, ButtonEvent, FilterResult, Keysym, ModifiersState, MotionEvent},
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},

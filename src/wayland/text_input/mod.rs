@@ -10,13 +10,13 @@
 //!     delegate_text_input_manager,
 //! };
 //! use smithay::wayland::seat::{Seat, SeatState, SeatHandler, XkbConfig};
-//! use smithay::wayland::input_method_manager::{
+//! use smithay::wayland::input_method::{
 //!     InputMethodManagerState,
-//!     InputMethodSeatTrait
+//!     InputMethodSeat
 //! };
-//! use smithay::wayland::text_input_manager::{
+//! use smithay::wayland::text_input::{
 //!     TextInputManagerState,
-//!     TextInputSeatTrait
+//!     TextInputSeat
 //! };
 //!
 //! # struct State { seat_state: SeatState<Self> };
@@ -65,22 +65,22 @@ use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandl
 
 use crate::wayland::seat::Seat;
 
-pub use text_input::TextInputHandle;
-pub use text_input::TextInputUserData;
+pub use text_input_handle::TextInputHandle;
+pub use text_input_handle::TextInputUserData;
 
-use super::input_method_manager::InputMethodHandle;
+use super::input_method::InputMethodHandle;
 
 const MANAGER_VERSION: u32 = 1;
 
-mod text_input;
+mod text_input_handle;
 
 /// Extends [Seat] with text input functionality
-pub trait TextInputSeatTrait {
+pub trait TextInputSeat {
     /// Get text input associated with this seat
     fn text_input(&self) -> TextInputHandle;
 }
 
-impl<D: 'static> TextInputSeatTrait for Seat<D> {
+impl<D: 'static> TextInputSeat for Seat<D> {
     fn text_input(&self) -> TextInputHandle {
         let user_data = self.user_data();
         user_data.insert_if_missing(TextInputHandle::default);
@@ -181,14 +181,14 @@ macro_rules! delegate_text_input_manager {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols::wp::text_input::zv3::server::zwp_text_input_manager_v3::ZwpTextInputManagerV3: ()
-        ] => $crate::wayland::text_input_manager::TextInputManagerState);
+        ] => $crate::wayland::text_input::TextInputManagerState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols::wp::text_input::zv3::server::zwp_text_input_manager_v3::ZwpTextInputManagerV3: ()
-        ] => $crate::wayland::text_input_manager::TextInputManagerState);
+        ] => $crate::wayland::text_input::TextInputManagerState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::ZwpTextInputV3: $crate::wayland::text_input_manager::TextInputUserData
-        ] => $crate::wayland::text_input_manager::TextInputManagerState);
+            $crate::reexports::wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::ZwpTextInputV3: $crate::wayland::text_input::TextInputUserData
+        ] => $crate::wayland::text_input::TextInputManagerState);
     };
 }

@@ -5,7 +5,7 @@ use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::{protocol::wl_surface::WlSurface, Dispatch, Resource};
 
 use crate::utils::IsAlive;
-use crate::wayland::input_method_manager::InputMethodHandle;
+use crate::wayland::input_method::InputMethodHandle;
 
 use super::TextInputManagerState;
 

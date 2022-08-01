@@ -73,7 +73,7 @@ pub fn draw_input_popup_surface(
     SurfaceTree {
         surface,
         position: location.into(),
-        z_index: 99, /* Cursor should always be on-top */
+        z_index: 98, /* Input-popup should only be below cursor */
     }
 }
 
