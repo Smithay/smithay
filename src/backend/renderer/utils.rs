@@ -1,10 +1,8 @@
 //! Utility module for helpers around drawing [`WlSurface`]s with [`Renderer`]s.
 
-#[cfg(feature = "desktop")]
-use crate::utils::Coordinate;
 use crate::{
     backend::renderer::{buffer_dimensions, buffer_has_alpha, Frame, ImportAll, Renderer},
-    utils::{Buffer as BufferCoord, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
             self, add_destruction_hook, is_sync_subsurface, with_surface_tree_downward,
@@ -96,7 +94,8 @@ impl RendererSurfaceState {
                     .buffer_dimensions
                     .unwrap()
                     .to_logical(self.buffer_scale, self.buffer_transform);
-                self.surface_view = Some(SurfaceView::from_states(states, surface_size));
+                let surface_view = SurfaceView::from_states(states, surface_size);
+                self.surface_view = Some(surface_view);
 
                 let mut buffer_damage = attrs
                     .damage
@@ -104,9 +103,11 @@ impl RendererSurfaceState {
                     .flat_map(|dmg| {
                         match dmg {
                             Damage::Buffer(rect) => rect,
-                            Damage::Surface(rect) => {
-                                rect.to_buffer(self.buffer_scale, self.buffer_transform, &surface_size)
-                            }
+                            Damage::Surface(rect) => surface_view.rect_to_local(rect).to_i32_up().to_buffer(
+                                self.buffer_scale,
+                                self.buffer_transform,
+                                &surface_size,
+                            ),
                         }
                         .intersection(Rectangle::from_loc_and_size(
                             (0, 0),
@@ -348,7 +349,16 @@ impl SurfaceView {
         rect.upscale(scale)
     }
 
-    #[cfg(feature = "desktop")]
+    pub(crate) fn rect_to_local<N>(&self, rect: Rectangle<N, Logical>) -> Rectangle<f64, Logical>
+    where
+        N: Coordinate,
+    {
+        let scale = self.scale();
+        let mut rect = rect.to_f64().downscale(scale);
+        rect.loc += self.src.loc;
+        rect
+    }
+
     fn scale(&self) -> Scale<f64> {
         Scale::from((
             self.dst.w as f64 / self.src.size.w,
