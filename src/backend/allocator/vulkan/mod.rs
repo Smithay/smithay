@@ -110,6 +110,7 @@ pub enum Error {
     /// 1. There is no equivalent Vulkan format for the specified format code.
     /// 2. The driver does not support any of the specified modifiers for the format code.
     /// 3. The driver does support some of the format, but the size of the buffer requested is too large.
+    /// 4. The usage is empty
     #[error("format is not supported")]
     UnsupportedFormat,
 
@@ -184,11 +185,18 @@ impl VulkanAllocator {
     ///
     /// # Panics
     ///
-    /// If the version of instance which created the [`PhysicalDevice`] is higher than [`VulkanAllocator::MAX_INSTANCE_VERSION`].
+    /// - If the version of instance which created the [`PhysicalDevice`] is higher than [`VulkanAllocator::MAX_INSTANCE_VERSION`].
+    /// - If the default [`ImageUsageFlags`] are empty.
     pub fn new(phd: &PhysicalDevice, default_usage: ImageUsageFlags) -> Result<VulkanAllocator, Error> {
         // Panic if the instance version is too high
         if phd.instance().api_version() > Self::MAX_INSTANCE_VERSION {
             panic!("Exceeded maximum instance api version for VulkanAllocator (1.3 max)")
+        }
+
+        // VUID-VkPhysicalDeviceImageFormatInfo2-usage-requiredbitmask
+        // At least one image usage flag must be specified.
+        if default_usage.is_empty() {
+            panic!("Default usage flags for allocator are empty")
         }
 
         // Get required extensions
@@ -254,6 +262,12 @@ impl VulkanAllocator {
 
     /// Returns whether this allocator supports the specified format with the usage flags.
     pub fn is_format_supported(&self, format: DrmFormat, usage: ImageUsageFlags) -> bool {
+        // VUID-VkPhysicalDeviceImageFormatInfo2-usage-requiredbitmask
+        // At least one image usage flag must be specified.
+        if usage.is_empty() {
+            return false;
+        }
+
         // TODO: Check if the extents are also valid?
         // Vulkan states a maximum extent size for images.
         // This may also be useful as a function on Allocator.
@@ -263,6 +277,13 @@ impl VulkanAllocator {
     }
 
     /// Try to create a buffer with the given dimensions, pixel format and usage flags.
+    ///
+    /// This may return [`Err`] for one of the following reasons:
+    /// - The `usage` is empty.
+    /// - The `fourcc` format is not supported.
+    /// - All of the allowed `modifiers` are not supported.
+    /// - The size of the buffer is too large for the `usage`, `fourcc` format or `modifiers`.
+    /// - The `fourcc` format and `modifiers` do not support the specified usage.
     pub fn create_buffer_with_usage(
         &mut self,
         width: u32,
@@ -279,6 +300,12 @@ impl VulkanAllocator {
         // VUID-VkImageCreateInfo-extent-00944, VUID-VkImageCreateInfo-extent-00945
         if width == 0 || height == 0 {
             return Err(Error::InvalidSize);
+        }
+
+        // VUID-VkPhysicalDeviceImageFormatInfo2-usage-requiredbitmask
+        // At least one image usage flag must be specified.
+        if usage.is_empty() {
+            return Err(Error::UnsupportedFormat);
         }
 
         // VUID-VkImageCreateInfo-usage-00964, VUID-VkImageCreateInfo-usage-00965
