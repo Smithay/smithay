@@ -267,6 +267,11 @@ impl RendererSurfaceState {
 
         Some(&self.opaque_regions[..])
     }
+
+    /// Gets the [`SurfaceView`] of this surface
+    pub fn view(&self) -> Option<SurfaceView> {
+        self.surface_view
+    }
 }
 
 /// Handler to let smithay take over buffer management.
@@ -315,10 +320,14 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
     }
 }
 
+/// Defines a view into the surface
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
-pub(crate) struct SurfaceView {
+pub struct SurfaceView {
+    /// The logical source used for cropping
     pub src: Rectangle<f64, Logical>,
+    /// The logical destination size used for scaling
     pub dst: Size<i32, Logical>,
+    /// The logical offset for a sub-surface
     pub offset: Point<i32, Logical>,
 }
 
