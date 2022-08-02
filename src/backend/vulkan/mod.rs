@@ -74,7 +74,7 @@ use std::{
 use ash::{
     extensions::ext::DebugUtils,
     prelude::VkResult,
-    vk::{self, PhysicalDeviceDrmPropertiesEXT},
+    vk::{self, PhysicalDeviceDriverProperties, PhysicalDeviceDrmPropertiesEXT},
     Entry,
 };
 use libc::c_void;
@@ -451,56 +451,12 @@ impl PhysicalDevice {
         self.info.features
     }
 
-    /// Returns the Vulkan 1.1 physical device features.
-    ///
-    /// Confusingly, this is only available if the device supports at least Version 1.2 (since this type was
-    /// added in Vulkan 1.2).
-    pub fn features_1_1(&self) -> Option<vk::PhysicalDeviceVulkan11Features> {
-        self.info.features_1_1
-    }
-
-    /// Returns the Vulkan 1.2 physical device features.
-    ///
-    /// This will return [`None`] if the physical device does not support at least Vulkan 1.2.
-    pub fn features_1_2(&self) -> Option<vk::PhysicalDeviceVulkan12Features> {
-        self.info.features_1_2
-    }
-
-    /// Returns the Vulkan 1.3 physical device features.
-    ///
-    /// This will return [`None`] if the physical device does not support at least Vulkan 1.3.
-    pub fn features_1_3(&self) -> Option<vk::PhysicalDeviceVulkan13Features> {
-        self.info.features_1_3
-    }
-
     /// Returns the physical device properties.
     ///
     /// Some properties such as the device name can be obtained using other functions defined on
     /// [`PhysicalDevice`].
     pub fn properties(&self) -> vk::PhysicalDeviceProperties {
         self.info.properties
-    }
-
-    /// Returns the Vulkan 1.1 physical device properties.
-    ///
-    /// Confusingly, this is only available if the device supports at least Version 1.2 (since this type was
-    /// added in Vulkan 1.2).
-    pub fn properties_1_1(&self) -> Option<vk::PhysicalDeviceVulkan11Properties> {
-        self.info.properties_1_1
-    }
-
-    /// Returns the Vulkan 1.2 physical device properties.
-    ///
-    /// This will return [`None`] if the physical device does not support at least Vulkan 1.2.
-    pub fn properties_1_2(&self) -> Option<vk::PhysicalDeviceVulkan12Properties> {
-        self.info.properties_1_2
-    }
-
-    /// Returns the Vulkan 1.3 physical device properties.
-    ///
-    /// This will return [`None`] if the physical device does not support at least Vulkan 1.3.
-    pub fn properties_1_3(&self) -> Option<vk::PhysicalDeviceVulkan13Properties> {
-        self.info.properties_1_3
     }
 
     /// Returns the device's descriptor set properties.
@@ -629,7 +585,7 @@ pub struct DriverInfo {
     pub conformance: vk::ConformanceVersion,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct PhdInfo {
     api_version: Version,
     name: String,
@@ -637,12 +593,7 @@ struct PhdInfo {
     features: vk::PhysicalDeviceFeatures,
     maintenance_3: vk::PhysicalDeviceMaintenance3Properties,
     id: vk::PhysicalDeviceIDProperties,
-    properties_1_1: Option<vk::PhysicalDeviceVulkan11Properties>,
-    features_1_1: Option<vk::PhysicalDeviceVulkan11Features>,
-    properties_1_2: Option<vk::PhysicalDeviceVulkan12Properties>,
-    features_1_2: Option<vk::PhysicalDeviceVulkan12Features>,
-    properties_1_3: Option<vk::PhysicalDeviceVulkan13Properties>,
-    features_1_3: Option<vk::PhysicalDeviceVulkan13Features>,
+    properties_driver: Option<PhysicalDeviceDriverProperties>,
     /// Information about the DRM device which corresponds to this physical device.
     #[cfg_attr(not(feature = "backend_drm"), allow(dead_code))]
     properties_drm: Option<PhysicalDeviceDrmPropertiesEXT>,
