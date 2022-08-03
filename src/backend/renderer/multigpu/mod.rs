@@ -349,7 +349,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     {
         use crate::{
             backend::renderer::utils::RendererSurfaceState,
-            wayland::compositor::{with_surface_tree_upward, Damage, SurfaceAttributes, TraversalAction},
+            wayland::compositor::{with_surface_tree_upward, TraversalAction},
         };
 
         let mut result = Ok(());
@@ -360,53 +360,42 @@ impl<A: GraphicsApi> GpuManager<A> {
                 if let Some(data) = states.data_map.get::<RefCell<RendererSurfaceState>>() {
                     let mut data_ref = data.borrow_mut();
                     let data = &mut *data_ref;
-                    let attributes = states.cached_state.current::<SurfaceAttributes>();
-                    // Import a new buffer if available
-                    let surface_size = data
-                        .buffer_dimensions
-                        .map(|d| d.to_logical(data.buffer_scale, data.buffer_transform));
-                    if let Some(buffer) = data.buffer.as_ref() {
-                        let surface_size = surface_size.unwrap();
-                        let buffer_damage = attributes
-                            .damage
-                            .iter()
-                            .flat_map(|dmg| {
-                                match dmg {
-                                    Damage::Buffer(rect) => *rect,
-                                    Damage::Surface(rect) => rect.to_buffer(
-                                        attributes.buffer_scale,
-                                        attributes.buffer_transform.into(),
-                                        &surface_size,
-                                    ),
-                                }
-                                .intersection(Rectangle::from_loc_and_size(
-                                    (0, 0),
-                                    data.buffer_dimensions.unwrap(),
-                                ))
-                            })
-                            .fold(Vec::<Rectangle<i32, BufferCoords>>::new(), |damage, mut rect| {
-                                // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                                    damage.into_iter().partition(|other| other.overlaps(rect));
+                    if data.textures.is_empty() {
+                        // Import a new buffer if available
+                        if let Some(buffer) = data.buffer.as_ref() {
+                            // We do an optimistic optimization here, so contrary to many much more defensive damage-tracking algorithms,
+                            // we only import the most recent set of damage here.
+                            // If we need more on rendering - which we cannot know at this point - we will call import_missing later
+                            // to receive the rest.
+                            let buffer_damage = data.damage.iter().take(1).flatten().cloned().fold(
+                                Vec::<Rectangle<i32, BufferCoords>>::new(),
+                                |damage, mut rect| {
+                                    // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
+                                    let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
+                                        damage.into_iter().partition(|other| other.overlaps(rect));
 
-                                for overlap in overlapping {
-                                    rect = rect.merge(overlap);
-                                }
-                                new_damage.push(rect);
-                                new_damage
-                            });
+                                    for overlap in overlapping {
+                                        rect = rect.merge(overlap);
+                                    }
+                                    new_damage.push(rect);
+                                    new_damage
+                                },
+                            );
 
-                        if let Err(err) =
-                            self.early_import_buffer(source, target, buffer, states, &*buffer_damage)
-                        {
-                            result = Err(err);
+                            if let Err(err) =
+                                self.early_import_buffer(source, target, buffer, states, &*buffer_damage)
+                            {
+                                result = Err(err);
+                            }
                         }
-                    }
-                    // Now, was the import successful?
-                    if result.is_ok() {
-                        TraversalAction::DoChildren(())
+                        // Now, was the import successful?
+                        if result.is_ok() {
+                            TraversalAction::DoChildren(())
+                        } else {
+                            // we are not displayed, so our children are neither
+                            TraversalAction::SkipChildren
+                        }
                     } else {
-                        // we are not displayed, so our children are neither
                         TraversalAction::SkipChildren
                     }
                 } else {
