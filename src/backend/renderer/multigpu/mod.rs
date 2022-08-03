@@ -1109,6 +1109,13 @@ impl MultiTexture {
         <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId: 'static,
     {
         let mut tex = self.0.borrow_mut();
+        slog::trace!(
+            crate::slog_or_fallback(None),
+            "Inserting into: {:p} for {:?}: {:?}",
+            self.0.as_ptr(),
+            render,
+            tex
+        );
         let textures = tex.textures.entry(TypeId::of::<A>()).or_default();
         textures.insert(
             render,
@@ -1234,8 +1241,10 @@ where
         } else {
             slog::warn!(
                 self.log,
-                "Failed to render texture, import for wrong devices? {:?}",
-                texture
+                "Failed to render texture {:?}, import for wrong devices {:?}? {:?}",
+                texture.0.as_ptr(),
+                self.node,
+                texture.0.borrow(),
             );
             Ok(())
         }
@@ -1548,7 +1557,7 @@ where
             .and_then(|nodes_textures| nodes_textures.get_mut(render_node))
             .map(|texture| match texture.mapping.as_ref() {
                 None => vec![Rectangle::from_loc_and_size((0, 0), size)],
-                // in the few cases, were we need to rerender more, then was damaged by the client,
+                // in the few cases, were we need to rerender more, than was damaged by the client,
                 // we might have not been continuously rendering this buffer. So we need to assume,
                 // everything might have been damaged in the meantime.
                 // In those cases we cannot assume that our existing texture + early-import is sufficiently
@@ -1566,14 +1575,21 @@ where
 
         slog::trace!(
             crate::slog_or_fallback(None),
-            "Copying dmabuf {:?} from {:?} to {:?}",
+            "Copying dmabuf {:?} from {:?} to {:?} for {:?}: {:?}",
             dmabuf.handles().collect::<Vec<_>>(),
             source,
-            render_node
+            render_node,
+            texture.0.as_ptr(),
+            texture.0.borrow(),
         );
         if !new_damage.is_empty() {
             // no (complete) early-import :(
-            slog::trace!(crate::slog_or_fallback(None), "Missing damage: {:?}", new_damage);
+            slog::trace!(
+                crate::slog_or_fallback(None),
+                "Missing damage {:?}: {:?}",
+                texture.0.as_ptr(),
+                new_damage
+            );
             self.import_missing(new_damage, source, dmabuf, &mut texture)?;
         }
         // else we have an early import(!)
@@ -1643,6 +1659,11 @@ where
                         .map_err(Error::Render)?,
                 )
             } else {
+                slog::warn!(
+                    crate::slog_or_fallback(None),
+                    "Failed to find device for importing: {:?}",
+                    dmabuf
+                );
                 None
             };
             if let Some(new_texture) = new_texture {
@@ -1704,6 +1725,12 @@ where
                         .update_memory(texture, mapped, region)
                         .map_err(Error::Render)?;
                 }
+            } else {
+                slog::warn!(
+                    crate::slog_or_fallback(None),
+                    "Failed to find device for updating: {:?}",
+                    dmabuf
+                );
             };
         }
         std::mem::drop(texture_ref);
