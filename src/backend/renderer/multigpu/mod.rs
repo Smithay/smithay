@@ -349,7 +349,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     {
         use crate::{
             backend::renderer::utils::RendererSurfaceState,
-            wayland::compositor::{with_surface_tree_upward, Damage, SurfaceAttributes, TraversalAction},
+            wayland::compositor::{with_surface_tree_upward, TraversalAction},
         };
 
         let mut result = Ok(());
@@ -360,53 +360,42 @@ impl<A: GraphicsApi> GpuManager<A> {
                 if let Some(data) = states.data_map.get::<RefCell<RendererSurfaceState>>() {
                     let mut data_ref = data.borrow_mut();
                     let data = &mut *data_ref;
-                    let attributes = states.cached_state.current::<SurfaceAttributes>();
-                    // Import a new buffer if available
-                    let surface_size = data
-                        .buffer_dimensions
-                        .map(|d| d.to_logical(data.buffer_scale, data.buffer_transform));
-                    if let Some(buffer) = data.buffer.as_ref() {
-                        let surface_size = surface_size.unwrap();
-                        let buffer_damage = attributes
-                            .damage
-                            .iter()
-                            .flat_map(|dmg| {
-                                match dmg {
-                                    Damage::Buffer(rect) => *rect,
-                                    Damage::Surface(rect) => rect.to_buffer(
-                                        attributes.buffer_scale,
-                                        attributes.buffer_transform.into(),
-                                        &surface_size,
-                                    ),
-                                }
-                                .intersection(Rectangle::from_loc_and_size(
-                                    (0, 0),
-                                    data.buffer_dimensions.unwrap(),
-                                ))
-                            })
-                            .fold(Vec::<Rectangle<i32, BufferCoords>>::new(), |damage, mut rect| {
-                                // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                                    damage.into_iter().partition(|other| other.overlaps(rect));
+                    if data.textures.is_empty() {
+                        // Import a new buffer if available
+                        if let Some(buffer) = data.buffer.as_ref() {
+                            // We do an optimistic optimization here, so contrary to many much more defensive damage-tracking algorithms,
+                            // we only import the most recent set of damage here.
+                            // If we need more on rendering - which we cannot know at this point - we will call import_missing later
+                            // to receive the rest.
+                            let buffer_damage = data.damage.iter().take(1).flatten().cloned().fold(
+                                Vec::<Rectangle<i32, BufferCoords>>::new(),
+                                |damage, mut rect| {
+                                    // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
+                                    let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
+                                        damage.into_iter().partition(|other| other.overlaps(rect));
 
-                                for overlap in overlapping {
-                                    rect = rect.merge(overlap);
-                                }
-                                new_damage.push(rect);
-                                new_damage
-                            });
+                                    for overlap in overlapping {
+                                        rect = rect.merge(overlap);
+                                    }
+                                    new_damage.push(rect);
+                                    new_damage
+                                },
+                            );
 
-                        if let Err(err) =
-                            self.early_import_buffer(source, target, buffer, states, &*buffer_damage)
-                        {
-                            result = Err(err);
+                            if let Err(err) =
+                                self.early_import_buffer(source, target, buffer, states, &*buffer_damage)
+                            {
+                                result = Err(err);
+                            }
                         }
-                    }
-                    // Now, was the import successful?
-                    if result.is_ok() {
-                        TraversalAction::DoChildren(())
+                        // Now, was the import successful?
+                        if result.is_ok() {
+                            TraversalAction::DoChildren(())
+                        } else {
+                            // we are not displayed, so our children are neither
+                            TraversalAction::SkipChildren
+                        }
                     } else {
-                        // we are not displayed, so our children are neither
                         TraversalAction::SkipChildren
                     }
                 } else {
@@ -1062,7 +1051,13 @@ impl MultiTexture {
                     size,
                 }))
             });
-        internal.borrow_mut().size = size;
+        {
+            let mut internal = internal.borrow_mut();
+            if internal.size != size {
+                internal.textures.clear();
+                internal.size = size;
+            }
+        }
         MultiTexture(internal)
     }
 
@@ -1114,6 +1109,13 @@ impl MultiTexture {
         <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId: 'static,
     {
         let mut tex = self.0.borrow_mut();
+        slog::trace!(
+            crate::slog_or_fallback(None),
+            "Inserting into: {:p} for {:?}: {:?}",
+            self.0.as_ptr(),
+            render,
+            tex
+        );
         let textures = tex.textures.entry(TypeId::of::<A>()).or_default();
         textures.insert(
             render,
@@ -1158,7 +1160,18 @@ impl MultiTexture {
             .filter(|(old_src, _)| *old_src == source)
             .map(|(_, mappings)| mappings)
             .unwrap_or_default();
-        mappings.extend(new_mappings.map(|(r, m)| (r, Box::new(m) as Box<_>)));
+
+        // don't keep old mappings that are superseeded by new ones
+        let new_mappings = new_mappings
+            .map(|(r, m)| (r, Box::new(m) as Box<_>))
+            .collect::<Vec<_>>();
+        mappings.retain(|(region, _)| {
+            !new_mappings
+                .iter()
+                .any(|(new_region, _)| new_region.contains_rect(*region))
+        });
+        mappings.extend(new_mappings);
+
         textures.insert(
             render,
             GpuSingleTexture {
@@ -1228,8 +1241,10 @@ where
         } else {
             slog::warn!(
                 self.log,
-                "Failed to render texture, import for wrong devices? {:?}",
-                texture
+                "Failed to render texture {:?}, import for wrong devices {:?}? {:?}",
+                texture.0.as_ptr(),
+                self.node,
+                texture.0.borrow(),
             );
             Ok(())
         }
@@ -1542,7 +1557,7 @@ where
             .and_then(|nodes_textures| nodes_textures.get_mut(render_node))
             .map(|texture| match texture.mapping.as_ref() {
                 None => vec![Rectangle::from_loc_and_size((0, 0), size)],
-                // in the few cases, were we need to rerender more, then was damaged by the client,
+                // in the few cases, were we need to rerender more, than was damaged by the client,
                 // we might have not been continuously rendering this buffer. So we need to assume,
                 // everything might have been damaged in the meantime.
                 // In those cases we cannot assume that our existing texture + early-import is sufficiently
@@ -1560,14 +1575,21 @@ where
 
         slog::trace!(
             crate::slog_or_fallback(None),
-            "Copying dmabuf {:?} from {:?} to {:?}",
+            "Copying dmabuf {:?} from {:?} to {:?} for {:?}: {:?}",
             dmabuf.handles().collect::<Vec<_>>(),
             source,
-            render_node
+            render_node,
+            texture.0.as_ptr(),
+            texture.0.borrow(),
         );
         if !new_damage.is_empty() {
             // no (complete) early-import :(
-            slog::trace!(crate::slog_or_fallback(None), "Missing damage: {:?}", new_damage);
+            slog::trace!(
+                crate::slog_or_fallback(None),
+                "Missing damage {:?}: {:?}",
+                texture.0.as_ptr(),
+                new_damage
+            );
             self.import_missing(new_damage, source, dmabuf, &mut texture)?;
         }
         // else we have an early import(!)
@@ -1603,10 +1625,12 @@ where
                     .renderer_mut()
                     .map_texture(mapping)
                     .map_err(Error::Target)?;
-                self.render
-                    .renderer_mut()
-                    .import_memory(mapped, mapping.size(), false)
-                    .ok()
+                Some(
+                    self.render
+                        .renderer_mut()
+                        .import_memory(mapped, mapping.size(), false)
+                        .map_err(Error::Render)?,
+                )
             } else if let Some(source) = self
                 .other_renderers
                 .iter_mut()
@@ -1628,11 +1652,18 @@ where
                     .renderer_mut()
                     .map_texture(mapping)
                     .map_err(Error::Render)?;
-                self.render
-                    .renderer_mut()
-                    .import_memory(mapped, mapping.size(), false)
-                    .ok()
+                Some(
+                    self.render
+                        .renderer_mut()
+                        .import_memory(mapped, mapping.size(), false)
+                        .map_err(Error::Render)?,
+                )
             } else {
+                slog::warn!(
+                    crate::slog_or_fallback(None),
+                    "Failed to find device for importing: {:?}",
+                    dmabuf
+                );
                 None
             };
             if let Some(new_texture) = new_texture {
@@ -1660,9 +1691,14 @@ where
                         texture.size(),
                         region
                     );
-                    if let Ok(mapped) = source.renderer_mut().map_texture(mapping) {
-                        let _ = self.render.renderer_mut().update_memory(texture, mapped, region);
-                    }
+                    let mapped = source
+                        .renderer_mut()
+                        .map_texture(mapping)
+                        .map_err(Error::Target)?;
+                    self.render
+                        .renderer_mut()
+                        .update_memory(texture, mapped, region)
+                        .map_err(Error::Render)?;
                 }
             } else if let Some(source) = self
                 .other_renderers
@@ -1680,10 +1716,21 @@ where
                         texture.size(),
                         region
                     );
-                    if let Ok(mapped) = source.renderer_mut().map_texture(mapping) {
-                        let _ = self.render.renderer_mut().update_memory(texture, mapped, region);
-                    }
+                    let mapped = source
+                        .renderer_mut()
+                        .map_texture(mapping)
+                        .map_err(Error::Render)?;
+                    self.render
+                        .renderer_mut()
+                        .update_memory(texture, mapped, region)
+                        .map_err(Error::Render)?;
                 }
+            } else {
+                slog::warn!(
+                    crate::slog_or_fallback(None),
+                    "Failed to find device for updating: {:?}",
+                    dmabuf
+                );
             };
         }
         std::mem::drop(texture_ref);
