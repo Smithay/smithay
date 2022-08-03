@@ -1153,7 +1153,18 @@ impl MultiTexture {
             .filter(|(old_src, _)| *old_src == source)
             .map(|(_, mappings)| mappings)
             .unwrap_or_default();
-        mappings.extend(new_mappings.map(|(r, m)| (r, Box::new(m) as Box<_>)));
+
+        // don't keep old mappings that are superseeded by new ones
+        let new_mappings = new_mappings
+            .map(|(r, m)| (r, Box::new(m) as Box<_>))
+            .collect::<Vec<_>>();
+        mappings.retain(|(region, _)| {
+            !new_mappings
+                .iter()
+                .any(|(new_region, _)| new_region.contains_rect(*region))
+        });
+        mappings.extend(new_mappings);
+
         textures.insert(
             render,
             GpuSingleTexture {
