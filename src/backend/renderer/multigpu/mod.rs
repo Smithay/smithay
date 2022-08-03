@@ -1609,10 +1609,12 @@ where
                     .renderer_mut()
                     .map_texture(mapping)
                     .map_err(Error::Target)?;
-                self.render
-                    .renderer_mut()
-                    .import_memory(mapped, mapping.size(), false)
-                    .ok()
+                Some(
+                    self.render
+                        .renderer_mut()
+                        .import_memory(mapped, mapping.size(), false)
+                        .map_err(Error::Render)?,
+                )
             } else if let Some(source) = self
                 .other_renderers
                 .iter_mut()
@@ -1634,10 +1636,12 @@ where
                     .renderer_mut()
                     .map_texture(mapping)
                     .map_err(Error::Render)?;
-                self.render
-                    .renderer_mut()
-                    .import_memory(mapped, mapping.size(), false)
-                    .ok()
+                Some(
+                    self.render
+                        .renderer_mut()
+                        .import_memory(mapped, mapping.size(), false)
+                        .map_err(Error::Render)?,
+                )
             } else {
                 None
             };
@@ -1666,9 +1670,14 @@ where
                         texture.size(),
                         region
                     );
-                    if let Ok(mapped) = source.renderer_mut().map_texture(mapping) {
-                        let _ = self.render.renderer_mut().update_memory(texture, mapped, region);
-                    }
+                    let mapped = source
+                        .renderer_mut()
+                        .map_texture(mapping)
+                        .map_err(Error::Target)?;
+                    self.render
+                        .renderer_mut()
+                        .update_memory(texture, mapped, region)
+                        .map_err(Error::Render)?;
                 }
             } else if let Some(source) = self
                 .other_renderers
@@ -1686,9 +1695,14 @@ where
                         texture.size(),
                         region
                     );
-                    if let Ok(mapped) = source.renderer_mut().map_texture(mapping) {
-                        let _ = self.render.renderer_mut().update_memory(texture, mapped, region);
-                    }
+                    let mapped = source
+                        .renderer_mut()
+                        .map_texture(mapping)
+                        .map_err(Error::Render)?;
+                    self.render
+                        .renderer_mut()
+                        .update_memory(texture, mapped, region)
+                        .map_err(Error::Render)?;
                 }
             };
         }
