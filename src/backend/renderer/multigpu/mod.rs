@@ -1051,7 +1051,13 @@ impl MultiTexture {
                     size,
                 }))
             });
-        internal.borrow_mut().size = size;
+        {
+            let mut internal = internal.borrow_mut();
+            if internal.size != size {
+                internal.textures.clear();
+                internal.size = size;
+            }
+        }
         MultiTexture(internal)
     }
 
