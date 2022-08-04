@@ -295,10 +295,10 @@ impl<Backend> AnvilState<Backend> {
 
         let horizontal_amount = evt
             .amount(input::Axis::Horizontal)
-            .unwrap_or_else(|| evt.amount_discrete(input::Axis::Horizontal).unwrap() * 3.0);
+            .unwrap_or_else(|| evt.amount_discrete(input::Axis::Horizontal).unwrap_or(0.0) * 3.0);
         let vertical_amount = evt
             .amount(input::Axis::Vertical)
-            .unwrap_or_else(|| evt.amount_discrete(input::Axis::Vertical).unwrap() * 3.0);
+            .unwrap_or_else(|| evt.amount_discrete(input::Axis::Vertical).unwrap_or(0.0) * 3.0);
         let horizontal_amount_discrete = evt.amount_discrete(input::Axis::Horizontal);
         let vertical_amount_discrete = evt.amount_discrete(input::Axis::Vertical);
 
