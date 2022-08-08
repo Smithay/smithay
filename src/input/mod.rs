@@ -16,7 +16,7 @@
 //! ### Initialization
 //!
 //! ```
-//! use smithay::input::{Seat, SeatState, SeatHandler};
+//! use smithay::input::{Seat, SeatState, SeatHandler, keyboard::KeyboardHandler, pointer::CursorImageStatus};
 //!
 //! struct State {
 //!     seat_state: SeatState<Self>,
@@ -196,11 +196,15 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # Examples
     ///
     /// ```no_run
-    /// # extern crate wayland_server;
+    /// # use smithay::input::{Seat, SeatState, SeatHandler, keyboard::KeyboardHandler, pointer::CursorImageStatus};
     /// #
-    /// # use smithay::wayland::seat::Seat;
-    /// #
-    /// # let mut seat: Seat<()> = unimplemented!();
+    /// # struct State;
+    /// # impl SeatHandler for State {
+    /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
+    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>) { unimplemented!() }
+    /// #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
+    /// # }
+    /// # let mut seat: Seat<State> = unimplemented!();
     /// let pointer_handle = seat.add_pointer();
     /// ```
     pub fn add_pointer(&mut self) -> PointerHandle<D> {
@@ -252,9 +256,15 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # Examples
     ///
     /// ```no_run
-    /// # extern crate smithay;
-    /// # use smithay::wayland::seat::{Seat, XkbConfig};
-    /// # let mut seat: Seat<()> = unimplemented!();
+    /// # use smithay::input::{Seat, SeatState, SeatHandler, keyboard::{KeyboardHandler, XkbConfig}, pointer::CursorImageStatus};
+    /// #
+    /// # struct State;
+    /// # impl SeatHandler for State {
+    /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
+    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>) { unimplemented!() }
+    /// #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
+    /// # }
+    /// # let mut seat: Seat<State> = unimplemented!();
     /// let keyboard = seat
     ///     .add_keyboard(
     ///         XkbConfig {

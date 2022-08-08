@@ -27,10 +27,8 @@
 //! #
 //! use smithay::delegate_xdg_shell;
 //! use smithay::reexports::wayland_server::protocol::wl_seat;
-//! use smithay::wayland::{
-//!     shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState},
-//!     Serial,
-//! };
+//! use smithay::wayland::shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState};
+//! use smithay::utils::Serial;
 //!
 //! # struct State { xdg_shell_state: XdgShellState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
