@@ -3,6 +3,10 @@ use std::sync::Mutex;
 use smithay::{
     delegate_xdg_shell,
     desktop::{Kind, Space, Window, WindowSurfaceType},
+    input::{
+        pointer::{Focus, GrabStartData as PointerGrabStartData},
+        Seat,
+    },
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
@@ -13,7 +17,6 @@ use smithay::{
     utils::Rectangle,
     wayland::{
         compositor::with_states,
-        seat::{Focus, PointerGrabStartData, Seat},
         shell::xdg::{
             PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
             XdgToplevelSurfaceRoleAttributes,
@@ -65,7 +68,7 @@ impl XdgShellHandler for Smallvil {
                 initial_window_location,
             };
 
-            pointer.set_grab(grab, serial, Focus::Clear);
+            pointer.set_grab(self, grab, serial, Focus::Clear);
         }
     }
 
@@ -105,7 +108,7 @@ impl XdgShellHandler for Smallvil {
                 Rectangle::from_loc_and_size(initial_window_location, initial_window_size),
             );
 
-            pointer.set_grab(grab, serial, Focus::Clear);
+            pointer.set_grab(self, grab, serial, Focus::Clear);
         }
     }
 
@@ -117,7 +120,11 @@ impl XdgShellHandler for Smallvil {
 // Xdg Shell
 delegate_xdg_shell!(Smallvil);
 
-fn check_grab(seat: &Seat<Smallvil>, surface: &WlSurface, serial: Serial) -> Option<PointerGrabStartData> {
+fn check_grab(
+    seat: &Seat<Smallvil>,
+    surface: &WlSurface,
+    serial: Serial,
+) -> Option<PointerGrabStartData<Smallvil>> {
     let pointer = seat.get_pointer()?;
 
     // Check that this surface has a click grab.
@@ -129,7 +136,12 @@ fn check_grab(seat: &Seat<Smallvil>, surface: &WlSurface, serial: Serial) -> Opt
 
     let (focus, _) = start_data.focus.as_ref()?;
     // If the focus was for a different surface, ignore the request.
-    if !focus.id().same_client_as(&surface.id()) {
+    if !focus
+        .as_any()
+        .downcast_ref::<WlSurface>()
+        .map(|s| s.id().same_client_as(&surface.id()))
+        .unwrap_or(false)
+    {
         return None;
     }
 
