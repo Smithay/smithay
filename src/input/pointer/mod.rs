@@ -37,6 +37,7 @@ impl<D> Clone for PointerHandle<D> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            #[cfg(feature = "wayland_frontend")]
             known_pointers: self.known_pointers.clone(),
         }
     }
@@ -100,6 +101,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     pub(crate) fn new() -> PointerHandle<D> {
         PointerHandle {
             inner: Arc::new(Mutex::new(PointerInternal::new())),
+            #[cfg(feature = "wayland_frontend")]
             known_pointers: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -516,6 +518,7 @@ pub struct ButtonEvent {
 #[derive(Copy, Clone, Debug)]
 pub struct AxisFrame {
     pub(crate) source: Option<AxisSource>,
+    #[allow(dead_code)]
     pub(crate) time: u32,
     pub(crate) axis: (f64, f64),
     pub(crate) discrete: (i32, i32),

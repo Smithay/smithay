@@ -14,6 +14,7 @@ use slog::error;
 
 #[derive(Debug)]
 pub struct KeymapFile {
+    #[allow(dead_code)]
     sealed: Option<SealedFile>,
     keymap: CString,
 }
@@ -32,6 +33,7 @@ impl KeymapFile {
         }
     }
 
+    #[cfg(feature = "wayland_frontend")]
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
         F: FnOnce(RawFd, usize),
@@ -58,6 +60,7 @@ impl KeymapFile {
 #[derive(Debug)]
 struct SealedFile {
     file: File,
+    #[allow(dead_code)]
     size: usize,
 }
 

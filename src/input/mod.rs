@@ -55,6 +55,7 @@ pub(crate) struct Inner<D> {
 
 #[derive(Debug)]
 pub(crate) struct SeatRc<D> {
+    #[allow(dead_code)]
     pub(crate) name: String,
     pub(crate) inner: Mutex<Inner<D>>,
     user_data_map: UserDataMap,
@@ -166,6 +167,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.pointer.is_some() {
             inner.pointer = None;
+            #[cfg(feature = "wayland_frontend")]
             inner.send_all_caps();
         }
     }
