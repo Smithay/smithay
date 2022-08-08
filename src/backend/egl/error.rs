@@ -18,6 +18,9 @@ pub enum Error {
     /// Display creation failed
     #[error("Display creation failed with error: {0:}")]
     DisplayCreationError(#[source] EGLError),
+    /// Display query result invalid
+    #[error("Display query result invalid")]
+    DisplayQueryResultInvalid,
     /// Unable to obtain a valid EGL Display
     #[error("Unable to obtain a valid EGL Display.")]
     DisplayNotSupported,
