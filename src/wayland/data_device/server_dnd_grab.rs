@@ -141,7 +141,7 @@ where
                         offer.offer(mime_type);
                     }
                     offer.source_actions(self.metadata.dnd_action);
-                    device.enter(serial.into(), &surface, x, y, Some(&offer));
+                    device.enter(serial.into(), surface, x, y, Some(&offer));
                     self.pending_offers.push(offer);
                 }
                 self.offer_data = Some(offer_data);

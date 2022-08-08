@@ -133,6 +133,12 @@ impl<D: SeatHandler> Clone for Seat<D> {
     }
 }
 
+impl<D: SeatHandler> Default for SeatState<D> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<D: SeatHandler> SeatState<D> {
     /// Create new delegate SeatState
     pub fn new() -> Self {

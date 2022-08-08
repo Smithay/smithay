@@ -527,7 +527,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         // forward to client if no keybinding is triggered
         let seat = self.get_seat(data);
-        let modifiers = mods_changed.then(|| guard.mods_state.clone());
+        let modifiers = mods_changed.then(|| guard.mods_state);
         guard.with_grab(
             &seat,
             move |mut handle, grab| {
@@ -708,11 +708,11 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
                     })
                     .collect();
                 focus.enter(self.seat, data, keys, serial);
-                focus.modifiers(self.seat, data, self.inner.mods_state.clone(), serial);
+                focus.modifiers(self.seat, data, self.inner.mods_state, serial);
             };
             {
                 let KbdInternal { ref focus, .. } = *self.inner;
-                data.focus_changed(&self.seat, focus.as_ref().map(|f| &*f.0));
+                data.focus_changed(self.seat, focus.as_ref().map(|f| &*f.0));
             }
             if self.inner.focus.is_some() {
                 trace!(self.logger, "Focus set to new surface");

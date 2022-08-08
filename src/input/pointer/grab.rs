@@ -7,7 +7,9 @@ use crate::{
     utils::{Logical, Point},
 };
 
-use super::{AxisFrame, ButtonEvent, Focus, MotionEvent, PointerHandler, PointerInnerHandle};
+use super::{
+    AxisFrame, ButtonEvent, Focus, MotionEvent, PointerFocusBoxed, PointerHandler, PointerInnerHandle,
+};
 
 /// A trait to implement a pointer grab
 ///
@@ -42,7 +44,7 @@ pub trait PointerGrab<D: SeatHandler>: Send {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>,
+        focus: Option<PointerFocusBoxed<D>>,
         event: &MotionEvent,
     );
     /// A button press was reported
@@ -66,7 +68,7 @@ pub struct GrabStartData<D> {
     /// The focused surface and its location, if any, at the start of the grab.
     ///
     /// The location coordinates are in the global compositor space.
-    pub focus: Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>,
+    pub focus: Option<PointerFocusBoxed<D>>,
     /// The button that initiated the grab.
     pub button: u32,
     /// The location of the click that initiated the grab, in the global compositor space.
@@ -89,9 +91,9 @@ impl<D: SeatHandler + 'static> Clone for GrabStartData<D> {
             focus: self
                 .focus
                 .as_ref()
-                .map(|(handler, loc)| (handler.clone_handler(), loc.clone())),
+                .map(|(handler, loc)| (handler.clone_handler(), *loc)),
             button: self.button,
-            location: self.location.clone(),
+            location: self.location,
         }
     }
 }

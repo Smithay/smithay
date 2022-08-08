@@ -175,7 +175,7 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
     fn clone_handler(&self) -> Box<dyn KeyboardHandler<D>> {
         Box::new(self.clone())
     }
-    fn as_any<'a>(&'a self) -> &dyn std::any::Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 }

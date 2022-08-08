@@ -72,7 +72,7 @@ where
                             let start_data = pointer.grab_start_data().unwrap();
                             pointer.set_grab(
                                 handler,
-                                dnd_grab::DnDGrab::new(dh, start_data.clone(), source, origin, seat, icon),
+                                dnd_grab::DnDGrab::new(dh, start_data, source, origin, seat, icon),
                                 serial,
                                 Focus::Clear,
                             );
