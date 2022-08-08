@@ -9,11 +9,13 @@ use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
-use crate::wayland::{
-    compositor,
-    data_device::seat_data::{SeatData, Selection},
-    seat::{Focus, Seat},
-    Serial,
+use crate::{
+    input::{pointer::Focus, Seat},
+    wayland::{
+        compositor,
+        data_device::seat_data::{SeatData, Selection},
+        Serial,
+    },
 };
 
 use super::{dnd_grab, DataDeviceHandler, DataDeviceState};
@@ -69,7 +71,8 @@ where
                             handler.started(source.clone(), icon.clone(), seat.clone());
                             let start_data = pointer.grab_start_data().unwrap();
                             pointer.set_grab(
-                                dnd_grab::DnDGrab::new(start_data, source, origin, seat, icon),
+                                handler,
+                                dnd_grab::DnDGrab::new(dh, start_data.clone(), source, origin, seat, icon),
                                 serial,
                                 Focus::Clear,
                             );

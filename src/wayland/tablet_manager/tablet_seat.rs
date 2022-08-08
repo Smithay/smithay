@@ -9,7 +9,7 @@ use wayland_server::{
 };
 
 use crate::backend::input::TabletToolDescriptor;
-use crate::wayland::seat::CursorImageStatus;
+use crate::input::pointer::CursorImageStatus;
 
 use super::{
     tablet::TabletUserData,

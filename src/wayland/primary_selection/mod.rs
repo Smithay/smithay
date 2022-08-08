@@ -58,7 +58,7 @@ use wayland_protocols::wp::primary_selection::zv1::server::{
 };
 use wayland_server::{backend::GlobalId, Client, DisplayHandle, GlobalDispatch};
 
-use crate::wayland::seat::Seat;
+use crate::input::{Seat, SeatHandler};
 
 mod device;
 mod seat_data;
@@ -117,8 +117,7 @@ impl PrimarySelectionState {
 /// Set the primary selection focus to a certain client for a given seat
 pub fn set_primary_focus<D>(dh: &DisplayHandle, seat: &Seat<D>, client: Option<Client>)
 where
-    D: PrimarySelectionHandler,
-    D: 'static,
+    D: SeatHandler + PrimarySelectionHandler + 'static,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::new()));
@@ -134,8 +133,7 @@ where
 /// receive a [`PrimarySelectionHandler::send_selection`] event.
 pub fn set_primary_selection<D>(dh: &DisplayHandle, seat: &Seat<D>, mime_types: Vec<String>)
 where
-    D: PrimarySelectionHandler,
-    D: 'static,
+    D: SeatHandler + PrimarySelectionHandler + 'static,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::new()));
@@ -158,7 +156,7 @@ mod handlers {
     };
     use wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
 
-    use crate::wayland::seat::Seat;
+    use crate::input::{Seat, SeatHandler};
 
     use super::{device::PrimaryDeviceUserData, seat_data::SeatData, source::PrimarySourceUserData};
     use super::{PrimarySelectionHandler, PrimarySelectionState};
@@ -190,6 +188,7 @@ mod handlers {
         D: Dispatch<PrimarySource, PrimarySourceUserData>,
         D: Dispatch<PrimaryDevice, PrimaryDeviceUserData>,
         D: PrimarySelectionHandler,
+        D: SeatHandler,
         D: 'static,
     {
         fn request(

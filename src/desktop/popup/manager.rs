@@ -1,8 +1,8 @@
 use crate::{
+    input::{Seat, SeatHandler},
     utils::{DeadResource, IsAlive, Logical, Point},
     wayland::{
         compositor::{get_role, with_states},
-        seat::Seat,
         shell::xdg::{XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
         Serial,
     },
@@ -65,13 +65,13 @@ impl PopupManager {
     ///
     /// Returns a [`PopupGrab`] on success or an [`PopupGrabError`]
     /// if the grab has been denied.
-    pub fn grab_popup<D: 'static>(
+    pub fn grab_popup<D: SeatHandler + 'static>(
         &mut self,
         _dh: &DisplayHandle,
         popup: PopupKind,
         seat: &Seat<D>,
         serial: Serial,
-    ) -> Result<PopupGrab, PopupGrabError> {
+    ) -> Result<PopupGrab<D>, PopupGrabError> {
         let surface = popup.wl_surface();
         let root = find_popup_root_surface(&popup)?;
 
@@ -129,6 +129,7 @@ impl PopupManager {
         };
 
         Ok(PopupGrab::new(
+            dh,
             toplevel_popups,
             root,
             serial,
