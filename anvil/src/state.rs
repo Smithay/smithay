@@ -163,8 +163,8 @@ impl<BackendData> SeatHandler for AnvilState<BackendData> {
 
         let focus = surface.and_then(|s| dh.get_client(s.id()).ok());
         let focus2 = surface.and_then(|s| dh.get_client(s.id()).ok());
-        set_data_device_focus(&dh, seat, focus);
-        set_primary_focus(&dh, seat, focus2);
+        set_data_device_focus(dh, seat, focus);
+        set_primary_focus(dh, seat, focus2);
     }
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
         *self.cursor_status.lock().unwrap() = image;

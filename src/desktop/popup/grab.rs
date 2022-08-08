@@ -247,8 +247,8 @@ impl<D: SeatHandler + 'static> Clone for PopupGrab<D> {
         PopupGrab {
             dh: self.dh.clone(),
             root: self.root.clone(),
-            serial: self.serial.clone(),
-            previous_serial: self.previous_serial.clone(),
+            serial: self.serial,
+            previous_serial: self.previous_serial,
             toplevel_grab: self.toplevel_grab.clone(),
             keyboard_handle: self.keyboard_handle.clone(),
             keyboard_grab_start_data: self.keyboard_grab_start_data.clone(),
@@ -516,7 +516,7 @@ impl<D: SeatHandler> PointerGrab<D> for PopupPointerGrab<D> {
         if self.focus_client_equals(focus.as_ref().map(|(a, _)| &**a)) {
             handle.motion(data, focus, event);
         } else {
-            handle.motion(data, focus, event);
+            handle.motion(data, None, event);
         }
     }
 

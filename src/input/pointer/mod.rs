@@ -110,6 +110,9 @@ impl<D: SeatHandler + 'static> PointerHandler<D> for Box<dyn PointerHandler<D>> 
     }
 }
 
+/// Pointer focus containing a boxed PointerHandler and a relative position
+pub type PointerFocusBoxed<D> = (Box<dyn PointerHandler<D>>, Point<i32, Logical>);
+
 impl<D: SeatHandler + 'static> PointerHandle<D> {
     pub(crate) fn new() -> PointerHandle<D> {
         PointerHandle {
@@ -296,12 +299,7 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
-    pub fn motion(
-        &mut self,
-        data: &mut D,
-        focus: Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>,
-        event: &MotionEvent,
-    ) {
+    pub fn motion(&mut self, data: &mut D, focus: Option<PointerFocusBoxed<D>>, event: &MotionEvent) {
         self.inner.motion(data, self.seat, focus, event);
     }
 
@@ -327,8 +325,8 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
 }
 
 pub(crate) struct PointerInternal<D> {
-    pub(crate) focus: Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>,
-    pending_focus: Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>,
+    pub(crate) focus: Option<PointerFocusBoxed<D>>,
+    pending_focus: Option<PointerFocusBoxed<D>>,
     location: Point<f64, Logical>,
     grab: GrabStatus<D>,
     pressed_buttons: Vec<u32>,
@@ -405,7 +403,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
-        focus: Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>,
+        focus: Option<PointerFocusBoxed<D>>,
         event: &MotionEvent,
     ) {
         // do we leave a surface ?
@@ -420,10 +418,10 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         }
         if leave {
             if let Some((focused, _)) = self.focus.as_mut() {
-                focused.leave(&seat, data, event.serial, event.time);
+                focused.leave(seat, data, event.serial, event.time);
             }
             self.focus = None;
-            data.cursor_image(&seat, CursorImageStatus::Default);
+            data.cursor_image(seat, CursorImageStatus::Default);
         }
 
         // do we enter one ?
@@ -439,10 +437,10 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
             };
             let (focused, _) = self.focus.as_mut().unwrap();
             if entered {
-                focused.enter(&seat, data, &event);
+                focused.enter(seat, data, &event);
             } else {
                 // we were on top of a surface and remained on it
-                focused.motion(&seat, data, &event);
+                focused.motion(seat, data, &event);
             }
         }
     }

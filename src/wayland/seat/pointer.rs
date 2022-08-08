@@ -67,7 +67,7 @@ where
     }
     fn leave(&mut self, seat: &Seat<D>, _data: &mut D, serial: Serial, _time: u32) {
         with_focused_pointers(seat, self, |ptr| {
-            ptr.leave(serial.into(), &self);
+            ptr.leave(serial.into(), self);
             if ptr.version() >= 5 {
                 ptr.frame();
             }
