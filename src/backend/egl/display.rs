@@ -432,6 +432,15 @@ impl EGLDisplay {
             .next()
             .unwrap_or_else(|| config_ids[0]);
 
+        // return the format that was selected for our config
+        let desc = unsafe { self.get_pixel_format(config_id)? };
+        info!(self.logger, "Selected color format: {:?}", desc);
+
+        Ok((desc, config_id))
+    }
+
+    /// Gets a PixelFormat from a configured EGLConfig
+    pub unsafe fn get_pixel_format(&self, config_id: *const c_void) -> Result<PixelFormat, Error> {
         // analyzing each config
         macro_rules! attrib {
             ($display:expr, $config:expr, $attr:expr) => {{
@@ -449,29 +458,22 @@ impl EGLDisplay {
             }};
         }
 
-        // return the format that was selected for our config
-        let desc = unsafe {
-            PixelFormat {
-                hardware_accelerated: attrib!(self.display, config_id, ffi::egl::CONFIG_CAVEAT)
-                    != ffi::egl::SLOW_CONFIG as i32,
-                color_bits: attrib!(self.display, config_id, ffi::egl::RED_SIZE) as u8
-                    + attrib!(self.display, config_id, ffi::egl::BLUE_SIZE) as u8
-                    + attrib!(self.display, config_id, ffi::egl::GREEN_SIZE) as u8,
-                alpha_bits: attrib!(self.display, config_id, ffi::egl::ALPHA_SIZE) as u8,
-                depth_bits: attrib!(self.display, config_id, ffi::egl::DEPTH_SIZE) as u8,
-                stencil_bits: attrib!(self.display, config_id, ffi::egl::STENCIL_SIZE) as u8,
-                stereoscopy: false,
-                multisampling: match attrib!(self.display, config_id, ffi::egl::SAMPLES) {
-                    0 | 1 => None,
-                    a => Some(a as u16),
-                },
-                srgb: false, // TODO: use EGL_KHR_gl_colorspace to know that
-            }
-        };
-
-        info!(self.logger, "Selected color format: {:?}", desc);
-
-        Ok((desc, config_id))
+        Ok(PixelFormat {
+            hardware_accelerated: attrib!(self.display, config_id, ffi::egl::CONFIG_CAVEAT)
+                != ffi::egl::SLOW_CONFIG as i32,
+            color_bits: attrib!(self.display, config_id, ffi::egl::RED_SIZE) as u8
+                + attrib!(self.display, config_id, ffi::egl::BLUE_SIZE) as u8
+                + attrib!(self.display, config_id, ffi::egl::GREEN_SIZE) as u8,
+            alpha_bits: attrib!(self.display, config_id, ffi::egl::ALPHA_SIZE) as u8,
+            depth_bits: attrib!(self.display, config_id, ffi::egl::DEPTH_SIZE) as u8,
+            stencil_bits: attrib!(self.display, config_id, ffi::egl::STENCIL_SIZE) as u8,
+            stereoscopy: false,
+            multisampling: match attrib!(self.display, config_id, ffi::egl::SAMPLES) {
+                0 | 1 => None,
+                a => Some(a as u16),
+            },
+            srgb: false, // TODO: use EGL_KHR_gl_colorspace to know that
+        })
     }
 
     /// Get a handle to the underlying raw EGLDisplay handle
