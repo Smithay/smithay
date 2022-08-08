@@ -1,3 +1,66 @@
+//!
+//! Input abstractions
+//!
+//! This module provides some types loosely resembling instances of wayland seats, pointers and keyboards.
+//! It is however not directly tied to wayland and can be used to multiplex various input operations
+//! between different handlers.
+//!
+//! If the [`wayland_frontend`]-feature is enabled the `smithay::wayland::seat`-module provides additional
+//! functionality for the provided types of this module to map them to advertised wayland globals and objects.
+//!
+//! ## How to use it
+//!
+//! To start using this module you need to create a [`SeatState`] and use that to create [`Seat`]s.
+//! Additionally you need to implement the [`SeatHandler`] trait.
+//!  
+//! ### Initialization
+//!
+//! ```
+//! use smithay::input::{Seat, SeatState, SeatHandler};
+//!
+//! struct State {
+//!     seat_state: SeatState<Self>,
+//!     // ...
+//! };
+//!
+//! let mut seat_state = SeatState::<State>::new();
+//!
+//! // create the seat
+//! let seat = seat_state.new_seat(
+//!     "seat-0",  // the name of the seat, will be advertized to clients
+//!     None       // insert a logger here
+//! );
+//!
+//! // implement the required traits
+//! impl SeatHandler for State {
+//!     fn seat_state(&mut self) -> &mut SeatState<Self> {
+//!         &mut self.seat_state
+//!     }
+//!
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>) {
+//!         // handle focus changes, if you need to ...
+//!     }
+//!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {
+//!         // handle new images for the cursor ...   
+//!     }
+//! }
+//! ```
+//!
+//! ### Run usage
+//!
+//! Once the seat is initialized, you can add capabilities to it.
+//!
+//! Currently, pointer and keyboard capabilities are supported by this module.
+//! [`smithay::wayland::seat`] also provides an abstraction to send touch-events to client,
+//! further helpers are not provided at this point.
+//! [`smithay::wayland::tablet_manager`] also provides client interaction for drawing tablets.
+//!
+//! You can add these capabilities via methods of the [`Seat`] struct:
+//! [`Seat::add_keyboard`] and [`Seat::add_pointer`].
+//! These methods return handles that can be cloned and sent across thread, so you can keep one around
+//! in your event-handling code to forward inputs to your clients.
+//!
+
 use std::sync::{Arc, Mutex};
 
 use crate::utils::user_data::UserDataMap;
@@ -8,14 +71,14 @@ pub mod pointer;
 use self::keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardHandler};
 use self::pointer::{CursorImageStatus, PointerHandle};
 
-// TODO: KeymapFile
-
 /// Handler trait for Seats
 pub trait SeatHandler: Sized {
     /// [SeatState] getter
     fn seat_state(&mut self) -> &mut SeatState<Self>;
 
+    /// Callback that will be notified whenever the focus of the seat changes.
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>);
+    /// Callback that will be notified whenever a client requests to set a custom cursor image.
     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus);
 }
 /// Delegate type for all [Seat] globals.
@@ -124,9 +187,6 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// will overwrite it, and will be seen by the clients as if the
     /// mouse was unplugged and a new one was plugged.
     ///
-    /// You need to provide a callback that will be notified whenever a client requests
-    /// to set a custom cursor image.
-    ///
     /// # Examples
     ///
     /// ```no_run
@@ -135,9 +195,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # use smithay::wayland::seat::Seat;
     /// #
     /// # let mut seat: Seat<()> = unimplemented!();
-    /// let pointer_handle = seat.add_pointer(
-    ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
-    /// );
+    /// let pointer_handle = seat.add_pointer();
     /// ```
     pub fn add_pointer(&mut self) -> PointerHandle<D> {
         let mut inner = self.arc.inner.lock().unwrap();

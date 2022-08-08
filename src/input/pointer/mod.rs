@@ -1,3 +1,5 @@
+//! Pointer-related structs and trait for smithays input abstraction
+
 use std::{
     fmt,
     sync::{Arc, Mutex},
@@ -49,20 +51,31 @@ impl<D> ::std::cmp::PartialEq for PointerHandle<D> {
     }
 }
 
+/// Trait representing object that can receive pointer interactions
 pub trait PointerHandler<D>
 where
     D: SeatHandler,
     Self: std::any::Any + Send + 'static,
 {
+    /// A pointer of a given seat entered this handler
     fn enter(&mut self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);
+    /// A pointer of a given seat moved over this handler
     fn motion(&mut self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);
+    /// A pointer of a given seat clicked a button
     fn button(&mut self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent);
+    /// A pointer of a given seat scrolled on an axis
     fn axis(&mut self, seat: &Seat<D>, data: &mut D, frame: AxisFrame);
+    /// A pointer of a given seat left this handler
     fn leave(&mut self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32);
 
+    /// Returns if this element is still alive and able to handle pointer events
     fn is_alive(&self) -> bool;
+    /// Compare this element to any given other to figure out if a provided
+    /// handler is referencing the same object.
     fn same_handler_as(&self, other: &dyn PointerHandler<D>) -> bool;
+    /// Clone this handler
     fn clone_handler(&self) -> Box<dyn PointerHandler<D> + 'static>;
+    /// Access this handler as an [`std::any::Any`] reference
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
