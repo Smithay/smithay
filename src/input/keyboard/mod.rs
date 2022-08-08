@@ -260,6 +260,7 @@ pub enum Error {
 #[derive(Debug)]
 pub(crate) struct KbdRc<D> {
     pub(crate) internal: Mutex<KbdInternal<D>>,
+    #[allow(dead_code)]
     pub(crate) keymap: KeymapFile,
     pub(crate) logger: ::slog::Logger,
     #[cfg(feature = "wayland_frontend")]
@@ -579,6 +580,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.repeat_delay = delay;
         guard.repeat_rate = rate;
+        #[cfg(feature = "wayland_frontend")]
         for kbd in &*self.arc.known_kbds.lock().unwrap() {
             kbd.repeat_info(rate, delay);
         }

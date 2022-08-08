@@ -1,3 +1,4 @@
+#[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::utils::{Logical, Point};
