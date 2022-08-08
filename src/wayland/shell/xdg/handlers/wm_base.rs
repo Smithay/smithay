@@ -1,8 +1,8 @@
 use std::sync::{atomic::AtomicBool, Mutex};
 
 use crate::{
-    utils::{alive_tracker::AliveTracker, IsAlive},
-    wayland::{shell::xdg::XdgShellState, Serial},
+    utils::{alive_tracker::AliveTracker, IsAlive, Serial},
+    wayland::shell::xdg::XdgShellState,
 };
 
 use wayland_protocols::xdg::shell::server::{

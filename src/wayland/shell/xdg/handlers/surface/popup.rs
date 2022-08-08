@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use crate::wayland::{shell::xdg::XdgPositionerUserData, Serial};
+use crate::{utils::Serial, wayland::shell::xdg::XdgPositionerUserData};
 
 use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 

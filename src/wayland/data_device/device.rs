@@ -11,10 +11,10 @@ use wayland_server::{
 
 use crate::{
     input::{pointer::Focus, Seat},
+    utils::Serial,
     wayland::{
         compositor,
         data_device::seat_data::{SeatData, Selection},
-        Serial,
     },
 };
 

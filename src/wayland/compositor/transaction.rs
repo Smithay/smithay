@@ -47,7 +47,7 @@ use std::{
 
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
-use crate::{utils::IsAlive, wayland::Serial};
+use crate::{utils::IsAlive, utils::Serial};
 
 use super::tree::PrivateSurfaceData;
 

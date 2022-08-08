@@ -1,10 +1,9 @@
 use crate::{
     input::{Seat, SeatHandler},
-    utils::{DeadResource, IsAlive, Logical, Point},
+    utils::{DeadResource, IsAlive, Logical, Point, Serial},
     wayland::{
         compositor::{get_role, with_states},
         shell::xdg::{XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
-        Serial,
     },
 };
 use std::sync::{Arc, Mutex};

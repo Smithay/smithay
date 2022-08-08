@@ -20,7 +20,7 @@ use smithay::{
             DisplayHandle, Resource,
         },
     },
-    utils::{IsAlive, Logical, Point, Rectangle, Size},
+    utils::{IsAlive, Logical, Point, Rectangle, Serial, Size},
     wayland::{
         buffer::BufferHandler,
         compositor::{
@@ -38,7 +38,6 @@ use smithay::{
                 XdgToplevelSurfaceRoleAttributes,
             },
         },
-        Serial,
     },
 };
 

@@ -14,14 +14,13 @@ use smithay::{
             DisplayHandle, Resource,
         },
     },
-    utils::Rectangle,
+    utils::{Rectangle, Serial},
     wayland::{
         compositor::with_states,
         shell::xdg::{
             PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
             XdgToplevelSurfaceRoleAttributes,
         },
-        Serial,
     },
 };
 

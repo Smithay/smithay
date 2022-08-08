@@ -1,5 +1,5 @@
 use crate::backend::input::KeyState;
-use crate::wayland::Serial;
+use crate::utils::Serial;
 use slog::{debug, error, info, o, trace};
 use std::{
     default::Default,

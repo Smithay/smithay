@@ -73,7 +73,7 @@ use wayland_server::{
 
 use rand::distributions::{Alphanumeric, DistString};
 
-use crate::wayland::Serial;
+use crate::utils::Serial;
 
 mod dispatch;
 

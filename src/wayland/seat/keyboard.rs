@@ -16,7 +16,7 @@ use crate::{
         Seat, SeatHandler, SeatState,
     },
     utils::IsAlive,
-    wayland::Serial,
+    utils::Serial,
 };
 
 impl<D: SeatHandler + 'static> KeyboardHandle<D> {

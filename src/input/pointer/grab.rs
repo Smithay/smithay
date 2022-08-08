@@ -3,8 +3,8 @@ use std::fmt;
 use crate::{
     backend::input::ButtonState,
     input::SeatHandler,
+    utils::Serial,
     utils::{Logical, Point},
-    wayland::Serial,
 };
 
 use super::{AxisFrame, ButtonEvent, Focus, MotionEvent, PointerHandler, PointerInnerHandle};

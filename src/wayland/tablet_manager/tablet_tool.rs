@@ -15,7 +15,7 @@ use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
-use crate::wayland::{compositor, Serial};
+use crate::{utils::Serial, wayland::compositor};
 
 use super::tablet::TabletHandle;
 use super::TabletManagerState;

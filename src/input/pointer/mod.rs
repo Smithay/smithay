@@ -6,8 +6,8 @@ use std::{
 use crate::{
     backend::input::{Axis, AxisSource, ButtonState},
     input::{Seat, SeatHandler},
+    utils::Serial,
     utils::{Logical, Point},
-    wayland::Serial,
 };
 
 mod cursor_image;
