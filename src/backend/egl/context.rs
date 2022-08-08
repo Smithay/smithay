@@ -5,6 +5,8 @@ use std::{
     sync::{atomic::Ordering, Arc},
 };
 
+use libc::c_void;
+
 use super::{ffi, wrap_egl_call, Error, MakeCurrentError};
 use crate::{
     backend::{
@@ -27,6 +29,7 @@ pub struct EGLContext {
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: Option<PixelFormat>,
     user_data: Arc<UserDataMap>,
+    externally_managed: bool,
 }
 
 // SAFETY: A context can be sent to another thread when this context is not current.
@@ -37,6 +40,36 @@ pub struct EGLContext {
 unsafe impl Send for EGLContext {}
 
 impl EGLContext {
+    /// Creates a new `EGLContext` from raw handles.
+    ///
+    /// # Safety
+    ///
+    /// This function is marked unsafe, because the context cannot be made current on another thread without
+    /// being unbound again (see [`EGLContext::unbind`]).
+    pub unsafe fn from_raw<L>(
+        display: *const c_void,
+        config_id: *const c_void,
+        context: *const c_void,
+        log: L,
+    ) -> Result<EGLContext, Error>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "backend_egl"));
+
+        let display = EGLDisplay::from_raw(display, config_id, log)?;
+        let pixel_format = display.get_pixel_format(config_id)?;
+
+        Ok(EGLContext {
+            context,
+            display,
+            config_id,
+            pixel_format: Some(pixel_format),
+            user_data: Arc::new(UserDataMap::default()),
+            externally_managed: true,
+        })
+    }
+
     /// Creates a new configless `EGLContext` from a given `EGLDisplay`
     pub fn new<L>(display: &EGLDisplay, log: L) -> Result<EGLContext, Error>
     where
@@ -181,6 +214,7 @@ impl EGLContext {
             } else {
                 Arc::new(UserDataMap::default())
             },
+            externally_managed: false,
         })
     }
 
@@ -289,11 +323,13 @@ impl EGLContext {
 
 impl Drop for EGLContext {
     fn drop(&mut self) {
-        unsafe {
-            // We need to ensure the context is unbound, otherwise it egl stalls the destroy call
-            // ignore failures at this point
-            let _ = self.unbind();
-            ffi::egl::DestroyContext(**self.display.get_display_handle(), self.context);
+        if !self.externally_managed {
+            unsafe {
+                // We need to ensure the context is unbound, otherwise it egl stalls the destroy call
+                // ignore failures at this point
+                let _ = self.unbind();
+                ffi::egl::DestroyContext(**self.display.get_display_handle(), self.context);
+            }
         }
     }
 }
