@@ -191,7 +191,19 @@ impl RendererSurfaceState {
         }
     }
 
-    pub(crate) fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, BufferCoord>> {
+    /// Get the current commit position of this surface
+    ///
+    /// The position should be saved after calling [`damage_since`] and
+    /// provided as the commit in the next call.
+    pub fn current_commit(&self) -> usize {
+        self.commit_count
+    }
+
+    /// Gets the damage since the last commit
+    ///
+    /// If either the commit is `None` or the commit is too old
+    /// the whole buffer will be returned as damage.
+    pub fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, BufferCoord>> {
         // on overflow the wrapping_sub should end up
         let recent_enough = commit
             // if commit > commit_count we have overflown, in that case the following map might result
