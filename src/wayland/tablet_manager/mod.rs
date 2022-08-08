@@ -71,7 +71,7 @@
 //!    );
 //! ```
 
-use crate::wayland::seat::Seat;
+use crate::input::{Seat, SeatHandler};
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_manager_v2::{self, ZwpTabletManagerV2},
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
@@ -96,7 +96,7 @@ pub trait TabletSeatTrait {
     fn tablet_seat(&self) -> TabletSeatHandle;
 }
 
-impl<D: 'static> TabletSeatTrait for Seat<D> {
+impl<D: SeatHandler + 'static> TabletSeatTrait for Seat<D> {
     fn tablet_seat(&self) -> TabletSeatHandle {
         let user_data = self.user_data();
         user_data.insert_if_missing(TabletSeatHandle::default);
@@ -156,7 +156,7 @@ where
     D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
     D: Dispatch<ZwpTabletV2, TabletUserData>,
     D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-    D: 'static,
+    D: SeatHandler + 'static,
 {
     fn request(
         _state: &mut D,

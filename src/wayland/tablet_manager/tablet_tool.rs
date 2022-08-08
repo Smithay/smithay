@@ -2,8 +2,9 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use crate::backend::input::{ButtonState, TabletToolCapabilitys, TabletToolDescriptor, TabletToolType};
+use crate::input::pointer::{CursorImageAttributes, CursorImageStatus};
 use crate::utils::{Logical, Point};
-use crate::wayland::seat::{CursorImageAttributes, CursorImageStatus, CURSOR_IMAGE_ROLE};
+use crate::wayland::seat::CURSOR_IMAGE_ROLE;
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
     zwp_tablet_tool_v2::{self, ZwpTabletToolV2},
@@ -486,7 +487,7 @@ where
                                     .hotspot = (hotspot_x, hotspot_y).into();
                             });
 
-                            (data.cb.lock().unwrap())(&data.desc, CursorImageStatus::Image(surface));
+                            (data.cb.lock().unwrap())(&data.desc, CursorImageStatus::Surface(surface));
                         } else {
                             (data.cb.lock().unwrap())(&data.desc, CursorImageStatus::Hidden);
                         };

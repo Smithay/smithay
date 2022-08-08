@@ -67,9 +67,10 @@ use wayland_server::{
     Client, DisplayHandle, GlobalDispatch,
 };
 
-use super::{
-    seat::{Focus, PointerGrabStartData, Seat},
-    Serial,
+use super::Serial;
+use crate::input::{
+    pointer::{Focus, GrabStartData as PointerGrabStartData},
+    Seat, SeatHandler,
 };
 
 mod device;
@@ -107,7 +108,7 @@ pub trait DataDeviceHandler: Sized + ClientDndGrabHandler + ServerDndGrabHandler
 }
 
 /// Events that are generated during client initiated drag'n'drop
-pub trait ClientDndGrabHandler: Sized {
+pub trait ClientDndGrabHandler: SeatHandler + Sized {
     /// A client started a drag'n'drop as response to a user pointer action
     ///
     /// * `source` - The data source provided by the client.
@@ -212,8 +213,7 @@ pub fn default_action_chooser(available: DndAction, preferred: DndAction) -> Dnd
 /// Set the data device focus to a certain client for a given seat
 pub fn set_data_device_focus<D>(dh: &DisplayHandle, seat: &Seat<D>, client: Option<Client>)
 where
-    D: DataDeviceHandler,
-    D: 'static,
+    D: SeatHandler + DataDeviceHandler + 'static,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::new()));
@@ -229,8 +229,7 @@ where
 /// receive a [`DataDeviceHandler::send_selection`] event.
 pub fn set_data_device_selection<D>(dh: &DisplayHandle, seat: &Seat<D>, mime_types: Vec<String>)
 where
-    D: DataDeviceHandler,
-    D: 'static,
+    D: SeatHandler + DataDeviceHandler + 'static,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::new()));
@@ -250,19 +249,21 @@ where
 /// drag'n'drop in the provided callback. See [`ServerDndGrabHandler`] for details about
 /// which events can be generated and what response is expected from you to them.
 pub fn start_dnd<D, C>(
+    dh: &DisplayHandle,
     seat: &Seat<D>,
+    data: &mut D,
     serial: Serial,
-    start_data: PointerGrabStartData,
+    start_data: PointerGrabStartData<D>,
     metadata: SourceMetadata,
 ) where
-    D: DataDeviceHandler,
-    D: 'static,
+    D: SeatHandler + DataDeviceHandler + 'static,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::new()));
     if let Some(pointer) = seat.get_pointer() {
         pointer.set_grab(
-            server_dnd_grab::ServerDnDGrab::new(start_data, metadata, seat.clone()),
+            data,
+            server_dnd_grab::ServerDnDGrab::new(dh, start_data, metadata, seat.clone()),
             serial,
             Focus::Keep,
         );
@@ -282,7 +283,7 @@ mod handlers {
         Dispatch, DisplayHandle, GlobalDispatch,
     };
 
-    use crate::wayland::seat::Seat;
+    use crate::input::Seat;
 
     use super::{device::DataDeviceUserData, seat_data::SeatData, source::DataSourceUserData};
     use super::{DataDeviceHandler, DataDeviceState};
