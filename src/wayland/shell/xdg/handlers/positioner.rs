@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use crate::{utils::Rectangle, wayland::Serial};
+use crate::{utils::Rectangle, utils::Serial};
 
 use wayland_protocols::xdg::shell::server::{xdg_positioner, xdg_positioner::XdgPositioner};
 

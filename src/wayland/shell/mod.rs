@@ -12,8 +12,7 @@
 //! - The [`xdg`](xdg/index.html) module provides handlers for the `xdg_shell` protocol, which is
 //!   the current standard for desktop apps
 
-use super::Serial;
-use crate::wayland::compositor;
+use crate::{utils::Serial, wayland::compositor};
 use thiserror::Error;
 use wayland_server::protocol::wl_surface::WlSurface;
 

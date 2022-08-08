@@ -59,11 +59,10 @@ use wayland_server::{
 };
 
 use crate::{
-    utils::{alive_tracker::IsAlive, Logical, Size},
+    utils::{alive_tracker::IsAlive, Logical, Serial, Size, SERIAL_COUNTER},
     wayland::{
         compositor::{self, Cacheable},
         shell::xdg,
-        Serial, SERIAL_COUNTER,
     },
 };
 

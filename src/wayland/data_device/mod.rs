@@ -67,10 +67,12 @@ use wayland_server::{
     Client, DisplayHandle, GlobalDispatch,
 };
 
-use super::Serial;
-use crate::input::{
-    pointer::{Focus, GrabStartData as PointerGrabStartData},
-    Seat, SeatHandler,
+use crate::{
+    input::{
+        pointer::{Focus, GrabStartData as PointerGrabStartData},
+        Seat, SeatHandler,
+    },
+    utils::Serial,
 };
 
 mod device;

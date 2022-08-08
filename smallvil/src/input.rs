@@ -8,7 +8,7 @@ use smithay::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
-    wayland::SERIAL_COUNTER,
+    utils::SERIAL_COUNTER,
 };
 
 use crate::state::Smallvil;

@@ -19,6 +19,9 @@ pub use self::geometry::{
     Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Scale, Size, Transform,
 };
 
+mod serial;
+pub use serial::*;
+
 /// This resource is not managed by Smithay
 #[derive(Debug)]
 pub struct UnmanagedResource;

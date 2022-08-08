@@ -18,8 +18,8 @@ use crate::{
         },
         SeatHandler,
     },
-    utils::{DeadResource, IsAlive, Logical, Point},
-    wayland::{compositor::get_role, shell::xdg::XDG_POPUP_ROLE, Serial},
+    utils::{DeadResource, IsAlive, Logical, Point, Serial},
+    wayland::{compositor::get_role, shell::xdg::XDG_POPUP_ROLE},
 };
 
 use thiserror::Error;

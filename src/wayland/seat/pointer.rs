@@ -21,8 +21,8 @@ use crate::{
         },
         Seat,
     },
-    utils::IsAlive,
-    wayland::{compositor, Serial},
+    utils::{IsAlive, Serial},
+    wayland::compositor,
 };
 
 use super::{SeatHandler, SeatState};

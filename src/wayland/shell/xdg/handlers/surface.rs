@@ -4,11 +4,10 @@ use std::sync::Mutex;
 
 use crate::utils::alive_tracker::{AliveTracker, IsAlive};
 use crate::{
-    utils::Rectangle,
+    utils::{Rectangle, Serial},
     wayland::{
         compositor,
         shell::xdg::{PopupState, XdgShellState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE},
-        Serial,
     },
 };
 

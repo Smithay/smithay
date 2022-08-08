@@ -12,7 +12,7 @@ use smithay::{
     delegate_compositor, delegate_data_device, delegate_seat, delegate_shm, delegate_xdg_shell,
     input::{keyboard::FilterResult, Seat, SeatHandler, SeatState},
     reexports::wayland_server::{protocol::wl_seat, Display},
-    utils::{Rectangle, Transform},
+    utils::{Rectangle, Serial, Transform},
     wayland::{
         buffer::BufferHandler,
         compositor::{
@@ -22,7 +22,6 @@ use smithay::{
         data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
         shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
         shm::{ShmHandler, ShmState},
-        Serial,
     },
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;

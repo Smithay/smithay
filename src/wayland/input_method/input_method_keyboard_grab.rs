@@ -42,7 +42,7 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for InputMethodKeyboardGrab {
         keycode: u32,
         key_state: KeyState,
         modifiers: Option<ModifiersState>,
-        _serial: crate::wayland::Serial,
+        _serial: crate::utils::Serial,
         time: u32,
     ) {
         let inner = self.inner.lock().unwrap();
@@ -64,7 +64,7 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for InputMethodKeyboardGrab {
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
         focus: Option<Box<dyn KeyboardHandler<D>>>,
-        serial: crate::wayland::Serial,
+        serial: crate::utils::Serial,
     ) {
         let inner = self.inner.lock().unwrap();
         inner.text_input_handle.as_ref().unwrap().set_focus(

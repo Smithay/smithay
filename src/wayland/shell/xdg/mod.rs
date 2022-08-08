@@ -95,10 +95,10 @@
 
 use crate::utils::alive_tracker::IsAlive;
 use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
+use crate::utils::{Serial, SERIAL_COUNTER};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::shell::is_toplevel_equivalent;
-use crate::wayland::{Serial, SERIAL_COUNTER};
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 

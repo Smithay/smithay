@@ -19,13 +19,12 @@ use smithay::{
         protocol::{wl_pointer, wl_surface::WlSurface},
         DisplayHandle,
     },
-    utils::{Logical, Point},
+    utils::{Logical, Point, Serial, SERIAL_COUNTER as SCOUNTER},
     wayland::{
         compositor::with_states,
         input_method::InputMethodSeat,
         output::Scale,
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
-        Serial, SERIAL_COUNTER as SCOUNTER,
     },
 };
 

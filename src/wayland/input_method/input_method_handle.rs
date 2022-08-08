@@ -20,8 +20,8 @@ use crate::{
         keyboard::{KeyboardHandle, KeymapFile, XkbConfig},
         SeatHandler,
     },
-    utils::{IsAlive, Logical, Physical, Point, Rectangle},
-    wayland::{text_input::TextInputHandle, SERIAL_COUNTER},
+    utils::{IsAlive, Logical, Physical, Point, Rectangle, SERIAL_COUNTER},
+    wayland::text_input::TextInputHandle,
 };
 
 use super::{
