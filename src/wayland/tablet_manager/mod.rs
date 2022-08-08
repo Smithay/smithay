@@ -5,20 +5,20 @@
 //! ```
 //! # extern crate wayland_server;
 //! use smithay::{delegate_seat, delegate_tablet_manager};
-//! use smithay::wayland::seat::{Seat, SeatState, SeatHandler};
+//! use smithay::input::{Seat, SeatState, SeatHandler, keyboard::KeyboardHandler, pointer::CursorImageStatus};
 //! use smithay::wayland::tablet_manager::{TabletManagerState, TabletDescriptor};
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //!
-//! let seat_state = SeatState::<State>::new();
+//! let mut seat_state = SeatState::<State>::new();
 //! let tablet_state = TabletManagerState::new::<State>(&display_handle);
 //! // add the seat state to your state
 //! // ...
 //!
 //! // create the seat
-//! let seat = Seat::<State>::new(
+//! let seat = seat_state.new_wl_seat(
 //!     &display_handle,          // the display
 //!     "seat-0",                 // the name of the seat, will be advertized to clients
 //!     None                      // insert a logger here
@@ -41,6 +41,12 @@
 //! impl SeatHandler for State {
 //!     fn seat_state(&mut self) -> &mut SeatState<Self> {
 //!         &mut self.seat_state
+//!     }
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>) {
+//!         // ...
+//!     }
+//!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {
+//!         // ...
 //!     }
 //! }
 //! delegate_seat!(State);

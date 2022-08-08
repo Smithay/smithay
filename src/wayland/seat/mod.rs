@@ -10,26 +10,33 @@
 //! ```
 //! # extern crate wayland_server;
 //! use smithay::delegate_seat;
-//! use smithay::wayland::seat::{Seat, SeatState, SeatHandler};
+//! use smithay::input::{Seat, SeatState, SeatHandler, keyboard::KeyboardHandler, pointer::CursorImageStatus};
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
-//! // create the seat
-//! let seat = Seat::<State>::new(
-//!     &display_handle,          // the display
-//!     "seat-0",          // the name of the seat, will be advertized to clients
-//!     None                      // insert a logger here
-//! );
 //!
-//! let seat_state = SeatState::<State>::new();
+//! let mut seat_state = SeatState::<State>::new();
 //! // add the seat state to your state
 //! // ...
+//!
+//! // create the wl_seat
+//! let seat = seat_state.new_wl_seat(
+//!     &display_handle,          // the display
+//!     "seat-0",                 // the name of the seat, will be advertized to clients
+//!     None                      // insert a logger here
+//! );
 //!
 //! // implement the required traits
 //! impl SeatHandler for State {
 //!     fn seat_state(&mut self) -> &mut SeatState<Self> {
 //!         &mut self.seat_state
+//!     }
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>) {
+//!         // ...
+//!     }
+//!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {
+//!         // ...
 //!     }
 //! }
 //! delegate_seat!(State);
@@ -159,10 +166,15 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # Examples
     ///
     /// ```no_run
-    /// # extern crate wayland_server;
+    /// # use smithay::input::{Seat, SeatState, SeatHandler, keyboard::KeyboardHandler, pointer::CursorImageStatus};
     /// #
-    /// # use smithay::wayland::seat::Seat;
-    /// # let mut seat: Seat<()> = unimplemented!();
+    /// # struct State;
+    /// # impl SeatHandler for State {
+    /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
+    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>) { unimplemented!() }
+    /// #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
+    /// # }
+    /// # let mut seat: Seat<State> = unimplemented!();
     /// let touch_handle = seat.add_touch();
     /// ```
     pub fn add_touch(&mut self) -> TouchHandle {
