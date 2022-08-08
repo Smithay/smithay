@@ -13,7 +13,7 @@ use nix::{
 use slog::error;
 
 #[derive(Debug)]
-pub struct KeymapFile {
+pub(crate) struct KeymapFile {
     #[allow(dead_code)]
     sealed: Option<SealedFile>,
     keymap: CString,

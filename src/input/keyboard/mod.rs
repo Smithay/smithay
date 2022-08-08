@@ -1,3 +1,5 @@
+//! Keyboard-related structs and trait for smithays input abstraction
+
 use crate::backend::input::KeyState;
 use crate::utils::Serial;
 use slog::{debug, error, info, o, trace};
@@ -15,7 +17,7 @@ pub use xkbcommon::xkb::{keysyms, Keysym};
 use super::{Seat, SeatHandler};
 
 mod keymap_file;
-pub use keymap_file::KeymapFile;
+pub(crate) use keymap_file::KeymapFile;
 
 mod modifiers_state;
 pub use modifiers_state::ModifiersState;
@@ -23,13 +25,17 @@ pub use modifiers_state::ModifiersState;
 mod xkb_config;
 pub use xkb_config::XkbConfig;
 
+/// Trait representing object that can receive keyboard interactions
 pub trait KeyboardHandler<D>
 where
     D: SeatHandler,
     Self: std::any::Any + Send + 'static,
 {
+    /// Keyboard focus of a given seat was assigned to this handler
     fn enter(&mut self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial);
+    /// The keyboard focus of a given seat left this handler
     fn leave(&mut self, seat: &Seat<D>, data: &mut D, serial: Serial);
+    /// A key was pressed on a keyboard from a given seat
     fn key(
         &mut self,
         seat: &Seat<D>,
@@ -39,11 +45,17 @@ where
         serial: Serial,
         time: u32,
     );
+    /// Hold modifiers were changed on a keyboard from a given seat
     fn modifiers(&mut self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial);
 
+    /// Returns if this element is still alive and able to handle keyboard events
     fn is_alive(&self) -> bool;
+    /// Compare this element to any given other to figure out if a provided
+    /// handler is referencing the same object.
     fn same_handler_as(&self, other: &dyn KeyboardHandler<D>) -> bool;
+    /// Clone this handler
     fn clone_handler(&self) -> Box<dyn KeyboardHandler<D> + 'static>;
+    /// Access this handler as an [`std::any::Any`] reference
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
@@ -622,6 +634,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
         self.inner.focus.as_ref().map(|f| &*f.0)
     }
 
+    /// Convert a given keycode as a [`KeysymHandle`] modified by this keyboards state
     pub fn keysym_handle(&self, keycode: u32) -> KeysymHandle<'_> {
         KeysymHandle {
             keycode: keycode + 8,
