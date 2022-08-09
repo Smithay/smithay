@@ -1,4 +1,4 @@
-//! Keyboard-related structs and trait for smithays input abstraction
+//! Keyboard-related types for smithay's input abstraction
 
 use crate::backend::input::KeyState;
 use crate::utils::Serial;
@@ -471,7 +471,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     }
 
     /// Returns the start data for the grab, if any.
-    pub fn rab_start_data(&self) -> Option<GrabStartData<D>> {
+    pub fn grab_start_data(&self) -> Option<GrabStartData<D>> {
         let guard = self.arc.internal.lock().unwrap();
         match &guard.grab {
             GrabStatus::Active(_, g) => Some(g.start_data().clone()),

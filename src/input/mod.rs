@@ -90,6 +90,7 @@ pub struct SeatState<D: SeatHandler> {
 }
 
 /// A Seat handle
+///
 /// This struct gives you access to the control of the
 /// capabilities of the associated seat.
 ///
