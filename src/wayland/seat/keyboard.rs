@@ -61,11 +61,17 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         if let Some((focused, serial)) = guard.focus.as_ref() {
             if let Some(surface) = focused.as_any().downcast_ref::<WlSurface>() {
                 if surface.id().same_client_as(&kbd.id()) {
-                    let (dep, la, lo, gr) = serialize_modifiers(&guard.state);
+                    let modifiers = serialize_modifiers(&guard.state);
                     let keys = serialize_pressed_keys(guard.pressed_keys.clone());
                     kbd.enter((*serial).into(), surface, keys);
                     // Modifiers must be send after enter event.
-                    kbd.modifiers((*serial).into(), dep, la, lo, gr);
+                    kbd.modifiers(
+                        (*serial).into(),
+                        modifiers.mods_depressed,
+                        modifiers.mods_latched,
+                        modifiers.mods_locked,
+                        modifiers.layout_locked,
+                    );
                 }
             }
         }
@@ -127,13 +133,25 @@ fn serialize_pressed_keys(keys: Vec<u32>) -> Vec<u8> {
     serialized.into()
 }
 
-fn serialize_modifiers(state: &xkb::State) -> (u32, u32, u32, u32) {
+struct SerializedMods {
+    mods_depressed: u32,
+    mods_latched: u32,
+    mods_locked: u32,
+    layout_locked: u32,
+}
+
+fn serialize_modifiers(state: &xkb::State) -> SerializedMods {
     let mods_depressed = state.serialize_mods(xkb::STATE_MODS_DEPRESSED);
     let mods_latched = state.serialize_mods(xkb::STATE_MODS_LATCHED);
     let mods_locked = state.serialize_mods(xkb::STATE_MODS_LOCKED);
     let layout_locked = state.serialize_layout(xkb::STATE_LAYOUT_LOCKED);
 
-    (mods_depressed, mods_latched, mods_locked, layout_locked)
+    SerializedMods {
+        mods_depressed,
+        mods_latched,
+        mods_locked,
+        layout_locked,
+    }
 }
 
 impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
@@ -174,8 +192,14 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
         serial: Serial,
     ) {
         with_focused_kbds(seat, self, |kbd| {
-            let (de, la, lo, gr) = serialize_modifiers(state);
-            kbd.modifiers(serial.into(), de, la, lo, gr)
+            let modifiers = serialize_modifiers(state);
+            kbd.modifiers(
+                serial.into(),
+                modifiers.mods_depressed,
+                modifiers.mods_latched,
+                modifiers.mods_locked,
+                modifiers.layout_locked,
+            );
         })
     }
 
