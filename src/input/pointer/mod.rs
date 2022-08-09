@@ -1,4 +1,4 @@
-//! Pointer-related structs and trait for smithays input abstraction
+//! Pointer-related types for smithay's input abstraction
 
 use std::{
     fmt,
