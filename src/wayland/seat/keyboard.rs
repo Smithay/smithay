@@ -155,7 +155,7 @@ fn serialize_modifiers(state: &xkb::State) -> SerializedMods {
 }
 
 impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
-    fn enter(&mut self, seat: &Seat<D>, _data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
+    fn enter(&self, seat: &Seat<D>, _data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
         with_focused_kbds(seat, self, |kbd| {
             kbd.enter(
                 serial.into(),
@@ -165,12 +165,12 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
         })
     }
 
-    fn leave(&mut self, seat: &Seat<D>, _data: &mut D, serial: Serial) {
+    fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial) {
         with_focused_kbds(seat, self, |kbd| kbd.leave(serial.into(), self))
     }
 
     fn key(
-        &mut self,
+        &self,
         seat: &Seat<D>,
         _data: &mut D,
         key: KeysymHandle<'_>,
@@ -184,7 +184,7 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
     }
 
     fn modifiers(
-        &mut self,
+        &self,
         seat: &Seat<D>,
         _data: &mut D,
         state: &xkb::State,

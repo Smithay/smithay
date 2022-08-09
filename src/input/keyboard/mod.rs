@@ -32,12 +32,12 @@ where
     Self: std::any::Any + Send + 'static,
 {
     /// Keyboard focus of a given seat was assigned to this handler
-    fn enter(&mut self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial);
+    fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial);
     /// The keyboard focus of a given seat left this handler
-    fn leave(&mut self, seat: &Seat<D>, data: &mut D, serial: Serial);
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial);
     /// A key was pressed on a keyboard from a given seat
     fn key(
-        &mut self,
+        &self,
         seat: &Seat<D>,
         data: &mut D,
         key: KeysymHandle<'_>,
@@ -47,7 +47,7 @@ where
     );
     /// Hold modifiers were changed on a keyboard from a given seat
     fn modifiers(
-        &mut self,
+        &self,
         seat: &Seat<D>,
         data: &mut D,
         state: &xkb::State,
@@ -67,14 +67,14 @@ where
 }
 
 impl<D: SeatHandler + 'static> KeyboardHandler<D> for Box<dyn KeyboardHandler<D>> {
-    fn enter(&mut self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        KeyboardHandler::enter(&mut **self, seat, data, keys, serial)
+    fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
+        KeyboardHandler::enter(&**self, seat, data, keys, serial)
     }
-    fn leave(&mut self, seat: &Seat<D>, data: &mut D, serial: Serial) {
-        KeyboardHandler::leave(&mut **self, seat, data, serial)
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
+        KeyboardHandler::leave(&**self, seat, data, serial)
     }
     fn key(
-        &mut self,
+        &self,
         seat: &Seat<D>,
         data: &mut D,
         key: KeysymHandle<'_>,
@@ -82,17 +82,17 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for Box<dyn KeyboardHandler<D>
         serial: Serial,
         time: u32,
     ) {
-        KeyboardHandler::key(&mut **self, seat, data, key, state, serial, time)
+        KeyboardHandler::key(&**self, seat, data, key, state, serial, time)
     }
     fn modifiers(
-        &mut self,
+        &self,
         seat: &Seat<D>,
         data: &mut D,
         state: &xkb::State,
         modifiers: ModifiersState,
         serial: Serial,
     ) {
-        KeyboardHandler::modifiers(&mut **self, seat, data, state, modifiers, serial)
+        KeyboardHandler::modifiers(&**self, seat, data, state, modifiers, serial)
     }
 
     fn is_alive(&self) -> bool {

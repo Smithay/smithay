@@ -58,15 +58,15 @@ where
     Self: std::any::Any + Send + 'static,
 {
     /// A pointer of a given seat entered this handler
-    fn enter(&mut self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);
+    fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);
     /// A pointer of a given seat moved over this handler
-    fn motion(&mut self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);
+    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);
     /// A pointer of a given seat clicked a button
-    fn button(&mut self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent);
+    fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent);
     /// A pointer of a given seat scrolled on an axis
-    fn axis(&mut self, seat: &Seat<D>, data: &mut D, frame: AxisFrame);
+    fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame);
     /// A pointer of a given seat left this handler
-    fn leave(&mut self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32);
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32);
 
     /// Returns if this element is still alive and able to handle pointer events
     fn is_alive(&self) -> bool;
@@ -80,20 +80,20 @@ where
 }
 
 impl<D: SeatHandler + 'static> PointerHandler<D> for Box<dyn PointerHandler<D>> {
-    fn enter(&mut self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerHandler::enter(&mut **self, seat, data, event)
+    fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
+        PointerHandler::enter(&**self, seat, data, event)
     }
-    fn leave(&mut self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
-        PointerHandler::leave(&mut **self, seat, data, serial, time)
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
+        PointerHandler::leave(&**self, seat, data, serial, time)
     }
-    fn motion(&mut self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerHandler::motion(&mut **self, seat, data, event);
+    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
+        PointerHandler::motion(&**self, seat, data, event);
     }
-    fn button(&mut self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
-        PointerHandler::button(&mut **self, seat, data, event)
+    fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
+        PointerHandler::button(&**self, seat, data, event)
     }
-    fn axis(&mut self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
-        PointerHandler::axis(&mut **self, seat, data, frame);
+    fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
+        PointerHandler::axis(&**self, seat, data, frame);
     }
 
     fn is_alive(&self) -> bool {
