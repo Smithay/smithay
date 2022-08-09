@@ -52,8 +52,14 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for InputMethodKeyboardGrab {
             .as_ref()
             .unwrap()
             .with_focused_text_input(|_, _, serial| {
-                if let Some((dep, la, lo, gr)) = modifiers.map(|m| m.serialized) {
-                    keyboard.modifiers(*serial, dep, la, lo, gr)
+                if let Some(serialized) = modifiers.map(|m| m.serialized) {
+                    keyboard.modifiers(
+                        *serial,
+                        serialized.depressed,
+                        serialized.latched,
+                        serialized.locked,
+                        serialized.layout_locked,
+                    )
                 }
                 keyboard.key(*serial, time, keycode, key_state.into());
             });

@@ -60,11 +60,17 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         if let Some((focused, serial)) = guard.focus.as_ref() {
             if let Some(surface) = focused.as_any().downcast_ref::<WlSurface>() {
                 if surface.id().same_client_as(&kbd.id()) {
-                    let (dep, la, lo, gr) = guard.mods_state.serialized;
+                    let serialized = guard.mods_state.serialized;
                     let keys = serialize_pressed_keys(guard.pressed_keys.clone());
                     kbd.enter((*serial).into(), surface, keys);
                     // Modifiers must be send after enter event.
-                    kbd.modifiers((*serial).into(), dep, la, lo, gr);
+                    kbd.modifiers(
+                        (*serial).into(),
+                        serialized.depressed,
+                        serialized.latched,
+                        serialized.locked,
+                        serialized.layout_locked,
+                    );
                 }
             }
         }
@@ -157,8 +163,14 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
 
     fn modifiers(&mut self, seat: &Seat<D>, _data: &mut D, modifiers: ModifiersState, serial: Serial) {
         with_focused_kbds(seat, self, |kbd| {
-            let (de, la, lo, gr) = modifiers.serialized;
-            kbd.modifiers(serial.into(), de, la, lo, gr)
+            let modifiers = modifiers.serialized;
+            kbd.modifiers(
+                serial.into(),
+                modifiers.depressed,
+                modifiers.latched,
+                modifiers.locked,
+                modifiers.layout_locked,
+            );
         })
     }
 
