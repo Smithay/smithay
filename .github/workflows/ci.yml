@@ -8,7 +8,7 @@ on:
 
 jobs:
   format:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -34,7 +34,7 @@ jobs:
           args: --all -- --check
   
   clippy-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -127,7 +127,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs:
       - clippy-check
       - format
@@ -198,7 +198,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout sources
@@ -226,18 +226,7 @@ jobs:
           profile: minimal
       
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
-
-      - name: Build and install Libseat
-        if: matrix.features == 'backend_session_libseat'
-        run: |
-          sudo apt-get install -y meson ninja-build
-          wget https://git.sr.ht/~kennylevinsen/seatd/archive/0.5.0.tar.gz -O libseat-source.tar.gz
-          tar xf libseat-source.tar.gz
-          cd seatd-0.5.0
-          meson -Dbuiltin=enabled -Dserver=disabled -Dexamples=disabled -Dman-pages=disabled build .
-          ninja -C build
-          sudo meson install -C build
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev libseat-dev
 
       - name: Downgrade log
         uses: actions-rs/cargo@v1
@@ -264,7 +253,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout sources
@@ -329,7 +318,7 @@ jobs:
     env:
       RUSTFLAGS: "-D warnings"
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout sources
@@ -400,7 +389,7 @@ jobs:
       RUSTFLAGS: "-D warnings"
       GRCOV_VERSION: "0.8.10"
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout sources
@@ -485,7 +474,7 @@ jobs:
 
   doc:
     name: Documentation on Github Pages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs:
       - smithay-tests
 
