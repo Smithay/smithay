@@ -22,7 +22,11 @@ use smithay::{
 use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
-        renderer::{gles2::Gles2Renderer, Bind},
+        renderer::{
+            gles2::{Gles2Renderer, Gles2Texture},
+            output::OutputRender,
+            Bind, ImportMem, Renderer,
+        },
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
     input::pointer::CursorImageStatus,
@@ -47,6 +51,7 @@ pub struct X11Data {
     // FIXME: If Gles2Renderer is dropped before X11Surface, then the MakeCurrent call inside Gles2Renderer will
     // fail because the X11Surface is keeping gbm alive.
     renderer: Gles2Renderer,
+    output_render: OutputRender,
     surface: X11Surface,
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
@@ -82,6 +87,8 @@ impl Backend for X11Data {
     }
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
+
+static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../resources/cursor.rgba");
 
 pub fn run_x11(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
@@ -160,21 +167,6 @@ pub fn run_x11(log: Logger) {
             false,
         )
         .expect("Unable to upload FPS texture");
-
-    let data = X11Data {
-        render: true,
-        mode,
-        surface,
-        renderer,
-        #[cfg(feature = "egl")]
-        dmabuf_state,
-        #[cfg(feature = "debug")]
-        fps_texture,
-        #[cfg(feature = "debug")]
-        fps: fps_ticker::Fps::default(),
-    };
-
-    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
     let output = Output::new(
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
@@ -188,6 +180,29 @@ pub fn run_x11(log: Logger) {
     let _global = output.create_global::<AnvilState<X11Data>>(&display.handle());
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
+
+    let fallback_cursor = renderer
+        .import_memory(FALLBACK_CURSOR_DATA, (64, 64).into(), false)
+        .expect("failed to load fallback cursor");
+
+    let output_render = OutputRender::new(&output);
+
+    let data = X11Data {
+        render: true,
+        mode,
+        surface,
+        renderer,
+        output_render,
+        #[cfg(feature = "egl")]
+        dmabuf_state,
+        #[cfg(feature = "debug")]
+        fps_texture,
+        #[cfg(feature = "debug")]
+        fps: fps_ticker::Fps::default(),
+    };
+
+    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
+
     state.space.map_output(&output, (0, 0));
 
     let output_clone = output.clone();
@@ -223,18 +238,20 @@ pub fn run_x11(log: Logger) {
         .expect("Failed to insert X11 Backend into event loop");
 
     let start_time = std::time::Instant::now();
-    let mut cursor_visible;
 
     #[cfg(feature = "xwayland")]
     state.start_xwayland();
 
     info!(log, "Initialization completed, starting the main loop.");
 
+    let mut fallback_pointer_element = PointerElement::new(fallback_cursor, (0, 0));
+
     while state.running.load(Ordering::SeqCst) {
         if state.backend_data.render {
             let backend_data = &mut state.backend_data;
             // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
             let (x, y) = state.pointer_location.into();
+            fallback_pointer_element.set_position((x as i32, y as i32));
             let cursor_status = &state.cursor_status;
             #[cfg(feature = "debug")]
             let fps = backend_data.fps.avg().round() as u32;
@@ -247,17 +264,17 @@ pub fn run_x11(log: Logger) {
                 continue;
             }
 
-            let mut elements = Vec::<CustomElem<Gles2Renderer>>::new();
             let mut cursor_guard = cursor_status.lock().unwrap();
+            let mut custom_space_elements: Vec<&PointerElement<Gles2Texture>> = Vec::new();
 
-            // draw the dnd icon if any
-            if let Some(surface) = state.dnd_icon.as_ref() {
-                if surface.alive() {
-                    elements.push(
-                        draw_dnd_icon(surface.clone(), state.pointer_location.to_i32_round(), &log).into(),
-                    );
-                }
-            }
+            // // draw the dnd icon if any
+            // if let Some(surface) = state.dnd_icon.as_ref() {
+            //     if surface.alive() {
+            //         elements.push(
+            //             draw_dnd_icon(surface.clone(), state.pointer_location.to_i32_round(), &log).into(),
+            //         );
+            //     }
+            // }
 
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
@@ -268,47 +285,55 @@ pub fn run_x11(log: Logger) {
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
             }
-            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
-                cursor_visible = false;
-                elements.push(draw_cursor(surface.clone(), (x as i32, y as i32), &log).into());
+
+            fallback_pointer_element.set_status(cursor_guard.clone());
+            custom_space_elements.push(&fallback_pointer_element);
+
+            // // draw FPS
+            // #[cfg(feature = "debug")]
+            // {
+            //     elements.push(draw_fps::<Gles2Renderer>(fps_texture, fps).into());
+            // }
+
+            let elements = state.space.elements_for_output(&output, &*custom_space_elements);
+            let output_render = &mut backend_data.output_render;
+            output_render.render_output(&mut backend_data.renderer, age.into(), &*elements, &log);
+
+            if let Err(err) = backend_data.surface.submit() {
+                backend_data.surface.reset_buffers();
+                warn!(log, "Failed to submit buffer: {}. Retrying", err);
             } else {
-                cursor_visible = true;
-            }
+                state.backend_data.render = false;
+            };
 
-            // draw FPS
-            #[cfg(feature = "debug")]
-            {
-                elements.push(draw_fps::<Gles2Renderer>(fps_texture, fps).into());
-            }
-
-            let render_res = crate::render::render_output(
-                &output,
-                &mut state.space,
-                &mut backend_data.renderer,
-                age.into(),
-                &*elements,
-                &log,
-            );
-            match render_res {
-                Ok(_) => {
-                    trace!(log, "Finished rendering");
-                    if let Err(err) = backend_data.surface.submit() {
-                        backend_data.surface.reset_buffers();
-                        warn!(log, "Failed to submit buffer: {}. Retrying", err);
-                    } else {
-                        state.backend_data.render = false;
-                    };
-                }
-                Err(err) => {
-                    backend_data.surface.reset_buffers();
-                    error!(log, "Rendering error: {}", err);
-                    // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
-                }
-            }
+            // let render_res = crate::render::render_output(
+            //     &output,
+            //     &mut state.space,
+            //     &mut backend_data.renderer,
+            //     age.into(),
+            //     &*elements,
+            //     &log,
+            // );
+            // match render_res {
+            //     Ok(_) => {
+            //         trace!(log, "Finished rendering");
+            //         if let Err(err) = backend_data.surface.submit() {
+            //             backend_data.surface.reset_buffers();
+            //             warn!(log, "Failed to submit buffer: {}. Retrying", err);
+            //         } else {
+            //             state.backend_data.render = false;
+            //         };
+            //     }
+            //     Err(err) => {
+            //         backend_data.surface.reset_buffers();
+            //         error!(log, "Rendering error: {}", err);
+            //         // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
+            //     }
+            // }
 
             #[cfg(feature = "debug")]
             state.backend_data.fps.tick();
-            window.set_cursor_visible(cursor_visible);
+            window.set_cursor_visible(false);
         }
 
         // Send frame events so that client start drawing their next frame
@@ -327,3 +352,107 @@ pub fn run_x11(log: Logger) {
         }
     }
 }
+
+// smithay::backend::renderer::output::element::render_elements! {
+//     pub CustomRenderElements<R>;
+//     Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
+// }
+
+smithay::backend::renderer::output::element::render_elements! {
+    pub CustomRenderElements<R>;
+    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
+    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<R>,
+}
+
+// enum CustomRenderElements<'a, R>
+// where
+//     R: Renderer + ImportAll,
+//     <R as Renderer>::TextureId: Texture + 'static,
+// {
+//     Surface(smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>),
+//     Texture(smithay::backend::renderer::output::element::texture::TextureRenderElement<'a, R>),
+// }
+
+// impl<'a, R> smithay::backend::renderer::output::element::RenderElement<R> for CustomRenderElements<'a, R>
+// where
+//     R: Renderer + ImportAll,
+// {
+//     fn id(&self) -> &smithay::backend::renderer::output::element::Id {
+//         match self {
+//             CustomRenderElements::Surface(s) => s.id(),
+//             CustomRenderElements::Texture(t) => t.id(),
+//         }
+//     }
+
+//     fn current_commit(&self) -> usize {
+//         match self {
+//             CustomRenderElements::Surface(s) => s.current_commit(),
+//             CustomRenderElements::Texture(t) => t.current_commit(),
+//         }
+//     }
+
+//     fn location(
+//         &self,
+//         scale: smithay::utils::Scale<f64>,
+//     ) -> smithay::utils::Point<i32, smithay::utils::Physical> {
+//         match self {
+//             CustomRenderElements::Surface(s) => s.location(scale),
+//             CustomRenderElements::Texture(t) => t.location(scale),
+//         }
+//     }
+
+//     fn geometry(
+//         &self,
+//         scale: smithay::utils::Scale<f64>,
+//     ) -> smithay::utils::Rectangle<i32, smithay::utils::Physical> {
+//         match self {
+//             CustomRenderElements::Surface(s) => s.geometry(scale),
+//             CustomRenderElements::Texture(t) => t.geometry(scale),
+//         }
+//     }
+
+//     fn damage_since(
+//         &self,
+//         scale: smithay::utils::Scale<f64>,
+//         commit: Option<usize>,
+//     ) -> Vec<smithay::utils::Rectangle<i32, smithay::utils::Physical>> {
+//         match self {
+//             CustomRenderElements::Surface(s) => s.damage_since(scale, commit),
+//             CustomRenderElements::Texture(t) => t.damage_since(scale, commit),
+//         }
+//     }
+
+//     fn opaque_regions(
+//         &self,
+//         scale: smithay::utils::Scale<f64>,
+//     ) -> Vec<smithay::utils::Rectangle<i32, smithay::utils::Physical>> {
+//         match self {
+//             CustomRenderElements::Surface(s) => s.opaque_regions(scale),
+//             CustomRenderElements::Texture(t) => t.opaque_regions(scale),
+//         }
+//     }
+
+//     fn underlying_storage(
+//         &self,
+//         renderer: &R,
+//     ) -> Option<smithay::backend::renderer::output::element::UnderlyingStorage<'_, R>> {
+//         match self {
+//             CustomRenderElements::Surface(s) => s.underlying_storage(renderer),
+//             CustomRenderElements::Texture(t) => t.underlying_storage(renderer),
+//         }
+//     }
+
+//     fn draw(
+//         &self,
+//         renderer: &mut R,
+//         frame: &mut <R as Renderer>::Frame,
+//         scale: smithay::utils::Scale<f64>,
+//         damage: &[smithay::utils::Rectangle<i32, smithay::utils::Physical>],
+//         log: &slog::Logger,
+//     ) {
+//         match self {
+//             CustomRenderElements::Surface(s) => s.draw(renderer, frame, scale, damage, log),
+//             CustomRenderElements::Texture(t) => t.draw(renderer, frame, scale, damage, log),
+//         }
+//     }
+// }
