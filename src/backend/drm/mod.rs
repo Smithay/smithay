@@ -75,6 +75,7 @@ pub mod node;
 #[cfg(feature = "backend_session")]
 pub(self) mod session;
 pub(self) mod surface;
+pub mod renderer;
 
 pub use device::{DevPath, DrmDevice, DrmEvent, EventMetadata as DrmEventMetadata, Time as DrmEventTime};
 pub use error::Error as DrmError;
