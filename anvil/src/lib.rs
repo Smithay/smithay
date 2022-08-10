@@ -13,7 +13,7 @@ extern crate slog;
 pub mod cursor;
 pub mod drawing;
 pub mod input_handler;
-pub mod render;
+// pub mod render;
 pub mod shell;
 pub mod state;
 #[cfg(feature = "udev")]

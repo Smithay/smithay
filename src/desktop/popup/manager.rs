@@ -310,10 +310,13 @@ impl PopupNode {
         loc: P,
     ) -> impl Iterator<Item = (&PopupKind, Point<i32, Logical>)> {
         let relative_to = loc.into() + self.surface.location();
-        std::iter::once((&self.surface, relative_to)).chain(self.children.iter().flat_map(move |x| {
-            Box::new(x.iter_popups_relative_to(relative_to))
-                as Box<dyn Iterator<Item = (&PopupKind, Point<i32, Logical>)>>
-        }))
+        self.children
+            .iter()
+            .flat_map(move |x| {
+                Box::new(x.iter_popups_relative_to(relative_to))
+                    as Box<dyn Iterator<Item = (&PopupKind, Point<i32, Logical>)>>
+            })
+            .chain(std::iter::once((&self.surface, relative_to)))
     }
 
     fn insert(&mut self, popup: PopupKind) -> bool {

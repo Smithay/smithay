@@ -2,7 +2,7 @@
 //! rendering helpers to add custom elements or different clients to a space.
 
 use crate::{
-    backend::renderer::{Frame, ImportAll, Renderer},
+    backend::renderer::{ImportAll, Renderer, Texture},
     desktop::{
         layer::{layer_map_for_output, LayerSurface},
         popup::PopupManager,
@@ -10,17 +10,16 @@ use crate::{
         window::Window,
     },
     output::Output,
-    utils::{IsAlive, Logical, Physical, Point, Rectangle, Transform},
+    utils::{IsAlive, Logical, Point, Rectangle, Scale, Transform},
     wayland::compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
 };
-use indexmap::{IndexMap, IndexSet};
-use std::{collections::VecDeque, fmt};
+use indexmap::IndexSet;
+use std::fmt;
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 mod element;
 mod layer;
 mod output;
-mod popup;
 mod window;
 
 pub use self::element::*;
@@ -175,7 +174,7 @@ impl Space {
     pub fn window_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<&Window> {
         let point = point.into();
         self.windows.iter().rev().find(|w| {
-            let loc = window_loc(w, &self.id) - w.geometry().loc;
+            let loc = window_loc(w, &self.id) - Window::geometry(w).loc;
             let mut geo = w.bbox();
             geo.loc += loc;
             geo.to_f64().contains(point)
@@ -430,287 +429,69 @@ impl Space {
         }
     }
 
-    /// Render a given [`Output`] using a given [`Renderer`].
-    ///
-    /// [`Space`] will render all mapped [`Window`]s, mapped [`LayerSurface`](super::LayerSurface)s
-    /// of the given [`Output`] and their popups (if tracked by a [`PopupManager`](super::PopupManager)).
-    /// `clear_color` will be used to fill all unoccupied regions.
-    ///
-    /// Rendering using this function will automatically apply damage-tracking.
-    /// To facilitate this you need to provide age values of the buffers bound to
-    /// the given `renderer`. If you stop using `Space` temporarily for rendering
-    /// or apply additional rendering operations, you need to reset the age values
-    /// accordingly as `Space` will be unable to track your custom rendering operations
-    /// to avoid rendering artifacts.
-    ///
-    /// To add aditional elements without breaking damage-tracking implement the `RenderElement`
-    /// trait and use `custom_elements` to provide them to this function. `custom_elements are rendered
-    /// after every other element.
-    ///
-    /// Returns a list of updated regions relative to the rendered output
-    /// (or `None` if that list would be empty) in case of success.
-    pub fn render_output<R, E>(
-        &mut self,
-        renderer: &mut R,
+    /// Retrieve the render elements for an output
+    pub fn elements_for_output<R, E>(
+        &self,
         output: &Output,
-        age: usize,
-        clear_color: [f32; 4],
         custom_elements: &[E],
-    ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, RenderError<R>>
+    ) -> Vec<SpaceRenderElements<R>>
     where
-        R: Renderer + ImportAll,
-        R::TextureId: 'static,
-        E: RenderElement<R>,
+        R: Renderer + ImportAll + 'static,
+        <R as Renderer>::TextureId: Texture + 'static,
+        E: SpaceElement<R, SpaceRenderElements<R>>,
     {
-        if !self.outputs.contains(output) {
-            return Err(RenderError::UnmappedOutput);
-        }
-
-        let mut state = output_state(self.id, output);
-        let output_size = output.current_mode().ok_or(RenderError::OutputNoMode)?.size;
+        let state = output_state(self.id, output);
+        let output_size = output.current_mode().unwrap().size;
         let output_scale = output.current_scale().fractional_scale();
-        // We explicitly use ceil for the output geometry size to make sure the damage
-        // spans at least the output size. Round and floor would result in parts not drawn as the
-        // frame size could be bigger than the maximum the output_geo would define.
+        let output_location = state.location;
         let output_geo = Rectangle::from_loc_and_size(
-            state.location.to_physical_precise_round(output_scale),
-            output_size,
+            state.location,
+            output_size.to_f64().to_logical(output_scale).to_i32_ceil(),
         );
+
         let layer_map = layer_map_for_output(output);
 
-        let window_popups = self
-            .windows
-            .iter()
-            .flat_map(|w| w.popup_elements(self.id))
-            .collect::<Vec<_>>();
-        let layer_popups = layer_map
-            .layers()
-            .flat_map(|l| l.popup_elements(self.id))
-            .collect::<Vec<_>>();
+        let mut space_elements: Vec<SpaceElements<'_, E>> = Vec::new();
 
-        let mut render_elements: Vec<SpaceElement<'_, R, E>> = Vec::with_capacity(
-            custom_elements.len()
-                + layer_map.len()
-                + self.windows.len()
-                + window_popups.len()
-                + layer_popups.len(),
-        );
-
-        render_elements.extend(
+        space_elements.extend(
             custom_elements
                 .iter()
-                .map(|e| SpaceElement::Custom(e, std::marker::PhantomData)),
+                .map(SpaceElements::Custom)
+                .collect::<Vec<_>>(),
         );
-        render_elements.extend(self.windows.iter().map(SpaceElement::Window));
-        render_elements.extend(window_popups.iter().map(SpaceElement::Popup));
-        render_elements.extend(layer_map.layers().map(SpaceElement::Layer));
-        render_elements.extend(layer_popups.iter().map(SpaceElement::Popup));
 
-        render_elements.sort_by_key(|e| e.z_index(self.id));
+        space_elements.extend(
+            self.windows()
+                .rev()
+                .map(SpaceElements::Window)
+                .collect::<Vec<_>>(),
+        );
 
-        let opaque_regions = render_elements
-            .iter()
-            .enumerate()
-            .filter_map(|(zindex, element)| {
-                element
-                    .opaque_regions(self.id, output_scale)
-                    .map(|regions| (zindex, regions))
-            })
-            .collect::<Vec<_>>();
+        space_elements.extend(
+            layer_map
+                .layers()
+                .rev()
+                .map(SpaceElements::Layer)
+                .collect::<Vec<_>>(),
+        );
 
-        // This will hold all the damage we need for this rendering step
-        let mut damage = Vec::<Rectangle<i32, Physical>>::new();
+        space_elements.sort_by_key(|e| std::cmp::Reverse(e.z_index(self.id)));
 
-        // First add damage for windows gone
-        for old_toplevel in state
-            .last_toplevel_state
-            .iter()
-            .filter_map(|(id, state)| {
-                if !render_elements.iter().any(|e| ToplevelId::from(e) == *id) {
-                    Some(state.1)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Rectangle<i32, Physical>>>()
-        {
-            slog::trace!(self.logger, "Removing toplevel at: {:?}", old_toplevel);
-            damage.push(old_toplevel);
-        }
-
-        // lets iterate front to back and figure out, what new windows or unmoved windows we have
-        for (zindex, element) in render_elements.iter().enumerate() {
-            let geo = element.geometry(self.id, output_scale);
-            let old_state = state.last_toplevel_state.get(&ToplevelId::from(element)).cloned();
-
-            let mut element_damage = element.accumulated_damage(self.id, output_scale, Some((self, output)));
-
-            // window was moved, resized or just appeared
-            if old_state
-                .map(|(old_zindex, old_geo)| old_geo != geo || zindex != old_zindex)
-                .unwrap_or(true)
-            {
-                slog::trace!(self.logger, "Toplevel geometry changed, damaging previous and current geometry. previous geometry: {:?}, current geometry: {:?}", old_state, geo);
-                // Add damage for the old position of the window
-                if let Some((_, old_geo)) = old_state {
-                    element_damage.push(old_geo);
-                }
-                element_damage.push(geo);
-            }
-
-            let element_damage = opaque_regions
-                .iter()
-                .filter(|(index, _)| *index > zindex)
-                .flat_map(|(_, regions)| regions)
-                .fold(element_damage, |damage, region| {
-                    damage
-                        .into_iter()
-                        .flat_map(|geo| geo.subtract_rect(*region))
-                        .collect::<Vec<_>>()
-                })
-                .into_iter()
-                .collect::<Vec<_>>();
-
-            // add the damage as reported by the element
-            damage.extend(element_damage);
-        }
-
-        if state.last_output_geo.map(|geo| geo != output_geo).unwrap_or(true) {
-            // The output geometry changed, so just damage everything
-            slog::trace!(self.logger, "Output geometry changed, damaging whole output geometry. previous geometry: {:?}, current geometry: {:?}", state.last_output_geo, output_geo);
-            damage = vec![output_geo];
-        }
-
-        // That is all completely new damage, which we need to store for subsequent renders
-        let new_damage = damage.clone();
-        // We now add old damage states, if we have an age value
-        if age > 0 && state.old_damage.len() >= age {
-            // We do not need even older states anymore
-            state.old_damage.truncate(age);
-            damage.extend(state.old_damage.iter().flatten().copied());
-        } else {
-            // just damage everything, if we have no damage
-            damage = vec![output_geo];
-        }
-
-        // Optimize the damage for rendering
-        damage.dedup();
-        damage.retain(|rect| rect.overlaps(output_geo));
-        damage.retain(|rect| !rect.is_empty());
-        // filter damage outside of the output gep and merge overlapping rectangles
-        damage = damage
+        space_elements
             .into_iter()
-            .filter_map(|rect| rect.intersection(output_geo))
-            .fold(Vec::new(), |new_damage, mut rect| {
-                // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                    new_damage.into_iter().partition(|other| other.overlaps(rect));
-
-                for overlap in overlapping {
-                    rect = rect.merge(overlap);
-                }
-                new_damage.push(rect);
-                new_damage
-            });
-
-        if damage.is_empty() {
-            return Ok(None);
-        }
-
-        let output_transform: Transform = output.current_transform();
-        let res = renderer.render(
-            output_transform.transform_size(output_size),
-            output_transform,
-            |renderer, frame| {
-                let clear_damage = opaque_regions
-                    .iter()
-                    .flat_map(|(_, regions)| regions)
-                    .fold(damage.clone(), |damage, region| {
-                        damage
-                            .into_iter()
-                            .flat_map(|geo| geo.subtract_rect(*region))
-                            .collect::<Vec<_>>()
-                    })
-                    .into_iter()
-                    .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
-                    .collect::<Vec<_>>();
-
-                // First clear all damaged regions
-                slog::trace!(self.logger, "Clearing at {:#?}", clear_damage);
-                frame.clear(clear_color, &clear_damage)?;
-                // Then re-draw all windows & layers overlapping with a damage rect.
-                for (zindex, element) in render_elements.iter().enumerate() {
-                    let geo = element.geometry(self.id, output_scale);
-
-                    let element_damage = opaque_regions
-                        .iter()
-                        .filter(|(index, _)| *index > zindex)
-                        .flat_map(|(_, regions)| regions)
-                        .fold(damage.clone(), |damage, region| {
-                            damage
-                                .into_iter()
-                                .flat_map(|geo| geo.subtract_rect(*region))
-                                .collect::<Vec<_>>()
-                        })
-                        .into_iter()
-                        .map(|geo| Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size))
-                        .collect::<Vec<_>>();
-
-                    let element_geo = Rectangle::from_loc_and_size(geo.loc - output_geo.loc, geo.size);
-                    if element_damage.iter().any(|d| d.overlaps(element_geo)) {
-                        let loc = element.location(self.id, output_scale);
-                        slog::trace!(
-                            self.logger,
-                            "Rendering toplevel with index {} at {:?} with damage {:#?}",
-                            zindex,
-                            element_geo,
-                            element_damage
-                        );
-                        element.draw(
-                            self.id,
-                            renderer,
-                            frame,
-                            output_scale,
-                            loc - output_geo.loc.to_f64(),
-                            &element_damage,
-                            &self.logger,
-                        )?;
-                    }
-                }
-
-                Result::<(), R::Error>::Ok(())
-            },
-        );
-
-        if let Err(err) = res {
-            // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
-            // thus clean our old states before returning
-            state.old_damage = VecDeque::new();
-            state.last_toplevel_state = IndexMap::new();
-            return Err(RenderError::Rendering(err));
-        }
-
-        // If rendering was successful capture the state and add the damage
-        state.last_toplevel_state = render_elements
-            .iter()
-            .enumerate()
-            .map(|(zindex, elem)| {
-                let geo = elem.geometry(self.id, output_scale);
-                (ToplevelId::from(elem), (zindex, geo))
+            .filter(|e| {
+                let geometry = SpaceElement::<R, SpaceRenderElements<R>>::geometry(&e, self.id);
+                output_geo.overlaps(geometry)
             })
-            .collect();
-        state.old_damage.push_front(new_damage.clone());
-        state.last_output_geo = Some(output_geo);
-
-        Ok(Some(
-            new_damage
-                .into_iter()
-                .map(|mut geo| {
-                    geo.loc -= output_geo.loc;
-                    geo
-                })
-                .collect(),
-        ))
+            .flat_map(|e| {
+                let location =
+                    SpaceElement::<R, SpaceRenderElements<R>>::location(&e, self.id) - output_location;
+                e.render_elements(
+                    location.to_physical_precise_round(output_scale),
+                    Scale::from(output_scale),
+                )
+            })
+            .collect::<Vec<_>>()
     }
 
     /// Sends the frame callback to mapped [`Window`]s and [`LayerSurface`]s.
@@ -752,432 +533,432 @@ impl<R: Renderer> fmt::Debug for RenderError<R> {
     }
 }
 
-#[macro_export]
-#[doc(hidden)]
-macro_rules! custom_elements_internal {
-    (@enum $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
-        $vis enum $name {
-            $(
-                $(
-                    #[$meta]
-                )*
-                $body($field)
-            ),*,
-            #[doc(hidden)]
-            _GenericCatcher(std::convert::Infallible),
-        }
-    };
-    (@enum $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
-        $vis enum $name<$renderer>
-        where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
-        {
-            $(
-                $(
-                    #[$meta]
-                )*
-                $body($field)
-            ),*,
-            #[doc(hidden)]
-            _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
-        }
-    };
-    (@call $renderer:ty; $name:ident; $($x:ident),*) => {
-        $crate::desktop::space::RenderElement::<$renderer>::$name($($x),*)
-    };
-    (@call $renderer:ty as $other:ty; draw; $x:ident, $renderer_ref:ident, $frame:ident, $($tail:ident),*) => {
-        $crate::desktop::space::RenderElement::<$other>::draw($x, $renderer_ref.as_mut(), $frame.as_mut(), $($tail),*).map_err(Into::into)
-    };
-    (@call $renderer:ty as $other:ty; $name:ident; $($x:ident),*) => {
-        $crate::desktop::space::RenderElement::<$other>::$name($($x),*)
-    };
-    (@body $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        fn id(&self) -> usize {
-            match self {
-                $(
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; id; x)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
+// #[macro_export]
+// #[doc(hidden)]
+// macro_rules! custom_elements_internal {
+//     (@enum $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+//         $vis enum $name {
+//             $(
+//                 $(
+//                     #[$meta]
+//                 )*
+//                 $body($field)
+//             ),*,
+//             #[doc(hidden)]
+//             _GenericCatcher(std::convert::Infallible),
+//         }
+//     };
+//     (@enum $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+//         $vis enum $name<$renderer>
+//         where
+//             $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+//         {
+//             $(
+//                 $(
+//                     #[$meta]
+//                 )*
+//                 $body($field)
+//             ),*,
+//             #[doc(hidden)]
+//             _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
+//         }
+//     };
+//     (@call $renderer:ty; $name:ident; $($x:ident),*) => {
+//         $crate::desktop::space::RenderElement::<$renderer>::$name($($x),*)
+//     };
+//     (@call $renderer:ty as $other:ty; draw; $x:ident, $renderer_ref:ident, $frame:ident, $($tail:ident),*) => {
+//         $crate::desktop::space::RenderElement::<$other>::draw($x, $renderer_ref.as_mut(), $frame.as_mut(), $($tail),*).map_err(Into::into)
+//     };
+//     (@call $renderer:ty as $other:ty; $name:ident; $($x:ident),*) => {
+//         $crate::desktop::space::RenderElement::<$other>::$name($($x),*)
+//     };
+//     (@body $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+//         fn id(&self) -> usize {
+//             match self {
+//                 $(
+//                     $(
+//                         #[$meta]
+//                     )*
+//                     Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; id; x)
+//                 ),*,
+//                 Self::_GenericCatcher(_) => unreachable!(),
+//             }
+//         }
 
-        fn type_of(&self) -> std::any::TypeId {
-            match self {
-                $(
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; type_of; x)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
+//         fn type_of(&self) -> std::any::TypeId {
+//             match self {
+//                 $(
+//                     $(
+//                         #[$meta]
+//                     )*
+//                     Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; type_of; x)
+//                 ),*,
+//                 Self::_GenericCatcher(_) => unreachable!(),
+//             }
+//         }
 
-        fn location(&self, scale: impl Into<$crate::utils::Scale<f64>>) -> $crate::utils::Point<f64, $crate::utils::Physical> {
-            match self {
-                $(
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; location; x, scale)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
+//         fn location(&self, scale: impl Into<$crate::utils::Scale<f64>>) -> $crate::utils::Point<f64, $crate::utils::Physical> {
+//             match self {
+//                 $(
+//                     $(
+//                         #[$meta]
+//                     )*
+//                     Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; location; x, scale)
+//                 ),*,
+//                 Self::_GenericCatcher(_) => unreachable!(),
+//             }
+//         }
 
-        fn geometry(&self, scale: impl Into<$crate::utils::Scale<f64>>) -> $crate::utils::Rectangle<i32, $crate::utils::Physical> {
-            match self {
-                $(
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; geometry; x, scale)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
+//         fn geometry(&self, scale: impl Into<$crate::utils::Scale<f64>>) -> $crate::utils::Rectangle<i32, $crate::utils::Physical> {
+//             match self {
+//                 $(
+//                     $(
+//                         #[$meta]
+//                     )*
+//                     Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; geometry; x, scale)
+//                 ),*,
+//                 Self::_GenericCatcher(_) => unreachable!(),
+//             }
+//         }
 
-        fn accumulated_damage(&self, scale: impl Into<$crate::utils::Scale<f64>>, for_values: Option<$crate::desktop::space::SpaceOutputTuple<'_, '_>>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>> {
-            match self {
-                $(
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; accumulated_damage; x, scale, for_values)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
+//         fn accumulated_damage(&self, scale: impl Into<$crate::utils::Scale<f64>>, for_values: Option<$crate::desktop::space::SpaceOutputTuple<'_, '_>>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>> {
+//             match self {
+//                 $(
+//                     $(
+//                         #[$meta]
+//                     )*
+//                     Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; accumulated_damage; x, scale, for_values)
+//                 ),*,
+//                 Self::_GenericCatcher(_) => unreachable!(),
+//             }
+//         }
 
-        fn opaque_regions(&self, scale: impl Into<$crate::utils::Scale<f64>>) -> Option<Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>>> {
-            match self {
-                $(
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; opaque_regions; x, scale)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
+//         fn opaque_regions(&self, scale: impl Into<$crate::utils::Scale<f64>>) -> Option<Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>>> {
+//             match self {
+//                 $(
+//                     $(
+//                         #[$meta]
+//                     )*
+//                     Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; opaque_regions; x, scale)
+//                 ),*,
+//                 Self::_GenericCatcher(_) => unreachable!(),
+//             }
+//         }
 
-        fn z_index(&self) -> u8 {
-            match self {
-                $(
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; z_index; x)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
-    };
-    (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        fn draw(
-            &self,
-            renderer: &mut $renderer,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
-            scale: impl Into<$crate::utils::Scale<f64>>,
-            location: $crate::utils::Point<f64, $crate::utils::Physical>,
-            damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
-            log: &slog::Logger,
-        ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
-        where
-        $(
-            $(
-                $renderer: std::convert::AsMut<$other_renderer>,
-                <$renderer as $crate::backend::renderer::Renderer>::Frame: std::convert::AsMut<<$other_renderer as $crate::backend::renderer::Renderer>::Frame>,
-                <$other_renderer as $crate::backend::renderer::Renderer>::Error: Into<<$renderer as $crate::backend::renderer::Renderer>::Error>,
-            )*
-        )*
-        {
-            match self {
-                $(
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
-    };
-    (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        fn draw(
-            &self,
-            renderer: &mut $renderer,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
-            scale: impl Into<$crate::utils::Scale<f64>>,
-            location: $crate::utils::Point<f64, $crate::utils::Physical>,
-            damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
-            log: &slog::Logger,
-        ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
-        {
-            match self {
-                $(
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
-    };
-    (@impl $name:ident<$renderer:ident>; $($tail:tt)*) => {
-        impl<$renderer> $crate::desktop::space::RenderElement<$renderer> for $name<$renderer>
-        where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
-            <$renderer as Renderer>::TextureId: 'static,
-        {
-            $crate::custom_elements_internal!(@body $renderer; $($tail)*);
-            $crate::custom_elements_internal!(@draw <$renderer>; $($tail)*);
-        }
-    };
-    (@impl $name:ident; $renderer:ident; $($tail:tt)*) => {
-        impl<$renderer> $crate::desktop::space::RenderElement<$renderer> for $name
-        where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
-            <$renderer as Renderer>::TextureId: 'static,
-        {
-            $crate::custom_elements_internal!(@body $renderer; $($tail)*);
-            $crate::custom_elements_internal!(@draw <$renderer>; $($tail)*);
-        }
-    };
-    (@impl $name:ident<=$renderer:ty>; $($tail:tt)*) => {
-        impl $crate::desktop::space::RenderElement<$renderer> for $name
-        {
-            $crate::custom_elements_internal!(@body $renderer; $($tail)*);
-            $crate::custom_elements_internal!(@draw $renderer; $($tail)*);
-        }
-    };
-    (@from $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        $(
-            $(
-                #[$meta]
-            )*
-            impl<$renderer> From<$field> for $name<$renderer>
-            where
-                $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
-                $(
-                    $($renderer: std::convert::AsMut<$other_renderer>,)?
-                )*
-            {
-                fn from(field: $field) -> $name<$renderer> {
-                    $name::$body(field)
-                }
-            }
-        )*
-    };
-    (@from $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        $(
-            $(
-                #[$meta]
-            )*
-            impl From<$field> for $name {
-                fn from(field: $field) -> $name {
-                    $name::$body(field)
-                }
-            }
-        )*
-    };
-}
+//         fn z_index(&self) -> u8 {
+//             match self {
+//                 $(
+//                     $(
+//                         #[$meta]
+//                     )*
+//                     Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; z_index; x)
+//                 ),*,
+//                 Self::_GenericCatcher(_) => unreachable!(),
+//             }
+//         }
+//     };
+//     (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+//         fn draw(
+//             &self,
+//             renderer: &mut $renderer,
+//             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
+//             scale: impl Into<$crate::utils::Scale<f64>>,
+//             location: $crate::utils::Point<f64, $crate::utils::Physical>,
+//             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
+//             log: &slog::Logger,
+//         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
+//         where
+//         $(
+//             $(
+//                 $renderer: std::convert::AsMut<$other_renderer>,
+//                 <$renderer as $crate::backend::renderer::Renderer>::Frame: std::convert::AsMut<<$other_renderer as $crate::backend::renderer::Renderer>::Frame>,
+//                 <$other_renderer as $crate::backend::renderer::Renderer>::Error: Into<<$renderer as $crate::backend::renderer::Renderer>::Error>,
+//             )*
+//         )*
+//         {
+//             match self {
+//                 $(
+//                     $(
+//                         #[$meta]
+//                     )*
+//                     Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
+//                 ),*,
+//                 Self::_GenericCatcher(_) => unreachable!(),
+//             }
+//         }
+//     };
+//     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+//         fn draw(
+//             &self,
+//             renderer: &mut $renderer,
+//             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
+//             scale: impl Into<$crate::utils::Scale<f64>>,
+//             location: $crate::utils::Point<f64, $crate::utils::Physical>,
+//             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
+//             log: &slog::Logger,
+//         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
+//         {
+//             match self {
+//                 $(
+//                     $(
+//                         #[$meta]
+//                     )*
+//                     Self::$body(x) => $crate::custom_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
+//                 ),*,
+//                 Self::_GenericCatcher(_) => unreachable!(),
+//             }
+//         }
+//     };
+//     (@impl $name:ident<$renderer:ident>; $($tail:tt)*) => {
+//         impl<$renderer> $crate::desktop::space::RenderElement<$renderer> for $name<$renderer>
+//         where
+//             $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+//             <$renderer as Renderer>::TextureId: 'static,
+//         {
+//             $crate::custom_elements_internal!(@body $renderer; $($tail)*);
+//             $crate::custom_elements_internal!(@draw <$renderer>; $($tail)*);
+//         }
+//     };
+//     (@impl $name:ident; $renderer:ident; $($tail:tt)*) => {
+//         impl<$renderer> $crate::desktop::space::RenderElement<$renderer> for $name
+//         where
+//             $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+//             <$renderer as Renderer>::TextureId: 'static,
+//         {
+//             $crate::custom_elements_internal!(@body $renderer; $($tail)*);
+//             $crate::custom_elements_internal!(@draw <$renderer>; $($tail)*);
+//         }
+//     };
+//     (@impl $name:ident<=$renderer:ty>; $($tail:tt)*) => {
+//         impl $crate::desktop::space::RenderElement<$renderer> for $name
+//         {
+//             $crate::custom_elements_internal!(@body $renderer; $($tail)*);
+//             $crate::custom_elements_internal!(@draw $renderer; $($tail)*);
+//         }
+//     };
+//     (@from $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+//         $(
+//             $(
+//                 #[$meta]
+//             )*
+//             impl<$renderer> From<$field> for $name<$renderer>
+//             where
+//                 $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+//                 $(
+//                     $($renderer: std::convert::AsMut<$other_renderer>,)?
+//                 )*
+//             {
+//                 fn from(field: $field) -> $name<$renderer> {
+//                     $name::$body(field)
+//                 }
+//             }
+//         )*
+//     };
+//     (@from $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+//         $(
+//             $(
+//                 #[$meta]
+//             )*
+//             impl From<$field> for $name {
+//                 fn from(field: $field) -> $name {
+//                     $name::$body(field)
+//                 }
+//             }
+//         )*
+//     };
+// }
 
-/// Macro to collate multiple [`crate::desktop::space::RenderElement`]-implementations
-/// into one type to be used with [`Space::render_output`].
-/// ## Example
-///
-/// ```no_run
-/// # use wayland_server::{Display, DisplayHandle};
-/// use smithay::{
-///     backend::renderer::{Texture, Renderer, ImportAll},
-///     desktop::space::{SurfaceTree, Space, SpaceOutputTuple, RenderElement},
-///     utils::{Point, Size, Rectangle, Transform, Logical, Scale},
-/// };
-/// use slog::Logger;
-///
-/// # use smithay::{
-/// #   backend::SwapBuffersError,
-/// #   backend::renderer::{TextureFilter, Frame},
-/// #   reexports::wayland_server::protocol::wl_buffer,
-/// #   wayland::compositor::SurfaceData,
-/// #   utils::{Buffer, Physical},
-/// # };
-/// # struct DummyRenderer;
-/// # struct DummyFrame;
-/// # struct DummyError;
-/// # struct DummyTexture;
-/// # impl Renderer for DummyRenderer {
-/// #    type Error = smithay::backend::SwapBuffersError;
-/// #    type TextureId = DummyTexture;
-/// #    type Frame = DummyFrame;
-/// #    fn id(&self) -> usize { 0 }
-/// #    fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> { Ok(()) }
-/// #    fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> { Ok(()) }
-/// #    fn render<F, R>(
-/// #        &mut self,
-/// #        size: Size<i32, Physical>,
-/// #        dst_transform: Transform,
-/// #        rendering: F,
-/// #    ) -> Result<R, Self::Error>
-/// #    where
-/// #        F: FnOnce(&mut Self, &mut Self::Frame) -> R
-/// #    {
-/// #       Ok(rendering(self, &mut DummyFrame))
-/// #    }
-/// # }
-/// # impl ImportAll for DummyRenderer {
-/// #    fn import_buffer(
-/// #        &mut self,
-/// #        buffer: &wl_buffer::WlBuffer,
-/// #        surface: Option<&SurfaceData>,
-/// #        damage: &[Rectangle<i32, Buffer>],
-/// #    ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> { None }
-/// # }
-/// # impl Texture for DummyTexture {
-/// #    fn width(&self) -> u32 { 0 }
-/// #    fn height(&self) -> u32 { 0 }
-/// # }
-/// # impl Frame for DummyFrame {
-/// #   type Error = SwapBuffersError;
-/// #   type TextureId = DummyTexture;
-/// #   fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> { Ok(()) }
-/// #   #[allow(clippy::too_many_arguments)]
-/// #   fn render_texture_at(
-/// #       &mut self,
-/// #       texture: &Self::TextureId,
-/// #       pos: Point<i32, Physical>,
-/// #       texture_scale: i32,
-/// #       output_scale: impl Into<Scale<f64>>,
-/// #       src_transform: Transform,
-/// #       damage: &[Rectangle<i32, Physical>],
-/// #       alpha: f32,
-/// #   ) -> Result<(), Self::Error> {
-/// #       Ok(())
-/// #   }
-/// #   fn render_texture_from_to(
-/// #       &mut self,
-/// #       texture: &Self::TextureId,
-/// #       src: Rectangle<f64, Buffer>,
-/// #       dst: Rectangle<i32, Physical>,
-/// #       damage: &[Rectangle<i32, Physical>],
-/// #       src_transform: Transform,
-/// #       alpha: f32,
-/// #   ) -> Result<(), Self::Error> {
-/// #       Ok(())   
-/// #   }
-/// #   fn transformation(&self) -> Transform { Transform::Normal }
-/// # }
-///
-/// smithay::custom_elements! {
-///     CustomElem; // name of the new type
-///     SurfaceTree=SurfaceTree, // <variant name> = <type to collate>
-/// };
-///
-/// smithay::custom_elements! {
-///     CustomElemGeneric<R>; // You can make it generic over renderers!
-///     SurfaceTree=SurfaceTree,
-///     PointerElement=PointerElement<<R as Renderer>::TextureId>, // and then use R in your types
-/// };
-///
-/// smithay::custom_elements! {
-///     CustomElemExplicit<=DummyRenderer>; // You can make it only usable with one renderer
-///     // that is particulary useful, if your renderer has lifetimes (e.g. MultiRenderer)
-///     SurfaceTree=SurfaceTree,
-///     PointerElement=PointerElement<DummyTexture>, // and then you use a concrete and matching texture type
-/// };
-/// // in case your renderer wraps another renderer and implements `std::convert::AsMut`
-/// // you can also use `RenderElement`-implementations requiring the wrapped renderer
-/// // by writing something like: `EguiFrame=EguiFrame as <Gles2Renderer>` where `as <renderer>`
-/// // denotes the type of the wrapped renderer.
-///
-/// pub struct PointerElement<T: Texture> {
-///    texture: T,
-///    position: Point<i32, Logical>,
-///    size: Size<i32, Logical>,
-/// }
-///
-/// impl<T: Texture> PointerElement<T> {
-///    pub fn new(texture: T, pointer_pos: Point<i32, Logical>) -> PointerElement<T> {
-///        let size = texture.size().to_logical(1, Transform::Normal);
-///        PointerElement {
-///            texture,
-///            position: pointer_pos,
-///            size,
-///        }
-///    }
-/// }
-///
-///# impl<R> RenderElement<R> for PointerElement<<R as Renderer>::TextureId>
-///# where
-///#    R: Renderer + ImportAll,
-///#    <R as Renderer>::TextureId: 'static,
-///# {
-///#    fn id(&self) -> usize {
-///#        0
-///#    }
-///#
-///#    fn location(&self, scale: impl Into<Scale<f64>>) -> Point<f64, Physical> {
-///#        self.position.to_f64().to_physical(scale)
-///#    }
-///#
-///#    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
-///#        Rectangle::from_loc_and_size(self.position, self.size).to_f64().to_physical(scale).to_i32_round()
-///#    }
-///#
-///#    fn accumulated_damage(&self, _: impl Into<Scale<f64>>, _: Option<SpaceOutputTuple<'_, '_>>) -> Vec<Rectangle<i32, Physical>> {
-///#        vec![]
-///#    }
-///#
-///#    fn opaque_regions(&self, scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>> {
-///#        None
-///#    }
-///#
-///#    fn draw(
-///#        &self,
-///#        _renderer: &mut R,
-///#        frame: &mut <R as Renderer>::Frame,
-///#        scale: impl Into<Scale<f64>>,
-///#        location: Point<f64, Physical>,
-///#        damage: &[Rectangle<i32, Physical>],
-///#        _log: &Logger,
-///#    ) -> Result<(), <R as Renderer>::Error> {
-///#        Ok(())
-///#    }
-///# }
-///# // just placeholders
-///# let mut renderer = DummyRenderer;
-///# let texture = DummyTexture;
-///# let output = unsafe { std::mem::zeroed() };
-///# let surface_tree: SurfaceTree = unsafe { std::mem::zeroed() };
-///# let mut space = Space::new(None);
-///# let age = 0;
-///# let display = Display::<()>::new().unwrap();
-///# let dh = display.handle();
-///
-/// let elements = [CustomElem::from(surface_tree)];
-/// space.render_output(&mut renderer, &output, age, [0.0, 0.0, 0.0, 1.0], &elements);
-/// ```
-#[macro_export]
-macro_rules! custom_elements {
-    ($vis:vis $name:ident<=$renderer:ty>; $($tail:tt)*) => {
-        $crate::custom_elements_internal!(@enum $vis $name; $($tail)*);
-        $crate::custom_elements_internal!(@impl $name<=$renderer>; $($tail)*);
-        $crate::custom_elements_internal!(@from $name; $($tail)*);
+// /// Macro to collate multiple [`crate::desktop::space::RenderElement`]-implementations
+// /// into one type to be used with [`Space::render_output`].
+// /// ## Example
+// ///
+// /// ```no_run
+// /// # use wayland_server::{Display, DisplayHandle};
+// /// use smithay::{
+// ///     backend::renderer::{Texture, Renderer, ImportAll},
+// ///     desktop::space::{SurfaceTree, Space, SpaceOutputTuple, RenderElement},
+// ///     utils::{Point, Size, Rectangle, Transform, Logical, Scale},
+// /// };
+// /// use slog::Logger;
+// ///
+// /// # use smithay::{
+// /// #   backend::SwapBuffersError,
+// /// #   backend::renderer::{TextureFilter, Frame},
+// /// #   reexports::wayland_server::protocol::wl_buffer,
+// /// #   wayland::compositor::SurfaceData,
+// /// #   utils::{Buffer, Physical},
+// /// # };
+// /// # struct DummyRenderer;
+// /// # struct DummyFrame;
+// /// # struct DummyError;
+// /// # struct DummyTexture;
+// /// # impl Renderer for DummyRenderer {
+// /// #    type Error = smithay::backend::SwapBuffersError;
+// /// #    type TextureId = DummyTexture;
+// /// #    type Frame = DummyFrame;
+// /// #    fn id(&self) -> usize { 0 }
+// /// #    fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> { Ok(()) }
+// /// #    fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error> { Ok(()) }
+// /// #    fn render<F, R>(
+// /// #        &mut self,
+// /// #        size: Size<i32, Physical>,
+// /// #        dst_transform: Transform,
+// /// #        rendering: F,
+// /// #    ) -> Result<R, Self::Error>
+// /// #    where
+// /// #        F: FnOnce(&mut Self, &mut Self::Frame) -> R
+// /// #    {
+// /// #       Ok(rendering(self, &mut DummyFrame))
+// /// #    }
+// /// # }
+// /// # impl ImportAll for DummyRenderer {
+// /// #    fn import_buffer(
+// /// #        &mut self,
+// /// #        buffer: &wl_buffer::WlBuffer,
+// /// #        surface: Option<&SurfaceData>,
+// /// #        damage: &[Rectangle<i32, Buffer>],
+// /// #    ) -> Option<Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>> { None }
+// /// # }
+// /// # impl Texture for DummyTexture {
+// /// #    fn width(&self) -> u32 { 0 }
+// /// #    fn height(&self) -> u32 { 0 }
+// /// # }
+// /// # impl Frame for DummyFrame {
+// /// #   type Error = SwapBuffersError;
+// /// #   type TextureId = DummyTexture;
+// /// #   fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> { Ok(()) }
+// /// #   #[allow(clippy::too_many_arguments)]
+// /// #   fn render_texture_at(
+// /// #       &mut self,
+// /// #       texture: &Self::TextureId,
+// /// #       pos: Point<i32, Physical>,
+// /// #       texture_scale: i32,
+// /// #       output_scale: impl Into<Scale<f64>>,
+// /// #       src_transform: Transform,
+// /// #       damage: &[Rectangle<i32, Physical>],
+// /// #       alpha: f32,
+// /// #   ) -> Result<(), Self::Error> {
+// /// #       Ok(())
+// /// #   }
+// /// #   fn render_texture_from_to(
+// /// #       &mut self,
+// /// #       texture: &Self::TextureId,
+// /// #       src: Rectangle<f64, Buffer>,
+// /// #       dst: Rectangle<i32, Physical>,
+// /// #       damage: &[Rectangle<i32, Physical>],
+// /// #       src_transform: Transform,
+// /// #       alpha: f32,
+// /// #   ) -> Result<(), Self::Error> {
+// /// #       Ok(())
+// /// #   }
+// /// #   fn transformation(&self) -> Transform { Transform::Normal }
+// /// # }
+// ///
+// /// smithay::custom_elements! {
+// ///     CustomElem; // name of the new type
+// ///     SurfaceTree=SurfaceTree, // <variant name> = <type to collate>
+// /// };
+// ///
+// /// smithay::custom_elements! {
+// ///     CustomElemGeneric<R>; // You can make it generic over renderers!
+// ///     SurfaceTree=SurfaceTree,
+// ///     PointerElement=PointerElement<<R as Renderer>::TextureId>, // and then use R in your types
+// /// };
+// ///
+// /// smithay::custom_elements! {
+// ///     CustomElemExplicit<=DummyRenderer>; // You can make it only usable with one renderer
+// ///     // that is particulary useful, if your renderer has lifetimes (e.g. MultiRenderer)
+// ///     SurfaceTree=SurfaceTree,
+// ///     PointerElement=PointerElement<DummyTexture>, // and then you use a concrete and matching texture type
+// /// };
+// /// // in case your renderer wraps another renderer and implements `std::convert::AsMut`
+// /// // you can also use `RenderElement`-implementations requiring the wrapped renderer
+// /// // by writing something like: `EguiFrame=EguiFrame as <Gles2Renderer>` where `as <renderer>`
+// /// // denotes the type of the wrapped renderer.
+// ///
+// /// pub struct PointerElement<T: Texture> {
+// ///    texture: T,
+// ///    position: Point<i32, Logical>,
+// ///    size: Size<i32, Logical>,
+// /// }
+// ///
+// /// impl<T: Texture> PointerElement<T> {
+// ///    pub fn new(texture: T, pointer_pos: Point<i32, Logical>) -> PointerElement<T> {
+// ///        let size = texture.size().to_logical(1, Transform::Normal);
+// ///        PointerElement {
+// ///            texture,
+// ///            position: pointer_pos,
+// ///            size,
+// ///        }
+// ///    }
+// /// }
+// ///
+// ///# impl<R> RenderElement<R> for PointerElement<<R as Renderer>::TextureId>
+// ///# where
+// ///#    R: Renderer + ImportAll,
+// ///#    <R as Renderer>::TextureId: 'static,
+// ///# {
+// ///#    fn id(&self) -> usize {
+// ///#        0
+// ///#    }
+// ///#
+// ///#    fn location(&self, scale: impl Into<Scale<f64>>) -> Point<f64, Physical> {
+// ///#        self.position.to_f64().to_physical(scale)
+// ///#    }
+// ///#
+// ///#    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
+// ///#        Rectangle::from_loc_and_size(self.position, self.size).to_f64().to_physical(scale).to_i32_round()
+// ///#    }
+// ///#
+// ///#    fn accumulated_damage(&self, _: impl Into<Scale<f64>>, _: Option<SpaceOutputTuple<'_, '_>>) -> Vec<Rectangle<i32, Physical>> {
+// ///#        vec![]
+// ///#    }
+// ///#
+// ///#    fn opaque_regions(&self, scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>> {
+// ///#        None
+// ///#    }
+// ///#
+// ///#    fn draw(
+// ///#        &self,
+// ///#        _renderer: &mut R,
+// ///#        frame: &mut <R as Renderer>::Frame,
+// ///#        scale: impl Into<Scale<f64>>,
+// ///#        location: Point<f64, Physical>,
+// ///#        damage: &[Rectangle<i32, Physical>],
+// ///#        _log: &Logger,
+// ///#    ) -> Result<(), <R as Renderer>::Error> {
+// ///#        Ok(())
+// ///#    }
+// ///# }
+// ///# // just placeholders
+// ///# let mut renderer = DummyRenderer;
+// ///# let texture = DummyTexture;
+// ///# let output = unsafe { std::mem::zeroed() };
+// ///# let surface_tree: SurfaceTree = unsafe { std::mem::zeroed() };
+// ///# let mut space = Space::new(None);
+// ///# let age = 0;
+// ///# let display = Display::<()>::new().unwrap();
+// ///# let dh = display.handle();
+// ///
+// /// let elements = [CustomElem::from(surface_tree)];
+// /// space.render_output(&mut renderer, &output, age, [0.0, 0.0, 0.0, 1.0], &elements);
+// /// ```
+// #[macro_export]
+// macro_rules! custom_elements {
+//     ($vis:vis $name:ident<=$renderer:ty>; $($tail:tt)*) => {
+//         $crate::custom_elements_internal!(@enum $vis $name; $($tail)*);
+//         $crate::custom_elements_internal!(@impl $name<=$renderer>; $($tail)*);
+//         $crate::custom_elements_internal!(@from $name; $($tail)*);
 
-    };
-    ($vis:vis $name:ident<$renderer:ident>; $($tail:tt)*) => {
-        $crate::custom_elements_internal!(@enum $vis $name<$renderer>; $($tail)*);
-        $crate::custom_elements_internal!(@impl $name<$renderer>; $($tail)*);
-        $crate::custom_elements_internal!(@from $name<$renderer>; $($tail)*);
-    };
-    ($vis:vis $name:ident; $($tail:tt)*) => {
-        $crate::custom_elements_internal!(@enum $vis $name; $($tail)*);
-        $crate::custom_elements_internal!(@impl $name; R; $($tail)*);
-        $crate::custom_elements_internal!(@from $name; $($tail)*);
-    };
-}
+//     };
+//     ($vis:vis $name:ident<$renderer:ident>; $($tail:tt)*) => {
+//         $crate::custom_elements_internal!(@enum $vis $name<$renderer>; $($tail)*);
+//         $crate::custom_elements_internal!(@impl $name<$renderer>; $($tail)*);
+//         $crate::custom_elements_internal!(@from $name<$renderer>; $($tail)*);
+//     };
+//     ($vis:vis $name:ident; $($tail:tt)*) => {
+//         $crate::custom_elements_internal!(@enum $vis $name; $($tail)*);
+//         $crate::custom_elements_internal!(@impl $name; R; $($tail)*);
+//         $crate::custom_elements_internal!(@from $name; $($tail)*);
+//     };
+// }
