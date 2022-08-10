@@ -2,138 +2,111 @@
 
 use std::sync::Mutex;
 
-use slog::Logger;
 #[cfg(feature = "debug")]
 use smithay::utils::Buffer;
 use smithay::{
-    backend::renderer::{Frame, ImportAll, Renderer, Texture},
-    desktop::space::{RenderElement, SpaceOutputTuple, SurfaceTree},
-    input::pointer::CursorImageAttributes,
-    reexports::wayland_server::protocol::wl_surface,
+    backend::renderer::{ImportAll, Renderer, Texture},
+    desktop::space::SpaceElement,
+    input::pointer::{CursorImageAttributes, CursorImageStatus},
     utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform},
-    wayland::compositor::{get_role, with_states},
+    wayland::compositor::with_states,
 };
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
 
-smithay::custom_elements! {
-    pub CustomElem<R>;
-    SurfaceTree=SurfaceTree,
-    PointerElement=PointerElement::<<R as Renderer>::TextureId>,
-    #[cfg(feature = "debug")]
-    FpsElement=FpsElement::<<R as Renderer>::TextureId>,
-}
-
-pub fn draw_cursor(
-    surface: wl_surface::WlSurface,
-    location: impl Into<Point<i32, Logical>>,
-    _log: &Logger,
-) -> SurfaceTree {
-    let mut position = location.into();
-    position -= with_states(&surface, |states| {
-        states
-            .data_map
-            .get::<Mutex<CursorImageAttributes>>()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .hotspot
-    });
-    SurfaceTree {
-        surface,
-        position,
-        z_index: 100, /* Cursor should always be on-top */
-    }
-}
-
-pub fn draw_dnd_icon(
-    surface: wl_surface::WlSurface,
-    location: impl Into<Point<i32, Logical>>,
-    log: &Logger,
-) -> SurfaceTree {
-    if get_role(&surface) != Some("dnd_icon") {
-        warn!(
-            log,
-            "Trying to display as a dnd icon a surface that does not have the DndIcon role."
-        );
-    }
-    SurfaceTree {
-        surface,
-        position: location.into(),
-        z_index: 100, /* Cursor should always be on-top */
-    }
-}
-
 pub struct PointerElement<T: Texture> {
+    id: smithay::backend::renderer::output::element::Id,
     texture: T,
     position: Point<i32, Logical>,
+    status: CursorImageStatus,
     size: Size<i32, Logical>,
 }
 
-impl<T: Texture> PointerElement<T> {
-    pub fn new(texture: T, pointer_pos: Point<i32, Logical>) -> PointerElement<T> {
+impl<T: Texture + 'static> PointerElement<T> {
+    pub fn new(texture: T, pointer_pos: impl Into<Point<i32, Logical>>) -> PointerElement<T> {
         let size = texture.size().to_logical(1, Transform::Normal);
         PointerElement {
+            id: smithay::backend::renderer::output::element::Id::new(),
             texture,
-            position: pointer_pos,
+            position: pointer_pos.into(),
             size,
+            status: CursorImageStatus::Default,
         }
+    }
+
+    pub fn set_position(&mut self, position: impl Into<Point<i32, Logical>>) {
+        self.position = position.into();
+    }
+
+    pub fn set_status(&mut self, status: CursorImageStatus) {
+        self.status = status;
     }
 }
 
-impl<R> RenderElement<R> for PointerElement<<R as Renderer>::TextureId>
+impl<T: Texture + Clone + 'static, R, E> SpaceElement<R, E> for PointerElement<T>
 where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
+    R: Renderer<TextureId = T> + ImportAll,
+    E: smithay::backend::renderer::output::element::RenderElement<R>
+        + From<smithay::backend::renderer::output::element::texture::TextureRenderElement<R>>
+        + From<smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>>,
 {
-    fn id(&self) -> usize {
-        0
+    fn location(&self, _space_id: usize) -> Point<i32, Logical> {
+        if let CursorImageStatus::Surface(surface) = &self.status {
+            let hotspot = with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<Mutex<CursorImageAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .hotspot
+            });
+
+            self.position - hotspot
+        } else {
+            self.position
+        }
     }
 
-    fn location(&self, scale: impl Into<Scale<f64>>) -> Point<f64, Physical> {
-        self.position.to_f64().to_physical(scale)
+    fn geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
+        match &self.status {
+            CursorImageStatus::Hidden => Rectangle::default(),
+            CursorImageStatus::Default => Rectangle::from_loc_and_size(self.position, self.size),
+            CursorImageStatus::Surface(surface) => {
+                let hotspot = with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<Mutex<CursorImageAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .hotspot
+                });
+
+                smithay::desktop::utils::bbox_from_surface_tree(surface, self.position - hotspot)
+            }
+        }
     }
 
-    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(self.position, self.size).to_physical_precise_round(scale)
-    }
-
-    fn accumulated_damage(
-        &self,
-        scale: impl Into<Scale<f64>>,
-        _: Option<SpaceOutputTuple<'_, '_>>,
-    ) -> Vec<Rectangle<i32, Physical>> {
-        let scale = scale.into();
-        vec![Rectangle::from_loc_and_size(self.position, self.size).to_physical_precise_up(scale)]
-    }
-
-    fn opaque_regions(&self, _scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>> {
-        None
-    }
-
-    fn draw(
-        &self,
-        _renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
-        scale: impl Into<Scale<f64>>,
-        location: Point<f64, Physical>,
-        _damage: &[Rectangle<i32, Physical>],
-        _log: &Logger,
-    ) -> Result<(), <R as Renderer>::Error> {
-        let scale = scale.into();
-        frame.render_texture_at(
-            &self.texture,
-            location.to_i32_round(),
-            1,
-            scale,
-            Transform::Normal,
-            &[Rectangle::from_loc_and_size(
-                (0, 0),
-                self.size.to_physical_precise_round(scale),
-            )],
-            1.0,
-        )?;
-        Ok(())
+    fn render_elements(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E> {
+        match &self.status {
+            CursorImageStatus::Hidden => vec![],
+            CursorImageStatus::Default => {
+                vec![
+                    smithay::backend::renderer::output::element::texture::TextureRenderElement::from_texture(
+                        location,
+                        self.id.clone(),
+                        self.texture.clone(),
+                    )
+                    .into(),
+                ]
+            }
+            CursorImageStatus::Surface(surface) => {
+                smithay::backend::renderer::output::element::surface::surfaces_from_surface_tree(
+                    surface, location, scale,
+                )
+            }
+        }
     }
 }
 
