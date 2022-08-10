@@ -5,21 +5,29 @@ use crate::{
     utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
-            self, add_destruction_hook, is_sync_subsurface, with_surface_tree_downward,
+            self, add_destruction_hook, is_sync_subsurface, with_states, with_surface_tree_downward,
             with_surface_tree_upward, BufferAssignment, Damage, RectangleKind, SubsurfaceCachedState,
             SurfaceAttributes, SurfaceData, TraversalAction,
         },
+        output::Output,
         viewporter,
     },
 };
+use indexmap::IndexMap;
 use slog::trace;
-use std::collections::VecDeque;
 use std::{
     any::TypeId,
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},
 };
-use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
+use std::{collections::VecDeque, hash::Hash};
+use wayland_backend::server::ObjectId;
+use wayland_server::{
+    protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface},
+    Resource,
+};
+
+use super::{buffer_type, BufferType};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -253,6 +261,16 @@ impl RendererSurfaceState {
     /// Can be used to check if surface is mapped
     pub fn wl_buffer(&self) -> Option<&WlBuffer> {
         self.buffer.as_ref()
+    }
+
+    /// Gets a reference to the texture for the specified renderer
+    pub fn texture<R>(&self, renderer: &R) -> Option<&R::TextureId>
+    where
+        R: Renderer,
+        <R as Renderer>::TextureId: 'static,
+    {
+        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
+        self.textures.get(&texture_id).and_then(|e| e.downcast_ref())
     }
 
     /// Location of the buffer relative to the previous call of take_accumulated_buffer_delta
@@ -491,6 +509,509 @@ where
         |_, _, _| true,
     );
     result
+}
+
+/// Retrieve the render surfaces for a surface tree
+pub fn surfaces_from_surface_tree(
+    surface: &WlSurface,
+    location: Point<f64, Physical>,
+    scale: impl Into<Scale<f64>>,
+) -> Vec<WaylandSurfaceRenderElement> {
+    let scale = scale.into();
+    let mut surfaces: Vec<WaylandSurfaceRenderElement> = Vec::new();
+
+    compositor::with_surface_tree_downward(
+        surface,
+        location,
+        |_, states, location| {
+            let mut location = *location;
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+
+            if let Some(data) = data {
+                let data = &*data.borrow();
+
+                if let Some(view) = data.view() {
+                    location += view.offset.to_f64().to_physical(scale);
+                    TraversalAction::DoChildren(location)
+                } else {
+                    TraversalAction::SkipChildren
+                }
+            } else {
+                TraversalAction::SkipChildren
+            }
+        },
+        |surface, states, location| {
+            let mut location = *location;
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+
+            if let Some(data) = data {
+                let data = &*data.borrow();
+
+                if let Some(view) = data.view() {
+                    location += view.offset.to_f64().to_physical(scale);
+
+                    let surface = WaylandSurfaceRenderElement::new(surface, location.to_i32_round());
+                    surfaces.push(surface);
+                }
+            }
+        },
+        |_, _, _| true,
+    );
+
+    surfaces
+}
+
+/// A single surface render element
+#[derive(Debug)]
+pub struct WaylandSurfaceRenderElement {
+    location: Point<i32, Physical>,
+    surface: WlSurface,
+}
+
+impl WaylandSurfaceRenderElement {
+    fn new(surface: &WlSurface, location: Point<i32, Physical>) -> Self {
+        Self {
+            location,
+            surface: surface.clone(),
+        }
+    }
+}
+
+impl RenderElement<ObjectId> for WaylandSurfaceRenderElement {
+    fn id(&self) -> ObjectId {
+        self.surface.id()
+    }
+
+    fn current_commit(&self) -> usize {
+        with_states(&self.surface, |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            data.map(|d| d.borrow().current_commit()).unwrap()
+        })
+    }
+
+    fn location(&self, _scale: impl Into<Scale<f64>>) -> Point<i32, Physical> {
+        self.location
+    }
+
+    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
+        with_states(&self.surface, |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            data.map(|d| d.borrow().view().unwrap().dst)
+                .map(|d| Rectangle::from_loc_and_size(self.location, d.to_physical_precise_round(scale)))
+                .unwrap()
+        })
+    }
+
+    fn damage_since(
+        &self,
+        scale: impl Into<Scale<f64>>,
+        commit: Option<usize>,
+    ) -> Vec<Rectangle<i32, Physical>> {
+        let scale = scale.into();
+        with_states(&self.surface, |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            data.map(|d| {
+                let data = d.borrow();
+                data.damage_since(commit)
+                    .iter()
+                    .map(|d| {
+                        d.to_f64()
+                            .to_logical(
+                                data.buffer_scale as f64,
+                                data.buffer_transform,
+                                &data.buffer_dimensions.unwrap().to_f64(),
+                            )
+                            .to_physical(scale)
+                            .to_i32_up()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+        })
+    }
+
+    fn opaque_regions(&self, scale: impl Into<Scale<f64>>) -> Vec<Rectangle<i32, Physical>> {
+        let scale = scale.into();
+        with_states(&self.surface, |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            data.map(|d| {
+                let data = d.borrow();
+                data.opaque_regions()
+                    .map(|r| {
+                        r.iter()
+                            .map(|r| r.to_physical_precise_up(scale))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+        })
+    }
+
+    fn underlying_storage<R: Renderer>(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+        with_states(&self.surface, |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            data.and_then(|d| d.borrow().wl_buffer().cloned())
+                .map(|b| UnderlyingStorage::Wayland(b))
+        })
+    }
+
+    fn draw<R>(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        scale: impl Into<Scale<f64>>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) where
+        R: Renderer + ImportAll,
+        <R as Renderer>::TextureId: 'static,
+    {
+        import_surface_tree(renderer, &self.surface, log).expect("failed to import surface");
+
+        with_states(&self.surface, |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            if let Some(data) = data {
+                let data = data.borrow();
+                frame
+                    .render_texture_at(
+                        data.texture(renderer).unwrap(),
+                        self.location,
+                        data.buffer_scale,
+                        scale,
+                        data.buffer_transform,
+                        damage,
+                        1.0f32,
+                    )
+                    .expect("failed to render texture");
+            }
+        })
+    }
+}
+
+/// Specialized render for drm output which uses planes
+pub struct DrmOutputRender<I> {
+    output_render: OutputRender<I>,
+}
+
+impl<I: PartialEq + Hash + Eq> DrmOutputRender<I> {
+    /// Render the output
+    pub fn render_output<R, E>(&mut self, renderer: &mut R, elements: &[E], log: &slog::Logger)
+    where
+        E: RenderElement<I>,
+        R: Renderer + ImportAll + std::fmt::Debug,
+        <R as Renderer>::TextureId: std::fmt::Debug + 'static,
+    {
+        for element in elements {
+            if let Some(underlying_storage) = element.underlying_storage(renderer) {
+                match underlying_storage {
+                    UnderlyingStorage::Wayland(buffer) => {
+                        let buffer_type = buffer_type(&buffer);
+
+                        let buffer_supports_direct_scan_out = if let Some(buffer_type) = buffer_type {
+                            matches!(buffer_type, BufferType::Dma)
+                        } else {
+                            false
+                        };
+
+                        if buffer_supports_direct_scan_out {
+                            // Try to assign the element to a plane
+                            todo!()
+                        } else {
+                            // No direct-scan out possible, needs to be rendered on the primary plane
+                        }
+                    }
+                    UnderlyingStorage::External(_) => {
+                        // No direct-scan out possible, needs to be rendered on the primary plane
+                    }
+                }
+            } else {
+                // No direct-scan out possible, needs to be rendered on the primary plane
+            }
+        }
+
+        // Draw the remaining elements on the primary plane
+        self.output_render.render_output(renderer, 0, elements, log);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ElementState {
+    last_commit: usize,
+    last_geometry: Rectangle<i32, Physical>,
+    last_z_index: usize,
+}
+
+#[derive(Debug)]
+struct OutputRenderState<I> {
+    size: Option<Size<i32, Physical>>,
+    elements: IndexMap<I, ElementState>,
+}
+
+/// Rendering for a single output
+#[derive(Debug)]
+pub struct OutputRender<I> {
+    output: Output,
+    last_states: VecDeque<OutputRenderState<I>>,
+    empty_state: OutputRenderState<I>,
+}
+
+/// The underlying storage for a element
+#[derive(Debug)]
+pub enum UnderlyingStorage<'a, R: Renderer> {
+    /// A wayland buffer
+    Wayland(WlBuffer),
+    /// A texture
+    External(&'a R::TextureId),
+}
+
+/// A single render element
+pub trait RenderElement<I> {
+    /// Get the unique id of this element
+    fn id(&self) -> I;
+    /// Get the current commit position of this element
+    fn current_commit(&self) -> usize;
+    /// Get the location relative to the output
+    fn location(&self, scale: impl Into<Scale<f64>>) -> Point<i32, Physical>;
+    /// Get the geometry relative to the output
+    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical>;
+    /// Get the damage since the provided commit relative to the element
+    fn damage_since(
+        &self,
+        scale: impl Into<Scale<f64>>,
+        commit: Option<usize>,
+    ) -> Vec<Rectangle<i32, Physical>>;
+    /// Get the opaque regions of the element relative to the element
+    fn opaque_regions(&self, scale: impl Into<Scale<f64>>) -> Vec<Rectangle<i32, Physical>>;
+    /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
+    fn underlying_storage<R: Renderer>(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>>;
+    /// Draw this element
+    fn draw<R>(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        scale: impl Into<Scale<f64>>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) where
+        R: Renderer + ImportAll,
+        <R as Renderer>::TextureId: 'static;
+}
+
+impl<I: PartialEq + Hash + Eq> OutputRender<I> {
+    /// Initialize a new [`OutputRender`]
+    pub fn new(output: &Output) -> Self {
+        Self {
+            output: output.clone(),
+            last_states: VecDeque::new(),
+            empty_state: OutputRenderState {
+                size: None,
+                elements: IndexMap::new(),
+            },
+        }
+    }
+
+    /// Render this output
+    pub fn render_output<E, R>(&mut self, renderer: &mut R, age: usize, elements: &[E], log: &slog::Logger)
+    where
+        E: RenderElement<I>,
+        R: Renderer + ImportAll + std::fmt::Debug,
+        <R as Renderer>::TextureId: std::fmt::Debug + 'static,
+    {
+        let output_size = self.output.current_mode().unwrap().size;
+        let output_transform = self.output.current_transform();
+        let output_scale = self.output.current_scale().fractional_scale();
+        let output_geo = Rectangle::from_loc_and_size((0, 0), output_size);
+
+        // This will hold all the damage we need for this rendering step
+        let mut damage: Vec<Rectangle<i32, Physical>> = Vec::new();
+        let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
+        let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
+
+        let last_state = if age > 0 && self.last_states.len() >= age {
+            self.last_states.truncate(age);
+            self.last_states.get(age - 1).unwrap_or(&self.empty_state)
+        } else {
+            damage = vec![output_geo];
+            &self.empty_state
+        };
+
+        // If the output size changed damage everything
+        if last_state.size.map(|s| s != output_size).unwrap_or(true) {
+            damage = vec![output_geo];
+        }
+
+        for element in elements {
+            let element_geometry = element.geometry(output_scale);
+
+            // First test if the element overlaps with the output
+            // if not we can skip ip
+            if !element_geometry.overlaps(output_geo) {
+                continue;
+            }
+
+            // Then test if the element is completely hidden behind opaque regions
+            let is_hidden = opaque_regions
+                .iter()
+                .fold([element_geometry].to_vec(), |geometry, opaque_region| {
+                    geometry
+                        .into_iter()
+                        .flat_map(|g| g.subtract_rect(*opaque_region))
+                        .collect::<Vec<_>>()
+                })
+                .is_empty();
+
+            if is_hidden {
+                // No need to draw a completely hidden element
+                continue;
+            }
+
+            let element_damage = element
+                .damage_since(
+                    output_scale,
+                    last_state.elements.get(&element.id()).map(|s| s.last_commit),
+                )
+                .into_iter()
+                .map(|mut d| {
+                    d.loc += element_geometry.loc;
+                    d
+                })
+                .collect::<Vec<_>>();
+
+            let element_output_damage =
+                opaque_regions
+                    .iter()
+                    .fold(element_damage, |damage, opaque_region| {
+                        damage
+                            .into_iter()
+                            .flat_map(|damage| damage.subtract_rect(*opaque_region))
+                            .collect::<Vec<_>>()
+                    });
+
+            damage.extend(element_output_damage);
+            opaque_regions.extend(
+                element
+                    .opaque_regions(output_scale)
+                    .into_iter()
+                    .map(|mut region| {
+                        region.loc += element_geometry.loc;
+                        region
+                    }),
+            );
+            render_elements.insert(0, element);
+        }
+
+        // add the damage for elements gone that are not covered by
+        // by an opaque region
+        // TODO: actually filter the damage with the opaque regions
+        let elements_gone = last_state
+            .elements
+            .iter()
+            .filter_map(|(id, state)| {
+                if !render_elements.iter().any(|e| e.id() == *id) {
+                    Some(state.last_geometry)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        damage.extend(elements_gone);
+
+        // if the element has been moved or it's z index changed damage it
+        for (z_index, element) in render_elements.iter().enumerate() {
+            let element_geometry = element.geometry(output_scale);
+            let element_last_state = last_state.elements.get(&element.id());
+
+            if element_last_state
+                .map(|s| s.last_geometry != element_geometry || s.last_z_index != z_index)
+                .unwrap_or(false)
+            {
+                if let Some(old_geo) = element_last_state.map(|s| s.last_geometry) {
+                    damage.push(old_geo);
+                }
+                damage.push(element_geometry);
+            }
+        }
+
+        // Optimize the damage for rendering
+        damage.dedup();
+        damage.retain(|rect| rect.overlaps(output_geo));
+        damage.retain(|rect| !rect.is_empty());
+        // filter damage outside of the output gep and merge overlapping rectangles
+        damage = damage
+            .into_iter()
+            .filter_map(|rect| rect.intersection(output_geo))
+            .fold(Vec::new(), |new_damage, mut rect| {
+                // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
+                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
+                    new_damage.into_iter().partition(|other| other.overlaps(rect));
+
+                for overlap in overlapping {
+                    rect = rect.merge(overlap);
+                }
+                new_damage.push(rect);
+                new_damage
+            });
+
+        if damage.is_empty() {
+            return;
+        }
+
+        dbg!(elements.len());
+        dbg!(render_elements.len());
+
+        let mut elements_drawn = 0;
+
+        renderer
+            .render(output_size, output_transform.into(), |renderer, frame| {
+                frame
+                    .clear([1.0f32, 0.0f32, 0.0f32, 1.0f32], &*damage)
+                    .expect("failed to clear the frame");
+
+                for element in render_elements.iter() {
+                    let element_geometry = element.geometry(output_scale);
+
+                    let element_damage = damage
+                        .iter()
+                        .filter_map(|d| d.intersection(element_geometry))
+                        .map(|mut d| {
+                            d.loc -= element_geometry.loc;
+                            d
+                        })
+                        .collect::<Vec<_>>();
+
+                    if element_damage.is_empty() {
+                        continue;
+                    }
+
+                    element.draw(renderer, frame, output_scale, &*element_damage, log);
+                    elements_drawn += 1;
+                }
+            })
+            .expect("failed to render");
+
+        dbg!(elements_drawn);
+
+        let new_elements_state = render_elements
+            .iter()
+            .enumerate()
+            .map(|(zindex, elem)| {
+                let id = elem.id();
+                let current_commit = elem.current_commit();
+                let elem_geometry = elem.geometry(output_scale);
+                let state = ElementState {
+                    last_commit: current_commit,
+                    last_geometry: elem_geometry,
+                    last_z_index: zindex,
+                };
+                (id, state)
+            })
+            .collect();
+        self.last_states.push_front(OutputRenderState {
+            size: Some(output_size),
+            elements: new_elements_state,
+        });
+    }
 }
 
 #[derive(Debug, Default)]

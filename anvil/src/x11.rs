@@ -22,9 +22,10 @@ use smithay::{
 use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
-        renderer::{gles2::Gles2Renderer, Bind},
+        renderer::{gles2::Gles2Renderer, utils::OutputRender, Bind},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
+    desktop::space::SpaceRenderElementId,
     reexports::{
         calloop::EventLoop,
         gbm,
@@ -49,6 +50,7 @@ pub struct X11Data {
     // FIXME: If Gles2Renderer is dropped before X11Surface, then the MakeCurrent call inside Gles2Renderer will
     // fail because the X11Surface is keeping gbm alive.
     renderer: Gles2Renderer,
+    output_render: OutputRender<SpaceRenderElementId>,
     surface: X11Surface,
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
@@ -167,21 +169,6 @@ pub fn run_x11(log: Logger) {
             false,
         )
         .expect("Unable to upload FPS texture");
-
-    let data = X11Data {
-        render: true,
-        mode,
-        surface,
-        renderer,
-        #[cfg(feature = "egl")]
-        dmabuf_state,
-        #[cfg(feature = "debug")]
-        fps_texture,
-        #[cfg(feature = "debug")]
-        fps: fps_ticker::Fps::default(),
-    };
-
-    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
     let output = Output::new(
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
@@ -195,6 +182,25 @@ pub fn run_x11(log: Logger) {
     let _global = output.create_global::<AnvilState<X11Data>>(&display.handle());
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
+
+    let output_render = OutputRender::new(&output);
+
+    let data = X11Data {
+        render: true,
+        mode,
+        surface,
+        renderer,
+        output_render,
+        #[cfg(feature = "egl")]
+        dmabuf_state,
+        #[cfg(feature = "debug")]
+        fps_texture,
+        #[cfg(feature = "debug")]
+        fps: fps_ticker::Fps::default(),
+    };
+
+    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
+
     state.space.map_output(&output, (0, 0));
 
     let output_clone = output.clone();
@@ -288,30 +294,41 @@ pub fn run_x11(log: Logger) {
                 elements.push(draw_fps::<Gles2Renderer>(fps_texture, fps).into());
             }
 
-            let render_res = crate::render::render_output(
-                &output,
-                &mut state.space,
-                &mut backend_data.renderer,
-                age.into(),
-                &*elements,
-                &log,
-            );
-            match render_res {
-                Ok(_) => {
-                    trace!(log, "Finished rendering");
-                    if let Err(err) = backend_data.surface.submit() {
-                        backend_data.surface.reset_buffers();
-                        warn!(log, "Failed to submit buffer: {}. Retrying", err);
-                    } else {
-                        state.backend_data.render = false;
-                    };
-                }
-                Err(err) => {
-                    backend_data.surface.reset_buffers();
-                    error!(log, "Rendering error: {}", err);
-                    // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
-                }
-            }
+            let elements = state.space.elements_for_output(&output);
+            let output_render = &mut backend_data.output_render;
+            output_render.render_output(&mut backend_data.renderer, age.into(), &*elements, &log);
+
+            if let Err(err) = backend_data.surface.submit() {
+                backend_data.surface.reset_buffers();
+                warn!(log, "Failed to submit buffer: {}. Retrying", err);
+            } else {
+                state.backend_data.render = false;
+            };
+
+            // let render_res = crate::render::render_output(
+            //     &output,
+            //     &mut state.space,
+            //     &mut backend_data.renderer,
+            //     age.into(),
+            //     &*elements,
+            //     &log,
+            // );
+            // match render_res {
+            //     Ok(_) => {
+            //         trace!(log, "Finished rendering");
+            //         if let Err(err) = backend_data.surface.submit() {
+            //             backend_data.surface.reset_buffers();
+            //             warn!(log, "Failed to submit buffer: {}. Retrying", err);
+            //         } else {
+            //             state.backend_data.render = false;
+            //         };
+            //     }
+            //     Err(err) => {
+            //         backend_data.surface.reset_buffers();
+            //         error!(log, "Rendering error: {}", err);
+            //         // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
+            //     }
+            // }
 
             #[cfg(feature = "debug")]
             state.backend_data.fps.tick();

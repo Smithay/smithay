@@ -20,8 +20,8 @@ use super::{window::window_loc, RenderZindex};
 
 #[derive(Debug)]
 pub struct RenderPopup {
-    location: Point<i32, Logical>,
-    popup: PopupKind,
+    pub(crate) location: Point<i32, Logical>,
+    pub(crate) popup: PopupKind,
     z_index: u8,
 }
 

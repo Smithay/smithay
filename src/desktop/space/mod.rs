@@ -9,7 +9,7 @@ use crate::{
         utils::{output_leave, output_update},
         window::Window,
     },
-    utils::{IsAlive, Logical, Physical, Point, Rectangle, Transform},
+    utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform},
     wayland::{
         compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
         output::Output,
@@ -17,6 +17,7 @@ use crate::{
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{collections::VecDeque, fmt};
+use wayland_backend::server::ObjectId;
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 mod element;
@@ -432,6 +433,61 @@ impl Space {
         }
     }
 
+    /// Retrieve the render elements for an output
+    pub fn elements_for_output(&self, output: &Output) -> Vec<SpaceRenderElement> {
+        let state = output_state(self.id, output);
+        let output_size = output.current_mode().unwrap().size;
+        let output_scale = output.current_scale().fractional_scale();
+        let output_geo = Rectangle::from_loc_and_size(
+            state.location.to_physical_precise_round(output_scale),
+            output_size,
+        );
+
+        let mut element: Vec<SpaceRenderElement> = Vec::new();
+        for window in self.windows().rev() {
+            let popups = window.popup_elements(self.id).collect::<Vec<_>>();
+
+            for popup in popups.iter().rev() {
+                let surface = popup.popup.wl_surface();
+                let popup_surfaces = crate::backend::renderer::utils::surfaces_from_surface_tree(
+                    surface,
+                    popup.location.to_physical_precise_round(output_scale),
+                    output_scale,
+                )
+                .into_iter()
+                .map(|surface| SpaceSurface {
+                    space_id: self.id,
+                    surface,
+                })
+                .map(SpaceRenderElement::Surface);
+                element.extend(popup_surfaces);
+            }
+
+            let window_location = window.elem_location(self.id, output_scale);
+            let window_geometry = window.elem_geometry(self.id, output_scale);
+
+            if !window_geometry.overlaps(output_geo) {
+                continue;
+            }
+
+            let surface = window.toplevel().wl_surface();
+            let window_surfaces = crate::backend::renderer::utils::surfaces_from_surface_tree(
+                surface,
+                window_location,
+                output_scale,
+            )
+            .into_iter()
+            .map(|surface| SpaceSurface {
+                space_id: self.id,
+                surface,
+            })
+            .map(SpaceRenderElement::Surface);
+            element.extend(window_surfaces);
+        }
+
+        element
+    }
+
     /// Render a given [`Output`] using a given [`Renderer`].
     ///
     /// [`Space`] will render all mapped [`Window`]s, mapped [`LayerSurface`](super::LayerSurface)s
@@ -727,6 +783,147 @@ impl Space {
                 layer.send_frame(time);
             }
         }
+    }
+}
+
+#[derive(Debug)]
+pub enum SpaceRenderElement {
+    Surface(SpaceSurface),
+}
+
+#[derive(Debug)]
+pub struct SpaceSurface {
+    space_id: usize,
+    surface: crate::backend::renderer::utils::WaylandSurfaceRenderElement,
+}
+
+impl crate::backend::renderer::utils::RenderElement<SpaceRenderElementId> for SpaceSurface {
+    fn id(&self) -> SpaceRenderElementId {
+        SpaceRenderElementId::from((self.space_id, self.surface.id()))
+    }
+
+    fn current_commit(&self) -> usize {
+        self.surface.current_commit()
+    }
+
+    fn location(&self, scale: impl Into<crate::utils::Scale<f64>>) -> Point<i32, Physical> {
+        self.surface.location(scale)
+    }
+
+    fn geometry(&self, scale: impl Into<crate::utils::Scale<f64>>) -> Rectangle<i32, Physical> {
+        self.surface.geometry(scale)
+    }
+
+    fn damage_since(
+        &self,
+        scale: impl Into<crate::utils::Scale<f64>>,
+        commit: Option<usize>,
+    ) -> Vec<Rectangle<i32, Physical>> {
+        self.surface.damage_since(scale, commit)
+    }
+
+    fn opaque_regions(&self, scale: impl Into<crate::utils::Scale<f64>>) -> Vec<Rectangle<i32, Physical>> {
+        self.surface.opaque_regions(scale)
+    }
+
+    fn underlying_storage<R: Renderer>(
+        &self,
+        renderer: &R,
+    ) -> Option<crate::backend::renderer::utils::UnderlyingStorage<'_, R>> {
+        self.surface.underlying_storage(renderer)
+    }
+
+    fn draw<R>(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        scale: impl Into<Scale<f64>>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) where
+        R: Renderer + ImportAll,
+        <R as Renderer>::TextureId: 'static,
+    {
+        self.surface.draw(renderer, frame, scale, damage, log)
+    }
+}
+
+impl crate::backend::renderer::utils::RenderElement<SpaceRenderElementId> for SpaceRenderElement {
+    fn id(&self) -> SpaceRenderElementId {
+        match self {
+            SpaceRenderElement::Surface(surface) => surface.id(),
+        }
+    }
+
+    fn current_commit(&self) -> usize {
+        match self {
+            SpaceRenderElement::Surface(surface) => surface.current_commit(),
+        }
+    }
+
+    fn location(&self, scale: impl Into<crate::utils::Scale<f64>>) -> Point<i32, Physical> {
+        match self {
+            SpaceRenderElement::Surface(surface) => surface.location(scale),
+        }
+    }
+
+    fn geometry(&self, scale: impl Into<crate::utils::Scale<f64>>) -> Rectangle<i32, Physical> {
+        match self {
+            SpaceRenderElement::Surface(surface) => surface.geometry(scale),
+        }
+    }
+
+    fn damage_since(
+        &self,
+        scale: impl Into<crate::utils::Scale<f64>>,
+        commit: Option<usize>,
+    ) -> Vec<Rectangle<i32, Physical>> {
+        match self {
+            SpaceRenderElement::Surface(surface) => surface.damage_since(scale, commit),
+        }
+    }
+
+    fn opaque_regions(&self, scale: impl Into<crate::utils::Scale<f64>>) -> Vec<Rectangle<i32, Physical>> {
+        match self {
+            SpaceRenderElement::Surface(surface) => surface.opaque_regions(scale),
+        }
+    }
+
+    fn underlying_storage<R: Renderer>(
+        &self,
+        renderer: &R,
+    ) -> Option<crate::backend::renderer::utils::UnderlyingStorage<'_, R>> {
+        match self {
+            SpaceRenderElement::Surface(surface) => surface.underlying_storage(renderer),
+        }
+    }
+
+    fn draw<R>(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        scale: impl Into<Scale<f64>>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) where
+        R: Renderer + ImportAll,
+        <R as Renderer>::TextureId: 'static,
+    {
+        match self {
+            SpaceRenderElement::Surface(surface) => surface.draw(renderer, frame, scale, damage, log),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct SpaceRenderElementId {
+    space_id: usize,
+    element_id: ObjectId,
+}
+
+impl From<(usize, ObjectId)> for SpaceRenderElementId {
+    fn from((space_id, element_id): (usize, ObjectId)) -> Self {
+        Self { space_id, element_id }
     }
 }
 
