@@ -25,16 +25,16 @@ fn main() {
 
     let arg = ::std::env::args().nth(1);
     match arg.as_ref().map(|s| &s[..]) {
-        #[cfg(feature = "winit")]
-        Some("--winit") => {
-            slog::info!(log, "Starting anvil with winit backend");
-            anvil::winit::run_winit(log);
-        }
-        #[cfg(feature = "udev")]
-        Some("--tty-udev") => {
-            slog::info!(log, "Starting anvil on a tty using udev");
-            anvil::udev::run_udev(log);
-        }
+        // #[cfg(feature = "winit")]
+        // Some("--winit") => {
+        //     slog::info!(log, "Starting anvil with winit backend");
+        //     anvil::winit::run_winit(log);
+        // }
+        // #[cfg(feature = "udev")]
+        // Some("--tty-udev") => {
+        //     slog::info!(log, "Starting anvil on a tty using udev");
+        //     anvil::udev::run_udev(log);
+        // }
         #[cfg(feature = "x11")]
         Some("--x11") => {
             slog::info!(log, "Starting anvil with x11 backend");
