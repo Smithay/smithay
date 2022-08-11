@@ -43,7 +43,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             source,
         })?;
         for &con in res_handles.connectors() {
-            let con_info = dev.fd.get_connector(con).map_err(|source| Error::Access {
+            let con_info = dev.fd.get_connector(con, false).map_err(|source| Error::Access {
                 errmsg: "Error loading connector info",
                 dev: dev.fd.dev_path(),
                 source,
@@ -144,7 +144,7 @@ where
 {
     // for every connector...
     for conn in connectors {
-        let info = dev.get_connector(conn).map_err(|source| Error::Access {
+        let info = dev.get_connector(conn, false).map_err(|source| Error::Access {
             errmsg: "Failed to get connector infos",
             dev: dev.dev_path(),
             source,

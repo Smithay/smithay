@@ -374,7 +374,7 @@ fn scan_connectors(
     let connector_infos: Vec<ConnectorInfo> = res_handles
         .connectors()
         .iter()
-        .map(|conn| device.get_connector(*conn).unwrap())
+        .map(|conn| device.get_connector(*conn, true).unwrap())
         .filter(|conn| conn.state() == ConnectorState::Connected)
         .inspect(|conn| info!(logger, "Connected: {:?}", conn.interface()))
         .collect();
@@ -399,7 +399,6 @@ fn scan_connectors(
         let encoder_infos = connector_info
             .encoders()
             .iter()
-            .flatten()
             .flat_map(|encoder_handle| device.get_encoder(*encoder_handle))
             .collect::<Vec<EncoderInfo>>();
 

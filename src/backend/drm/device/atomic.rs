@@ -59,12 +59,11 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             source,
         })?;
 
-        let plane_handles = dev.fd.plane_handles().map_err(|source| Error::Access {
+        let planes = dev.fd.plane_handles().map_err(|source| Error::Access {
             errmsg: "Error loading planes",
             dev: dev.fd.dev_path(),
             source,
         })?;
-        let planes = plane_handles.planes();
 
         let mut old_state = dev.old_state.clone();
         let mut mapping = dev.prop_mapping.clone();
@@ -74,14 +73,14 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
         add_props(&*dev.fd, res_handles.connectors(), &mut old_state.0)?;
         add_props(&*dev.fd, res_handles.crtcs(), &mut old_state.1)?;
         add_props(&*dev.fd, res_handles.framebuffers(), &mut old_state.2)?;
-        add_props(&*dev.fd, planes, &mut old_state.3)?;
+        add_props(&*dev.fd, &planes, &mut old_state.3)?;
 
         // And because the mapping is not consistent across devices,
         // we also need to lookup the handle for a property name.
         // And we do this a fair bit, so lets cache that mapping.
         map_props(&*dev.fd, res_handles.connectors(), &mut mapping.0)?;
         map_props(&*dev.fd, res_handles.crtcs(), &mut mapping.1)?;
-        map_props(&*dev.fd, planes, &mut mapping.2)?;
+        map_props(&*dev.fd, &planes, &mut mapping.2)?;
 
         dev.old_state = old_state;
         dev.prop_mapping = mapping;
@@ -137,24 +136,24 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
             req.add_property(*conn, *prop, property::Value::CRTC(None));
         }
         // Disable all planes
-        for plane in plane_handles.planes() {
+        for plane in plane_handles {
             let prop = self
                 .prop_mapping
                 .2
-                .get(plane)
+                .get(&plane)
                 .expect("Unknown handle")
                 .get("CRTC_ID")
                 .expect("Unknown property CRTC_ID");
-            req.add_property(*plane, *prop, property::Value::CRTC(None));
+            req.add_property(plane, *prop, property::Value::CRTC(None));
 
             let prop = self
                 .prop_mapping
                 .2
-                .get(plane)
+                .get(&plane)
                 .expect("Unknown handle")
                 .get("FB_ID")
                 .expect("Unknown property FB_ID");
-            req.add_property(*plane, *prop, property::Value::Framebuffer(None));
+            req.add_property(plane, *prop, property::Value::Framebuffer(None));
         }
         // A crtc without a connector has no mode, we also need to reset that.
         // Otherwise the commit will not be accepted.

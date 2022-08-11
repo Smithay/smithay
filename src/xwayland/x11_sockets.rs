@@ -134,7 +134,7 @@ fn open_socket(addr: socket::UnixAddr) -> nix::Result<UnixStream> {
         None,
     )?;
     // bind it to requested address
-    if let Err(e) = socket::bind(fd, &socket::SockAddr::Unix(addr)) {
+    if let Err(e) = socket::bind(fd, &addr) {
         let _ = ::nix::unistd::close(fd);
         return Err(e);
     }
