@@ -245,21 +245,23 @@ pub fn run_winit(log: Logger) {
 
             let full_redraw = &mut state.backend_data.full_redraw;
             *full_redraw = full_redraw.saturating_sub(1);
-            let age = if *full_redraw > 0 {
-                0
-            } else {
-                backend.buffer_age().unwrap_or(0)
-            };
             let space = &mut state.space;
             let render_res = backend.bind().and_then(|_| {
                 let renderer = backend.renderer();
-                crate::render::render_output(&output, space, renderer, age, &*elements, &log).map_err(|err| {
+                // Fixme: calling `render_output` freeze anvil on some system when a non zero age value is sent
+                crate::render::render_output(&output, space, renderer, 0, &*elements, &log).map_err(|err| {
                     match err {
                         RenderError::Rendering(err) => err.into(),
                         _ => unreachable!(),
                     }
                 })
             });
+
+            let age = if *full_redraw > 0 {
+                0
+            } else {
+                backend.buffer_age().unwrap_or(0)
+            };
 
             match render_res {
                 Ok(Some(damage)) => {
