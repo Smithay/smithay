@@ -71,49 +71,45 @@ pub fn main() {
     slog_stdlog::init().expect("Could not setup log backend");
 
     cfg_if! {
-            if #[cfg(not(target_os = "android"))] {
-                let arg = ::std::env::args().nth(1);
-
-                match arg.as_ref().map(|s| &s[..]) {
-                    #[cfg(feature = "winit")]
-                    Some("--winit") => {
-                        slog::info!(log, "Starting anvil with winit backend");
-                        crate::winit::run_winit(log);
-                    }
-                    #[cfg(feature = "udev")]
-                    Some("--tty-udev") => {
-                        slog::info!(log, "Starting anvil on a tty using udev");
-                        crate::udev::run_udev(log);
-                    }
-                    #[cfg(feature = "x11")]
-                    Some("--x11") => {
-                        slog::info!(log, "Starting anvil with x11 backend");
-                        crate::x11::run_x11(log);
-                    }
-                    Some(other) => {
-                        crit!(log, "Unknown backend: {}", other);
-                    }
-                    None => {
-                        println!("USAGE: anvil --backend");
-                        println!();
-                        println!("Possible backends are:");
-                        for b in POSSIBLE_BACKENDS {
-                            println!("\t{}", b);
-                        }
+        if #[cfg(not(target_os = "android"))] {
+            let arg = ::std::env::args().nth(1);
+            slog_stdlog::init().expect("Could not setup log backend");
+            match arg.as_ref().map(|s| &s[..]) {
+                #[cfg(feature = "winit")]
+                Some("--winit") => {
+                    slog::info!(log, "Starting anvil with winit backend");
+                    crate::winit::run_winit(log);
+                }
+                #[cfg(feature = "udev")]
+                Some("--tty-udev") => {
+                    slog::info!(log, "Starting anvil on a tty using udev");
+                    crate::udev::run_udev(log);
+                }
+                #[cfg(feature = "x11")]
+                Some("--x11") => {
+                    slog::info!(log, "Starting anvil with x11 backend");
+                    crate::x11::run_x11(log);
+                }
+                Some(other) => {
+                    crit!(log, "Unknown backend: {}", other);
+                }
+                None => {
+                    println!("USAGE: anvil --backend");
+                    println!();
+                    println!("Possible backends are:");
+                    for b in POSSIBLE_BACKENDS {
+                        println!("\t{}", b);
                     }
                 }
-            } else {
-    <<<<<<< HEAD
-                slog::info!(log, "Starting anvil with winit backend");
-    =======
-                slog::info!(log, "Starting anvil with android+winit backend");
-                let activity = ndk_glue::native_activity();
-                // For ndk_sys 0.6.x
-                // let android_context = ndk_context::android_context();
-                // let activity = unsafe { NativeActivity::from_ptr(NonNull::new(android_context.context() as *mut ndk_sys::ANativeActivity).unwrap()) };
-
-    >>>>>>> bac5c6944 (anvil: Switch to ndk_glue::native_activity() for now)
-                crate::winit::run_winit(log);
             }
+        } else {
+            slog::info!(log, "Starting anvil with android+winit backend");
+            let activity = ndk_glue::native_activity();
+            // For ndk_sys 0.6.x
+            // let android_context = ndk_context::android_context();
+            // let activity = unsafe { NativeActivity::from_ptr(NonNull::new(android_context.context() as *mut ndk_sys::ANativeActivity).unwrap()) };
+           
+            crate::winit::run_winit(log);
         }
+    }
 }

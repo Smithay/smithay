@@ -26,7 +26,12 @@ crate-type = ["lib", "cdylib"]
 
 # This dependency will only be included when targeting Android
 [target.'cfg(target_os = "android")'.dependencies]
-ndk-glue = "0.6.2" # Substitute this with the latest ndk-glue version you wish to use
+# Winit still uses the 0.5.* versions of the ndk-* crates ^^
+ndk-glue = { version = "0.5.2", features = ["logger"] } # Substitute this with the latest ndk-glue version you wish to use
+ndk = "0.5.0"
+ndk-context = "0.1.1"
+jni = "0.19.0"
+ndk-sys = "0.2.2"
 
 [dependencies.smithay]
 path = ".."
@@ -59,15 +64,19 @@ test_all_features = ["default", "debug"]
 [package.metadata.android]
 # Specifies the package property of the manifest.
 package = "com.github.lovelyyfiaaa.Waylovely"
-
+assets = "../assets"
 # Specifies the array of targets to build for.
 build_targets = [ "aarch64-linux-android" ] # For now we'll just build for Aarch64 <3
 
 # Name for final APK file.
 # Defaults to package name.
 apk_name = "waylovely"
-runtime_libs = "../../prebuilt-libs"
-# Unsure to
+runtime_libs = "../prebuilt-libs"
+
+
+# Anvil needs this to create socket files for Wayland
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
 
 # See https://developer.android.com/guide/topics/manifest/uses-sdk-element
 
