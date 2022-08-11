@@ -30,16 +30,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     crate::winit::init_winit(&mut event_loop, &mut data, log)?;
 
-    let mut args = std::env::args().skip(1);
-    let flag = args.next();
-    let arg = args.next();
+    let mut args = std::env::args();
 
-    match (flag.as_deref(), arg) {
-        (Some("-c") | Some("--command"), Some(command)) => {
-            std::process::Command::new(command).spawn().ok();
-        }
-        _ => {
-            std::process::Command::new("weston-terminal").spawn().ok();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-c" | "--client" => {
+                if let Some(client) = args.next() {
+                    std::process::Command::new(client).spawn().ok();
+                } else {
+                    std::process::Command::new("weston-terminal").spawn().ok();
+                }
+            }
+            _ => {}
         }
     }
 
