@@ -10,7 +10,7 @@ pub struct CursorImageAttributes {
 }
 
 /// Possible status of a cursor as requested by clients
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CursorImageStatus {
     /// The cursor should be hidden
     Hidden,

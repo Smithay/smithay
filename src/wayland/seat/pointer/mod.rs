@@ -55,7 +55,7 @@ impl<D> fmt::Debug for PointerInternal<D> {
 }
 
 /// Defines the focus behavior for [`PointerHandle::set_grab`]
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Focus {
     /// Keep the current focus
     Keep,

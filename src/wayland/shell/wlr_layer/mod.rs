@@ -139,7 +139,7 @@ impl LayerSurfaceAttributes {
 }
 
 /// State of a layer surface
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct LayerSurfaceState {
     /// The suggested size of the surface
     pub size: Option<Size<i32, Logical>>,

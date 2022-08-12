@@ -57,7 +57,7 @@ use std::ffi::CString;
 use std::sync::Arc;
 
 /// Error that can happen on optional EGL features
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EglExtensionNotSupportedError(pub &'static [&'static str]);
 
 impl fmt::Display for EglExtensionNotSupportedError {
