@@ -74,6 +74,6 @@ where
             .and_then(std::convert::identity)
             .map_err(RenderError::<R>::Rendering)
     } else {
-        space.render_output(&mut *renderer, output, age as usize, CLEAR_COLOR, &*elements)
+        space.render_output(&mut *renderer, output, age as usize, CLEAR_COLOR, elements)
     }
 }

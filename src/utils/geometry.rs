@@ -259,7 +259,7 @@ floating_point_coordinate_impl! {
 /// A two-dimensional scale that can be
 /// used to scale [`Point`]s, [`Size`]s and
 /// [`Rectangle`]s
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scale<N: Coordinate> {
     /// The scale on the x axis
     pub x: N,

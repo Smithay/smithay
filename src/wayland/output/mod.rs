@@ -130,7 +130,7 @@ impl OutputManagerState {
 ///
 /// This should only describe the characteristics of the video driver,
 /// not taking into account any global scaling.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Mode {
     /// The size of the mode, in pixels
     pub size: Size<i32, Physical>,

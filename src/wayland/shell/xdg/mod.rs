@@ -399,7 +399,7 @@ xdg_role!(
 );
 
 /// Represents the state of the popup
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct PopupState {
     /// The positioner state can be used by the compositor
     /// to calculate the best placement for the popup.
@@ -419,7 +419,7 @@ pub struct PopupState {
     pub geometry: Rectangle<i32, Logical>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// The state of a positioner, as set by the client
 pub struct PositionerState {
     /// Size of the rectangle that needs to be positioned
@@ -600,7 +600,7 @@ impl PositionerState {
 }
 
 /// State of a regular toplevel surface
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct ToplevelState {
     /// The suggested size of the surface
     pub size: Option<Size<i32, Logical>>,
@@ -632,7 +632,7 @@ impl Clone for ToplevelState {
 /// having the same `xdg_toplevel::State` multiple times
 /// and simplifies setting and un-setting a particularly
 /// `xdg_toplevel::State`
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ToplevelStateSet {
     states: Vec<xdg_toplevel::State>,
 }

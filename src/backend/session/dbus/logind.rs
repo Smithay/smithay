@@ -345,7 +345,7 @@ impl LogindSessionImpl {
             let (_, changed, _) = message
                 .get3::<String, Dict<'_, String, Variant<Iter<'_>>, Iter<'_>>, Array<'_, String, Iter<'_>>>();
             let mut changed = changed.ok_or(Error::UnexpectedMethodReturn)?;
-            if let Some((_, mut value)) = changed.find(|&(ref key, _)| &*key == "Active") {
+            if let Some((_, mut value)) = changed.find(|&(ref key, _)| key == "Active") {
                 if let Some(active) = Get::get(&mut value.0) {
                     self.active.store(active, Ordering::SeqCst);
                 }
