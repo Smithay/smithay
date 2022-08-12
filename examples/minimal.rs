@@ -143,7 +143,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     std::env::set_var("WAYLAND_DISPLAY", "wayland-5");
-    std::process::Command::new("weston-terminal").spawn().ok();
+    std::process::Command::new(detect_terminal()).spawn().ok();
 
     loop {
         winit.dispatch_new_events(|event| match event {
@@ -240,6 +240,18 @@ impl ClientData for ClientState {
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {
         println!("disconnected");
     }
+}
+
+fn detect_terminal() -> String {
+    use std::fs::read_link;
+
+    const SYMLINK: &str = "/usr/bin/x-terminal-emulator";
+
+    if let Ok(found) = read_link(SYMLINK) {
+        return read_link(&found).unwrap_or(found).to_string_lossy().to_string();
+    }
+
+    "/usr/bin/gnome-terminal".to_string()
 }
 
 // Macros used to delegate protocol handling to types in the app state.

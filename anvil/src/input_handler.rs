@@ -807,8 +807,8 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Optio
             (keysym - xkb::KEY_XF86Switch_VT_1 + 1) as i32,
         ))
     } else if modifiers.logo && keysym == xkb::KEY_Return {
-        // run terminal
-        Some(KeyAction::Run("weston-terminal".into()))
+        // Run terminal
+        Some(KeyAction::Run(detect_terminal()))
     } else if modifiers.logo && keysym >= xkb::KEY_1 && keysym <= xkb::KEY_9 {
         Some(KeyAction::Screen((keysym - xkb::KEY_1) as usize))
     } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_M {
@@ -818,4 +818,16 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Optio
     } else {
         None
     }
+}
+
+fn detect_terminal() -> String {
+    use std::fs::read_link;
+
+    const SYMLINK: &str = "/usr/bin/x-terminal-emulator";
+
+    if let Ok(found) = read_link(SYMLINK) {
+        return read_link(&found).unwrap_or(found).to_string_lossy().to_string();
+    }
+
+    "/usr/bin/gnome-terminal".to_string()
 }

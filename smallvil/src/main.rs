@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::Command::new(command).spawn().ok();
         }
         _ => {
-            std::process::Command::new("weston-terminal").spawn().ok();
+            std::process::Command::new(detect_terminal()).spawn().ok();
         }
     }
 
@@ -48,4 +48,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     Ok(())
+}
+
+fn detect_terminal() -> String {
+    use std::fs::read_link;
+
+    const SYMLINK: &str = "/usr/bin/x-terminal-emulator";
+
+    if let Ok(found) = read_link(SYMLINK) {
+        return read_link(&found).unwrap_or(found).to_string_lossy().to_string();
+    }
+
+    "/usr/bin/gnome-terminal".to_string()
 }
