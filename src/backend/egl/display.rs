@@ -212,6 +212,9 @@ impl EGLDisplay {
     {
         let log = crate::slog_or_fallback(logger.into()).new(o!("smithay_module" => "backend_egl"));
 
+        let dp_extensions = ffi::make_sure_egl_is_loaded()?;
+        debug!(log, "Supported EGL client extensions: {:?}", dp_extensions);
+
         let egl_version = {
             let p = CStr::from_ptr(
                 wrap_egl_call(|| ffi::egl::QueryString(display, ffi::egl::VERSION as i32))
