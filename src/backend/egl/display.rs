@@ -202,6 +202,10 @@ impl EGLDisplay {
     }
 
     /// Create a new [`EGLDisplay`] from an already initialized EGLDisplay and EGLConfig handle
+    ///
+    /// # Safety
+    ///
+    /// Display and config handles must be externally managed to ensure they do not become invalid before the compositor is shut down
     pub unsafe fn from_raw<L>(
         display: *const c_void,
         config: *const c_void,
@@ -443,7 +447,7 @@ impl EGLDisplay {
     }
 
     /// Gets a PixelFormat from a configured EGLConfig
-    pub unsafe fn get_pixel_format(&self, config_id: *const c_void) -> Result<PixelFormat, Error> {
+    pub(super) unsafe fn get_pixel_format(&self, config_id: *const c_void) -> Result<PixelFormat, Error> {
         // analyzing each config
         macro_rules! attrib {
             ($display:expr, $config:expr, $attr:expr) => {{
