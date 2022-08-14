@@ -49,8 +49,7 @@
 //! This module further defines the `"cursor_image"` role, that is assigned to surfaces used by clients
 //! to change the cursor icon.
 
-#[allow(missing_docs)]
-pub mod keyboard;
+pub(crate) mod keyboard;
 mod pointer;
 mod touch;
 

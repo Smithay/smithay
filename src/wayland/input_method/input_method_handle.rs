@@ -16,7 +16,7 @@ use wayland_server::{
 use xkbcommon::xkb;
 
 use crate::{
-    utils::{IsAlive, Logical, Point},
+    utils::{IsAlive, Logical, Point, Rectangle, Physical},
     wayland::{
         seat::{keyboard::KeymapFile, KeyboardHandle, XkbConfig},
         text_input::TextInputHandle,
@@ -112,7 +112,7 @@ impl InputMethodHandle {
     }
 
     /// Used to access the relative location of an input popup surface
-    pub fn coordinates(&self) -> (i32, i32, i32, i32) {
+    pub fn coordinates(&self) -> Rectangle<i32, Physical> {
         let inner = self.inner.lock().unwrap();
         inner.popup.coordinates()
     }

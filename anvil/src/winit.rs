@@ -219,11 +219,20 @@ pub fn run_winit(log: Logger) {
                 }
             }
 
-            // draw input method square if any
+            // draw input method surface if any
             let input_method = state.seat.input_method().unwrap();
-            let (x, y, _, height) = input_method.coordinates();
+            let rectangle = input_method.coordinates();
             input_method.with_surface(|surface| {
-                elements.push(draw_input_popup_surface(surface.clone(), (x, (y + height))).into());
+                elements.push(
+                    draw_input_popup_surface(
+                        surface.clone(),
+                        (
+                            rectangle.loc.x + rectangle.size.w,
+                            (rectangle.loc.y + rectangle.size.h),
+                        ),
+                    )
+                    .into(),
+                );
             });
 
             // draw the cursor as relevant

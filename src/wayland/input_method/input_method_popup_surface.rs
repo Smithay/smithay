@@ -6,7 +6,7 @@ use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface
 use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::{protocol::wl_surface::WlSurface, Dispatch};
 
-use crate::utils::{Logical, Point};
+use crate::utils::{Logical, Point, Rectangle, Physical};
 
 use super::InputMethodManagerState;
 
@@ -14,12 +14,8 @@ use super::InputMethodManagerState;
 pub(crate) struct InputMethodPopupSurface {
     pub surface_role: Option<ZwpInputPopupSurfaceV2>,
     pub surface: Option<WlSurface>,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    l_x: i32,
-    l_y: i32,
+    rectangle: Rectangle<i32, Physical>,
+    point: Point<i32, Logical>
 }
 
 /// Handle to an input method instance
@@ -32,28 +28,25 @@ impl InputMethodPopupSurfaceHandle {
     /// Used to store surface coordinates
     pub fn add_coordinates(&self, x: i32, y: i32, width: i32, height: i32) {
         let mut inner = self.inner.lock().unwrap();
-        inner.x = x;
-        inner.y = y;
-        inner.width = width;
-        inner.height = height;
+        inner.rectangle.loc.x = x;
+        inner.rectangle.loc.y = y;
+        inner.rectangle.size.w = width;
+        inner.rectangle.size.h = height;
     }
 
     /// Used to access the relative location of an input popup surface
-    pub fn coordinates(&self) -> (i32, i32, i32, i32) {
+    pub fn coordinates(&self) -> Rectangle<i32, Physical> {
         let inner = self.inner.lock().unwrap();
-        (
-            inner.x + inner.l_x,
-            inner.y + inner.l_y,
-            inner.width,
-            inner.height,
-        )
+        let mut rectangle = inner.rectangle;
+        rectangle.loc.x += inner.point.x;
+        rectangle.loc.y += inner.point.y;
+        rectangle
     }
 
     /// Sets the point of the upper left corner of the surface in focus
     pub fn set_point(&mut self, point: &Point<i32, Logical>) {
         let mut inner = self.inner.lock().unwrap();
-        inner.l_x = point.x;
-        inner.l_y = point.y;
+        inner.point = *point;
     }
 }
 
