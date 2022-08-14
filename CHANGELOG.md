@@ -74,6 +74,8 @@
 - Support for `wl_seat` global version 7
 - Support for `wl_compositor` global version 5
 - Support for the `wp_viewporter` protocol
+- Support for the `zwp_input_method_v2` protocol
+- Support for the `zwp_text_input_v3` protocol
 
 #### Backends
 

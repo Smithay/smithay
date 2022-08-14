@@ -18,6 +18,7 @@ use smithay::{
     utils::{Logical, Point},
     wayland::{
         compositor::with_states,
+        input_method::InputMethodSeat,
         output::Scale,
         seat::{keysyms as xkb, AxisFrame, ButtonEvent, FilterResult, Keysym, ModifiersState, MotionEvent},
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
@@ -163,6 +164,7 @@ impl<Backend> AnvilState<Backend> {
     fn update_keyboard_focus(&mut self, dh: &DisplayHandle, serial: Serial) {
         let pointer = self.seat.get_pointer().unwrap();
         let keyboard = self.seat.get_keyboard().unwrap();
+        let input_method = self.seat.input_method().unwrap();
         // change the keyboard focus unless the pointer or keyboard is grabbed
         // We test for any matching surface type here but always use the root
         // (in case of a window the toplevel) surface for the focus.
@@ -172,7 +174,9 @@ impl<Backend> AnvilState<Backend> {
         // subsurface menus (for example firefox-wayland).
         // see here for a discussion about that issue:
         // https://gitlab.freedesktop.org/wayland/wayland/-/issues/294
-        if !pointer.is_grabbed() && !keyboard.is_grabbed() {
+        // Input methods are a special case in that they only use the keyboard input,
+        // and othervise behaves as an ungrabbed keyboard.
+        if !pointer.is_grabbed() && (!keyboard.is_grabbed() || input_method.keyboard_grabbed()) {
             if let Some(output) = self.space.output_under(self.pointer_location).next() {
                 let output_geo = self.space.output_geometry(output).unwrap();
                 if let Some(window) = output
@@ -287,6 +291,10 @@ impl<Backend> AnvilState<Backend> {
                 )
                 .map(|(s, loc)| (s, loc + layer_loc));
         };
+        let input_method = self.seat.input_method().unwrap();
+        if let Some((_, point)) = under {
+            input_method.set_point(&point);
+        }
         under
     }
 

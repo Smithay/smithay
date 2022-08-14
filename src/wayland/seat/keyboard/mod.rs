@@ -29,7 +29,7 @@ mod xkb_config;
 pub use xkb_config::XkbConfig;
 
 mod keymap_file;
-use keymap_file::KeymapFile;
+pub use keymap_file::KeymapFile;
 
 enum GrabStatus {
     None,

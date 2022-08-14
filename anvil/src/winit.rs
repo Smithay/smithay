@@ -29,6 +29,7 @@ use smithay::{
     },
     utils::IsAlive,
     wayland::{
+        input_method::InputMethodSeat,
         output::{Mode, Output, PhysicalProperties},
         seat::CursorImageStatus,
     },
@@ -217,6 +218,22 @@ pub fn run_winit(log: Logger) {
                     );
                 }
             }
+
+            // draw input method surface if any
+            let input_method = state.seat.input_method().unwrap();
+            let rectangle = input_method.coordinates();
+            input_method.with_surface(|surface| {
+                elements.push(
+                    draw_input_popup_surface(
+                        surface.clone(),
+                        (
+                            rectangle.loc.x + rectangle.size.w,
+                            (rectangle.loc.y + rectangle.size.h),
+                        ),
+                    )
+                    .into(),
+                );
+            });
 
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive

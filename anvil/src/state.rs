@@ -4,9 +4,10 @@ use std::{
 };
 
 use smithay::{
-    delegate_compositor, delegate_data_device, delegate_layer_shell, delegate_output,
-    delegate_primary_selection, delegate_seat, delegate_shm, delegate_tablet_manager, delegate_viewporter,
-    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_compositor, delegate_data_device, delegate_input_method_manager, delegate_layer_shell,
+    delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_tablet_manager,
+    delegate_text_input_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
+    delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
@@ -26,6 +27,7 @@ use smithay::{
             set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
             ServerDndGrabHandler,
         },
+        input_method::{InputMethodManagerState, InputMethodSeat},
         output::{Output, OutputManagerState},
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         seat::{CursorImageStatus, Seat, SeatHandler, SeatState, XkbConfig},
@@ -39,6 +41,7 @@ use smithay::{
         shm::{ShmHandler, ShmState},
         socket::ListeningSocketSource,
         tablet_manager::TabletSeatTrait,
+        text_input::TextInputManagerState,
         viewporter::ViewporterState,
         xdg_activation::{
             XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
@@ -156,6 +159,10 @@ delegate_seat!(@<BackendData: 'static> AnvilState<BackendData>);
 
 delegate_tablet_manager!(@<BackendData: 'static> AnvilState<BackendData>);
 
+delegate_text_input_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+
+delegate_input_method_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+
 delegate_viewporter!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
@@ -264,6 +271,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let xdg_activation_state = XdgActivationState::new::<Self, _>(&dh, log.clone());
         let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&dh, log.clone());
         let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone());
+        TextInputManagerState::new::<Self>(&dh);
+        InputMethodManagerState::new::<Self>(&dh);
 
         // init input
         let seat_name = backend_data.seat_name();
@@ -286,6 +295,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             // TODO: tablet tools should have their own cursors
             *cursor_status3.lock().unwrap() = new_status;
         });
+
+        seat.add_input_method(XkbConfig::default(), 200, 25);
 
         #[cfg(feature = "xwayland")]
         let xwayland = {

@@ -66,6 +66,17 @@ pub fn draw_dnd_icon(
     }
 }
 
+pub fn draw_input_popup_surface(
+    surface: wl_surface::WlSurface,
+    location: impl Into<Point<i32, Logical>>,
+) -> SurfaceTree {
+    SurfaceTree {
+        surface,
+        position: location.into(),
+        z_index: 98, /* Input-popup should only be below cursor */
+    }
+}
+
 pub struct PointerElement<T: Texture> {
     texture: T,
     position: Point<i32, Logical>,
