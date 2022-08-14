@@ -174,7 +174,7 @@ impl<Backend> AnvilState<Backend> {
         // subsurface menus (for example firefox-wayland).
         // see here for a discussion about that issue:
         // https://gitlab.freedesktop.org/wayland/wayland/-/issues/294
-        // Input methods is a special case in that they only use the keyboard input,
+        // Input methods are a special case in that they only use the keyboard input,
         // and othervise behaves as an ungrabbed keyboard.
         if !pointer.is_grabbed() && (!keyboard.is_grabbed() || input_method.keyboard_grabbed()) {
             if let Some(output) = self.space.output_under(self.pointer_location).next() {
