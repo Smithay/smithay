@@ -12,14 +12,12 @@ use nix::{
 };
 use slog::error;
 
-#[allow(missing_docs)]
 #[derive(Debug)]
 pub struct KeymapFile {
     sealed: Option<SealedFile>,
     keymap: CString,
 }
 
-#[allow(missing_docs)]
 impl KeymapFile {
     pub fn new(keymap: CString, log: slog::Logger) -> Self {
         let sealed = SealedFile::new(&keymap);

@@ -133,7 +133,6 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 );
             });
 
-
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
