@@ -16,7 +16,7 @@ use wayland_server::{
 use xkbcommon::xkb;
 
 use crate::{
-    utils::{IsAlive, Logical, Point, Rectangle, Physical},
+    utils::{IsAlive, Logical, Physical, Point, Rectangle},
     wayland::{
         seat::{keyboard::KeymapFile, KeyboardHandle, XkbConfig},
         text_input::TextInputHandle,

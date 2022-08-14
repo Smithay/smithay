@@ -6,7 +6,7 @@ use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface
 use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::{protocol::wl_surface::WlSurface, Dispatch};
 
-use crate::utils::{Logical, Point, Rectangle, Physical};
+use crate::utils::{Logical, Physical, Point, Rectangle};
 
 use super::InputMethodManagerState;
 
@@ -15,7 +15,7 @@ pub(crate) struct InputMethodPopupSurface {
     pub surface_role: Option<ZwpInputPopupSurfaceV2>,
     pub surface: Option<WlSurface>,
     rectangle: Rectangle<i32, Physical>,
-    point: Point<i32, Logical>
+    point: Point<i32, Logical>,
 }
 
 /// Handle to an input method instance
