@@ -1,5 +1,5 @@
 use crate::{
-    backend::renderer::Renderer,
+    backend::renderer::{ImportAll, Renderer},
     utils::{Physical, Point, Rectangle, Scale},
 };
 
@@ -31,11 +31,21 @@ pub trait RenderElement<R: Renderer> {
     /// Get the geometry relative to the output
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical>;
     /// Get the damage since the provided commit relative to the element
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<usize>) -> Vec<Rectangle<i32, Physical>>;
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
+        if commit != Some(self.current_commit()) {
+            vec![Rectangle::from_loc_and_size((0, 0), self.geometry(scale).size)]
+        } else {
+            vec![]
+        }
+    }
     /// Get the opaque regions of the element relative to the element
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>>;
+    fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        vec![]
+    }
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>>;
+    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+        None
+    }
     /// Draw this element
     fn draw(
         &self,
@@ -47,11 +57,56 @@ pub trait RenderElement<R: Renderer> {
     );
 }
 
+impl<R, E> RenderElement<R> for &E
+where
+    R: Renderer,
+    E: RenderElement<R>,
+{
+    fn id(&self) -> &Id {
+        (*self).id()
+    }
+
+    fn current_commit(&self) -> usize {
+        (*self).current_commit()
+    }
+
+    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        (*self).location(scale)
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        (*self).geometry(scale)
+    }
+
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
+        (*self).damage_since(scale, commit)
+    }
+
+    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        (*self).opaque_regions(scale)
+    }
+
+    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+        (*self).underlying_storage(renderer)
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        scale: Scale<f64>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) {
+        (*self).draw(renderer, frame, scale, damage, log)
+    }
+}
 
 #[macro_export]
 #[doc(hidden)]
 macro_rules! render_elements_internal {
-    (@enum $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+        $(#[$attr])*
         $vis enum $name {
             $(
                 $(
@@ -63,7 +118,8 @@ macro_rules! render_elements_internal {
             _GenericCatcher(std::convert::Infallible),
         }
     };
-    (@enum $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+        $(#[$attr])*
         $vis enum $name<$renderer>
         where
             $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
@@ -78,7 +134,8 @@ macro_rules! render_elements_internal {
             _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
         }
     };
-    (@enum $lt:lifetime $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+    (@enum $(#[$attr:meta])* $lt:lifetime $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+        $(#[$attr])*
         $vis enum $name<$lt, $renderer>
         where
             $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
@@ -329,33 +386,58 @@ macro_rules! render_elements_internal {
 
 #[macro_export]
 macro_rules! render_elements {
-    ($vis:vis $name:ident<=$renderer:ty>; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $vis $name; $($tail)*);
+    ($(#[$attr:meta])* $vis:vis $name:ident<=$renderer:ty>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name; $($tail)*);
         $crate::render_elements_internal!(@impl $name<=$renderer>; $($tail)*);
         $crate::render_elements_internal!(@from $name; $($tail)*);
 
     };
-    ($vis:vis $name:ident<=$lt:lifetime, $renderer:ty>; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $lt $vis $name; $($tail)*);
+    ($(#[$attr:meta])* $vis:vis $name:ident<=$lt:lifetime, $renderer:ty>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $lt $vis $name; $($tail)*);
         $crate::render_elements_internal!(@impl $lt $name<=$renderer>; $($tail)*);
         $crate::render_elements_internal!(@from $lt $name; $($tail)*);
 
     };
-    ($vis:vis $name:ident<$renderer:ident>; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $vis $name<$renderer>; $($tail)*);
+    ($(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$renderer>; $($tail)*);
         $crate::render_elements_internal!(@impl $name<$renderer>; $($tail)*);
         $crate::render_elements_internal!(@from $name<$renderer>; $($tail)*);
     };
-    ($vis:vis $name:ident<$lt:lifetime, $renderer:ident>; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $lt $vis $name<$renderer>; $($tail)*);
+    ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $lt $vis $name<$renderer>; $($tail)*);
         $crate::render_elements_internal!(@impl $lt $name<$renderer>; $($tail)*);
         $crate::render_elements_internal!(@from $lt $name<$renderer>; $($tail)*);
     };
-    ($vis:vis $name:ident; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $vis $name; $($tail)*);
+    ($(#[$attr:meta])* $vis:vis $name:ident; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name; $($tail)*);
         $crate::render_elements_internal!(@impl $name; R; $($tail)*);
         $crate::render_elements_internal!(@from $name; $($tail)*);
     };
 }
 
 pub use render_elements;
+
+use self::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement};
+
+render_elements! {
+    /// Defines the built-in render elements supported by smithay
+    pub BuiltinRenderElements<R>;
+    /// A single wayland surface
+    Surface=WaylandSurfaceRenderElement<R>,
+    /// A single texture
+    Texture=TextureRenderElement<R>,
+}
+
+impl<R> std::fmt::Debug for BuiltinRenderElements<R>
+where
+    R: Renderer + ImportAll + std::fmt::Debug,
+    <R as Renderer>::TextureId: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),
+            Self::Texture(arg0) => f.debug_tuple("Texture").field(arg0).finish(),
+            Self::_GenericCatcher(_) => unreachable!(),
+        }
+    }
+}
