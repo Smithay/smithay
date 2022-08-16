@@ -9,7 +9,7 @@ use crate::{
 };
 use slog::Logger;
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::{gles2::Gles2Texture, ImportMem};
+use smithay::backend::renderer::gles2::Gles2Texture;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -23,8 +23,8 @@ use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
         renderer::{
-            gles2::{Gles2Renderer, Gles2Texture},
-            output::OutputRender,
+            gles2::Gles2Renderer,
+            output::{element::BuiltinRenderElements, OutputRender},
             Bind, ImportMem, Renderer,
         },
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
@@ -52,8 +52,6 @@ pub struct X11Data {
     surface: X11Surface,
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
-    #[cfg(feature = "debug")]
-    fps_texture: Gles2Texture,
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
 }
@@ -164,6 +162,8 @@ pub fn run_x11(log: Logger) {
             false,
         )
         .expect("Unable to upload FPS texture");
+    #[cfg(feature = "debug")]
+    let mut fps_element = FpsElement::new(fps_texture);
     let output = Output::new(
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
@@ -192,8 +192,6 @@ pub fn run_x11(log: Logger) {
         output_render,
         #[cfg(feature = "egl")]
         dmabuf_state,
-        #[cfg(feature = "debug")]
-        fps_texture,
         #[cfg(feature = "debug")]
         fps: fps_ticker::Fps::default(),
     };
@@ -253,7 +251,7 @@ pub fn run_x11(log: Logger) {
             #[cfg(feature = "debug")]
             let fps = backend_data.fps.avg().round() as u32;
             #[cfg(feature = "debug")]
-            let fps_texture = &backend_data.fps_texture;
+            fps_element.update_fps(fps);
 
             let (buffer, age) = backend_data.surface.buffer().expect("gbm device was destroyed");
             if let Err(err) = backend_data.renderer.bind(buffer) {
@@ -262,7 +260,7 @@ pub fn run_x11(log: Logger) {
             }
 
             let mut cursor_guard = cursor_status.lock().unwrap();
-            let mut custom_space_elements: Vec<&PointerElement<Gles2Texture>> = Vec::new();
+            let mut custom_space_elements: Vec<&PointerElement<_>> = Vec::new();
 
             // // draw the dnd icon if any
             // if let Some(surface) = state.dnd_icon.as_ref() {
@@ -292,7 +290,16 @@ pub fn run_x11(log: Logger) {
             //     elements.push(draw_fps::<Gles2Renderer>(fps_texture, fps).into());
             // }
 
-            let elements = state.space.elements_for_output(&output, &*custom_space_elements);
+            #[cfg(feature = "debug")]
+            let mut elements = state
+                .space
+                .elements_for_output::<_, _, CustomRenderElements<'_, _>>(&output, &*custom_space_elements);
+            #[cfg(not(feature = "debug"))]
+            let elements = state
+                .space
+                .elements_for_output::<_, _, BuiltinRenderElements<_>>(&output, &*custom_space_elements);
+            #[cfg(feature = "debug")]
+            elements.insert(0, CustomRenderElements::Fps(&fps_element));
             let output_render = &mut backend_data.output_render;
             output_render.render_output(&mut backend_data.renderer, age.into(), &*elements, &log);
 
@@ -350,16 +357,19 @@ pub fn run_x11(log: Logger) {
     }
 }
 
+#[cfg(feature = "debug")]
+smithay::backend::renderer::output::element::render_elements! {
+    pub CustomRenderElements<'a, R>;
+    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
+    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<R>,
+    Fps=&'a FpsElement<<R as Renderer>::TextureId>
+}
+
 // smithay::backend::renderer::output::element::render_elements! {
 //     pub CustomRenderElements<R>;
 //     Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
+//     Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<R>,
 // }
-
-smithay::backend::renderer::output::element::render_elements! {
-    pub CustomRenderElements<R>;
-    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
-    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<R>,
-}
 
 // enum CustomRenderElements<'a, R>
 // where
