@@ -3,7 +3,13 @@
 use std::sync::Mutex;
 
 #[cfg(feature = "debug")]
-use smithay::utils::Buffer;
+use smithay::{
+    backend::renderer::{
+        output::element::{Id, RenderElement},
+        Frame,
+    },
+    utils::Buffer,
+};
 use smithay::{
     backend::renderer::{ImportAll, Renderer, Texture},
     desktop::space::SpaceElement,
@@ -114,8 +120,29 @@ pub static FPS_NUMBERS_PNG: &[u8] = include_bytes!("../resources/numbers.png");
 
 #[cfg(feature = "debug")]
 pub struct FpsElement<T: Texture> {
+    id: Id,
     value: u32,
     texture: T,
+    commit_counter: usize,
+}
+
+#[cfg(feature = "debug")]
+impl<T: Texture> FpsElement<T> {
+    pub fn new(texture: T) -> Self {
+        FpsElement {
+            id: Id::new(),
+            texture,
+            value: 0,
+            commit_counter: 0,
+        }
+    }
+
+    pub fn update_fps(&mut self, fps: u32) {
+        if self.value != fps {
+            self.value = fps;
+            self.commit_counter = self.commit_counter.wrapping_add(1);
+        }
+    }
 }
 
 #[cfg(feature = "debug")]
@@ -124,15 +151,15 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
 {
-    fn id(&self) -> usize {
-        0
+    fn id(&self) -> &Id {
+        &self.id
     }
 
-    fn location(&self, _scale: impl Into<Scale<f64>>) -> Point<f64, Physical> {
-        (0.0, 0.0).into()
+    fn location(&self, _scale: Scale<f64>) -> Point<i32, Physical> {
+        (0, 0).into()
     }
 
-    fn geometry(&self, scale: impl Into<Scale<f64>>) -> Rectangle<i32, Physical> {
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
         let digits = if self.value < 10 {
             1
         } else if self.value < 100 {
@@ -143,32 +170,22 @@ where
         Rectangle::from_loc_and_size((0, 0), (24 * digits, 35)).to_physical_precise_round(scale)
     }
 
-    fn accumulated_damage(
-        &self,
-        scale: impl Into<Scale<f64>>,
-        _: Option<SpaceOutputTuple<'_, '_>>,
-    ) -> Vec<Rectangle<i32, Physical>> {
-        vec![Rectangle::from_loc_and_size((0, 0), (24 * 3, 35)).to_physical_precise_up(scale)]
-    }
-
-    fn opaque_regions(&self, _scale: impl Into<Scale<f64>>) -> Option<Vec<Rectangle<i32, Physical>>> {
-        None
+    fn current_commit(&self) -> usize {
+        self.commit_counter
     }
 
     fn draw(
         &self,
         _renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: impl Into<Scale<f64>>,
-        location: Point<f64, Physical>,
+        scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
-        _log: &Logger,
-    ) -> Result<(), <R as Renderer>::Error> {
+        _log: &slog::Logger,
+    ) {
         let value_str = std::cmp::min(self.value, 999).to_string();
-        let scale = scale.into();
         let mut offset: Point<f64, Physical> = Point::from((0.0, 0.0));
         for digit in value_str.chars().map(|d| d.to_digit(10).unwrap()) {
-            let digit_location = location + offset;
+            let digit_location = offset;
             let digit_size = Size::<i32, Logical>::from((22, 35)).to_f64().to_physical(scale);
             let dst = Rectangle::from_loc_and_size(
                 digit_location.to_i32_round(),
@@ -197,29 +214,10 @@ where
                 5 => Rectangle::from_loc_and_size((44, 70), (22, 35)),
                 _ => unreachable!(),
             };
-            frame.render_texture_from_to(
-                &self.texture,
-                src.to_f64(),
-                dst,
-                &damage,
-                Transform::Normal,
-                1.0,
-            )?;
+            frame
+                .render_texture_from_to(&self.texture, src.to_f64(), dst, &damage, Transform::Normal, 1.0)
+                .unwrap();
             offset += Point::from((24.0, 0.0)).to_physical(scale);
         }
-
-        Ok(())
-    }
-}
-
-#[cfg(feature = "debug")]
-pub fn draw_fps<R>(texture: &<R as Renderer>::TextureId, value: u32) -> FpsElement<<R as Renderer>::TextureId>
-where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Clone,
-{
-    FpsElement {
-        value,
-        texture: texture.clone(),
     }
 }
