@@ -2,7 +2,12 @@
 //! rendering helpers to add custom elements or different clients to a space.
 
 use crate::{
-    backend::renderer::{ImportAll, Renderer, Texture},
+    backend::renderer::{
+        output::element::{
+            surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement,
+        },
+        ImportAll, Renderer, Texture,
+    },
     desktop::{
         layer::{layer_map_for_output, LayerSurface},
         popup::PopupManager,
@@ -288,8 +293,6 @@ impl Space {
             // keep surfaces, we still need to inform them of leaving,
             // if they don't overlap anymore during refresh.
             surfaces: std::mem::take(&mut state.surfaces),
-            // resets last_seen and old_damage, if remapped
-            ..Default::default()
         };
         if !self.outputs.contains(output) {
             self.outputs.push(output.clone());
@@ -432,15 +435,12 @@ impl Space {
     }
 
     /// Retrieve the render elements for an output
-    pub fn elements_for_output<R, E>(
-        &self,
-        output: &Output,
-        custom_elements: &[E],
-    ) -> Vec<SpaceRenderElements<R>>
+    pub fn elements_for_output<R, C, E>(&self, output: &Output, custom_elements: &[C]) -> Vec<E>
     where
         R: Renderer + ImportAll + 'static,
         <R as Renderer>::TextureId: Texture + 'static,
-        E: SpaceElement<R, SpaceRenderElements<R>>,
+        C: SpaceElement<R, E>,
+        E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
     {
         let state = output_state(self.id, output);
         let output_size = output.current_mode().unwrap().size;
@@ -453,7 +453,7 @@ impl Space {
 
         let layer_map = layer_map_for_output(output);
 
-        let mut space_elements: Vec<SpaceElements<'_, E>> = Vec::new();
+        let mut space_elements: Vec<SpaceElements<'_, C>> = Vec::new();
 
         space_elements.extend(
             custom_elements
@@ -482,12 +482,11 @@ impl Space {
         space_elements
             .into_iter()
             .filter(|e| {
-                let geometry = SpaceElement::<R, SpaceRenderElements<R>>::geometry(&e, self.id);
+                let geometry = SpaceElement::<R, E>::geometry(&e, self.id);
                 output_geo.overlaps(geometry)
             })
             .flat_map(|e| {
-                let location =
-                    SpaceElement::<R, SpaceRenderElements<R>>::location(&e, self.id) - output_location;
+                let location = SpaceElement::<R, E>::location(&e, self.id) - output_location;
                 e.render_elements(
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
