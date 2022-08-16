@@ -53,7 +53,7 @@ where
                 if let Some(view) = data.view() {
                     location += view.offset.to_f64().to_physical(scale);
 
-                    let surface = WaylandSurfaceRenderElement::new(surface, location.to_i32_round());
+                    let surface = WaylandSurfaceRenderElement::from_surface(surface, location.to_i32_round());
                     surfaces.push(surface.into());
                 }
             }
@@ -74,7 +74,8 @@ pub struct WaylandSurfaceRenderElement<R> {
 }
 
 impl<R> WaylandSurfaceRenderElement<R> {
-    fn new(surface: &wl_surface::WlSurface, location: Point<i32, Physical>) -> Self {
+    /// Create a render element from a surface
+    pub fn from_surface(surface: &wl_surface::WlSurface, location: Point<i32, Physical>) -> Self {
         let id = Id::from_wayland_resource(surface);
 
         Self {
