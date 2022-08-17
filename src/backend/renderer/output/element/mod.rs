@@ -54,7 +54,7 @@ pub trait RenderElement<R: Renderer> {
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
-    );
+    ) -> Result<(), R::Error>;
 }
 
 impl<R, E> RenderElement<R> for &E
@@ -97,7 +97,7 @@ where
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
-    ) {
+    ) -> Result<(), R::Error> {
         (*self).draw(renderer, frame, scale, damage, log)
     }
 }
@@ -254,7 +254,7 @@ macro_rules! render_elements_internal {
             scale: $crate::utils::Scale<f64>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             log: &slog::Logger,
-        )
+        ) -> Result<(), R::Error>
         where
         $(
             $(
@@ -284,7 +284,7 @@ macro_rules! render_elements_internal {
             location: $crate::utils::Point<f64, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             log: &slog::Logger,
-        )
+        ) -> Result<(), R::Error>
         {
             match self {
                 $(

@@ -3,8 +3,9 @@
 
 use crate::{
     backend::renderer::{
-        output::element::{
-            surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement,
+        output::{
+            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement},
+            OutputRender, OutputRenderError,
         },
         ImportAll, Renderer, Texture,
     },
@@ -15,7 +16,7 @@ use crate::{
         window::Window,
     },
     output::Output,
-    utils::{IsAlive, Logical, Point, Rectangle, Scale, Transform},
+    utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform},
     wayland::compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
 };
 use indexmap::IndexSet;
@@ -433,15 +434,23 @@ impl Space {
     }
 
     /// Retrieve the render elements for an output
-    pub fn elements_for_output<R, C, E>(&self, output: &Output, custom_elements: &[C]) -> Vec<E>
+    pub fn elements_for_output<R, C, E>(
+        &self,
+        output: &Output,
+        custom_elements: &[C],
+    ) -> Result<Vec<E>, OutputError>
     where
         R: Renderer + ImportAll + 'static,
         <R as Renderer>::TextureId: Texture + 'static,
         C: SpaceElement<R, E>,
         E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
     {
+        if !self.outputs.contains(output) {
+            return Err(OutputError::UnmappedOutput);
+        }
+
         let state = output_state(self.id, output);
-        let output_size = output.current_mode().unwrap().size;
+        let output_size = output.current_mode().ok_or(OutputError::OutputNoMode)?.size;
         let output_scale = output.current_scale().fractional_scale();
         let output_location = state.location;
         let output_geo = Rectangle::from_loc_and_size(
@@ -477,20 +486,20 @@ impl Space {
 
         space_elements.sort_by_key(|e| std::cmp::Reverse(e.z_index(self.id)));
 
-        space_elements
+        Ok(space_elements
             .into_iter()
             .filter(|e| {
-                let geometry = SpaceElement::<R, E>::geometry(&e, self.id);
+                let geometry = e.geometry(self.id);
                 output_geo.overlaps(geometry)
             })
             .flat_map(|e| {
-                let location = SpaceElement::<R, E>::location(&e, self.id) - output_location;
+                let location = e.location(self.id) - output_location;
                 e.render_elements(
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
                 )
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>())
     }
 
     /// Sends the frame callback to mapped [`Window`]s and [`LayerSurface`]s.
@@ -508,12 +517,9 @@ impl Space {
     }
 }
 
-/// Errors thrown by [`Space::render_output`]
-#[derive(thiserror::Error)]
-pub enum RenderError<R: Renderer> {
-    /// The provided [`Renderer`] did return an error during an operation
-    #[error(transparent)]
-    Rendering(R::Error),
+/// Errors thrown by [`Space::render_elements_for_output`]
+#[derive(thiserror::Error, Debug)]
+pub enum OutputError {
     /// The given [`Output`] has no set mode
     #[error("Output has no active mode")]
     OutputNoMode,
@@ -522,15 +528,72 @@ pub enum RenderError<R: Renderer> {
     UnmappedOutput,
 }
 
-impl<R: Renderer> fmt::Debug for RenderError<R> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RenderError::Rendering(err) => fmt::Debug::fmt(err, f),
-            RenderError::OutputNoMode => f.write_str("Output has no active move"),
-            RenderError::UnmappedOutput => f.write_str("Output was not mapped to this space"),
+/// Render a output
+pub fn render_output<R, C, E>(
+    renderer: &mut R,
+    age: usize,
+    spaces: &[(&Space, &[C])],
+    custom_elements: Vec<E>,
+    output_render: &mut OutputRender,
+    log: &slog::Logger,
+) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
+where
+    R: Renderer + ImportAll + 'static,
+    <R as Renderer>::TextureId: Texture + 'static,
+    C: SpaceElement<R, E>,
+    E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
+{
+    let mut render_elements: Vec<E> = Vec::new();
+    render_elements.extend(custom_elements.into_iter());
+
+    for (space, custom_elements) in spaces {
+        let res = space.elements_for_output(output_render.output(), custom_elements);
+
+        match res {
+            Ok(elements) => {
+                render_elements.extend(elements);
+            }
+            Err(OutputError::UnmappedOutput) => {}
+            Err(err) => {
+                return Err(OutputRenderError::OutputNoMode);
+                //return Err(err);
+            }
         }
     }
+
+    // let mut render_elements = spaces
+    //     .iter()
+    //     .flat_map(|(space, custom_elements)| {
+    //         space.elements_for_output(output_render.output(), custom_elements)
+    //     })
+    //     .collect::<Vec<_>>();
+    // render_elements.extend(custom_elements);
+    output_render.render_output(renderer, age, &*render_elements, log)
 }
+
+// /// Errors thrown by [`Space::render_output`]
+// #[derive(thiserror::Error)]
+// pub enum RenderError<R: Renderer> {
+//     /// The provided [`Renderer`] did return an error during an operation
+//     #[error(transparent)]
+//     Rendering(R::Error),
+//     /// The given [`Output`] has no set mode
+//     #[error("Output has no active mode")]
+//     OutputNoMode,
+//     /// The given [`Output`] is not mapped to this [`Space`].
+//     #[error("Output was not mapped to this space")]
+//     UnmappedOutput,
+// }
+
+// impl<R: Renderer> fmt::Debug for RenderError<R> {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self {
+//             RenderError::Rendering(err) => fmt::Debug::fmt(err, f),
+//             RenderError::OutputNoMode => f.write_str("Output has no active move"),
+//             RenderError::UnmappedOutput => f.write_str("Output was not mapped to this space"),
+//         }
+//     }
+// }
 
 // #[macro_export]
 // #[doc(hidden)]
