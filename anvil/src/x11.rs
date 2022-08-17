@@ -8,8 +8,6 @@ use crate::{
     state::{AnvilState, Backend, CalloopData},
 };
 use slog::Logger;
-#[cfg(feature = "debug")]
-use smithay::backend::renderer::gles2::Gles2Texture;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -23,7 +21,7 @@ use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
         renderer::{
-            gles2::Gles2Renderer,
+            gles2::{Gles2Renderer, Gles2Texture},
             output::{
                 element::{
                     surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement,
@@ -269,15 +267,6 @@ pub fn run_x11(log: Logger) {
             let mut cursor_guard = cursor_status.lock().unwrap();
             let mut custom_space_elements: Vec<CustomSpaceElements<'_, _>> = Vec::new();
 
-            // // draw the dnd icon if any
-            // if let Some(surface) = state.dnd_icon.as_ref() {
-            //     if surface.alive() {
-            //         elements.push(
-            //             draw_dnd_icon(surface.clone(), state.pointer_location.to_i32_round(), &log).into(),
-            //         );
-            //     }
-            // }
-
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
@@ -317,32 +306,8 @@ pub fn run_x11(log: Logger) {
                 }
             }
 
-            // #[cfg(not(feature = "debug"))]
-            // let render_elements = smithay::desktop::space::space_render_elements::<_, _, RenderElements<_>>(
-            //     &[(&state.space, &*custom_space_elements)],
-            //     backend_data.output_render.output(),
-            // )
-            // .expect("oh no");
-
-            // #[cfg(feature = "debug")]
-            // let mut render_elements = smithay::desktop::space::space_render_elements::<_, _, RenderElements<'_, _>>(
-            //     &[(&state.space, &*custom_space_elements)],
-            //     backend_data.output_render.output(),
-            // )
-            // .expect("oh no");
-
-            // #[cfg(feature = "debug")]
-            // render_elements.insert(0, RenderElements::Fps(&fps_element));
-
-            // let render_res = backend_data.output_render.render_output(
-            //     &mut backend_data.renderer,
-            //     age.into(),
-            //     &*render_elements,
-            //     &log,
-            // );
-
             #[cfg(feature = "debug")]
-            let render_res = smithay::desktop::space::render_output::<_, _, RenderElements<'_, _>>(
+            let render_res = smithay::desktop::space::render_output::<_, _, RenderElements<'_>>(
                 &mut backend_data.renderer,
                 age.into(),
                 &[(&state.space, &*custom_space_elements)],
@@ -352,7 +317,7 @@ pub fn run_x11(log: Logger) {
             );
 
             #[cfg(not(feature = "debug"))]
-            let render_res = smithay::desktop::space::render_output::<_, _, RenderElements<_>>(
+            let render_res = smithay::desktop::space::render_output::<_, _, RenderElements>(
                 &mut backend_data.renderer,
                 age.into(),
                 &[(&state.space, &*custom_space_elements)],
@@ -402,17 +367,17 @@ pub fn run_x11(log: Logger) {
 
 #[cfg(feature = "debug")]
 smithay::backend::renderer::output::element::render_elements! {
-    pub RenderElements<'a, R>;
-    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
-    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<R>,
-    Fps=&'a FpsElement<<R as Renderer>::TextureId>
+    pub RenderElements<='a, Gles2Renderer>;
+    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
+    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<Gles2Texture>,
+    Fps=&'a FpsElement<Gles2Texture>
 }
 
 #[cfg(not(feature = "debug"))]
 smithay::backend::renderer::output::element::render_elements! {
-    pub RenderElements<R>;
-    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
-    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<R>,
+    pub RenderElements<=Gles2Renderer>;
+    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
+    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<Gles2Texture>,
 }
 
 pub enum CustomSpaceElements<'a, R>
@@ -427,7 +392,9 @@ impl<'a, R, E> SpaceElement<R, E> for CustomSpaceElements<'a, R>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Clone + 'static,
-    E: RenderElement<R> + From<TextureRenderElement<R>> + From<WaylandSurfaceRenderElement<R>>,
+    E: RenderElement<R>
+        + From<WaylandSurfaceRenderElement>
+        + From<TextureRenderElement<<R as Renderer>::TextureId>>,
 {
     fn z_index(&self, space_id: usize) -> u8 {
         match self {

@@ -7,23 +7,15 @@ use super::{Id, RenderElement, UnderlyingStorage};
 
 /// A single texture render element
 #[derive(Debug)]
-pub struct TextureRenderElement<R>
-where
-    R: Renderer,
-    <R as Renderer>::TextureId: Texture,
-{
+pub struct TextureRenderElement<T: Texture> {
     location: Point<i32, Physical>,
     id: Id,
-    texture: R::TextureId,
+    texture: T,
 }
 
-impl<R> TextureRenderElement<R>
-where
-    R: Renderer,
-    <R as Renderer>::TextureId: Texture,
-{
+impl<T: Texture> TextureRenderElement<T> {
     /// Create a texture render element from an existing texture
-    pub fn from_texture(location: impl Into<Point<i32, Physical>>, id: Id, texture: R::TextureId) -> Self {
+    pub fn from_texture(location: impl Into<Point<i32, Physical>>, id: Id, texture: T) -> Self {
         Self {
             location: location.into(),
             id,
@@ -32,10 +24,10 @@ where
     }
 }
 
-impl<R> RenderElement<R> for TextureRenderElement<R>
+impl<R, T> RenderElement<R> for TextureRenderElement<T>
 where
-    R: Renderer,
-    <R as Renderer>::TextureId: Texture,
+    T: Texture,
+    R: Renderer<TextureId = T>,
 {
     fn id(&self) -> &Id {
         &self.id

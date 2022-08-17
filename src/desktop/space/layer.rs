@@ -15,7 +15,7 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
     E: crate::backend::renderer::output::element::RenderElement<R>
-        + From<crate::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>>,
+        + From<crate::backend::renderer::output::element::surface::WaylandSurfaceRenderElement>,
 {
     fn location(&self, _space_id: usize) -> Point<i32, crate::utils::Logical> {
         let state = output_layer_state(self);
