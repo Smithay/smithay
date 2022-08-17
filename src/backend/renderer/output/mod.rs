@@ -1,3 +1,5 @@
+//! TODO: Docs
+
 use std::collections::VecDeque;
 
 use indexmap::IndexMap;
@@ -175,7 +177,8 @@ impl OutputRender {
         // add the damage for elements gone that are not covered by
         // by an opaque region
         // TODO: actually filter the damage with the opaque regions
-        let elements_gone = self.last_state
+        let elements_gone = self
+            .last_state
             .elements
             .iter()
             .filter_map(|(id, state)| {
@@ -259,8 +262,6 @@ impl OutputRender {
         if let Err(err) = res {
             // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
             // thus clean our old states before returning
-            // state.old_damage = VecDeque::new();
-            // state.last_toplevel_state = IndexMap::new();
             self.last_state = Default::default();
             return Err(OutputRenderError::Rendering(err));
         }
