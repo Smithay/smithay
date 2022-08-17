@@ -1,3 +1,5 @@
+//! TODO: Docs
+
 use crate::{
     backend::renderer::{Frame, Renderer, Texture},
     utils::{Physical, Point, Rectangle, Scale, Transform},
@@ -41,29 +43,29 @@ where
         self.location
     }
 
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+    fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
         Rectangle::from_loc_and_size(self.location, (64, 64))
     }
 
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(&self, _scale: Scale<f64>, _commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
         vec![]
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+    fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         vec![]
     }
 
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
         todo!()
     }
 
     fn draw(
         &self,
-        renderer: &mut R,
+        _renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
+        _log: &slog::Logger,
     ) -> Result<(), R::Error> {
         frame.render_texture_at(
             &self.texture,
