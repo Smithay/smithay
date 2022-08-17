@@ -530,12 +530,18 @@ pub enum OutputError {
     UnmappedOutput,
 }
 
+crate::backend::renderer::output::element::render_elements! {
+    OutputRenderElements<'a, R, E>;
+    Space=E,
+    Custom=&'a E,
+}
+
 /// Render a output
 pub fn render_output<R, C, E>(
     renderer: &mut R,
     age: usize,
     spaces: &[(&Space, &[C])],
-    custom_elements: Vec<E>,
+    custom_elements: &[E],
     output_render: &mut OutputRender,
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
@@ -545,31 +551,23 @@ where
     C: SpaceElement<R, E>,
     E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
 {
-    let mut render_elements: Vec<E> = Vec::new();
-    render_elements.extend(custom_elements.into_iter());
+    let mut render_elements: Vec<OutputRenderElements<'_, R, E>> = Vec::new();
+    render_elements.extend(custom_elements.iter().map(OutputRenderElements::from));
 
     for (space, custom_elements) in spaces {
-        let res = space.elements_for_output(output_render.output(), custom_elements);
+        let res = space.elements_for_output::<R, C, E>(output_render.output(), custom_elements);
 
         match res {
             Ok(elements) => {
-                render_elements.extend(elements);
+                render_elements.extend(elements.into_iter().map(OutputRenderElements::from));
             }
             Err(OutputError::UnmappedOutput) => {}
-            Err(err) => {
+            Err(OutputError::OutputNoMode) => {
                 return Err(OutputRenderError::OutputNoMode);
-                //return Err(err);
             }
         }
     }
 
-    // let mut render_elements = spaces
-    //     .iter()
-    //     .flat_map(|(space, custom_elements)| {
-    //         space.elements_for_output(output_render.output(), custom_elements)
-    //     })
-    //     .collect::<Vec<_>>();
-    // render_elements.extend(custom_elements);
     output_render.render_output(renderer, age, &*render_elements, log)
 }
 

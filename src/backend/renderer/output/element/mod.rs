@@ -134,12 +134,47 @@ macro_rules! render_elements_internal {
             _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
         }
     };
-    (@enum $(#[$attr:meta])* $lt:lifetime $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+        $(#[$attr])*
+        $vis enum $name<$renderer, $custom>
+        where
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+            $custom: $crate::backend::renderer::output::element::RenderElement<$renderer>,
+        {
+            $(
+                $(
+                    #[$meta]
+                )*
+                $body($field)
+            ),*,
+            #[doc(hidden)]
+            _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
+        }
+    };
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
         $vis enum $name<$lt, $renderer>
         where
             $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+        {
+            $(
+                $(
+                    #[$meta]
+                )*
+                $body($field)
+            ),*,
+            #[doc(hidden)]
+            _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
+        }
+    };
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+        $(#[$attr])*
+        $vis enum $name<$lt, $renderer, $custom>
+        where
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            $custom: $crate::backend::renderer::output::element::RenderElement<$renderer>,
         {
             $(
                 $(
@@ -307,11 +342,22 @@ macro_rules! render_elements_internal {
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
-    (@impl $lt:lifetime $name:ident<$renderer:ident>; $($tail:tt)*) => {
+    (@impl $name:ident<$lt:lifetime, $renderer:ident>; $($tail:tt)*) => {
         impl<$lt, $renderer> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$lt, $renderer>
         where
             $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
             <$renderer as Renderer>::TextureId: 'static,
+        {
+            $crate::render_elements_internal!(@body $renderer; $($tail)*);
+            $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
+        }
+    };
+    (@impl $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $($tail:tt)*) => {
+        impl<$lt, $renderer, $custom> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$lt, $renderer, $custom>
+        where
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            <$renderer as Renderer>::TextureId: 'static,
+            $custom: $crate::backend::renderer::output::element::RenderElement<$renderer>,
         {
             $crate::render_elements_internal!(@body $renderer; $($tail)*);
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
@@ -352,7 +398,25 @@ macro_rules! render_elements_internal {
             }
         )*
     };
-    (@from $lt:lifetime $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+    (@from $name:ident<$renderer:ident, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+        $(
+            $(
+                #[$meta]
+            )*
+            impl<$renderer, $custom> From<$field> for $name<$renderer, $custom>
+            where
+                $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+                $(
+                    $($renderer: std::convert::AsMut<$other_renderer>,)?
+                )*
+            {
+                fn from(field: $field) -> $name<$renderer> {
+                    $name::$body(field)
+                }
+            }
+        )*
+    };
+    (@from $name:ident<$lt:lifetime, $renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         $(
             $(
                 #[$meta]
@@ -365,6 +429,25 @@ macro_rules! render_elements_internal {
                 )*
             {
                 fn from(field: $field) -> $name<$lt, $renderer> {
+                    $name::$body(field)
+                }
+            }
+        )*
+    };
+    (@from $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+        $(
+            $(
+                #[$meta]
+            )*
+            impl<$lt, $renderer, $custom> From<$field> for $name<$lt, $renderer, $custom>
+            where
+                $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+                $custom: $crate::backend::renderer::output::element::RenderElement<$renderer>,
+                $(
+                    $($renderer: std::convert::AsMut<$other_renderer>,)?
+                )*
+            {
+                fn from(field: $field) -> $name<$lt, $renderer, $custom> {
                     $name::$body(field)
                 }
             }
@@ -398,15 +481,31 @@ macro_rules! render_elements {
         $crate::render_elements_internal!(@from $lt $name; $($tail)*);
 
     };
+    ($(#[$attr:meta])* $vis:vis $name:ident<=$lt:lifetime, $renderer:ty, $custom:ident>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $lt $vis $name $custom; $($tail)*);
+        $crate::render_elements_internal!(@impl $lt $name<=$renderer>; $($tail)*);
+        $crate::render_elements_internal!(@from $lt $name; $($tail)*);
+
+    };
     ($(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident>; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$renderer>; $($tail)*);
         $crate::render_elements_internal!(@impl $name<$renderer>; $($tail)*);
         $crate::render_elements_internal!(@from $name<$renderer>; $($tail)*);
     };
+    ($(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident, $custom:ident>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$renderer, $custom>; $($tail)*);
+        $crate::render_elements_internal!(@impl $name<$renderer>; $($tail)*);
+        $crate::render_elements_internal!(@from $name<$renderer>; $($tail)*);
+    };
     ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident>; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $(#[$attr])* $lt $vis $name<$renderer>; $($tail)*);
-        $crate::render_elements_internal!(@impl $lt $name<$renderer>; $($tail)*);
-        $crate::render_elements_internal!(@from $lt $name<$renderer>; $($tail)*);
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $renderer>; $($tail)*);
+        $crate::render_elements_internal!(@impl $name<$lt, $renderer>; $($tail)*);
+        $crate::render_elements_internal!(@from $name<$lt, $renderer>; $($tail)*);
+    };
+    ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $renderer, $custom>; $($tail)*);
+        $crate::render_elements_internal!(@impl $name<$lt, $renderer, $custom>; $($tail)*);
+        $crate::render_elements_internal!(@from $name<$lt, $renderer, $custom>; $($tail)*);
     };
     ($(#[$attr:meta])* $vis:vis $name:ident; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name; $($tail)*);
