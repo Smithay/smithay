@@ -7,7 +7,7 @@ use crate::{
             element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement},
             OutputRender, OutputRenderError,
         },
-        ImportAll, Renderer, Texture,
+        ImportAll, Renderer, Texture, gles2::Gles2Renderer,
     },
     desktop::{
         layer::{layer_map_for_output, LayerSurface},
@@ -20,7 +20,7 @@ use crate::{
     wayland::compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
 };
 use indexmap::IndexSet;
-use std::fmt;
+use std::{fmt, marker::PhantomData};
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 mod element;
@@ -529,7 +529,7 @@ pub enum OutputError {
 }
 
 crate::backend::renderer::output::element::render_elements! {
-    OutputRenderElements<'a, R, E>;
+    OutputRenderElements<'a, Gles2Renderer, E>;
     Space=E,
     Custom=&'a E,
 }
