@@ -21,18 +21,38 @@ struct ElementState {
     last_z_index: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct OutputRenderState {
     size: Option<Size<i32, Physical>>,
     elements: IndexMap<Id, ElementState>,
+    old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
 }
 
 /// Rendering for a single output
 #[derive(Debug)]
 pub struct OutputRender {
     output: Output,
-    last_states: VecDeque<OutputRenderState>,
-    empty_state: OutputRenderState,
+    last_state: OutputRenderState,
+}
+
+/// Errors thrown by [`Space::render_output`]
+#[derive(thiserror::Error)]
+pub enum OutputRenderError<R: Renderer> {
+    /// The provided [`Renderer`] did return an error during an operation
+    #[error(transparent)]
+    Rendering(R::Error),
+    /// The given [`Output`] has no set mode
+    #[error("Output has no active mode")]
+    OutputNoMode,
+}
+
+impl<R: Renderer> std::fmt::Debug for OutputRenderError<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputRenderError::Rendering(err) => std::fmt::Debug::fmt(err, f),
+            OutputRenderError::OutputNoMode => f.write_str("Output has no active mode"),
+        }
+    }
 }
 
 impl OutputRender {
@@ -40,22 +60,33 @@ impl OutputRender {
     pub fn new(output: &Output) -> Self {
         Self {
             output: output.clone(),
-            last_states: VecDeque::new(),
-            empty_state: OutputRenderState {
-                size: None,
-                elements: IndexMap::new(),
-            },
+            last_state: Default::default(),
         }
     }
 
+    /// Get the output associated with this renderer
+    pub fn output(&self) -> &Output {
+        &self.output
+    }
+
     /// Render this output
-    pub fn render_output<E, R>(&mut self, renderer: &mut R, age: usize, elements: &[E], log: &slog::Logger)
+    pub fn render_output<E, R>(
+        &mut self,
+        renderer: &mut R,
+        age: usize,
+        elements: &[E],
+        log: &slog::Logger,
+    ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
     where
         E: RenderElement<R>,
-        R: Renderer + ImportAll + std::fmt::Debug,
-        <R as Renderer>::TextureId: Texture + std::fmt::Debug + 'static,
+        R: Renderer + ImportAll,
+        <R as Renderer>::TextureId: Texture + 'static,
     {
-        let output_size = self.output.current_mode().unwrap().size;
+        let output_size = self
+            .output
+            .current_mode()
+            .ok_or(OutputRenderError::OutputNoMode)?
+            .size;
         let output_transform = self.output.current_transform();
         let output_scale = Scale::from(self.output.current_scale().fractional_scale());
         let output_geo = Rectangle::from_loc_and_size((0, 0), output_size);
@@ -65,16 +96,19 @@ impl OutputRender {
         let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
         let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
 
-        let last_state = if age > 0 && self.last_states.len() >= age {
-            self.last_states.truncate(age);
-            self.last_states.get(age - 1).unwrap_or(&self.empty_state)
-        } else {
+        if self.last_state.size.map(|geo| geo != output_size).unwrap_or(true) {
+            // The output geometry changed, so just damage everything
+            slog::trace!(log, "Output geometry changed, damaging whole output geometry. previous geometry: {:?}, current geometry: {:?}", self.last_state.size, output_geo);
             damage = vec![output_geo];
-            &self.empty_state
-        };
+        }
 
-        // If the output size changed damage everything
-        if last_state.size.map(|s| s != output_size).unwrap_or(true) {
+        // We now add old damage states, if we have an age value
+        if age > 0 && self.last_state.old_damage.len() >= age {
+            // We do not need even older states anymore
+            self.last_state.old_damage.truncate(age);
+            damage.extend(self.last_state.old_damage.iter().flatten().copied());
+        } else {
+            // just damage everything, if we have no damage
             damage = vec![output_geo];
         }
 
@@ -106,7 +140,7 @@ impl OutputRender {
             let element_damage = element
                 .damage_since(
                     output_scale,
-                    last_state.elements.get(element.id()).map(|s| s.last_commit),
+                    self.last_state.elements.get(element.id()).map(|s| s.last_commit),
                 )
                 .into_iter()
                 .map(|mut d| {
@@ -141,7 +175,7 @@ impl OutputRender {
         // add the damage for elements gone that are not covered by
         // by an opaque region
         // TODO: actually filter the damage with the opaque regions
-        let elements_gone = last_state
+        let elements_gone = self.last_state
             .elements
             .iter()
             .filter_map(|(id, state)| {
@@ -157,7 +191,7 @@ impl OutputRender {
         // if the element has been moved or it's z index changed damage it
         for (z_index, element) in render_elements.iter().enumerate() {
             let element_geometry = element.geometry(output_scale);
-            let element_last_state = last_state.elements.get(element.id());
+            let element_last_state = self.last_state.elements.get(element.id());
 
             if element_last_state
                 .map(|s| s.last_geometry != element_geometry || s.last_z_index != z_index)
@@ -191,43 +225,45 @@ impl OutputRender {
             });
 
         if damage.is_empty() {
-            return;
+            return Ok(None);
         }
-
-        dbg!(elements.len());
-        dbg!(render_elements.len());
 
         let mut elements_drawn = 0;
 
-        renderer
-            .render(output_size, output_transform.into(), |renderer, frame| {
-                frame
-                    .clear([1.0f32, 0.0f32, 0.0f32, 1.0f32], &*damage)
-                    .expect("failed to clear the frame");
+        let res = renderer.render(output_size, output_transform.into(), |renderer, frame| {
+            frame.clear([1.0f32, 0.0f32, 0.0f32, 1.0f32], &*damage)?;
 
-                for element in render_elements.iter() {
-                    let element_geometry = element.geometry(output_scale);
+            for element in render_elements.iter() {
+                let element_geometry = element.geometry(output_scale);
 
-                    let element_damage = damage
-                        .iter()
-                        .filter_map(|d| d.intersection(element_geometry))
-                        .map(|mut d| {
-                            d.loc -= element_geometry.loc;
-                            d
-                        })
-                        .collect::<Vec<_>>();
+                let element_damage = damage
+                    .iter()
+                    .filter_map(|d| d.intersection(element_geometry))
+                    .map(|mut d| {
+                        d.loc -= element_geometry.loc;
+                        d
+                    })
+                    .collect::<Vec<_>>();
 
-                    if element_damage.is_empty() {
-                        continue;
-                    }
-
-                    element.draw(renderer, frame, output_scale, &*element_damage, log);
-                    elements_drawn += 1;
+                if element_damage.is_empty() {
+                    continue;
                 }
-            })
-            .expect("failed to render");
 
-        dbg!(elements_drawn);
+                element.draw(renderer, frame, output_scale, &*element_damage, log)?;
+                elements_drawn += 1;
+            }
+
+            Result::<(), R::Error>::Ok(())
+        });
+
+        if let Err(err) = res {
+            // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
+            // thus clean our old states before returning
+            // state.old_damage = VecDeque::new();
+            // state.last_toplevel_state = IndexMap::new();
+            self.last_state = Default::default();
+            return Err(OutputRenderError::Rendering(err));
+        }
 
         let new_elements_state = render_elements
             .iter()
@@ -244,9 +280,10 @@ impl OutputRender {
                 (id, state)
             })
             .collect();
-        self.last_states.push_front(OutputRenderState {
-            size: Some(output_size),
-            elements: new_elements_state,
-        });
+        self.last_state.size = Some(output_size);
+        self.last_state.elements = new_elements_state;
+        self.last_state.old_damage.push_front(damage.clone());
+
+        Ok(Some(damage))
     }
 }
