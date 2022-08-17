@@ -182,7 +182,7 @@ where
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         _log: &slog::Logger,
-    ) {
+    ) -> Result<(), R::Error> {
         let value_str = std::cmp::min(self.value, 999).to_string();
         let mut offset: Point<f64, Physical> = Point::from((0.0, 0.0));
         for digit in value_str.chars().map(|d| d.to_digit(10).unwrap()) {
@@ -215,10 +215,17 @@ where
                 5 => Rectangle::from_loc_and_size((44, 70), (22, 35)),
                 _ => unreachable!(),
             };
-            frame
-                .render_texture_from_to(&self.texture, src.to_f64(), dst, &damage, Transform::Normal, 1.0)
-                .unwrap();
+            frame.render_texture_from_to(
+                &self.texture,
+                src.to_f64(),
+                dst,
+                &damage,
+                Transform::Normal,
+                1.0,
+            )?;
             offset += Point::from((24.0, 0.0)).to_physical(scale);
         }
+
+        Ok(())
     }
 }

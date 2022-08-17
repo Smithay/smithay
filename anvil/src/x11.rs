@@ -24,12 +24,19 @@ use smithay::{
         egl::{EGLContext, EGLDisplay},
         renderer::{
             gles2::Gles2Renderer,
-            output::{element::BuiltinRenderElements, OutputRender},
-            Bind, ImportMem, Renderer,
+            output::{
+                element::{
+                    surface::WaylandSurfaceRenderElement, texture::TextureRenderElement,
+                    BuiltinRenderElements, RenderElement,
+                },
+                OutputRender,
+            },
+            Bind, ImportAll, ImportMem, Renderer,
         },
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
-    input::pointer::CursorImageStatus,
+    desktop::space::{SpaceElement, SurfaceTree},
+    input::pointer::{CursorImageAttributes, CursorImageStatus},
     reexports::{
         calloop::EventLoop,
         gbm,
@@ -39,7 +46,10 @@ use smithay::{
         },
     },
     utils::IsAlive,
-    wayland::output::{Mode, Output, PhysicalProperties},
+    wayland::{
+        compositor,
+        output::{Mode, Output, PhysicalProperties},
+    },
 };
 
 pub const OUTPUT_NAME: &str = "x11";
@@ -268,7 +278,7 @@ pub fn run_x11(log: Logger) {
             }
 
             let mut cursor_guard = cursor_status.lock().unwrap();
-            let mut custom_space_elements: Vec<&PointerElement<_>> = Vec::new();
+            let mut custom_space_elements: Vec<CustomSpaceElements<'_, _>> = Vec::new();
 
             // // draw the dnd icon if any
             // if let Some(surface) = state.dnd_icon.as_ref() {
@@ -290,58 +300,70 @@ pub fn run_x11(log: Logger) {
             }
 
             fallback_pointer_element.set_status(cursor_guard.clone());
-            custom_space_elements.push(&fallback_pointer_element);
+            custom_space_elements.push(CustomSpaceElements::Pointer(&fallback_pointer_element));
 
-            // // draw FPS
-            // #[cfg(feature = "debug")]
-            // {
-            //     elements.push(draw_fps::<Gles2Renderer>(fps_texture, fps).into());
-            // }
+            // draw the dnd icon if any
+            if let Some(surface) = state.dnd_icon.as_ref() {
+                if surface.alive() {
+                    let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
+                        compositor::with_states(surface, |states| {
+                            states
+                                .data_map
+                                .get::<Mutex<CursorImageAttributes>>()
+                                .unwrap()
+                                .lock()
+                                .unwrap()
+                                .hotspot
+                        })
+                    } else {
+                        (0, 0).into()
+                    };
+
+                    custom_space_elements.push(CustomSpaceElements::SurfaceTree(
+                        smithay::desktop::space::SurfaceTree::from_surface(
+                            surface,
+                            state.pointer_location.to_i32_round() - cursor_hotspot,
+                        ),
+                    ));
+                }
+            }
 
             #[cfg(feature = "debug")]
-            let mut elements = state
-                .space
-                .elements_for_output::<_, _, CustomRenderElements<'_, _>>(&output, &*custom_space_elements);
+            let render_res = smithay::desktop::space::render_output::<_, _, CustomRenderElements<'_, _>>(
+                &mut backend_data.renderer,
+                age.into(),
+                &[(&state.space, &*custom_space_elements)],
+                vec![CustomRenderElements::Fps(&fps_element)],
+                &mut backend_data.output_render,
+                &log,
+            );
+
             #[cfg(not(feature = "debug"))]
-            let elements = state
-                .space
-                .elements_for_output::<_, _, BuiltinRenderElements<_>>(&output, &*custom_space_elements);
-            #[cfg(feature = "debug")]
-            elements.insert(0, CustomRenderElements::Fps(&fps_element));
-            let output_render = &mut backend_data.output_render;
-            output_render.render_output(&mut backend_data.renderer, age.into(), &*elements, &log);
+            let render_res = smithay::desktop::space::render_output::<_, _, BuiltinRenderElements<_>>(
+                &mut backend_data.renderer,
+                age.into(),
+                &[(&state.space, &*custom_space_elements)],
+                vec![],
+                &mut backend_data.output_render,
+                &log,
+            );
 
-            if let Err(err) = backend_data.surface.submit() {
-                backend_data.surface.reset_buffers();
-                warn!(log, "Failed to submit buffer: {}. Retrying", err);
-            } else {
-                state.backend_data.render = false;
-            };
-
-            // let render_res = crate::render::render_output(
-            //     &output,
-            //     &mut state.space,
-            //     &mut backend_data.renderer,
-            //     age.into(),
-            //     &*elements,
-            //     &log,
-            // );
-            // match render_res {
-            //     Ok(_) => {
-            //         trace!(log, "Finished rendering");
-            //         if let Err(err) = backend_data.surface.submit() {
-            //             backend_data.surface.reset_buffers();
-            //             warn!(log, "Failed to submit buffer: {}. Retrying", err);
-            //         } else {
-            //             state.backend_data.render = false;
-            //         };
-            //     }
-            //     Err(err) => {
-            //         backend_data.surface.reset_buffers();
-            //         error!(log, "Rendering error: {}", err);
-            //         // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
-            //     }
-            // }
+            match render_res {
+                Ok(_) => {
+                    trace!(log, "Finished rendering");
+                    if let Err(err) = backend_data.surface.submit() {
+                        backend_data.surface.reset_buffers();
+                        warn!(log, "Failed to submit buffer: {}. Retrying", err);
+                    } else {
+                        state.backend_data.render = false;
+                    };
+                }
+                Err(err) => {
+                    backend_data.surface.reset_buffers();
+                    error!(log, "Rendering error: {}", err);
+                    // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
+                }
+            }
 
             #[cfg(feature = "debug")]
             state.backend_data.fps.tick();
@@ -371,6 +393,53 @@ smithay::backend::renderer::output::element::render_elements! {
     Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
     Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<R>,
     Fps=&'a FpsElement<<R as Renderer>::TextureId>
+}
+
+pub enum CustomSpaceElements<'a, R>
+where
+    R: Renderer,
+{
+    Pointer(&'a PointerElement<<R as Renderer>::TextureId>),
+    SurfaceTree(SurfaceTree),
+}
+
+impl<'a, R, E> SpaceElement<R, E> for CustomSpaceElements<'a, R>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: Clone + 'static,
+    E: RenderElement<R> + From<TextureRenderElement<R>> + From<WaylandSurfaceRenderElement<R>>,
+{
+    fn z_index(&self, space_id: usize) -> u8 {
+        match self {
+            CustomSpaceElements::Pointer(p) => SpaceElement::<R, E>::z_index(*p, space_id),
+            CustomSpaceElements::SurfaceTree(s) => SpaceElement::<R, E>::z_index(s, space_id),
+        }
+    }
+
+    fn location(&self, space_id: usize) -> smithay::utils::Point<i32, smithay::utils::Logical> {
+        match self {
+            CustomSpaceElements::Pointer(p) => SpaceElement::<R, E>::location(*p, space_id),
+            CustomSpaceElements::SurfaceTree(s) => SpaceElement::<R, E>::location(s, space_id),
+        }
+    }
+
+    fn geometry(&self, space_id: usize) -> smithay::utils::Rectangle<i32, smithay::utils::Logical> {
+        match self {
+            CustomSpaceElements::Pointer(p) => SpaceElement::<R, E>::geometry(*p, space_id),
+            CustomSpaceElements::SurfaceTree(s) => SpaceElement::<R, E>::geometry(s, space_id),
+        }
+    }
+
+    fn render_elements(
+        &self,
+        location: smithay::utils::Point<i32, smithay::utils::Physical>,
+        scale: smithay::utils::Scale<f64>,
+    ) -> Vec<E> {
+        match self {
+            CustomSpaceElements::Pointer(p) => p.render_elements(location, scale),
+            CustomSpaceElements::SurfaceTree(s) => s.render_elements(location, scale),
+        }
+    }
 }
 
 // smithay::backend::renderer::output::element::render_elements! {

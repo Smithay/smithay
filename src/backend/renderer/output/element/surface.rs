@@ -171,25 +171,24 @@ where
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
-    ) {
-        crate::backend::renderer::utils::import_surface_tree(renderer, &self.surface, log)
-            .expect("failed to import surface");
+    ) -> Result<(), R::Error> {
+        crate::backend::renderer::utils::import_surface_tree(renderer, &self.surface, log)?;
 
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
             if let Some(data) = data {
                 let data = data.borrow();
-                frame
-                    .render_texture_at(
-                        data.texture(renderer).unwrap(),
-                        self.location,
-                        data.buffer_scale,
-                        scale,
-                        data.buffer_transform,
-                        damage,
-                        1.0f32,
-                    )
-                    .expect("failed to render texture");
+                frame.render_texture_at(
+                    data.texture(renderer).unwrap(),
+                    self.location,
+                    data.buffer_scale,
+                    scale,
+                    data.buffer_transform,
+                    damage,
+                    1.0f32,
+                )
+            } else {
+                Ok(())
             }
         })
     }

@@ -23,11 +23,7 @@ where
     <R as Renderer>::TextureId: Texture,
 {
     /// Create a texture render element from an existing texture
-    pub fn from_texture(
-        location: impl Into<Point<i32, Physical>>,
-        id: Id,
-        texture: R::TextureId,
-    ) -> Self {
+    pub fn from_texture(location: impl Into<Point<i32, Physical>>, id: Id, texture: R::TextureId) -> Self {
         Self {
             location: location.into(),
             id,
@@ -76,17 +72,15 @@ where
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
-    ) {
-        frame
-            .render_texture_at(
-                &self.texture,
-                self.location,
-                1,
-                scale,
-                Transform::Normal,
-                damage,
-                1.0,
-            )
-            .expect("failed to render")
+    ) -> Result<(), R::Error> {
+        frame.render_texture_at(
+            &self.texture,
+            self.location,
+            1,
+            scale,
+            Transform::Normal,
+            damage,
+            1.0,
+        )
     }
 }
