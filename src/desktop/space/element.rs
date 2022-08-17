@@ -123,3 +123,42 @@ where
         (*self).render_elements(location, scale)
     }
 }
+
+/// A custom surface tree
+#[derive(Debug)]
+pub struct SurfaceTree {
+    location: Point<i32, Logical>,
+    surface: WlSurface,
+}
+
+impl SurfaceTree {
+    /// Create a surface tree from a surface
+    pub fn from_surface(surface: &WlSurface, location: impl Into<Point<i32, Logical>>) -> Self {
+        SurfaceTree {
+            location: location.into(),
+            surface: surface.clone(),
+        }
+    }
+}
+
+impl<R, E> SpaceElement<R, E> for SurfaceTree
+where
+    R: Renderer + ImportAll,
+    E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>>,
+{
+    fn location(&self, _space_id: usize) -> Point<i32, Logical> {
+        self.location
+    }
+
+    fn geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
+        crate::desktop::utils::bbox_from_surface_tree(&self.surface, self.location)
+    }
+
+    fn render_elements(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E> {
+        crate::backend::renderer::output::element::surface::surfaces_from_surface_tree(
+            &self.surface,
+            location,
+            scale,
+        )
+    }
+}
