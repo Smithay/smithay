@@ -125,7 +125,6 @@ where
         (*self).render_elements(location, scale)
     }
 }
-
 /// A custom surface tree
 #[derive(Debug)]
 pub struct SurfaceTree {
