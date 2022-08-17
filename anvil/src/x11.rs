@@ -328,7 +328,7 @@ pub fn run_x11(log: Logger) {
                 &mut backend_data.renderer,
                 age.into(),
                 &[(&state.space, &*custom_space_elements)],
-                vec![CustomRenderElements::Fps(&fps_element)],
+                &[CustomRenderElements::Fps(&fps_element)],
                 &mut backend_data.output_render,
                 &log,
             );
@@ -338,7 +338,7 @@ pub fn run_x11(log: Logger) {
                 &mut backend_data.renderer,
                 age.into(),
                 &[(&state.space, &*custom_space_elements)],
-                vec![],
+                &[],
                 &mut backend_data.output_render,
                 &log,
             );
