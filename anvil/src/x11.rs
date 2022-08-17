@@ -8,6 +8,8 @@ use crate::{
     state::{AnvilState, Backend, CalloopData},
 };
 use slog::Logger;
+#[cfg(not(feature = "debug"))]
+use smithay::desktop::space::SpaceRenderElements;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -21,7 +23,7 @@ use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
         renderer::{
-            gles2::{Gles2Renderer, Gles2Texture},
+            gles2::Gles2Renderer,
             output::{
                 element::{
                     surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement,
@@ -317,17 +319,17 @@ pub fn run_x11(log: Logger) {
             }
 
             #[cfg(feature = "debug")]
-            let render_res = smithay::desktop::space::render_output::<_, _, RenderElements<'_>>(
+            let render_res = smithay::desktop::space::render_output::<_, _, CustomRenderElements<'_, _>>(
                 &mut backend_data.renderer,
                 age.into(),
                 &[(&state.space, &*custom_space_elements)],
-                &[RenderElements::Fps(&fps_element)],
+                &[CustomRenderElements::Fps(&fps_element)],
                 &mut backend_data.output_render,
                 &log,
             );
 
             #[cfg(not(feature = "debug"))]
-            let render_res = smithay::desktop::space::render_output::<_, _, RenderElements>(
+            let render_res = smithay::desktop::space::render_output::<_, _, SpaceRenderElements<_>>(
                 &mut backend_data.renderer,
                 age.into(),
                 &[(&state.space, &*custom_space_elements)],
@@ -377,17 +379,10 @@ pub fn run_x11(log: Logger) {
 
 #[cfg(feature = "debug")]
 smithay::backend::renderer::output::element::render_elements! {
-    pub RenderElements<='a, Gles2Renderer>;
+    pub CustomRenderElements<'a, R>;
     Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
-    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<Gles2Texture>,
-    Fps=&'a FpsElement<Gles2Texture>
-}
-
-#[cfg(not(feature = "debug"))]
-smithay::backend::renderer::output::element::render_elements! {
-    pub RenderElements<=Gles2Renderer>;
-    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
-    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<Gles2Texture>,
+    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<<R as Renderer>::TextureId>,
+    Fps=&'a FpsElement<<R as Renderer>::TextureId>
 }
 
 pub enum CustomSpaceElements<'a, R>
@@ -438,102 +433,3 @@ where
         }
     }
 }
-
-// smithay::backend::renderer::output::element::render_elements! {
-//     pub CustomRenderElements<R>;
-//     Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
-//     Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<R>,
-// }
-
-// enum CustomRenderElements<'a, R>
-// where
-//     R: Renderer + ImportAll,
-//     <R as Renderer>::TextureId: Texture + 'static,
-// {
-//     Surface(smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>),
-//     Texture(smithay::backend::renderer::output::element::texture::TextureRenderElement<'a, R>),
-// }
-
-// impl<'a, R> smithay::backend::renderer::output::element::RenderElement<R> for CustomRenderElements<'a, R>
-// where
-//     R: Renderer + ImportAll,
-// {
-//     fn id(&self) -> &smithay::backend::renderer::output::element::Id {
-//         match self {
-//             CustomRenderElements::Surface(s) => s.id(),
-//             CustomRenderElements::Texture(t) => t.id(),
-//         }
-//     }
-
-//     fn current_commit(&self) -> usize {
-//         match self {
-//             CustomRenderElements::Surface(s) => s.current_commit(),
-//             CustomRenderElements::Texture(t) => t.current_commit(),
-//         }
-//     }
-
-//     fn location(
-//         &self,
-//         scale: smithay::utils::Scale<f64>,
-//     ) -> smithay::utils::Point<i32, smithay::utils::Physical> {
-//         match self {
-//             CustomRenderElements::Surface(s) => s.location(scale),
-//             CustomRenderElements::Texture(t) => t.location(scale),
-//         }
-//     }
-
-//     fn geometry(
-//         &self,
-//         scale: smithay::utils::Scale<f64>,
-//     ) -> smithay::utils::Rectangle<i32, smithay::utils::Physical> {
-//         match self {
-//             CustomRenderElements::Surface(s) => s.geometry(scale),
-//             CustomRenderElements::Texture(t) => t.geometry(scale),
-//         }
-//     }
-
-//     fn damage_since(
-//         &self,
-//         scale: smithay::utils::Scale<f64>,
-//         commit: Option<usize>,
-//     ) -> Vec<smithay::utils::Rectangle<i32, smithay::utils::Physical>> {
-//         match self {
-//             CustomRenderElements::Surface(s) => s.damage_since(scale, commit),
-//             CustomRenderElements::Texture(t) => t.damage_since(scale, commit),
-//         }
-//     }
-
-//     fn opaque_regions(
-//         &self,
-//         scale: smithay::utils::Scale<f64>,
-//     ) -> Vec<smithay::utils::Rectangle<i32, smithay::utils::Physical>> {
-//         match self {
-//             CustomRenderElements::Surface(s) => s.opaque_regions(scale),
-//             CustomRenderElements::Texture(t) => t.opaque_regions(scale),
-//         }
-//     }
-
-//     fn underlying_storage(
-//         &self,
-//         renderer: &R,
-//     ) -> Option<smithay::backend::renderer::output::element::UnderlyingStorage<'_, R>> {
-//         match self {
-//             CustomRenderElements::Surface(s) => s.underlying_storage(renderer),
-//             CustomRenderElements::Texture(t) => t.underlying_storage(renderer),
-//         }
-//     }
-
-//     fn draw(
-//         &self,
-//         renderer: &mut R,
-//         frame: &mut <R as Renderer>::Frame,
-//         scale: smithay::utils::Scale<f64>,
-//         damage: &[smithay::utils::Rectangle<i32, smithay::utils::Physical>],
-//         log: &slog::Logger,
-//     ) {
-//         match self {
-//             CustomRenderElements::Surface(s) => s.draw(renderer, frame, scale, damage, log),
-//             CustomRenderElements::Texture(t) => t.draw(renderer, frame, scale, damage, log),
-//         }
-//     }
-// }
