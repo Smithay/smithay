@@ -611,10 +611,11 @@ where
         + From<WaylandSurfaceRenderElement>
         + From<TextureRenderElement<<R as Renderer>::TextureId>>,
 {
-    let mut render_elements: Vec<OutputRenderElements<'_, R, E>> = Vec::new();
-
     let space_render_elements =
         space_render_elements(spaces, output_render.output()).map_err(|_| OutputRenderError::OutputNoMode)?;
+
+    let mut render_elements: Vec<OutputRenderElements<'_, R, E>> =
+        Vec::with_capacity(custom_elements.len() + space_render_elements.len());
 
     render_elements.extend(custom_elements.iter().map(OutputRenderElements::from));
     render_elements.extend(
