@@ -1,5 +1,7 @@
+use std::marker::PhantomData;
+
 use crate::{
-    backend::renderer::{ImportAll, Renderer},
+    backend::renderer::{gles2::Gles2Renderer, ImportAll, Renderer},
     utils::{Physical, Point, Rectangle, Scale},
 };
 
@@ -118,6 +120,46 @@ macro_rules! render_elements_internal {
             _GenericCatcher(std::convert::Infallible),
         }
     };
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident $custom:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+        $(#[$attr])*
+        $vis enum $name<$custom> {
+            $(
+                $(
+                    #[$meta]
+                )*
+                $body($field)
+            ),*,
+            #[doc(hidden)]
+            _GenericCatcher(std::convert::Infallible),
+        }
+    };
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident $lt:lifetime; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+        $(#[$attr])*
+        $vis enum $name<$lt> {
+            $(
+                $(
+                    #[$meta]
+                )*
+                $body($field)
+            ),*,
+            #[doc(hidden)]
+            _GenericCatcher(std::convert::Infallible),
+        }
+    };
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident $lt:lifetime $custom:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+        $(#[$attr])*
+        $vis enum $name<$lt, $custom> {
+            $(
+                $(
+                    #[$meta]
+                )*
+                $body($field)
+            ),*,
+            #[doc(hidden)]
+            _GenericCatcher(std::convert::Infallible),
+        }
+    };
+
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
         $vis enum $name<$renderer>
@@ -289,7 +331,7 @@ macro_rules! render_elements_internal {
             scale: $crate::utils::Scale<f64>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             log: &slog::Logger,
-        ) -> Result<(), R::Error>
+        ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
         where
         $(
             $(
@@ -315,23 +357,23 @@ macro_rules! render_elements_internal {
             &self,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
-            scale: impl Into<$crate::utils::Scale<f64>>,
-            location: $crate::utils::Point<f64, $crate::utils::Physical>,
+            scale: $crate::utils::Scale<f64>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             log: &slog::Logger,
-        ) -> Result<(), R::Error>
+        ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
         {
             match self {
                 $(
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, location, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
     };
+    // Generic renderer
     (@impl $name:ident<$renderer:ident>; $($tail:tt)*) => {
         impl<$renderer> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$renderer>
         where
@@ -347,6 +389,17 @@ macro_rules! render_elements_internal {
         where
             $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
             <$renderer as Renderer>::TextureId: 'static,
+        {
+            $crate::render_elements_internal!(@body $renderer; $($tail)*);
+            $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
+        }
+    };
+    (@impl $name:ident<$renderer:ident, $custom:ident>; $($tail:tt)*) => {
+        impl<$renderer, $custom> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$renderer, $custom>
+        where
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            <$renderer as Renderer>::TextureId: 'static,
+            $custom: $crate::backend::renderer::output::element::RenderElement<$renderer>,
         {
             $crate::render_elements_internal!(@body $renderer; $($tail)*);
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
@@ -373,6 +426,8 @@ macro_rules! render_elements_internal {
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
+
+    // Specific renderer
     (@impl $name:ident<=$renderer:ty>; $($tail:tt)*) => {
         impl $crate::backend::renderer::output::element::RenderElement<$renderer> for $name
         {
@@ -380,6 +435,33 @@ macro_rules! render_elements_internal {
             $crate::render_elements_internal!(@draw $renderer; $($tail)*);
         }
     };
+    (@impl $name:ident<=$renderer:ty, $custom:ident>; $($tail:tt)*) => {
+        impl<$custom> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$custom>
+        where $custom: $crate::backend::renderer::output::element::RenderElement<$renderer>
+        {
+            $crate::render_elements_internal!(@body $renderer; $($tail)*);
+            $crate::render_elements_internal!(@draw $renderer; $($tail)*);
+        }
+    };
+
+    (@impl $name:ident<=$renderer:ty, $lt:lifetime>; $($tail:tt)*) => {
+        impl<$lt> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$lt>
+        {
+            $crate::render_elements_internal!(@body $renderer; $($tail)*);
+            $crate::render_elements_internal!(@draw $renderer; $($tail)*);
+        }
+    };
+
+    (@impl $name:ident<=$renderer:ty, $lt:lifetime, $custom:ident>; $($tail:tt)*) => {
+        impl<$lt, $custom> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$lt, $custom>
+        where $custom: $crate::backend::renderer::output::element::RenderElement<$renderer>
+        {
+            $crate::render_elements_internal!(@body $renderer; $($tail)*);
+            $crate::render_elements_internal!(@draw $renderer; $($tail)*);
+        }
+    };
+
+
     (@from $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         $(
             $(
@@ -406,11 +488,12 @@ macro_rules! render_elements_internal {
             impl<$renderer, $custom> From<$field> for $name<$renderer, $custom>
             where
                 $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+                $custom: $crate::backend::renderer::output::element::RenderElement<$renderer>,
                 $(
                     $($renderer: std::convert::AsMut<$other_renderer>,)?
                 )*
             {
-                fn from(field: $field) -> $name<$renderer> {
+                fn from(field: $field) -> $name<$renderer, $custom> {
                     $name::$body(field)
                 }
             }
@@ -465,47 +548,64 @@ macro_rules! render_elements_internal {
             }
         )*
     };
+    (@from $name:ident<$lt:lifetime>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+        $(
+            $(
+                #[$meta]
+            )*
+            impl<$lt> From<$field> for $name<$lt> {
+                fn from(field: $field) -> $name<$lt> {
+                    $name::$body(field)
+                }
+            }
+        )*
+    };
 }
 
 #[macro_export]
 macro_rules! render_elements {
+    ($(#[$attr:meta])* $vis:vis $name:ident<=$lt:lifetime, $renderer:ty, $custom:ident>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name $lt $custom; $($tail)*);
+        $crate::render_elements_internal!(@impl $name<=$renderer, $lt, $custom>; $($tail)*);
+        $crate::render_elements_internal!(@from $name<$lt, $custom>; $($tail)*);
+    };
+    ($(#[$attr:meta])* $vis:vis $name:ident<=$lt:lifetime, $renderer:ty>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name $lt; $($tail)*);
+        $crate::render_elements_internal!(@impl $name<=$renderer, $lt>; $($tail)*);
+        $crate::render_elements_internal!(@from $name<$lt>; $($tail)*);
+    };
+    ($(#[$attr:meta])* $vis:vis $name:ident<=$renderer:ty, $custom:ident>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name $custom; $($tail)*);
+        $crate::render_elements_internal!(@impl $name<=$renderer, $custom>; $($tail)*);
+        $crate::render_elements_internal!(@from $name<$custom>; $($tail)*);
+    };
     ($(#[$attr:meta])* $vis:vis $name:ident<=$renderer:ty>; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name; $($tail)*);
         $crate::render_elements_internal!(@impl $name<=$renderer>; $($tail)*);
         $crate::render_elements_internal!(@from $name; $($tail)*);
+    };
 
-    };
-    ($(#[$attr:meta])* $vis:vis $name:ident<=$lt:lifetime, $renderer:ty>; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $(#[$attr])* $lt $vis $name; $($tail)*);
-        $crate::render_elements_internal!(@impl $lt $name<=$renderer>; $($tail)*);
-        $crate::render_elements_internal!(@from $lt $name; $($tail)*);
 
-    };
-    ($(#[$attr:meta])* $vis:vis $name:ident<=$lt:lifetime, $renderer:ty, $custom:ident>; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $(#[$attr])* $lt $vis $name $custom; $($tail)*);
-        $crate::render_elements_internal!(@impl $lt $name<=$renderer>; $($tail)*);
-        $crate::render_elements_internal!(@from $lt $name; $($tail)*);
 
-    };
-    ($(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident>; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$renderer>; $($tail)*);
-        $crate::render_elements_internal!(@impl $name<$renderer>; $($tail)*);
-        $crate::render_elements_internal!(@from $name<$renderer>; $($tail)*);
-    };
-    ($(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident, $custom:ident>; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$renderer, $custom>; $($tail)*);
-        $crate::render_elements_internal!(@impl $name<$renderer>; $($tail)*);
-        $crate::render_elements_internal!(@from $name<$renderer>; $($tail)*);
+    ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $renderer, $custom>; $($tail)*);
+        $crate::render_elements_internal!(@impl $name<$lt, $renderer, $custom>; $($tail)*);
+        $crate::render_elements_internal!(@from $name<$lt, $renderer, $custom>; $($tail)*);
     };
     ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident>; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $renderer>; $($tail)*);
         $crate::render_elements_internal!(@impl $name<$lt, $renderer>; $($tail)*);
         $crate::render_elements_internal!(@from $name<$lt, $renderer>; $($tail)*);
     };
-    ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $($tail:tt)*) => {
-        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $renderer, $custom>; $($tail)*);
-        $crate::render_elements_internal!(@impl $name<$lt, $renderer, $custom>; $($tail)*);
-        $crate::render_elements_internal!(@from $name<$lt, $renderer, $custom>; $($tail)*);
+    ($(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident, $custom:ident>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$renderer, $custom>; $($tail)*);
+        $crate::render_elements_internal!(@impl $name<$renderer, $custom>; $($tail)*);
+        $crate::render_elements_internal!(@from $name<$renderer, $custom>; $($tail)*);
+    };
+    ($(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident>; $($tail:tt)*) => {
+        $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$renderer>; $($tail)*);
+        $crate::render_elements_internal!(@impl $name<$renderer>; $($tail)*);
+        $crate::render_elements_internal!(@from $name<$renderer>; $($tail)*);
     };
     ($(#[$attr:meta])* $vis:vis $name:ident; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name; $($tail)*);
@@ -519,24 +619,222 @@ pub use render_elements;
 use self::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement};
 
 render_elements! {
-    /// Defines the built-in render elements supported by smithay
-    pub BuiltinRenderElements<R>;
-    /// A single wayland surface
-    Surface=WaylandSurfaceRenderElement<R>,
-    /// A single texture
-    Texture=TextureRenderElement<R>,
+    Test<='a, Gles2Renderer>;
+    Surface=TestRenderElement<'a, Gles2Renderer>
 }
 
-impl<R> std::fmt::Debug for BuiltinRenderElements<R>
+render_elements! {
+    Test2<=Gles2Renderer>;
+    Surface=TestRenderElement2<Gles2Renderer>
+}
+
+render_elements! {
+    Test3<='a, Gles2Renderer, C>;
+    Surface=TestRenderElement<'a, Gles2Renderer>,
+    Custom=&'a C,
+}
+
+render_elements! {
+    Test4<=Gles2Renderer, C>;
+    Surface=TestRenderElement2<Gles2Renderer>,
+    Custom=C
+}
+
+render_elements! {
+    TestG<'a, R>;
+    Surface=TestRenderElement<'a, R>
+}
+
+render_elements! {
+    TestG2<R>;
+    Surface=TestRenderElement2<R>
+}
+
+render_elements! {
+    TestG3<'a, R, C>;
+    Surface=TestRenderElement<'a, R>,
+    Custom=&'a C,
+}
+
+struct Custom<C>(C);
+
+impl<R, C> RenderElement<R> for Custom<C>
 where
-    R: Renderer + ImportAll + std::fmt::Debug,
-    <R as Renderer>::TextureId: std::fmt::Debug,
+    R: Renderer,
+    C: RenderElement<R>,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),
-            Self::Texture(arg0) => f.debug_tuple("Texture").field(arg0).finish(),
-            Self::_GenericCatcher(_) => unreachable!(),
-        }
+    fn id(&self) -> &Id {
+        todo!()
+    }
+
+    fn current_commit(&self) -> usize {
+        todo!()
+    }
+
+    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        todo!()
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        todo!()
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        scale: Scale<f64>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) -> Result<(), <R as Renderer>::Error> {
+        todo!()
     }
 }
+
+render_elements! {
+    TestG4<R, C>;
+    Surface=TestRenderElement2<R>,
+    Custom=Custom<C>
+}
+
+render_elements! {
+    TestG5;
+    What=Empty,
+}
+
+render_elements! {
+    TestG6<'a, R, C>;
+    Surface=TestRenderElement<'a, R>,
+    Custom=&'a C,
+    Custom2=Custom<C>,
+}
+
+impl<R> RenderElement<R> for Empty
+where
+    R: Renderer,
+{
+    fn id(&self) -> &Id {
+        todo!()
+    }
+
+    fn current_commit(&self) -> usize {
+        todo!()
+    }
+
+    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        todo!()
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        todo!()
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        scale: Scale<f64>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) -> Result<(), <R as Renderer>::Error> {
+        todo!()
+    }
+}
+
+struct Empty;
+
+struct TestRenderElement2<R> {
+    _phantom: PhantomData<R>,
+}
+
+impl<R> RenderElement<R> for TestRenderElement2<R>
+where
+    R: Renderer,
+{
+    fn id(&self) -> &Id {
+        todo!()
+    }
+
+    fn current_commit(&self) -> usize {
+        todo!()
+    }
+
+    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        todo!()
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        todo!()
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        scale: Scale<f64>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) -> Result<(), <R as Renderer>::Error> {
+        todo!()
+    }
+}
+
+struct TestRenderElement<'a, R> {
+    test: &'a usize,
+    _phantom: PhantomData<R>,
+}
+
+impl<'a, R> RenderElement<R> for TestRenderElement<'a, R>
+where
+    R: Renderer,
+{
+    fn id(&self) -> &Id {
+        todo!()
+    }
+
+    fn current_commit(&self) -> usize {
+        todo!()
+    }
+
+    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        todo!()
+    }
+
+    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        todo!()
+    }
+
+    fn draw(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        scale: Scale<f64>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) -> Result<(), <R as Renderer>::Error> {
+        todo!()
+    }
+}
+
+// render_elements! {
+//     /// Defines the built-in render elements supported by smithay
+//     pub BuiltinRenderElements<R>;
+//     /// A single wayland surface
+//     Surface=WaylandSurfaceRenderElement<R>,
+//     /// A single texture
+//     Texture=TextureRenderElement<R>,
+// }
+
+// impl<R> std::fmt::Debug for BuiltinRenderElements<R>
+// where
+//     R: Renderer + ImportAll + std::fmt::Debug,
+//     <R as Renderer>::TextureId: std::fmt::Debug,
+// {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         match self {
+//             Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),
+//             Self::Texture(arg0) => f.debug_tuple("Texture").field(arg0).finish(),
+//             Self::_GenericCatcher(_) => unreachable!(),
+//         }
+//     }
+// }
