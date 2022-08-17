@@ -53,8 +53,8 @@ impl<T: Texture + Clone + 'static, R, E> SpaceElement<R, E> for PointerElement<T
 where
     R: Renderer<TextureId = T> + ImportAll,
     E: smithay::backend::renderer::output::element::RenderElement<R>
-        + From<smithay::backend::renderer::output::element::texture::TextureRenderElement<R>>
-        + From<smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>>,
+        + From<smithay::backend::renderer::output::element::texture::TextureRenderElement<<R as Renderer>::TextureId>>
+        + From<smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement>,
 {
     fn location(&self, _space_id: usize) -> Point<i32, Logical> {
         if let CursorImageStatus::Surface(surface) = &self.status {

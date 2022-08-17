@@ -65,7 +65,9 @@ where
     R: Renderer + ImportAll + 'static,
     <R as Renderer>::TextureId: Texture + 'static,
     C: SpaceElement<R, E>,
-    E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
+    E: RenderElement<R>
+        + From<WaylandSurfaceRenderElement>
+        + From<TextureRenderElement<<R as Renderer>::TextureId>>,
 {
     fn location(&self, space_id: usize) -> Point<i32, Logical> {
         match self {
@@ -143,7 +145,7 @@ impl SurfaceTree {
 impl<R, E> SpaceElement<R, E> for SurfaceTree
 where
     R: Renderer + ImportAll,
-    E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>>,
+    E: RenderElement<R> + From<WaylandSurfaceRenderElement>,
 {
     fn location(&self, _space_id: usize) -> Point<i32, Logical> {
         self.location
