@@ -616,47 +616,15 @@ macro_rules! render_elements {
 
 pub use render_elements;
 
-use self::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement};
+/// New-type wrapper for wrapping owned elements
+/// in render_elements!
+pub struct Custom<C>(C);
 
-render_elements! {
-    Test<='a, Gles2Renderer>;
-    Surface=TestRenderElement<'a, Gles2Renderer>
+impl<C> From<C> for Custom<C> {
+    fn from(from: C) -> Self {
+        Self(from)
+    }
 }
-
-render_elements! {
-    Test2<=Gles2Renderer>;
-    Surface=TestRenderElement2<Gles2Renderer>
-}
-
-render_elements! {
-    Test3<='a, Gles2Renderer, C>;
-    Surface=TestRenderElement<'a, Gles2Renderer>,
-    Custom=&'a C,
-}
-
-render_elements! {
-    Test4<=Gles2Renderer, C>;
-    Surface=TestRenderElement2<Gles2Renderer>,
-    Custom=C
-}
-
-render_elements! {
-    TestG<'a, R>;
-    Surface=TestRenderElement<'a, R>
-}
-
-render_elements! {
-    TestG2<R>;
-    Surface=TestRenderElement2<R>
-}
-
-render_elements! {
-    TestG3<'a, R, C>;
-    Surface=TestRenderElement<'a, R>,
-    Custom=&'a C,
-}
-
-struct Custom<C>(C);
 
 impl<R, C> RenderElement<R> for Custom<C>
 where
@@ -664,19 +632,19 @@ where
     C: RenderElement<R>,
 {
     fn id(&self) -> &Id {
-        todo!()
+        self.0.id()
     }
 
     fn current_commit(&self) -> usize {
-        todo!()
+        self.0.current_commit()
     }
 
     fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
-        todo!()
+        self.0.location(scale)
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        todo!()
+        self.0.geometry(scale)
     }
 
     fn draw(
@@ -687,154 +655,193 @@ where
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        todo!()
+        self.0.draw(renderer, frame, scale, damage, log)
+    }
+
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
+        self.0.damage_since(scale, commit)
+    }
+
+    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        self.0.opaque_regions(scale)
+    }
+
+    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+        self.0.underlying_storage(renderer)
     }
 }
 
-render_elements! {
-    TestG4<R, C>;
-    Surface=TestRenderElement2<R>,
-    Custom=Custom<C>
+#[cfg(test)]
+mod tests {
+    use std::marker::PhantomData;
+
+    use crate::{
+        backend::renderer::{gles2::Gles2Renderer, Renderer},
+        utils::{Physical, Point, Rectangle, Scale},
+    };
+
+    use super::{Custom, Id, RenderElement};
+
+    render_elements! {
+        Test<='a, Gles2Renderer>;
+        Surface=TestRenderElement<'a, Gles2Renderer>
+    }
+
+    render_elements! {
+        Test2<=Gles2Renderer>;
+        Surface=TestRenderElement2<Gles2Renderer>
+    }
+
+    render_elements! {
+        Test3<='a, Gles2Renderer, C>;
+        Surface=TestRenderElement<'a, Gles2Renderer>,
+        Custom=&'a C,
+    }
+
+    render_elements! {
+        Test4<=Gles2Renderer, C>;
+        Surface=TestRenderElement2<Gles2Renderer>,
+        Custom=C
+    }
+
+    render_elements! {
+        TestG<'a, R>;
+        Surface=TestRenderElement<'a, R>
+    }
+
+    render_elements! {
+        TestG2<R>;
+        Surface=TestRenderElement2<R>
+    }
+
+    render_elements! {
+        TestG3<'a, R, C>;
+        Surface=TestRenderElement<'a, R>,
+        Custom=&'a C,
+    }
+
+    render_elements! {
+        TestG4<R, C>;
+        Surface=TestRenderElement2<R>,
+        Custom=Custom<C>
+    }
+
+    render_elements! {
+        TestG5;
+        What=Empty,
+    }
+
+    render_elements! {
+        TestG6<'a, R, C>;
+        Surface=TestRenderElement<'a, R>,
+        Custom=&'a C,
+        Custom2=Custom<C>,
+    }
+
+    impl<R> RenderElement<R> for Empty
+    where
+        R: Renderer,
+    {
+        fn id(&self) -> &Id {
+            todo!()
+        }
+
+        fn current_commit(&self) -> usize {
+            todo!()
+        }
+
+        fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+            todo!()
+        }
+
+        fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+            todo!()
+        }
+
+        fn draw(
+            &self,
+            renderer: &mut R,
+            frame: &mut <R as Renderer>::Frame,
+            scale: Scale<f64>,
+            damage: &[Rectangle<i32, Physical>],
+            log: &slog::Logger,
+        ) -> Result<(), <R as Renderer>::Error> {
+            todo!()
+        }
+    }
+
+    struct Empty;
+
+    struct TestRenderElement2<R> {
+        _phantom: PhantomData<R>,
+    }
+
+    impl<R> RenderElement<R> for TestRenderElement2<R>
+    where
+        R: Renderer,
+    {
+        fn id(&self) -> &Id {
+            todo!()
+        }
+
+        fn current_commit(&self) -> usize {
+            todo!()
+        }
+
+        fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+            todo!()
+        }
+
+        fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+            todo!()
+        }
+
+        fn draw(
+            &self,
+            renderer: &mut R,
+            frame: &mut <R as Renderer>::Frame,
+            scale: Scale<f64>,
+            damage: &[Rectangle<i32, Physical>],
+            log: &slog::Logger,
+        ) -> Result<(), <R as Renderer>::Error> {
+            todo!()
+        }
+    }
+
+    struct TestRenderElement<'a, R> {
+        test: &'a usize,
+        _phantom: PhantomData<R>,
+    }
+
+    impl<'a, R> RenderElement<R> for TestRenderElement<'a, R>
+    where
+        R: Renderer,
+    {
+        fn id(&self) -> &Id {
+            todo!()
+        }
+
+        fn current_commit(&self) -> usize {
+            todo!()
+        }
+
+        fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+            todo!()
+        }
+
+        fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+            todo!()
+        }
+
+        fn draw(
+            &self,
+            renderer: &mut R,
+            frame: &mut <R as Renderer>::Frame,
+            scale: Scale<f64>,
+            damage: &[Rectangle<i32, Physical>],
+            log: &slog::Logger,
+        ) -> Result<(), <R as Renderer>::Error> {
+            todo!()
+        }
+    }
 }
-
-render_elements! {
-    TestG5;
-    What=Empty,
-}
-
-render_elements! {
-    TestG6<'a, R, C>;
-    Surface=TestRenderElement<'a, R>,
-    Custom=&'a C,
-    Custom2=Custom<C>,
-}
-
-impl<R> RenderElement<R> for Empty
-where
-    R: Renderer,
-{
-    fn id(&self) -> &Id {
-        todo!()
-    }
-
-    fn current_commit(&self) -> usize {
-        todo!()
-    }
-
-    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
-        todo!()
-    }
-
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        todo!()
-    }
-
-    fn draw(
-        &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
-        scale: Scale<f64>,
-        damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
-    ) -> Result<(), <R as Renderer>::Error> {
-        todo!()
-    }
-}
-
-struct Empty;
-
-struct TestRenderElement2<R> {
-    _phantom: PhantomData<R>,
-}
-
-impl<R> RenderElement<R> for TestRenderElement2<R>
-where
-    R: Renderer,
-{
-    fn id(&self) -> &Id {
-        todo!()
-    }
-
-    fn current_commit(&self) -> usize {
-        todo!()
-    }
-
-    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
-        todo!()
-    }
-
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        todo!()
-    }
-
-    fn draw(
-        &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
-        scale: Scale<f64>,
-        damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
-    ) -> Result<(), <R as Renderer>::Error> {
-        todo!()
-    }
-}
-
-struct TestRenderElement<'a, R> {
-    test: &'a usize,
-    _phantom: PhantomData<R>,
-}
-
-impl<'a, R> RenderElement<R> for TestRenderElement<'a, R>
-where
-    R: Renderer,
-{
-    fn id(&self) -> &Id {
-        todo!()
-    }
-
-    fn current_commit(&self) -> usize {
-        todo!()
-    }
-
-    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
-        todo!()
-    }
-
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        todo!()
-    }
-
-    fn draw(
-        &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
-        scale: Scale<f64>,
-        damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
-    ) -> Result<(), <R as Renderer>::Error> {
-        todo!()
-    }
-}
-
-// render_elements! {
-//     /// Defines the built-in render elements supported by smithay
-//     pub BuiltinRenderElements<R>;
-//     /// A single wayland surface
-//     Surface=WaylandSurfaceRenderElement<R>,
-//     /// A single texture
-//     Texture=TextureRenderElement<R>,
-// }
-
-// impl<R> std::fmt::Debug for BuiltinRenderElements<R>
-// where
-//     R: Renderer + ImportAll + std::fmt::Debug,
-//     <R as Renderer>::TextureId: std::fmt::Debug,
-// {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         match self {
-//             Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),
-//             Self::Texture(arg0) => f.debug_tuple("Texture").field(arg0).finish(),
-//             Self::_GenericCatcher(_) => unreachable!(),
-//         }
-//     }
-// }
