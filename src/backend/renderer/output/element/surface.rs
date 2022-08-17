@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use wayland_server::protocol::wl_surface;
 
 use crate::{
@@ -11,13 +9,13 @@ use crate::{
 use super::{Id, RenderElement, UnderlyingStorage};
 
 /// Retrieve the render surfaces for a surface tree
-pub fn surfaces_from_surface_tree<R, E>(
+pub fn surfaces_from_surface_tree<E>(
     surface: &wl_surface::WlSurface,
     location: impl Into<Point<i32, Physical>>,
     scale: impl Into<Scale<f64>>,
 ) -> Vec<E>
 where
-    E: From<WaylandSurfaceRenderElement<R>>,
+    E: From<WaylandSurfaceRenderElement>,
 {
     let location = location.into().to_f64();
     let scale = scale.into();
@@ -66,14 +64,13 @@ where
 
 /// A single surface render element
 #[derive(Debug)]
-pub struct WaylandSurfaceRenderElement<R> {
+pub struct WaylandSurfaceRenderElement {
     id: Id,
     location: Point<i32, Physical>,
     surface: wl_surface::WlSurface,
-    _phantom: PhantomData<R>,
 }
 
-impl<R> WaylandSurfaceRenderElement<R> {
+impl WaylandSurfaceRenderElement {
     /// Create a render element from a surface
     pub fn from_surface(surface: &wl_surface::WlSurface, location: Point<i32, Physical>) -> Self {
         let id = Id::from_wayland_resource(surface);
@@ -82,12 +79,11 @@ impl<R> WaylandSurfaceRenderElement<R> {
             id,
             location,
             surface: surface.clone(),
-            _phantom: PhantomData,
         }
     }
 }
 
-impl<R> RenderElement<R> for WaylandSurfaceRenderElement<R>
+impl<R> RenderElement<R> for WaylandSurfaceRenderElement
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,

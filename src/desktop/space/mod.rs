@@ -443,7 +443,9 @@ impl Space {
         R: Renderer + ImportAll + 'static,
         <R as Renderer>::TextureId: Texture + 'static,
         C: SpaceElement<R, E>,
-        E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
+        E: RenderElement<R>
+            + From<WaylandSurfaceRenderElement>
+            + From<TextureRenderElement<<R as Renderer>::TextureId>>,
     {
         if !self.outputs.contains(output) {
             return Err(OutputError::Unmapped);
@@ -547,7 +549,9 @@ pub fn space_render_elements<R, C, E>(
 where
     R: Renderer + ImportAll + 'static,
     C: SpaceElement<R, E>,
-    E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
+    E: RenderElement<R>
+        + From<WaylandSurfaceRenderElement>
+        + From<TextureRenderElement<<R as Renderer>::TextureId>>,
 {
     let mut render_elements = Vec::new();
 
@@ -575,7 +579,9 @@ where
     R: Renderer + ImportAll + 'static,
     <R as Renderer>::TextureId: Texture + 'static,
     C: SpaceElement<R, E>,
-    E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
+    E: RenderElement<R>
+        + From<WaylandSurfaceRenderElement>
+        + From<TextureRenderElement<<R as Renderer>::TextureId>>,
 {
     let mut render_elements: Vec<OutputRenderElements<'_, R, E>> = Vec::new();
 
