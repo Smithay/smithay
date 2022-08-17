@@ -448,11 +448,11 @@ impl Space {
         E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
     {
         if !self.outputs.contains(output) {
-            return Err(OutputError::UnmappedOutput);
+            return Err(OutputError::Unmapped);
         }
 
         let state = output_state(self.id, output);
-        let output_size = output.current_mode().ok_or(OutputError::OutputNoMode)?.size;
+        let output_size = output.current_mode().ok_or(OutputNoMode)?.size;
         let output_scale = output.current_scale().fractional_scale();
         let output_location = state.location;
         let output_geo = Rectangle::from_loc_and_size(
@@ -523,17 +523,45 @@ impl Space {
 #[derive(thiserror::Error, Debug)]
 pub enum OutputError {
     /// The given [`Output`] has no set mode
-    #[error("Output has no active mode")]
-    OutputNoMode,
+    #[error(transparent)]
+    NoMode(#[from] OutputNoMode),
     /// The given [`Output`] is not mapped to this [`Space`].
     #[error("Output was not mapped to this space")]
-    UnmappedOutput,
+    Unmapped,
 }
+
+/// The given [`Output`] has no set mode
+#[derive(thiserror::Error, Debug)]
+#[error("Output has no active mode")]
+pub struct OutputNoMode;
 
 crate::backend::renderer::output::element::render_elements! {
     OutputRenderElements<'a, R, E>;
-    Space=E,
+    Space=crate::backend::renderer::output::element::Custom<E>,
     Custom=&'a E,
+}
+
+/// Get the render elements for a specific output
+pub fn space_render_elements<R, C, E>(
+    spaces: &[(&Space, &[C])],
+    output: &Output,
+) -> Result<Vec<E>, OutputNoMode>
+where
+    R: Renderer + ImportAll + 'static,
+    C: SpaceElement<R, E>,
+    E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
+{
+    let mut render_elements = Vec::new();
+
+    for (space, custom_elements) in spaces {
+        match space.elements_for_output(output, custom_elements) {
+            Ok(elements) => render_elements.extend(elements),
+            Err(OutputError::Unmapped) => {}
+            Err(OutputError::NoMode(_)) => return Err(OutputNoMode),
+        }
+    }
+
+    Ok(render_elements)
 }
 
 /// Render a output
@@ -552,21 +580,16 @@ where
     E: RenderElement<R> + From<WaylandSurfaceRenderElement<R>> + From<TextureRenderElement<R>>,
 {
     let mut render_elements: Vec<OutputRenderElements<'_, R, E>> = Vec::new();
+
+    let space_render_elements =
+        space_render_elements(spaces, output_render.output()).map_err(|_| OutputRenderError::OutputNoMode)?;
+
     render_elements.extend(custom_elements.iter().map(OutputRenderElements::from));
-
-    for (space, custom_elements) in spaces {
-        let res = space.elements_for_output::<R, C, E>(output_render.output(), custom_elements);
-
-        match res {
-            Ok(elements) => {
-                render_elements.extend(elements.into_iter().map(OutputRenderElements::from));
-            }
-            Err(OutputError::UnmappedOutput) => {}
-            Err(OutputError::OutputNoMode) => {
-                return Err(OutputRenderError::OutputNoMode);
-            }
-        }
-    }
+    render_elements.extend(
+        space_render_elements
+            .into_iter()
+            .map(|e| OutputRenderElements::Space(crate::backend::renderer::output::element::Custom::from(e))),
+    );
 
     output_render.render_output(renderer, age, &*render_elements, log)
 }
