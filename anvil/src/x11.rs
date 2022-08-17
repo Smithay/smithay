@@ -26,8 +26,7 @@ use smithay::{
             gles2::Gles2Renderer,
             output::{
                 element::{
-                    surface::WaylandSurfaceRenderElement, texture::TextureRenderElement,
-                    BuiltinRenderElements, RenderElement,
+                    surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement,
                 },
                 OutputRender,
             },
@@ -318,18 +317,42 @@ pub fn run_x11(log: Logger) {
                 }
             }
 
+            // #[cfg(not(feature = "debug"))]
+            // let render_elements = smithay::desktop::space::space_render_elements::<_, _, RenderElements<_>>(
+            //     &[(&state.space, &*custom_space_elements)],
+            //     backend_data.output_render.output(),
+            // )
+            // .expect("oh no");
+
+            // #[cfg(feature = "debug")]
+            // let mut render_elements = smithay::desktop::space::space_render_elements::<_, _, RenderElements<'_, _>>(
+            //     &[(&state.space, &*custom_space_elements)],
+            //     backend_data.output_render.output(),
+            // )
+            // .expect("oh no");
+
+            // #[cfg(feature = "debug")]
+            // render_elements.insert(0, RenderElements::Fps(&fps_element));
+
+            // let render_res = backend_data.output_render.render_output(
+            //     &mut backend_data.renderer,
+            //     age.into(),
+            //     &*render_elements,
+            //     &log,
+            // );
+
             #[cfg(feature = "debug")]
-            let render_res = smithay::desktop::space::render_output::<_, _, CustomRenderElements<'_, _>>(
+            let render_res = smithay::desktop::space::render_output::<_, _, RenderElements<'_, _>>(
                 &mut backend_data.renderer,
                 age.into(),
                 &[(&state.space, &*custom_space_elements)],
-                &[CustomRenderElements::Fps(&fps_element)],
+                &[RenderElements::Fps(&fps_element)],
                 &mut backend_data.output_render,
                 &log,
             );
 
             #[cfg(not(feature = "debug"))]
-            let render_res = smithay::desktop::space::render_output::<_, _, BuiltinRenderElements<_>>(
+            let render_res = smithay::desktop::space::render_output::<_, _, RenderElements<_>>(
                 &mut backend_data.renderer,
                 age.into(),
                 &[(&state.space, &*custom_space_elements)],
@@ -379,10 +402,17 @@ pub fn run_x11(log: Logger) {
 
 #[cfg(feature = "debug")]
 smithay::backend::renderer::output::element::render_elements! {
-    pub CustomRenderElements<'a, R>;
+    pub RenderElements<'a, R>;
     Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
     Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<R>,
     Fps=&'a FpsElement<<R as Renderer>::TextureId>
+}
+
+#[cfg(not(feature = "debug"))]
+smithay::backend::renderer::output::element::render_elements! {
+    pub RenderElements<R>;
+    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>,
+    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<R>,
 }
 
 pub enum CustomSpaceElements<'a, R>
