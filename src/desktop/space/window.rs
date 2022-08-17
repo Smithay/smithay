@@ -50,7 +50,7 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
     E: crate::backend::renderer::output::element::RenderElement<R>
-        + From<crate::backend::renderer::output::element::surface::WaylandSurfaceRenderElement<R>>,
+        + From<crate::backend::renderer::output::element::surface::WaylandSurfaceRenderElement>,
 {
     fn location(&self, space_id: usize) -> Point<i32, Logical> {
         window_loc(self, &space_id) - self.geometry().loc
