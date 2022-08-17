@@ -50,6 +50,8 @@ impl DrmOutputRender {
         }
 
         // Draw the remaining elements on the primary plane
-        self.output_render.render_output(renderer, 0, elements, log);
+        self.output_render
+            .render_output(renderer, 0, elements, log)
+            .expect("failed to render");
     }
 }

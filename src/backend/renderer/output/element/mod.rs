@@ -1,7 +1,7 @@
-use std::marker::PhantomData;
+//! TODO: Docs
 
 use crate::{
-    backend::renderer::{gles2::Gles2Renderer, ImportAll, Renderer},
+    backend::renderer::Renderer,
     utils::{Physical, Point, Rectangle, Scale},
 };
 
@@ -241,6 +241,7 @@ macro_rules! render_elements_internal {
         fn id(&self) -> &$crate::backend::renderer::output::element::Id {
             match self {
                 $(
+                    #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
@@ -253,6 +254,7 @@ macro_rules! render_elements_internal {
         fn location(&self, scale: $crate::utils::Scale<f64>) -> $crate::utils::Point<i32, $crate::utils::Physical> {
             match self {
                 $(
+                    #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
@@ -265,6 +267,7 @@ macro_rules! render_elements_internal {
         fn geometry(&self, scale: $crate::utils::Scale<f64>) -> $crate::utils::Rectangle<i32, $crate::utils::Physical> {
             match self {
                 $(
+                    #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
@@ -278,6 +281,7 @@ macro_rules! render_elements_internal {
         {
             match self {
                 $(
+                    #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
@@ -290,6 +294,7 @@ macro_rules! render_elements_internal {
         fn current_commit(&self) -> usize {
             match self {
                 $(
+                    #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
@@ -302,6 +307,7 @@ macro_rules! render_elements_internal {
         fn damage_since(&self, scale: $crate::utils::Scale<f64>, commit: Option<usize>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>> {
             match self {
                 $(
+                    #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
@@ -314,6 +320,7 @@ macro_rules! render_elements_internal {
         fn opaque_regions(&self, scale: $crate::utils::Scale<f64>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>> {
             match self {
                 $(
+                    #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
@@ -343,9 +350,6 @@ macro_rules! render_elements_internal {
         {
             match self {
                 $(
-                    $(
-                        #[$meta]
-                    )*
                     Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
@@ -364,6 +368,7 @@ macro_rules! render_elements_internal {
         {
             match self {
                 $(
+                    #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
@@ -562,6 +567,7 @@ macro_rules! render_elements_internal {
     };
 }
 
+/// TODO: Docs
 #[macro_export]
 macro_rules! render_elements {
     ($(#[$attr:meta])* $vis:vis $name:ident<=$lt:lifetime, $renderer:ty, $custom:ident>; $($tail:tt)*) => {
@@ -618,15 +624,16 @@ pub use render_elements;
 
 /// New-type wrapper for wrapping owned elements
 /// in render_elements!
-pub struct Custom<C>(C);
+#[derive(Debug)]
+pub struct Wrap<C>(C);
 
-impl<C> From<C> for Custom<C> {
+impl<C> From<C> for Wrap<C> {
     fn from(from: C) -> Self {
         Self(from)
     }
 }
 
-impl<R, C> RenderElement<R> for Custom<C>
+impl<R, C> RenderElement<R> for Wrap<C>
 where
     R: Renderer,
     C: RenderElement<R>,
@@ -680,7 +687,7 @@ mod tests {
         utils::{Physical, Point, Rectangle, Scale},
     };
 
-    use super::{Custom, Id, RenderElement};
+    use super::{Id, RenderElement, Wrap};
 
     render_elements! {
         Test<='a, Gles2Renderer>;
@@ -723,7 +730,7 @@ mod tests {
     render_elements! {
         TestG4<R, C>;
         Surface=TestRenderElement2<R>,
-        Custom=Custom<C>
+        Custom=Wrap<C>
     }
 
     render_elements! {
@@ -735,7 +742,7 @@ mod tests {
         TestG6<'a, R, C>;
         Surface=TestRenderElement<'a, R>,
         Custom=&'a C,
-        Custom2=Custom<C>,
+        Custom2=Wrap<C>,
     }
 
     impl<R> RenderElement<R> for Empty
@@ -750,21 +757,21 @@ mod tests {
             todo!()
         }
 
-        fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        fn location(&self, _scale: Scale<f64>) -> Point<i32, Physical> {
             todo!()
         }
 
-        fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
             todo!()
         }
 
         fn draw(
             &self,
-            renderer: &mut R,
-            frame: &mut <R as Renderer>::Frame,
-            scale: Scale<f64>,
-            damage: &[Rectangle<i32, Physical>],
-            log: &slog::Logger,
+            _renderer: &mut R,
+            _frame: &mut <R as Renderer>::Frame,
+            _scale: Scale<f64>,
+            _damage: &[Rectangle<i32, Physical>],
+            _log: &slog::Logger,
         ) -> Result<(), <R as Renderer>::Error> {
             todo!()
         }
@@ -788,28 +795,28 @@ mod tests {
             todo!()
         }
 
-        fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        fn location(&self, _scale: Scale<f64>) -> Point<i32, Physical> {
             todo!()
         }
 
-        fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
             todo!()
         }
 
         fn draw(
             &self,
-            renderer: &mut R,
-            frame: &mut <R as Renderer>::Frame,
-            scale: Scale<f64>,
-            damage: &[Rectangle<i32, Physical>],
-            log: &slog::Logger,
+            _renderer: &mut R,
+            _frame: &mut <R as Renderer>::Frame,
+            _scale: Scale<f64>,
+            _damage: &[Rectangle<i32, Physical>],
+            _log: &slog::Logger,
         ) -> Result<(), <R as Renderer>::Error> {
             todo!()
         }
     }
 
     struct TestRenderElement<'a, R> {
-        test: &'a usize,
+        _test: &'a usize,
         _phantom: PhantomData<R>,
     }
 
@@ -825,21 +832,21 @@ mod tests {
             todo!()
         }
 
-        fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        fn location(&self, _scale: Scale<f64>) -> Point<i32, Physical> {
             todo!()
         }
 
-        fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
             todo!()
         }
 
         fn draw(
             &self,
-            renderer: &mut R,
-            frame: &mut <R as Renderer>::Frame,
-            scale: Scale<f64>,
-            damage: &[Rectangle<i32, Physical>],
-            log: &slog::Logger,
+            _renderer: &mut R,
+            _frame: &mut <R as Renderer>::Frame,
+            _scale: Scale<f64>,
+            _damage: &[Rectangle<i32, Physical>],
+            _log: &slog::Logger,
         ) -> Result<(), <R as Renderer>::Error> {
             todo!()
         }
