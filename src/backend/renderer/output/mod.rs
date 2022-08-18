@@ -82,7 +82,7 @@ impl OutputRender {
     where
         E: RenderElement<R>,
         R: Renderer + ImportAll,
-        <R as Renderer>::TextureId: Texture + 'static,
+        <R as Renderer>::TextureId: Texture,
     {
         let output_size = self
             .output
