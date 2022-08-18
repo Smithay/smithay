@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
-        renderer::gles2::Gles2Renderer,
+        renderer::{gles2::Gles2Renderer, output::OutputRender},
         winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
     },
-    desktop::space::SurfaceTree,
+    desktop::space::{SpaceRenderElements, SurfaceTree},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::calloop::{
         timer::{TimeoutAction, Timer},
@@ -49,13 +49,24 @@ pub fn init_winit(
 
     state.space.map_output(&output, (0, 0));
 
+    let mut output_renderer = OutputRender::new(&output);
+
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 
     let mut full_redraw = 0u8;
 
     let timer = Timer::immediate();
     event_loop.handle().insert_source(timer, move |_, _, data| {
-        winit_dispatch(&mut backend, &mut winit, data, &output, &mut full_redraw).unwrap();
+        winit_dispatch(
+            &mut backend,
+            &mut winit,
+            data,
+            &output,
+            &mut output_renderer,
+            &mut full_redraw,
+            &log,
+        )
+        .unwrap();
         TimeoutAction::ToDuration(Duration::from_millis(16))
     })?;
 
@@ -67,7 +78,9 @@ pub fn winit_dispatch(
     winit: &mut WinitEventLoop,
     data: &mut CalloopData,
     output: &Output,
+    output_render: &mut OutputRender,
     full_redraw: &mut u8,
+    log: &Logger,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let display = &mut data.display;
     let state = &mut data.state;
@@ -103,16 +116,19 @@ pub fn winit_dispatch(
     let damage = Rectangle::from_loc_and_size((0, 0), size);
 
     backend.bind().ok().and_then(|_| {
-        state
-            .space
-            .render_output::<Gles2Renderer, SurfaceTree>(
-                backend.renderer(),
-                output,
-                0,
-                [0.1, 0.1, 0.1, 1.0],
-                &[],
-            )
-            .unwrap()
+        smithay::desktop::space::render_output::<
+            Gles2Renderer,
+            SurfaceTree,
+            SpaceRenderElements<Gles2Renderer>,
+        >(
+            backend.renderer(),
+            0,
+            &[(&state.space, &[])],
+            &[],
+            output_render,
+            log,
+        )
+        .unwrap()
     });
 
     backend.submit(Some(&[damage])).unwrap();
