@@ -1,9 +1,8 @@
-use std::{
-    sync::{atomic::Ordering, Mutex},
-    time::Duration,
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
 use slog::Logger;
+#[cfg(feature = "debug")]
+use smithay::backend::renderer::ImportMem;
 #[cfg(not(feature = "debug"))]
 use smithay::desktop::space::SpaceRenderElements;
 #[cfg(feature = "egl")]
@@ -18,14 +17,17 @@ use smithay::{
 use smithay::{
     backend::{
         renderer::{
-            output::{element::surface::WaylandSurfaceRenderElement, OutputRender},
-            ImportMem, Renderer,
+            output::{
+                element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
+                OutputRender,
+            },
+            Renderer,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
         SwapBuffersError,
     },
     desktop::space::SurfaceTree,
-    input::pointer::{CursorImageAttributes, CursorImageStatus},
+    input::pointer::CursorImageStatus,
     reexports::{
         calloop::EventLoop,
         wayland_server::{
@@ -82,6 +84,23 @@ impl Backend for WinitData {
         self.full_redraw = 4;
     }
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
+}
+
+#[cfg(feature = "debug")]
+smithay::backend::renderer::output::element::render_elements! {
+    pub CustomRenderElements<'a, R>;
+    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
+    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<<R as Renderer>::TextureId>,
+    Fps=&'a FpsElement<<R as Renderer>::TextureId>
+}
+
+smithay::desktop::space::space_elements! {
+    CustomSpaceElements<'a, R>[
+        WaylandSurfaceRenderElement,
+        TextureRenderElement<<R as Renderer>::TextureId>,
+    ];
+    Pointer=&'a PointerElement<<R as Renderer>::TextureId>,
+    SurfaceTree=SurfaceTree,
 }
 
 pub fn run_winit(log: Logger) {
@@ -176,6 +195,8 @@ pub fn run_winit(log: Logger) {
 
     info!(log, "Initialization completed, starting the main loop.");
 
+    let mut pointer_element = PointerElement::default();
+
     while state.running.load(Ordering::SeqCst) {
         if winit
             .dispatch_new_events(|event| match event {
@@ -208,8 +229,28 @@ pub fn run_winit(log: Logger) {
             let backend = &mut state.backend_data.backend;
             let cursor_visible: bool;
 
-            let mut elements = Vec::<CustomSpaceElements>::new();
+            let mut elements = Vec::<CustomSpaceElements<'_, _>>::new();
             let mut cursor_guard = state.cursor_status.lock().unwrap();
+
+            // draw the cursor as relevant
+            // reset the cursor if the surface is no longer alive
+            let mut reset = false;
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
+                reset = !surface.alive();
+            }
+            if reset {
+                *cursor_guard = CursorImageStatus::Default;
+            }
+
+            if let CursorImageStatus::Surface(_) = *cursor_guard {
+                cursor_visible = false;
+            } else {
+                cursor_visible = true;
+            }
+
+            pointer_element.set_position(state.pointer_location.to_i32_round());
+            pointer_element.set_status(cursor_guard.clone());
+            elements.push(CustomSpaceElements::Pointer(&pointer_element));
 
             // draw the dnd icon if any
             if let Some(surface) = state.dnd_icon.as_ref() {
@@ -227,48 +268,16 @@ pub fn run_winit(log: Logger) {
             let input_method = state.seat.input_method().unwrap();
             let rectangle = input_method.coordinates();
             input_method.with_surface(|surface| {
-                elements.push(
-                    draw_input_popup_surface(
+                elements.push(CustomSpaceElements::SurfaceTree(
+                    smithay::desktop::space::SurfaceTree::from_surface(
                         surface.clone(),
                         (
                             rectangle.loc.x + rectangle.size.w,
                             (rectangle.loc.y + rectangle.size.h),
                         ),
                     )
-                    .into(),
-                );
-            });
-
-            // draw the cursor as relevant
-            // reset the cursor if the surface is no longer alive
-            let mut reset = false;
-            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
-                reset = !surface.alive();
-            }
-            if reset {
-                *cursor_guard = CursorImageStatus::Default;
-            }
-            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
-                cursor_visible = false;
-                let hotspot = compositor::with_states(surface, |states| {
-                    states
-                        .data_map
-                        .get::<Mutex<CursorImageAttributes>>()
-                        .unwrap()
-                        .lock()
-                        .unwrap()
-                        .hotspot
-                });
-
-                elements.push(CustomSpaceElements::SurfaceTree(
-                    smithay::desktop::space::SurfaceTree::from_surface(
-                        surface,
-                        state.pointer_location.to_i32_round() - hotspot,
-                    ),
                 ));
-            } else {
-                cursor_visible = true;
-            }
+            });
 
             #[cfg(feature = "debug")]
             let fps = state.backend_data.fps.avg().round() as u32;
@@ -352,19 +361,4 @@ pub fn run_winit(log: Logger) {
         #[cfg(feature = "debug")]
         state.backend_data.fps.tick();
     }
-}
-
-#[cfg(feature = "debug")]
-smithay::backend::renderer::output::element::render_elements! {
-    pub CustomRenderElements<'a, R>;
-    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
-    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<<R as Renderer>::TextureId>,
-    Fps=&'a FpsElement<<R as Renderer>::TextureId>
-}
-
-smithay::desktop::space::space_elements! {
-    CustomSpaceElements[
-        WaylandSurfaceRenderElement,
-    ];
-    SurfaceTree=SurfaceTree,
 }
