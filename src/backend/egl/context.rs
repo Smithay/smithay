@@ -44,7 +44,7 @@ impl EGLContext {
     ///
     /// # Safety
     ///
-    /// - Not using the system default EGL library (`dlopen("libEGL.so")`) as loaded by smithay might cause undefined behavior
+    /// - The context must be created from the system default EGL library (`dlopen("libEGL.so")`)
     /// - Display, config, and context handles must be externally managed to ensure they do not become invalid before the compositor is shut down
     pub unsafe fn from_raw<L>(
         display: *const c_void,
