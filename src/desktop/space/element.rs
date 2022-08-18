@@ -2,7 +2,7 @@ use crate::backend::renderer::output::element::surface::WaylandSurfaceRenderElem
 use crate::backend::renderer::output::element::texture::TextureRenderElement;
 use crate::backend::renderer::output::element::RenderElement;
 use crate::{
-    backend::renderer::{ImportAll, Renderer, Texture},
+    backend::renderer::{ImportAll, Renderer},
     desktop::space::*,
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
@@ -55,52 +55,14 @@ where
     fn render_elements(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E>;
 }
 
-pub(crate) enum SpaceElements<'a, C> {
-    Layer(&'a LayerSurface),
-    Window(&'a Window),
-    Custom(&'a C),
-}
-
-impl<'a, R, C, E> SpaceElement<R, E> for SpaceElements<'a, C>
-where
-    R: Renderer + ImportAll + 'static,
-    <R as Renderer>::TextureId: Texture + 'static,
-    C: SpaceElement<R, E>,
-    E: RenderElement<R>
-        + From<WaylandSurfaceRenderElement>
-        + From<TextureRenderElement<<R as Renderer>::TextureId>>,
-{
-    fn location(&self, space_id: usize) -> Point<i32, Logical> {
-        match self {
-            SpaceElements::Layer(layer) => SpaceElement::<R, E>::location(*layer, space_id),
-            SpaceElements::Window(window) => SpaceElement::<R, E>::location(*window, space_id),
-            SpaceElements::Custom(custom) => SpaceElement::<R, E>::location(*custom, space_id),
-        }
-    }
-
-    fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
-        match self {
-            SpaceElements::Layer(layer) => SpaceElement::<R, E>::geometry(*layer, space_id),
-            SpaceElements::Window(window) => SpaceElement::<R, E>::geometry(*window, space_id),
-            SpaceElements::Custom(custom) => SpaceElement::<R, E>::geometry(*custom, space_id),
-        }
-    }
-
-    fn z_index(&self, space_id: usize) -> u8 {
-        match self {
-            SpaceElements::Layer(layer) => SpaceElement::<R, E>::z_index(*layer, space_id),
-            SpaceElements::Window(window) => SpaceElement::<R, E>::z_index(*window, space_id),
-            SpaceElements::Custom(custom) => SpaceElement::<R, E>::z_index(*custom, space_id),
-        }
-    }
-
-    fn render_elements(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E> {
-        match self {
-            SpaceElements::Layer(layer) => SpaceElement::<R, E>::render_elements(*layer, location, scale),
-            SpaceElements::Window(window) => SpaceElement::<R, E>::render_elements(*window, location, scale),
-            SpaceElements::Custom(custom) => SpaceElement::<R, E>::render_elements(*custom, location, scale),
-        }
-    }
+space_elements! {
+    pub(crate) SpaceElements<'a, _, C>[
+        WaylandSurfaceRenderElement,
+        TextureRenderElement<<R as Renderer>::TextureId>,
+    ];
+    Layer=&'a LayerSurface,
+    Window=&'a Window,
+    Custom=&'a C,
 }
 
 impl<T, R, E> SpaceElement<R, E> for &T
