@@ -45,7 +45,7 @@ impl EGLContext {
     /// # Safety
     ///
     /// - The context must be created from the system default EGL library (`dlopen("libEGL.so")`)
-    /// - Display, config, and context handles must be externally managed to ensure they do not become invalid before the compositor is shut down
+    /// - The `display`, `config`, and `context` must be valid for the lifetime of the returned context.
     pub unsafe fn from_raw<L>(
         display: *const c_void,
         config_id: *const c_void,

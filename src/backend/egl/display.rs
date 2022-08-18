@@ -205,8 +205,8 @@ impl EGLDisplay {
     ///
     /// # Safety
     ///
-    /// - Not using the system default EGL library (`dlopen("libEGL.so")`) as loaded by smithay might cause undefined behavior
-    /// - Display and config handles must be externally managed to ensure they do not become invalid before the compositor is shut down
+    /// - The display must be created from the system default EGL library (`dlopen("libEGL.so")`)
+    /// - The `display` and `config` must be valid for the lifetime of the returned display and any handles created by this display (using [`EGLDisplay::get_display_handle`])
     pub unsafe fn from_raw<L>(
         display: *const c_void,
         config_id: *const c_void,
