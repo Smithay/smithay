@@ -44,8 +44,8 @@ impl EGLContext {
     ///
     /// # Safety
     ///
-    /// This function is marked unsafe, because the context cannot be made current on another thread without
-    /// being unbound again (see [`EGLContext::unbind`]).
+    /// - Not using the system default EGL library (`dlopen("libEGL.so")`) as loaded by smithay might cause undefined behavior
+    /// - Display, config, and context handles must be externally managed to ensure they do not become invalid before the compositor is shut down
     pub unsafe fn from_raw<L>(
         display: *const c_void,
         config_id: *const c_void,
@@ -55,6 +55,9 @@ impl EGLContext {
     where
         L: Into<Option<::slog::Logger>>,
     {
+        assert!(!display.is_null(), "EGLDisplay pointer is null");
+        assert!(!config_id.is_null(), "EGL configuration id pointer is null");
+        assert!(!context.is_null(), "EGLContext pointer is null");
         let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "backend_egl"));
 
         let display = EGLDisplay::from_raw(display, config_id, log)?;

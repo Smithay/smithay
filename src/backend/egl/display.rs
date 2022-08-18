@@ -205,15 +205,19 @@ impl EGLDisplay {
     ///
     /// # Safety
     ///
-    /// Display and config handles must be externally managed to ensure they do not become invalid before the compositor is shut down
+    /// - Not using the system default EGL library (`dlopen("libEGL.so")`) as loaded by smithay might cause undefined behavior
+    /// - Display and config handles must be externally managed to ensure they do not become invalid before the compositor is shut down
     pub unsafe fn from_raw<L>(
         display: *const c_void,
-        config: *const c_void,
+        config_id: *const c_void,
         logger: L,
     ) -> Result<EGLDisplay, Error>
     where
         L: Into<Option<::slog::Logger>>,
     {
+        assert!(!display.is_null(), "EGLDisplay pointer is null");
+        assert!(!config_id.is_null(), "EGL configuration id pointer is null");
+
         let log = crate::slog_or_fallback(logger.into()).new(o!("smithay_module" => "backend_egl"));
 
         let dp_extensions = ffi::make_sure_egl_is_loaded()?;
@@ -263,7 +267,7 @@ impl EGLDisplay {
             wrap_egl_call(|| {
                 ffi::egl::GetConfigAttrib(
                     display,
-                    config,
+                    config_id,
                     ffi::egl::SURFACE_TYPE as i32,
                     surface_type.as_mut_ptr(),
                 )
