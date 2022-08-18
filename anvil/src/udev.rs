@@ -15,6 +15,8 @@ use crate::{
     drawing::*,
     state::{AnvilState, Backend, CalloopData},
 };
+#[cfg(not(feature = "debug"))]
+use smithay::desktop::space::SpaceRenderElements;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -32,13 +34,17 @@ use smithay::{
         renderer::{
             gles2::Gles2Renderbuffer,
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
+            output::{
+                element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
+                OutputRender, OutputRenderError,
+            },
             Bind, Frame, ImportMem, Renderer,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
         SwapBuffersError,
     },
-    desktop::space::{RenderError, Space, SurfaceTree},
+    desktop::space::{Space, SurfaceTree},
     input::pointer::CursorImageStatus,
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
@@ -67,12 +73,22 @@ use smithay::{
 };
 
 type UdevRenderer<'a> = MultiRenderer<'a, 'a, EglGlesBackend, EglGlesBackend, Gles2Renderbuffer>;
-smithay::custom_elements! {
-    pub CustomElem<=UdevRenderer<'_>>;
+
+#[cfg(feature = "debug")]
+smithay::backend::renderer::output::element::render_elements! {
+    pub CustomRenderElements<='a, UdevRenderer<'a>>;
+    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
+    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<MultiTexture>,
+    Fps=&'a FpsElement<MultiTexture>
+}
+
+smithay::desktop::space::space_elements! {
+    CustomSpaceElements<'a, R>[
+        WaylandSurfaceRenderElement,
+        TextureRenderElement<<R as Renderer>::TextureId>,
+    ];
     SurfaceTree=SurfaceTree,
-    PointerElement=PointerElement::<MultiTexture>,
-    #[cfg(feature = "debug")]
-    FpsElement=FpsElement::<MultiTexture>,
+    PointerElement=&'a PointerElement<<R as Renderer>::TextureId>,
 }
 
 #[derive(Copy, Clone)]
@@ -98,6 +114,7 @@ pub struct UdevData {
     gpus: GpuManager<EglGlesBackend>,
     backends: HashMap<DrmNode, BackendData>,
     pointer_images: Vec<(xcursor::parser::Image, MultiTexture)>,
+    pointer_element: PointerElement<MultiTexture>,
     #[cfg(feature = "debug")]
     fps_texture: MultiTexture,
     signaler: Signaler<SessionSignal>,
@@ -241,6 +258,7 @@ pub fn run_udev(log: Logger) {
         signaler: session_signal.clone(),
         pointer_image: crate::cursor::Cursor::load(&log),
         pointer_images: Vec::new(),
+        pointer_element: PointerElement::default(),
         #[cfg(feature = "debug")]
         fps_texture,
         logger: log.clone(),
@@ -334,8 +352,11 @@ struct SurfaceData {
     render_node: DrmNode,
     surface: RenderSurface,
     global: Option<GlobalId>,
+    output_render: OutputRender,
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
+    #[cfg(feature = "debug")]
+    fps_element: FpsElement<MultiTexture>,
 }
 
 impl Drop for SurfaceData {
@@ -360,6 +381,7 @@ fn scan_connectors(
     gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
     display: &mut Display<AnvilState<UdevData>>,
     space: &mut Space,
+    #[cfg(feature = "debug")] fps_texture: &MultiTexture,
     signaler: &Signaler<SessionSignal>,
     logger: &::slog::Logger,
 ) -> HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>> {
@@ -483,14 +505,21 @@ fn scan_connectors(
                 .user_data()
                 .insert_if_missing(|| UdevOutputId { crtc, device_id });
 
+            let output_render = OutputRender::new(&output);
+            #[cfg(feature = "debug")]
+            let fps_element = FpsElement::new(fps_texture.clone());
+
             entry.insert(Rc::new(RefCell::new(SurfaceData {
                 dh: display.handle(),
                 device_id,
                 render_node,
                 surface: gbm_surface,
                 global: Some(global),
+                output_render,
                 #[cfg(feature = "debug")]
                 fps: fps_ticker::Fps::default(),
+                #[cfg(feature = "debug")]
+                fps_element,
             })));
 
             break;
@@ -544,6 +573,8 @@ impl AnvilState<UdevData> {
             &gbm,
             display,
             &mut self.space,
+            #[cfg(feature = "debug")]
+            &self.backend_data.fps_texture,
             &self.backend_data.signaler,
             &self.log,
         )));
@@ -626,6 +657,8 @@ impl AnvilState<UdevData> {
                 &backend_data.gbm,
                 display,
                 &mut self.space,
+                #[cfg(feature = "debug")]
+                &self.backend_data.fps_texture,
                 &signaler,
                 &logger,
             );
@@ -737,8 +770,7 @@ impl AnvilState<UdevData> {
                 &mut self.space,
                 self.pointer_location,
                 &pointer_image,
-                #[cfg(feature = "debug")]
-                &self.backend_data.fps_texture,
+                &mut self.backend_data.pointer_element,
                 &self.dnd_icon,
                 &mut *self.cursor_status.lock().unwrap(),
                 &self.log,
@@ -782,14 +814,14 @@ impl AnvilState<UdevData> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn render_surface(
-    surface: &mut SurfaceData,
-    renderer: &mut UdevRenderer<'_>,
+fn render_surface<'a>(
+    surface: &'a mut SurfaceData,
+    renderer: &mut UdevRenderer<'a>,
     crtc: crtc::Handle,
     space: &mut Space,
     pointer_location: Point<f64, Logical>,
     pointer_image: &MultiTexture,
-    #[cfg(feature = "debug")] fps_texture: &MultiTexture,
+    pointer_element: &mut PointerElement<MultiTexture>,
     dnd_icon: &Option<wl_surface::WlSurface>,
     cursor_status: &mut CursorImageStatus,
     logger: &slog::Logger,
@@ -813,19 +845,14 @@ fn render_surface(
     let (dmabuf, age) = surface.surface.next_buffer()?;
     renderer.bind(dmabuf)?;
 
-    let mut elements: Vec<CustomElem> = Vec::new();
+    let mut elements: Vec<CustomSpaceElements<'_, _>> = Vec::new();
     // set cursor
     if output_geometry.to_f64().contains(pointer_location) {
         let (ptr_x, ptr_y) = pointer_location.into();
         let ptr_location = Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)); // - output_geometry.loc;
-                                                                                      // draw the dnd icon if applicable
-        {
-            if let Some(wl_surface) = dnd_icon.as_ref() {
-                if wl_surface.alive() {
-                    elements.push(draw_dnd_icon(wl_surface.clone(), ptr_location, logger).into());
-                }
-            }
-        }
+
+        pointer_element.set_position(ptr_location);
+        pointer_element.set_texture(pointer_image.clone());
 
         // draw the cursor as relevant
         {
@@ -838,27 +865,62 @@ fn render_surface(
                 *cursor_status = CursorImageStatus::Default;
             }
 
-            if let CursorImageStatus::Surface(ref wl_surface) = *cursor_status {
-                elements.push(draw_cursor(wl_surface.clone(), ptr_location, logger).into());
-            } else {
-                elements.push(PointerElement::new(pointer_image.clone(), ptr_location).into());
+            pointer_element.set_status(cursor_status.clone());
+        }
+
+        elements.push(CustomSpaceElements::PointerElement(pointer_element));
+
+        // draw the dnd icon if applicable
+        {
+            if let Some(wl_surface) = dnd_icon.as_ref() {
+                if wl_surface.alive() {
+                    elements.push(CustomSpaceElements::SurfaceTree(
+                        smithay::desktop::space::SurfaceTree::from_surface(wl_surface, ptr_location),
+                    ));
+                }
             }
         }
 
         #[cfg(feature = "debug")]
         {
-            elements.push(draw_fps::<UdevRenderer<'_>>(fps_texture, surface.fps.avg().round() as u32).into());
+            surface.fps_element.update_fps(surface.fps.avg().round() as u32);
             surface.fps.tick();
         }
     }
 
     // and draw to our buffer
     // TODO we can pass the damage rectangles inside a AtomicCommitRequest
-    let render_res = crate::render::render_output(&output, space, renderer, age.into(), &*elements, logger)
+    #[cfg(feature = "debug")]
+    let render_res =
+        smithay::desktop::space::render_output::<_, CustomSpaceElements<'_, _>, CustomRenderElements<'_>>(
+            renderer,
+            age.into(),
+            &[(space, &*elements)],
+            &[CustomRenderElements::Fps(&surface.fps_element)],
+            &mut surface.output_render,
+            logger,
+        )
         .map(|x| x.is_some());
 
+    #[cfg(not(feature = "debug"))]
+    let render_res =
+        smithay::desktop::space::render_output::<_, CustomSpaceElements<'_, _>, SpaceRenderElements<_>>(
+            renderer,
+            age.into(),
+            &[(space, &*elements)],
+            &[],
+            &mut surface.output_render,
+            logger,
+        )
+        .map(|x| x.is_some());
+
+    // // and draw to our buffer
+    // // TODO we can pass the damage rectangles inside a AtomicCommitRequest
+    // let render_res = crate::render::render_output(&output, space, renderer, age.into(), &*elements, logger)
+    //     .map(|x| x.is_some());
+
     match render_res.map_err(|err| match err {
-        RenderError::Rendering(err) => err.into(),
+        OutputRenderError::Rendering(err) => err.into(),
         _ => unreachable!(),
     }) {
         Ok(true) => {

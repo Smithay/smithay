@@ -8,6 +8,8 @@ use crate::{
     state::{AnvilState, Backend, CalloopData},
 };
 use slog::Logger;
+#[cfg(feature = "debug")]
+use smithay::backend::renderer::ImportMem;
 #[cfg(not(feature = "debug"))]
 use smithay::desktop::space::SpaceRenderElements;
 #[cfg(feature = "egl")]
@@ -28,7 +30,7 @@ use smithay::{
                 element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
                 OutputRender,
             },
-            Bind, ImportMem, Renderer,
+            Bind, Renderer,
         },
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
@@ -88,7 +90,22 @@ impl Backend for X11Data {
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
-static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../resources/cursor.rgba");
+#[cfg(feature = "debug")]
+smithay::backend::renderer::output::element::render_elements! {
+    pub CustomRenderElements<'a, R>;
+    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
+    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<<R as Renderer>::TextureId>,
+    Fps=&'a FpsElement<<R as Renderer>::TextureId>
+}
+
+smithay::desktop::space::space_elements! {
+    CustomSpaceElements<'a, R>[
+        WaylandSurfaceRenderElement,
+        TextureRenderElement<<R as Renderer>::TextureId>,
+    ];
+    Pointer=&'a PointerElement<<R as Renderer>::TextureId>,
+    SurfaceTree=SurfaceTree,
+}
 
 pub fn run_x11(log: Logger) {
     let mut event_loop = EventLoop::try_new().unwrap();
@@ -183,10 +200,6 @@ pub fn run_x11(log: Logger) {
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
 
-    let fallback_cursor = renderer
-        .import_memory(FALLBACK_CURSOR_DATA, (64, 64).into(), false)
-        .expect("failed to load fallback cursor");
-
     let output_render = OutputRender::new(&output);
 
     let data = X11Data {
@@ -244,14 +257,14 @@ pub fn run_x11(log: Logger) {
 
     info!(log, "Initialization completed, starting the main loop.");
 
-    let mut fallback_pointer_element = PointerElement::new(fallback_cursor, (0, 0));
+    let mut pointer_element = PointerElement::default();
 
     while state.running.load(Ordering::SeqCst) {
         if state.backend_data.render {
             let backend_data = &mut state.backend_data;
+            let cursor_visible: bool;
             // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
             let (x, y) = state.pointer_location.into();
-            fallback_pointer_element.set_position((x as i32, y as i32));
             let cursor_status = &state.cursor_status;
             #[cfg(feature = "debug")]
             let fps = backend_data.fps.avg().round() as u32;
@@ -277,8 +290,15 @@ pub fn run_x11(log: Logger) {
                 *cursor_guard = CursorImageStatus::Default;
             }
 
-            fallback_pointer_element.set_status(cursor_guard.clone());
-            custom_space_elements.push(CustomSpaceElements::Pointer(&fallback_pointer_element));
+            if let CursorImageStatus::Surface(_) = *cursor_guard {
+                cursor_visible = false;
+            } else {
+                cursor_visible = true;
+            }
+
+            pointer_element.set_position((x as i32, y as i32));
+            pointer_element.set_status(cursor_guard.clone());
+            custom_space_elements.push(CustomSpaceElements::Pointer(&pointer_element));
 
             // draw the dnd icon if any
             if let Some(surface) = state.dnd_icon.as_ref() {
@@ -345,7 +365,7 @@ pub fn run_x11(log: Logger) {
 
             #[cfg(feature = "debug")]
             state.backend_data.fps.tick();
-            window.set_cursor_visible(false);
+            window.set_cursor_visible(cursor_visible);
         }
 
         // Send frame events so that client start drawing their next frame
@@ -363,21 +383,4 @@ pub fn run_x11(log: Logger) {
             display.flush_clients().unwrap();
         }
     }
-}
-
-#[cfg(feature = "debug")]
-smithay::backend::renderer::output::element::render_elements! {
-    pub CustomRenderElements<'a, R>;
-    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
-    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<<R as Renderer>::TextureId>,
-    Fps=&'a FpsElement<<R as Renderer>::TextureId>
-}
-
-smithay::desktop::space::space_elements! {
-    CustomSpaceElements<'a, R>[
-        WaylandSurfaceRenderElement,
-        TextureRenderElement<<R as Renderer>::TextureId>,
-    ];
-    Pointer=&'a PointerElement<<R as Renderer>::TextureId>,
-    SurfaceTree=SurfaceTree,
 }
