@@ -25,16 +25,14 @@ use smithay::{
         renderer::{
             gles2::Gles2Renderer,
             output::{
-                element::{
-                    surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement,
-                },
+                element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
                 OutputRender,
             },
-            Bind, ImportAll, ImportMem, Renderer,
+            Bind, ImportMem, Renderer,
         },
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
-    desktop::space::{SpaceElement, SurfaceTree},
+    desktop::space::SurfaceTree,
     input::pointer::{CursorImageAttributes, CursorImageStatus},
     reexports::{
         calloop::EventLoop,
@@ -380,51 +378,11 @@ smithay::backend::renderer::output::element::render_elements! {
     Fps=&'a FpsElement<<R as Renderer>::TextureId>
 }
 
-pub enum CustomSpaceElements<'a, R>
-where
-    R: Renderer,
-{
-    Pointer(&'a PointerElement<<R as Renderer>::TextureId>),
-    SurfaceTree(SurfaceTree),
-}
-
-impl<'a, R, E> SpaceElement<R, E> for CustomSpaceElements<'a, R>
-where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Clone + 'static,
-    E: RenderElement<R>
-        + From<WaylandSurfaceRenderElement>
-        + From<TextureRenderElement<<R as Renderer>::TextureId>>,
-{
-    fn z_index(&self, space_id: usize) -> u8 {
-        match self {
-            CustomSpaceElements::Pointer(p) => SpaceElement::<R, E>::z_index(*p, space_id),
-            CustomSpaceElements::SurfaceTree(s) => SpaceElement::<R, E>::z_index(s, space_id),
-        }
-    }
-
-    fn location(&self, space_id: usize) -> smithay::utils::Point<i32, smithay::utils::Logical> {
-        match self {
-            CustomSpaceElements::Pointer(p) => SpaceElement::<R, E>::location(*p, space_id),
-            CustomSpaceElements::SurfaceTree(s) => SpaceElement::<R, E>::location(s, space_id),
-        }
-    }
-
-    fn geometry(&self, space_id: usize) -> smithay::utils::Rectangle<i32, smithay::utils::Logical> {
-        match self {
-            CustomSpaceElements::Pointer(p) => SpaceElement::<R, E>::geometry(*p, space_id),
-            CustomSpaceElements::SurfaceTree(s) => SpaceElement::<R, E>::geometry(s, space_id),
-        }
-    }
-
-    fn render_elements(
-        &self,
-        location: smithay::utils::Point<i32, smithay::utils::Physical>,
-        scale: smithay::utils::Scale<f64>,
-    ) -> Vec<E> {
-        match self {
-            CustomSpaceElements::Pointer(p) => p.render_elements(location, scale),
-            CustomSpaceElements::SurfaceTree(s) => s.render_elements(location, scale),
-        }
-    }
+smithay::desktop::space::space_elements! {
+    CustomSpaceElements<'a, R>[
+        WaylandSurfaceRenderElement,
+        TextureRenderElement<<R as Renderer>::TextureId>,
+    ];
+    Pointer=&'a PointerElement<<R as Renderer>::TextureId>,
+    SurfaceTree=SurfaceTree,
 }
