@@ -382,7 +382,7 @@ macro_rules! render_elements_internal {
     (@impl $name:ident<$renderer:ident>; $($tail:tt)*) => {
         impl<$renderer> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$renderer>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as Renderer>::TextureId: 'static,
         {
             $crate::render_elements_internal!(@body $renderer; $($tail)*);
@@ -392,7 +392,7 @@ macro_rules! render_elements_internal {
     (@impl $name:ident<$lt:lifetime, $renderer:ident>; $($tail:tt)*) => {
         impl<$lt, $renderer> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$lt, $renderer>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as Renderer>::TextureId: 'static,
         {
             $crate::render_elements_internal!(@body $renderer; $($tail)*);
@@ -402,7 +402,7 @@ macro_rules! render_elements_internal {
     (@impl $name:ident<$renderer:ident, $custom:ident>; $($tail:tt)*) => {
         impl<$renderer, $custom> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$renderer, $custom>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as Renderer>::TextureId: 'static,
             $custom: $crate::backend::renderer::output::element::RenderElement<$renderer>,
         {
@@ -413,7 +413,7 @@ macro_rules! render_elements_internal {
     (@impl $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $($tail:tt)*) => {
         impl<$lt, $renderer, $custom> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name<$lt, $renderer, $custom>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as Renderer>::TextureId: 'static,
             $custom: $crate::backend::renderer::output::element::RenderElement<$renderer>,
         {
@@ -424,7 +424,7 @@ macro_rules! render_elements_internal {
     (@impl $name:ident; $renderer:ident; $($tail:tt)*) => {
         impl<$renderer> $crate::backend::renderer::output::element::RenderElement<$renderer> for $name
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as Renderer>::TextureId: 'static,
         {
             $crate::render_elements_internal!(@body $renderer; $($tail)*);
