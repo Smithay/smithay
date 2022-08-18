@@ -442,7 +442,7 @@ impl Space {
         custom_elements: &[C],
     ) -> Result<Vec<E>, OutputError>
     where
-        R: Renderer + ImportAll + 'static,
+        R: Renderer + ImportAll,
         <R as Renderer>::TextureId: Texture + Clone + 'static,
         C: SpaceElement<R, E>,
         E: RenderElement<R>
@@ -575,8 +575,8 @@ pub fn space_render_elements<R, C, E>(
     output: &Output,
 ) -> Result<Vec<E>, OutputNoMode>
 where
-    R: Renderer + ImportAll + 'static,
-    <R as Renderer>::TextureId: Texture + Clone,
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: Texture + Clone + 'static,
     C: SpaceElement<R, E>,
     E: RenderElement<R>
         + From<WaylandSurfaceRenderElement>
@@ -605,7 +605,7 @@ pub fn render_output<R, C, E>(
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
 where
-    R: Renderer + ImportAll + 'static,
+    R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + Clone + 'static,
     C: SpaceElement<R, E>,
     E: RenderElement<R>
@@ -785,7 +785,7 @@ macro_rules! space_elements_internal {
     (@impl $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $render_element:ident; $($what:ty$(,)?)+; $($tail:tt)*) => {
         impl<$lt, $renderer, $render_element, $custom> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$lt, $renderer, $custom>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
             $custom: $crate::desktop::space::SpaceElement<$renderer, $render_element>,
             $render_element: $crate::backend::renderer::output::element::RenderElement<$renderer> $(+ From<$what>)*,
@@ -796,7 +796,7 @@ macro_rules! space_elements_internal {
     (@impl $name:ident<$lt:lifetime, $renderer:ident>; $render_element:ident; $($what:ty$(,)?)+; $($tail:tt)*) => {
         impl<$lt, $renderer, $render_element> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$lt, $renderer>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
             $render_element: $crate::backend::renderer::output::element::RenderElement<$renderer> $(+ From<$what>)*,
         {
@@ -806,7 +806,7 @@ macro_rules! space_elements_internal {
     (@impl $name:ident<$lt:lifetime>; $renderer:ident $render_element:ident; $($what:ty$(,)?)+; $($tail:tt)*) => {
         impl<$lt, $renderer, $render_element> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$lt>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
             $render_element: $crate::backend::renderer::output::element::RenderElement<$renderer> $(+ From<$what>)*,
         {
@@ -816,7 +816,7 @@ macro_rules! space_elements_internal {
     (@impl $name:ident<$renderer:ident>; $render_element:ident; $($what:ty$(,)?)+; $($tail:tt)*) => {
         impl<$renderer, $render_element> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$renderer>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
             $render_element: $crate::backend::renderer::output::element::RenderElement<$renderer> $(+ From<$what>)*,
         {
@@ -826,7 +826,7 @@ macro_rules! space_elements_internal {
     (@impl $name:ident<$lt:lifetime, $custom:ident>; $renderer:ident $render_element:ident; $($what:ty$(,)?)+;$($tail:tt)*) => {
         impl<$lt, $renderer, $render_element, $custom> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$lt, $custom>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
             $custom: $crate::desktop::space::SpaceElement<$renderer, $render_element>,
             $render_element: $crate::backend::renderer::output::element::RenderElement<$renderer> $(+ From<$what>)*,
@@ -837,7 +837,7 @@ macro_rules! space_elements_internal {
     (@impl $name:ident<$custom:ident>; $renderer:ident $render_element:ident; $($what:ty$(,)?)+;$($tail:tt)*) => {
         impl<$renderer, $render_element, $custom> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$custom>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
             $custom: $crate::desktop::space::SpaceElement<$renderer, $render_element>,
             $render_element: $crate::backend::renderer::output::element::RenderElement<$renderer> $(+ From<$what>)*,
@@ -848,7 +848,7 @@ macro_rules! space_elements_internal {
     (@impl $name:ident; $renderer:ident $render_element:ident; $($what:ty$(,)?)+;$($tail:tt)*) => {
         impl<$renderer, $render_element> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + 'static,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
             $render_element: $crate::backend::renderer::output::element::RenderElement<$renderer> $(+ From<$what>)*,
         {
