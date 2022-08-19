@@ -1,9 +1,15 @@
 use crate::{
-    backend::renderer::{
-        element::surface::WaylandSurfaceRenderElement, utils::draw_render_elements, ImportAll, Renderer,
+    backend::{
+        input::KeyState,
+        renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     },
-    desktop::{utils::*, PopupManager},
-    utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
+    desktop::{space::RenderZindex, utils::*, PopupManager},
+    input::{
+        keyboard::{xkb, KeyboardHandler, KeysymHandle, ModifiersState},
+        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerHandler},
+        Seat, SeatHandler,
+    },
+    utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
     wayland::{
         compositor::with_states,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
@@ -11,12 +17,13 @@ use crate::{
 };
 use std::{
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc, Mutex,
+    },
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
 use wayland_server::protocol::wl_surface;
-
-use super::space::SpaceElement;
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
@@ -86,6 +93,7 @@ pub(super) struct WindowInner {
     pub(super) id: usize,
     toplevel: Kind,
     bbox: Mutex<Rectangle<i32, Logical>>,
+    pub(crate) z_index: AtomicU8,
     user_data: UserDataMap,
 }
 
@@ -143,6 +151,7 @@ impl Window {
             id,
             toplevel,
             bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
+            z_index: AtomicU8::new(RenderZindex::Shell as u8),
             user_data: UserDataMap::new(),
         }))
     }
@@ -252,6 +261,10 @@ impl Window {
         &self.0.toplevel
     }
 
+    pub fn override_z_index(&self, z_index: u8) {
+        self.0.z_index.store(z_index, Ordering::SeqCst);
+    }
+
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
@@ -283,16 +296,95 @@ where
     S: Into<Scale<f64>>,
     P: Into<Point<f64, Physical>>,
 {
-    let location = location.into();
-    let scale = scale.into();
-
-    let elements = SpaceElement::<R, WaylandSurfaceRenderElement>::render_elements(
-        window,
-        location.to_i32_round(),
+    draw_surface_tree(
+        renderer,
+        frame,
+        window.toplevel().wl_surface(),
         scale,
-    );
+        location.into(),
+        damage,
+        log,
+    )
+}
 
-    draw_render_elements(renderer, frame, scale, &*elements, damage, log)?;
+impl<D: SeatHandler + 'static> PointerHandler<D> for Window {
+    fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
+        PointerHandler::<D>::enter(self.0.toplevel.wl_surface(), seat, data, event)
+    }
+    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
+        PointerHandler::<D>::motion(self.0.toplevel.wl_surface(), seat, data, event)
+    }
+    fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
+        PointerHandler::<D>::button(self.0.toplevel.wl_surface(), seat, data, event)
+    }
+    fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
+        PointerHandler::<D>::axis(self.0.toplevel.wl_surface(), seat, data, frame)
+    }
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
+        PointerHandler::<D>::leave(self.0.toplevel.wl_surface(), seat, data, serial, time)
+    }
 
-    Ok(())
+    fn is_alive(&self) -> bool {
+        self.alive()
+    }
+    fn same_handler_as(&self, other: &dyn PointerHandler<D>) -> bool {
+        if let Some(other_window) = other.as_any().downcast_ref::<Window>() {
+            self.0.id == other_window.0.id
+        } else {
+            false
+        }
+    }
+    fn clone_handler(&self) -> Box<dyn PointerHandler<D> + 'static> {
+        Box::new(self.clone())
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl<D: SeatHandler + 'static> KeyboardHandler<D> for Window {
+    fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
+        KeyboardHandler::<D>::enter(self.0.toplevel.wl_surface(), seat, data, keys, serial)
+    }
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
+        KeyboardHandler::<D>::leave(self.0.toplevel.wl_surface(), seat, data, serial)
+    }
+    fn key(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        key: KeysymHandle<'_>,
+        state: KeyState,
+        serial: Serial,
+        time: u32,
+    ) {
+        KeyboardHandler::<D>::key(self.0.toplevel.wl_surface(), seat, data, key, state, serial, time)
+    }
+    fn modifiers(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        state: &xkb::State,
+        modifiers: ModifiersState,
+        serial: Serial,
+    ) {
+        KeyboardHandler::<D>::modifiers(self.0.toplevel.wl_surface(), seat, data, state, modifiers, serial)
+    }
+
+    fn is_alive(&self) -> bool {
+        self.alive()
+    }
+    fn same_handler_as(&self, other: &dyn KeyboardHandler<D>) -> bool {
+        if let Some(other_window) = other.as_any().downcast_ref::<Window>() {
+            self.0.id == other_window.0.id
+        } else {
+            false
+        }
+    }
+    fn clone_handler(&self) -> Box<dyn KeyboardHandler<D> + 'static> {
+        Box::new(self.clone())
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
