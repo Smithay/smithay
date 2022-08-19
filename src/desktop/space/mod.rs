@@ -605,6 +605,7 @@ pub fn render_output<R, C, E>(
     spaces: &[(&Space, &[C])],
     custom_elements: &[E],
     output_render: &mut OutputRender,
+    clear_color: [f32; 4],
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
 where
@@ -629,7 +630,7 @@ where
             .map(OutputRenderElements::Space),
     );
 
-    output_render.render_output(renderer, age, &*render_elements, log)
+    output_render.render_output(renderer, age, &*render_elements, clear_color, log)
 }
 
 #[macro_export]
