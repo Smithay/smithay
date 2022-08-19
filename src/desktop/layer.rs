@@ -1,7 +1,11 @@
 use crate::{
+    backend::renderer::{
+        output::element::surface::WaylandSurfaceRenderElement, utils::draw_render_elements, ImportAll,
+        Renderer,
+    },
     desktop::{utils::*, PopupManager},
     output::{Inner as OutputInner, Output, OutputData},
-    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle},
+    utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, TraversalAction},
         shell::wlr_layer::{
@@ -20,7 +24,7 @@ use std::{
     sync::{Arc, Mutex, Weak},
 };
 
-use super::WindowSurfaceType;
+use super::{space::SpaceElement, WindowSurfaceType};
 
 crate::utils::ids::id_gen!(next_layer_id, LAYER_ID, LAYER_IDS);
 
@@ -544,4 +548,43 @@ impl LayerSurface {
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.userdata
     }
+}
+
+/// Renders a given [`LayerSurface`] using a provided renderer and frame.
+///
+/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
+/// - `location` is the position the layer surface should be drawn at.
+/// - `damage` is the set of regions of the layer surface that should be drawn.
+///
+/// Note: This function will render nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_layer_surface<R, P, S>(
+    renderer: &mut R,
+    frame: &mut <R as Renderer>::Frame,
+    layer: &LayerSurface,
+    scale: S,
+    location: P,
+    damage: &[Rectangle<i32, Physical>],
+    log: &slog::Logger,
+) -> Result<(), <R as Renderer>::Error>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+    S: Into<Scale<f64>>,
+    P: Into<Point<f64, Physical>>,
+{
+    let location = location.into();
+    let scale = scale.into();
+
+    let elements = SpaceElement::<R, WaylandSurfaceRenderElement>::render_elements(
+        layer,
+        location.to_i32_round(),
+        scale,
+    );
+
+    draw_render_elements(renderer, frame, scale, &*elements, damage, log)?;
+
+    Ok(())
 }
