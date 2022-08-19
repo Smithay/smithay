@@ -5,8 +5,20 @@ use std::{
 };
 
 use smithay::{
-    backend::input::ButtonState,
-    desktop::WindowSurfaceType,
+    backend::{
+        input::ButtonState,
+        renderer::{
+            output::{
+                element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
+                OutputRender,
+            },
+            Renderer,
+        },
+    },
+    desktop::{
+        space::{SpaceRenderElements, SurfaceTree},
+        WindowSurfaceType,
+    },
     input::pointer::{ButtonEvent, CursorImageStatus, MotionEvent},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
@@ -21,10 +33,7 @@ use smithay::{
 };
 
 use anvil::{
-    drawing::{draw_cursor, draw_dnd_icon, draw_input_popup_surface},
-    render::render_output,
-    state::Backend,
-    AnvilState, CalloopData, ClientState,
+    drawing::PointerElement, render::render_output, state::Backend, AnvilState, CalloopData, ClientState,
 };
 
 use crate::WlcsEvent;
@@ -42,6 +51,15 @@ impl Backend for TestState {
 
     fn reset_buffers(&mut self, _output: &Output) {}
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
+}
+
+smithay::desktop::space::space_elements! {
+    CustomSpaceElements<'a, R>[
+        WaylandSurfaceRenderElement,
+        TextureRenderElement<<R as Renderer>::TextureId>,
+    ];
+    Pointer=&'a PointerElement<<R as Renderer>::TextureId>,
+    SurfaceTree=SurfaceTree,
 }
 
 pub fn run(channel: Channel<WlcsEvent>) {
@@ -95,22 +113,14 @@ pub fn run(channel: Channel<WlcsEvent>) {
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
 
+    let mut output_render = OutputRender::new(&output);
+    let mut pointer_element = PointerElement::default();
+
     while state.running.load(Ordering::SeqCst) {
         // pretend to draw something
         {
-            let mut elements = Vec::new();
             let mut cursor_guard = state.cursor_status.lock().unwrap();
-
-            // draw the dnd icon if any
-            if let Some(surface) = state.dnd_icon.as_ref() {
-                if surface.alive() {
-                    elements.push(draw_dnd_icon(
-                        surface.clone(),
-                        state.pointer_location.to_i32_round(),
-                        &logger,
-                    ));
-                }
-            }
+            let mut elements: Vec<CustomSpaceElements<'_, _>> = Vec::new();
 
             // draw input method square if any
             let input_method = state.seat.input_method().unwrap();
@@ -134,15 +144,32 @@ pub fn run(channel: Channel<WlcsEvent>) {
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
             }
-            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
-                elements.push(draw_cursor(
-                    surface.clone(),
-                    state.pointer_location.to_i32_round(),
-                    &logger,
-                ));
+
+            pointer_element.set_position(state.pointer_location.to_i32_round());
+            pointer_element.set_status(cursor_guard.clone());
+            elements.push(CustomSpaceElements::Pointer(&pointer_element));
+
+            // draw the dnd icon if any
+            if let Some(surface) = state.dnd_icon.as_ref() {
+                if surface.alive() {
+                    elements.push(CustomSpaceElements::SurfaceTree(
+                        smithay::desktop::space::SurfaceTree::from_surface(
+                            surface,
+                            state.pointer_location.to_i32_round(),
+                        ),
+                    ));
+                }
             }
 
-            let _ = render_output(&output, &mut state.space, &mut renderer, 0, &*elements, &logger);
+            let _ = render_output::<_, _, SpaceRenderElements<_>>(
+                &mut output_render,
+                &state.space,
+                &*elements,
+                &[],
+                &mut renderer,
+                0,
+                &logger,
+            );
         }
 
         // Send frame events so that client start drawing their next frame
