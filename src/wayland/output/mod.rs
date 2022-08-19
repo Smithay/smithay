@@ -159,6 +159,7 @@ impl Output {
         D: GlobalDispatch<WlOutput, OutputData>,
         D: 'static,
     {
+        self.data.inner.0.lock().unwrap().dh = Some(display.clone());
         display.create_global::<D, WlOutput, _>(4, self.data.clone())
     }
 
@@ -220,44 +221,64 @@ impl Output {
 
     /// This function allows to run a [FnMut] on every
     /// [WlOutput] matching the same [Client] as provided
-    pub fn with_client_outputs<F>(&self, dh: &DisplayHandle, client: &Client, mut f: F)
+    pub fn with_client_outputs<F>(&self, client: &Client, mut f: F)
     where
-        F: FnMut(&DisplayHandle, &WlOutput),
+        F: FnMut(&WlOutput),
     {
-        let list: Vec<_> = self
-            .data
-            .inner
-            .0
-            .lock()
-            .unwrap()
-            .instances
-            .iter()
-            .filter(|output| {
-                dh.get_client(output.id())
-                    .map(|output_client| &output_client == client)
-                    .unwrap_or(false)
-            })
-            .cloned()
-            .collect();
+        let list: Vec<WlOutput> = {
+            let data = self.data.inner.0.lock().unwrap();
+            data.instances
+                .iter()
+                .filter(|output| {
+                    data.dh
+                        .as_ref()
+                        .map(|dh| {
+                            dh.get_client(output.id())
+                                .map(|output_client| &output_client == client)
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect()
+        };
 
         for o in list {
-            f(dh, &o);
+            f(&o);
         }
     }
 
     /// Sends `wl_surface.enter` for the provided surface
     /// with the matching client output
-    pub fn enter(&self, dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
-        if let Ok(client) = dh.get_client(surface.id()) {
-            self.with_client_outputs(dh, &client, |_dh, output| surface.enter(output))
+    pub fn enter(&self, surface: &wl_surface::WlSurface) {
+        let client = self
+            .data
+            .inner
+            .0
+            .lock()
+            .unwrap()
+            .dh
+            .as_ref()
+            .and_then(|dh| dh.get_client(surface.id()).ok());
+        if let Some(client) = client {
+            self.with_client_outputs(&client, |output| surface.enter(output))
         }
     }
 
     /// Sends `wl_surface.leave` for the provided surface
     /// with the matching client output
-    pub fn leave(&self, dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
-        if let Ok(client) = dh.get_client(surface.id()) {
-            self.with_client_outputs(dh, &client, |_dh, output| surface.leave(output))
+    pub fn leave(&self, surface: &wl_surface::WlSurface) {
+        let client = self
+            .data
+            .inner
+            .0
+            .lock()
+            .unwrap()
+            .dh
+            .as_ref()
+            .and_then(|dh| dh.get_client(surface.id()).ok());
+        if let Some(client) = client {
+            self.with_client_outputs(&client, |output| surface.leave(output))
         }
     }
 }
