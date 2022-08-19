@@ -1,12 +1,16 @@
 use smithay::{
     backend::renderer::{
         damage::{DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode},
-        element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement, Wrap},
+        element::{
+            surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, AsRenderElements,
+            RenderElement,
+        },
         ImportAll, Renderer,
     },
     desktop::{
         self,
         space::{Space, SpaceElement},
+        Window,
     },
     output::Output,
     render_elements,
@@ -14,20 +18,24 @@ use smithay::{
     wayland::output::Output,
 };
 
-use crate::{drawing::CLEAR_COLOR, shell::FullscreenSurface};
+use crate::{
+    drawing::{PointerRenderElement, CLEAR_COLOR},
+    shell::FullscreenSurface,
+};
 
-render_elements! {
-    OutputRenderElements<'a, R, E>;
-    Space=Wrap<E>,
-    Custom=&'a E,
+smithay::backend::renderer::element::render_elements! {
+    pub CustomRenderElements<R>;
+    Pointer=PointerRenderElement<R>,
+    Surface=WaylandSurfaceRenderElement,
+    #[cfg(feature = "debug")]
+    Fps=FpsElement<<R as Renderer>::TextureId>,
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn render_output<R, C, E>(
+pub fn render_output<'a, R>(
     output: &Output,
-    space: &Space,
-    space_elements: &[C],
-    output_elements: &[E],
+    space: &'a Space<Window>,
+    custom_elements: &'a [CustomRenderElements<R>],
     renderer: &mut R,
     damage_tracked_renderer: &mut DamageTrackedRenderer,
     age: usize,
@@ -36,10 +44,6 @@ pub fn render_output<R, C, E>(
 where
     R: Renderer + ImportAll,
     R::TextureId: Clone + 'static,
-    C: SpaceElement<R, E>,
-    E: RenderElement<R>
-        + From<WaylandSurfaceRenderElement>
-        + From<TextureRenderElement<<R as Renderer>::TextureId>>,
 {
     if let Some(window) = output
         .user_data()
@@ -51,37 +55,23 @@ where
         }
 
         let scale = output.current_scale().fractional_scale().into();
-        let window_render_elements = SpaceElement::<R, E>::render_elements(&window, (0, 0).into(), scale);
+        let window_render_elements = AsRenderElements::<R>::render_elements(&window, (0, 0).into(), scale);
 
         let output_geo = space.output_geometry(output).unwrap();
 
-        let output_render_elements = output_elements
+        let render_elements = custom_elements
             .iter()
-            .map(|e| OutputRenderElements::Custom(e))
-            .chain(
-                space_elements
-                    .iter()
-                    .filter(|e| {
-                        let geometry = e.geometry(space.id());
-                        output_geo.overlaps(geometry)
-                    })
-                    .flat_map(|e| {
-                        let location = e.location(space.id()) - output_geo.loc;
-                        e.render_elements(location.to_physical_precise_round(scale), scale)
-                    })
-                    .chain(window_render_elements)
-                    .map(|e| OutputRenderElements::Space(Wrap::from(e))),
-            )
+            .chain(window_render_elements.iter())
             .collect::<Vec<_>>();
 
-        damage_tracked_renderer.render_output(renderer, age, &*output_render_elements, CLEAR_COLOR, log)
+        damage_tracked_renderer.render_output(renderer, age, &render_elements, CLEAR_COLOR, log)
     } else {
         desktop::space::render_output(
             output,
             renderer,
             age,
-            &[(space, space_elements)],
-            output_elements,
+            &[space],
+            custom_elements,
             damage_tracked_renderer,
             CLEAR_COLOR,
             log,
