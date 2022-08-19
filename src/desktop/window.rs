@@ -1,6 +1,10 @@
 use crate::{
+    backend::renderer::{
+        output::element::surface::WaylandSurfaceRenderElement, utils::draw_render_elements, ImportAll,
+        Renderer,
+    },
     desktop::{utils::*, PopupManager},
-    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle},
+    utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::with_states,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
@@ -12,6 +16,8 @@ use std::{
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
 use wayland_server::protocol::wl_surface;
+
+use super::space::SpaceElement;
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
@@ -251,4 +257,43 @@ impl Window {
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
     }
+}
+
+/// Renders a given [`Window`] using a provided renderer and frame.
+///
+/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
+/// - `location` is the position the window should be drawn at.
+/// - `damage` is the set of regions of the window that should be drawn.
+///
+/// Note: This function will render nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_window<R, P, S>(
+    renderer: &mut R,
+    frame: &mut <R as Renderer>::Frame,
+    window: &Window,
+    scale: S,
+    location: P,
+    damage: &[Rectangle<i32, Physical>],
+    log: &slog::Logger,
+) -> Result<(), <R as Renderer>::Error>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+    S: Into<Scale<f64>>,
+    P: Into<Point<f64, Physical>>,
+{
+    let location = location.into();
+    let scale = scale.into();
+
+    let elements = SpaceElement::<R, WaylandSurfaceRenderElement>::render_elements(
+        window,
+        location.to_i32_round(),
+        scale,
+    );
+
+    draw_render_elements(renderer, frame, scale, &*elements, damage, log)?;
+
+    Ok(())
 }
