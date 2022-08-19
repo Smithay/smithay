@@ -243,6 +243,16 @@ impl RendererSurfaceState {
         self.buffer.as_ref()
     }
 
+    /// Gets a reference to the texture for the specified renderer
+    pub fn texture<R>(&self, renderer: &R) -> Option<&R::TextureId>
+    where
+        R: Renderer,
+        <R as Renderer>::TextureId: 'static,
+    {
+        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
+        self.textures.get(&texture_id).and_then(|e| e.downcast_ref())
+    }
+
     /// Location of the buffer relative to the previous call of take_accumulated_buffer_delta
     ///
     /// In other words, the x and y, combined with the new surface size define in which directions
