@@ -13,6 +13,7 @@ use slog::Logger;
 
 use crate::{
     drawing::*,
+    render,
     state::{AnvilState, Backend, CalloopData},
 };
 #[cfg(not(feature = "debug"))]
@@ -891,33 +892,28 @@ fn render_surface<'a>(
     // and draw to our buffer
     // TODO we can pass the damage rectangles inside a AtomicCommitRequest
     #[cfg(feature = "debug")]
-    let render_res =
-        smithay::desktop::space::render_output::<_, CustomSpaceElements<'_, _>, CustomRenderElements<'_>>(
-            renderer,
-            age.into(),
-            &[(space, &*elements)],
-            &[CustomRenderElements::Fps(&surface.fps_element)],
-            &mut surface.output_render,
-            logger,
-        )
-        .map(|x| x.is_some());
+    let render_res = render::render_output::<_, _, CustomRenderElements<'_>>(
+        &mut surface.output_render,
+        space,
+        &*elements,
+        &[CustomRenderElements::Fps(&surface.fps_element)],
+        renderer,
+        age.into(),
+        logger,
+    )
+    .map(|x| x.is_some());
 
     #[cfg(not(feature = "debug"))]
-    let render_res =
-        smithay::desktop::space::render_output::<_, CustomSpaceElements<'_, _>, SpaceRenderElements<_>>(
-            renderer,
-            age.into(),
-            &[(space, &*elements)],
-            &[],
-            &mut surface.output_render,
-            logger,
-        )
-        .map(|x| x.is_some());
-
-    // // and draw to our buffer
-    // // TODO we can pass the damage rectangles inside a AtomicCommitRequest
-    // let render_res = crate::render::render_output(&output, space, renderer, age.into(), &*elements, logger)
-    //     .map(|x| x.is_some());
+    let render_res = render::render_output::<_, _, SpaceRenderElements<_>>(
+        &mut surface.output_render,
+        space,
+        &*elements,
+        &[],
+        renderer,
+        age.into(),
+        logger,
+    )
+    .map(|x| x.is_some());
 
     match render_res.map_err(|err| match err {
         OutputRenderError::Rendering(err) => err.into(),
