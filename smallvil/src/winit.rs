@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
-        renderer::{gles2::Gles2Renderer, output::OutputRender},
+        renderer::{gles2::Gles2Renderer, output::DamageTrackedRenderer},
         winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
     },
     desktop::space::{SpaceRenderElements, SurfaceTree},
@@ -49,7 +49,7 @@ pub fn init_winit(
 
     state.space.map_output(&output, (0, 0));
 
-    let mut output_renderer = OutputRender::new(&output);
+    let mut damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
 
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 
@@ -62,7 +62,7 @@ pub fn init_winit(
             &mut winit,
             data,
             &output,
-            &mut output_renderer,
+            &mut damage_tracked_renderer,
             &mut full_redraw,
             &log,
         )
@@ -78,7 +78,7 @@ pub fn winit_dispatch(
     winit: &mut WinitEventLoop,
     data: &mut CalloopData,
     output: &Output,
-    output_render: &mut OutputRender,
+    damage_tracked_renderer: &mut DamageTrackedRenderer,
     full_redraw: &mut u8,
     log: &Logger,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -121,11 +121,12 @@ pub fn winit_dispatch(
             SurfaceTree,
             SpaceRenderElements<Gles2Renderer>,
         >(
+            output,
             backend.renderer(),
             0,
             &[(&state.space, &[])],
             &[],
-            output_render,
+            damage_tracked_renderer,
             [0.1, 0.1, 0.1, 1.0],
             log,
         )

@@ -2,7 +2,7 @@ use crate::backend::renderer::{
     buffer_type,
     output::{
         element::{RenderElement, UnderlyingStorage},
-        OutputRender,
+        DamageTrackedRenderer,
     },
     BufferType, ImportAll, Renderer, Texture,
 };
@@ -10,7 +10,7 @@ use crate::backend::renderer::{
 /// Specialized render for drm output which uses planes
 #[derive(Debug)]
 pub struct DrmOutputRender {
-    output_render: OutputRender,
+    damage_tracked_renderer: DamageTrackedRenderer,
 }
 
 impl DrmOutputRender {
@@ -51,7 +51,7 @@ impl DrmOutputRender {
         }
 
         // Draw the remaining elements on the primary plane
-        self.output_render
+        self.damage_tracked_renderer
             .render_output(renderer, 0, elements, clear_color, log)
             .expect("failed to render");
     }
