@@ -360,7 +360,6 @@ impl SurfaceView {
         SurfaceView { src, dst, offset }
     }
 
-    #[cfg(feature = "desktop")]
     pub(crate) fn rect_to_global<N>(&self, rect: Rectangle<N, Logical>) -> Rectangle<f64, Logical>
     where
         N: Coordinate,
