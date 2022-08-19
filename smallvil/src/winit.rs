@@ -134,6 +134,7 @@ pub fn winit_dispatch(
             &[(&state.space, &[])],
             &[],
             output_render,
+            [0.1, 0.1, 0.1, 1.0],
             log,
         )
         .unwrap()
