@@ -38,3 +38,9 @@ pub trait IsAlive {
     /// Check if object is alive
     fn alive(&self) -> bool;
 }
+
+impl<T: IsAlive> IsAlive for &T {
+    fn alive(&self) -> bool {
+        IsAlive::alive(*self)
+    }
+}
