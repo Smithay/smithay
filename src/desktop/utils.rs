@@ -4,14 +4,10 @@ use crate::{
     backend::renderer::utils::RendererSurfaceState,
     output::Output,
     utils::{Logical, Point, Rectangle, Scale},
-    wayland::{
-        compositor::{with_surface_tree_downward, SurfaceAttributes, TraversalAction},
-        output::Output,
-    },
+    wayland::compositor::{with_surface_tree_downward, SurfaceAttributes, TraversalAction},
 };
-use wayland_server::{backend::ObjectId, protocol::wl_surface, DisplayHandle, Resource};
-
-use std::{cell::RefCell, collections::HashSet};
+use std::cell::RefCell;
+use wayland_server::protocol::wl_surface;
 
 use super::WindowSurfaceType;
 
@@ -159,102 +155,4 @@ pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
         },
         |_, _, &()| true,
     );
-}
-
-pub(crate) fn output_update(
-    dh: &DisplayHandle,
-    output: &Output,
-    output_geometry: Rectangle<i32, Logical>,
-    surface_list: &mut HashSet<ObjectId>,
-    surface: &wl_surface::WlSurface,
-    location: Point<i32, Logical>,
-    logger: &slog::Logger,
-) {
-    with_surface_tree_downward(
-        surface,
-        (location, false),
-        |_, states, (location, parent_unmapped)| {
-            let mut location = *location;
-            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
-
-            // If the parent is unmapped we still have to traverse
-            // our children to send a leave events
-            if *parent_unmapped {
-                TraversalAction::DoChildren((location, true))
-            } else if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
-                location += surface_view.offset;
-                TraversalAction::DoChildren((location, false))
-            } else {
-                // If we are unmapped we still have to traverse
-                // our children to send leave events
-                TraversalAction::DoChildren((location, true))
-            }
-        },
-        |wl_surface, states, (location, parent_unmapped)| {
-            let mut location = *location;
-
-            if *parent_unmapped {
-                // The parent is unmapped, just send a leave event
-                // if we were previously mapped and exit early
-                output_leave(dh, output, surface_list, wl_surface, logger);
-                return;
-            }
-            let data = states.data_map.get::<RefCell<RendererSurfaceState>>();
-
-            if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
-                location += surface_view.offset;
-                let surface_rectangle = Rectangle::from_loc_and_size(location, surface_view.dst);
-                if output_geometry.overlaps(surface_rectangle) {
-                    // We found a matching output, check if we already sent enter
-                    output_enter(dh, output, surface_list, wl_surface, logger);
-                } else {
-                    // Surface does not match output, if we sent enter earlier
-                    // we should now send leave
-                    output_leave(dh, output, surface_list, wl_surface, logger);
-                }
-            } else {
-                // Maybe the the surface got unmapped, send leave on output
-                output_leave(dh, output, surface_list, wl_surface, logger);
-            }
-        },
-        |_, _, _| true,
-    );
-}
-
-pub(crate) fn output_enter(
-    dh: &DisplayHandle,
-    output: &Output,
-    surface_list: &mut HashSet<ObjectId>,
-    surface: &wl_surface::WlSurface,
-    logger: &slog::Logger,
-) {
-    if !surface_list.contains(&surface.id()) {
-        slog::debug!(
-            logger,
-            "surface ({:?}) entering output {:?}",
-            surface,
-            output.name()
-        );
-        output.enter(dh, surface);
-        surface_list.insert(surface.id());
-    }
-}
-
-pub(crate) fn output_leave(
-    dh: &DisplayHandle,
-    output: &Output,
-    surface_list: &mut HashSet<ObjectId>,
-    surface: &wl_surface::WlSurface,
-    logger: &slog::Logger,
-) {
-    if surface_list.contains(&surface.id()) {
-        slog::debug!(
-            logger,
-            "surface ({:?}) leaving output {:?}",
-            surface,
-            output.name()
-        );
-        output.leave(dh, surface);
-        surface_list.remove(&surface.id());
-    }
 }

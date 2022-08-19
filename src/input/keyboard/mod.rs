@@ -11,8 +11,7 @@ use std::{
 };
 use thiserror::Error;
 
-use xkbcommon::xkb;
-pub use xkbcommon::xkb::{keysyms, Keysym};
+pub use xkbcommon::xkb::{self, keysyms, Keysym};
 
 use super::{Seat, SeatHandler};
 
