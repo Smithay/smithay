@@ -2,18 +2,15 @@ use crate::{
     output::Output,
     utils::{Logical, Point},
 };
-use wayland_server::backend::ObjectId;
 
 use std::{
     cell::{RefCell, RefMut},
-    collections::{HashMap, HashSet},
+    collections::HashMap,
 };
 
 #[derive(Clone, Default)]
 pub struct OutputState {
     pub location: Point<i32, Logical>,
-    // surfaces for tracking enter and leave events
-    pub surfaces: HashSet<ObjectId>,
 }
 
 pub type OutputUserdata = RefCell<HashMap<usize, OutputState>>;

@@ -6,23 +6,17 @@ use crate::{
         damage::{
             DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode, OutputNoMode,
         },
-        element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement, Wrap},
+        element::{surface::WaylandSurfaceRenderElement, AsRenderElements, RenderElement},
         ImportAll, Renderer, Texture,
     },
-    desktop::{
-        layer::{layer_map_for_output, LayerSurface},
-        popup::PopupManager,
-        utils::{output_leave, output_update},
-        window::Window,
-    },
+    desktop::layer::{layer_map_for_output, LayerSurface},
+    input::{keyboard::KeyboardTarget, pointer::PointerTarget},
     output::Output,
-    render_elements,
     utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform},
-    wayland::compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
+    wayland::compositor::{with_surface_tree_downward, TraversalAction},
 };
-use indexmap::IndexSet;
-use std::fmt;
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
+use std::{collections::HashSet, fmt};
+use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 
 mod element;
 mod layer;
@@ -31,43 +25,49 @@ mod window;
 
 pub use self::element::*;
 use self::output::*;
-use self::window::*;
 
 use super::WindowSurfaceType;
 
 crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
 
+#[derive(Debug)]
+struct InnerElement<E> {
+    element: E,
+    location: Point<i32, Logical>,
+    outputs: HashSet<Output>,
+}
+
 /// Represents two dimensional plane to map windows and outputs upon.
 #[derive(Debug)]
-pub struct Space {
+pub struct Space<E: SpaceElement> {
     pub(super) id: usize,
     // in z-order, back to front
-    windows: IndexSet<Window>,
+    elements: Vec<InnerElement<E>>,
     outputs: Vec<Output>,
     logger: ::slog::Logger,
 }
 
-impl PartialEq for Space {
-    fn eq(&self, other: &Space) -> bool {
+impl<E: SpaceElement> PartialEq for Space<E> {
+    fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl Drop for Space {
+impl<E: SpaceElement> Drop for Space<E> {
     fn drop(&mut self) {
         SPACE_IDS.lock().unwrap().remove(&self.id);
     }
 }
 
-impl Space {
+impl<E: SpaceElement + PartialEq> Space<E> {
     /// Create a new [`Space`]
-    pub fn new<L>(log: L) -> Space
+    pub fn new<L>(log: L) -> Self
     where
         L: Into<Option<slog::Logger>>,
     {
         Space {
             id: next_space_id(),
-            windows: IndexSet::new(),
+            elements: Vec::new(),
             outputs: Vec::new(),
             logger: crate::slog_or_fallback(log),
         }
@@ -89,18 +89,20 @@ impl Space {
     /// If activate is true it will set the new windows state
     /// to be activate and removes that state from every
     /// other mapped window.
-    pub fn map_window<P, Z>(&mut self, window: &Window, location: P, z_index: Z, activate: bool)
+    pub fn map_element<P>(&mut self, element: E, location: P, activate: bool)
     where
         P: Into<Point<i32, Logical>>,
-        Z: Into<Option<u8>>,
     {
-        let z_index = z_index.into().unwrap_or(RenderZindex::Shell as u8);
-        {
-            let mut state = window_state(self.id, window);
-            state.location = location.into();
-            state.z_index = z_index;
+        if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
+            self.elements.swap_remove(pos);
         }
-        self.insert_window(window, activate);
+
+        let inner = InnerElement {
+            element,
+            location: location.into(),
+            outputs: HashSet::new(),
+        };
+        self.insert_elem(inner, activate);
     }
 
     /// Moves an already mapped [`Window`] to top of the stack
@@ -110,43 +112,39 @@ impl Space {
     /// If activate is true it will set the new windows state
     /// to be activate and removes that state from every
     /// other mapped window.
-    pub fn raise_window(&mut self, window: &Window, activate: bool) {
-        if self.windows.shift_remove(window) {
-            self.insert_window(window, activate);
+    pub fn raise_element(&mut self, element: &E, activate: bool) {
+        if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
+            let inner = self.elements.swap_remove(pos);
+            self.insert_elem(inner, activate);
         }
     }
 
-    fn insert_window(&mut self, window: &Window, activate: bool) {
-        self.windows.insert(window.clone());
-        self.windows.sort_by(|w1, w2| {
-            window_state(self.id, w1)
-                .z_index
-                .cmp(&window_state(self.id, w2).z_index)
-        });
-
+    fn insert_elem(&mut self, elem: InnerElement<E>, activate: bool) {
         if activate {
-            window.set_activated(true);
-            for w in self.windows.iter() {
-                if w != window {
-                    w.set_activated(false);
-                }
+            elem.element.set_activate(true);
+            for e in self.elements.iter() {
+                e.element.set_activate(false);
             }
         }
+
+        self.elements.push(elem);
+        self.elements
+            .sort_by(|e1, e2| e1.element.z_index().cmp(&e2.element.z_index()));
     }
 
     /// Unmap a [`Window`] from this space.
     ///
     /// This function does nothing for already unmapped windows
-    pub fn unmap_window(&mut self, window: &Window) {
-        if let Some(map) = window.user_data().get::<WindowUserdata>() {
-            map.borrow_mut().remove(&self.id);
+    // TODO: Requirements for E? Also provide retain?
+    pub fn unmap_elem(&mut self, element: &E) {
+        if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
+            self.elements.swap_remove(pos);
         }
-        self.windows.shift_remove(window);
     }
 
     /// Iterate window in z-order back to front
-    pub fn windows(&self) -> impl DoubleEndedIterator<Item = &Window> {
-        self.windows.iter()
+    pub fn elements(&self) -> impl DoubleEndedIterator<Item = &E> {
+        self.elements.iter().map(|e| &e.element)
     }
 
     /// Finds the topmost surface under this point if any and returns it
@@ -159,37 +157,14 @@ impl Space {
     /// As [`Window::surface_under`] internally uses the surface input regions
     /// the same applies to this method and it will only return a surface
     /// where the point is within the surface input regions.
-    pub fn surface_under<P: Into<Point<f64, Logical>>>(
-        &self,
-        point: P,
-        surface_type: WindowSurfaceType,
-    ) -> Option<(Window, WlSurface, Point<i32, Logical>)> {
+    pub fn element_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<(&E, Point<i32, Logical>)> {
         let point = point.into();
-        for window in self.windows.iter().rev() {
-            let loc = window_loc(window, &self.id) - window.geometry().loc;
-            let mut geo = window.bbox_with_popups();
-            geo.loc += loc;
-
-            if !geo.to_f64().contains(point) {
-                continue;
+        self.elements.iter().rev().find_map(|e| {
+            if let Some(pos) = e.element.input_region(&point) {
+                Some((&e.element, pos))
+            } else {
+                None
             }
-
-            if let Some((surface, location)) = window.surface_under(point - loc.to_f64(), surface_type) {
-                return Some((window.clone(), surface, location + loc));
-            }
-        }
-
-        None
-    }
-
-    /// Get a reference to the window under a given point, if any
-    pub fn window_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<&Window> {
-        let point = point.into();
-        self.windows.iter().rev().find(|w| {
-            let loc = window_loc(w, &self.id) - Window::geometry(w).loc;
-            let mut geo = w.bbox();
-            geo.loc += loc;
-            geo.to_f64().contains(point)
         })
     }
 
@@ -200,57 +175,6 @@ impl Space {
             let bbox = self.output_geometry(o);
             bbox.map(|bbox| bbox.to_f64().contains(point)).unwrap_or(false)
         })
-    }
-
-    /// Returns the window matching a given surface, if any.
-    ///
-    /// `surface_type` can be used to limit the types of surfaces queried for equality.
-    pub fn window_for_surface(
-        &self,
-        surface: &WlSurface,
-        surface_type: WindowSurfaceType,
-    ) -> Option<&Window> {
-        if !surface.alive() {
-            return None;
-        }
-
-        if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
-            if let Some(window) = self.windows.iter().find(|w| w.toplevel().wl_surface() == surface) {
-                return Some(window);
-            }
-        }
-
-        if surface_type.contains(WindowSurfaceType::SUBSURFACE) {
-            use std::sync::atomic::{AtomicBool, Ordering};
-
-            if let Some(window) = self.windows.iter().find(|w| {
-                let toplevel = w.toplevel().wl_surface();
-                let found = AtomicBool::new(false);
-                with_surface_tree_downward(
-                    toplevel,
-                    surface,
-                    |_, _, search| TraversalAction::DoChildren(search),
-                    |s, _, search| {
-                        found.fetch_or(s == *search, Ordering::SeqCst);
-                    },
-                    |_, _, _| !found.load(Ordering::SeqCst),
-                );
-                found.load(Ordering::SeqCst)
-            }) {
-                return Some(window);
-            }
-        }
-
-        if surface_type.contains(WindowSurfaceType::POPUP) {
-            if let Some(window) = self.windows.iter().find(|w| {
-                PopupManager::popups_for_surface(w.toplevel().wl_surface())
-                    .any(|(p, _)| p.wl_surface() == surface)
-            }) {
-                return Some(window);
-            }
-        }
-
-        None
     }
 
     /// Returns the layer matching a given surface, if any
@@ -268,21 +192,20 @@ impl Space {
     }
 
     /// Returns the location of a [`Window`] inside the Space.
-    pub fn window_location(&self, w: &Window) -> Option<Point<i32, Logical>> {
-        if !self.windows.contains(w) {
-            return None;
-        }
-
-        Some(window_loc(w, &self.id))
+    pub fn element_location(&self, elem: &E) -> Option<Point<i32, Logical>> {
+        self.elements
+            .iter()
+            .find(|e| &e.element == elem)
+            .map(|e| e.location)
     }
 
     /// Returns the bounding box of a [`Window`] including its relative position inside the Space.
-    pub fn window_bbox(&self, w: &Window) -> Option<Rectangle<i32, Logical>> {
-        if !self.windows.contains(w) {
-            return None;
-        }
-
-        Some(window_rect(w, &self.id))
+    pub fn element_bbox(&self, elem: &E) -> Option<Rectangle<i32, Logical>> {
+        self.elements.iter().find(|e| &e.element == elem).map(|e| {
+            let mut bbox = e.element.bbox();
+            bbox.loc += e.location;
+            bbox
+        })
     }
 
     /// Maps an [`Output`] inside the space.
@@ -295,9 +218,6 @@ impl Space {
         let mut state = output_state(self.id, output);
         *state = OutputState {
             location: location.into(),
-            // keep surfaces, we still need to inform them of leaving,
-            // if they don't overlap anymore during refresh.
-            surfaces: std::mem::take(&mut state.surfaces),
         };
         if !self.outputs.contains(output) {
             self.outputs.push(output.clone());
@@ -346,17 +266,16 @@ impl Space {
     }
 
     /// Returns all [`Output`]s a [`Window`] overlaps with.
-    pub fn outputs_for_window(&self, w: &Window) -> Vec<Output> {
-        if !self.windows.contains(w) {
+    pub fn outputs_for_element(&self, elem: &E) -> Vec<Output> {
+        if !self.elements.iter().any(|e| &e.element == elem) {
             return Vec::new();
         }
 
-        self.outputs
+        self.elements
             .iter()
-            .filter(|o| {
-                let output_state = output_state(self.id, o);
-                output_state.surfaces.contains(&w.toplevel().wl_surface().id())
-            })
+            .find(|e| &e.element == elem)
+            .into_iter()
+            .flat_map(|e| &e.outputs)
             .cloned()
             .collect()
     }
@@ -367,91 +286,51 @@ impl Space {
     ///
     /// Needs to be called periodically, at best before every
     /// wayland socket flush.
-    pub fn refresh(&mut self, dh: &DisplayHandle) {
-        self.windows.retain(|w| w.alive());
+    pub fn refresh(&mut self) {
+        self.elements.retain(|e| e.element.alive());
 
-        for output in &mut self.outputs {
-            output_state(self.id, output)
-                .surfaces
-                .retain(|i| dh.backend_handle().object_info(i.clone()).is_ok());
-        }
-
-        for window in &self.windows {
-            let bbox = window_rect(window, &self.id);
-            let kind = window.toplevel();
-
-            for output in &self.outputs {
-                let output_geometry = self
-                    .output_geometry(output)
+        let outputs = self
+            .outputs
+            .iter()
+            .cloned()
+            .map(|o| {
+                let geo = self
+                    .output_geometry(&o)
                     .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (0, 0)));
-                let mut output_state = output_state(self.id, output);
+                (o, geo)
+            })
+            .collect::<Vec<_>>();
+        for e in &mut self.elements {
+            let bbox = e.element.bbox();
 
+            for (output, output_geometry) in &outputs {
                 // Check if the bounding box of the toplevel intersects with
-                // the output, if not no surface in the tree can intersect with
-                // the output.
+                // the output
                 if !output_geometry.overlaps(bbox) {
-                    let surface = kind.wl_surface();
-                    output_leave(dh, output, &mut output_state.surfaces, surface, &self.logger);
-                    continue;
-                }
-
-                let surface = kind.wl_surface();
-                output_update(
-                    dh,
-                    output,
-                    output_geometry,
-                    &mut output_state.surfaces,
-                    surface,
-                    window_loc(window, &self.id),
-                    &self.logger,
-                );
-
-                for (popup, location) in PopupManager::popups_for_surface(surface) {
-                    let surface = popup.wl_surface();
-                    let location = window_loc(window, &self.id) + window.geometry().loc + location
-                        - popup.geometry().loc;
-                    output_update(
-                        dh,
-                        output,
-                        output_geometry,
-                        &mut output_state.surfaces,
-                        surface,
-                        location,
-                        &self.logger,
-                    );
+                    if e.outputs.remove(output) {
+                        e.element.output_leave(output);
+                    }
+                } else {
+                    if e.outputs.insert(output.clone()) {
+                        e.element.output_enter(output);
+                    }
                 }
             }
         }
     }
 
-    /// Should be called on commit to let the space automatically call [`Window::refresh`]
-    /// for the window that belongs to the given surface, if managed by this space.
-    pub fn commit(&self, surface: &WlSurface) {
-        if is_sync_subsurface(surface) {
-            return;
-        }
-        let mut root = surface.clone();
-        while let Some(parent) = get_parent(&root) {
-            root = parent;
-        }
-        if let Some(window) = self.windows().find(|w| w.toplevel().wl_surface() == &root) {
-            window.refresh();
-        }
-    }
-
     /// Retrieve the render elements for an output
-    pub fn elements_for_output<R, C, E>(
-        &self,
+    pub fn elements_for_output<'a, R>(
+        &'a self,
         output: &Output,
-        custom_elements: &[C],
-    ) -> Result<Vec<E>, OutputError>
+    ) -> Result<Vec<SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>>, OutputError>
     where
         R: Renderer + ImportAll,
-        <R as Renderer>::TextureId: Texture + Clone + 'static,
-        C: SpaceElement<R, E>,
-        E: RenderElement<R>
-            + From<WaylandSurfaceRenderElement>
-            + From<TextureRenderElement<<R as Renderer>::TextureId>>,
+        <R as Renderer>::TextureId: Texture + 'static,
+        E: AsRenderElements<R>,
+        <E as AsRenderElements<R>>::RenderElement: 'a,
+        SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>:
+            From<<E as AsRenderElements<R>>::RenderElement>,
     {
         if !self.outputs.contains(output) {
             return Err(OutputError::Unmapped);
@@ -467,61 +346,28 @@ impl Space {
         );
 
         let layer_map = layer_map_for_output(output);
+        let mut space_elements: Vec<SpaceElements<'_, E>> = Vec::new();
 
-        let mut space_elements: Vec<SpaceElements<'_, C>> = Vec::new();
+        space_elements.extend(self.elements().rev().map(SpaceElements::Element));
 
-        space_elements.extend(
-            custom_elements
-                .iter()
-                .map(SpaceElements::Custom)
-                .collect::<Vec<_>>(),
-        );
+        space_elements.extend(layer_map.layers().rev().cloned().map(SpaceElements::Layer));
 
-        space_elements.extend(
-            self.windows()
-                .rev()
-                .map(SpaceElements::Window)
-                .collect::<Vec<_>>(),
-        );
-
-        space_elements.extend(
-            layer_map
-                .layers()
-                .rev()
-                .map(SpaceElements::Layer)
-                .collect::<Vec<_>>(),
-        );
-
-        space_elements.sort_by_key(|e| std::cmp::Reverse(e.z_index(self.id)));
+        space_elements.sort_by_key(|e| std::cmp::Reverse(e.z_index()));
 
         Ok(space_elements
             .into_iter()
             .filter(|e| {
-                let geometry = e.geometry(self.id);
+                let geometry = e.geometry();
                 output_geo.overlaps(geometry)
             })
             .flat_map(|e| {
-                let location = e.location(self.id) - output_location;
+                let location = e.geometry().loc - output_location;
                 e.render_elements(
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
                 )
             })
             .collect::<Vec<_>>())
-    }
-
-    /// Sends the frame callback to mapped [`Window`]s and [`LayerSurface`]s.
-    pub fn send_frames(&self, time: u32) {
-        for window in self.windows.iter() {
-            window.send_frame(time);
-        }
-
-        for output in self.outputs.iter() {
-            let map = layer_map_for_output(output);
-            for layer in map.layers() {
-                layer.send_frame(time);
-            }
-        }
     }
 }
 
@@ -536,55 +382,55 @@ pub enum OutputError {
     Unmapped,
 }
 
-render_elements! {
+crate::backend::renderer::element::render_elements! {
     /// Defines the render elements used internally by a [`Space`]
     ///
     /// Use them in place of `E` in `space_render_elements` or
     /// `render_output` if you do not need custom render elements
-    pub SpaceRenderElements<R>;
+    pub SpaceRenderElements<'a, R, E>;
     /// A single wayland surface
     Surface=WaylandSurfaceRenderElement,
     /// A single texture
-    Texture=TextureRenderElement<<R as Renderer>::TextureId>
+    Element=&'a E,
 }
 
-impl<R> std::fmt::Debug for SpaceRenderElements<R>
+impl<'a, R, E> std::fmt::Debug for SpaceRenderElements<'a, R, E>
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: std::fmt::Debug,
+    E: RenderElement<R> + std::fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),
-            Self::Texture(arg0) => f.debug_tuple("Texture").field(arg0).finish(),
+            Self::Element(arg0) => f.debug_tuple("Element").field(arg0).finish(),
             Self::_GenericCatcher(_) => unreachable!(),
         }
     }
 }
 
-render_elements! {
-    OutputRenderElements<'a, R, E>;
-    Space=Wrap<E>,
-    Custom=&'a E,
+crate::backend::renderer::element::render_elements! {
+    OutputRenderElements<'a, R, E, C>;
+    Space=SpaceRenderElements<'a, R, E>,
+    Custom=&'a C,
 }
 
 /// Get the render elements for a specific output
-pub fn space_render_elements<R, C, E>(
-    spaces: &[(&Space, &[C])],
+pub fn space_render_elements<'a, R, E>(
+    spaces: &[&'a Space<E>],
     output: &Output,
-) -> Result<Vec<E>, OutputNoMode>
+) -> Result<Vec<SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Texture + Clone + 'static,
-    C: SpaceElement<R, E>,
-    E: RenderElement<R>
-        + From<WaylandSurfaceRenderElement>
-        + From<TextureRenderElement<<R as Renderer>::TextureId>>,
+    <R as Renderer>::TextureId: Texture + 'static,
+    E: SpaceElement + PartialEq + AsRenderElements<R>,
+    <E as AsRenderElements<R>>::RenderElement: 'a,
+    SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>:
+        From<<E as AsRenderElements<R>>::RenderElement>,
 {
     let mut render_elements = Vec::new();
 
-    for (space, custom_elements) in spaces {
-        match space.elements_for_output(output, custom_elements) {
+    for space in spaces {
+        match space.elements_for_output(output) {
             Ok(elements) => render_elements.extend(elements),
             Err(OutputError::Unmapped) => {}
             Err(OutputError::NoMode(_)) => return Err(OutputNoMode),
@@ -595,24 +441,23 @@ where
 }
 
 /// Render a output
-#[allow(clippy::too_many_arguments)]
-pub fn render_output<R, C, E>(
+pub fn render_output<'a, R, C, E>(
     output: &Output,
     renderer: &mut R,
     age: usize,
-    spaces: &[(&Space, &[C])],
-    custom_elements: &[E],
+    spaces: &[&'a Space<E>],
+    custom_elements: &'a [C],
     damage_tracked_renderer: &mut DamageTrackedRenderer,
     clear_color: [f32; 4],
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
 where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Texture + Clone + 'static,
-    C: SpaceElement<R, E>,
-    E: RenderElement<R>
-        + From<WaylandSurfaceRenderElement>
-        + From<TextureRenderElement<<R as Renderer>::TextureId>>,
+    R: Renderer + ImportAll + 'static,
+    <R as Renderer>::TextureId: Texture + 'static,
+    E: SpaceElement + PartialEq + AsRenderElements<R>,
+    SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>:
+        From<<E as AsRenderElements<R>>::RenderElement>,
+    C: RenderElement<R>,
 {
     if let DamageTrackedRendererMode::Auto(renderer_output) = damage_tracked_renderer.mode() {
         assert!(renderer_output == output);
@@ -620,16 +465,11 @@ where
 
     let space_render_elements = space_render_elements(spaces, output)?;
 
-    let mut render_elements: Vec<OutputRenderElements<'_, R, E>> =
+    let mut render_elements: Vec<OutputRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement, C>> =
         Vec::with_capacity(custom_elements.len() + space_render_elements.len());
 
-    render_elements.extend(custom_elements.iter().map(OutputRenderElements::from));
-    render_elements.extend(
-        space_render_elements
-            .into_iter()
-            .map(Wrap::from)
-            .map(OutputRenderElements::Space),
-    );
+    render_elements.extend(custom_elements.iter().map(OutputRenderElements::Custom));
+    render_elements.extend(space_render_elements.into_iter().map(OutputRenderElements::Space));
 
     damage_tracked_renderer.render_output(renderer, age, &*render_elements, clear_color, log)
 }

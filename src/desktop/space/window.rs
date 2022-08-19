@@ -1,77 +1,104 @@
+use super::SpaceElement;
 use crate::{
     backend::renderer::{
         element::{
             surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-            RenderElement,
+            AsRenderElements,
         },
-        ImportAll, Renderer, Texture,
+        ImportAll, Renderer,
     },
-    desktop::{window::Window, PopupManager},
+    desktop::{window::Window, PopupManager, WindowSurfaceType},
     utils::{Logical, Physical, Point, Rectangle, Scale},
+    wayland::{
+        compositor::{with_surface_tree_downward, TraversalAction},
+        output::Output,
+    },
 };
-use std::{
-    cell::{RefCell, RefMut},
-    collections::HashMap,
-};
 
-use super::SpaceElement;
+impl SpaceElement for Window {
+    fn geometry(&self) -> Rectangle<i32, Logical> {
+        self.geometry()
+    }
 
-#[derive(Default)]
-pub struct WindowState {
-    pub location: Point<i32, Logical>,
-    pub drawn: bool,
-    pub z_index: u8,
+    fn bbox(&self) -> Rectangle<i32, Logical> {
+        self.bbox_with_popups()
+    }
+
+    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
+        self.surface_under(*point, WindowSurfaceType::ALL)
+            .map(|(s, point)| point)
+    }
+
+    fn z_index(&self) -> u8 {
+        self.0.z_index.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn set_activate(&self, activated: bool) {
+        self.set_activated(activated);
+    }
+    fn output_enter(&self, output: &Output) {
+        with_surface_tree_downward(
+            self.toplevel().wl_surface(),
+            (),
+            |_, _, _| TraversalAction::DoChildren(()),
+            |wl_surface, _, _| {
+                output.enter(wl_surface);
+            },
+            |_, _, _| true,
+        );
+        for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
+            let surface = popup.wl_surface();
+            with_surface_tree_downward(
+                surface,
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |wl_surface, _, _| {
+                    output.enter(wl_surface);
+                },
+                |_, _, _| true,
+            )
+        }
+    }
+    fn output_leave(&self, output: &Output) {
+        with_surface_tree_downward(
+            self.toplevel().wl_surface(),
+            (),
+            |_, _, _| TraversalAction::DoChildren(()),
+            |wl_surface, _, _| {
+                output.leave(wl_surface);
+            },
+            |_, _, _| true,
+        );
+        for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
+            let surface = popup.wl_surface();
+            with_surface_tree_downward(
+                surface,
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |wl_surface, _, _| {
+                    output.leave(wl_surface);
+                },
+                |_, _, _| true,
+            )
+        }
+    }
 }
 
-pub type WindowUserdata = RefCell<HashMap<usize, WindowState>>;
-pub fn window_state(space: usize, w: &Window) -> RefMut<'_, WindowState> {
-    let userdata = w.user_data();
-    userdata.insert_if_missing(WindowUserdata::default);
-    RefMut::map(userdata.get::<WindowUserdata>().unwrap().borrow_mut(), |m| {
-        m.entry(space).or_default()
-    })
-}
-
-pub fn window_rect(window: &Window, space_id: &usize) -> Rectangle<i32, Logical> {
-    let loc = window_loc(window, space_id);
-    let mut wgeo = window.bbox();
-    wgeo.loc += loc;
-    wgeo
-}
-
-pub fn window_loc(window: &Window, space_id: &usize) -> Point<i32, Logical> {
-    window
-        .user_data()
-        .get::<RefCell<HashMap<usize, WindowState>>>()
-        .unwrap()
-        .borrow()
-        .get(space_id)
-        .unwrap()
-        .location
-}
-
-impl<R, E> SpaceElement<R, E> for Window
+impl<R> AsRenderElements<R> for Window
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Texture + 'static,
-    E: RenderElement<R> + From<WaylandSurfaceRenderElement>,
+    <R as Renderer>::TextureId: 'static,
 {
-    fn location(&self, space_id: usize) -> Point<i32, Logical> {
-        window_loc(self, &space_id) - self.geometry().loc
-    }
+    type RenderElement = WaylandSurfaceRenderElement;
 
-    fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
-        window_rect(self, &space_id)
-    }
-
-    fn z_index(&self, space_id: usize) -> u8 {
-        window_state(space_id, self).z_index
-    }
-
-    fn render_elements(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E> {
+    fn render_elements<C: From<WaylandSurfaceRenderElement>>(
+        &self,
+        location: Point<i32, Physical>,
+        scale: Scale<f64>,
+    ) -> Vec<C> {
         let surface = self.toplevel().wl_surface();
 
-        let mut render_elements: Vec<E> = Vec::new();
+        let mut render_elements: Vec<C> = Vec::new();
         let popup_render_elements =
             PopupManager::popups_for_surface(surface).flat_map(|(popup, popup_offset)| {
                 let offset = (self.geometry().loc + popup_offset - popup.geometry().loc)
