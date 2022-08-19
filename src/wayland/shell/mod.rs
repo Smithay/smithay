@@ -7,19 +7,22 @@
 //! The shell protocols thus define what kind of interactions a client can have with
 //! the compositor to properly display its contents on the screen.
 //!
-//! Smithay currently provides two of them:
+//! Smithay currently provides three of them:
 //!
 //! - The [`xdg`](xdg/index.html) module provides handlers for the `xdg_shell` protocol, which is
 //!   the current standard for desktop apps
+//! - The [`wlr_layer`](wlr_layer/index.html) module provides handlers for the `wlr_layer_shell`
+//!   protocol, which is for windows rendering above/below normal XDG windows
+//! - The [`kde`](kde/index.html) module provides handlers for KDE-specific protocols
 
 use super::Serial;
 use crate::wayland::compositor;
 use thiserror::Error;
 use wayland_server::protocol::wl_surface::WlSurface;
 
-pub mod xdg;
-
+pub mod kde;
 pub mod wlr_layer;
+pub mod xdg;
 
 /// Represents the possible errors returned from
 /// a surface ping
