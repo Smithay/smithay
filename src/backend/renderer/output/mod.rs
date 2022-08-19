@@ -280,7 +280,7 @@ impl DamageTrackedRenderer {
 
         let mut elements_drawn = 0;
 
-        let res = renderer.render(output_size, output_transform.into(), |renderer, frame| {
+        let res = renderer.render(output_size, output_transform, |renderer, frame| {
             frame.clear(clear_color, &*damage)?;
 
             for element in render_elements.iter() {
