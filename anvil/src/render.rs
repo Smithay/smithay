@@ -15,7 +15,7 @@ use smithay::{
     utils::{Physical, Rectangle},
 };
 
-use crate::shell::FullscreenSurface;
+use crate::{drawing::CLEAR_COLOR, shell::FullscreenSurface};
 
 smithay::backend::renderer::output::element::render_elements! {
     OutputRenderElements<'a, R, E>;
@@ -71,7 +71,7 @@ where
             )
             .collect::<Vec<_>>();
 
-        output_render.render_output(renderer, age, &*output_render_elements, log)
+        output_render.render_output(renderer, age, &*output_render_elements, CLEAR_COLOR, log)
     } else {
         desktop::space::render_output(
             renderer,
@@ -79,6 +79,7 @@ where
             &[(space, space_elements)],
             output_elements,
             output_render,
+            CLEAR_COLOR,
             log,
         )
     }
