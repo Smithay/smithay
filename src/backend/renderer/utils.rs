@@ -529,7 +529,7 @@ where
 }
 
 /// Draws the render elements using a given [`Renderer`] and [`Frame`]
-/// 
+///
 /// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
 /// - `location` is the position the surface should be drawn at.
 /// - `damage` is the set of regions that should be drawn relative to the same origin as the location.
