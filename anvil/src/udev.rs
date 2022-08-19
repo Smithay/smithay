@@ -381,6 +381,7 @@ struct BackendData {
     event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, CalloopData<UdevData>>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn scan_connectors(
     device_id: DrmNode,
     device: &DrmDevice<SessionFd>,
