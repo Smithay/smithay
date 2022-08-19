@@ -452,9 +452,10 @@ pub fn render_output<'a, R, C, E>(
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
 where
-    R: Renderer + ImportAll + 'static,
+    R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
     E: SpaceElement + PartialEq + AsRenderElements<R>,
+    <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>:
         From<<E as AsRenderElements<R>>::RenderElement>,
     C: RenderElement<R>,
