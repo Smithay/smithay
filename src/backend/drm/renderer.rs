@@ -27,11 +27,7 @@ impl DrmOutputRender {
                     UnderlyingStorage::Wayland(buffer) => {
                         let buffer_type = buffer_type(&buffer);
 
-                        let buffer_supports_direct_scan_out = if let Some(buffer_type) = buffer_type {
-                            matches!(buffer_type, BufferType::Dma)
-                        } else {
-                            false
-                        };
+                        let buffer_supports_direct_scan_out = matches!(buffer_type, Some(BufferType::Dma));
 
                         if buffer_supports_direct_scan_out {
                             // Try to assign the element to a plane
