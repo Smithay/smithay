@@ -899,6 +899,7 @@ macro_rules! space_elements {
 pub use space_elements;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use crate::{
         backend::renderer::{
