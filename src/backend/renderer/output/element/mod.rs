@@ -29,7 +29,9 @@ pub trait RenderElement<R: Renderer> {
     /// Get the current commit position of this element
     fn current_commit(&self) -> usize;
     /// Get the location relative to the output
-    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical>;
+    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+        self.geometry(scale).loc
+    }
     /// Get the geometry relative to the output
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical>;
     /// Get the damage since the provided commit relative to the element
