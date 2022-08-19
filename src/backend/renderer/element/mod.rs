@@ -708,6 +708,8 @@ macro_rules! render_elements {
     };
 }
 
+pub use render_elements;
+
 /// New-type wrapper for wrapping owned elements
 /// in render_elements!
 #[derive(Debug)]
