@@ -127,7 +127,7 @@ impl X11State {
         &mut self,
         event: Event,
         dh: &DisplayHandle,
-        space: &mut Space,
+        space: &mut Space<Window>,
     ) -> Result<(), ReplyOrIdError> {
         debug!(self.log, "X11: Got event {:?}", event);
         match event {
@@ -215,7 +215,7 @@ impl X11State {
         window: X11Window,
         surface: WlSurface,
         location: Point<i32, Logical>,
-        space: &mut Space,
+        space: &mut Space<Window>,
     ) {
         debug!(self.log, "Matched X11 surface {:x?} to {:x?}", window, surface);
 
@@ -226,12 +226,12 @@ impl X11State {
         }
 
         let x11surface = X11Surface { surface };
-        space.map_window(&Window::new(Kind::X11(x11surface)), location, None, true);
+        space.map_element(Window::new(Kind::X11(x11surface)), location, true);
     }
 }
 
 // Called when a WlSurface commits.
-pub fn commit_hook(surface: &WlSurface, dh: &DisplayHandle, state: &mut X11State, space: &mut Space) {
+pub fn commit_hook(surface: &WlSurface, dh: &DisplayHandle, state: &mut X11State, space: &mut Space<Window>) {
     if let Ok(client) = dh.get_client(surface.id()) {
         // Is this the Xwayland client?
         if client == state.client {
