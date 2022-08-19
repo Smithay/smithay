@@ -1,7 +1,5 @@
 use crate::{
-    backend::renderer::{
-        element::surface::WaylandSurfaceRenderElement, utils::draw_render_elements, ImportAll, Renderer,
-    },
+    backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager},
     output::{Output, WeakOutput},
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
@@ -14,7 +12,7 @@ use crate::{
     },
 };
 use indexmap::IndexSet;
-use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle};
+use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 use std::{
     cell::{RefCell, RefMut},
@@ -23,7 +21,7 @@ use std::{
     sync::Arc,
 };
 
-use super::{space::SpaceElement, WindowSurfaceType};
+use super::WindowSurfaceType;
 
 crate::utils::ids::id_gen!(next_layer_id, LAYER_ID, LAYER_IDS);
 
@@ -111,7 +109,10 @@ impl LayerMap {
                 (),
                 |_, _, _| TraversalAction::DoChildren(()),
                 |wl_surface, _, _| {
-                    output_leave(dh, &output, &mut self.surfaces, wl_surface, &self.logger);
+                    if self.surfaces.contains(&wl_surface.id()) {
+                        output.leave(wl_surface);
+                        self.surfaces.remove(&wl_surface.id());
+                    }
                 },
                 |_, _, _| true,
             );
@@ -122,7 +123,10 @@ impl LayerMap {
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        output_leave(dh, &output, &mut self.surfaces, wl_surface, &self.logger);
+                        if self.surfaces.contains(&wl_surface.id()) {
+                            output.leave(wl_surface);
+                            self.surfaces.remove(&wl_surface.id());
+                        }
                     },
                     |_, _, _| true,
                 )
@@ -257,7 +261,10 @@ impl LayerMap {
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        output_enter(dh, &output, surfaces_ref, wl_surface, logger_ref);
+                        if !surfaces_ref.contains(&wl_surface.id()) {
+                            output.enter(wl_surface);
+                            surfaces_ref.insert(wl_surface.id());
+                        }
                     },
                     |_, _, _| true,
                 );
@@ -268,7 +275,10 @@ impl LayerMap {
                         (),
                         |_, _, _| TraversalAction::DoChildren(()),
                         |wl_surface, _, _| {
-                            output_enter(dh, &output, surfaces_ref, wl_surface, logger_ref);
+                            if !surfaces_ref.contains(&wl_surface.id()) {
+                                output.enter(wl_surface);
+                                surfaces_ref.insert(wl_surface.id());
+                            }
                         },
                         |_, _, _| true,
                     )
@@ -383,6 +393,7 @@ impl LayerMap {
 #[derive(Debug, Default)]
 pub struct LayerState {
     pub location: Point<i32, Logical>,
+    pub outputs: Vec<Output>,
 }
 
 type LayerUserdata = RefCell<Option<LayerState>>;
@@ -571,16 +582,15 @@ where
     S: Into<Scale<f64>>,
     P: Into<Point<f64, Physical>>,
 {
-    let location = location.into();
-    let scale = scale.into();
-
-    let elements = SpaceElement::<R, WaylandSurfaceRenderElement>::render_elements(
-        layer,
-        location.to_i32_round(),
+    draw_surface_tree(
+        renderer,
+        frame,
+        layer.wl_surface(),
         scale,
-    );
-
-    draw_render_elements(renderer, frame, scale, &*elements, damage, log)?;
+        location.into(),
+        damage,
+        log,
+    )?;
 
     Ok(())
 }
