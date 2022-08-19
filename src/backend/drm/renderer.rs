@@ -15,8 +15,13 @@ pub struct DrmOutputRender {
 
 impl DrmOutputRender {
     /// Render the output
-    pub fn render_output<R, E>(&mut self, renderer: &mut R, elements: &[E], log: &slog::Logger)
-    where
+    pub fn render_output<R, E>(
+        &mut self,
+        renderer: &mut R,
+        elements: &[E],
+        clear_color: [f32; 4],
+        log: &slog::Logger,
+    ) where
         E: RenderElement<R>,
         R: Renderer + ImportAll + std::fmt::Debug,
         <R as Renderer>::TextureId: Texture + std::fmt::Debug + 'static,
@@ -47,7 +52,7 @@ impl DrmOutputRender {
 
         // Draw the remaining elements on the primary plane
         self.output_render
-            .render_output(renderer, 0, elements, log)
+            .render_output(renderer, 0, elements, clear_color, log)
             .expect("failed to render");
     }
 }

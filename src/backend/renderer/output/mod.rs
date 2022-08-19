@@ -77,6 +77,7 @@ impl OutputRender {
         renderer: &mut R,
         age: usize,
         elements: &[E],
+        clear_color: [f32; 4],
         log: &slog::Logger,
     ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
     where
@@ -234,7 +235,7 @@ impl OutputRender {
         let mut elements_drawn = 0;
 
         let res = renderer.render(output_size, output_transform.into(), |renderer, frame| {
-            frame.clear([1.0f32, 0.0f32, 0.0f32, 1.0f32], &*damage)?;
+            frame.clear(clear_color, &*damage)?;
 
             for element in render_elements.iter() {
                 let element_geometry = element.geometry(output_scale);
