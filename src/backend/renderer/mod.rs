@@ -37,6 +37,7 @@ pub mod multigpu;
 #[cfg(feature = "wayland_frontend")]
 pub mod utils;
 
+#[cfg(feature = "wayland_frontend")]
 pub mod output;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
