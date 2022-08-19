@@ -72,6 +72,11 @@ impl Space {
         }
     }
 
+    /// Gets the id of this space
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
     /// Map a [`Window`] and move it to top of the stack
     ///
     /// If a z_index is provided it will override the default
