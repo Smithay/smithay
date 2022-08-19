@@ -680,7 +680,7 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "renderer_gl"))]
 mod tests {
     use std::marker::PhantomData;
 
