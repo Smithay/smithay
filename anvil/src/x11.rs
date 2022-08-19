@@ -29,7 +29,7 @@ use smithay::{
             gles2::Gles2Renderer,
             output::{
                 element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-                OutputRender,
+                DamageTrackedRenderer,
             },
             Bind, Renderer,
         },
@@ -61,7 +61,7 @@ pub struct X11Data {
     // FIXME: If Gles2Renderer is dropped before X11Surface, then the MakeCurrent call inside Gles2Renderer will
     // fail because the X11Surface is keeping gbm alive.
     renderer: Gles2Renderer,
-    output_render: OutputRender,
+    damage_tracked_renderer: DamageTrackedRenderer,
     surface: X11Surface,
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
@@ -206,14 +206,14 @@ pub fn run_x11(log: Logger) {
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
 
-    let output_render = OutputRender::new(&output);
+    let damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
 
     let data = X11Data {
         render: true,
         mode,
         surface,
         renderer,
-        output_render,
+        damage_tracked_renderer,
         #[cfg(feature = "egl")]
         dmabuf_state,
         #[cfg(feature = "debug")]
@@ -345,11 +345,12 @@ pub fn run_x11(log: Logger) {
 
             #[cfg(not(feature = "debug"))]
             let render_res = render::render_output::<_, _, SpaceRenderElements<_>>(
-                &mut backend_data.output_render,
+                &output,
                 &state.space,
                 &*custom_space_elements,
                 &[],
                 &mut backend_data.renderer,
+                &mut backend_data.damage_tracked_renderer,
                 age.into(),
                 &log,
             );
