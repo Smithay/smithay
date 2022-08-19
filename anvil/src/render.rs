@@ -1,79 +1,92 @@
 use smithay::{
-    backend::renderer::{Frame, ImportAll, Renderer},
+    backend::renderer::{
+        output::{
+            element::{
+                surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement, Wrap,
+            },
+            DamageTrackedRenderer, Mode, OutputRenderError,
+        },
+        ImportAll, Renderer,
+    },
     desktop::{
-        draw_window, draw_window_popups,
-        space::{RenderElement, RenderError, Space},
+        self,
+        space::{Space, SpaceElement},
     },
     utils::{Physical, Rectangle},
     wayland::output::Output,
 };
 
-use crate::{drawing::*, shell::FullscreenSurface};
+use crate::{drawing::CLEAR_COLOR, shell::FullscreenSurface};
 
-pub fn render_output<R, E>(
+smithay::backend::renderer::output::element::render_elements! {
+    OutputRenderElements<'a, R, E>;
+    Space=smithay::backend::renderer::output::element::Wrap<E>,
+    Custom=&'a E,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn render_output<R, C, E>(
     output: &Output,
-    space: &mut Space,
+    space: &Space,
+    space_elements: &[C],
+    output_elements: &[E],
     renderer: &mut R,
+    damage_tracked_renderer: &mut DamageTrackedRenderer,
     age: usize,
-    elements: &[E],
     log: &slog::Logger,
-) -> Result<Option<Vec<Rectangle<i32, Physical>>>, RenderError<R>>
+) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
 where
     R: Renderer + ImportAll,
-    R::TextureId: 'static,
-    E: RenderElement<R>,
+    R::TextureId: Clone + 'static,
+    C: SpaceElement<R, E>,
+    E: RenderElement<R>
+        + From<WaylandSurfaceRenderElement>
+        + From<TextureRenderElement<<R as Renderer>::TextureId>>,
 {
     if let Some(window) = output
         .user_data()
         .get::<FullscreenSurface>()
         .and_then(|f| f.get())
     {
-        let transform = output.current_transform().into();
-        let mode = output.current_mode().unwrap();
-        let scale = output.current_scale().fractional_scale();
-        let output_geo = space
-            .output_geometry(output)
-            .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (0, 0)));
-        renderer
-            .render(mode.size, transform, |renderer, frame| {
-                let mut damage = window.accumulated_damage((0.0, 0.0), scale, None);
-                frame.clear(CLEAR_COLOR, &[Rectangle::from_loc_and_size((0, 0), mode.size)])?;
-                draw_window(
-                    renderer,
-                    frame,
-                    &window,
-                    scale,
-                    (0.0, 0.0),
-                    &[Rectangle::from_loc_and_size((0, 0), mode.size)],
-                    log,
-                )?;
-                draw_window_popups(
-                    renderer,
-                    frame,
-                    &window,
-                    scale,
-                    (0.0, 0.0),
-                    &[Rectangle::from_loc_and_size((0, 0), mode.size)],
-                    log,
-                )?;
-                for elem in elements {
-                    let geo = elem.geometry(scale);
-                    let location = elem.location(scale) - output_geo.loc.to_physical_precise_round(scale);
-                    elem.draw(
-                        renderer,
-                        frame,
-                        scale,
-                        location,
-                        &[Rectangle::from_loc_and_size((0, 0), mode.size)],
-                        log,
-                    )?;
-                    damage.extend([Rectangle::from_loc_and_size((0, 0), geo.size)]);
-                }
-                Ok(Some(damage))
-            })
-            .and_then(std::convert::identity)
-            .map_err(RenderError::<R>::Rendering)
+        if let Mode::Auto(renderer_output) = damage_tracked_renderer.mode() {
+            assert!(renderer_output == output);
+        }
+
+        let scale = output.current_scale().fractional_scale().into();
+        let window_render_elements = SpaceElement::<R, E>::render_elements(&window, (0, 0).into(), scale);
+
+        let output_geo = space.output_geometry(output).unwrap();
+
+        let output_render_elements = output_elements
+            .iter()
+            .map(|e| OutputRenderElements::Custom(e))
+            .chain(
+                space_elements
+                    .iter()
+                    .filter(|e| {
+                        let geometry = e.geometry(space.id());
+                        output_geo.overlaps(geometry)
+                    })
+                    .flat_map(|e| {
+                        let location = e.location(space.id()) - output_geo.loc;
+                        e.render_elements(location.to_physical_precise_round(scale), scale)
+                    })
+                    .chain(window_render_elements)
+                    .map(|e| OutputRenderElements::Space(Wrap::from(e))),
+            )
+            .collect::<Vec<_>>();
+
+        damage_tracked_renderer.render_output(renderer, age, &*output_render_elements, CLEAR_COLOR, log)
     } else {
-        space.render_output(&mut *renderer, output, age as usize, CLEAR_COLOR, elements)
+        desktop::space::render_output(
+            output,
+            renderer,
+            age,
+            &[(space, space_elements)],
+            output_elements,
+            damage_tracked_renderer,
+            CLEAR_COLOR,
+            log,
+        )
     }
 }

@@ -1,10 +1,12 @@
 use crate::{
-    backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
-    desktop::{utils::*, PopupManager, Space},
+    backend::renderer::{
+        output::element::surface::WaylandSurfaceRenderElement, utils::draw_render_elements, ImportAll,
+        Renderer,
+    },
+    desktop::{utils::*, PopupManager},
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::with_states,
-        output::Output,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
 };
@@ -14,6 +16,8 @@ use std::{
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
 use wayland_server::protocol::wl_surface;
+
+use super::space::SpaceElement;
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
@@ -175,33 +179,6 @@ impl Window {
         bounding_box
     }
 
-    /// Returns the [`Physical`] bounding box over this window, it subsurfaces as well as any popups.
-    ///
-    /// This differs from using [`bbox_with_popups`](Window::bbox_with_popups) and translating the returned [`Rectangle`]
-    /// to [`Physical`] space as it rounds the subsurface and popup offsets.
-    /// See [`physical_bbox_from_surface_tree`] for more information.
-    ///
-    /// Note: You need to use a [`PopupManager`] to track popups, otherwise the bounding box
-    /// will not include the popups.
-    pub fn physical_bbox_with_popups(
-        &self,
-        location: impl Into<Point<f64, Physical>>,
-        scale: impl Into<Scale<f64>>,
-    ) -> Rectangle<i32, Physical> {
-        let location = location.into();
-        let scale = scale.into();
-        let surface = self.0.toplevel.wl_surface();
-        let mut geo = physical_bbox_from_surface_tree(surface, location, scale);
-        for (popup, p_location) in PopupManager::popups_for_surface(surface) {
-            let offset = (self.geometry().loc + p_location - popup.geometry().loc)
-                .to_f64()
-                .to_physical(scale)
-                .to_i32_round();
-            geo = geo.merge(physical_bbox_from_surface_tree(surface, location + offset, scale));
-        }
-        geo
-    }
-
     /// Activate/Deactivate this window
     pub fn set_activated(&self, active: bool) -> bool {
         match self.0.toplevel {
@@ -271,31 +248,6 @@ impl Window {
         under_from_surface_tree(surface, point, (0, 0), surface_type)
     }
 
-    /// Damage of all the surfaces of this window.
-    ///
-    /// If `for_values` is `Some(_)` it will only return the damage on the
-    /// first call for a given [`Space`] and [`Output`], if the buffer hasn't changed.
-    /// Subsequent calls will return an empty vector until the buffer is updated again.
-    pub fn accumulated_damage(
-        &self,
-        location: impl Into<Point<f64, Physical>>,
-        scale: impl Into<Scale<f64>>,
-        for_values: Option<(&Space, &Output)>,
-    ) -> Vec<Rectangle<i32, Physical>> {
-        let surface = self.0.toplevel.wl_surface();
-        damage_from_surface_tree(surface, location, scale, for_values)
-    }
-
-    /// Returns the opaque regions of this window
-    pub fn opaque_regions(
-        &self,
-        location: impl Into<Point<f64, Physical>>,
-        scale: impl Into<Scale<f64>>,
-    ) -> Option<Vec<Rectangle<i32, Physical>>> {
-        let surface = self.0.toplevel.wl_surface();
-        opaque_regions_from_surface_tree(surface, location, scale)
-    }
-
     /// Returns the underlying toplevel
     pub fn toplevel(&self) -> &Kind {
         &self.0.toplevel
@@ -333,45 +285,15 @@ where
     P: Into<Point<f64, Physical>>,
 {
     let location = location.into();
-    let surface = window.toplevel().wl_surface();
-    draw_surface_tree(renderer, frame, surface, scale.into(), location, damage, log)
-}
+    let scale = scale.into();
 
-/// Renders popups of a given [`Window`] using a provided renderer and frame
-///
-/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
-/// - `location` is the position the window would be drawn at (popups will be drawn relative to that coordiante).
-/// - `damage` is the set of regions of the layer surface that should be drawn.
-///
-/// Note: This function will render nothing, if you are not using
-/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
-/// to let smithay handle buffer management.
-#[allow(clippy::too_many_arguments)]
-pub fn draw_window_popups<R, S, P>(
-    renderer: &mut R,
-    frame: &mut <R as Renderer>::Frame,
-    window: &Window,
-    scale: S,
-    location: P,
-    damage: &[Rectangle<i32, Physical>],
-    log: &slog::Logger,
-) -> Result<(), <R as Renderer>::Error>
-where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
-    S: Into<Scale<f64>>,
-    P: Into<Point<f64, Physical>>,
-{
-    let location = location.into();
-    let surface = window.toplevel().wl_surface();
-    super::popup::draw_popups(
-        renderer,
-        frame,
-        surface,
-        location,
-        window.geometry().loc,
-        scale.into(),
-        damage,
-        log,
-    )
+    let elements = SpaceElement::<R, WaylandSurfaceRenderElement>::render_elements(
+        window,
+        location.to_i32_round(),
+        scale,
+    );
+
+    draw_render_elements(renderer, frame, scale, &*elements, damage, log)?;
+
+    Ok(())
 }
