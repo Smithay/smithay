@@ -10,7 +10,7 @@ use smithay::{
         renderer::{
             output::{
                 element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-                OutputRender,
+                DamageTrackedRenderer,
             },
             Renderer,
         },
@@ -115,7 +115,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
 
-    let mut output_render = OutputRender::new(&output);
+    let mut damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
     let mut pointer_element = PointerElement::default();
 
     while state.running.load(Ordering::SeqCst) {
@@ -151,11 +151,12 @@ pub fn run(channel: Channel<WlcsEvent>) {
             }
 
             let _ = render_output::<_, _, SpaceRenderElements<_>>(
-                &mut output_render,
+                &output,
                 &state.space,
                 &*elements,
                 &[],
                 &mut renderer,
+                &mut damage_tracked_renderer,
                 0,
                 &logger,
             );

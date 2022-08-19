@@ -5,7 +5,7 @@ use crate::{
     backend::renderer::{
         output::{
             element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement},
-            OutputRender, OutputRenderError,
+            DamageTrackedRenderer, Mode, OutputNoMode, OutputRenderError,
         },
         ImportAll, Renderer, Texture,
     },
@@ -537,11 +537,6 @@ pub enum OutputError {
     Unmapped,
 }
 
-/// The given [`Output`] has no set mode
-#[derive(thiserror::Error, Debug)]
-#[error("Output has no active mode")]
-pub struct OutputNoMode;
-
 crate::backend::renderer::output::element::render_elements! {
     /// Defines the render elements used internally by a [`Space`]
     ///
@@ -601,12 +596,14 @@ where
 }
 
 /// Render a output
+#[allow(clippy::too_many_arguments)]
 pub fn render_output<R, C, E>(
+    output: &Output,
     renderer: &mut R,
     age: usize,
     spaces: &[(&Space, &[C])],
     custom_elements: &[E],
-    output_render: &mut OutputRender,
+    damage_tracked_renderer: &mut DamageTrackedRenderer,
     clear_color: [f32; 4],
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
@@ -618,8 +615,11 @@ where
         + From<WaylandSurfaceRenderElement>
         + From<TextureRenderElement<<R as Renderer>::TextureId>>,
 {
-    let space_render_elements =
-        space_render_elements(spaces, output_render.output()).map_err(|_| OutputRenderError::OutputNoMode)?;
+    if let Mode::Auto(renderer_output) = damage_tracked_renderer.mode() {
+        assert!(renderer_output == output);
+    }
+
+    let space_render_elements = space_render_elements(spaces, output)?;
 
     let mut render_elements: Vec<OutputRenderElements<'_, R, E>> =
         Vec::with_capacity(custom_elements.len() + space_render_elements.len());
@@ -632,7 +632,7 @@ where
             .map(OutputRenderElements::Space),
     );
 
-    output_render.render_output(renderer, age, &*render_elements, clear_color, log)
+    damage_tracked_renderer.render_output(renderer, age, &*render_elements, clear_color, log)
 }
 
 #[macro_export]
