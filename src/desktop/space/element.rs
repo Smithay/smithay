@@ -1,6 +1,6 @@
 use crate::{
-    backend::renderer::{element::surface::render_elements_from_surface_tree, ImportAll, Renderer},
-    desktop::{space::*, utils::bbox_from_surface_tree},
+    backend::renderer::{ImportAll, Renderer},
+    desktop::{space::*, utils as desktop_utils},
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
 };
@@ -35,53 +35,84 @@ impl From<RenderZindex> for Option<u8> {
 }
 
 /// Trait for a space element
-pub trait SpaceElement<R, E>
-where
-    R: Renderer + ImportAll,
-    E: RenderElement<R>,
-{
-    /// Gets the location of this element on the specified space
-    fn location(&self, space_id: usize) -> Point<i32, Logical>;
-    /// Gets the geometry of this element on the specified space
-    fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical>;
+pub trait SpaceElement: IsAlive {
+    /// Gets the geometry of this element
+    fn geometry(&self) -> Rectangle<i32, Logical> {
+        self.bbox()
+    }
+    fn bbox(&self) -> Rectangle<i32, Logical>;
+    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>>;
     /// Gets the z-index of this element on the specified space
-    fn z_index(&self, _space_id: usize) -> u8 {
+    fn z_index(&self) -> u8 {
         RenderZindex::Overlay as u8
     }
-    /// Gets render elements of this space element
-    fn render_elements(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E>;
+
+    fn set_activate(&self, activated: bool);
+    fn output_enter(&self, output: &Output);
+    fn output_leave(&self, output: &Output);
+}
+
+impl<T: SpaceElement> SpaceElement for &T {
+    fn geometry(&self) -> Rectangle<i32, Logical> {
+        SpaceElement::geometry(*self)
+    }
+    fn bbox(&self) -> Rectangle<i32, Logical> {
+        SpaceElement::bbox(*self)
+    }
+    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
+        SpaceElement::input_region(*self, point)
+    }
+    fn z_index(&self) -> u8 {
+        SpaceElement::z_index(*self)
+    }
+
+    fn set_activate(&self, activated: bool) {
+        SpaceElement::set_activate(*self, activated)
+    }
+    fn output_enter(&self, output: &Output) {
+        SpaceElement::output_enter(*self, output)
+    }
+    fn output_leave(&self, output: &Output) {
+        SpaceElement::output_leave(*self, output)
+    }
 }
 
 space_elements! {
-    pub(crate) SpaceElements<'a, _, C>[
-        WaylandSurfaceRenderElement,
-        TextureRenderElement<<R as Renderer>::TextureId>,
-    ];
-    Layer=&'a LayerSurface,
-    Window=&'a Window,
-    Custom=&'a C,
+    pub SpaceElements<'a, E>;
+    Layer=LayerSurface,
+    Element=&'a E,
 }
 
-impl<T, R, E> SpaceElement<R, E> for &T
+impl<'a, R, E> AsRenderElements<R> for SpaceElements<'a, E>
 where
-    T: SpaceElement<R, E>,
-    E: RenderElement<R>,
     R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: Texture + 'static,
+    E: AsRenderElements<R>,
+    <E as AsRenderElements<R>>::RenderElement: 'a,
+    SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>:
+        From<<E as AsRenderElements<R>>::RenderElement> + From<WaylandSurfaceRenderElement>,
 {
-    fn location(&self, space_id: usize) -> Point<i32, Logical> {
-        (*self).location(space_id)
-    }
+    type RenderElement = SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>;
 
-    fn geometry(&self, space_id: usize) -> Rectangle<i32, Logical> {
-        (*self).geometry(space_id)
-    }
-
-    fn z_index(&self, space_id: usize) -> u8 {
-        (*self).z_index(space_id)
-    }
-
-    fn render_elements(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E> {
-        (*self).render_elements(location, scale)
+    fn render_elements<C: From<Self::RenderElement>>(
+        &self,
+        location: Point<i32, Physical>,
+        scale: Scale<f64>,
+    ) -> Vec<C> {
+        match &self {
+            SpaceElements::Layer(layer) => {
+                AsRenderElements::<R>::render_elements::<Self::RenderElement>(layer, location, scale)
+                    .into_iter()
+                    .map(C::from)
+                    .collect()
+            }
+            SpaceElements::Element(element) => element
+                .render_elements::<Self::RenderElement>(location, scale)
+                .into_iter()
+                .map(C::from)
+                .collect(),
+            _ => unreachable!(),
+        }
     }
 }
 /// A custom surface tree
@@ -101,28 +132,75 @@ impl SurfaceTree {
     }
 }
 
-impl<R, E> SpaceElement<R, E> for SurfaceTree
+impl IsAlive for SurfaceTree {
+    fn alive(&self) -> bool {
+        self.surface.alive()
+    }
+}
+
+impl SpaceElement for SurfaceTree {
+    fn geometry(&self) -> Rectangle<i32, Logical> {
+        self.bbox()
+    }
+
+    fn bbox(&self) -> Rectangle<i32, Logical> {
+        desktop_utils::bbox_from_surface_tree(&self.surface, self.location)
+    }
+
+    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
+        desktop_utils::under_from_surface_tree(&self.surface, *point, (0, 0), WindowSurfaceType::ALL)
+            .map(|(s, point)| point)
+    }
+
+    fn set_activate(&self, activated: bool) {}
+    fn output_enter(&self, output: &Output) {
+        with_surface_tree_downward(
+            &self.surface,
+            (),
+            |_, _, _| TraversalAction::DoChildren(()),
+            |wl_surface, _, _| {
+                output.enter(wl_surface);
+            },
+            |_, _, _| true,
+        );
+    }
+    fn output_leave(&self, output: &Output) {
+        with_surface_tree_downward(
+            &self.surface,
+            (),
+            |_, _, _| TraversalAction::DoChildren(()),
+            |wl_surface, _, _| {
+                output.leave(wl_surface);
+            },
+            |_, _, _| true,
+        );
+    }
+}
+
+impl<R> AsRenderElements<R> for SurfaceTree
 where
     R: Renderer + ImportAll,
-    E: RenderElement<R> + From<WaylandSurfaceRenderElement>,
+    <R as Renderer>::TextureId: 'static,
 {
-    fn location(&self, _space_id: usize) -> Point<i32, Logical> {
-        self.location
-    }
+    type RenderElement = WaylandSurfaceRenderElement;
 
-    fn geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
-        bbox_from_surface_tree(&self.surface, self.location)
-    }
-
-    fn render_elements(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E> {
-        render_elements_from_surface_tree(&self.surface, location, scale)
+    fn render_elements<C: From<WaylandSurfaceRenderElement>>(
+        &self,
+        location: Point<i32, Physical>,
+        scale: Scale<f64>,
+    ) -> Vec<C> {
+        crate::backend::renderer::element::surface::render_elements_from_surface_tree(
+            &self.surface,
+            location,
+            scale,
+        )
     }
 }
 
 #[macro_export]
 #[doc(hidden)]
 macro_rules! space_elements_internal {
-    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, _, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
         $(#[$attr])*
         $vis enum $name<$lt, $custom> {
             $(
@@ -135,7 +213,7 @@ macro_rules! space_elements_internal {
             _GenericCatcher(std::convert::Infallible),
         }
     };
-    (@enum $(#[$attr:meta])* $vis:vis $name:ident<_, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
         $(#[$attr])*
         $vis enum $name<$custom> {
             $(
@@ -148,35 +226,7 @@ macro_rules! space_elements_internal {
             _GenericCatcher(std::convert::Infallible),
         }
     };
-    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
-        $(#[$attr])*
-        $vis enum $name<$lt, $renderer, $custom>
-        where $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll, {
-            $(
-                $(
-                    #[$meta]
-                )*
-                $body($field)
-            ),*,
-            #[doc(hidden)]
-            _GenericCatcher(std::convert::Infallible),
-        }
-    };
-    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
-        $(#[$attr])*
-        $vis enum $name<$lt, $renderer>
-        where $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll, {
-            $(
-                $(
-                    #[$meta]
-                )*
-                $body($field)
-            ),*,
-            #[doc(hidden)]
-            _GenericCatcher(std::convert::Infallible),
-        }
-    };
-    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime>; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
         $(#[$attr])*
         $vis enum $name<$lt> {
             $(
@@ -189,21 +239,7 @@ macro_rules! space_elements_internal {
             _GenericCatcher(std::convert::Infallible),
         }
     };
-    (@enum $(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
-        $(#[$attr])*
-        $vis enum $name<$renderer>
-        where $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll, {
-            $(
-                $(
-                    #[$meta]
-                )*
-                $body($field)
-            ),*,
-            #[doc(hidden)]
-            _GenericCatcher(std::convert::Infallible),
-        }
-    };
-    (@enum $(#[$attr:meta])* $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
+    (@enum $(#[$attr:meta])* $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
         $(#[$attr])*
         $vis enum $name {
             $(
@@ -216,133 +252,157 @@ macro_rules! space_elements_internal {
             _GenericCatcher(std::convert::Infallible),
         }
     };
-    (@call $renderer:ident $render_element:ident; $name:ident; $($x:ident),*) => {
-        $crate::desktop::space::SpaceElement::<$renderer, $render_element>::$name($($x),*)
+    (@call $name:ident; $($x:ident),*) => {
+        $crate::desktop::space::SpaceElement::$name($($x),*)
     };
-    (@body $renderer:ident $render_element:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
-        fn location(&self, space_id: usize) -> $crate::utils::Point<i32, $crate::utils::Logical> {
+    (@alive $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+        fn alive(&self) -> bool {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::space_elements_internal!(@call $renderer $render_element; location; x, space_id)
+                    Self::$body(x) => $crate::utils::IsAlive::alive(x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+    };
+    (@body $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
+        fn geometry(&self) -> $crate::utils::Rectangle<i32, $crate::utils::Logical> {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::space_elements_internal!(@call geometry; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+        fn bbox(&self) -> $crate::utils::Rectangle<i32, $crate::utils::Logical> {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::space_elements_internal!(@call bbox; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+        fn input_region(&self, point: &$crate::utils::Point<f64, $crate::utils::Logical>) -> Option<$crate::utils::Point<i32, $crate::utils::Logical>> {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::space_elements_internal!(@call input_region; x, point)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
 
-        fn geometry(&self, space_id: usize) -> $crate::utils::Rectangle<i32, $crate::utils::Logical> {
+        fn z_index(&self) -> u8 {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::space_elements_internal!(@call $renderer $render_element; geometry; x, space_id)
+                    Self::$body(x) => $crate::space_elements_internal!(@call z_index; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
 
-        fn z_index(&self, space_id: usize) -> u8 {
+        fn set_activate(&self, activated: bool) {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::space_elements_internal!(@call $renderer $render_element; z_index; x, space_id)
+                    Self::$body(x) => $crate::space_elements_internal!(@call set_activate; x, activated)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
-
-        fn render_elements(&self, location: $crate::utils::Point<i32, $crate::utils::Physical>, scale: $crate::utils::Scale<f64>) -> Vec<$render_element> {
+        fn output_enter(&self, output: &$crate::wayland::output::Output) {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::space_elements_internal!(@call $renderer $render_element; render_elements; x, location, scale)
+                    Self::$body(x) => $crate::space_elements_internal!(@call output_enter; x, output)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+        fn output_leave(&self, output: &$crate::wayland::output::Output) {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::space_elements_internal!(@call output_leave; x, output)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
     };
-    (@impl $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $render_element:ident; $($what:ty$(,)?)+; $($tail:tt)*) => {
-        impl<$lt, $renderer, $render_element, $custom> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$lt, $renderer, $custom>
-        where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
-            $custom: $crate::desktop::space::SpaceElement<$renderer, $render_element>,
-            $render_element: $crate::backend::renderer::element::RenderElement<$renderer> $(+ From<$what>)*,
+    (@impl $name:ident<$lt:lifetime>; $($tail:tt)*) => {
+        impl<$lt> $crate::desktop::space::SpaceElement for $name<$lt>
         {
-            $crate::space_elements_internal!(@body $renderer $render_element; $($tail)*);
+            $crate::space_elements_internal!(@body $($tail)*);
+        }
+        impl<$lt> $crate::utils::IsAlive for $name<$lt>
+        {
+            $crate::space_elements_internal!(@alive $($tail)*);
         }
     };
-    (@impl $name:ident<$lt:lifetime, $renderer:ident>; $render_element:ident; $($what:ty$(,)?)+; $($tail:tt)*) => {
-        impl<$lt, $renderer, $render_element> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$lt, $renderer>
+    (@impl $name:ident<$lt:lifetime, $custom:ident>; $($tail:tt)*) => {
+        impl<$lt, $custom> $crate::desktop::space::SpaceElement for $name<$lt, $custom>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
-            $render_element: $crate::backend::renderer::element::RenderElement<$renderer> $(+ From<$what>)*,
+            $custom: $crate::desktop::space::SpaceElement,
         {
-            $crate::space_elements_internal!(@body $renderer $render_element; $($tail)*);
+            $crate::space_elements_internal!(@body $($tail)*);
+        }
+        impl<$lt, $custom> $crate::utils::IsAlive for $name<$lt, $custom>
+        where
+            $custom: $crate::utils::IsAlive,
+        {
+            $crate::space_elements_internal!(@alive $($tail)*);
         }
     };
-    (@impl $name:ident<$lt:lifetime>; $renderer:ident $render_element:ident; $($what:ty$(,)?)+; $($tail:tt)*) => {
-        impl<$lt, $renderer, $render_element> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$lt>
+    (@impl $name:ident<$custom:ident>; $($tail:tt)*) => {
+        impl<$custom> $crate::desktop::space::SpaceElement for $name<$custom>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
-            $render_element: $crate::backend::renderer::element::RenderElement<$renderer> $(+ From<$what>)*,
+            $custom: $crate::desktop::space::SpaceElement,
         {
-            $crate::space_elements_internal!(@body $renderer $render_element; $($tail)*);
+            $crate::space_elements_internal!(@body $($tail)*);
+        }
+        impl<$custom> $crate::utils::IsAlive for $name<$custom>
+        where
+            $custom: $crate::utils::IsAlive,
+        {
+            $crate::space_elements_internal!(@alive $($tail)*);
         }
     };
-    (@impl $name:ident<$renderer:ident>; $render_element:ident; $($what:ty$(,)?)+; $($tail:tt)*) => {
-        impl<$renderer, $render_element> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$renderer>
-        where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
-            $render_element: $crate::backend::renderer::element::RenderElement<$renderer> $(+ From<$what>)*,
+    (@impl $name:ident; $($tail:tt)*) => {
+        impl $crate::desktop::space::SpaceElement for $name
         {
-            $crate::space_elements_internal!(@body $renderer $render_element; $($tail)*);
+            $crate::space_elements_internal!(@body $($tail)*);
         }
-    };
-    (@impl $name:ident<$lt:lifetime, $custom:ident>; $renderer:ident $render_element:ident; $($what:ty$(,)?)+;$($tail:tt)*) => {
-        impl<$lt, $renderer, $render_element, $custom> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$lt, $custom>
-        where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
-            $custom: $crate::desktop::space::SpaceElement<$renderer, $render_element>,
-            $render_element: $crate::backend::renderer::element::RenderElement<$renderer> $(+ From<$what>)*,
+        impl $crate::utils::IsAlive for $name
         {
-            $crate::space_elements_internal!(@body $renderer $render_element; $($tail)*);
-        }
-    };
-    (@impl $name:ident<$custom:ident>; $renderer:ident $render_element:ident; $($what:ty$(,)?)+;$($tail:tt)*) => {
-        impl<$renderer, $render_element, $custom> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name<$custom>
-        where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
-            $custom: $crate::desktop::space::SpaceElement<$renderer, $render_element>,
-            $render_element: $crate::backend::renderer::element::RenderElement<$renderer> $(+ From<$what>)*,
-        {
-            $crate::space_elements_internal!(@body $renderer $render_element; $($tail)*);
-        }
-    };
-    (@impl $name:ident; $renderer:ident $render_element:ident; $($what:ty$(,)?)+;$($tail:tt)*) => {
-        impl<$renderer, $render_element> $crate::desktop::space::SpaceElement<$renderer, $render_element> for $name
-        where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
-            <$renderer as $crate::backend::renderer::Renderer>::TextureId: Clone + 'static,
-            $render_element: $crate::backend::renderer::element::RenderElement<$renderer> $(+ From<$what>)*,
-        {
-            $crate::space_elements_internal!(@body $renderer $render_element; $($tail)*);
+            $crate::space_elements_internal!(@alive $($tail)*);
         }
     };
 }
@@ -350,68 +410,41 @@ macro_rules! space_elements_internal {
 /// TODO: Docs
 #[macro_export]
 macro_rules! space_elements {
-    ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, _, $custom:ident>[$($what:ty$(,)?)+]; $($tail:tt)*) => {
-        $crate::space_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, _, $custom>; $($tail)*);
-        $crate::space_elements_internal!(@impl $name<$lt, $custom>; R E; $($what)*; $($tail)*);
+    ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $custom:ident>; $($tail:tt)*) => {
+        $crate::space_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $custom>; $($tail)*);
+        $crate::space_elements_internal!(@impl $name<$lt, $custom>; $($tail)*);
     };
-    ($(#[$attr:meta])* $vis:vis $name:ident<_, $custom:ident>[$($what:ty$(,)?)+]; $($tail:tt)*) => {
-        $crate::space_elements_internal!(@enum $(#[$attr])* $vis $name<_, $custom>; $($tail)*);
-        $crate::space_elements_internal!(@impl $name<$custom>; R E; $($what)*; $($tail)*);
+    ($(#[$attr:meta])* $vis:vis $name:ident<$custom:ident>; $($tail:tt)*) => {
+        $crate::space_elements_internal!(@enum $(#[$attr])* $vis $name<$custom>; $($tail)*);
+        $crate::space_elements_internal!(@impl $name<$custom>; $($tail)*);
     };
-    ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>[$($what:ty$(,)?)+]; $($tail:tt)*) => {
-        $crate::space_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $renderer, $custom>; $($tail)*);
-        $crate::space_elements_internal!(@impl $name<$lt, $renderer, $custom>; E; $($what)*; $($tail)*);
-    };
-    ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident>[$($what:ty$(,)?)+]; $($tail:tt)*) => {
-        $crate::space_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $renderer>; $($tail)*);
-        $crate::space_elements_internal!(@impl $name<$lt, $renderer>; E; $($what)*; $($tail)*);
-    };
-    ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime>[$($what:ty$(,)?)+]; $($tail:tt)*) => {
+    ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime>; $($tail:tt)*) => {
         $crate::space_elements_internal!(@enum $(#[$attr])* $vis $name<$lt>; $($tail)*);
-        $crate::space_elements_internal!(@impl $name<$lt>; R E; $($what)*; $($tail)*);
+        $crate::space_elements_internal!(@impl $name<$lt>; $($tail)*);
     };
-    ($(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident>[$($what:ty$(,)?)+]; $($tail:tt)*) => {
-        $crate::space_elements_internal!(@enum $(#[$attr])* $vis $name<$renderer>; $($tail)*);
-        $crate::space_elements_internal!(@impl $name<$renderer>; E; $($what)*; $($tail)*);
-    };
-    ($(#[$attr:meta])* $vis:vis $name:ident[$($what:ty$(,)?)+]; $($tail:tt)*) => {
+    ($(#[$attr:meta])* $vis:vis $name:ident; $($tail:tt)*) => {
         $crate::space_elements_internal!(@enum $(#[$attr])* $vis $name; $($tail)*);
-        $crate::space_elements_internal!(@impl $name; R E; $($what)*; $($tail)*);
+        $crate::space_elements_internal!(@impl $name; $($tail)*);
     };
 }
 
-pub(self) use space_elements;
+pub use space_elements;
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests {
-    use crate::{
-        backend::renderer::{
-            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement},
-            ImportAll, Renderer, Texture,
-        },
-        desktop::{LayerSurface, Window},
-        utils::{Logical, Physical, Point, Rectangle, Scale},
-    };
-
-    use super::{SpaceElement, SurfaceTree};
+    use super::SurfaceTree;
+    use crate::desktop::{LayerSurface, Window};
 
     space_elements! {
         /// Some test space elements
-        pub TestSpaceElements[
-            WaylandSurfaceRenderElement,
-            TextureRenderElement<<R as Renderer>::TextureId>,
-        ];
+        pub TestSpaceElements;
         /// A complete surface tree
         SurfaceTree=SurfaceTree,
     }
 
     space_elements! {
         /// Some test space elements
-        pub TestSpaceElements2<'a>[
-            WaylandSurfaceRenderElement,
-            TextureRenderElement<<R as Renderer>::TextureId>,
-        ];
+        pub TestSpaceElements2<'a>;
         /// A complete surface tree
         Window=&'a Window,
         /// A layer surface
@@ -420,44 +453,7 @@ mod tests {
 
     space_elements! {
         /// Some test space elements
-        pub TestSpaceElements3<R>[
-            WaylandSurfaceRenderElement,
-            TextureRenderElement<<R as Renderer>::TextureId>,
-        ];
-        /// A complete surface tree
-        SurfaceTree=SurfaceTree,
-        Something=SomeSpaceElement<<R as Renderer>::TextureId>,
-    }
-
-    space_elements! {
-        /// Some test space elements
-        pub TestSpaceElements4<'a, R>[
-            WaylandSurfaceRenderElement,
-            TextureRenderElement<<R as Renderer>::TextureId>,
-        ];
-        /// A complete surface tree
-        SurfaceTree=SurfaceTree,
-        Something=&'a SomeSpaceElement<<R as Renderer>::TextureId>,
-    }
-
-    space_elements! {
-        /// Some test space elements
-        pub TestSpaceElements5<'a, R, C>[
-            WaylandSurfaceRenderElement,
-            TextureRenderElement<<R as Renderer>::TextureId>,
-        ];
-        /// A complete surface tree
-        SurfaceTree=SurfaceTree,
-        Something=&'a SomeSpaceElement<<R as Renderer>::TextureId>,
-        Custom=&'a C,
-    }
-
-    space_elements! {
-        /// Some test space elements
-        pub TestSpaceElements6<'a, _, C>[
-            WaylandSurfaceRenderElement,
-            TextureRenderElement<<R as Renderer>::TextureId>,
-        ];
+        pub TestSpaceElements5<'a, C>;
         /// A complete surface tree
         SurfaceTree=SurfaceTree,
         Custom=&'a C,
@@ -465,35 +461,9 @@ mod tests {
 
     space_elements! {
         /// Some test space elements
-        pub TestSpaceElements7<_, C>[
-            WaylandSurfaceRenderElement,
-            TextureRenderElement<<R as Renderer>::TextureId>,
-        ];
+        pub TestSpaceElements7<C>;
         /// A complete surface tree
         SurfaceTree=SurfaceTree,
         Custom=C,
-    }
-
-    pub struct SomeSpaceElement<T: Texture> {
-        _texture: T,
-    }
-
-    impl<T, R, E> SpaceElement<R, E> for SomeSpaceElement<T>
-    where
-        T: Texture,
-        R: Renderer<TextureId = T> + ImportAll,
-        E: RenderElement<R>,
-    {
-        fn location(&self, _space_id: usize) -> Point<i32, Logical> {
-            todo!()
-        }
-
-        fn geometry(&self, _space_id: usize) -> Rectangle<i32, Logical> {
-            todo!()
-        }
-
-        fn render_elements(&self, _location: Point<i32, Physical>, _scale: Scale<f64>) -> Vec<E> {
-            todo!()
-        }
     }
 }
