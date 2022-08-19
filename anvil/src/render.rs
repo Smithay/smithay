@@ -4,7 +4,7 @@ use smithay::{
             element::{
                 surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement, Wrap,
             },
-            OutputRender, OutputRenderError,
+            DamageTrackedRenderer, Mode, OutputRenderError,
         },
         ImportAll, Renderer,
     },
@@ -14,6 +14,7 @@ use smithay::{
     },
     output::Output,
     utils::{Physical, Rectangle},
+    wayland::output::Output,
 };
 
 use crate::{drawing::CLEAR_COLOR, shell::FullscreenSurface};
@@ -24,12 +25,14 @@ smithay::backend::renderer::output::element::render_elements! {
     Custom=&'a E,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_output<R, C, E>(
-    output_render: &mut OutputRender,
+    output: &Output,
     space: &Space,
     space_elements: &[C],
     output_elements: &[E],
     renderer: &mut R,
+    damage_tracked_renderer: &mut DamageTrackedRenderer,
     age: usize,
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
@@ -41,13 +44,15 @@ where
         + From<WaylandSurfaceRenderElement>
         + From<TextureRenderElement<<R as Renderer>::TextureId>>,
 {
-    let output = output_render.output();
-
     if let Some(window) = output
         .user_data()
         .get::<FullscreenSurface>()
         .and_then(|f| f.get())
     {
+        if let Mode::Auto(renderer_output) = damage_tracked_renderer.mode() {
+            assert!(renderer_output == output);
+        }
+
         let scale = output.current_scale().fractional_scale().into();
         let window_render_elements = SpaceElement::<R, E>::render_elements(&window, (0, 0).into(), scale);
 
@@ -72,14 +77,15 @@ where
             )
             .collect::<Vec<_>>();
 
-        output_render.render_output(renderer, age, &*output_render_elements, CLEAR_COLOR, log)
+        damage_tracked_renderer.render_output(renderer, age, &*output_render_elements, CLEAR_COLOR, log)
     } else {
         desktop::space::render_output(
+            output,
             renderer,
             age,
             &[(space, space_elements)],
             output_elements,
-            output_render,
+            damage_tracked_renderer,
             CLEAR_COLOR,
             log,
         )
