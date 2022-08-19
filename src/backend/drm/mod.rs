@@ -72,11 +72,11 @@
 pub(crate) mod device;
 pub(self) mod error;
 pub mod node;
+/// TODO: Docs
+pub mod renderer;
 #[cfg(feature = "backend_session")]
 pub(self) mod session;
 pub(self) mod surface;
-/// TODO: Docs
-pub mod renderer;
 
 pub use device::{DevPath, DrmDevice, DrmEvent, EventMetadata as DrmEventMetadata, Time as DrmEventTime};
 pub use error::Error as DrmError;
