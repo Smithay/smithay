@@ -177,18 +177,7 @@ impl EGLDisplay {
 
         // the list of extensions supported by the client once initialized is different from the
         // list of extensions obtained earlier
-        let extensions = if egl_version >= (1, 2) {
-            let p = unsafe {
-                CStr::from_ptr(
-                    wrap_egl_call(|| ffi::egl::QueryString(display, ffi::egl::EXTENSIONS as i32))
-                        .map_err(Error::InitFailed)?,
-                )
-            };
-            let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
-            list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
-        } else {
-            vec![]
-        };
+        let extensions = EGLDisplay::get_extensions(egl_version, display)?;
         info!(log, "Supported EGL display extensions: {:?}", extensions);
 
         let (dmabuf_import_formats, dmabuf_render_formats) =
@@ -210,6 +199,108 @@ impl EGLDisplay {
             dmabuf_render_formats,
             logger: log,
         })
+    }
+
+    /// Create a new [`EGLDisplay`] from an already initialized EGLDisplay and EGLConfig handle
+    ///
+    /// # Safety
+    ///
+    /// - The display must be created from the system default EGL library (`dlopen("libEGL.so")`)
+    /// - The `display` and `config` must be valid for the lifetime of the returned display and any handles created by this display (using [`EGLDisplay::get_display_handle`])
+    pub unsafe fn from_raw<L>(
+        display: *const c_void,
+        config_id: *const c_void,
+        logger: L,
+    ) -> Result<EGLDisplay, Error>
+    where
+        L: Into<Option<::slog::Logger>>,
+    {
+        assert!(!display.is_null(), "EGLDisplay pointer is null");
+        assert!(!config_id.is_null(), "EGL configuration id pointer is null");
+
+        let log = crate::slog_or_fallback(logger.into()).new(o!("smithay_module" => "backend_egl"));
+
+        let dp_extensions = ffi::make_sure_egl_is_loaded()?;
+        debug!(log, "Supported EGL client extensions: {:?}", dp_extensions);
+
+        let egl_version = {
+            let p = CStr::from_ptr(
+                wrap_egl_call(|| ffi::egl::QueryString(display, ffi::egl::VERSION as i32))
+                    .map_err(|_| Error::DisplayQueryResultInvalid)?,
+            );
+
+            let version_string = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
+            let mut version_iterator = version_string
+                .split(' ')
+                .next()
+                .ok_or(Error::DisplayQueryResultInvalid)?
+                .split('.');
+
+            let major = version_iterator
+                .next()
+                .and_then(|v| v.parse::<i32>().ok())
+                .ok_or(Error::DisplayQueryResultInvalid)?;
+            let minor = version_iterator
+                .next()
+                .and_then(|v| v.parse::<i32>().ok())
+                .ok_or(Error::DisplayQueryResultInvalid)?;
+
+            info!(log, "EGL Version: {:?}", (major, minor));
+            (major, minor)
+        };
+
+        let extensions = EGLDisplay::get_extensions(egl_version, display)?;
+        info!(log, "Supported EGL display extensions: {:?}", extensions);
+
+        let (dmabuf_import_formats, dmabuf_render_formats) =
+            get_dmabuf_formats(&display, &extensions, &log).map_err(Error::DisplayCreationError)?;
+
+        let egl_api =
+            wrap_egl_call(|| ffi::egl::QueryAPI()).map_err(|_| Error::OpenGlesNotSupported(None))?;
+        if egl_api != ffi::egl::OPENGL_ES_API {
+            return Err(Error::OpenGlesNotSupported(None));
+        }
+
+        let surface_type = {
+            let mut surface_type: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
+
+            wrap_egl_call(|| {
+                ffi::egl::GetConfigAttrib(
+                    display,
+                    config_id,
+                    ffi::egl::SURFACE_TYPE as i32,
+                    surface_type.as_mut_ptr(),
+                )
+            })
+            .map_err(|_| Error::OpenGlesNotSupported(None))?;
+
+            surface_type.assume_init()
+        };
+
+        Ok(EGLDisplay {
+            display: Arc::new(EGLDisplayHandle { handle: display }),
+            surface_type,
+            egl_version,
+            extensions,
+            dmabuf_import_formats,
+            dmabuf_render_formats,
+            logger: log,
+        })
+    }
+
+    fn get_extensions(egl_version: (i32, i32), display: *const c_void) -> Result<Vec<String>, Error> {
+        if egl_version >= (1, 2) {
+            let p = unsafe {
+                CStr::from_ptr(
+                    wrap_egl_call(|| ffi::egl::QueryString(display, ffi::egl::EXTENSIONS as i32))
+                        .map_err(Error::InitFailed)?,
+                )
+            };
+            let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
+            Ok(list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>())
+        } else {
+            Ok(vec![])
+        }
     }
 
     /// Finds a compatible EGLConfig for a given set of requirements
@@ -352,6 +443,15 @@ impl EGLDisplay {
             .next()
             .unwrap_or_else(|| config_ids[0]);
 
+        // return the format that was selected for our config
+        let desc = unsafe { self.get_pixel_format(config_id)? };
+        info!(self.logger, "Selected color format: {:?}", desc);
+
+        Ok((desc, config_id))
+    }
+
+    /// Gets a PixelFormat from a configured EGLConfig
+    pub(super) unsafe fn get_pixel_format(&self, config_id: *const c_void) -> Result<PixelFormat, Error> {
         // analyzing each config
         macro_rules! attrib {
             ($display:expr, $config:expr, $attr:expr) => {{
@@ -369,29 +469,22 @@ impl EGLDisplay {
             }};
         }
 
-        // return the format that was selected for our config
-        let desc = unsafe {
-            PixelFormat {
-                hardware_accelerated: attrib!(self.display, config_id, ffi::egl::CONFIG_CAVEAT)
-                    != ffi::egl::SLOW_CONFIG as i32,
-                color_bits: attrib!(self.display, config_id, ffi::egl::RED_SIZE) as u8
-                    + attrib!(self.display, config_id, ffi::egl::BLUE_SIZE) as u8
-                    + attrib!(self.display, config_id, ffi::egl::GREEN_SIZE) as u8,
-                alpha_bits: attrib!(self.display, config_id, ffi::egl::ALPHA_SIZE) as u8,
-                depth_bits: attrib!(self.display, config_id, ffi::egl::DEPTH_SIZE) as u8,
-                stencil_bits: attrib!(self.display, config_id, ffi::egl::STENCIL_SIZE) as u8,
-                stereoscopy: false,
-                multisampling: match attrib!(self.display, config_id, ffi::egl::SAMPLES) {
-                    0 | 1 => None,
-                    a => Some(a as u16),
-                },
-                srgb: false, // TODO: use EGL_KHR_gl_colorspace to know that
-            }
-        };
-
-        info!(self.logger, "Selected color format: {:?}", desc);
-
-        Ok((desc, config_id))
+        Ok(PixelFormat {
+            hardware_accelerated: attrib!(self.display, config_id, ffi::egl::CONFIG_CAVEAT)
+                != ffi::egl::SLOW_CONFIG as i32,
+            color_bits: attrib!(self.display, config_id, ffi::egl::RED_SIZE) as u8
+                + attrib!(self.display, config_id, ffi::egl::BLUE_SIZE) as u8
+                + attrib!(self.display, config_id, ffi::egl::GREEN_SIZE) as u8,
+            alpha_bits: attrib!(self.display, config_id, ffi::egl::ALPHA_SIZE) as u8,
+            depth_bits: attrib!(self.display, config_id, ffi::egl::DEPTH_SIZE) as u8,
+            stencil_bits: attrib!(self.display, config_id, ffi::egl::STENCIL_SIZE) as u8,
+            stereoscopy: false,
+            multisampling: match attrib!(self.display, config_id, ffi::egl::SAMPLES) {
+                0 | 1 => None,
+                a => Some(a as u16),
+            },
+            srgb: false, // TODO: use EGL_KHR_gl_colorspace to know that
+        })
     }
 
     /// Get a handle to the underlying raw EGLDisplay handle
