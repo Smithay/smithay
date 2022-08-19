@@ -13,7 +13,6 @@ use super::SpaceElement;
 #[derive(Default)]
 pub struct WindowState {
     pub location: Point<i32, Logical>,
-    // TODO: How to handle that?
     pub drawn: bool,
     pub z_index: u8,
 }
