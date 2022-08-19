@@ -19,7 +19,7 @@ use smithay::{
         renderer::{
             output::{
                 element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-                OutputRender,
+                DamageTrackedRenderer,
             },
             Renderer,
         },
@@ -50,7 +50,7 @@ pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData {
     backend: WinitGraphicsBackend,
-    output_render: OutputRender,
+    damage_tracked_renderer: DamageTrackedRenderer,
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     full_redraw: u8,
@@ -173,11 +173,11 @@ pub fn run_winit(log: Logger) {
             None
         };
 
-        let output_render = OutputRender::new(&output);
+        let damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
 
         WinitData {
             backend,
-            output_render,
+            damage_tracked_renderer,
             #[cfg(feature = "egl")]
             dmabuf_state,
             full_redraw: 0,
@@ -292,13 +292,14 @@ pub fn run_winit(log: Logger) {
                 backend.buffer_age().unwrap_or(0)
             };
             let space = &mut state.space;
-            let output_render = &mut state.backend_data.output_render;
+            let damage_tracked_renderer = &mut state.backend_data.damage_tracked_renderer;
             let render_res = backend.bind().and_then(|_| {
                 let renderer = backend.renderer();
 
                 #[cfg(feature = "debug")]
                 let res = render::render_output::<_, _, CustomRenderElements<'_, _>>(
-                    output_render,
+                    &output,
+                    damage_tracked_renderer,
                     space,
                     &*elements,
                     &[CustomRenderElements::Fps(&fps_element)],
@@ -313,11 +314,12 @@ pub fn run_winit(log: Logger) {
 
                 #[cfg(not(feature = "debug"))]
                 let res = render::render_output::<_, _, SpaceRenderElements<_>>(
-                    output_render,
+                    &output,
                     space,
                     &*elements,
                     &[],
                     renderer,
+                    damage_tracked_renderer,
                     age,
                     &log,
                 )

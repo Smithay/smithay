@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 
 use crate::{
     backend::renderer::Frame,
-    utils::{Physical, Rectangle, Scale, Size},
+    utils::{Physical, Rectangle, Scale, Size, Transform},
     wayland::output::Output,
 };
 
@@ -30,10 +30,50 @@ struct OutputRenderState {
     old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
 }
 
+/// Mode for the [`DamageTrackedRenderer`]
+#[derive(Debug, Clone)]
+pub enum Mode {
+    /// Automatic mode based on a output
+    Auto(Output),
+    /// Static mode
+    Static {
+        /// Size of the static output
+        size: Size<i32, Physical>,
+        /// Scale of the static output
+        scale: Scale<f64>,
+        /// Transform of the static output
+        transform: Transform,
+    },
+}
+
+/// Output has no active mode
+#[derive(Debug, thiserror::Error)]
+#[error("Output has no active mode")]
+pub struct OutputNoMode;
+
+impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for Mode {
+    type Error = OutputNoMode;
+
+    fn try_into(self) -> Result<(Size<i32, Physical>, Scale<f64>, Transform), Self::Error> {
+        match self {
+            Mode::Auto(output) => Ok((
+                output.current_mode().ok_or(OutputNoMode)?.size,
+                output.current_scale().fractional_scale().into(),
+                output.current_transform().into(),
+            )),
+            Mode::Static {
+                size,
+                scale,
+                transform,
+            } => Ok((size, scale, transform)),
+        }
+    }
+}
+
 /// Rendering for a single output
 #[derive(Debug)]
-pub struct OutputRender {
-    output: Output,
+pub struct DamageTrackedRenderer {
+    mode: Mode,
     last_state: OutputRenderState,
 }
 
@@ -44,31 +84,43 @@ pub enum OutputRenderError<R: Renderer> {
     #[error(transparent)]
     Rendering(R::Error),
     /// The given [`Output`] has no set mode
-    #[error("Output has no active mode")]
-    OutputNoMode,
+    #[error(transparent)]
+    OutputNoMode(#[from] OutputNoMode),
 }
 
 impl<R: Renderer> std::fmt::Debug for OutputRenderError<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             OutputRenderError::Rendering(err) => std::fmt::Debug::fmt(err, f),
-            OutputRenderError::OutputNoMode => f.write_str("Output has no active mode"),
+            OutputRenderError::OutputNoMode(err) => std::fmt::Debug::fmt(err, f),
         }
     }
 }
 
-impl OutputRender {
-    /// Initialize a new [`OutputRender`]
-    pub fn new(output: &Output) -> Self {
+impl DamageTrackedRenderer {
+    /// Initialize a new [`DamageTrackedRenderer`]
+    pub fn new(size: Size<i32, Physical>, scale: impl Into<Scale<f64>>, transform: Transform) -> Self {
         Self {
-            output: output.clone(),
+            mode: Mode::Static {
+                size,
+                scale: scale.into(),
+                transform,
+            },
             last_state: Default::default(),
         }
     }
 
-    /// Get the output associated with this renderer
-    pub fn output(&self) -> &Output {
-        &self.output
+    /// Initialize a new [`DamageTrackedRenderer`]
+    pub fn from_output(output: &Output) -> Self {
+        Self {
+            mode: Mode::Auto(output.clone()),
+            last_state: Default::default(),
+        }
+    }
+
+    /// Get the [`Mode`] of the [`DamageTrackedRenderer`]
+    pub fn mode(&self) -> &Mode {
+        &self.mode
     }
 
     /// Render this output
@@ -85,13 +137,7 @@ impl OutputRender {
         R: Renderer + ImportAll,
         <R as Renderer>::TextureId: Texture,
     {
-        let output_size = self
-            .output
-            .current_mode()
-            .ok_or(OutputRenderError::OutputNoMode)?
-            .size;
-        let output_transform = self.output.current_transform();
-        let output_scale = Scale::from(self.output.current_scale().fractional_scale());
+        let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
         let output_geo = Rectangle::from_loc_and_size((0, 0), output_size);
 
         // This will hold all the damage we need for this rendering step

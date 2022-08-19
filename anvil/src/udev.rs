@@ -37,7 +37,7 @@ use smithay::{
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
             output::{
                 element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-                OutputRender, OutputRenderError,
+                DamageTrackedRenderer, OutputRenderError,
             },
             Bind, Frame, ImportMem, Renderer,
         },
@@ -358,7 +358,7 @@ struct SurfaceData {
     render_node: DrmNode,
     surface: RenderSurface,
     global: Option<GlobalId>,
-    output_render: OutputRender,
+    damage_tracked_renderer: DamageTrackedRenderer,
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
     #[cfg(feature = "debug")]
@@ -513,7 +513,7 @@ fn scan_connectors(
                 .user_data()
                 .insert_if_missing(|| UdevOutputId { crtc, device_id });
 
-            let output_render = OutputRender::new(&output);
+            let damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
             #[cfg(feature = "debug")]
             let fps_element = FpsElement::new(fps_texture.clone());
 
@@ -523,7 +523,7 @@ fn scan_connectors(
                 render_node,
                 surface: gbm_surface,
                 global: Some(global),
-                output_render,
+                damage_tracked_renderer,
                 #[cfg(feature = "debug")]
                 fps: fps_ticker::Fps::default(),
                 #[cfg(feature = "debug")]
@@ -900,6 +900,7 @@ fn render_surface<'a>(
     // TODO we can pass the damage rectangles inside a AtomicCommitRequest
     #[cfg(feature = "debug")]
     let render_res = render::render_output::<_, _, CustomRenderElements<'_>>(
+        &output,
         &mut surface.output_render,
         space,
         &*elements,
@@ -912,11 +913,12 @@ fn render_surface<'a>(
 
     #[cfg(not(feature = "debug"))]
     let render_res = render::render_output::<_, _, SpaceRenderElements<_>>(
-        &mut surface.output_render,
+        &output,
         space,
         &*elements,
         &[],
         renderer,
+        &mut surface.damage_tracked_renderer,
         age.into(),
         logger,
     )
