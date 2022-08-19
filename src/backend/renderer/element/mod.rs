@@ -104,6 +104,19 @@ pub trait RenderElement<R: Renderer> {
     ) -> Result<(), R::Error>;
 }
 
+pub trait AsRenderElements<R>
+where
+    R: Renderer,
+{
+    type RenderElement: RenderElement<R>;
+    /// Gets render elements of this space element
+    fn render_elements<C: From<Self::RenderElement>>(
+        &self,
+        location: Point<i32, Physical>,
+        scale: Scale<f64>,
+    ) -> Vec<C>;
+}
+
 impl<R, E> RenderElement<R> for &E
 where
     R: Renderer,
