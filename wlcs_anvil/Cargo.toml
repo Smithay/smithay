@@ -10,7 +10,7 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-smithay = { path = "..", default-features=false, features=["wayland_frontend", "use_system_lib"] }
+smithay = { path = "..", default-features=false, features=["wayland_frontend", "backend_egl", "use_system_lib"] }
 anvil = { path = "../anvil", default-features=false }
 wayland-sys = { version = "=0.30.0-beta.10", features = ["client", "server"] }
 libc = "0.2"
