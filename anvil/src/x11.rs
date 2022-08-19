@@ -339,11 +339,12 @@ pub fn run_x11(log: Logger) {
 
             #[cfg(feature = "debug")]
             let render_res = render::render_output::<_, _, CustomRenderElements<'_, _>>(
-                &mut backend_data.output_render,
+                &output,
                 &state.space,
                 &*custom_space_elements,
                 &[CustomRenderElements::Fps(&fps_element)],
                 &mut backend_data.renderer,
+                &mut backend_data.damage_tracked_renderer,
                 age.into(),
                 &log,
             );

@@ -286,11 +286,11 @@ pub fn run_winit(log: Logger) {
                 #[cfg(feature = "debug")]
                 let res = render::render_output::<_, _, CustomRenderElements<'_, _>>(
                     &output,
-                    damage_tracked_renderer,
                     space,
                     &*elements,
                     &[CustomRenderElements::Fps(&fps_element)],
                     renderer,
+                    damage_tracked_renderer,
                     age,
                     &log,
                 )
