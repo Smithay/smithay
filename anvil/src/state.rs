@@ -4,12 +4,16 @@ use std::{
 };
 
 use smithay::{
-    delegate_compositor, delegate_data_device, delegate_input_method_manager,
-    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_primary_selection,
-    delegate_seat, delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
-    desktop::{PopupManager, Space, WindowSurfaceType},
-    input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
+    delegate_compositor, delegate_data_device, delegate_input_method_manager, delegate_layer_shell,
+    delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_tablet_manager,
+    delegate_text_input_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
+    delegate_xdg_shell,
+    desktop::{PopupManager, Space, Window, WindowSurfaceType},
+    input::{
+        keyboard::{KeyboardTarget, XkbConfig},
+        pointer::CursorImageStatus,
+        Seat, SeatHandler, SeatState,
+    },
     output::Output,
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
@@ -82,7 +86,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub handle: LoopHandle<'static, CalloopData<BackendData>>,
 
     // desktop
-    pub space: Space,
+    pub space: Space<Window>,
     pub popups: PopupManager,
 
     // smithay state
@@ -214,10 +218,11 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
             // Just grant the wish
             let w = self
                 .space
-                .window_for_surface(&surface, WindowSurfaceType::TOPLEVEL)
+                .elements()
+                .find(|window| window.toplevel().wl_surface() == &surface)
                 .cloned();
             if let Some(window) = w {
-                self.space.raise_window(&window, true);
+                self.space.raise_element(&window, true);
             }
         } else {
             // Discard the request
