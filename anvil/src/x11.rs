@@ -5,6 +5,7 @@ use std::{
 
 use crate::{
     drawing::*,
+    render,
     state::{AnvilState, Backend, CalloopData},
 };
 use slog::Logger;
@@ -337,22 +338,24 @@ pub fn run_x11(log: Logger) {
             }
 
             #[cfg(feature = "debug")]
-            let render_res = smithay::desktop::space::render_output::<_, _, CustomRenderElements<'_, _>>(
+            let render_res = render::render_output::<_, _, CustomRenderElements<'_, _>>(
+                &mut backend_data.output_render,
+                &state.space,
+                &*custom_space_elements,
+                &[CustomRenderElements::Fps(&fps_element)],
                 &mut backend_data.renderer,
                 age.into(),
-                &[(&state.space, &*custom_space_elements)],
-                &[CustomRenderElements::Fps(&fps_element)],
-                &mut backend_data.output_render,
                 &log,
             );
 
             #[cfg(not(feature = "debug"))]
-            let render_res = smithay::desktop::space::render_output::<_, _, SpaceRenderElements<_>>(
+            let render_res = render::render_output::<_, _, SpaceRenderElements<_>>(
+                &mut backend_data.output_render,
+                &state.space,
+                &*custom_space_elements,
+                &[],
                 &mut backend_data.renderer,
                 age.into(),
-                &[(&state.space, &*custom_space_elements)],
-                &[],
-                &mut backend_data.output_render,
                 &log,
             );
 

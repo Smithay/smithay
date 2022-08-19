@@ -40,8 +40,8 @@ use smithay::{
     wayland::output::{Mode, Output, PhysicalProperties},
 };
 
-use crate::drawing::*;
 use crate::state::{AnvilState, Backend, CalloopData};
+use crate::{drawing::*, render};
 
 pub const OUTPUT_NAME: &str = "winit";
 
@@ -284,12 +284,13 @@ pub fn run_winit(log: Logger) {
                 let renderer = backend.renderer();
 
                 #[cfg(feature = "debug")]
-                let res = smithay::desktop::space::render_output::<_, _, CustomRenderElements<'_, _>>(
+                let res = render::render_output::<_, _, CustomRenderElements<'_, _>>(
+                    output_render,
+                    space,
+                    &*elements,
+                    &[CustomRenderElements::Fps(&fps_element)],
                     renderer,
                     age,
-                    &[(&space, &*elements)],
-                    &[CustomRenderElements::Fps(&fps_element)],
-                    output_render,
                     &log,
                 )
                 .map_err(|err| match err {
@@ -298,12 +299,13 @@ pub fn run_winit(log: Logger) {
                 });
 
                 #[cfg(not(feature = "debug"))]
-                let res = smithay::desktop::space::render_output::<_, _, SpaceRenderElements<_>>(
+                let res = render::render_output::<_, _, SpaceRenderElements<_>>(
+                    output_render,
+                    space,
+                    &*elements,
+                    &[],
                     renderer,
                     age,
-                    &[(&space, &*elements)],
-                    &[],
-                    output_render,
                     &log,
                 )
                 .map_err(|err| match err {
