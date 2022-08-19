@@ -895,11 +895,11 @@ fn render_surface<'a>(
     #[cfg(feature = "debug")]
     let render_res = render::render_output::<_, _, CustomRenderElements<'_>>(
         &output,
-        &mut surface.output_render,
         space,
         &*elements,
         &[CustomRenderElements::Fps(&surface.fps_element)],
         renderer,
+        &mut surface.damage_tracked_renderer,
         age.into(),
         logger,
     )
