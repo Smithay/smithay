@@ -16,8 +16,8 @@ use crate::input::{
 };
 use crate::wayland::{seat::WaylandFocus, text_input::TextInputHandle};
 
-use super::InputMethodManagerState;
 use super::input_method_popup_surface::InputMethodPopupSurfaceHandle;
+use super::InputMethodManagerState;
 
 #[derive(Default, Debug)]
 pub(crate) struct InputMethodKeyboard {
@@ -26,7 +26,7 @@ pub(crate) struct InputMethodKeyboard {
     pub repeat_rate: i32,
     pub keymap_file: Option<KeymapFile>,
     pub text_input_handle: Option<TextInputHandle>,
-    pub popup: InputMethodPopupSurfaceHandle
+    pub popup: InputMethodPopupSurfaceHandle,
 }
 
 /// Handle to an input method instance
