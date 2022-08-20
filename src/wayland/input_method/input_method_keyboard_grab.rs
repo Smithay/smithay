@@ -17,6 +17,7 @@ use crate::input::{
 use crate::wayland::{seat::WaylandFocus, text_input::TextInputHandle};
 
 use super::InputMethodManagerState;
+use super::input_method_popup_surface::InputMethodPopupSurfaceHandle;
 
 #[derive(Default, Debug)]
 pub(crate) struct InputMethodKeyboard {
@@ -25,6 +26,7 @@ pub(crate) struct InputMethodKeyboard {
     pub repeat_rate: i32,
     pub keymap_file: Option<KeymapFile>,
     pub text_input_handle: Option<TextInputHandle>,
+    pub popup: InputMethodPopupSurfaceHandle
 }
 
 /// Handle to an input method instance
@@ -76,11 +78,12 @@ where
         serial: crate::utils::Serial,
     ) {
         let inner = self.inner.lock().unwrap();
+        let popup = &inner.popup;
         inner
             .text_input_handle
             .as_ref()
             .unwrap()
-            .set_focus(focus.as_ref().and_then(|f| f.wl_surface()));
+            .set_focus(focus.as_ref().and_then(|f| f.wl_surface()), popup);
         handle.set_focus(data, focus, serial)
     }
 
