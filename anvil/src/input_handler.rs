@@ -27,7 +27,7 @@ use smithay::{
 };
 
 #[cfg(any(feature = "winit", feature = "x11", feature = "udev"))]
-use smithay::backend::input::PointerMotionAbsoluteEvent;
+use smithay::backend::input::AbsolutePositionEvent;
 
 #[cfg(any(feature = "winit", feature = "x11"))]
 use smithay::wayland::output::Output;
