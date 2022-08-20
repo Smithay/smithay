@@ -7,7 +7,7 @@ use smithay::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
             protocol::{wl_seat, wl_surface::WlSurface},
-            DisplayHandle, Resource,
+            Resource,
         },
     },
     utils::Rectangle,
@@ -32,19 +32,16 @@ impl XdgShellHandler for Smallvil {
         &mut self.xdg_shell_state
     }
 
-    fn new_toplevel(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+    fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let window = Window::new(Kind::Xdg(surface));
         self.space.map_window(&window, (0, 0), None, false);
     }
-    fn new_popup(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _positioner: PositionerState) {}
 
-    fn move_request(
-        &mut self,
-        _dh: &DisplayHandle,
-        surface: ToplevelSurface,
-        seat: wl_seat::WlSeat,
-        serial: Serial,
-    ) {
+    fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
+        // TODO: Popup handling using PopupManager
+    }
+
+    fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let seat = Seat::from_resource(&seat).unwrap();
 
         let wl_surface = surface.wl_surface();
@@ -71,7 +68,6 @@ impl XdgShellHandler for Smallvil {
 
     fn resize_request(
         &mut self,
-        _dh: &DisplayHandle,
         surface: ToplevelSurface,
         seat: wl_seat::WlSeat,
         serial: Serial,
@@ -109,7 +105,7 @@ impl XdgShellHandler for Smallvil {
         }
     }
 
-    fn grab(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
+    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
         // TODO popup grabs
     }
 }

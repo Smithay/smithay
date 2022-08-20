@@ -31,16 +31,14 @@
 //! // implement the necessary traits
 //! impl XdgShellHandler for State {
 //!     # fn xdg_shell_state(&mut self) -> &mut XdgShellState { unimplemented!() }
-//!     # fn new_toplevel(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) { unimplemented!() }
+//!     # fn new_toplevel(&mut self, surface: ToplevelSurface) { unimplemented!() }
 //!     # fn new_popup(
 //!     #     &mut self,
-//!     #     dh: &wayland_server::DisplayHandle,
 //!     #     surface: PopupSurface,
 //!     #     positioner: PositionerState,
 //!     # ) { unimplemented!() }
 //!     # fn grab(
 //!     #     &mut self,
-//!     #     dh: &wayland_server::DisplayHandle,
 //!     #     surface: PopupSurface,
 //!     #     seat: wl_seat::WlSeat,
 //!     #     serial: Serial,
@@ -48,15 +46,15 @@
 //!     // ...
 //! }
 //! impl XdgDecorationHandler for State {
-//!     fn new_decoration(&mut self, dh: &wayland_server::DisplayHandle, toplevel: ToplevelSurface) {
+//!     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
 //!         toplevel.with_pending_state(|state| {
 //!             // Advertise server side decoration
 //!             state.decoration_mode = Some(Mode::ServerSide);
 //!         });
 //!         toplevel.send_configure();
 //!     }
-//!     fn request_mode(&mut self, dh: &wayland_server::DisplayHandle, toplevel: ToplevelSurface, mode: Mode) { /* ... */ }
-//!     fn unset_mode(&mut self, dh: &wayland_server::DisplayHandle, toplevel: ToplevelSurface) { /* ... */ }
+//!     fn request_mode(&mut self, toplevel: ToplevelSurface, mode: Mode) { /* ... */ }
+//!     fn unset_mode(&mut self, toplevel: ToplevelSurface) { /* ... */ }
 //! }
 //! delegate_xdg_shell!(State);
 //! delegate_xdg_decoration!(State);
@@ -109,13 +107,13 @@ impl XdgDecorationState {
 /// Handler trait for xdg decoration events.
 pub trait XdgDecorationHandler {
     /// Notification the client supports server side decoration on the toplevel.
-    fn new_decoration(&mut self, dh: &DisplayHandle, toplevel: ToplevelSurface);
+    fn new_decoration(&mut self, toplevel: ToplevelSurface);
 
     /// Notification the client prefers the provided decoration decoration mode on the toplevel.
-    fn request_mode(&mut self, dh: &DisplayHandle, toplevel: ToplevelSurface, mode: Mode);
+    fn request_mode(&mut self, toplevel: ToplevelSurface, mode: Mode);
 
     /// Notification the client does not prefer a particular decoration mode on the toplevel.
-    fn unset_mode(&mut self, dh: &DisplayHandle, toplevel: ToplevelSurface);
+    fn unset_mode(&mut self, toplevel: ToplevelSurface);
 }
 
 /// Macro to delegate implementation of the xdg decoration to [`XdgDecorationState`].
@@ -179,7 +177,7 @@ where
         resource: &zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
         request: zxdg_decoration_manager_v1::Request,
         _: &(),
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         use self::zxdg_decoration_manager_v1::Request;
@@ -204,7 +202,7 @@ where
                 *decoration_guard = Some(toplevel_decoration);
                 drop(decoration_guard);
 
-                state.new_decoration(dh, toplevel);
+                state.new_decoration(toplevel);
             }
 
             Request::Destroy => {}
@@ -228,7 +226,7 @@ where
         _: &zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
         request: zxdg_toplevel_decoration_v1::Request,
         data: &ToplevelSurface,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _: &mut DataInit<'_, D>,
     ) {
         use self::zxdg_toplevel_decoration_v1::Request;
@@ -236,12 +234,12 @@ where
         match request {
             Request::SetMode { mode } => {
                 if let WEnum::Value(mode) = mode {
-                    state.request_mode(dh, data.clone(), mode);
+                    state.request_mode(data.clone(), mode);
                 }
             }
 
             Request::UnsetMode => {
-                state.unset_mode(dh, data.clone());
+                state.unset_mode(data.clone());
             }
 
             Request::Destroy => {

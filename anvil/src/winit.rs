@@ -10,7 +10,6 @@ use smithay::{
         renderer::{ImportDma, ImportEgl},
     },
     delegate_dmabuf,
-    reexports::wayland_server::DisplayHandle,
     wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
 };
 use smithay::{
@@ -59,12 +58,7 @@ impl DmabufHandler for AnvilState<WinitData> {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
     }
 
-    fn dmabuf_imported(
-        &mut self,
-        _dh: &DisplayHandle,
-        _global: &DmabufGlobal,
-        dmabuf: Dmabuf,
-    ) -> Result<(), ImportError> {
+    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
         self.backend_data
             .backend
             .renderer()

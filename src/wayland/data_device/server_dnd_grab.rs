@@ -242,7 +242,7 @@ where
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((resource, request)) = WlDataOffer::parse_request(&dh, msg) {
-            handle_server_dnd(handler, &resource, request, &self, &dh);
+            handle_server_dnd(handler, &resource, request, &self);
         }
 
         None
@@ -256,7 +256,6 @@ fn handle_server_dnd<D>(
     offer: &WlDataOffer,
     request: wl_data_offer::Request,
     data: &ServerDndData,
-    dh: &DisplayHandle,
 ) where
     D: DataDeviceHandler,
 {
@@ -329,7 +328,7 @@ fn handle_server_dnd<D>(
                 return;
             }
             let possible_actions = metadata.dnd_action & dnd_actions;
-            data.chosen_action = handler.action_choice(dh, possible_actions, preferred_action);
+            data.chosen_action = handler.action_choice(possible_actions, preferred_action);
             // check that the user provided callback respects that one precise action should be chosen
             debug_assert!(
                 [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]

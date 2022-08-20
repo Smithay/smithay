@@ -244,7 +244,7 @@ where
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((_resource, request)) = PrimaryOffer::parse_request(&dh, msg) {
-            handle_server_selection(handler, &dh, request, &self.offer_meta);
+            handle_server_selection(handler, request, &self.offer_meta);
         }
 
         None
@@ -255,7 +255,6 @@ where
 
 pub fn handle_server_selection<D>(
     handler: &mut D,
-    dh: &DisplayHandle,
     request: primary_offer::Request,
     offer_meta: &SourceMetadata,
 ) where
@@ -274,7 +273,7 @@ pub fn handle_server_selection<D>(
             );
             let _ = ::nix::unistd::close(fd);
         } else {
-            handler.send_selection(dh, mime_type, fd);
+            handler.send_selection(mime_type, fd);
         }
     }
 }

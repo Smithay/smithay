@@ -53,7 +53,7 @@ where
         shell: &ZwlrLayerShellV1,
         request: zwlr_layer_shell_v1::Request,
         _data: &(),
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -142,7 +142,7 @@ where
                     .unwrap()
                     .push(handle.clone());
 
-                WlrLayerShellHandler::new_layer_surface(state, dh, handle, output, layer, namespace);
+                WlrLayerShellHandler::new_layer_surface(state, handle, output, layer, namespace);
             }
             zwlr_layer_shell_v1::Request::Destroy => {
                 // Handled by destructor
@@ -182,7 +182,7 @@ where
         layer_surface: &ZwlrLayerSurfaceV1,
         request: zwlr_layer_surface_v1::Request,
         data: &WlrLayerSurfaceUserData,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -268,7 +268,6 @@ where
 
                 WlrLayerShellHandler::new_popup(
                     state,
-                    dh,
                     make_surface_handle(layer_surface),
                     crate::wayland::shell::xdg::handlers::make_popup_handle(&popup),
                 );
@@ -298,7 +297,7 @@ where
                     }
                 };
 
-                WlrLayerShellHandler::ack_configure(state, dh, data.wl_surface.clone(), configure);
+                WlrLayerShellHandler::ack_configure(state, data.wl_surface.clone(), configure);
             }
             _ => {}
         }

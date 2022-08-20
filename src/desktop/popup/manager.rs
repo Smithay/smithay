@@ -67,7 +67,7 @@ impl PopupManager {
     /// if the grab has been denied.
     pub fn grab_popup<D: 'static>(
         &mut self,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         popup: PopupKind,
         seat: &Seat<D>,
         serial: Serial,
@@ -113,7 +113,7 @@ impl PopupManager {
             Err(err) => {
                 match err {
                     PopupGrabError::ParentDismissed => {
-                        let _ = PopupManager::dismiss_popup(dh, &root, &popup);
+                        let _ = PopupManager::dismiss_popup(&root, &popup);
                     }
                     PopupGrabError::NotTheTopmostPopup => {
                         surface.post_error(
@@ -184,11 +184,7 @@ impl PopupManager {
         })
     }
 
-    pub(crate) fn dismiss_popup(
-        dh: &DisplayHandle,
-        surface: &WlSurface,
-        popup: &PopupKind,
-    ) -> Result<(), DeadResource> {
+    pub(crate) fn dismiss_popup(surface: &WlSurface, popup: &PopupKind) -> Result<(), DeadResource> {
         if !surface.alive() {
             return Err(DeadResource);
         }
@@ -196,7 +192,7 @@ impl PopupManager {
             let tree = states.data_map.get::<PopupTree>();
 
             if let Some(tree) = tree {
-                tree.dismiss_popup(dh, popup);
+                tree.dismiss_popup(popup);
             }
         });
         Ok(())
@@ -263,14 +259,14 @@ impl PopupTree {
         children.push(PopupNode::new(popup));
     }
 
-    fn dismiss_popup(&self, dh: &DisplayHandle, popup: &PopupKind) {
+    fn dismiss_popup(&self, popup: &PopupKind) {
         let mut children = self.0.lock().unwrap();
 
         let mut i = 0;
         while i < children.len() {
             let child = &mut children[i];
 
-            if child.dismiss_popup(dh, popup) {
+            if child.dismiss_popup(popup) {
                 let _ = children.remove(i);
                 break;
             } else {
@@ -326,17 +322,17 @@ impl PopupNode {
         }
     }
 
-    fn send_done(&self, dh: &DisplayHandle) {
+    fn send_done(&self) {
         for child in self.children.iter().rev() {
-            child.send_done(dh);
+            child.send_done();
         }
 
         self.surface.send_done();
     }
 
-    fn dismiss_popup(&mut self, dh: &DisplayHandle, popup: &PopupKind) -> bool {
+    fn dismiss_popup(&mut self, popup: &PopupKind) -> bool {
         if self.surface.wl_surface() == popup.wl_surface() {
-            self.send_done(dh);
+            self.send_done();
             return true;
         }
 
@@ -344,7 +340,7 @@ impl PopupNode {
         while i < self.children.len() {
             let child = &mut self.children[i];
 
-            if child.dismiss_popup(dh, popup) {
+            if child.dismiss_popup(popup) {
                 let _ = self.children.remove(i);
                 return false;
             } else {

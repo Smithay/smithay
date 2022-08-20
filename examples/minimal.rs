@@ -32,7 +32,7 @@ use wayland_server::{
         wl_buffer,
         wl_surface::{self, WlSurface},
     },
-    DisplayHandle, ListeningSocket,
+    ListeningSocket,
 };
 
 impl BufferHandler for App {
@@ -44,15 +44,19 @@ impl XdgShellHandler for App {
         &mut self.xdg_shell_state
     }
 
-    fn new_toplevel(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+    fn new_toplevel(&mut self, surface: ToplevelSurface) {
         surface.with_pending_state(|state| {
             state.states.set(xdg_toplevel::State::Activated);
         });
         surface.send_configure();
     }
 
-    fn new_popup(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _positioner: PositionerState) {}
-    fn grab(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
+    fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
+        // Handle popup creation here
+    }
+
+    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
+        // Handle popup grab here
     }
 }
 
@@ -60,8 +64,6 @@ impl DataDeviceHandler for App {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
-
-    fn send_selection(&mut self, _dh: &DisplayHandle, _mime_type: String, _fd: RawFd) {}
 }
 
 impl ClientDndGrabHandler for App {}
@@ -74,7 +76,7 @@ impl CompositorHandler for App {
         &mut self.compositor_state
     }
 
-    fn commit(&mut self, _dh: &DisplayHandle, surface: &WlSurface) {
+    fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler(surface);
     }
 }

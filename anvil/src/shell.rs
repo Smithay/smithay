@@ -339,19 +339,19 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.compositor_state
     }
-    fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
+    fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler(surface);
         self.backend_data.early_import(surface);
 
         #[cfg(feature = "xwayland")]
         if let Some(x11) = self.x11_state.as_mut() {
-            super::xwayland::commit_hook(surface, dh, x11, &mut self.space);
+            super::xwayland::commit_hook(surface, &self.display, x11, &mut self.space);
         }
 
         self.space.commit(surface);
         self.popups.commit(surface);
 
-        ensure_initial_configure(dh, surface, &self.space, &mut self.popups)
+        ensure_initial_configure(&self.display, surface, &self.space, &mut self.popups)
     }
 }
 
@@ -360,7 +360,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         &mut self.xdg_shell_state
     }
 
-    fn new_toplevel(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+    fn new_toplevel(&mut self, surface: ToplevelSurface) {
         // Do not send a configure here, the initial configure
         // of a xdg_surface has to be sent during the commit if
         // the surface is not already configured
@@ -368,7 +368,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         place_new_window(&mut self.space, &window, true);
     }
 
-    fn new_popup(&mut self, _dh: &DisplayHandle, surface: PopupSurface, positioner: PositionerState) {
+    fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
         // Do not send a configure here, the initial configure
         // of a xdg_surface has to be sent during the commit if
         // the surface is not already configured
@@ -386,13 +386,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         }
     }
 
-    fn reposition_request(
-        &mut self,
-        _dh: &DisplayHandle,
-        surface: PopupSurface,
-        positioner: PositionerState,
-        token: u32,
-    ) {
+    fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {
         surface.with_pending_state(|state| {
             // NOTE: This is again a simplification, a proper compositor would
             // calculate the geometry of the popup here. For simplicity we just
@@ -405,13 +399,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         surface.send_repositioned(token);
     }
 
-    fn move_request(
-        &mut self,
-        _dh: &DisplayHandle,
-        surface: ToplevelSurface,
-        seat: wl_seat::WlSeat,
-        serial: Serial,
-    ) {
+    fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
         // TODO: touch move.
         let pointer = seat.get_pointer().unwrap();
@@ -479,7 +467,6 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
     fn resize_request(
         &mut self,
-        _dh: &DisplayHandle,
         surface: ToplevelSurface,
         seat: wl_seat::WlSeat,
         serial: Serial,
@@ -543,7 +530,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         pointer.set_grab(grab, serial, Focus::Clear);
     }
 
-    fn ack_configure(&mut self, _dh: &DisplayHandle, surface: WlSurface, configure: Configure) {
+    fn ack_configure(&mut self, surface: WlSurface, configure: Configure) {
         if let Configure::Toplevel(configure) = configure {
             if let Some(serial) = with_states(&surface, |states| {
                 if let Some(data) = states.data_map.get::<RefCell<SurfaceData>>() {
@@ -594,12 +581,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         }
     }
 
-    fn fullscreen_request(
-        &mut self,
-        dh: &DisplayHandle,
-        surface: ToplevelSurface,
-        mut wl_output: Option<wl_output::WlOutput>,
-    ) {
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, mut wl_output: Option<wl_output::WlOutput>) {
         // NOTE: This is only one part of the solution. We can set the
         // location and configure size here, but the surface should be rendered fullscreen
         // independently from its buffer size
@@ -612,8 +594,8 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .and_then(Output::from_resource)
                 .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
-            let client = dh.get_client(wl_surface.id()).unwrap();
-            output.with_client_outputs(dh, &client, |_dh, output| {
+            let client = self.display.get_client(wl_surface.id()).unwrap();
+            output.with_client_outputs(&self.display, &client, |_dh, output| {
                 wl_output = Some(output.clone());
             });
 
@@ -638,7 +620,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         }
     }
 
-    fn unfullscreen_request(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
         let ret = surface.with_pending_state(|state| {
             state.states.unset(xdg_toplevel::State::Fullscreen);
             state.size = None;
@@ -656,7 +638,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         }
     }
 
-    fn maximize_request(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
         // NOTE: This should use layer-shell when it is implemented to
         // get the correct maximum size
         let window = self
@@ -681,7 +663,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         window.configure();
     }
 
-    fn unmaximize_request(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
         surface.with_pending_state(|state| {
             state.states.unset(xdg_toplevel::State::Maximized);
             state.size = None;
@@ -689,9 +671,11 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         surface.send_configure();
     }
 
-    fn grab(&mut self, dh: &DisplayHandle, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
+    fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
-        let ret = self.popups.grab_popup(dh, surface.into(), &seat, serial);
+        let ret = self
+            .popups
+            .grab_popup(&self.display, surface.into(), &seat, serial);
 
         if let Ok(mut grab) = ret {
             if let Some(keyboard) = seat.get_keyboard() {
@@ -699,10 +683,10 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     && !(keyboard.has_grab(serial)
                         || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
                 {
-                    grab.ungrab(dh, PopupUngrabStrategy::All);
+                    grab.ungrab(PopupUngrabStrategy::All);
                     return;
                 }
-                keyboard.set_focus(dh, grab.current_grab().as_ref(), serial);
+                keyboard.set_focus(&self.display, grab.current_grab().as_ref(), serial);
                 keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
             }
             if let Some(pointer) = seat.get_pointer() {
@@ -710,7 +694,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     && !(pointer.has_grab(serial)
                         || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
                 {
-                    grab.ungrab(dh, PopupUngrabStrategy::All);
+                    grab.ungrab(PopupUngrabStrategy::All);
                     return;
                 }
                 pointer.set_grab(PopupPointerGrab::new(&grab), serial, Focus::Keep);
@@ -726,7 +710,6 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
 
     fn new_layer_surface(
         &mut self,
-        dh: &DisplayHandle,
         surface: WlrLayerSurface,
         wl_output: Option<wl_output::WlOutput>,
         _layer: Layer,
@@ -737,7 +720,8 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
             .and_then(Output::from_resource)
             .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
         let mut map = layer_map_for_output(&output);
-        map.map_layer(dh, &LayerSurface::new(surface, namespace)).unwrap();
+        map.map_layer(&self.display, &LayerSurface::new(surface, namespace))
+            .unwrap();
     }
 }
 
