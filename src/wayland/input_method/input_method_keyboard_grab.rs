@@ -26,7 +26,7 @@ pub(crate) struct InputMethodKeyboard {
     pub repeat_rate: i32,
     pub keymap_file: Option<KeymapFile>,
     pub text_input_handle: Option<TextInputHandle>,
-    pub popup: InputMethodPopupSurfaceHandle,
+    pub popup_handle: InputMethodPopupSurfaceHandle,
 }
 
 /// Handle to an input method instance
@@ -83,7 +83,7 @@ where
             .as_ref()
             .unwrap()
             .set_focus(focus.as_ref().and_then(|f| f.wl_surface()), || {
-            let mut popup = inner.popup.inner.lock().unwrap();
+            let mut popup = inner.popup_handle.inner.lock().unwrap();
             popup.surface_role = None;
         });
         handle.set_focus(data, focus, serial)
