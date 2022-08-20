@@ -5,7 +5,7 @@ use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::{protocol::wl_surface::WlSurface, Dispatch, Resource};
 
 use crate::utils::IsAlive;
-use crate::wayland::input_method::{InputMethodHandle, InputMethodPopupSurfaceHandle};
+use crate::wayland::input_method::InputMethodHandle;
 
 use super::TextInputManagerState;
 
@@ -64,12 +64,14 @@ impl TextInputHandle {
     }
 
     /// Sets text input focus to a surface
-    pub fn set_focus(&self, focus: Option<&WlSurface>, popup: &InputMethodPopupSurfaceHandle) {
+    pub fn set_focus<F>(&self, focus: Option<&WlSurface>, f: F)
+    where
+        F: Fn(),
+    {
         let mut inner = self.inner.lock().unwrap();
         let same = inner.focus.as_ref() == focus;
         if !same {
-            let mut popup = popup.inner.lock().unwrap();
-            popup.surface_role = None;
+            f();
             inner.with_focused_text_input(|ti, surface, _serial| {
                 ti.leave(surface);
             });
