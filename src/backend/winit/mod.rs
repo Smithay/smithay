@@ -472,7 +472,6 @@ impl WinitEventLoop {
                         callback(WinitEvent::Suspended);
                     }
                     Event::Resumed => {
-                        callback(WinitEvent::Resumed);
                         #[cfg(target_os = "android")]
                         {
                             egl.replace(Some(Rc::new(
@@ -487,6 +486,8 @@ impl WinitEventLoop {
                                 .unwrap(),
                             )));
                         }
+
+                        callback(WinitEvent::Resumed);
                     }
                     Event::WindowEvent { event, .. } => {
                         let duration = Instant::now().duration_since(*time);
