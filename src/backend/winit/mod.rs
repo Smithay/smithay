@@ -473,13 +473,13 @@ impl WinitEventLoop {
                     }
                     Event::Resumed => {
                         #[cfg(target_os = "android")]
-                        {
+                        if let Some(window) = ndk_glue::native_window().as_ref() {
                             egl.replace(Some(Rc::new(
                                 EGLSurface::new(
                                     display,
                                     context.pixel_format().unwrap(),
                                     context.config_id(),
-                                    ndk_glue::native_window().as_ref().unwrap().clone(),
+                                    window.clone(),
                                     logger.clone(),
                                 )
                                 .map_err(EGLError::CreationFailed)
