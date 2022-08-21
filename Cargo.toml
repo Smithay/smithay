@@ -70,8 +70,13 @@ gl_generator = { version = "0.14", optional = true }
 pkg-config = { version = "0.3.17", optional = true }
 
 [features]
+<<<<<<< HEAD
 default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_multi", "xwayland", "wayland_frontend", "slog-stdlog", "backend_vulkan"]
 backend_winit = ["winit", "backend_egl", "wayland-egl", "renderer_gl"]
+=======
+default = [ "backend_session_logind", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_multi", "xwayland", "wayland_frontend", "slog-stdlog"]
+backend_winit = ["winit", "wayland-server/dlopen", "backend_egl", "wayland-egl", "renderer_gl"]
+>>>>>>> b30b5919b (Remove non-Winit backends from default features)
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
 backend_gbm = ["gbm"]
