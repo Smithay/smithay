@@ -23,9 +23,7 @@ mod input;
 
 use crate::{
     backend::{
-        egl::{
-            context::GlAttributes, display::EGLDisplay, EGLContext, EGLSurface, Error as EGLError,
-        },
+        egl::{context::GlAttributes, display::EGLDisplay, EGLContext, EGLSurface, Error as EGLError},
         input::InputEvent,
         renderer::{
             gles2::{Gles2Error, Gles2Renderer},
