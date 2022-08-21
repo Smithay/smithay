@@ -94,11 +94,11 @@ pub fn main() {
                     crit!(log, "Unknown backend: {}", other);
                 }
                 None => {
-                    println!("USAGE: anvil --backend");
-                    println!();
-                    println!("Possible backends are:");
+                    slog::info!(log, "USAGE: anvil --backend");
+                    slog::info!(log, );
+                    slog::info!(log, "Possible backends are:");
                     for b in POSSIBLE_BACKENDS {
-                        println!("\t{}", b);
+                        slog::info!(log, "\t{}", b);
                     }
                 }
             }
