@@ -108,7 +108,58 @@ pub fn main() {
             // For ndk_sys 0.6.x
             // let android_context = ndk_context::android_context();
             // let activity = unsafe { NativeActivity::from_ptr(NonNull::new(android_context.context() as *mut ndk_sys::ANativeActivity).unwrap()) };
-           
+            let data_dir = PathBuf::from(activity.internal_data_path().to_string_lossy().into_owned());
+            let cache_dir = data_dir.join("cache");
+
+            if !cache_dir.exists() {
+                fs::create_dir(&cache_dir).unwrap();
+            } else if !cache_dir.is_dir() {
+                panic!("Cache dir {} is not a directory!!!", cache_dir.display());
+            }
+            let runtime_dir = cache_dir.join("run");
+
+            if !runtime_dir.exists() {
+                fs::create_dir_all(runtime_dir).unwrap();
+            }
+            std::env::set_var("XDG_RUNTIME_DIR", cache_dir.join("run"));
+
+            let assets = activity.asset_manager();
+            let version = env!("CARGO_PKG_VERSION");
+            let lockfile_path = cache_dir.join(".version-lockfile");
+            if {
+                match File::open(lockfile_path) {
+                        Ok(mut file) => {
+                            let mut contents = String::new();
+                file.read_to_string(&mut contents).unwrap();
+
+                &contents != version
+                        },
+                        Err(err) => {
+                            use std::io::ErrorKind::NotFound;
+
+                            if err.kind() == NotFound {
+                                false
+                            } else {
+                                panic!("{:#?}", err)
+                            }
+                        }
+                }
+
+            } {
+                let x11_assets = assets.open_dir(&CString::new("x11").unwrap()).unwrap();
+                let x11_path = cache_dir.join("x11");
+                for path in x11_assets {
+                    let mut asset = assets.open(&path).unwrap();
+                    let mut file = File::create(x11_path.join(path.to_string_lossy().into_owned())).unwrap();
+                    file.write(asset.get_buffer().unwrap()).unwrap();
+                }
+
+                let mut lockfile = File::create(cache_dir.join(".version-lockfile")).unwrap();
+
+                write!(lockfile, "{version}").unwrap();
+            }
+
+
             crate::winit::run_winit(log);
         }
     }
