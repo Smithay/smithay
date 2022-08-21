@@ -32,6 +32,7 @@ ndk = "0.5.0"
 ndk-context = "0.1.1"
 jni = "0.19.0"
 ndk-sys = "0.2.2"
+tar = "0.4.38"
 
 [dependencies.smithay]
 path = ".."

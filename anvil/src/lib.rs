@@ -146,14 +146,12 @@ pub fn main() {
                 }
 
             } {
-                let x11_assets = assets.open_dir(&CString::new("x11").unwrap()).unwrap();
-                let x11_path = cache_dir.join("x11");
-                for path in x11_assets {
-                    let mut asset = assets.open(&path).unwrap();
-                    let mut file = File::create(x11_path.join(path.to_string_lossy().into_owned())).unwrap();
-                    file.write(asset.get_buffer().unwrap()).unwrap();
-                }
+                slog::info!(log, "Writing XKB assets into cache");
+                let asset = assets.open(&CString::new("x11.tar").unwrap()).unwrap();
 
+                let mut tar = Archive::new(asset);
+
+                tar.unpack(&cache_dir).unwrap();
                 let mut lockfile = File::create(cache_dir.join(".version-lockfile")).unwrap();
 
                 write!(lockfile, "{version}").unwrap();
