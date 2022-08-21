@@ -205,6 +205,9 @@ pub trait Renderer {
 
     /// Initialize a rendering context on the current rendering target with given dimensions and transformation.
     ///
+    /// The `output_size` specifies the dimensions of the display **before** the `dst_transform` is
+    /// applied.
+    ///
     /// This function *may* error, if:
     /// - The given dimensions are unsupported (too large) for this renderer
     /// - The given Transformation is not supported by the renderer (`Transform::Normal` is always supported).
@@ -212,7 +215,7 @@ pub trait Renderer {
     /// - (Renderers not implementing `Bind` always have a default target.)
     fn render<F, R>(
         &mut self,
-        size: Size<i32, Physical>,
+        output_size: Size<i32, Physical>,
         dst_transform: Transform,
         rendering: F,
     ) -> Result<R, Self::Error>
