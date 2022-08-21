@@ -467,6 +467,8 @@ impl WinitEventLoop {
                         callback(WinitEvent::Refresh);
                     }
                     Event::Suspended => {
+                        #[cfg(target_os = "android")]
+                        egl.replace(None);
                         callback(WinitEvent::Suspended);
                     }
                     Event::Resumed => {
