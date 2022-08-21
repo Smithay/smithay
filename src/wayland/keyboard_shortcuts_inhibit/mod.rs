@@ -22,6 +22,7 @@ use super::seat::Seat;
 
 type SeatId = ObjectId;
 
+/// List of inhibitors associated with WlSeat
 #[derive(Debug, Default)]
 struct SeatInhibitors(Vec<KeyboardShortcutsInhibitor>);
 
@@ -47,7 +48,12 @@ impl SeatInhibitors {
     }
 
     fn surface_has_inhibitor(&self, surface: &WlSurface) -> bool {
-        self.0.iter().any(|i| i.wl_surface() == surface)
+        self.inhibitor_for_surface(surface).is_some()
+    }
+
+    /// Find inhibitor_for WlSurface
+    fn inhibitor_for_surface(&self, surface: &WlSurface) -> Option<&KeyboardShortcutsInhibitor> {
+        self.0.iter().find(|i| i.wl_surface() == surface)
     }
 }
 
@@ -149,17 +155,50 @@ impl SeatData {
     fn is_inhibited(&self) -> bool {
         self.inhibitors.borrow().is_inhibited()
     }
+
+    /// Find inhibitor for WlSurface
+    fn inhibitor_for_surface(&self, surface: &WlSurface) -> Option<KeyboardShortcutsInhibitor> {
+        self.inhibitors.borrow().inhibitor_for_surface(surface).cloned()
+    }
 }
 
 /// Seat extension used to check if shortcuts are inhibited
 pub trait KeyboardShortcutsInhibitorSeat {
     /// Check if keyboard_shortcuts are inhibited
     fn keyboard_shortcuts_inhibited(&self) -> bool;
+
+    /// Get inhibitors associated with given WlSurface
+    ///
+    /// Can be used to check if certain surface has inhibitor on it
+    /// ```no_run
+    /// use smithay::wayland::seat::Seat;
+    /// use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat;
+    /// # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+    /// # struct State;
+    /// # let wl_surface: WlSurface = todo!();
+    ///
+    /// let seat: Seat<State> = todo!();
+    ///
+    /// if let Some(inhibitor) = seat.keyboard_shortcuts_inhibitor_for_surface(&wl_surface) {
+    ///     dbg!(inhibitor.is_active());
+    /// }
+    /// ```
+    fn keyboard_shortcuts_inhibitor_for_surface(
+        &self,
+        surface: &WlSurface,
+    ) -> Option<KeyboardShortcutsInhibitor>;
 }
 
 impl<D: 'static> KeyboardShortcutsInhibitorSeat for Seat<D> {
     fn keyboard_shortcuts_inhibited(&self) -> bool {
         SeatData::get(self).borrow().is_inhibited()
+    }
+
+    fn keyboard_shortcuts_inhibitor_for_surface(
+        &self,
+        surface: &WlSurface,
+    ) -> Option<KeyboardShortcutsInhibitor> {
+        SeatData::get(self).borrow().inhibitor_for_surface(surface)
     }
 }
 
