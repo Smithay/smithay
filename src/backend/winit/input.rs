@@ -6,9 +6,10 @@ use winit::{
 };
 
 use crate::backend::input::{
-    self, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event, InputBackend, KeyState,
-    KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent, TouchCancelEvent,
-    TouchDownEvent, TouchMotionEvent, TouchSlot, TouchUpEvent, UnusedEvent,
+    self, AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
+    InputBackend, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+    PointerMotionAbsoluteEvent, TouchCancelEvent, TouchDownEvent, TouchEvent, TouchMotionEvent, TouchSlot,
+    TouchUpEvent, UnusedEvent,
 };
 
 use super::WindowSize;
@@ -97,7 +98,8 @@ impl Event<WinitInput> for WinitMouseMovedEvent {
     }
 }
 
-impl PointerMotionAbsoluteEvent<WinitInput> for WinitMouseMovedEvent {
+impl PointerMotionAbsoluteEvent<WinitInput> for WinitMouseMovedEvent {}
+impl AbsolutePositionEvent<WinitInput> for WinitMouseMovedEvent {
     // TODO: maybe use {Logical, Physical}Position from winit?
     fn x(&self) -> f64 {
         let wsize = self.size.borrow();
@@ -223,11 +225,15 @@ impl Event<WinitInput> for WinitTouchStartedEvent {
     }
 }
 
-impl TouchDownEvent<WinitInput> for WinitTouchStartedEvent {
+impl TouchDownEvent<WinitInput> for WinitTouchStartedEvent {}
+
+impl TouchEvent<WinitInput> for WinitTouchStartedEvent {
     fn slot(&self) -> TouchSlot {
         Some(self.id as u32).into()
     }
+}
 
+impl AbsolutePositionEvent<WinitInput> for WinitTouchStartedEvent {
     fn x(&self) -> f64 {
         let wsize = self.size.borrow();
         self.location.x * wsize.scale_factor
@@ -270,11 +276,15 @@ impl Event<WinitInput> for WinitTouchMovedEvent {
     }
 }
 
-impl TouchMotionEvent<WinitInput> for WinitTouchMovedEvent {
+impl TouchMotionEvent<WinitInput> for WinitTouchMovedEvent {}
+
+impl TouchEvent<WinitInput> for WinitTouchMovedEvent {
     fn slot(&self) -> TouchSlot {
         Some(self.id as u32).into()
     }
+}
 
+impl AbsolutePositionEvent<WinitInput> for WinitTouchMovedEvent {
     fn x(&self) -> f64 {
         let wsize = self.size.borrow();
         self.location.x * wsize.scale_factor
@@ -315,7 +325,9 @@ impl Event<WinitInput> for WinitTouchEndedEvent {
     }
 }
 
-impl TouchUpEvent<WinitInput> for WinitTouchEndedEvent {
+impl TouchUpEvent<WinitInput> for WinitTouchEndedEvent {}
+
+impl TouchEvent<WinitInput> for WinitTouchEndedEvent {
     fn slot(&self) -> TouchSlot {
         Some(self.id as u32).into()
     }
@@ -338,7 +350,9 @@ impl Event<WinitInput> for WinitTouchCancelledEvent {
     }
 }
 
-impl TouchCancelEvent<WinitInput> for WinitTouchCancelledEvent {
+impl TouchCancelEvent<WinitInput> for WinitTouchCancelledEvent {}
+
+impl TouchEvent<WinitInput> for WinitTouchCancelledEvent {
     fn slot(&self) -> TouchSlot {
         Some(self.id as u32).into()
     }

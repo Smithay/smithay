@@ -1,7 +1,7 @@
 use smithay::{
     backend::input::{
-        Axis, Event, InputBackend, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
-        PointerMotionAbsoluteEvent,
+        AbsolutePositionEvent, Axis, Event, InputBackend, InputEvent, KeyboardKeyEvent, PointerAxisEvent,
+        PointerButtonEvent,
     },
     reexports::wayland_server::{protocol::wl_pointer, Display},
     wayland::{
