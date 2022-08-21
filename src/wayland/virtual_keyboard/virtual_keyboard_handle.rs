@@ -3,14 +3,17 @@ use std::sync::{Arc, Mutex};
 use wayland_backend::server::{ClientId, ObjectId};
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::{self, ZwpVirtualKeyboardV1};
 use wayland_server::{Dispatch, Client, DisplayHandle, DataInit};
+use xkbcommon::xkb::{KeymapFormat, self};
 
-use crate::wayland::seat::{KeyboardGrab, KeyboardGrabStartData, KeyboardInnerHandle, KeyboardHandle};
+use crate::{wayland::{seat::{KeyboardHandle, Seat, FilterResult}, SERIAL_COUNTER}, backend::input::KeyState};
 
 use super::VirtualKeyboardManagerState;
 
 #[derive(Default, Debug)]
 pub(crate) struct VirtualKeyboard {
     pub instance : Option<ZwpVirtualKeyboardV1>,
+    modifiers: Option<(u32, u32, u32, u32)>,
+    keyboard_handle: Option<KeyboardHandle>,
 }
 
 /// Handle to a virtual keyboard instance
@@ -31,66 +34,50 @@ impl VirtualKeyboardHandle {
     }
 }
 
-impl KeyboardGrab for VirtualKeyboardHandle {
-    fn input(
-        &mut self,
-        _dh: &DisplayHandle,
-        handle: &mut KeyboardInnerHandle<'_>,
-        keycode: u32,
-        key_state: wayland_server::protocol::wl_keyboard::KeyState,
-        modifiers: Option<(u32, u32, u32, u32)>,
-        serial: crate::wayland::Serial,
-        time: u32,
-    ) {
-        handle.input(keycode, key_state, modifiers, serial, time);
-    }
-
-    fn set_focus(
-        &mut self,
-        _dh: &DisplayHandle,
-        handle: &mut KeyboardInnerHandle<'_>,
-        focus: Option<&wayland_server::protocol::wl_surface::WlSurface>,
-        serial: crate::wayland::Serial,
-    ) {
-        handle.set_focus(focus, serial);
-    }
-
-    fn start_data(&self) -> &KeyboardGrabStartData {
-        &KeyboardGrabStartData { focus: None }
-    }
-}
-
 /// User data of ZwpVirtualKeyboardV1 object
 #[derive(Debug)]
-pub struct VirtualKeyboardUserData {
+pub struct VirtualKeyboardUserData<D> {
     pub(super) handle: VirtualKeyboardHandle,
-    pub(crate) keyboard_handle: KeyboardHandle,
-    modifiers: Option<(u32, u32, u32, u32)>,
+    pub(super) seat: Seat<D>,
 }
 
-impl<D> Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData, D> for VirtualKeyboardManagerState
+impl<D> Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>, D> for VirtualKeyboardManagerState
 where
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData>,
+    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
     D: 'static,
 {
     fn request(
         _state: &mut D,
         _client: &Client,
-        _seat: &ZwpVirtualKeyboardV1,
+        _: &ZwpVirtualKeyboardV1,
         request: zwp_virtual_keyboard_v1::Request,
-        data: &VirtualKeyboardUserData,
+        data: &VirtualKeyboardUserData<D>,
         dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
-                data.keyboard_handle.
+                let mut inner = data.handle.inner.lock().unwrap();
+                let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+                let keymap = xkb::Keymap::new_from_fd(&context, fd, size as usize, format, xkb::KEYMAP_COMPILE_NO_FLAGS).unwrap();
+                
+                let keyboard = data.seat.add_keyboard(xkb_config, 200, 25, |_, _| {}).unwrap();
+                inner.keyboard_handle.replace(keyboard);
             },
             zwp_virtual_keyboard_v1::Request::Key { time, key, state } => {
-                data.handle.input(dh, data.handle, key, state.into(), data.modifiers, serial, time)
+                let mut inner = data.handle.inner.lock().unwrap();
+                if let Some(keyboard) = inner.keyboard_handle {
+                    let key_state = if state == 1 {
+                        KeyState::Pressed
+                    } else {
+                        KeyState::Released
+                    };
+                    let modifiers = data.handle.inner.lock().unwrap().modifiers;
+                    keyboard.input(dh, key, key_state, SERIAL_COUNTER.next_serial(), time, |_, _| FilterResult::Forward);
+                }
             },
             zwp_virtual_keyboard_v1::Request::Modifiers { mods_depressed, mods_latched, mods_locked, group } => {
-                data.modifiers = Some((mods_depressed, mods_latched, mods_locked, group));
+                data.handle.inner.lock().unwrap().modifiers = Some((mods_depressed, mods_latched, mods_locked, group));
             },
             zwp_virtual_keyboard_v1::Request::Destroy => {
                 // Nothing to do
@@ -99,7 +86,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, _virtual_keyboard: ObjectId, data: &VirtualKeyboardUserData) {
+    fn destroyed(_state: &mut D, _client: ClientId, _virtual_keyboard: ObjectId, data: &VirtualKeyboardUserData<D>) {
         data.handle.inner.lock().unwrap().instance = None;
     }
 }
