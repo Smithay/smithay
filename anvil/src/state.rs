@@ -162,17 +162,17 @@ impl<BackendData> ShmHandler for AnvilState<BackendData> {
 delegate_shm!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> SeatHandler for AnvilState<BackendData> {
-    type KeyboardFocus = WlSurface;
-    type PointerFocus = WlSurface;
+    type KeyboardFocus = Window;
+    type PointerFocus = Window;
 
     fn seat_state(&mut self) -> &mut SeatState<AnvilState<BackendData>> {
         &mut self.seat_state
     }
 
-    fn focus_changed(&mut self, seat: &Seat<Self>, surface: Option<&WlSurface>) {
+    fn focus_changed(&mut self, seat: &Seat<Self>, window: Option<&Window>) {
         let dh = &self.display_handle;
 
-        let focus = surface.and_then(|s| dh.get_client(s.id()).ok());
+        let focus = window.and_then(|w| dh.get_client(w.toplevel().wl_surface().id()).ok());
         set_data_device_focus(dh, seat, focus.clone());
         set_primary_focus(dh, seat, focus);
     }
