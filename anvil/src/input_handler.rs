@@ -221,10 +221,10 @@ impl<Backend> AnvilState<Backend> {
                 }
             }
 
-            if let Some((window, _)) = self
+            if let Some(window) = self
                 .space
                 .element_under(self.pointer_location)
-                .map(|(w, p)| (w.clone(), p))
+                .map(|(w, _)| w.clone())
             {
                 self.space.raise_element(&window, true);
                 keyboard.set_focus(self, Some(window.toplevel().wl_surface().clone()), serial);
