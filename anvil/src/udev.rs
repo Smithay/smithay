@@ -198,17 +198,6 @@ pub fn run_udev(log: Logger) {
         .renderer::<Gles2Renderbuffer>(&primary_gpu, &primary_gpu)
         .unwrap();
 
-    #[cfg(feature = "egl")]
-    {
-        info!(
-            log,
-            "Trying to initialize EGL Hardware Acceleration via {:?}", primary_gpu
-        );
-        if renderer.bind_wl_display(&display.handle()).is_ok() {
-            info!(log, "EGL hardware-acceleration enabled");
-        }
-    }
-
     #[cfg(feature = "debug")]
     let fps_image =
         image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
@@ -226,15 +215,25 @@ pub fn run_udev(log: Logger) {
     // init dmabuf support with format list from our primary gpu
     // TODO: This does not necessarily depend on egl, but mesa makes no use of it without wl_drm right now
     #[cfg(feature = "egl")]
-    let dmabuf_state = if renderer.bind_wl_display(&display.handle()).is_ok() {
-        info!(log, "EGL hardware-acceleration enabled");
-        let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
-        let mut state = DmabufState::new();
-        let global =
-            state.create_global::<AnvilState<UdevData>, _>(&display.handle(), dmabuf_formats, log.clone());
-        Some((state, global))
-    } else {
-        None
+    let dmabuf_state = {
+        info!(
+            log,
+            "Trying to initialize EGL Hardware Acceleration via {:?}", primary_gpu
+        );
+
+        if renderer.bind_wl_display(&display.handle()).is_ok() {
+            info!(log, "EGL hardware-acceleration enabled");
+            let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+            let mut state = DmabufState::new();
+            let global = state.create_global::<AnvilState<UdevData>, _>(
+                &display.handle(),
+                dmabuf_formats,
+                log.clone(),
+            );
+            Some((state, global))
+        } else {
+            None
+        }
     };
 
     let data = UdevData {
