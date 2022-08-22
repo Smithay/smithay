@@ -1,7 +1,6 @@
 use crate::{
     backend::renderer::{
-        output::element::surface::WaylandSurfaceRenderElement, utils::draw_render_elements, ImportAll,
-        Renderer,
+        element::surface::WaylandSurfaceRenderElement, utils::draw_render_elements, ImportAll, Renderer,
     },
     desktop::{utils::*, PopupManager},
     output::{Inner as OutputInner, Output, OutputData},
