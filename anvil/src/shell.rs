@@ -6,6 +6,13 @@ use smithay::{
         layer_map_for_output, Kind as SurfaceKind, LayerSurface, PopupKeyboardGrab, PopupKind, PopupManager,
         PopupPointerGrab, PopupUngrabStrategy, Space, Window, WindowSurfaceType,
     },
+    input::{
+        pointer::{
+            AxisFrame, ButtonEvent, Focus, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
+            PointerHandler, PointerInnerHandle,
+        },
+        Seat,
+    },
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
@@ -20,10 +27,6 @@ use smithay::{
             with_states, with_surface_tree_upward, CompositorHandler, CompositorState, TraversalAction,
         },
         output::Output,
-        seat::{
-            AxisFrame, ButtonEvent, Focus, MotionEvent, PointerGrab, PointerGrabStartData,
-            PointerInnerHandle, Seat,
-        },
         shell::{
             wlr_layer::{
                 Layer, LayerSurface as WlrLayerSurface, LayerSurfaceAttributes, WlrLayerShellHandler,
@@ -41,22 +44,25 @@ use smithay::{
 
 use crate::state::{AnvilState, Backend};
 
-struct MoveSurfaceGrab {
-    start_data: PointerGrabStartData,
+struct MoveSurfaceGrab<B: 'static> {
+    start_data: PointerGrabStartData<AnvilState<B>>,
     window: Window,
     initial_window_location: Point<i32, Logical>,
 }
 
-impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab {
+impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<BackendData> {
     fn motion(
         &mut self,
         data: &mut AnvilState<BackendData>,
-        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        _focus: Option<(
+            Box<dyn PointerHandler<AnvilState<BackendData>> + 'static>,
+            Point<i32, Logical>,
+        )>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
-        handle.motion(event.location, None, event.serial, event.time);
+        handle.motion(data, None, event);
 
         let delta = event.location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
@@ -67,29 +73,27 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab {
 
     fn button(
         &mut self,
-        _data: &mut AnvilState<BackendData>,
-        _dh: &DisplayHandle,
+        data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &ButtonEvent,
     ) {
-        handle.button(event.button, event.state, event.serial, event.time);
+        handle.button(data, event);
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(event.serial, event.time);
+            handle.unset_grab(data, event.serial, event.time);
         }
     }
 
     fn axis(
         &mut self,
-        _data: &mut AnvilState<BackendData>,
-        _dh: &DisplayHandle,
+        data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         details: AxisFrame,
     ) {
-        handle.axis(details)
+        handle.axis(data, details)
     }
 
-    fn start_data(&self) -> &PointerGrabStartData {
+    fn start_data(&self) -> &PointerGrabStartData<AnvilState<BackendData>> {
         &self.start_data
     }
 }
@@ -124,8 +128,8 @@ impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
     }
 }
 
-struct ResizeSurfaceGrab {
-    start_data: PointerGrabStartData,
+struct ResizeSurfaceGrab<B: 'static> {
+    start_data: PointerGrabStartData<AnvilState<B>>,
     window: Window,
     edges: ResizeEdge,
     initial_window_location: Point<i32, Logical>,
@@ -133,20 +137,23 @@ struct ResizeSurfaceGrab {
     last_window_size: Size<i32, Logical>,
 }
 
-impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
+impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<BackendData> {
     fn motion(
         &mut self,
-        _data: &mut AnvilState<BackendData>,
-        _dh: &DisplayHandle,
+        data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        _focus: Option<(
+            Box<dyn PointerHandler<AnvilState<BackendData>> + 'static>,
+            Point<i32, Logical>,
+        )>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
-        handle.motion(event.location, None, event.serial, event.time);
+        handle.motion(data, None, event);
 
         // It is impossible to get `min_size` and `max_size` of dead toplevel, so we return early.
         if !self.window.toplevel().alive() {
-            handle.unset_grab(event.serial, event.time);
+            handle.unset_grab(data, event.serial, event.time);
             return;
         }
 
@@ -215,14 +222,13 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
     fn button(
         &mut self,
         data: &mut AnvilState<BackendData>,
-        _dh: &DisplayHandle,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         event: &ButtonEvent,
     ) {
-        handle.button(event.button, event.state, event.serial, event.time);
+        handle.button(data, event);
         if handle.current_pressed().is_empty() {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(event.serial, event.time);
+            handle.unset_grab(data, event.serial, event.time);
 
             // If toplevel is dead, we can't resize it, so we return early.
             if !self.window.toplevel().alive() {
@@ -283,15 +289,14 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab {
 
     fn axis(
         &mut self,
-        _data: &mut AnvilState<BackendData>,
-        _dh: &DisplayHandle,
+        data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         details: AxisFrame,
     ) {
-        handle.axis(details)
+        handle.axis(data, details)
     }
 
-    fn start_data(&self) -> &PointerGrabStartData {
+    fn start_data(&self) -> &PointerGrabStartData<AnvilState<BackendData>> {
         &self.start_data
     }
 }
@@ -418,8 +423,10 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .unwrap()
                 .0
-                .id()
-                .same_client_as(&surface.wl_surface().id())
+                .as_any()
+                .downcast_ref::<WlSurface>()
+                .map(|s| s.id().same_client_as(&surface.wl_surface().id()))
+                .unwrap_or(false)
         {
             return;
         }
@@ -462,7 +469,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             initial_window_location,
         };
 
-        pointer.set_grab(grab, serial, Focus::Clear);
+        pointer.set_grab(self, grab, serial, Focus::Clear);
     }
 
     fn resize_request(
@@ -490,8 +497,10 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .unwrap()
                 .0
-                .id()
-                .same_client_as(&surface.wl_surface().id())
+                .as_any()
+                .downcast_ref::<WlSurface>()
+                .map(|s| s.id().same_client_as(&surface.wl_surface().id()))
+                .unwrap_or(false)
         {
             return;
         }
@@ -527,7 +536,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             last_window_size: initial_window_size,
         };
 
-        pointer.set_grab(grab, serial, Focus::Clear);
+        pointer.set_grab(self, grab, serial, Focus::Clear);
     }
 
     fn ack_configure(&mut self, surface: WlSurface, configure: Configure) {
@@ -686,7 +695,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     grab.ungrab(PopupUngrabStrategy::All);
                     return;
                 }
-                keyboard.set_focus(&self.display, grab.current_grab().as_ref(), serial);
+                keyboard.set_focus(self, grab.current_grab(), serial);
                 keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
             }
             if let Some(pointer) = seat.get_pointer() {
@@ -697,7 +706,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     grab.ungrab(PopupUngrabStrategy::All);
                     return;
                 }
-                pointer.set_grab(PopupPointerGrab::new(&grab), serial, Focus::Keep);
+                pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
             }
         }
     }

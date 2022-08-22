@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use smithay::delegate_seat;
-use smithay::reexports::wayland_server::Display;
-use smithay::wayland::seat::{self as seat, Seat, SeatHandler};
-
-use seat::SeatState;
-
-use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
-use wayland_server::ListeningSocket;
+use smithay::input::{keyboard::FilterResult, Seat, SeatHandler, SeatState};
+use smithay::reexports::wayland_server::{
+    backend::{ClientData, ClientId, DisconnectReason},
+    protocol::wl_surface::WlSurface,
+    Display, ListeningSocket,
+};
 
 struct App {
     seat_state: SeatState<Self>,
@@ -18,18 +17,26 @@ impl SeatHandler for App {
     fn seat_state(&mut self) -> &mut SeatState<Self> {
         &mut self.seat_state
     }
+
+    fn focus_changed(
+        &mut self,
+        _seat: &Seat<Self>,
+        _focused: Option<&dyn smithay::input::keyboard::KeyboardHandler<Self>>,
+    ) {
+    }
+    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: smithay::input::pointer::CursorImageStatus) {}
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
     let dh = display.handle();
 
-    let seat_state = SeatState::new();
-    let seat = Seat::<App>::new(&dh, "Example", None);
+    let mut seat_state = SeatState::new();
+    let seat = seat_state.new_wl_seat(&dh, "Example", None);
 
     let mut state = App { seat_state, seat };
 
-    let keyboard = state.seat.add_keyboard(Default::default(), 25, 600, |_, _| {})?;
+    let keyboard = state.seat.add_keyboard(Default::default(), 25, 600)?;
 
     let listener = ListeningSocket::bind("wayland-5").unwrap();
 
@@ -47,21 +54,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         keyboard.input(
-            &display.handle(),
+            &mut state,
             1,
             smithay::backend::input::KeyState::Pressed,
             0.into(),
             0,
             |_, _| {
                 if false {
-                    seat::FilterResult::Intercept(0)
+                    FilterResult::Intercept(0)
                 } else {
-                    seat::FilterResult::Forward
+                    FilterResult::Forward
                 }
             },
         );
 
-        keyboard.set_focus(&display.handle(), None, 0.into());
+        keyboard.set_focus(&mut state, Option::<WlSurface>::None, 0.into());
 
         display.dispatch_clients(&mut state)?;
         display.flush_clients()?;

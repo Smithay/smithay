@@ -1,4 +1,4 @@
-use std::{process::Command, sync::atomic::Ordering};
+use std::{convert::TryInto, process::Command, sync::atomic::Ordering};
 
 use crate::{shell::FullscreenSurface, AnvilState};
 
@@ -7,10 +7,14 @@ use crate::udev::UdevData;
 
 use smithay::{
     backend::input::{
-        self, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent,
-        PointerButtonEvent,
+        self, Axis, AxisSource, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
+        PointerAxisEvent, PointerButtonEvent,
     },
     desktop::{layer_map_for_output, WindowSurfaceType},
+    input::{
+        keyboard::{keysyms as xkb, FilterResult, Keysym, ModifiersState},
+        pointer::{AxisFrame, ButtonEvent, MotionEvent},
+    },
     reexports::wayland_server::{
         protocol::{wl_pointer, wl_surface::WlSurface},
         DisplayHandle,
@@ -20,7 +24,6 @@ use smithay::{
         compositor::with_states,
         input_method::InputMethodSeat,
         output::Scale,
-        seat::{keysyms as xkb, AxisFrame, ButtonEvent, FilterResult, Keysym, ModifiersState, MotionEvent},
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
         Serial, SERIAL_COUNTER as SCOUNTER,
     },
@@ -77,16 +80,16 @@ impl<Backend> AnvilState<Backend> {
 
     fn keyboard_key_to_action<B: InputBackend>(
         &mut self,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         evt: B::KeyboardKeyEvent,
     ) -> KeyAction {
         let keycode = evt.key_code();
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
         let serial = SCOUNTER.next_serial();
-        let log = &self.log;
+        let log = self.log.clone();
         let time = Event::time(&evt);
-        let suppressed_keys = &mut self.suppressed_keys;
+        let mut suppressed_keys = self.suppressed_keys.clone();
         let keyboard = self.seat.get_keyboard().unwrap();
 
         for layer in self.layer_shell_state.layer_surfaces().rev() {
@@ -96,14 +99,14 @@ impl<Backend> AnvilState<Backend> {
             if data.keyboard_interactivity == KeyboardInteractivity::Exclusive
                 && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)
             {
-                keyboard.set_focus(dh, Some(layer.wl_surface()), serial);
-                keyboard.input::<(), _>(dh, keycode, state, serial, time, |_, _| FilterResult::Forward);
+                keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
+                keyboard.input::<(), _>(self, keycode, state, serial, time, |_, _| FilterResult::Forward);
                 return KeyAction::None;
             }
         }
 
-        keyboard
-            .input(dh, keycode, state, serial, time, |modifiers, handle| {
+        let action = keyboard
+            .input(self, keycode, state, serial, time, |modifiers, handle| {
                 let keysym = handle.modified_sym();
 
                 debug!(log, "keysym";
@@ -137,7 +140,10 @@ impl<Backend> AnvilState<Backend> {
                     }
                 }
             })
-            .unwrap_or(KeyAction::None)
+            .unwrap_or(KeyAction::None);
+
+        self.suppressed_keys = suppressed_keys;
+        action
     }
 
     fn on_pointer_button<B: InputBackend>(&mut self, dh: &DisplayHandle, evt: B::PointerButtonEvent) {
@@ -151,17 +157,16 @@ impl<Backend> AnvilState<Backend> {
         };
         self.seat.get_pointer().unwrap().button(
             self,
-            dh,
             &ButtonEvent {
                 button,
-                state,
+                state: state.try_into().unwrap(),
                 serial,
                 time: evt.time(),
             },
         );
     }
 
-    fn update_keyboard_focus(&mut self, dh: &DisplayHandle, serial: Serial) {
+    fn update_keyboard_focus(&mut self, _dh: &DisplayHandle, serial: Serial) {
         let pointer = self.seat.get_pointer().unwrap();
         let keyboard = self.seat.get_keyboard().unwrap();
         let input_method = self.seat.input_method().unwrap();
@@ -174,10 +179,9 @@ impl<Backend> AnvilState<Backend> {
         // subsurface menus (for example firefox-wayland).
         // see here for a discussion about that issue:
         // https://gitlab.freedesktop.org/wayland/wayland/-/issues/294
-        // Input methods are a special case in that they only use the keyboard input,
-        // and othervise behaves as an ungrabbed keyboard.
         if !pointer.is_grabbed() && (!keyboard.is_grabbed() || input_method.keyboard_grabbed()) {
-            if let Some(output) = self.space.output_under(self.pointer_location).next() {
+            let output = self.space.output_under(self.pointer_location).next().cloned();
+            if let Some(output) = output.as_ref() {
                 let output_geo = self.space.output_geometry(output).unwrap();
                 if let Some(window) = output
                     .user_data()
@@ -191,7 +195,7 @@ impl<Backend> AnvilState<Backend> {
                         )
                         .is_some()
                     {
-                        keyboard.set_focus(dh, Some(window.toplevel().wl_surface()), serial);
+                        keyboard.set_focus(self, Some(window.toplevel().wl_surface().clone()), serial);
                         return;
                     }
                 }
@@ -211,7 +215,7 @@ impl<Backend> AnvilState<Backend> {
                             )
                             .is_some()
                     {
-                        keyboard.set_focus(dh, Some(layer.wl_surface()), serial);
+                        keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
                         return;
                     }
                 }
@@ -222,11 +226,11 @@ impl<Backend> AnvilState<Backend> {
                 .surface_under(self.pointer_location, WindowSurfaceType::ALL)
             {
                 self.space.raise_window(&window, true);
-                keyboard.set_focus(dh, Some(window.toplevel().wl_surface()), serial);
+                keyboard.set_focus(self, Some(window.toplevel().wl_surface().clone()), serial);
                 return;
             }
 
-            if let Some(output) = self.space.output_under(self.pointer_location).next() {
+            if let Some(output) = output.as_ref() {
                 let output_geo = self.space.output_geometry(output).unwrap();
                 let layers = layer_map_for_output(output);
                 if let Some(layer) = layers
@@ -243,7 +247,7 @@ impl<Backend> AnvilState<Backend> {
                             )
                             .is_some()
                     {
-                        keyboard.set_focus(dh, Some(layer.wl_surface()), serial);
+                        keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
                     }
                 }
             };
@@ -298,9 +302,7 @@ impl<Backend> AnvilState<Backend> {
         under
     }
 
-    fn on_pointer_axis<B: InputBackend>(&mut self, dh: &DisplayHandle, evt: B::PointerAxisEvent) {
-        let source = wl_pointer::AxisSource::from(evt.source());
-
+    fn on_pointer_axis<B: InputBackend>(&mut self, _dh: &DisplayHandle, evt: B::PointerAxisEvent) {
         let horizontal_amount = evt
             .amount(input::Axis::Horizontal)
             .unwrap_or_else(|| evt.amount_discrete(input::Axis::Horizontal).unwrap_or(0.0) * 3.0);
@@ -311,24 +313,24 @@ impl<Backend> AnvilState<Backend> {
         let vertical_amount_discrete = evt.amount_discrete(input::Axis::Vertical);
 
         {
-            let mut frame = AxisFrame::new(evt.time()).source(source);
+            let mut frame = AxisFrame::new(evt.time()).source(evt.source());
             if horizontal_amount != 0.0 {
-                frame = frame.value(wl_pointer::Axis::HorizontalScroll, horizontal_amount);
+                frame = frame.value(Axis::Horizontal, horizontal_amount);
                 if let Some(discrete) = horizontal_amount_discrete {
-                    frame = frame.discrete(wl_pointer::Axis::HorizontalScroll, discrete as i32);
+                    frame = frame.discrete(Axis::Horizontal, discrete as i32);
                 }
-            } else if source == wl_pointer::AxisSource::Finger {
-                frame = frame.stop(wl_pointer::Axis::HorizontalScroll);
+            } else if evt.source() == AxisSource::Finger {
+                frame = frame.stop(Axis::Horizontal);
             }
             if vertical_amount != 0.0 {
-                frame = frame.value(wl_pointer::Axis::VerticalScroll, vertical_amount);
+                frame = frame.value(Axis::Vertical, vertical_amount);
                 if let Some(discrete) = vertical_amount_discrete {
-                    frame = frame.discrete(wl_pointer::Axis::VerticalScroll, discrete as i32);
+                    frame = frame.discrete(Axis::Vertical, discrete as i32);
                 }
-            } else if source == wl_pointer::AxisSource::Finger {
-                frame = frame.stop(wl_pointer::Axis::VerticalScroll);
+            } else if evt.source() == AxisSource::Finger {
+                frame = frame.stop(Axis::Vertical);
             }
-            self.seat.get_pointer().unwrap().axis(self, dh, frame);
+            self.seat.get_pointer().unwrap().axis(self, frame);
         }
     }
 }
@@ -404,7 +406,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
 
     fn on_pointer_move_absolute_windowed<B: InputBackend>(
         &mut self,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         evt: B::PointerMotionAbsoluteEvent,
         output: &Output,
     ) {
@@ -417,10 +419,9 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
         let under = self.surface_under();
         self.seat.get_pointer().unwrap().motion(
             self,
-            dh,
+            under,
             &MotionEvent {
                 location: pos,
-                focus: under,
                 serial,
                 time: evt.time(),
             },
@@ -481,10 +482,9 @@ impl AnvilState<UdevData> {
                         if let Some(ptr) = self.seat.get_pointer() {
                             ptr.motion(
                                 self,
-                                dh,
+                                under,
                                 &MotionEvent {
                                     location: self.pointer_location,
-                                    focus: under,
                                     serial: SCOUNTER.next_serial(),
                                     time: 0,
                                 },
@@ -521,10 +521,9 @@ impl AnvilState<UdevData> {
                         if let Some(ptr) = self.seat.get_pointer() {
                             ptr.motion(
                                 self,
-                                dh,
+                                under,
                                 &MotionEvent {
                                     location: self.pointer_location,
-                                    focus: under,
                                     serial: SCOUNTER.next_serial(),
                                     time: 0,
                                 },
@@ -575,7 +574,7 @@ impl AnvilState<UdevData> {
         }
     }
 
-    fn on_pointer_move<B: InputBackend>(&mut self, dh: &DisplayHandle, evt: B::PointerMotionEvent) {
+    fn on_pointer_move<B: InputBackend>(&mut self, _dh: &DisplayHandle, evt: B::PointerMotionEvent) {
         let serial = SCOUNTER.next_serial();
         self.pointer_location += evt.delta();
 
@@ -587,10 +586,9 @@ impl AnvilState<UdevData> {
         if let Some(ptr) = self.seat.get_pointer() {
             ptr.motion(
                 self,
-                dh,
+                under,
                 &MotionEvent {
                     location: self.pointer_location,
-                    focus: under,
                     serial,
                     time: evt.time(),
                 },
@@ -600,7 +598,7 @@ impl AnvilState<UdevData> {
 
     fn on_pointer_move_absolute<B: InputBackend>(
         &mut self,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         evt: B::PointerMotionAbsoluteEvent,
     ) {
         let serial = SCOUNTER.next_serial();
@@ -628,10 +626,9 @@ impl AnvilState<UdevData> {
         if let Some(ptr) = self.seat.get_pointer() {
             ptr.motion(
                 self,
-                dh,
+                under,
                 &MotionEvent {
                     location: self.pointer_location,
-                    focus: under,
                     serial,
                     time: evt.time(),
                 },

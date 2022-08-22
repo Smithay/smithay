@@ -92,7 +92,7 @@ pub fn winit_dispatch(
                 None,
             );
         }
-        WinitEvent::Input(event) => state.process_input_event(display, event),
+        WinitEvent::Input(event) => state.process_input_event(event),
         _ => (),
     });
 
