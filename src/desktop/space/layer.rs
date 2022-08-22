@@ -1,5 +1,11 @@
 use crate::{
-    backend::renderer::{ImportAll, Renderer, Texture},
+    backend::renderer::{
+        element::{
+            surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+            RenderElement,
+        },
+        ImportAll, Renderer, Texture,
+    },
     desktop::{
         layer::{layer_state as output_layer_state, *},
         PopupManager,
@@ -14,8 +20,7 @@ impl<R, E> SpaceElement<R, E> for LayerSurface
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
-    E: crate::backend::renderer::output::element::RenderElement<R>
-        + From<crate::backend::renderer::output::element::surface::WaylandSurfaceRenderElement>,
+    E: RenderElement<R> + From<WaylandSurfaceRenderElement>,
 {
     fn location(&self, _space_id: usize) -> Point<i32, crate::utils::Logical> {
         let state = output_layer_state(self);
@@ -51,20 +56,12 @@ where
                     .to_physical(scale)
                     .to_i32_round();
 
-                crate::backend::renderer::output::element::surface::surfaces_from_surface_tree(
-                    popup.wl_surface(),
-                    location + offset,
-                    scale,
-                )
+                render_elements_from_surface_tree(popup.wl_surface(), location + offset, scale)
             });
 
         render_elements.extend(popup_render_elements);
 
-        render_elements.extend(
-            crate::backend::renderer::output::element::surface::surfaces_from_surface_tree(
-                surface, location, scale,
-            ),
-        );
+        render_elements.extend(render_elements_from_surface_tree(surface, location, scale));
 
         render_elements
     }
