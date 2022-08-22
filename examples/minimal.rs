@@ -94,7 +94,7 @@ impl SeatHandler for App {
     fn focus_changed(
         &mut self,
         _seat: &Seat<Self>,
-        _focused: Option<&dyn smithay::input::keyboard::KeyboardHandler<Self>>,
+        _focused: Option<&dyn smithay::input::keyboard::KeyboardTarget<Self>>,
     ) {
     }
     fn cursor_image(&mut self, _seat: &Seat<Self>, _image: smithay::input::pointer::CursorImageStatus) {}

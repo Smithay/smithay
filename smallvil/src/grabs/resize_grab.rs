@@ -3,7 +3,7 @@ use smithay::{
     desktop::{Kind, Space, Window, WindowSurfaceType},
     input::pointer::{
         AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-        PointerHandler, PointerInnerHandle,
+        PointerTarget, PointerInnerHandle,
     },
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel, wayland_server::protocol::wl_surface::WlSurface,
@@ -73,7 +73,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
         &mut self,
         data: &mut Smallvil,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
-        _focus: Option<(Box<dyn PointerHandler<Smallvil> + 'static>, Point<i32, Logical>)>,
+        _focus: Option<(Box<dyn PointerTarget<Smallvil> + 'static>, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus

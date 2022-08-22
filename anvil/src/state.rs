@@ -10,7 +10,7 @@ use smithay::{
     delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     input::{
-        keyboard::{KeyboardHandler, XkbConfig},
+        keyboard::{KeyboardTarget, XkbConfig},
         pointer::CursorImageStatus,
         Seat, SeatHandler, SeatState,
     },
@@ -160,7 +160,7 @@ impl<BackendData> SeatHandler for AnvilState<BackendData> {
         &mut self.seat_state
     }
 
-    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>) {
+    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardTarget<Self>>) {
         let surface = focused.and_then(|f| f.as_any().downcast_ref::<WlSurface>());
         let dh = &self.display_handle;
 

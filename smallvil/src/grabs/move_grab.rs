@@ -3,7 +3,7 @@ use smithay::{
     desktop::Window,
     input::pointer::{
         AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-        PointerHandler, PointerInnerHandle,
+        PointerTarget, PointerInnerHandle,
     },
     utils::{Logical, Point},
 };
@@ -19,7 +19,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         &mut self,
         data: &mut Smallvil,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
-        _focus: Option<(Box<dyn PointerHandler<Smallvil> + 'static>, Point<i32, Logical>)>,
+        _focus: Option<(Box<dyn PointerTarget<Smallvil> + 'static>, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus

@@ -18,7 +18,7 @@ use crate::{
     input::{
         pointer::{
             AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-            PointerHandler, PointerInnerHandle,
+            PointerTarget, PointerInnerHandle,
         },
         Seat, SeatHandler,
     },
@@ -71,7 +71,7 @@ where
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>,
+        focus: Option<(Box<dyn PointerTarget<D>>, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus

@@ -11,7 +11,7 @@ use wayland_server::{
 use crate::{
     backend::input::KeyState,
     input::{
-        keyboard::{KeyboardHandle, KeyboardHandler, KeysymHandle, ModifiersState},
+        keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
         Seat, SeatHandler, SeatState,
     },
     utils::IsAlive,
@@ -132,7 +132,7 @@ fn serialize_pressed_keys(keys: Vec<u32>) -> Vec<u8> {
     serialized.into()
 }
 
-impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
+impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
     fn enter(&self, seat: &Seat<D>, _data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
         with_focused_kbds(seat, self, |kbd| {
             kbd.enter(
@@ -177,14 +177,14 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
     fn is_alive(&self) -> bool {
         IsAlive::alive(self)
     }
-    fn same_handler_as(&self, other: &dyn KeyboardHandler<D>) -> bool {
+    fn same_handler_as(&self, other: &dyn KeyboardTarget<D>) -> bool {
         if let Some(other_surface) = other.as_any().downcast_ref::<WlSurface>() {
             self == other_surface
         } else {
             false
         }
     }
-    fn clone_handler(&self) -> Box<dyn KeyboardHandler<D>> {
+    fn clone_handler(&self) -> Box<dyn KeyboardTarget<D>> {
         Box::new(self.clone())
     }
     fn as_any(&self) -> &dyn std::any::Any {

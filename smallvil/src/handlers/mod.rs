@@ -25,7 +25,7 @@ impl SeatHandler for Smallvil {
     fn focus_changed(
         &mut self,
         _seat: &smithay::input::Seat<Self>,
-        _focused: Option<&dyn smithay::input::keyboard::KeyboardHandler<Self>>,
+        _focused: Option<&dyn smithay::input::keyboard::KeyboardTarget<Self>>,
     ) {
     }
 }

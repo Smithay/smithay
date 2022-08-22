@@ -9,7 +9,7 @@ use smithay::{
     input::{
         pointer::{
             AxisFrame, ButtonEvent, Focus, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-            PointerHandler, PointerInnerHandle,
+            PointerTarget, PointerInnerHandle,
         },
         Seat,
     },
@@ -55,7 +55,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<Backe
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         _focus: Option<(
-            Box<dyn PointerHandler<AnvilState<BackendData>> + 'static>,
+            Box<dyn PointerTarget<AnvilState<BackendData>> + 'static>,
             Point<i32, Logical>,
         )>,
         event: &MotionEvent,
@@ -142,7 +142,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
         _focus: Option<(
-            Box<dyn PointerHandler<AnvilState<BackendData>> + 'static>,
+            Box<dyn PointerTarget<AnvilState<BackendData>> + 'static>,
             Point<i32, Logical>,
         )>,
         event: &MotionEvent,

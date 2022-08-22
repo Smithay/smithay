@@ -26,7 +26,7 @@ mod xkb_config;
 pub use xkb_config::XkbConfig;
 
 /// Trait representing object that can receive keyboard interactions
-pub trait KeyboardHandler<D>
+pub trait KeyboardTarget<D>
 where
     D: SeatHandler,
     Self: std::any::Any + Send + 'static,
@@ -52,19 +52,19 @@ where
     fn is_alive(&self) -> bool;
     /// Compare this element to any given other to figure out if a provided
     /// handler is referencing the same object.
-    fn same_handler_as(&self, other: &dyn KeyboardHandler<D>) -> bool;
+    fn same_handler_as(&self, other: &dyn KeyboardTarget<D>) -> bool;
     /// Clone this handler
-    fn clone_handler(&self) -> Box<dyn KeyboardHandler<D> + 'static>;
+    fn clone_handler(&self) -> Box<dyn KeyboardTarget<D> + 'static>;
     /// Access this handler as an [`std::any::Any`] reference
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
-impl<D: SeatHandler + 'static> KeyboardHandler<D> for Box<dyn KeyboardHandler<D>> {
+impl<D: SeatHandler + 'static> KeyboardTarget<D> for Box<dyn KeyboardTarget<D>> {
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        KeyboardHandler::enter(&**self, seat, data, keys, serial)
+        KeyboardTarget::enter(&**self, seat, data, keys, serial)
     }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
-        KeyboardHandler::leave(&**self, seat, data, serial)
+        KeyboardTarget::leave(&**self, seat, data, serial)
     }
     fn key(
         &self,
@@ -75,20 +75,20 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for Box<dyn KeyboardHandler<D>
         serial: Serial,
         time: u32,
     ) {
-        KeyboardHandler::key(&**self, seat, data, key, state, serial, time)
+        KeyboardTarget::key(&**self, seat, data, key, state, serial, time)
     }
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
-        KeyboardHandler::modifiers(&**self, seat, data, modifiers, serial)
+        KeyboardTarget::modifiers(&**self, seat, data, modifiers, serial)
     }
 
     fn is_alive(&self) -> bool {
-        KeyboardHandler::is_alive(&**self)
+        KeyboardTarget::is_alive(&**self)
     }
-    fn same_handler_as(&self, other: &dyn KeyboardHandler<D>) -> bool {
-        KeyboardHandler::same_handler_as(&**self, other)
+    fn same_handler_as(&self, other: &dyn KeyboardTarget<D>) -> bool {
+        KeyboardTarget::same_handler_as(&**self, other)
     }
-    fn clone_handler(&self) -> Box<dyn KeyboardHandler<D>> {
-        KeyboardHandler::clone_handler(&**self)
+    fn clone_handler(&self) -> Box<dyn KeyboardTarget<D>> {
+        KeyboardTarget::clone_handler(&**self)
     }
     fn as_any(&self) -> &dyn std::any::Any {
         (**self).as_any()
@@ -102,8 +102,8 @@ enum GrabStatus<D> {
 }
 
 pub(crate) struct KbdInternal<D> {
-    pub(crate) focus: Option<(Box<dyn KeyboardHandler<D>>, Serial)>,
-    pending_focus: Option<Box<dyn KeyboardHandler<D>>>,
+    pub(crate) focus: Option<(Box<dyn KeyboardTarget<D>>, Serial)>,
+    pending_focus: Option<Box<dyn KeyboardTarget<D>>>,
     pub(crate) pressed_keys: Vec<u32>,
     pub(crate) mods_state: ModifiersState,
     keymap: xkb::Keymap,
@@ -318,7 +318,7 @@ pub enum FilterResult<T> {
 /// Data about the event that started the grab.
 pub struct GrabStartData<D> {
     /// The focused surface, if any, at the start of the grab.
-    pub focus: Option<Box<dyn KeyboardHandler<D>>>,
+    pub focus: Option<Box<dyn KeyboardTarget<D>>>,
 }
 
 impl<D: SeatHandler + 'static> fmt::Debug for GrabStartData<D> {
@@ -371,7 +371,7 @@ pub trait KeyboardGrab<D: SeatHandler> {
         &mut self,
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
-        focus: Option<Box<dyn KeyboardHandler<D>>>,
+        focus: Option<Box<dyn KeyboardTarget<D>>>,
         serial: Serial,
     );
 
@@ -550,9 +550,9 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&self, data: &mut D, focus: Option<impl KeyboardHandler<D> + 'static>, serial: Serial) {
+    pub fn set_focus(&self, data: &mut D, focus: Option<impl KeyboardTarget<D> + 'static>, serial: Serial) {
         let mut guard = self.arc.internal.lock().unwrap();
-        guard.pending_focus = focus.as_ref().map(KeyboardHandler::clone_handler);
+        guard.pending_focus = focus.as_ref().map(KeyboardTarget::clone_handler);
         let seat = self.get_seat(data);
         guard.with_grab(
             &seat,
@@ -560,7 +560,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 grab.set_focus(
                     data,
                     &mut handle,
-                    focus.map(|h| Box::new(h) as Box<dyn KeyboardHandler<D>>),
+                    focus.map(|h| Box::new(h) as Box<dyn KeyboardTarget<D>>),
                     serial,
                 );
             },
@@ -624,13 +624,13 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
                 .inner
                 .pending_focus
                 .as_ref()
-                .map(KeyboardHandler::clone_handler);
+                .map(KeyboardTarget::clone_handler);
             self.set_focus(data, focus, serial);
         }
     }
 
     /// Access the current focus of this keyboard
-    pub fn current_focus(&self) -> Option<&dyn KeyboardHandler<D>> {
+    pub fn current_focus(&self) -> Option<&dyn KeyboardTarget<D>> {
         self.inner.focus.as_ref().map(|f| &*f.0)
     }
 
@@ -676,7 +676,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&mut self, data: &mut D, focus: Option<Box<dyn KeyboardHandler<D>>>, serial: Serial) {
+    pub fn set_focus(&mut self, data: &mut D, focus: Option<Box<dyn KeyboardTarget<D>>>, serial: Serial) {
         let same = self
             .inner
             .focus
@@ -746,7 +746,7 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
         &mut self,
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
-        focus: Option<Box<dyn KeyboardHandler<D>>>,
+        focus: Option<Box<dyn KeyboardTarget<D>>>,
         serial: Serial,
     ) {
         handle.set_focus(data, focus, serial)

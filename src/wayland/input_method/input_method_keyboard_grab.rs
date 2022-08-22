@@ -10,7 +10,7 @@ use wayland_server::Dispatch;
 use crate::backend::input::KeyState;
 use crate::input::{
     keyboard::{
-        GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardHandler,
+        GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardTarget,
         KeyboardInnerHandle, KeymapFile, ModifiersState,
     },
     SeatHandler,
@@ -69,7 +69,7 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for InputMethodKeyboardGrab {
         &mut self,
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
-        focus: Option<Box<dyn KeyboardHandler<D>>>,
+        focus: Option<Box<dyn KeyboardTarget<D>>>,
         serial: crate::utils::Serial,
     ) {
         let inner = self.inner.lock().unwrap();

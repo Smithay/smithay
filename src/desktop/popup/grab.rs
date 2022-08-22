@@ -9,12 +9,12 @@ use crate::{
     backend::input::{ButtonState, KeyState},
     input::{
         keyboard::{
-            GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardHandler,
+            GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardTarget,
             KeyboardInnerHandle, ModifiersState,
         },
         pointer::{
             AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-            PointerHandler, PointerInnerHandle,
+            PointerTarget, PointerInnerHandle,
         },
         SeatHandler,
     },
@@ -426,7 +426,7 @@ impl<D: SeatHandler> KeyboardGrab<D> for PopupKeyboardGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
-        focus: Option<Box<dyn KeyboardHandler<D>>>,
+        focus: Option<Box<dyn KeyboardTarget<D>>>,
         serial: Serial,
     ) {
         // Ignore focus changes unless the grab has ended
@@ -479,7 +479,7 @@ impl<D: SeatHandler + 'static> PopupPointerGrab<D> {
         }
     }
 
-    fn focus_client_equals(&self, focus: Option<&dyn PointerHandler<D>>) -> bool {
+    fn focus_client_equals(&self, focus: Option<&dyn PointerTarget<D>>) -> bool {
         match (focus, self.popup_grab.current_grab()) {
             (Some(a), Some(b)) => a
                 .as_any()
@@ -497,7 +497,7 @@ impl<D: SeatHandler> PointerGrab<D> for PopupPointerGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>,
+        focus: Option<(Box<dyn PointerTarget<D>>, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         if self.popup_grab.has_ended() {

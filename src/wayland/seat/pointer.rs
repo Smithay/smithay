@@ -17,7 +17,7 @@ use crate::{
     input::{
         pointer::{
             AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus, MotionEvent, PointerHandle,
-            PointerHandler, PointerInternal,
+            PointerTarget, PointerInternal,
         },
         Seat,
     },
@@ -53,7 +53,7 @@ fn with_focused_pointers<D: SeatHandler + 'static>(
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl<D> PointerHandler<D> for WlSurface
+impl<D> PointerTarget<D> for WlSurface
 where
     D: SeatHandler + 'static,
 {
@@ -137,14 +137,14 @@ where
     fn is_alive(&self) -> bool {
         IsAlive::alive(self)
     }
-    fn same_handler_as(&self, other: &dyn PointerHandler<D>) -> bool {
+    fn same_handler_as(&self, other: &dyn PointerTarget<D>) -> bool {
         if let Some(other_surface) = other.as_any().downcast_ref::<WlSurface>() {
             self.id() == other_surface.id()
         } else {
             false
         }
     }
-    fn clone_handler(&self) -> Box<dyn PointerHandler<D> + 'static> {
+    fn clone_handler(&self) -> Box<dyn PointerTarget<D> + 'static> {
         Box::new(self.clone())
     }
     fn as_any(&self) -> &dyn std::any::Any {

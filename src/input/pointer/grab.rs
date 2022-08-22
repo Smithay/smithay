@@ -8,7 +8,7 @@ use crate::{
 };
 
 use super::{
-    AxisFrame, ButtonEvent, Focus, MotionEvent, PointerFocusBoxed, PointerHandler, PointerInnerHandle,
+    AxisFrame, ButtonEvent, Focus, MotionEvent, PointerFocusBoxed, PointerTarget, PointerInnerHandle,
 };
 
 /// A trait to implement a pointer grab
@@ -123,7 +123,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>,
+        focus: Option<(Box<dyn PointerTarget<D>>, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         handle.motion(data, focus, event);
@@ -170,7 +170,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        _focus: Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>,
+        _focus: Option<(Box<dyn PointerTarget<D>>, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         handle.motion(

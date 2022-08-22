@@ -68,7 +68,7 @@ use crate::utils::user_data::UserDataMap;
 pub mod keyboard;
 pub mod pointer;
 
-use self::keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardHandler};
+use self::keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardTarget};
 use self::pointer::{CursorImageStatus, PointerHandle};
 
 /// Handler trait for Seats
@@ -77,7 +77,7 @@ pub trait SeatHandler: Sized {
     fn seat_state(&mut self) -> &mut SeatState<Self>;
 
     /// Callback that will be notified whenever the focus of the seat changes.
-    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>);
+    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardTarget<Self>>);
     /// Callback that will be notified whenever a client requests to set a custom cursor image.
     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus);
 }

@@ -52,7 +52,7 @@ impl<D> ::std::cmp::PartialEq for PointerHandle<D> {
 }
 
 /// Trait representing object that can receive pointer interactions
-pub trait PointerHandler<D>
+pub trait PointerTarget<D>
 where
     D: SeatHandler,
     Self: std::any::Any + Send + 'static,
@@ -72,38 +72,38 @@ where
     fn is_alive(&self) -> bool;
     /// Compare this element to any given other to figure out if a provided
     /// handler is referencing the same object.
-    fn same_handler_as(&self, other: &dyn PointerHandler<D>) -> bool;
+    fn same_handler_as(&self, other: &dyn PointerTarget<D>) -> bool;
     /// Clone this handler
-    fn clone_handler(&self) -> Box<dyn PointerHandler<D> + 'static>;
+    fn clone_handler(&self) -> Box<dyn PointerTarget<D> + 'static>;
     /// Access this handler as an [`std::any::Any`] reference
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
-impl<D: SeatHandler + 'static> PointerHandler<D> for Box<dyn PointerHandler<D>> {
+impl<D: SeatHandler + 'static> PointerTarget<D> for Box<dyn PointerTarget<D>> {
     fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerHandler::enter(&**self, seat, data, event)
+        PointerTarget::enter(&**self, seat, data, event)
     }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
-        PointerHandler::leave(&**self, seat, data, serial, time)
+        PointerTarget::leave(&**self, seat, data, serial, time)
     }
     fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerHandler::motion(&**self, seat, data, event);
+        PointerTarget::motion(&**self, seat, data, event);
     }
     fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
-        PointerHandler::button(&**self, seat, data, event)
+        PointerTarget::button(&**self, seat, data, event)
     }
     fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
-        PointerHandler::axis(&**self, seat, data, frame);
+        PointerTarget::axis(&**self, seat, data, frame);
     }
 
     fn is_alive(&self) -> bool {
-        PointerHandler::is_alive(&**self)
+        PointerTarget::is_alive(&**self)
     }
-    fn same_handler_as(&self, other: &dyn PointerHandler<D>) -> bool {
-        PointerHandler::same_handler_as(&**self, other)
+    fn same_handler_as(&self, other: &dyn PointerTarget<D>) -> bool {
+        PointerTarget::same_handler_as(&**self, other)
     }
-    fn clone_handler(&self) -> Box<dyn PointerHandler<D> + 'static> {
-        PointerHandler::clone_handler(&**self)
+    fn clone_handler(&self) -> Box<dyn PointerTarget<D> + 'static> {
+        PointerTarget::clone_handler(&**self)
     }
     fn as_any(&self) -> &dyn std::any::Any {
         (**self).as_any()
@@ -111,7 +111,7 @@ impl<D: SeatHandler + 'static> PointerHandler<D> for Box<dyn PointerHandler<D>> 
 }
 
 /// Pointer focus containing a boxed PointerHandler and a relative position
-pub type PointerFocusBoxed<D> = (Box<dyn PointerHandler<D>>, Point<i32, Logical>);
+pub type PointerFocusBoxed<D> = (Box<dyn PointerTarget<D>>, Point<i32, Logical>);
 
 impl<D: SeatHandler + 'static> PointerHandle<D> {
     pub(crate) fn new() -> PointerHandle<D> {
@@ -179,7 +179,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     pub fn motion(
         &self,
         data: &mut D,
-        focus: Option<(impl PointerHandler<D>, Point<i32, Logical>)>,
+        focus: Option<(impl PointerTarget<D>, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         let mut inner = self.inner.lock().unwrap();
@@ -189,7 +189,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
             grab.motion(
                 data,
                 &mut handle,
-                focus.map(|(h, p)| (Box::new(h) as Box<dyn PointerHandler<D>>, p)),
+                focus.map(|(h, p)| (Box::new(h) as Box<dyn PointerTarget<D>>, p)),
                 event,
             );
         });
@@ -271,7 +271,7 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     }
 
     /// Access the current focus of this pointer
-    pub fn current_focus(&self) -> Option<(&dyn PointerHandler<D>, Point<i32, Logical>)> {
+    pub fn current_focus(&self) -> Option<(&dyn PointerTarget<D>, Point<i32, Logical>)> {
         self.inner.focus.as_ref().map(|(h, p)| (&**h, *p))
     }
 
