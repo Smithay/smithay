@@ -153,17 +153,12 @@ impl PopupGrabInner {
         Ok(guard.serial.replace(serial))
     }
 
-    fn ungrab(
-        &self,
-        dh: &DisplayHandle,
-        root: &WlSurface,
-        strategy: PopupUngrabStrategy,
-    ) -> Option<WlSurface> {
+    fn ungrab(&self, root: &WlSurface, strategy: PopupUngrabStrategy) -> Option<WlSurface> {
         let mut guard = self.internal.lock().unwrap();
         let dismissed = match strategy {
             PopupUngrabStrategy::Topmost => {
                 if let Some(grab) = guard.active_grabs.pop() {
-                    let dismissed = PopupManager::dismiss_popup(dh, root, &grab.1);
+                    let dismissed = PopupManager::dismiss_popup(root, &grab.1);
 
                     if dismissed.is_ok() {
                         guard.dismissed_grabs.push(grab);
@@ -178,7 +173,7 @@ impl PopupGrabInner {
                 let grabs = guard.active_grabs.drain(..).collect::<Vec<_>>();
 
                 if let Some(grab) = grabs.first() {
-                    let dismissed = PopupManager::dismiss_popup(dh, root, &grab.1);
+                    let dismissed = PopupManager::dismiss_popup(root, &grab.1);
 
                     if dismissed.is_ok() {
                         guard.dismissed_grabs.push(grab.clone());
@@ -310,9 +305,9 @@ impl PopupGrab {
     ///
     /// Returns the new topmost popup in case of nested popups
     /// or if the grab has ended the root surface
-    pub fn ungrab(&mut self, dh: &DisplayHandle, strategy: PopupUngrabStrategy) -> Option<WlSurface> {
+    pub fn ungrab(&mut self, strategy: PopupUngrabStrategy) -> Option<WlSurface> {
         self.toplevel_grab
-            .ungrab(dh, &self.root, strategy)
+            .ungrab(&self.root, strategy)
             .or_else(|| Some(self.root.clone()))
     }
 
@@ -499,7 +494,7 @@ impl<D> PointerGrab<D> for PopupPointerGrab {
         // Check if the the client of the focused surface is still equal to the grabbed surface client
         // if not the popup will be dismissed
         if state == ButtonState::Pressed && !self.focus_client_equals(handle.current_focus()) {
-            let _ = self.popup_grab.ungrab(dh, PopupUngrabStrategy::All);
+            let _ = self.popup_grab.ungrab(PopupUngrabStrategy::All);
             handle.unset_grab(serial, time);
             handle.button(button, state, serial, time);
             self.popup_grab.unset_keyboard_grab(dh, serial);

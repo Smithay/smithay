@@ -193,7 +193,7 @@ where
                 // create_dmabuf performs an implicit ensure_unused function call.
                 if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags) {
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
-                        match state.dmabuf_imported(dh, &DmabufGlobal { id: data.id }, dmabuf.clone()) {
+                        match state.dmabuf_imported(&DmabufGlobal { id: data.id }, dmabuf.clone()) {
                             Ok(_) => {
                                 match client.create_resource::<wl_buffer::WlBuffer, Dmabuf, D>(dh, 1, dmabuf)
                                 {
@@ -241,7 +241,7 @@ where
                 // create_dmabuf performs an implicit ensure_unused function call.
                 if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags) {
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
-                        match state.dmabuf_imported(dh, &DmabufGlobal { id: data.id }, dmabuf.clone()) {
+                        match state.dmabuf_imported(&DmabufGlobal { id: data.id }, dmabuf.clone()) {
                             Ok(_) => {
                                 // Import was successful, initialize the dmabuf data
                                 data_init.init(buffer_id, dmabuf);

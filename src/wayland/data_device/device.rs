@@ -86,7 +86,7 @@ where
                         if keyboard.client_of_object_has_focus(&resource.id()) {
                             let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
 
-                            handler.new_selection(dh, source.clone());
+                            handler.new_selection(source.clone());
                             // The client has kbd focus, it can set the selection
                             seat_data.borrow_mut().set_selection::<D>(
                                 dh,

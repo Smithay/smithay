@@ -272,7 +272,7 @@ where
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((resource, request)) = WlDataOffer::parse_request(&dh, msg) {
-            handle_dnd(handler, &resource, request, &self, &dh);
+            handle_dnd(handler, &resource, request, &self);
         }
 
         None
@@ -281,13 +281,8 @@ where
     fn destroyed(&self, _data: &mut D, _client_id: ClientId, _object_id: ObjectId) {}
 }
 
-fn handle_dnd<D>(
-    handler: &mut D,
-    offer: &WlDataOffer,
-    request: wl_data_offer::Request,
-    data: &DndDataOffer,
-    dh: &DisplayHandle,
-) where
+fn handle_dnd<D>(handler: &mut D, offer: &WlDataOffer, request: wl_data_offer::Request, data: &DndDataOffer)
+where
     D: DataDeviceHandler,
     D: 'static,
 {
@@ -368,7 +363,7 @@ fn handle_dnd<D>(
             let source_actions =
                 with_source_metadata(source, |meta| meta.dnd_action).unwrap_or_else(|_| DndAction::empty());
             let possible_actions = source_actions & dnd_actions;
-            data.chosen_action = handler.action_choice(dh, possible_actions, preferred_action);
+            data.chosen_action = handler.action_choice(possible_actions, preferred_action);
             // check that the user provided callback respects that one precise action should be chosen
             debug_assert!(
                 [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]

@@ -30,7 +30,7 @@ use smithay::{
         gbm,
         wayland_server::{
             protocol::{wl_output, wl_surface},
-            Display, DisplayHandle,
+            Display,
         },
     },
     utils::IsAlive,
@@ -64,12 +64,7 @@ impl DmabufHandler for AnvilState<X11Data> {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
     }
 
-    fn dmabuf_imported(
-        &mut self,
-        _dh: &DisplayHandle,
-        _global: &DmabufGlobal,
-        dmabuf: Dmabuf,
-    ) -> Result<(), ImportError> {
+    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
         self.backend_data
             .renderer
             .import_dmabuf(&dmabuf, None)

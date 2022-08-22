@@ -2,10 +2,7 @@ use crate::{grabs::resize_grab, Smallvil};
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     delegate_compositor, delegate_shm,
-    reexports::wayland_server::{
-        protocol::{wl_buffer, wl_surface::WlSurface},
-        DisplayHandle,
-    },
+    reexports::wayland_server::protocol::{wl_buffer, wl_surface::WlSurface},
     wayland::{
         buffer::BufferHandler,
         compositor::{CompositorHandler, CompositorState},
@@ -20,7 +17,7 @@ impl CompositorHandler for Smallvil {
         &mut self.compositor_state
     }
 
-    fn commit(&mut self, _dh: &DisplayHandle, surface: &WlSurface) {
+    fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler(surface);
         self.space.commit(surface);
 

@@ -74,6 +74,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub socket_name: Option<String>,
     pub running: Arc<AtomicBool>,
     pub handle: LoopHandle<'static, CalloopData<BackendData>>,
+    pub display: DisplayHandle,
 
     // desktop
     pub space: Space,
@@ -115,7 +116,7 @@ impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
-    fn send_selection(&mut self, _dh: &DisplayHandle, _mime_type: String, _fd: RawFd) {
+    fn send_selection(&mut self, _mime_type: String, _fd: RawFd) {
         unreachable!("Anvil doesn't do server-side selections");
     }
 }
@@ -172,7 +173,6 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
 
     fn request_activation(
         &mut self,
-        _dh: &DisplayHandle,
         token: XdgActivationToken,
         token_data: XdgActivationTokenData,
         surface: WlSurface,
@@ -204,15 +204,15 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
 delegate_xdg_activation!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgDecorationHandler for AnvilState<BackendData> {
-    fn new_decoration(&mut self, _dh: &DisplayHandle, toplevel: ToplevelSurface) {
+    fn new_decoration(&mut self, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ClientSide);
         });
         toplevel.send_configure();
     }
-    fn request_mode(&mut self, _dh: &DisplayHandle, _toplevel: ToplevelSurface, _mode: DecorationMode) {}
-    fn unset_mode(&mut self, _dh: &DisplayHandle, _toplevel: ToplevelSurface) {}
+    fn request_mode(&mut self, _toplevel: ToplevelSurface, _mode: DecorationMode) {}
+    fn unset_mode(&mut self, _toplevel: ToplevelSurface) {}
 }
 delegate_xdg_decoration!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
@@ -318,6 +318,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         AnvilState {
             backend_data,
+            display: display.handle(),
             socket_name,
             running: Arc::new(AtomicBool::new(true)),
             handle,

@@ -7,7 +7,7 @@ use smithay::wayland::compositor::{CompositorHandler, CompositorState};
 
 use wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{DisplayHandle, ListeningSocket};
+use wayland_server::ListeningSocket;
 
 struct App {
     compositor_state: CompositorState,
@@ -18,7 +18,7 @@ impl CompositorHandler for App {
         &mut self.compositor_state
     }
 
-    fn commit(&mut self, _dh: &DisplayHandle, surface: &WlSurface) {
+    fn commit(&mut self, surface: &WlSurface) {
         dbg!("Commit", surface);
     }
 }

@@ -22,7 +22,6 @@
 //!
 //!     fn request_activation(
 //!         &mut self,
-//!         dh: &DisplayHandle,
 //!         token: XdgActivationToken,
 //!         token_data: XdgActivationTokenData,
 //!         surface: WlSurface
@@ -245,7 +244,6 @@ pub trait XdgActivationHandler {
     /// ignore any future requests.
     fn request_activation(
         &mut self,
-        dh: &DisplayHandle,
         token: XdgActivationToken,
         token_data: XdgActivationTokenData,
         surface: WlSurface,

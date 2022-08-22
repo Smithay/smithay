@@ -76,14 +76,14 @@ pub trait PrimarySelectionHandler: Sized {
 
     /// A client has set the selection
     #[allow(unused_variables)]
-    fn new_selection(&mut self, dh: &DisplayHandle, source: Option<PrimarySource>) {}
+    fn new_selection(&mut self, source: Option<PrimarySource>) {}
 
     /// A client requested to read the server-set selection
     ///
     /// * `mime_type` - the requested mime type
     /// * `fd` - the fd to write into
     #[allow(unused_variables)]
-    fn send_selection(&mut self, dh: &DisplayHandle, mime_type: String, fd: RawFd) {}
+    fn send_selection(&mut self, mime_type: String, fd: RawFd) {}
 }
 
 /// State of data device

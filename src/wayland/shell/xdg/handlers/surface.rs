@@ -55,7 +55,7 @@ where
         xdg_surface: &XdgSurface,
         request: xdg_surface::Request,
         data: &XdgSurfaceUserData,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -121,7 +121,7 @@ where
 
                 let handle = make_toplevel_handle(&toplevel);
 
-                XdgShellHandler::new_toplevel(state, dh, handle);
+                XdgShellHandler::new_toplevel(state, handle);
             }
             xdg_surface::Request::GetPopup {
                 id,
@@ -196,7 +196,7 @@ where
 
                 let handle = make_popup_handle(&popup);
 
-                XdgShellHandler::new_popup(state, dh, handle, positioner_data);
+                XdgShellHandler::new_popup(state, handle, positioner_data);
             }
             xdg_surface::Request::SetWindowGeometry { x, y, width, height } => {
                 // Check the role of the surface, this can be either xdg_toplevel
@@ -293,7 +293,7 @@ where
                     }
                 };
 
-                XdgShellHandler::ack_configure(state, dh, surface.clone(), configure);
+                XdgShellHandler::ack_configure(state, surface.clone(), configure);
             }
             _ => unreachable!(),
         }
