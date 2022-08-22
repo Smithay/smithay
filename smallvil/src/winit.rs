@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
-        renderer::{gles2::Gles2Renderer, output::DamageTrackedRenderer},
+        renderer::{damage::DamageTrackedRenderer, gles2::Gles2Renderer},
         winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
     },
     desktop::space::{SpaceRenderElements, SurfaceTree},
