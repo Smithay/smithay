@@ -79,7 +79,7 @@ impl<T: SpaceElement> SpaceElement for &T {
 space_elements! {
     pub SpaceElements<'a, E>;
     Layer=LayerSurface,
-    Element=&'a E,
+    Element=&'a InnerElement<E>,
 }
 
 impl<'a, R, E> AsRenderElements<R> for SpaceElements<'a, E>
@@ -106,6 +106,7 @@ where
                     .collect()
             }
             SpaceElements::Element(element) => element
+                .element
                 .render_elements::<Self::RenderElement>(location, scale)
                 .into_iter()
                 .map(C::from)

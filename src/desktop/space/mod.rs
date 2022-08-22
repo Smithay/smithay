@@ -33,7 +33,8 @@ use super::WindowSurfaceType;
 crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
 
 #[derive(Debug)]
-struct InnerElement<E> {
+#[doc(hidden)]
+pub struct InnerElement<E> {
     element: E,
     location: Point<i32, Logical>,
     outputs: HashSet<Output>,
@@ -125,13 +126,13 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         if activate {
             elem.element.set_activate(true);
             for e in self.elements.iter() {
-                e.element.set_activate(false);
+                e.set_activate(false);
             }
         }
 
         self.elements.push(elem);
         self.elements
-            .sort_by(|e1, e2| e1.element.z_index().cmp(&e2.element.z_index()));
+            .sort_by(|e1, e2| e1.z_index().cmp(&e2.element.z_index()));
     }
 
     /// Unmap a [`Window`] from this space.
@@ -162,7 +163,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     pub fn element_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<(&E, Point<i32, Logical>)> {
         let point = point.into();
         self.elements.iter().rev().find_map(|e| {
-            if let Some(pos) = e.element.input_region(&point) {
+            if let Some(pos) = e.input_region(&point) {
                 Some((&e.element, pos))
             } else {
                 None
@@ -203,11 +204,10 @@ impl<E: SpaceElement + PartialEq> Space<E> {
 
     /// Returns the bounding box of a [`Window`] including its relative position inside the Space.
     pub fn element_bbox(&self, elem: &E) -> Option<Rectangle<i32, Logical>> {
-        self.elements.iter().find(|e| &e.element == elem).map(|e| {
-            let mut bbox = e.element.bbox();
-            bbox.loc += e.location;
-            bbox
-        })
+        self.elements
+            .iter()
+            .find(|e| &e.element == elem)
+            .map(|e| e.bbox())
     }
 
     /// Maps an [`Output`] inside the space.
@@ -289,7 +289,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// Needs to be called periodically, at best before every
     /// wayland socket flush.
     pub fn refresh(&mut self) {
-        self.elements.retain(|e| e.element.alive());
+        self.elements.retain(|e| e.alive());
 
         let outputs = self
             .outputs
@@ -303,7 +303,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             })
             .collect::<Vec<_>>();
         for e in &mut self.elements {
-            let bbox = e.element.bbox();
+            let bbox = e.bbox();
 
             for (output, output_geometry) in &outputs {
                 // Check if the bounding box of the toplevel intersects with
@@ -350,7 +350,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         let layer_map = layer_map_for_output(output);
         let mut space_elements: Vec<SpaceElements<'_, E>> = Vec::new();
 
-        space_elements.extend(self.elements().rev().map(SpaceElements::Element));
+        space_elements.extend(self.elements.iter().rev().map(SpaceElements::Element));
 
         space_elements.extend(layer_map.layers().rev().cloned().map(SpaceElements::Layer));
 
@@ -359,11 +359,11 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         Ok(space_elements
             .into_iter()
             .filter(|e| {
-                let geometry = e.geometry();
+                let geometry = e.bbox();
                 output_geo.overlaps(geometry)
             })
             .flat_map(|e| {
-                let location = e.geometry().loc - output_location;
+                let location = e.bbox().loc - output_location;
                 e.render_elements(
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
@@ -382,6 +382,45 @@ pub enum OutputError {
     /// The given [`Output`] is not mapped to this [`Space`].
     #[error("Output was not mapped to this space")]
     Unmapped,
+}
+
+impl<E: IsAlive> IsAlive for InnerElement<E> {
+    fn alive(&self) -> bool {
+        self.element.alive()
+    }
+}
+
+impl<E: SpaceElement> SpaceElement for InnerElement<E> {
+    fn geometry(&self) -> Rectangle<i32, Logical> {
+        let mut geo = self.element.geometry();
+        geo.loc += self.location;
+        geo
+    }
+
+    fn bbox(&self) -> Rectangle<i32, Logical> {
+        let mut bbox = self.element.bbox();
+        bbox.loc += self.location;
+        bbox
+    }
+
+    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
+        self.element
+            .input_region(&(*point - self.location.to_f64()))
+            .map(|p| p + self.location)
+    }
+    fn z_index(&self) -> u8 {
+        self.element.z_index()
+    }
+
+    fn set_activate(&self, activated: bool) {
+        self.element.set_activate(activated)
+    }
+    fn output_enter(&self, output: &Output) {
+        self.element.output_enter(output)
+    }
+    fn output_leave(&self, output: &Output) {
+        self.element.output_leave(output)
+    }
 }
 
 crate::backend::renderer::element::render_elements! {
