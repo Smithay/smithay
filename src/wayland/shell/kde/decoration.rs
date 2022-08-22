@@ -62,14 +62,17 @@ pub trait KdeDecorationHandler {
     /// decoration request.
     ///
     /// **It is up to the compositor to prevent feedback loops**, a client is free to ignore modes
-    /// suggested by [`OrgKdeKwinServerDecoration::mode`] and instead keep requesting their
-    /// preferred mode instead.
+    /// suggested by [`OrgKdeKwinServerDecoration::mode`] and instead request their preferred mode
+    /// instead.
     fn request_mode(
         &mut self,
         _surface: &WlSurface,
-        _decoration: &OrgKdeKwinServerDecoration,
-        _mode: WEnum<Mode>,
+        decoration: &OrgKdeKwinServerDecoration,
+        mode: WEnum<Mode>,
     ) {
+        if let WEnum::Value(mode) = mode {
+            decoration.mode(mode);
+        }
     }
 
     /// Handle decoration object removal for a surface.
