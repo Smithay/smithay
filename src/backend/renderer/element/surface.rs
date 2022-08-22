@@ -11,7 +11,7 @@ use crate::{
 use super::{Id, RenderElement, UnderlyingStorage};
 
 /// Retrieve the render surfaces for a surface tree
-pub fn surfaces_from_surface_tree<E>(
+pub fn render_elements_from_surface_tree<E>(
     surface: &wl_surface::WlSurface,
     location: impl Into<Point<i32, Physical>>,
     scale: impl Into<Scale<f64>>,

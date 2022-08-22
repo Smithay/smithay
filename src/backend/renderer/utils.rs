@@ -1,4 +1,4 @@
-//! Utility module for helpers around drawing [`WlSurface`]s with [`Renderer`]s.
+//! Utility module for helpers around drawing [`WlSurface`]s and [`RenderElement`]s with [`Renderer`]s.
 
 use crate::{
     backend::renderer::{buffer_dimensions, buffer_has_alpha, ImportAll, Renderer},
@@ -21,9 +21,9 @@ use std::{
 
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
-use super::output::{
-    self,
-    element::{surface::WaylandSurfaceRenderElement, RenderElement},
+use super::element::{
+    surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+    RenderElement,
 };
 
 /// Type stored in WlSurface states data_map
@@ -520,7 +520,7 @@ where
     let scale = scale.into();
 
     let elements: Vec<WaylandSurfaceRenderElement> =
-        output::element::surface::surfaces_from_surface_tree(surface, location.to_i32_round(), scale);
+        render_elements_from_surface_tree(surface, location.to_i32_round(), scale);
 
     draw_render_elements(renderer, frame, scale, &*elements, damage, log)?;
 
