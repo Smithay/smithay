@@ -1,26 +1,23 @@
 use smithay::{
     backend::renderer::{
-        output::{
-            element::{
-                surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement, Wrap,
-            },
-            DamageTrackedRenderer, Mode, OutputRenderError,
-        },
+        damage::{DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode},
+        element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, RenderElement, Wrap},
         ImportAll, Renderer,
     },
     desktop::{
         self,
         space::{Space, SpaceElement},
     },
+    render_elements,
     utils::{Physical, Rectangle},
     wayland::output::Output,
 };
 
 use crate::{drawing::CLEAR_COLOR, shell::FullscreenSurface};
 
-smithay::backend::renderer::output::element::render_elements! {
+render_elements! {
     OutputRenderElements<'a, R, E>;
-    Space=smithay::backend::renderer::output::element::Wrap<E>,
+    Space=Wrap<E>,
     Custom=&'a E,
 }
 
@@ -34,7 +31,7 @@ pub fn render_output<R, C, E>(
     damage_tracked_renderer: &mut DamageTrackedRenderer,
     age: usize,
     log: &slog::Logger,
-) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
+) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
 where
     R: Renderer + ImportAll,
     R::TextureId: Clone + 'static,
@@ -48,7 +45,7 @@ where
         .get::<FullscreenSurface>()
         .and_then(|f| f.get())
     {
-        if let Mode::Auto(renderer_output) = damage_tracked_renderer.mode() {
+        if let DamageTrackedRendererMode::Auto(renderer_output) = damage_tracked_renderer.mode() {
             assert!(renderer_output == output);
         }
 

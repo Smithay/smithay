@@ -1,9 +1,7 @@
 use crate::backend::renderer::{
     buffer_type,
-    output::{
-        element::{RenderElement, UnderlyingStorage},
-        DamageTrackedRenderer,
-    },
+    damage::DamageTrackedRenderer,
+    element::{RenderElement, UnderlyingStorage},
     BufferType, ImportAll, Renderer, Texture,
 };
 

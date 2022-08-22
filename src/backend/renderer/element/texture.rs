@@ -2,7 +2,7 @@
 
 use crate::{
     backend::renderer::{Frame, Renderer, Texture},
-    utils::{Physical, Point, Rectangle, Scale, Transform},
+    utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
 use super::{Id, RenderElement, UnderlyingStorage};
@@ -13,15 +13,31 @@ pub struct TextureRenderElement<T: Texture> {
     location: Point<i32, Physical>,
     id: Id,
     texture: T,
+    src: Option<Rectangle<f64, Buffer>>,
+    size: Size<i32, Physical>,
+    transform: Transform,
+    commit: usize,
 }
 
 impl<T: Texture> TextureRenderElement<T> {
     /// Create a texture render element from an existing texture
-    pub fn from_texture(location: impl Into<Point<i32, Physical>>, id: Id, texture: T) -> Self {
+    pub fn from_texture(
+        location: impl Into<Point<i32, Physical>>,
+        id: Id,
+        texture: T,
+        src: Option<Rectangle<f64, Buffer>>,
+        size: Size<i32, Physical>,
+        transform: Transform,
+        commit: usize,
+    ) -> Self {
         Self {
             location: location.into(),
             id,
             texture,
+            src,
+            size,
+            transform,
+            commit,
         }
     }
 }
@@ -36,44 +52,32 @@ where
     }
 
     fn current_commit(&self) -> usize {
-        1
-    }
-
-    fn location(&self, _scale: Scale<f64>) -> Point<i32, Physical> {
-        self.location
+        self.commit
     }
 
     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(self.location, (64, 64))
-    }
-
-    fn damage_since(&self, _scale: Scale<f64>, _commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
-        vec![]
-    }
-
-    fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        vec![]
+        Rectangle::from_loc_and_size(self.location, self.size)
     }
 
     fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
-        todo!()
+        Some(UnderlyingStorage::External(&self.texture))
     }
 
     fn draw(
         &self,
         _renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
-        scale: Scale<f64>,
+        _scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         _log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        frame.render_texture_at(
+        frame.render_texture_from_to(
             &self.texture,
-            self.location,
-            1,
-            scale,
-            Transform::Normal,
+            self.src
+                .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), self.texture.size()).to_f64()),
+            Rectangle::from_loc_and_size(self.location, self.size),
             damage,
+            self.transform,
             1.0,
         )
     }

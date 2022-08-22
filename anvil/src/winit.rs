@@ -1,10 +1,10 @@
 use std::{sync::atomic::Ordering, time::Duration};
 
 use slog::Logger;
-#[cfg(feature = "debug")]
-use smithay::backend::renderer::ImportMem;
 #[cfg(not(feature = "debug"))]
 use smithay::desktop::space::SpaceRenderElements;
+#[cfg(feature = "debug")]
+use smithay::{backend::renderer::ImportMem, render_elements};
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -17,10 +17,8 @@ use smithay::{
 use smithay::{
     backend::{
         renderer::{
-            output::{
-                element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-                DamageTrackedRenderer,
-            },
+            damage::{DamageTrackedRenderer, DamageTrackedRendererError},
+            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
             Renderer,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
@@ -38,7 +36,6 @@ use smithay::{
     utils::IsAlive,
     wayland::{
         input_method::InputMethodSeat,
-        compositor,
         output::{Mode, Output, PhysicalProperties},
     },
 };
@@ -87,14 +84,14 @@ impl Backend for WinitData {
 }
 
 #[cfg(feature = "debug")]
-smithay::backend::renderer::output::element::render_elements! {
+render_elements! {
     pub CustomRenderElements<'a, R>;
-    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
-    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<<R as Renderer>::TextureId>,
+    Surface=WaylandSurfaceRenderElement,
+    Texture=TextureRenderElement<<R as Renderer>::TextureId>,
     Fps=&'a FpsElement<<R as Renderer>::TextureId>
 }
 
-smithay::desktop::space::space_elements! {
+smithay::space_elements! {
     CustomSpaceElements<'a, R>[
         WaylandSurfaceRenderElement,
         TextureRenderElement<<R as Renderer>::TextureId>,
@@ -275,7 +272,7 @@ pub fn run_winit(log: Logger) {
                             rectangle.loc.x + rectangle.size.w,
                             (rectangle.loc.y + rectangle.size.h),
                         ),
-                    )
+                    ),
                 ));
             });
 
@@ -308,7 +305,7 @@ pub fn run_winit(log: Logger) {
                     &log,
                 )
                 .map_err(|err| match err {
-                    smithay::backend::renderer::output::OutputRenderError::Rendering(err) => err.into(),
+                    DamageTrackedRendererError::Rendering(err) => err.into(),
                     _ => unreachable!(),
                 });
 
@@ -324,7 +321,7 @@ pub fn run_winit(log: Logger) {
                     &log,
                 )
                 .map_err(|err| match err {
-                    smithay::backend::renderer::output::OutputRenderError::Rendering(err) => err.into(),
+                    DamageTrackedRendererError::Rendering(err) => err.into(),
                     _ => unreachable!(),
                 });
 

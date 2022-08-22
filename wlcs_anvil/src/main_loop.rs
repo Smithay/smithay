@@ -8,10 +8,8 @@ use smithay::{
     backend::{
         input::ButtonState,
         renderer::{
-            output::{
-                element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-                DamageTrackedRenderer,
-            },
+            damage::DamageTrackedRenderer,
+            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
             Renderer,
         },
     },
@@ -58,7 +56,7 @@ impl Backend for TestState {
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
-smithay::desktop::space::space_elements! {
+smithay::space_elements! {
     CustomSpaceElements<'a, R>[
         WaylandSurfaceRenderElement,
         TextureRenderElement<<R as Renderer>::TextureId>,
