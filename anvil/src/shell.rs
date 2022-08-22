@@ -419,6 +419,13 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
         let start_data = pointer.grab_start_data().unwrap();
 
+        let window = self
+            .space
+            .elements()
+            .find(|window| window.toplevel().wl_surface() == surface.wl_surface())
+            .unwrap()
+            .clone();
+
         // If the focus was for a different surface, ignore the request.
         if start_data.focus.is_none()
             || !start_data
@@ -432,12 +439,6 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             return;
         }
 
-        let window = self
-            .space
-            .elements()
-            .find(|window| window.toplevel().wl_surface() == surface.wl_surface())
-            .unwrap()
-            .clone();
         let mut initial_window_location = self.space.element_location(&window).unwrap();
 
         // If surface is maximized then unmaximize it
@@ -492,6 +493,13 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
         let start_data = pointer.grab_start_data().unwrap();
 
+        let window = self
+            .space
+            .elements()
+            .find(|window| window.toplevel().wl_surface() == surface.wl_surface())
+            .unwrap()
+            .clone();
+
         // If the focus was for a different surface, ignore the request.
         if start_data.focus.is_none()
             || !start_data
@@ -505,12 +513,6 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             return;
         }
 
-        let window = self
-            .space
-            .elements()
-            .find(|window| window.toplevel().wl_surface() == surface.wl_surface())
-            .unwrap()
-            .clone();
         let geometry = window.geometry();
         let loc = self.space.element_location(&window).unwrap();
         let (initial_window_location, initial_window_size) = (loc, geometry.size);
