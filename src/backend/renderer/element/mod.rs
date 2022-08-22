@@ -412,6 +412,10 @@ macro_rules! render_elements_internal {
         {
             match self {
                 $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
                     Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
