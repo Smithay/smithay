@@ -67,7 +67,7 @@ impl PopupManager {
     /// if the grab has been denied.
     pub fn grab_popup<D: SeatHandler + 'static>(
         &mut self,
-        _dh: &DisplayHandle,
+        dh: &DisplayHandle,
         popup: PopupKind,
         seat: &Seat<D>,
         serial: Serial,
