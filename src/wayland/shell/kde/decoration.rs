@@ -34,7 +34,9 @@ use slog::Logger;
 use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::{
     Mode, OrgKdeKwinServerDecoration,
 };
-use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager;
+use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::{
+    Mode as DefaultMode, OrgKdeKwinServerDecorationManager,
+};
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{Dispatch, DisplayHandle, GlobalDispatch, WEnum};
@@ -43,12 +45,6 @@ use wayland_server::{Dispatch, DisplayHandle, GlobalDispatch, WEnum};
 pub trait KdeDecorationHandler {
     /// Return the KDE server decoration state.
     fn kde_decoration_state(&self) -> &KdeDecorationState;
-
-    /// Handle decoration manager creation.
-    ///
-    /// Allows setting up the decoration manager, like setting the default decoration mode using
-    /// [`OrgKdeKwinServerDecorationManager::default_mode`].
-    fn setup(&mut self, _kde_decoration_manager: &OrgKdeKwinServerDecorationManager) {}
 
     /// Handle new decoration object creation.
     ///
@@ -82,13 +78,15 @@ pub trait KdeDecorationHandler {
 /// KDE server decoration state.
 #[derive(Debug)]
 pub struct KdeDecorationState {
+    pub(crate) default_mode: DefaultMode,
     pub(crate) logger: Logger,
+
     kde_decoration_manager: GlobalId,
 }
 
 impl KdeDecorationState {
     /// Create a new KDE server decoration global.
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> Self
+    pub fn new<D, L>(display: &DisplayHandle, default_mode: DefaultMode, logger: L) -> Self
     where
         D: GlobalDispatch<OrgKdeKwinServerDecorationManager, ()>
             + Dispatch<OrgKdeKwinServerDecorationManager, ()>
@@ -103,6 +101,7 @@ impl KdeDecorationState {
 
         Self {
             kde_decoration_manager,
+            default_mode,
             logger,
         }
     }

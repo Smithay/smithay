@@ -28,7 +28,10 @@ where
         data_init: &mut DataInit<'_, D>,
     ) {
         let kde_decoration_manager = data_init.init(resource, ());
-        state.setup(&kde_decoration_manager);
+
+        // Set default decoration mode.
+        let default_mode = state.kde_decoration_state().default_mode;
+        kde_decoration_manager.default_mode(default_mode);
 
         let logger = &state.kde_decoration_state().logger;
         slog::trace!(logger, "Bound decoration manager global");
