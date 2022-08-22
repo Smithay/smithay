@@ -72,7 +72,7 @@ pub trait KdeDecorationHandler {
     }
 
     /// Handle decoration object removal for a surface.
-    fn release(&mut self, _surface: &WlSurface) {}
+    fn release(&mut self, _decoration: &OrgKdeKwinServerDecoration, _surface: &WlSurface) {}
 }
 
 /// KDE server decoration state.

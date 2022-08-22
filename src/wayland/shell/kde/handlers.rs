@@ -93,7 +93,7 @@ where
 
         match request {
             Request::RequestMode { mode } => state.request_mode(surface, kde_decoration, mode),
-            Request::Release => state.release(surface),
+            Request::Release => state.release(kde_decoration, surface),
             _ => unreachable!(),
         }
     }
