@@ -912,14 +912,14 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         let mut req = AtomicModeReq::new();
 
         req.add_property(
-            self.plane,
-            plane_prop_handle(&*prop_mapping, self.plane, "CRTC_ID")?,
+            plane,
+            plane_prop_handle(&*prop_mapping, plane, "CRTC_ID")?,
             property::Value::CRTC(None),
         );
 
         req.add_property(
-            self.plane,
-            plane_prop_handle(&*prop_mapping, self.plane, "FB_ID")?,
+            plane,
+            plane_prop_handle(&*prop_mapping, plane, "FB_ID")?,
             property::Value::Framebuffer(None),
         );
 
