@@ -39,14 +39,7 @@ where
         serial: Serial,
         time: u32,
     );
-    fn modifiers(
-        &mut self,
-        seat: &Seat<D>,
-        data: &mut D,
-        state: &xkb::State,
-        modifiers: ModifiersState,
-        serial: Serial,
-    );
+    fn modifiers(&mut self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial);
 
     fn is_alive(&self) -> bool;
     fn same_handler_as(&self, other: &dyn KeyboardHandler<D>) -> bool;
@@ -72,15 +65,8 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for Box<dyn KeyboardHandler<D>
     ) {
         KeyboardHandler::key(&mut **self, seat, data, key, state, serial, time)
     }
-    fn modifiers(
-        &mut self,
-        seat: &Seat<D>,
-        data: &mut D,
-        state: &xkb::State,
-        modifiers: ModifiersState,
-        serial: Serial,
-    ) {
-        KeyboardHandler::modifiers(&mut **self, seat, data, state, modifiers, serial)
+    fn modifiers(&mut self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
+        KeyboardHandler::modifiers(&mut **self, seat, data, modifiers, serial)
     }
 
     fn is_alive(&self) -> bool {
@@ -107,7 +93,7 @@ pub(crate) struct KbdInternal<D> {
     pub(crate) focus: Option<(Box<dyn KeyboardHandler<D>>, Serial)>,
     pending_focus: Option<Box<dyn KeyboardHandler<D>>>,
     pub(crate) pressed_keys: Vec<u32>,
-    mods_state: ModifiersState,
+    pub(crate) mods_state: ModifiersState,
     keymap: xkb::Keymap,
     pub(crate) state: xkb::State,
     pub(crate) repeat_rate: i32,
@@ -664,7 +650,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
 
             focus.key(self.seat, data, key, key_state, serial, time);
             if let Some(mods) = modifiers {
-                focus.modifiers(self.seat, data, &self.inner.state, mods, serial);
+                focus.modifiers(self.seat, data, mods, serial);
             }
         };
     }
@@ -707,13 +693,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
                     })
                     .collect();
                 focus.enter(self.seat, data, keys, serial);
-                focus.modifiers(
-                    self.seat,
-                    data,
-                    &self.inner.state,
-                    self.inner.mods_state.clone(),
-                    serial,
-                );
+                focus.modifiers(self.seat, data, self.inner.mods_state.clone(), serial);
             };
             {
                 let KbdInternal { ref focus, .. } = *self.inner;

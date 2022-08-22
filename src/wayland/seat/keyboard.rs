@@ -7,7 +7,6 @@ use wayland_server::{
     },
     Dispatch, DisplayHandle, Resource,
 };
-use xkbcommon::xkb;
 
 use crate::{
     backend::input::KeyState,
@@ -61,7 +60,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         if let Some((focused, serial)) = guard.focus.as_ref() {
             if let Some(surface) = focused.as_any().downcast_ref::<WlSurface>() {
                 if surface.id().same_client_as(&kbd.id()) {
-                    let (dep, la, lo, gr) = serialize_modifiers(&guard.state);
+                    let (dep, la, lo, gr) = guard.mods_state.serialized;
                     let keys = serialize_pressed_keys(guard.pressed_keys.clone());
                     kbd.enter((*serial).into(), surface, keys);
                     // Modifiers must be send after enter event.
@@ -127,15 +126,6 @@ fn serialize_pressed_keys(keys: Vec<u32>) -> Vec<u8> {
     serialized.into()
 }
 
-fn serialize_modifiers(state: &xkb::State) -> (u32, u32, u32, u32) {
-    let mods_depressed = state.serialize_mods(xkb::STATE_MODS_DEPRESSED);
-    let mods_latched = state.serialize_mods(xkb::STATE_MODS_LATCHED);
-    let mods_locked = state.serialize_mods(xkb::STATE_MODS_LOCKED);
-    let layout_locked = state.serialize_layout(xkb::STATE_LAYOUT_LOCKED);
-
-    (mods_depressed, mods_latched, mods_locked, layout_locked)
-}
-
 impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
     fn enter(&mut self, seat: &Seat<D>, _data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
         with_focused_kbds(seat, self, |kbd| {
@@ -165,16 +155,9 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for WlSurface {
         })
     }
 
-    fn modifiers(
-        &mut self,
-        seat: &Seat<D>,
-        _data: &mut D,
-        state: &xkb::State,
-        _modifiers: ModifiersState,
-        serial: Serial,
-    ) {
+    fn modifiers(&mut self, seat: &Seat<D>, _data: &mut D, modifiers: ModifiersState, serial: Serial) {
         with_focused_kbds(seat, self, |kbd| {
-            let (de, la, lo, gr) = serialize_modifiers(state);
+            let (de, la, lo, gr) = modifiers.serialized;
             kbd.modifiers(serial.into(), de, la, lo, gr)
         })
     }

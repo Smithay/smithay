@@ -22,6 +22,8 @@ pub struct ModifiersState {
     pub logo: bool,
     /// The "Num lock" key
     pub num_lock: bool,
+
+    pub serialized: (u32, u32, u32, u32),
 }
 
 impl ModifiersState {
@@ -32,5 +34,15 @@ impl ModifiersState {
         self.caps_lock = state.mod_name_is_active(&xkb::MOD_NAME_CAPS, xkb::STATE_MODS_EFFECTIVE);
         self.logo = state.mod_name_is_active(&xkb::MOD_NAME_LOGO, xkb::STATE_MODS_EFFECTIVE);
         self.num_lock = state.mod_name_is_active(&xkb::MOD_NAME_NUM, xkb::STATE_MODS_EFFECTIVE);
+        self.serialized = serialize_modifiers(state);
     }
+}
+
+fn serialize_modifiers(state: &xkb::State) -> (u32, u32, u32, u32) {
+    let mods_depressed = state.serialize_mods(xkb::STATE_MODS_DEPRESSED);
+    let mods_latched = state.serialize_mods(xkb::STATE_MODS_LATCHED);
+    let mods_locked = state.serialize_mods(xkb::STATE_MODS_LOCKED);
+    let layout_locked = state.serialize_layout(xkb::STATE_LAYOUT_LOCKED);
+
+    (mods_depressed, mods_latched, mods_locked, layout_locked)
 }
