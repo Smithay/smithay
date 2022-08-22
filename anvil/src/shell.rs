@@ -350,13 +350,13 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
 
         #[cfg(feature = "xwayland")]
         if let Some(x11) = self.x11_state.as_mut() {
-            super::xwayland::commit_hook(surface, &self.display, x11, &mut self.space);
+            super::xwayland::commit_hook(surface, &self.display_handle, x11, &mut self.space);
         }
 
         self.space.commit(surface);
         self.popups.commit(surface);
 
-        ensure_initial_configure(&self.display, surface, &self.space, &mut self.popups)
+        ensure_initial_configure(&self.display_handle, surface, &self.space, &mut self.popups)
     }
 }
 
@@ -603,8 +603,8 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .and_then(Output::from_resource)
                 .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
-            let client = self.display.get_client(wl_surface.id()).unwrap();
-            output.with_client_outputs(&self.display, &client, |_dh, output| {
+            let client = self.display_handle.get_client(wl_surface.id()).unwrap();
+            output.with_client_outputs(&self.display_handle, &client, |_dh, output| {
                 wl_output = Some(output.clone());
             });
 
@@ -684,7 +684,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
         let ret = self
             .popups
-            .grab_popup(&self.display, surface.into(), &seat, serial);
+            .grab_popup(&self.display_handle, surface.into(), &seat, serial);
 
         if let Ok(mut grab) = ret {
             if let Some(keyboard) = seat.get_keyboard() {
@@ -729,7 +729,7 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
             .and_then(Output::from_resource)
             .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
         let mut map = layer_map_for_output(&output);
-        map.map_layer(&self.display, &LayerSurface::new(surface, namespace))
+        map.map_layer(&self.display_handle, &LayerSurface::new(surface, namespace))
             .unwrap();
     }
 }

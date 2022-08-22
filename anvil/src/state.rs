@@ -79,7 +79,6 @@ pub struct AnvilState<BackendData: 'static> {
     pub display_handle: DisplayHandle,
     pub running: Arc<AtomicBool>,
     pub handle: LoopHandle<'static, CalloopData<BackendData>>,
-    pub display: DisplayHandle,
 
     // desktop
     pub space: Space,
