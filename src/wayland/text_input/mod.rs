@@ -41,7 +41,7 @@ use wayland_protocols::wp::text_input::zv3::server::{
 };
 use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
-use crate::wayland::seat::Seat;
+use crate::input::{Seat, SeatHandler};
 
 pub use text_input_handle::TextInputHandle;
 pub use text_input_handle::TextInputUserData;
@@ -101,6 +101,7 @@ impl<D> Dispatch<ZwpTextInputManagerV3, (), D> for TextInputManagerState
 where
     D: Dispatch<ZwpTextInputManagerV3, ()>,
     D: Dispatch<ZwpTextInputV3, TextInputUserData>,
+    D: SeatHandler,
     D: 'static,
 {
     fn request(
