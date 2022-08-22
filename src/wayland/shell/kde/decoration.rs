@@ -10,12 +10,13 @@
 //!
 //! use smithay::delegate_kde_decoration;
 //! use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
+//! use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode;
 //!
 //! # struct State { kde_decoration_state: KdeDecorationState };
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //!
 //! // Create the new KdeDecorationState.
-//! let state = KdeDecorationState::new::<State, _>(&display.handle(), None);
+//! let state = KdeDecorationState::new::<State, _>(&display.handle(), Mode::Server, None);
 //!
 //! // Insert KdeDecorationState into your compositor state.
 //! // …
