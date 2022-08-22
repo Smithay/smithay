@@ -4,14 +4,18 @@ use std::sync::Mutex;
 
 #[cfg(feature = "debug")]
 use smithay::{
-    backend::renderer::{
-        output::element::{Id, RenderElement},
-        Frame,
-    },
+    backend::renderer::Frame,
     utils::{Buffer, Size},
 };
 use smithay::{
-    backend::renderer::{ImportAll, Renderer, Texture},
+    backend::renderer::{
+        element::{
+            surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+            texture::TextureRenderElement,
+            Id, RenderElement,
+        },
+        ImportAll, Renderer, Texture,
+    },
     desktop::space::SpaceElement,
     input::pointer::{CursorImageAttributes, CursorImageStatus},
     utils::{Logical, Physical, Point, Rectangle, Scale, Transform},
@@ -20,7 +24,7 @@ use smithay::{
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
 pub struct PointerElement<T: Texture> {
-    id: smithay::backend::renderer::output::element::Id,
+    id: Id,
     texture: Option<T>,
     position: Point<i32, Logical>,
     status: CursorImageStatus,
@@ -29,7 +33,7 @@ pub struct PointerElement<T: Texture> {
 impl<T: Texture> Default for PointerElement<T> {
     fn default() -> Self {
         Self {
-            id: smithay::backend::renderer::output::element::Id::new(),
+            id: Id::new(),
             texture: Default::default(),
             position: Default::default(),
             status: CursorImageStatus::Default,
@@ -54,12 +58,9 @@ impl<T: Texture + 'static> PointerElement<T> {
 impl<T: Texture + Clone + 'static, R, E> SpaceElement<R, E> for PointerElement<T>
 where
     R: Renderer<TextureId = T> + ImportAll,
-    E: smithay::backend::renderer::output::element::RenderElement<R>
-        + From<
-            smithay::backend::renderer::output::element::texture::TextureRenderElement<
-                <R as Renderer>::TextureId,
-            >,
-        > + From<smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement>,
+    E: RenderElement<R>
+        + From<TextureRenderElement<<R as Renderer>::TextureId>>
+        + From<WaylandSurfaceRenderElement>,
 {
     fn location(&self, _space_id: usize) -> Point<i32, Logical> {
         if let CursorImageStatus::Surface(surface) = &self.status {
@@ -113,22 +114,25 @@ where
             CursorImageStatus::Hidden => vec![],
             CursorImageStatus::Default => {
                 if let Some(texture) = self.texture.as_ref() {
-                    vec![
-                        smithay::backend::renderer::output::element::texture::TextureRenderElement::from_texture(
-                            location,
-                            self.id.clone(),
-                            texture.clone(),
-                        )
-                        .into(),
-                    ]
+                    vec![TextureRenderElement::from_texture(
+                        location,
+                        self.id.clone(),
+                        texture.clone(),
+                        None,
+                        texture
+                            .size()
+                            .to_logical(1, Transform::Normal)
+                            .to_physical_precise_round(scale),
+                        Transform::Normal,
+                        1,
+                    )
+                    .into()]
                 } else {
                     vec![]
                 }
             }
             CursorImageStatus::Surface(surface) => {
-                smithay::backend::renderer::output::element::surface::surfaces_from_surface_tree(
-                    surface, location, scale,
-                )
+                render_elements_from_surface_tree(surface, location, scale)
             }
         }
     }
