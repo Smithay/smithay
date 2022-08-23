@@ -87,16 +87,14 @@ impl ShmHandler for App {
 }
 
 impl SeatHandler for App {
+    type KeyboardFocus = WlSurface;
+    type PointerFocus = WlSurface;
+
     fn seat_state(&mut self) -> &mut SeatState<Self> {
         &mut self.seat_state
     }
 
-    fn focus_changed(
-        &mut self,
-        _seat: &Seat<Self>,
-        _focused: Option<&dyn smithay::input::keyboard::KeyboardTarget<Self>>,
-    ) {
-    }
+    fn focus_changed(&mut self, _seat: &Seat<Self>, _focused: Option<&WlSurface>) {}
     fn cursor_image(&mut self, _seat: &Seat<Self>, _image: smithay::input::pointer::CursorImageStatus) {}
 }
 

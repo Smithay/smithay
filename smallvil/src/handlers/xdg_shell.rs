@@ -131,12 +131,7 @@ fn check_grab(
 
     let (focus, _) = start_data.focus.as_ref()?;
     // If the focus was for a different surface, ignore the request.
-    if !focus
-        .as_any()
-        .downcast_ref::<WlSurface>()
-        .map(|s| s.id().same_client_as(&surface.id()))
-        .unwrap_or(false)
-    {
+    if !focus.id().same_client_as(&surface.id()) {
         return None;
     }
 

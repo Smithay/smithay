@@ -3,8 +3,9 @@ use smithay::{
     desktop::Window,
     input::pointer::{
         AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-        PointerTarget, PointerInnerHandle,
+        PointerInnerHandle, PointerTarget,
     },
+    reexports::wayland_server::protocol::wl_surface::WlSurface,
     utils::{Logical, Point},
 };
 
@@ -19,7 +20,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         &mut self,
         data: &mut Smallvil,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
-        _focus: Option<(Box<dyn PointerTarget<Smallvil> + 'static>, Point<i32, Logical>)>,
+        _focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus

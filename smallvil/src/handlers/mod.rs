@@ -8,10 +8,14 @@ use crate::Smallvil;
 //
 
 use smithay::input::{SeatHandler, SeatState};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::data_device::{ClientDndGrabHandler, DataDeviceHandler, ServerDndGrabHandler};
 use smithay::{delegate_data_device, delegate_output, delegate_seat};
 
 impl SeatHandler for Smallvil {
+    type KeyboardFocus = WlSurface;
+    type PointerFocus = WlSurface;
+
     fn seat_state(&mut self) -> &mut SeatState<Smallvil> {
         &mut self.seat_state
     }
@@ -22,12 +26,7 @@ impl SeatHandler for Smallvil {
         _image: smithay::input::pointer::CursorImageStatus,
     ) {
     }
-    fn focus_changed(
-        &mut self,
-        _seat: &smithay::input::Seat<Self>,
-        _focused: Option<&dyn smithay::input::keyboard::KeyboardTarget<Self>>,
-    ) {
-    }
+    fn focus_changed(&mut self, _seat: &smithay::input::Seat<Self>, _focused: Option<&WlSurface>) {}
 }
 
 delegate_seat!(Smallvil);

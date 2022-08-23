@@ -22,7 +22,6 @@ use smithay::{
     wayland::{
         input_method::InputMethodSeat,
         output::{Mode, Output, PhysicalProperties},
-        seat::{ButtonEvent, CursorImageStatus, MotionEvent},
     },
 };
 
