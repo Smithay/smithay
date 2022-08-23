@@ -28,7 +28,8 @@
 //! # #[macro_use] extern crate smithay;
 //! use smithay::delegate_primary_selection;
 //! use smithay::wayland::primary_selection::{PrimarySelectionState, PrimarySelectionHandler};
-//! # use smithay::input::{Seat, SeatHandler, SeatState, keyboard::KeyboardHandler, pointer::CursorImageStatus};
+//! # use smithay::input::{Seat, SeatHandler, SeatState, pointer::CursorImageStatus};
+//! # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 //!
 //! # struct State { primary_selection_state: PrimarySelectionState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -43,8 +44,10 @@
 //!
 //! // implement the necessary traits
 //! # impl SeatHandler for State {
+//! #     type KeyboardFocus = WlSurface;
+//! #     type PointerFocus = WlSurface;
 //! #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
-//! #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>) { unimplemented!() }
+//! #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
 //! #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
 //! # }
 //! impl PrimarySelectionHandler for State {

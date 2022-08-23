@@ -4,17 +4,17 @@
 //! it must be used in conjunction with the text input module to work.
 //!
 //! ```
-//! # extern crate wayland_server;
 //! use smithay::{
 //!     delegate_seat, delegate_tablet_manager, delegate_input_method_manager,
 //!     delegate_text_input_manager,
 //! };
-//! use smithay::wayland::seat::{Seat, SeatState, SeatHandler, XkbConfig};
+//! use smithay::input::{Seat, SeatState, SeatHandler, keyboard::XkbConfig, pointer::CursorImageStatus};
 //! use smithay::wayland::input_method::{
 //!     InputMethodManagerState,
 //!     InputMethodSeat
 //! };
 //! use smithay::wayland::text_input::TextInputManagerState;
+//! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //!
@@ -26,13 +26,17 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //!
-//! let seat_state = SeatState::<State>::new();
+//! let mut seat_state = SeatState::<State>::new();
 //!
 //! // implement the required traits
 //! impl SeatHandler for State {
+//!     type KeyboardFocus = WlSurface;
+//!     type PointerFocus = WlSurface;
 //!     fn seat_state(&mut self) -> &mut SeatState<Self> {
 //!         &mut self.seat_state
 //!     }
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
+//!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
 //! }
 //!
 //! // Add the seat state to your state and create manager globals
@@ -41,7 +45,7 @@
 //! TextInputManagerState::new::<State>(&display_handle);
 //!
 //! // create the seat
-//! let seat = Seat::<State>::new(
+//! let seat = seat_state.new_wl_seat(
 //!     &display_handle,          // the display
 //!     "seat-0",                 // the name of the seat, will be advertized to clients
 //!     None                      // insert a logger here

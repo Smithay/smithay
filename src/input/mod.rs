@@ -16,7 +16,13 @@
 //! ### Initialization
 //!
 //! ```
-//! use smithay::input::{Seat, SeatState, SeatHandler, keyboard::KeyboardHandler, pointer::CursorImageStatus};
+//! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! # use smithay::backend::input::KeyState;
+//! # use smithay::input::{
+//! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent},
+//! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+//! # };
+//! # use smithay::utils::{IsAlive, Serial};
 //!
 //! struct State {
 //!     seat_state: SeatState<Self>,
@@ -31,13 +37,43 @@
 //!     None       // insert a logger here
 //! );
 //!
+//! # #[derive(Debug, Clone, PartialEq)]
+//! # struct Target;
+//! # impl IsAlive for Target {
+//! #   fn alive(&self) -> bool { true }
+//! # }
+//! # impl PointerTarget<State> for Target {
+//! #   fn enter(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+//! #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
+//! #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
+//! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
+//! # }
+//! # impl KeyboardTarget<State> for Target {
+//! #   fn enter(&self, seat: &Seat<State>, data: &mut State, keys: Vec<KeysymHandle<'_>>, serial: Serial) {}
+//! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial) {}
+//! #   fn key(
+//! #       &self,
+//! #       seat: &Seat<State>,
+//! #       data: &mut State,
+//! #       key: KeysymHandle<'_>,
+//! #       state: KeyState,
+//! #       serial: Serial,
+//! #       time: u32,
+//! #   ) {}
+//! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
+//! # }
+//!
 //! // implement the required traits
 //! impl SeatHandler for State {
+//!     type KeyboardFocus = Target;
+//!     type PointerFocus = Target;
+//!
 //!     fn seat_state(&mut self) -> &mut SeatState<Self> {
 //!         &mut self.seat_state
 //!     }
 //!
-//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>) {
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) {
 //!         // handle focus changes, if you need to ...
 //!     }
 //!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {
@@ -98,8 +134,6 @@ pub struct SeatState<D: SeatHandler> {
 ///
 /// This struct gives you access to the control of the
 /// capabilities of the associated seat.
-///
-/// It is directly inserted in the wayland display by its [`new`](Seat::new) method.
 ///
 /// This is an handle to the inner logic, it can be cloned.
 ///
@@ -202,16 +236,47 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # Examples
     ///
     /// ```no_run
-    /// # use smithay::input::{Seat, SeatState, SeatHandler, keyboard::KeyboardTarget, pointer::CursorImageStatus};
-    /// # use wayland_server::protocol::wl_surface::WlSurface;
+    /// # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+    /// # use smithay::backend::input::KeyState;
+    /// # use smithay::input::{
+    /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent},
+    /// #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+    /// # };
+    /// # use smithay::utils::{IsAlive, Serial};
     /// #
+    /// # #[derive(Debug, Clone, PartialEq)]
+    /// # struct Target;
+    /// # impl IsAlive for Target {
+    /// #   fn alive(&self) -> bool { true }
+    /// # }
+    /// # impl PointerTarget<State> for Target {
+    /// #   fn enter(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+    /// #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+    /// #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
+    /// #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
+    /// #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
+    /// # }
+    /// # impl KeyboardTarget<State> for Target {
+    /// #   fn enter(&self, seat: &Seat<State>, data: &mut State, keys: Vec<KeysymHandle<'_>>, serial: Serial) {}
+    /// #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial) {}
+    /// #   fn key(
+    /// #       &self,
+    /// #       seat: &Seat<State>,
+    /// #       data: &mut State,
+    /// #       key: KeysymHandle<'_>,
+    /// #       state: KeyState,
+    /// #       serial: Serial,
+    /// #       time: u32,
+    /// #   ) {}
+    /// #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
+    /// # }
     /// # struct State;
     /// # impl SeatHandler for State {
-    /// #     type KeyboardFocus = WlSurface;
-    /// #     type PointerFocus = WlSurface;
+    /// #     type KeyboardFocus = Target;
+    /// #     type PointerFocus = Target;
     /// #
     /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
-    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Self::KeyboardFocus>) { unimplemented!() }
+    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) { unimplemented!() }
     /// #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
     /// # }
     /// # let mut seat: Seat<State> = unimplemented!();
@@ -266,12 +331,48 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # Examples
     ///
     /// ```no_run
-    /// # use smithay::input::{Seat, SeatState, SeatHandler, keyboard::{KeyboardHandler, XkbConfig}, pointer::CursorImageStatus};
+    /// # use smithay::input::{Seat, SeatState, SeatHandler, keyboard::XkbConfig, pointer::CursorImageStatus};
+    /// # use smithay::backend::input::KeyState;
+    /// # use smithay::input::{
+    /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent},
+    /// #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+    /// # };
+    /// # use smithay::utils::{IsAlive, Serial};
+    /// #
+    /// # #[derive(Debug, Clone, PartialEq)]
+    /// # struct Target;
+    /// # impl IsAlive for Target {
+    /// #   fn alive(&self) -> bool { true }
+    /// # }
+    /// # impl PointerTarget<State> for Target {
+    /// #   fn enter(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+    /// #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+    /// #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
+    /// #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
+    /// #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
+    /// # }
+    /// # impl KeyboardTarget<State> for Target {
+    /// #   fn enter(&self, seat: &Seat<State>, data: &mut State, keys: Vec<KeysymHandle<'_>>, serial: Serial) {}
+    /// #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial) {}
+    /// #   fn key(
+    /// #       &self,
+    /// #       seat: &Seat<State>,
+    /// #       data: &mut State,
+    /// #       key: KeysymHandle<'_>,
+    /// #       state: KeyState,
+    /// #       serial: Serial,
+    /// #       time: u32,
+    /// #   ) {}
+    /// #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
+    /// # }
     /// #
     /// # struct State;
     /// # impl SeatHandler for State {
+    /// #     type KeyboardFocus = Target;
+    /// #     type PointerFocus = Target;
+    /// #
     /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
-    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardHandler<Self>>) { unimplemented!() }
+    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) { unimplemented!() }
     /// #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
     /// # }
     /// # let mut seat: Seat<State> = unimplemented!();
