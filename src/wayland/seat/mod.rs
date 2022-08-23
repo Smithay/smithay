@@ -95,15 +95,16 @@ pub trait WaylandFocus {
     /// the same client connection as the provided `ObjectId`.
     ///
     /// *Must* return false, if there is not underlying wayland object.
-    fn same_client_as(&self, object_id: ObjectId) -> bool;
+    fn same_client_as(&self, object_id: &ObjectId) -> bool {
+        self.wl_surface()
+            .map(|s| s.id().same_client_as(object_id))
+            .unwrap_or(false)
+    }
 }
 
 impl WaylandFocus for wl_surface::WlSurface {
     fn wl_surface(&self) -> Option<&wl_surface::WlSurface> {
         Some(self)
-    }
-    fn same_client_as(&self, object_id: ObjectId) -> bool {
-        self.id().same_client_as(&object_id)
     }
 }
 

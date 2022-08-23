@@ -179,7 +179,7 @@ where
                     // is of the same client
                     let PointerInternal { ref focus, .. } = *guard;
                     if let Some((ref focus, _)) = *focus {
-                        if focus.same_client_as(pointer.id()) {
+                        if focus.same_client_as(&pointer.id()) {
                             match surface {
                                 Some(surface) => {
                                     // tolerate re-using the same surface

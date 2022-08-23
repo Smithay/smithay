@@ -31,7 +31,7 @@ where
             .unwrap()
             .focus
             .as_ref()
-            .map(|f| f.0.same_client_as(id.clone()))
+            .map(|f| f.0.same_client_as(id))
             .unwrap_or(false)
     }
 
@@ -61,7 +61,7 @@ where
             kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
         }
         if let Some((focused, serial)) = guard.focus.as_ref() {
-            if focused.same_client_as(kbd.id()) {
+            if focused.same_client_as(&kbd.id()) {
                 let serialized = guard.mods_state.serialized;
                 let keys = serialize_pressed_keys(guard.pressed_keys.clone());
                 kbd.enter((*serial).into(), focused.wl_surface().unwrap(), keys);

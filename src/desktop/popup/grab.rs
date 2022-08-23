@@ -652,7 +652,7 @@ where
         if self
             .popup_grab
             .current_grab()
-            .and_then(|(f1, _)| focus_clone.map(|(f2, _)| f2.same_client_as(f1.id())))
+            .and_then(|(f1, _)| focus_clone.map(|(f2, _)| f2.same_client_as(&f1.id())))
             .unwrap_or(false)
         {
             handle.motion(data, focus, event);
@@ -679,7 +679,7 @@ where
             && !self
                 .popup_grab
                 .current_grab()
-                .and_then(|(f1, _)| handle.current_focus().map(|(f2, _)| f2.same_client_as(f1.id())))
+                .and_then(|(f1, _)| handle.current_focus().map(|(f2, _)| f2.same_client_as(&f1.id())))
                 .unwrap_or(false)
         {
             let _ = self.popup_grab.ungrab(PopupUngrabStrategy::All);
