@@ -12,6 +12,7 @@ extern crate slog;
 #[cfg(feature = "udev")]
 pub mod cursor;
 pub mod drawing;
+pub mod focus;
 pub mod input_handler;
 pub mod render;
 pub mod shell;

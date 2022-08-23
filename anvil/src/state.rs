@@ -8,12 +8,8 @@ use smithay::{
     delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_tablet_manager,
     delegate_text_input_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
     delegate_xdg_shell,
-    desktop::{PopupManager, Space, Window, WindowSurfaceType},
-    input::{
-        keyboard::{KeyboardTarget, XkbConfig},
-        pointer::CursorImageStatus,
-        Seat, SeatHandler, SeatState,
-    },
+    desktop::{PopupManager, Space, Window},
+    input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     output::Output,
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
@@ -40,6 +36,7 @@ use smithay::{
         },
         output::OutputManagerState,
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
+        seat::WaylandFocus,
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{
@@ -58,6 +55,7 @@ use smithay::{
     },
 };
 
+use crate::focus::FocusTarget;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::X11State;
 #[cfg(feature = "xwayland")]
@@ -162,17 +160,17 @@ impl<BackendData> ShmHandler for AnvilState<BackendData> {
 delegate_shm!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> SeatHandler for AnvilState<BackendData> {
-    type KeyboardFocus = Window;
-    type PointerFocus = Window;
+    type KeyboardFocus = FocusTarget;
+    type PointerFocus = FocusTarget;
 
     fn seat_state(&mut self) -> &mut SeatState<AnvilState<BackendData>> {
         &mut self.seat_state
     }
 
-    fn focus_changed(&mut self, seat: &Seat<Self>, window: Option<&Window>) {
+    fn focus_changed(&mut self, seat: &Seat<Self>, target: Option<&FocusTarget>) {
         let dh = &self.display_handle;
 
-        let focus = window.and_then(|w| dh.get_client(w.toplevel().wl_surface().id()).ok());
+        let focus = target.and_then(WaylandFocus::wl_surface).map(|s| s.id());
         set_data_device_focus(dh, seat, focus.clone());
         set_primary_focus(dh, seat, focus);
     }

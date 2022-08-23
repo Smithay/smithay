@@ -28,6 +28,8 @@ use smithay::{
             get_parent, is_sync_subsurface, with_states, with_surface_tree_upward, CompositorHandler,
             CompositorState, TraversalAction,
         },
+        output::Output,
+        seat::WaylandFocus,
         shell::{
             wlr_layer::{
                 Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
@@ -41,7 +43,10 @@ use smithay::{
     },
 };
 
-use crate::state::{AnvilState, Backend};
+use crate::{
+    focus::FocusTarget,
+    state::{AnvilState, Backend},
+};
 
 struct MoveSurfaceGrab<B: 'static> {
     start_data: PointerGrabStartData<AnvilState<B>>,
@@ -54,7 +59,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<Backe
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -138,7 +143,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -432,8 +437,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .unwrap()
                 .0
-                .id()
-                .same_client_as(&surface.wl_surface().id())
+                .same_client_as(surface.wl_surface().id())
         {
             return;
         }
@@ -506,8 +510,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .unwrap()
                 .0
-                .id()
-                .same_client_as(&surface.wl_surface().id())
+                .same_client_as(surface.wl_surface().id())
         {
             return;
         }
