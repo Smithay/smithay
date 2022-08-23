@@ -129,15 +129,13 @@ pub fn run(channel: Channel<WlcsEvent>) {
             let input_method = state.seat.input_method().unwrap();
             let rectangle = input_method.coordinates();
             input_method.with_surface(|surface| {
-                elements.push(CustomSpaceElements::SurfaceTree(
-                    SurfaceTree::from_surface(
-                        surface,
-                        (
-                            rectangle.loc.x + rectangle.size.w,
-                            (rectangle.loc.y + rectangle.size.h),
-                        ),
-                    )
-                ));
+                elements.push(CustomSpaceElements::SurfaceTree(SurfaceTree::from_surface(
+                    surface,
+                    (
+                        rectangle.loc.x + rectangle.size.w,
+                        (rectangle.loc.y + rectangle.size.h),
+                    ),
+                )));
             });
 
             // draw the cursor as relevant
