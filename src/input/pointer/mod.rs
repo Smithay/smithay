@@ -52,10 +52,9 @@ impl<D: SeatHandler> ::std::cmp::PartialEq for PointerHandle<D> {
 }
 
 /// Trait representing object that can receive pointer interactions
-pub trait PointerTarget<D>: IsAlive + PartialEq + Clone
+pub trait PointerTarget<D>: IsAlive + PartialEq + Clone + Send
 where
     D: SeatHandler,
-    Self: std::any::Any + Send + 'static,
 {
     /// A pointer of a given seat entered this handler
     fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);

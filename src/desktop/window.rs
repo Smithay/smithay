@@ -5,13 +5,14 @@ use crate::{
     },
     desktop::{space::RenderZindex, utils::*, PopupManager},
     input::{
-        keyboard::{xkb, KeyboardHandler, KeysymHandle, ModifiersState},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerHandler},
+        keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
         Seat, SeatHandler,
     },
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
     wayland::{
         compositor::with_states,
+        seat::WaylandFocus,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
 };
@@ -23,7 +24,7 @@ use std::{
     },
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
-use wayland_server::protocol::wl_surface;
+use wayland_server::{backend::ObjectId, protocol::wl_surface, Resource};
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
@@ -307,47 +308,30 @@ where
     )
 }
 
-impl<D: SeatHandler + 'static> PointerHandler<D> for Window {
+impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
     fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerHandler::<D>::enter(self.0.toplevel.wl_surface(), seat, data, event)
+        PointerTarget::<D>::enter(self.0.toplevel.wl_surface(), seat, data, event)
     }
     fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerHandler::<D>::motion(self.0.toplevel.wl_surface(), seat, data, event)
+        PointerTarget::<D>::motion(self.0.toplevel.wl_surface(), seat, data, event)
     }
     fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
-        PointerHandler::<D>::button(self.0.toplevel.wl_surface(), seat, data, event)
+        PointerTarget::<D>::button(self.0.toplevel.wl_surface(), seat, data, event)
     }
     fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
-        PointerHandler::<D>::axis(self.0.toplevel.wl_surface(), seat, data, frame)
+        PointerTarget::<D>::axis(self.0.toplevel.wl_surface(), seat, data, frame)
     }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
-        PointerHandler::<D>::leave(self.0.toplevel.wl_surface(), seat, data, serial, time)
-    }
-
-    fn is_alive(&self) -> bool {
-        self.alive()
-    }
-    fn same_handler_as(&self, other: &dyn PointerHandler<D>) -> bool {
-        if let Some(other_window) = other.as_any().downcast_ref::<Window>() {
-            self.0.id == other_window.0.id
-        } else {
-            false
-        }
-    }
-    fn clone_handler(&self) -> Box<dyn PointerHandler<D> + 'static> {
-        Box::new(self.clone())
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+        PointerTarget::<D>::leave(self.0.toplevel.wl_surface(), seat, data, serial, time)
     }
 }
 
-impl<D: SeatHandler + 'static> KeyboardHandler<D> for Window {
+impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        KeyboardHandler::<D>::enter(self.0.toplevel.wl_surface(), seat, data, keys, serial)
+        KeyboardTarget::<D>::enter(self.0.toplevel.wl_surface(), seat, data, keys, serial)
     }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
-        KeyboardHandler::<D>::leave(self.0.toplevel.wl_surface(), seat, data, serial)
+        KeyboardTarget::<D>::leave(self.0.toplevel.wl_surface(), seat, data, serial)
     }
     fn key(
         &self,
@@ -358,33 +342,19 @@ impl<D: SeatHandler + 'static> KeyboardHandler<D> for Window {
         serial: Serial,
         time: u32,
     ) {
-        KeyboardHandler::<D>::key(self.0.toplevel.wl_surface(), seat, data, key, state, serial, time)
+        KeyboardTarget::<D>::key(self.0.toplevel.wl_surface(), seat, data, key, state, serial, time)
     }
-    fn modifiers(
-        &self,
-        seat: &Seat<D>,
-        data: &mut D,
-        state: &xkb::State,
-        modifiers: ModifiersState,
-        serial: Serial,
-    ) {
-        KeyboardHandler::<D>::modifiers(self.0.toplevel.wl_surface(), seat, data, state, modifiers, serial)
+    fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
+        KeyboardTarget::<D>::modifiers(self.0.toplevel.wl_surface(), seat, data, modifiers, serial)
+    }
+}
+
+impl WaylandFocus for Window {
+    fn wl_surface(&self) -> Option<&wl_surface::WlSurface> {
+        Some(self.toplevel().wl_surface())
     }
 
-    fn is_alive(&self) -> bool {
-        self.alive()
-    }
-    fn same_handler_as(&self, other: &dyn KeyboardHandler<D>) -> bool {
-        if let Some(other_window) = other.as_any().downcast_ref::<Window>() {
-            self.0.id == other_window.0.id
-        } else {
-            false
-        }
-    }
-    fn clone_handler(&self) -> Box<dyn KeyboardHandler<D> + 'static> {
-        Box::new(self.clone())
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn same_client_as(&self, object_id: ObjectId) -> bool {
+        self.toplevel().wl_surface().id().same_client_as(&object_id)
     }
 }

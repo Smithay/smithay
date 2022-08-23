@@ -28,6 +28,7 @@ use smithay::{
             CompositorState, TraversalAction,
         },
         output::Output,
+        seat::WaylandFocus,
         shell::{
             wlr_layer::{
                 Layer, LayerSurface as WlrLayerSurface, LayerSurfaceAttributes, WlrLayerShellHandler,
@@ -42,7 +43,10 @@ use smithay::{
     },
 };
 
-use crate::state::{AnvilState, Backend};
+use crate::{
+    focus::FocusTarget,
+    state::{AnvilState, Backend},
+};
 
 struct MoveSurfaceGrab<B: 'static> {
     start_data: PointerGrabStartData<AnvilState<B>>,
@@ -55,7 +59,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<Backe
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -139,7 +143,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -433,8 +437,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .unwrap()
                 .0
-                .id()
-                .same_client_as(&surface.wl_surface().id())
+                .same_client_as(surface.wl_surface().id())
         {
             return;
         }
@@ -507,8 +510,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .unwrap()
                 .0
-                .id()
-                .same_client_as(&surface.wl_surface().id())
+                .same_client_as(surface.wl_surface().id())
         {
             return;
         }
@@ -687,9 +689,12 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
-        let ret = self
-            .popups
-            .grab_popup(&self.display_handle, surface.wl_surface().clone(), &seat, serial);
+        let ret = self.popups.grab_popup(
+            &self.display_handle,
+            PopupKind::Xdg(surface).into(),
+            &seat,
+            serial,
+        );
 
         if let Ok(mut grab) = ret {
             if let Some(keyboard) = seat.get_keyboard() {
@@ -700,7 +705,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     grab.ungrab(PopupUngrabStrategy::All);
                     return;
                 }
-                keyboard.set_focus(self, grab.current_grab().map(|(s, _)| s), serial);
+                keyboard.set_focus(self, grab.current_grab().map(|(_, p)| p), serial);
                 keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
             }
             if let Some(pointer) = seat.get_pointer() {

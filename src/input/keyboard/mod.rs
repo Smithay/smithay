@@ -25,10 +25,9 @@ mod xkb_config;
 pub use xkb_config::XkbConfig;
 
 /// Trait representing object that can receive keyboard interactions
-pub trait KeyboardTarget<D>: IsAlive + PartialEq + Clone
+pub trait KeyboardTarget<D>: IsAlive + PartialEq + Clone + Send
 where
     D: SeatHandler,
-    Self: std::any::Any + Send + 'static,
 {
     /// Keyboard focus of a given seat was assigned to this handler
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial);
