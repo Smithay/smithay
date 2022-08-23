@@ -33,7 +33,7 @@ use smithay::{
             Display,
         },
     },
-    utils::{IsAlive, Scale},
+    utils::{IsAlive, Point, Scale},
     wayland::input_method::InputMethodSeat,
 };
 
@@ -222,21 +222,6 @@ pub fn run_winit(log: Logger) {
             pointer_element.set_position(state.pointer_location.to_i32_round());
             pointer_element.set_status(cursor_guard.clone());
 
-            // draw input method surface if any
-            let input_method = state.seat.input_method().unwrap();
-            let rectangle = input_method.coordinates();
-            input_method.with_surface(|surface| {
-                elements.push(CustomSpaceElements::SurfaceTree(
-                    smithay::desktop::space::SurfaceTree::from_surface(
-                        surface,
-                        (
-                            rectangle.loc.x + rectangle.size.w,
-                            (rectangle.loc.y + rectangle.size.h),
-                        ),
-                    ),
-                ));
-            });
-
             #[cfg(feature = "debug")]
             let fps = state.backend_data.fps.avg().round() as u32;
             #[cfg(feature = "debug")]
@@ -251,6 +236,7 @@ pub fn run_winit(log: Logger) {
             };
             let space = &mut state.space;
             let damage_tracked_renderer = &mut state.backend_data.damage_tracked_renderer;
+            let input_method = state.seat.input_method().unwrap();
             let dnd_icon = state.dnd_icon.as_ref();
             let scale = Scale::from(output.current_scale().fractional_scale());
             let cursor_pos = state.pointer_location;
@@ -261,6 +247,21 @@ pub fn run_winit(log: Logger) {
                 let mut elements = Vec::<CustomRenderElements<Gles2Renderer>>::new();
 
                 elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
+
+                // draw input method surface if any
+                let rectangle = input_method.coordinates();
+                let position = Point::from((
+                    rectangle.loc.x + rectangle.size.w,
+                    rectangle.loc.y + rectangle.size.h,
+                ));
+                input_method.with_surface(|surface| {
+                    elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                        &smithay::desktop::space::SurfaceTree::from_surface(surface, position),
+                        position.to_physical_precise_round(scale),
+                        scale,
+                    ));
+                });
+
                 // draw the dnd icon if any
                 if let Some(surface) = dnd_icon {
                     if surface.alive() {
