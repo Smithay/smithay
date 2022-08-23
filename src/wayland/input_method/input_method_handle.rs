@@ -21,7 +21,7 @@ use crate::{
         SeatHandler,
     },
     utils::{IsAlive, Logical, Physical, Point, Rectangle, SERIAL_COUNTER},
-    wayland::text_input::TextInputHandle,
+    wayland::{seat::WaylandFocus, text_input::TextInputHandle},
 };
 
 use super::{
@@ -138,6 +138,7 @@ where
     D: Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData>,
     D: Dispatch<ZwpInputMethodKeyboardGrabV2, InputMethodKeyboardUserData<D>>,
     D: SeatHandler,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(

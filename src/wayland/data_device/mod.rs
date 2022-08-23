@@ -79,6 +79,7 @@ use crate::{
         Seat, SeatHandler,
     },
     utils::Serial,
+    wayland::seat::WaylandFocus,
 };
 
 mod device;
@@ -261,6 +262,7 @@ pub fn start_dnd<D, C>(
     metadata: SourceMetadata,
 ) where
     D: SeatHandler + DataDeviceHandler + 'static,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::new()));

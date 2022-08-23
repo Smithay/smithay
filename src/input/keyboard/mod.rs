@@ -1,7 +1,7 @@
 //! Keyboard-related types for smithay's input abstraction
 
 use crate::backend::input::KeyState;
-use crate::utils::Serial;
+use crate::utils::{IsAlive, Serial};
 use slog::{debug, error, info, o, trace};
 use std::{
     default::Default,
@@ -26,7 +26,7 @@ mod xkb_config;
 pub use xkb_config::XkbConfig;
 
 /// Trait representing object that can receive keyboard interactions
-pub trait KeyboardTarget<D>
+pub trait KeyboardTarget<D>: IsAlive + PartialEq + Clone
 where
     D: SeatHandler,
     Self: std::any::Any + Send + 'static,
@@ -47,52 +47,6 @@ where
     );
     /// Hold modifiers were changed on a keyboard from a given seat
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial);
-
-    /// Returns if this element is still alive and able to handle keyboard events
-    fn is_alive(&self) -> bool;
-    /// Compare this element to any given other to figure out if a provided
-    /// handler is referencing the same object.
-    fn same_handler_as(&self, other: &dyn KeyboardTarget<D>) -> bool;
-    /// Clone this handler
-    fn clone_handler(&self) -> Box<dyn KeyboardTarget<D> + 'static>;
-    /// Access this handler as an [`std::any::Any`] reference
-    fn as_any(&self) -> &dyn std::any::Any;
-}
-
-impl<D: SeatHandler + 'static> KeyboardTarget<D> for Box<dyn KeyboardTarget<D>> {
-    fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        KeyboardTarget::enter(&**self, seat, data, keys, serial)
-    }
-    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
-        KeyboardTarget::leave(&**self, seat, data, serial)
-    }
-    fn key(
-        &self,
-        seat: &Seat<D>,
-        data: &mut D,
-        key: KeysymHandle<'_>,
-        state: KeyState,
-        serial: Serial,
-        time: u32,
-    ) {
-        KeyboardTarget::key(&**self, seat, data, key, state, serial, time)
-    }
-    fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
-        KeyboardTarget::modifiers(&**self, seat, data, modifiers, serial)
-    }
-
-    fn is_alive(&self) -> bool {
-        KeyboardTarget::is_alive(&**self)
-    }
-    fn same_handler_as(&self, other: &dyn KeyboardTarget<D>) -> bool {
-        KeyboardTarget::same_handler_as(&**self, other)
-    }
-    fn clone_handler(&self) -> Box<dyn KeyboardTarget<D>> {
-        KeyboardTarget::clone_handler(&**self)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        (**self).as_any()
-    }
 }
 
 enum GrabStatus<D> {
@@ -101,9 +55,9 @@ enum GrabStatus<D> {
     Borrowed,
 }
 
-pub(crate) struct KbdInternal<D> {
-    pub(crate) focus: Option<(Box<dyn KeyboardTarget<D>>, Serial)>,
-    pending_focus: Option<Box<dyn KeyboardTarget<D>>>,
+pub(crate) struct KbdInternal<D: SeatHandler> {
+    pub(crate) focus: Option<(<D as SeatHandler>::KeyboardFocus, Serial)>,
+    pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
     pub(crate) pressed_keys: Vec<u32>,
     pub(crate) mods_state: ModifiersState,
     keymap: xkb::Keymap,
@@ -114,7 +68,7 @@ pub(crate) struct KbdInternal<D> {
 }
 
 // focus_hook does not implement debug, so we have to impl Debug manually
-impl<D> fmt::Debug for KbdInternal<D> {
+impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KbdInternal")
             .field("focus", &self.focus.as_ref().map(|_| "..."))
@@ -131,7 +85,7 @@ impl<D> fmt::Debug for KbdInternal<D> {
 
 // This is OK because all parts of `xkb` will remain on the
 // same thread
-unsafe impl<D> Send for KbdInternal<D> {}
+unsafe impl<D: SeatHandler> Send for KbdInternal<D> {}
 
 impl<D: SeatHandler + 'static> KbdInternal<D> {
     fn new(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32) -> Result<KbdInternal<D>, ()> {
@@ -203,7 +157,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
                 if let Some(ref surface) = handler.start_data().focus {
-                    if !surface.is_alive() {
+                    if !surface.alive() {
                         self.grab = GrabStatus::None;
                         f(
                             KeyboardInnerHandle {
@@ -256,7 +210,7 @@ pub enum Error {
 }
 
 #[derive(Debug)]
-pub(crate) struct KbdRc<D> {
+pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) internal: Mutex<KbdInternal<D>>,
     #[allow(dead_code)]
     pub(crate) keymap: KeymapFile,
@@ -316,9 +270,9 @@ pub enum FilterResult<T> {
 }
 
 /// Data about the event that started the grab.
-pub struct GrabStartData<D> {
+pub struct GrabStartData<D: SeatHandler> {
     /// The focused surface, if any, at the start of the grab.
-    pub focus: Option<Box<dyn KeyboardTarget<D>>>,
+    pub focus: Option<<D as SeatHandler>::KeyboardFocus>,
 }
 
 impl<D: SeatHandler + 'static> fmt::Debug for GrabStartData<D> {
@@ -332,7 +286,7 @@ impl<D: SeatHandler + 'static> fmt::Debug for GrabStartData<D> {
 impl<D: SeatHandler + 'static> Clone for GrabStartData<D> {
     fn clone(&self) -> Self {
         GrabStartData {
-            focus: self.focus.as_ref().map(|handler| handler.clone_handler()),
+            focus: self.focus.clone(),
         }
     }
 }
@@ -371,7 +325,7 @@ pub trait KeyboardGrab<D: SeatHandler> {
         &mut self,
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
-        focus: Option<Box<dyn KeyboardTarget<D>>>,
+        focus: Option<<D as SeatHandler>::KeyboardFocus>,
         serial: Serial,
     );
 
@@ -391,11 +345,11 @@ pub trait KeyboardGrab<D: SeatHandler> {
 ///   or forwarded to the client. See the documentation of the [`KeyboardHandle::input`] method for
 ///   details.
 #[derive(Debug)]
-pub struct KeyboardHandle<D> {
+pub struct KeyboardHandle<D: SeatHandler> {
     pub(crate) arc: Arc<KbdRc<D>>,
 }
 
-impl<D> Clone for KeyboardHandle<D> {
+impl<D: SeatHandler> Clone for KeyboardHandle<D> {
     fn clone(&self) -> Self {
         KeyboardHandle {
             arc: self.arc.clone(),
@@ -403,7 +357,7 @@ impl<D> Clone for KeyboardHandle<D> {
     }
 }
 
-impl<D> ::std::cmp::PartialEq for KeyboardHandle<D> {
+impl<D: SeatHandler> ::std::cmp::PartialEq for KeyboardHandle<D> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.arc, &other.arc)
     }
@@ -550,19 +504,14 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&self, data: &mut D, focus: Option<impl KeyboardTarget<D> + 'static>, serial: Serial) {
+    pub fn set_focus(&self, data: &mut D, focus: Option<<D as SeatHandler>::KeyboardFocus>, serial: Serial) {
         let mut guard = self.arc.internal.lock().unwrap();
-        guard.pending_focus = focus.as_ref().map(KeyboardTarget::clone_handler);
+        guard.pending_focus = focus.clone();
         let seat = self.get_seat(data);
         guard.with_grab(
             &seat,
             move |mut handle, grab| {
-                grab.set_focus(
-                    data,
-                    &mut handle,
-                    focus.map(|h| Box::new(h) as Box<dyn KeyboardTarget<D>>),
-                    serial,
-                );
+                grab.set_focus(data, &mut handle, focus, serial);
             },
             self.arc.logger.clone(),
         );
@@ -620,18 +569,14 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
         self.inner.grab = GrabStatus::None;
         // restore the focus
         if restore_focus {
-            let focus = self
-                .inner
-                .pending_focus
-                .as_ref()
-                .map(KeyboardTarget::clone_handler);
+            let focus = self.inner.pending_focus.clone();
             self.set_focus(data, focus, serial);
         }
     }
 
     /// Access the current focus of this keyboard
-    pub fn current_focus(&self) -> Option<&dyn KeyboardTarget<D>> {
-        self.inner.focus.as_ref().map(|f| &*f.0)
+    pub fn current_focus(&self) -> Option<&<D as SeatHandler>::KeyboardFocus> {
+        self.inner.focus.as_ref().map(|f| &f.0)
     }
 
     /// Convert a given keycode as a [`KeysymHandle`] modified by this keyboards state
@@ -676,12 +621,18 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    pub fn set_focus(&mut self, data: &mut D, focus: Option<Box<dyn KeyboardTarget<D>>>, serial: Serial) {
+    pub fn set_focus(
+        &mut self,
+        data: &mut D,
+        focus: Option<<D as SeatHandler>::KeyboardFocus>,
+        serial: Serial,
+    ) {
+        let focus_clone = focus.clone();
         let same = self
             .inner
             .focus
             .as_ref()
-            .and_then(|f| focus.as_ref().map(|s| s.same_handler_as(&f.0)))
+            .and_then(|f| focus_clone.map(|f2| f.0 == f2))
             .unwrap_or(false);
 
         if !same {
@@ -712,7 +663,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
             };
             {
                 let KbdInternal { ref focus, .. } = *self.inner;
-                data.focus_changed(self.seat, focus.as_ref().map(|f| &*f.0));
+                data.focus_changed(self.seat, focus.as_ref().map(|f| &f.0));
             }
             if self.inner.focus.is_some() {
                 trace!(self.logger, "Focus set to new surface");
@@ -746,7 +697,7 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
         &mut self,
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
-        focus: Option<Box<dyn KeyboardTarget<D>>>,
+        focus: Option<<D as SeatHandler>::KeyboardFocus>,
         serial: Serial,
     ) {
         handle.set_focus(data, focus, serial)

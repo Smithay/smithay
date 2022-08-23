@@ -82,7 +82,21 @@ use wayland_server::{
     DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-impl<D> Inner<D> {
+pub trait WaylandFocus {
+    fn wl_surface(&self) -> Option<&wl_surface::WlSurface>;
+    fn same_client_as(&self, object_id: ObjectId) -> bool;
+}
+
+impl WaylandFocus for wl_surface::WlSurface {
+    fn wl_surface(&self) -> Option<&wl_surface::WlSurface> {
+        Some(self)
+    }
+    fn same_client_as(&self, object_id: ObjectId) -> bool {
+        self.id().same_client_as(&object_id)
+    }
+}
+
+impl<D: SeatHandler> Inner<D> {
     fn compute_caps(&self) -> wl_seat::Capability {
         let mut caps = wl_seat::Capability::empty();
         if self.pointer.is_some() {
@@ -107,7 +121,7 @@ impl<D> Inner<D> {
 
 /// Global data of WlSeat
 #[derive(Debug)]
-pub struct SeatGlobalData<D> {
+pub struct SeatGlobalData<D: SeatHandler> {
     arc: Arc<SeatRc<D>>,
 }
 
@@ -123,6 +137,8 @@ impl<D: SeatHandler + 'static> SeatState<D> {
     pub fn new_wl_seat<N, L>(&mut self, display: &DisplayHandle, name: N, logger: L) -> Seat<D>
     where
         D: GlobalDispatch<WlSeat, SeatGlobalData<D>> + SeatHandler + 'static,
+        <D as SeatHandler>::PointerFocus: WaylandFocus,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         N: Into<String>,
         L: Into<Option<::slog::Logger>>,
     {
@@ -209,7 +225,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
 
 /// User data for seat
 #[derive(Debug)]
-pub struct SeatUserData<D> {
+pub struct SeatUserData<D: SeatHandler> {
     arc: Arc<SeatRc<D>>,
 }
 
@@ -243,6 +259,7 @@ where
     D: Dispatch<WlPointer, PointerUserData<D>>,
     D: Dispatch<WlTouch, TouchUserData>,
     D: SeatHandler,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(

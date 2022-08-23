@@ -9,12 +9,30 @@ use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
+    input::{keyboard::KeyboardTarget, pointer::PointerTarget, SeatHandler},
     utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::with_states,
+        seat::WaylandFocus,
         shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceRoleAttributes},
     },
 };
+
+pub trait PopupFocus<D>: PointerTarget<D> + KeyboardTarget<D> + WaylandFocus
+where
+    D: SeatHandler<KeyboardFocus = Self, PointerFocus = Self> + 'static,
+{
+    fn xdg_popup(&self) -> Option<PopupKind>;
+}
+
+impl<D> PopupFocus<D> for WlSurface
+where
+    D: SeatHandler<KeyboardFocus = WlSurface, PointerFocus = WlSurface> + 'static,
+{
+    fn xdg_popup(&self) -> Option<PopupKind> {
+        PopupManager::popups_for_surface(self).next().map(|(p, _)| p)
+    }
+}
 
 /// Represents a popup surface
 #[derive(Debug, Clone)]

@@ -8,7 +8,10 @@ use wayland_server::{protocol::wl_seat::WlSeat, Client, DataInit, Dispatch, Disp
 
 use crate::{
     input::{Seat, SeatHandler},
-    wayland::primary_selection::seat_data::{SeatData, Selection},
+    wayland::{
+        primary_selection::seat_data::{SeatData, Selection},
+        seat::WaylandFocus,
+    },
 };
 
 use super::{PrimarySelectionHandler, PrimarySelectionState};
@@ -24,6 +27,7 @@ where
     D: Dispatch<PrimaryDevice, PrimaryDeviceUserData>,
     D: PrimarySelectionHandler,
     D: SeatHandler,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(

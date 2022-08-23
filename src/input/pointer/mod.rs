@@ -9,7 +9,7 @@ use crate::{
     backend::input::{Axis, AxisSource, ButtonState},
     input::{Seat, SeatHandler},
     utils::Serial,
-    utils::{Logical, Point},
+    utils::{IsAlive, Logical, Point},
 };
 
 mod cursor_image;
@@ -29,13 +29,13 @@ pub use grab::{GrabStartData, PointerGrab};
 /// When sending events using this handle, they will be intercepted by a pointer
 /// grab if any is active. See the [`PointerGrab`] trait for details.
 #[derive(Debug)]
-pub struct PointerHandle<D> {
+pub struct PointerHandle<D: SeatHandler> {
     pub(crate) inner: Arc<Mutex<PointerInternal<D>>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_pointers: Arc<Mutex<Vec<wayland_server::protocol::wl_pointer::WlPointer>>>,
 }
 
-impl<D> Clone for PointerHandle<D> {
+impl<D: SeatHandler> Clone for PointerHandle<D> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -45,14 +45,14 @@ impl<D> Clone for PointerHandle<D> {
     }
 }
 
-impl<D> ::std::cmp::PartialEq for PointerHandle<D> {
+impl<D: SeatHandler> ::std::cmp::PartialEq for PointerHandle<D> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
 /// Trait representing object that can receive pointer interactions
-pub trait PointerTarget<D>
+pub trait PointerTarget<D>: IsAlive + PartialEq + Clone
 where
     D: SeatHandler,
     Self: std::any::Any + Send + 'static,
@@ -67,51 +67,7 @@ where
     fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame);
     /// A pointer of a given seat left this handler
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32);
-
-    /// Returns if this element is still alive and able to handle pointer events
-    fn is_alive(&self) -> bool;
-    /// Compare this element to any given other to figure out if a provided
-    /// handler is referencing the same object.
-    fn same_handler_as(&self, other: &dyn PointerTarget<D>) -> bool;
-    /// Clone this handler
-    fn clone_handler(&self) -> Box<dyn PointerTarget<D> + 'static>;
-    /// Access this handler as an [`std::any::Any`] reference
-    fn as_any(&self) -> &dyn std::any::Any;
 }
-
-impl<D: SeatHandler + 'static> PointerTarget<D> for Box<dyn PointerTarget<D>> {
-    fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerTarget::enter(&**self, seat, data, event)
-    }
-    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
-        PointerTarget::leave(&**self, seat, data, serial, time)
-    }
-    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerTarget::motion(&**self, seat, data, event);
-    }
-    fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
-        PointerTarget::button(&**self, seat, data, event)
-    }
-    fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
-        PointerTarget::axis(&**self, seat, data, frame);
-    }
-
-    fn is_alive(&self) -> bool {
-        PointerTarget::is_alive(&**self)
-    }
-    fn same_handler_as(&self, other: &dyn PointerTarget<D>) -> bool {
-        PointerTarget::same_handler_as(&**self, other)
-    }
-    fn clone_handler(&self) -> Box<dyn PointerTarget<D> + 'static> {
-        PointerTarget::clone_handler(&**self)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        (**self).as_any()
-    }
-}
-
-/// Pointer focus containing a boxed PointerHandler and a relative position
-pub type PointerFocusBoxed<D> = (Box<dyn PointerTarget<D>>, Point<i32, Logical>);
 
 impl<D: SeatHandler + 'static> PointerHandle<D> {
     pub(crate) fn new() -> PointerHandle<D> {
@@ -179,19 +135,14 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     pub fn motion(
         &self,
         data: &mut D,
-        focus: Option<(impl PointerTarget<D>, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         let mut inner = self.inner.lock().unwrap();
-        inner.pending_focus = focus.as_ref().map(|(h, p)| (h.clone_handler(), *p));
+        inner.pending_focus = focus.clone();
         let seat = self.get_seat(data);
         inner.with_grab(&seat, move |mut handle, grab| {
-            grab.motion(
-                data,
-                &mut handle,
-                focus.map(|(h, p)| (Box::new(h) as Box<dyn PointerTarget<D>>, p)),
-                event,
-            );
+            grab.motion(data, &mut handle, focus, event);
         });
     }
 
@@ -271,8 +222,8 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     }
 
     /// Access the current focus of this pointer
-    pub fn current_focus(&self) -> Option<(&dyn PointerTarget<D>, Point<i32, Logical>)> {
-        self.inner.focus.as_ref().map(|(h, p)| (&**h, *p))
+    pub fn current_focus(&self) -> Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)> {
+        self.inner.focus.clone()
     }
 
     /// Access the current location of this pointer in the global space
@@ -299,7 +250,12 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
-    pub fn motion(&mut self, data: &mut D, focus: Option<PointerFocusBoxed<D>>, event: &MotionEvent) {
+    pub fn motion(
+        &mut self,
+        data: &mut D,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        event: &MotionEvent,
+    ) {
         self.inner.motion(data, self.seat, focus, event);
     }
 
@@ -324,16 +280,16 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     }
 }
 
-pub(crate) struct PointerInternal<D> {
-    pub(crate) focus: Option<PointerFocusBoxed<D>>,
-    pending_focus: Option<PointerFocusBoxed<D>>,
+pub(crate) struct PointerInternal<D: SeatHandler> {
+    pub(crate) focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+    pending_focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
     location: Point<f64, Logical>,
     grab: GrabStatus<D>,
     pressed_buttons: Vec<u32>,
 }
 
 // image_callback does not implement debug, so we have to impl Debug manually
-impl<D> fmt::Debug for PointerInternal<D> {
+impl<D: SeatHandler> fmt::Debug for PointerInternal<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerInternal")
             .field("focus", &self.focus.as_ref().map(|_| "..."))
@@ -386,7 +342,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         self.grab = GrabStatus::None;
         // restore the focus
         let location = self.location;
-        let focus = self.pending_focus.as_ref().map(|(h, p)| (h.clone_handler(), *p));
+        let focus = self.pending_focus.clone();
         self.motion(
             data,
             seat,
@@ -403,15 +359,15 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
-        focus: Option<PointerFocusBoxed<D>>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // do we leave a surface ?
         let mut leave = true;
         self.location = event.location;
         if let Some((ref current_focus, _)) = self.focus {
-            if let Some((ref surface, _)) = focus {
-                if current_focus.same_handler_as(surface) {
+            if let Some((ref new_focus, _)) = focus {
+                if current_focus == new_focus {
                     leave = false;
                 }
             }
@@ -454,8 +410,8 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
             GrabStatus::Borrowed => panic!("Accessed a pointer grab from within a pointer grab access."),
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
-                if let Some((ref surface, _)) = handler.start_data().focus {
-                    if !surface.is_alive() {
+                if let Some((ref focus, _)) = handler.start_data().focus {
+                    if !focus.alive() {
                         self.grab = GrabStatus::None;
                         f(PointerInnerHandle { inner: self, seat }, &mut DefaultGrab);
                         return;

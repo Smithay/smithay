@@ -9,7 +9,7 @@ use smithay::{
     input::{
         pointer::{
             AxisFrame, ButtonEvent, Focus, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-            PointerTarget, PointerInnerHandle,
+            PointerInnerHandle,
         },
         Seat,
     },
@@ -54,10 +54,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<Backe
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(
-            Box<dyn PointerTarget<AnvilState<BackendData>> + 'static>,
-            Point<i32, Logical>,
-        )>,
+        _focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -141,10 +138,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(
-            Box<dyn PointerTarget<AnvilState<BackendData>> + 'static>,
-            Point<i32, Logical>,
-        )>,
+        _focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -422,10 +416,8 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .unwrap()
                 .0
-                .as_any()
-                .downcast_ref::<WlSurface>()
-                .map(|s| s.id().same_client_as(&surface.wl_surface().id()))
-                .unwrap_or(false)
+                .id()
+                .same_client_as(&surface.wl_surface().id())
         {
             return;
         }
@@ -496,10 +488,8 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .unwrap()
                 .0
-                .as_any()
-                .downcast_ref::<WlSurface>()
-                .map(|s| s.id().same_client_as(&surface.wl_surface().id()))
-                .unwrap_or(false)
+                .id()
+                .same_client_as(&surface.wl_surface().id())
         {
             return;
         }
@@ -683,7 +673,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
         let ret = self
             .popups
-            .grab_popup(&self.display_handle, surface.into(), &seat, serial);
+            .grab_popup(&self.display_handle, surface.wl_surface().clone(), &seat, serial);
 
         if let Ok(mut grab) = ret {
             if let Some(keyboard) = seat.get_keyboard() {
@@ -694,7 +684,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                     grab.ungrab(PopupUngrabStrategy::All);
                     return;
                 }
-                keyboard.set_focus(self, grab.current_grab(), serial);
+                keyboard.set_focus(self, grab.current_grab().map(|(s, _)| s), serial);
                 keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
             }
             if let Some(pointer) = seat.get_pointer() {

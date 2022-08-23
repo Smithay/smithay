@@ -8,17 +8,21 @@ use wayland_server::{
     Dispatch, DisplayHandle, Resource,
 };
 
+use super::WaylandFocus;
 use crate::{
     backend::input::KeyState,
     input::{
         keyboard::{KeyboardHandle, KeyboardTarget, KeysymHandle, ModifiersState},
         Seat, SeatHandler, SeatState,
     },
-    utils::IsAlive,
     utils::Serial,
 };
 
-impl<D: SeatHandler + 'static> KeyboardHandle<D> {
+impl<D: SeatHandler + 'static> KeyboardHandle<D>
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+{
     /// Check if client of given resource currently has keyboard focus
     pub fn client_of_object_has_focus(&self, id: &ObjectId) -> bool {
         self.arc
@@ -27,8 +31,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             .unwrap()
             .focus
             .as_ref()
-            .and_then(|f| f.0.as_any().downcast_ref::<WlSurface>())
-            .map(|s| s.id().same_client_as(id))
+            .map(|f| f.0.same_client_as(id.clone()))
             .unwrap_or(false)
     }
 
@@ -58,20 +61,18 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             kbd.repeat_info(guard.repeat_rate, guard.repeat_delay);
         }
         if let Some((focused, serial)) = guard.focus.as_ref() {
-            if let Some(surface) = focused.as_any().downcast_ref::<WlSurface>() {
-                if surface.id().same_client_as(&kbd.id()) {
-                    let serialized = guard.mods_state.serialized;
-                    let keys = serialize_pressed_keys(guard.pressed_keys.clone());
-                    kbd.enter((*serial).into(), surface, keys);
-                    // Modifiers must be send after enter event.
-                    kbd.modifiers(
-                        (*serial).into(),
-                        serialized.depressed,
-                        serialized.latched,
-                        serialized.locked,
-                        serialized.layout_locked,
-                    );
-                }
+            if focused.same_client_as(kbd.id()) {
+                let serialized = guard.mods_state.serialized;
+                let keys = serialize_pressed_keys(guard.pressed_keys.clone());
+                kbd.enter((*serial).into(), focused.wl_surface().unwrap(), keys);
+                // Modifiers must be send after enter event.
+                kbd.modifiers(
+                    (*serial).into(),
+                    serialized.depressed,
+                    serialized.latched,
+                    serialized.locked,
+                    serialized.layout_locked,
+                );
             }
         }
         self.arc.known_kbds.lock().unwrap().push(kbd);
@@ -80,7 +81,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
 /// User data for keyboard
 #[derive(Debug)]
-pub struct KeyboardUserData<D> {
+pub struct KeyboardUserData<D: SeatHandler> {
     pub(crate) handle: Option<KeyboardHandle<D>>,
 }
 
@@ -172,23 +173,6 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
                 modifiers.layout_locked,
             );
         })
-    }
-
-    fn is_alive(&self) -> bool {
-        IsAlive::alive(self)
-    }
-    fn same_handler_as(&self, other: &dyn KeyboardTarget<D>) -> bool {
-        if let Some(other_surface) = other.as_any().downcast_ref::<WlSurface>() {
-            self == other_surface
-        } else {
-            false
-        }
-    }
-    fn clone_handler(&self) -> Box<dyn KeyboardTarget<D>> {
-        Box::new(self.clone())
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

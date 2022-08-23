@@ -10,11 +10,12 @@ use wayland_server::{
 };
 
 use crate::{
-    input::{pointer::Focus, Seat},
+    input::{pointer::Focus, Seat, SeatHandler},
     utils::Serial,
     wayland::{
         compositor,
         data_device::seat_data::{SeatData, Selection},
+        seat::WaylandFocus,
     },
 };
 
@@ -33,6 +34,9 @@ impl<D> Dispatch<WlDataDevice, DataDeviceUserData, D> for DataDeviceState
 where
     D: Dispatch<WlDataDevice, DataDeviceUserData>,
     D: DataDeviceHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(

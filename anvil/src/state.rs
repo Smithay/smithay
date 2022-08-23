@@ -9,11 +9,7 @@ use smithay::{
     delegate_text_input_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
     delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
-    input::{
-        keyboard::{KeyboardTarget, XkbConfig},
-        pointer::CursorImageStatus,
-        Seat, SeatHandler, SeatState,
-    },
+    input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
         wayland_protocols::xdg::decoration::{
@@ -156,12 +152,14 @@ impl<BackendData> ShmHandler for AnvilState<BackendData> {
 delegate_shm!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> SeatHandler for AnvilState<BackendData> {
+    type KeyboardFocus = WlSurface;
+    type PointerFocus = WlSurface;
+
     fn seat_state(&mut self) -> &mut SeatState<AnvilState<BackendData>> {
         &mut self.seat_state
     }
 
-    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&dyn KeyboardTarget<Self>>) {
-        let surface = focused.and_then(|f| f.as_any().downcast_ref::<WlSurface>());
+    fn focus_changed(&mut self, seat: &Seat<Self>, surface: Option<&WlSurface>) {
         let dh = &self.display_handle;
 
         let focus = surface.and_then(|s| dh.get_client(s.id()).ok());

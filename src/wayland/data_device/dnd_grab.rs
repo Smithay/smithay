@@ -18,11 +18,12 @@ use crate::{
     input::{
         pointer::{
             AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-            PointerTarget, PointerInnerHandle,
+            PointerInnerHandle,
         },
         Seat, SeatHandler,
     },
     utils::{IsAlive, Logical, Point},
+    wayland::seat::WaylandFocus,
 };
 
 use super::{seat_data::SeatData, with_source_metadata, ClientDndGrabHandler, DataDeviceHandler};
@@ -65,13 +66,15 @@ impl<D: SeatHandler> DnDGrab<D> {
 impl<D> PointerGrab<D> for DnDGrab<D>
 where
     D: DataDeviceHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
     fn motion(
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(Box<dyn PointerTarget<D>>, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -83,11 +86,7 @@ where
             .get::<RefCell<SeatData>>()
             .unwrap()
             .borrow_mut();
-        if focus
-            .as_ref()
-            .and_then(|&(ref s, _)| s.as_any().downcast_ref::<WlSurface>())
-            != self.current_focus.as_ref()
-        {
+        if focus.as_ref().and_then(|&(ref s, _)| s.wl_surface()) != self.current_focus.as_ref() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 // only leave if there is a data source or we are on the original client
@@ -107,7 +106,7 @@ where
         }
         if let Some((surface, surface_location)) = focus
             .as_ref()
-            .and_then(|(h, loc)| h.as_any().downcast_ref::<WlSurface>().map(|s| (s, loc)))
+            .and_then(|(h, loc)| h.wl_surface().map(|s| (s, loc)))
         {
             // early return if the surface is no longer valid
             let client = match self.dh.get_client(surface.id()) {

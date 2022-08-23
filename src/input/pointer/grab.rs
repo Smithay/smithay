@@ -7,9 +7,7 @@ use crate::{
     utils::{Logical, Point},
 };
 
-use super::{
-    AxisFrame, ButtonEvent, Focus, MotionEvent, PointerFocusBoxed, PointerTarget, PointerInnerHandle,
-};
+use super::{AxisFrame, ButtonEvent, Focus, MotionEvent, PointerInnerHandle};
 
 /// A trait to implement a pointer grab
 ///
@@ -44,7 +42,7 @@ pub trait PointerGrab<D: SeatHandler>: Send {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<PointerFocusBoxed<D>>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
     );
     /// A button press was reported
@@ -64,11 +62,11 @@ pub trait PointerGrab<D: SeatHandler>: Send {
 }
 
 /// Data about the event that started the grab.
-pub struct GrabStartData<D> {
+pub struct GrabStartData<D: SeatHandler> {
     /// The focused surface and its location, if any, at the start of the grab.
     ///
     /// The location coordinates are in the global compositor space.
-    pub focus: Option<PointerFocusBoxed<D>>,
+    pub focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
     /// The button that initiated the grab.
     pub button: u32,
     /// The location of the click that initiated the grab, in the global compositor space.
@@ -88,10 +86,7 @@ impl<D: SeatHandler + 'static> fmt::Debug for GrabStartData<D> {
 impl<D: SeatHandler + 'static> Clone for GrabStartData<D> {
     fn clone(&self) -> Self {
         GrabStartData {
-            focus: self
-                .focus
-                .as_ref()
-                .map(|(handler, loc)| (handler.clone_handler(), *loc)),
+            focus: self.focus.clone(),
             button: self.button,
             location: self.location,
         }
@@ -123,7 +118,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(Box<dyn PointerTarget<D>>, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         handle.motion(data, focus, event);
@@ -138,7 +133,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
                 Focus::Keep,
                 ClickGrab {
                     start_data: GrabStartData {
-                        focus: handle.current_focus().map(|(h, p)| (h.clone_handler(), p)),
+                        focus: handle.current_focus(),
                         button: event.button,
                         location: handle.current_location(),
                     },
@@ -161,7 +156,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
 //
 // In case the user maintains several simultaneous clicks, release
 // the grab once all are released.
-struct ClickGrab<D> {
+struct ClickGrab<D: SeatHandler> {
     start_data: GrabStartData<D>,
 }
 
@@ -170,17 +165,10 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        _focus: Option<(Box<dyn PointerTarget<D>>, Point<i32, Logical>)>,
+        _focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
-        handle.motion(
-            data,
-            self.start_data
-                .focus
-                .as_ref()
-                .map(|(h, p)| (h.clone_handler(), *p)),
-            event,
-        );
+        handle.motion(data, self.start_data.focus.clone(), event);
     }
 
     fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {

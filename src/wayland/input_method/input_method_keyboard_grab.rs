@@ -4,18 +4,17 @@ use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboa
     self, ZwpInputMethodKeyboardGrabV2,
 };
 use wayland_server::backend::{ClientId, ObjectId};
-use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::Dispatch;
 
 use crate::backend::input::KeyState;
 use crate::input::{
     keyboard::{
-        GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardTarget,
-        KeyboardInnerHandle, KeymapFile, ModifiersState,
+        GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
+        KeymapFile, ModifiersState,
     },
     SeatHandler,
 };
-use crate::wayland::text_input::TextInputHandle;
+use crate::wayland::{seat::WaylandFocus, text_input::TextInputHandle};
 
 use super::InputMethodManagerState;
 
@@ -34,7 +33,11 @@ pub struct InputMethodKeyboardGrab {
     pub(crate) inner: Arc<Mutex<InputMethodKeyboard>>,
 }
 
-impl<D: SeatHandler + 'static> KeyboardGrab<D> for InputMethodKeyboardGrab {
+impl<D> KeyboardGrab<D> for InputMethodKeyboardGrab
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+{
     fn input(
         &mut self,
         _data: &mut D,
@@ -69,15 +72,15 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for InputMethodKeyboardGrab {
         &mut self,
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
-        focus: Option<Box<dyn KeyboardTarget<D>>>,
+        focus: Option<<D as SeatHandler>::KeyboardFocus>,
         serial: crate::utils::Serial,
     ) {
         let inner = self.inner.lock().unwrap();
-        inner.text_input_handle.as_ref().unwrap().set_focus(
-            focus
-                .as_ref()
-                .and_then(|f| f.as_any().downcast_ref::<WlSurface>().clone()),
-        );
+        inner
+            .text_input_handle
+            .as_ref()
+            .unwrap()
+            .set_focus(focus.as_ref().and_then(|f| f.wl_surface().clone()));
         handle.set_focus(data, focus, serial)
     }
 

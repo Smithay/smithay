@@ -9,22 +9,22 @@ use crate::{
     backend::input::{ButtonState, KeyState},
     input::{
         keyboard::{
-            GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardTarget,
-            KeyboardInnerHandle, ModifiersState,
+            GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
+            ModifiersState,
         },
         pointer::{
             AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-            PointerTarget, PointerInnerHandle,
+            PointerInnerHandle,
         },
         SeatHandler,
     },
     utils::{DeadResource, IsAlive, Logical, Point, Serial},
-    wayland::{compositor::get_role, shell::xdg::XDG_POPUP_ROLE},
+    wayland::{compositor::get_role, seat::WaylandFocus, shell::xdg::XDG_POPUP_ROLE},
 };
 
 use thiserror::Error;
 
-use super::{PopupKind, PopupManager};
+use super::{PopupFocus, PopupManager};
 
 /// Defines the possible errors that
 /// can be returned from [`PopupManager::grab_popup`]
@@ -42,6 +42,9 @@ pub enum PopupGrabError {
     /// The client tried to grab a popup which is not the topmost
     #[error("popup was not created on the topmost popup")]
     NotTheTopmostPopup,
+    /// The focus target was no popup
+    #[error("focus target was no popup")]
+    NoPopup,
 }
 
 /// Defines the possibly strategies
@@ -54,33 +57,64 @@ pub enum PopupUngrabStrategy {
     All,
 }
 
-#[derive(Debug, Default)]
-struct PopupGrabInternal {
+struct PopupGrabInternal<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::KeyboardFocus: PopupFocus<D>,
+{
     serial: Option<Serial>,
-    active_grabs: Vec<(WlSurface, PopupKind)>,
-    dismissed_grabs: Vec<(WlSurface, PopupKind)>,
+    active_grabs: Vec<(WlSurface, <D as SeatHandler>::KeyboardFocus)>,
+    dismissed_grabs: Vec<(WlSurface, <D as SeatHandler>::KeyboardFocus)>,
 }
 
-impl PopupGrabInternal {
+impl<D> Default for PopupGrabInternal<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::KeyboardFocus: PopupFocus<D>,
+{
+    fn default() -> Self {
+        PopupGrabInternal {
+            serial: None,
+            active_grabs: Vec::new(),
+            dismissed_grabs: Vec::new(),
+        }
+    }
+}
+
+impl<D> fmt::Debug for PopupGrabInternal<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: PopupFocus<D>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PopupGrabInternal")
+            .field("serial", &self.serial)
+            .field("active_grab", &"..")
+            .field("dismissed_grabs", &"..")
+            .finish()
+    }
+}
+
+impl<D> PopupGrabInternal<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::KeyboardFocus: PopupFocus<D>,
+{
     fn active(&self) -> bool {
         !self.active_grabs.is_empty() || !self.dismissed_grabs.is_empty()
     }
 
-    fn current_grab(&self) -> Option<&WlSurface> {
-        self.active_grabs
-            .iter()
-            .rev()
-            .find(|(_, p)| p.alive())
-            .map(|(s, _)| s)
+    fn current_grab(&self) -> Option<&(WlSurface, <D as SeatHandler>::KeyboardFocus)> {
+        self.active_grabs.iter().rev().find(|(_, p)| p.alive())
     }
 
     fn is_dismissed(&self, surface: &WlSurface) -> bool {
         self.dismissed_grabs.iter().any(|(s, _)| s == surface)
     }
 
-    fn append_grab(&mut self, popup: &PopupKind) {
-        let surface = popup.wl_surface();
-        self.active_grabs.push((surface.clone(), popup.clone()));
+    fn append_grab(&mut self, popup: <D as SeatHandler>::KeyboardFocus) {
+        self.active_grabs
+            .push((popup.wl_surface().unwrap().clone(), popup));
     }
 
     fn cleanup(&mut self) {
@@ -98,26 +132,82 @@ impl PopupGrabInternal {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub(super) struct PopupGrabInner {
-    internal: Arc<Mutex<PopupGrabInternal>>,
+pub(super) struct PopupGrabInner<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::KeyboardFocus: PopupFocus<D>,
+{
+    internal: Arc<Mutex<PopupGrabInternal<D>>>,
 }
 
-impl PopupGrabInner {
+impl<D> Clone for PopupGrabInner<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::KeyboardFocus: PopupFocus<D>,
+{
+    fn clone(&self) -> Self {
+        PopupGrabInner {
+            internal: self.internal.clone(),
+        }
+    }
+}
+
+impl<D> Default for PopupGrabInner<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::KeyboardFocus: PopupFocus<D>,
+{
+    fn default() -> Self {
+        PopupGrabInner {
+            internal: Arc::new(Mutex::new(PopupGrabInternal::<D>::default())),
+        }
+    }
+}
+
+impl<D> fmt::Debug for PopupGrabInner<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: PopupFocus<D> + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PopupGrabInner")
+            .field("internal", &self.internal)
+            .finish()
+    }
+}
+
+pub(super) trait GrabTrait {
+    fn alive(&self) -> bool;
+    fn cleanup(&self);
+}
+
+impl<D> GrabTrait for PopupGrabInner<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus>,
+    <D as SeatHandler>::KeyboardFocus: PopupFocus<D>,
+{
+    fn alive(&self) -> bool {
+        self.internal.lock().unwrap().active()
+    }
+
+    fn cleanup(&self) {
+        self.internal.lock().unwrap().cleanup()
+    }
+}
+
+impl<D> PopupGrabInner<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus>,
+    <D as SeatHandler>::KeyboardFocus: PopupFocus<D>,
+{
     pub(super) fn active(&self) -> bool {
         let guard = self.internal.lock().unwrap();
         guard.active()
     }
 
-    fn current_grab(&self) -> Option<WlSurface> {
+    fn current_grab(&self) -> Option<(WlSurface, <D as SeatHandler>::KeyboardFocus)> {
         let guard = self.internal.lock().unwrap();
-        guard
-            .active_grabs
-            .iter()
-            .rev()
-            .find(|(_, p)| p.alive())
-            .map(|(s, _)| s)
-            .cloned()
+        guard.active_grabs.iter().rev().find(|(_, p)| p.alive()).cloned()
     }
 
     pub(super) fn cleanup(&self) {
@@ -125,8 +215,12 @@ impl PopupGrabInner {
         guard.cleanup();
     }
 
-    pub(super) fn grab(&self, popup: &PopupKind, serial: Serial) -> Result<Option<Serial>, PopupGrabError> {
-        let parent = popup.parent().ok_or(DeadResource)?;
+    pub(super) fn grab(
+        &self,
+        popup: <D as SeatHandler>::KeyboardFocus,
+        serial: Serial,
+    ) -> Result<Option<Serial>, PopupGrabError> {
+        let parent = popup.xdg_popup().unwrap().parent().ok_or(DeadResource)?;
         let parent_role = get_role(&parent);
 
         self.cleanup();
@@ -134,7 +228,7 @@ impl PopupGrabInner {
         let mut guard = self.internal.lock().unwrap();
 
         match guard.current_grab() {
-            Some(grab) => {
+            Some((grab, _)) => {
                 if grab != &parent {
                     // If the parent is a grabbing popup which has already been dismissed, this popup will be immediately dismissed.
                     if guard.is_dismissed(&parent) {
@@ -162,7 +256,7 @@ impl PopupGrabInner {
         let dismissed = match strategy {
             PopupUngrabStrategy::Topmost => {
                 if let Some(grab) = guard.active_grabs.pop() {
-                    let dismissed = PopupManager::dismiss_popup(root, &grab.1);
+                    let dismissed = PopupManager::dismiss_popup(root, &grab.1.xdg_popup().unwrap());
 
                     if dismissed.is_ok() {
                         guard.dismissed_grabs.push(grab);
@@ -177,7 +271,7 @@ impl PopupGrabInner {
                 let grabs = guard.active_grabs.drain(..).collect::<Vec<_>>();
 
                 if let Some(grab) = grabs.first() {
-                    let dismissed = PopupManager::dismiss_popup(root, &grab.1);
+                    let dismissed = PopupManager::dismiss_popup(root, &grab.1.xdg_popup().unwrap());
 
                     if dismissed.is_ok() {
                         guard.dismissed_grabs.push(grab.clone());
@@ -199,7 +293,7 @@ impl PopupGrabInner {
             guard.active_grabs.drain(..);
         }
 
-        guard.current_grab().cloned()
+        guard.current_grab().map(|(s, _)| s).cloned()
     }
 }
 
@@ -226,18 +320,26 @@ impl PopupGrabInner {
 /// timeout.
 ///
 /// The grab is obtained by calling [`PopupManager::grap_popup`](super::PopupManager::grab_popup).
-pub struct PopupGrab<D: SeatHandler + 'static> {
+pub struct PopupGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D>,
+{
     dh: DisplayHandle,
-    root: WlSurface,
+    root: <D as SeatHandler>::KeyboardFocus,
     serial: Serial,
     previous_serial: Option<Serial>,
-    toplevel_grab: PopupGrabInner,
+    toplevel_grab: PopupGrabInner<D>,
     keyboard_handle: Option<KeyboardHandle<D>>,
     keyboard_grab_start_data: KeyboardGrabStartData<D>,
     pointer_grab_start_data: PointerGrabStartData<D>,
 }
 
-impl<D: SeatHandler + 'static> Clone for PopupGrab<D> {
+impl<D> Clone for PopupGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D>,
+{
     fn clone(&self) -> Self {
         PopupGrab {
             dh: self.dh.clone(),
@@ -252,7 +354,11 @@ impl<D: SeatHandler + 'static> Clone for PopupGrab<D> {
     }
 }
 
-impl<D: SeatHandler + 'static> fmt::Debug for PopupGrab<D> {
+impl<D> fmt::Debug for PopupGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D> + fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PopupGrab")
             .field("dh", &self.dh)
@@ -267,11 +373,15 @@ impl<D: SeatHandler + 'static> fmt::Debug for PopupGrab<D> {
     }
 }
 
-impl<D: SeatHandler + 'static> PopupGrab<D> {
+impl<D> PopupGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D>,
+{
     pub(super) fn new(
         dh: &DisplayHandle,
-        toplevel_popups: PopupGrabInner,
-        root: WlSurface,
+        toplevel_popups: PopupGrabInner<D>,
+        root: <D as SeatHandler>::KeyboardFocus,
         serial: Serial,
         previous_serial: Option<Serial>,
         keyboard_handle: Option<KeyboardHandle<D>>,
@@ -287,14 +397,14 @@ impl<D: SeatHandler + 'static> PopupGrab<D> {
                 // We set the focus to root as this will make
                 // sure the grab will stay alive until the
                 // toplevel is destroyed or the grab is unset
-                focus: Some(Box::new(root.clone())),
+                focus: Some(root.clone()),
             },
             pointer_grab_start_data: PointerGrabStartData {
                 button: 0,
                 // We set the focus to root as this will make
                 // sure the grab will stay alive until the
                 // toplevel is destroyed or the grab is unset
-                focus: Some((Box::new(root), (0, 0).into())),
+                focus: Some((root, (0, 0).into())),
                 location: (0f64, 0f64).into(),
             },
         }
@@ -328,10 +438,10 @@ impl<D: SeatHandler + 'static> PopupGrab<D> {
     ///
     /// If the grab has ended this will return the root surface
     /// so that the client expected focus can be restored
-    pub fn current_grab(&self) -> Option<WlSurface> {
+    pub fn current_grab(&self) -> Option<(WlSurface, <D as SeatHandler>::KeyboardFocus)> {
         self.toplevel_grab
             .current_grab()
-            .or_else(|| Some(self.root.clone()))
+            .or_else(|| self.root.wl_surface().cloned().map(|s| (s, self.root.clone())))
     }
 
     /// Ungrab and dismiss a popup
@@ -343,8 +453,8 @@ impl<D: SeatHandler + 'static> PopupGrab<D> {
     /// or if the grab has ended the root surface
     pub fn ungrab(&mut self, strategy: PopupUngrabStrategy) -> Option<WlSurface> {
         self.toplevel_grab
-            .ungrab(&self.root, strategy)
-            .or_else(|| Some(self.root.clone()))
+            .ungrab(self.root.wl_surface().unwrap(), strategy)
+            .or_else(|| self.root.wl_surface().cloned())
     }
 
     /// Convenience method for getting a [`KeyboardGrabStartData`] for this grab.
@@ -384,12 +494,31 @@ impl<D: SeatHandler + 'static> PopupGrab<D> {
 /// on the topmost popup until the grab has ended. If the
 /// grab has ended it will restore the focus on the root of the grab
 /// and unset the [`KeyboardGrab`]
-#[derive(Debug)]
-pub struct PopupKeyboardGrab<D: SeatHandler + 'static> {
+pub struct PopupKeyboardGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D>,
+{
     popup_grab: PopupGrab<D>,
 }
 
-impl<D: SeatHandler + 'static> PopupKeyboardGrab<D> {
+impl<D> fmt::Debug for PopupKeyboardGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D> + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PopupKeyboardGrab")
+            .field("popup_grab", &self.popup_grab)
+            .finish()
+    }
+}
+
+impl<D> PopupKeyboardGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D>,
+{
     /// Create a [`PopupKeyboardGrab`] for the provided [`PopupGrab`]
     pub fn new(popup_grab: &PopupGrab<D>) -> Self {
         let grab: PopupGrab<D> = PopupGrab::<D>::clone(popup_grab);
@@ -397,7 +526,11 @@ impl<D: SeatHandler + 'static> PopupKeyboardGrab<D> {
     }
 }
 
-impl<D: SeatHandler> KeyboardGrab<D> for PopupKeyboardGrab<D> {
+impl<D> KeyboardGrab<D> for PopupKeyboardGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D>,
+{
     fn input(
         &mut self,
         data: &mut D,
@@ -411,8 +544,8 @@ impl<D: SeatHandler> KeyboardGrab<D> for PopupKeyboardGrab<D> {
         // Check if the grab changed and update the focus
         // If the grab has ended this will return the root
         // surface to restore the client expected focus.
-        if let Some(surface) = self.popup_grab.current_grab() {
-            handle.set_focus(data, Some(Box::new(surface)), serial);
+        if let Some((_surface, focus)) = self.popup_grab.current_grab() {
+            handle.set_focus(data, Some(focus), serial);
         }
 
         if self.popup_grab.has_ended() {
@@ -426,7 +559,7 @@ impl<D: SeatHandler> KeyboardGrab<D> for PopupKeyboardGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut KeyboardInnerHandle<'_, D>,
-        focus: Option<Box<dyn KeyboardTarget<D>>>,
+        focus: Option<<D as SeatHandler>::KeyboardFocus>,
         serial: Serial,
     ) {
         // Ignore focus changes unless the grab has ended
@@ -439,11 +572,7 @@ impl<D: SeatHandler> KeyboardGrab<D> for PopupKeyboardGrab<D> {
         // Allow to set the focus to the current grab, this can
         // happen if the user initially sets the focus to
         // popup instead of relying on the grab behavior
-        if focus
-            .as_ref()
-            .and_then(|h| h.as_any().downcast_ref::<WlSurface>())
-            == self.popup_grab.current_grab().as_ref()
-        {
+        if focus.as_ref() == self.popup_grab.current_grab().as_ref().map(|(_, f)| f) {
             handle.set_focus(data, focus, serial);
         }
     }
@@ -466,38 +595,49 @@ impl<D: SeatHandler> KeyboardGrab<D> for PopupKeyboardGrab<D> {
 /// [`PointerGrab`] is unset. Additional it will unset an active
 /// [`KeyboardGrab`] that matches the [`Serial`] of this grab and
 /// restore the keyboard focus like described in [`PopupKeyboardGrab`]
-#[derive(Debug)]
-pub struct PopupPointerGrab<D: SeatHandler + 'static> {
+pub struct PopupPointerGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D>,
+{
     popup_grab: PopupGrab<D>,
 }
 
-impl<D: SeatHandler + 'static> PopupPointerGrab<D> {
+impl<D> fmt::Debug for PopupPointerGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D> + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PopupPointerGrab")
+            .field("popup_grab", &self.popup_grab)
+            .finish()
+    }
+}
+
+impl<D> PopupPointerGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D>,
+{
     /// Create a [`PopupPointerGrab`] for the provided [`PopupGrab`]
     pub fn new(popup_grab: &PopupGrab<D>) -> Self {
         PopupPointerGrab {
             popup_grab: popup_grab.clone(),
         }
     }
-
-    fn focus_client_equals(&self, focus: Option<&dyn PointerTarget<D>>) -> bool {
-        match (focus, self.popup_grab.current_grab()) {
-            (Some(a), Some(b)) => a
-                .as_any()
-                .downcast_ref::<WlSurface>()
-                .map(|s| s.id().same_client_as(&b.id()))
-                .unwrap_or(false),
-            (None, Some(_)) | (Some(_), None) => false,
-            (None, None) => true,
-        }
-    }
 }
 
-impl<D: SeatHandler> PointerGrab<D> for PopupPointerGrab<D> {
+impl<D> PointerGrab<D> for PopupPointerGrab<D>
+where
+    D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+    <D as SeatHandler>::PointerFocus: super::PopupFocus<D>,
+{
     fn motion(
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(Box<dyn PointerTarget<D>>, Point<i32, Logical>)>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         if self.popup_grab.has_ended() {
@@ -508,7 +648,13 @@ impl<D: SeatHandler> PointerGrab<D> for PopupPointerGrab<D> {
 
         // Check that the focus is of the same client as the grab
         // If yes allow it, if not unset the focus.
-        if self.focus_client_equals(focus.as_ref().map(|(a, _)| &**a)) {
+        let focus_clone = focus.clone();
+        if self
+            .popup_grab
+            .current_grab()
+            .and_then(|(f1, _)| focus_clone.map(|(f2, _)| f2.same_client_as(f1.id())))
+            .unwrap_or(false)
+        {
             handle.motion(data, focus, event);
         } else {
             handle.motion(data, None, event);
@@ -529,7 +675,12 @@ impl<D: SeatHandler> PointerGrab<D> for PopupPointerGrab<D> {
 
         // Check if the the client of the focused surface is still equal to the grabbed surface client
         // if not the popup will be dismissed
-        if state == ButtonState::Pressed && !self.focus_client_equals(handle.current_focus().map(|(a, _)| a))
+        if state == ButtonState::Pressed
+            && !self
+                .popup_grab
+                .current_grab()
+                .and_then(|(f1, _)| handle.current_focus().map(|(f2, _)| f2.same_client_as(f1.id())))
+                .unwrap_or(false)
         {
             let _ = self.popup_grab.ungrab(PopupUngrabStrategy::All);
             handle.unset_grab(data, serial, time);

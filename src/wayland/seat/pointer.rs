@@ -17,17 +17,17 @@ use crate::{
     input::{
         pointer::{
             AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus, MotionEvent, PointerHandle,
-            PointerTarget, PointerInternal,
+            PointerInternal, PointerTarget,
         },
         Seat,
     },
-    utils::{IsAlive, Serial},
+    utils::Serial,
     wayland::compositor,
 };
 
-use super::{SeatHandler, SeatState};
+use super::{SeatHandler, SeatState, WaylandFocus};
 
-impl<D> PointerHandle<D> {
+impl<D: SeatHandler> PointerHandle<D> {
     pub(crate) fn new_pointer(&self, pointer: WlPointer) {
         let mut guard = self.known_pointers.lock().unwrap();
         guard.push(pointer);
@@ -133,28 +133,11 @@ where
             }
         })
     }
-
-    fn is_alive(&self) -> bool {
-        IsAlive::alive(self)
-    }
-    fn same_handler_as(&self, other: &dyn PointerTarget<D>) -> bool {
-        if let Some(other_surface) = other.as_any().downcast_ref::<WlSurface>() {
-            self.id() == other_surface.id()
-        } else {
-            false
-        }
-    }
-    fn clone_handler(&self) -> Box<dyn PointerTarget<D> + 'static> {
-        Box::new(self.clone())
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 }
 
 /// User data for pointer
 #[derive(Debug)]
-pub struct PointerUserData<D> {
+pub struct PointerUserData<D: SeatHandler> {
     pub(crate) handle: Option<PointerHandle<D>>,
 }
 
@@ -162,6 +145,7 @@ impl<D> Dispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
 where
     D: Dispatch<WlPointer, PointerUserData<D>>,
     D: SeatHandler,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
@@ -195,43 +179,41 @@ where
                     // is of the same client
                     let PointerInternal { ref focus, .. } = *guard;
                     if let Some((ref focus, _)) = *focus {
-                        if let Some(focused_surface) = focus.as_any().downcast_ref::<WlSurface>() {
-                            if focused_surface.id().same_client_as(&pointer.id()) {
-                                match surface {
-                                    Some(surface) => {
-                                        // tolerate re-using the same surface
-                                        if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
-                                            && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
-                                        {
-                                            pointer.post_error(
-                                                wl_pointer::Error::Role,
-                                                "Given wl_surface has another role.",
-                                            );
-                                            return;
-                                        }
-                                        compositor::with_states(&surface, |states| {
-                                            states.data_map.insert_if_missing_threadsafe(|| {
-                                                Mutex::new(CursorImageAttributes {
-                                                    hotspot: (0, 0).into(),
-                                                })
-                                            });
-                                            states
-                                                .data_map
-                                                .get::<Mutex<CursorImageAttributes>>()
-                                                .unwrap()
-                                                .lock()
-                                                .unwrap()
-                                                .hotspot = (hotspot_x, hotspot_y).into();
-                                        });
-
-                                        if let Some(seat) = seat {
-                                            state.cursor_image(&seat, CursorImageStatus::Surface(surface));
-                                        }
+                        if focus.same_client_as(pointer.id()) {
+                            match surface {
+                                Some(surface) => {
+                                    // tolerate re-using the same surface
+                                    if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
+                                        && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
+                                    {
+                                        pointer.post_error(
+                                            wl_pointer::Error::Role,
+                                            "Given wl_surface has another role.",
+                                        );
+                                        return;
                                     }
-                                    None => {
-                                        if let Some(seat) = seat {
-                                            state.cursor_image(&seat, CursorImageStatus::Hidden);
-                                        }
+                                    compositor::with_states(&surface, |states| {
+                                        states.data_map.insert_if_missing_threadsafe(|| {
+                                            Mutex::new(CursorImageAttributes {
+                                                hotspot: (0, 0).into(),
+                                            })
+                                        });
+                                        states
+                                            .data_map
+                                            .get::<Mutex<CursorImageAttributes>>()
+                                            .unwrap()
+                                            .lock()
+                                            .unwrap()
+                                            .hotspot = (hotspot_x, hotspot_y).into();
+                                    });
+
+                                    if let Some(seat) = seat {
+                                        state.cursor_image(&seat, CursorImageStatus::Surface(surface));
+                                    }
+                                }
+                                None => {
+                                    if let Some(seat) = seat {
+                                        state.cursor_image(&seat, CursorImageStatus::Hidden);
                                     }
                                 }
                             }
