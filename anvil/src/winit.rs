@@ -264,7 +264,7 @@ pub fn run_winit(log: Logger) {
             input_method.with_surface(|surface| {
                 elements.push(CustomSpaceElements::SurfaceTree(
                     smithay::desktop::space::SurfaceTree::from_surface(
-                        surface.clone(),
+                        surface,
                         (
                             rectangle.loc.x + rectangle.size.w,
                             (rectangle.loc.y + rectangle.size.h),
