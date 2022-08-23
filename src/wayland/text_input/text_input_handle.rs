@@ -63,7 +63,7 @@ impl TextInputHandle {
         }
     }
 
-    /// Sets text input focus to a surface, the hook can be used to e.g. 
+    /// Sets text input focus to a surface, the hook can be used to e.g.
     /// delete the popup surface role so it does not flicker between focused surfaces
     pub fn set_focus<F>(&self, focus: Option<&WlSurface>, focus_changed_hook: F)
     where
