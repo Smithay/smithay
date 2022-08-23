@@ -85,13 +85,13 @@ use wayland_server::{
 /// Focused objects that *might* have an underlying wl_surface.
 pub trait WaylandFocus {
     /// Returns the underlying wl_surface, if any.
-    /// 
+    ///
     /// *Note*: This has to return `Some`, if `same_client_as` can return true
     /// for any provided `ObjectId`
     fn wl_surface(&self) -> Option<&wl_surface::WlSurface>;
     /// Returns true, if the underlying wayland object originates from
     /// the same client connection as the provided `ObjectId`.
-    /// 
+    ///
     /// *Must* return false, if there is not underlying wayland object.
     fn same_client_as(&self, object_id: ObjectId) -> bool;
 }

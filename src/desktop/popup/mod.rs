@@ -18,7 +18,6 @@ use crate::{
     },
 };
 
-
 /// Focused objects that *might* be an XdgPopup.
 pub trait PopupFocus<D>: PointerTarget<D> + KeyboardTarget<D> + WaylandFocus
 where
