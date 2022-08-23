@@ -224,5 +224,8 @@ where
 
     fn destroyed(_state: &mut D, _client: ClientId, _input_method: ObjectId, data: &InputMethodUserData<D>) {
         data.handle.inner.lock().unwrap().instance = None;
+        data.text_input_handle.with_focused_text_input(|ti,surface,_| {
+            ti.leave(surface);
+        });
     }
 }
