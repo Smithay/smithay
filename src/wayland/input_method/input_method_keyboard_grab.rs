@@ -80,7 +80,7 @@ where
             .text_input_handle
             .as_ref()
             .unwrap()
-            .set_focus(focus.as_ref().and_then(|f| f.wl_surface().clone()));
+            .set_focus(focus.as_ref().and_then(|f| f.wl_surface()));
         handle.set_focus(data, focus, serial)
     }
 
