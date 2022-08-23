@@ -10,9 +10,7 @@ pub mod x11rb;
 pub(crate) mod ids;
 pub mod user_data;
 
-#[cfg(feature = "wayland_frontend")]
 pub(crate) mod alive_tracker;
-#[cfg(feature = "wayland_frontend")]
 pub use self::alive_tracker::IsAlive;
 
 pub use self::geometry::{
