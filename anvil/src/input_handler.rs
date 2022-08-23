@@ -1,6 +1,6 @@
 use std::{convert::TryInto, process::Command, sync::atomic::Ordering};
 
-use crate::{shell::FullscreenSurface, AnvilState};
+use crate::{focus::FocusTarget, shell::FullscreenSurface, AnvilState};
 
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
@@ -10,10 +10,10 @@ use smithay::{
         self, Axis, AxisSource, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
         PointerAxisEvent, PointerButtonEvent,
     },
-    desktop::{layer_map_for_output, space::SpaceElement, WindowSurfaceType},
+    desktop::{layer_map_for_output, space::SpaceElement, Window, WindowSurfaceType},
     input::{
         keyboard::{keysyms as xkb, FilterResult, Keysym, ModifiersState},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerHandler},
+        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
         SeatHandler,
     },
     output::Scale,
@@ -96,10 +96,8 @@ impl<Backend> AnvilState<Backend> {
             if data.keyboard_interactivity == KeyboardInteractivity::Exclusive
                 && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)
             {
-                keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
-                keyboard.input::<(), _>(self, keycode, state, serial, time, |_, _, _| {
-                    FilterResult::Forward
-                });
+                keyboard.set_focus(self, Some(layer.clone()), serial);
+                keyboard.input::<(), _>(self, keycode, state, serial, time, |_, _| FilterResult::Forward);
                 return KeyAction::None;
             }
         }
@@ -203,7 +201,7 @@ impl<Backend> AnvilState<Backend> {
                         WindowSurfaceType::ALL,
                     ) {
                         input_method.set_point(&point);
-                        keyboard.set_focus(self, Some(window.toplevel().wl_surface().clone()), serial);
+                        keyboard.set_focus(self, Some(window.clone().into()), serial);
                         return;
                     }
                 }
@@ -221,7 +219,7 @@ impl<Backend> AnvilState<Backend> {
                             WindowSurfaceType::ALL,
                         ) {
                             input_method.set_point(&point);
-                            keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
+                            keyboard.set_focus(self, Some(layer.clone().into()), serial);
                             return;
                         }
                     }
@@ -235,7 +233,7 @@ impl<Backend> AnvilState<Backend> {
             {
                 self.space.raise_element(&window, true);
                 input_method.set_point(&point);
-                keyboard.set_focus(self, Some(window.toplevel().wl_surface().clone()), serial);
+                keyboard.set_focus(self, Some(window.clone().into()), serial);
                 return;
             }
 
@@ -254,7 +252,7 @@ impl<Backend> AnvilState<Backend> {
                             WindowSurfaceType::ALL,
                         ) {
                             input_method.set_point(&point);
-                            keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
+                            keyboard.set_focus(self, Some(layer.clone().into()), serial);
                         }
                     }
                 }
@@ -262,9 +260,7 @@ impl<Backend> AnvilState<Backend> {
         }
     }
 
-    pub fn surface_under<D: SeatHandler + 'static>(
-        &self,
-    ) -> Option<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)> {
+    pub fn surface_under(&self) -> Option<(FocusTarget, Point<i32, Logical>)> {
         let pos = self.pointer_location;
         let output = self.space.outputs().find(|o| {
             let geometry = self.space.output_geometry(o).unwrap();
@@ -273,7 +269,7 @@ impl<Backend> AnvilState<Backend> {
         let output_geo = self.space.output_geometry(output).unwrap();
         let layers = layer_map_for_output(output);
 
-        let mut under = Option::<(Box<dyn PointerHandler<D>>, Point<i32, Logical>)>::None;
+        let mut under = None;
         if let Some(window) = output
             .user_data()
             .get::<FullscreenSurface>()
@@ -281,7 +277,7 @@ impl<Backend> AnvilState<Backend> {
         {
             under = window
                 .surface_under(pos - output_geo.loc.to_f64(), WindowSurfaceType::ALL)
-                .map(|(s, p)| (Box::new(s) as Box<_>, p));
+                .map(|(_, p)| (window.clone().into(), p));
         } else if let Some(layer) = layers
             .layer_under(WlrLayer::Overlay, pos)
             .or_else(|| layers.layer_under(WlrLayer::Top, pos))
@@ -292,9 +288,9 @@ impl<Backend> AnvilState<Backend> {
                     pos - output_geo.loc.to_f64() - layer_loc.to_f64(),
                     WindowSurfaceType::ALL,
                 )
-                .map(|(s, loc)| (Box::new(s) as Box<_>, loc + layer_loc));
+                .map(|(_, loc)| (layer.clone().into(), loc + layer_loc));
         } else if let Some((window, location)) = self.space.element_under(pos) {
-            under = Some((Box::new(window.clone()) as Box<_>, location));
+            under = Some((window.clone().into(), location));
         } else if let Some(layer) = layers
             .layer_under(WlrLayer::Bottom, pos)
             .or_else(|| layers.layer_under(WlrLayer::Background, pos))
@@ -305,7 +301,7 @@ impl<Backend> AnvilState<Backend> {
                     pos - output_geo.loc.to_f64() - layer_loc.to_f64(),
                     WindowSurfaceType::ALL,
                 )
-                .map(|(s, loc)| (Box::new(s) as Box<_>, loc + layer_loc));
+                .map(|(_, loc)| (layer.clone().into(), loc + layer_loc));
         };
         under
     }

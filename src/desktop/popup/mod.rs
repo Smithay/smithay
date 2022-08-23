@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// Represents a popup surface
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PopupKind {
     /// xdg-shell [`PopupSurface`]
     Xdg(PopupSurface),
