@@ -73,7 +73,9 @@ use self::pointer::{CursorImageStatus, PointerHandle, PointerTarget};
 
 /// Handler trait for Seats
 pub trait SeatHandler: Sized {
+    /// Type used to represent the target currently holding the keyboard focus
     type KeyboardFocus: KeyboardTarget<Self> + 'static;
+    /// Type used to represent the target currently holding the pointer focus
     type PointerFocus: PointerTarget<Self> + 'static;
 
     /// [SeatState] getter

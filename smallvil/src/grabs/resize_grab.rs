@@ -3,7 +3,7 @@ use smithay::{
     desktop::{Kind, Space, Window, WindowSurfaceType},
     input::pointer::{
         AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-        PointerInnerHandle, PointerTarget,
+        PointerInnerHandle,
     },
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel, wayland_server::protocol::wl_surface::WlSurface,

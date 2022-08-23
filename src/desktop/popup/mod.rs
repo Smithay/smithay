@@ -18,10 +18,13 @@ use crate::{
     },
 };
 
+
+/// Focused objects that *might* be an XdgPopup.
 pub trait PopupFocus<D>: PointerTarget<D> + KeyboardTarget<D> + WaylandFocus
 where
     D: SeatHandler<KeyboardFocus = Self, PointerFocus = Self> + 'static,
 {
+    /// Returns the underlying popup, if any
     fn xdg_popup(&self) -> Option<PopupKind>;
 }
 

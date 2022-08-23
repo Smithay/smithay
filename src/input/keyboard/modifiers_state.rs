@@ -23,6 +23,7 @@ pub struct ModifiersState {
     /// The "Num lock" key
     pub num_lock: bool,
 
+    /// Serialized modifier state, as send e.g. by the wl_keyboard protocol
     pub serialized: SerializedMods,
 }
 
