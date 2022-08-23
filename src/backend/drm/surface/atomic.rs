@@ -986,7 +986,9 @@ impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
                 "Failed to clear plane {:?} on {:?}: {}", self.plane, self.crtc, err
             );
         }
-        for plane_info in self.additional_planes.lock().unwrap().iter() {
+
+        let additional_planes = std::mem::take(&mut *self.additional_planes.lock().unwrap());
+        for plane_info in additional_planes {
             if let Err(err) = self.clear_plane(plane_info.handle) {
                 warn!(
                     self.logger,
