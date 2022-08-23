@@ -26,7 +26,7 @@ impl VirtualKeyboardManagerState {
     where
         D: GlobalDispatch<ZwpVirtualKeyboardManagerV1, ()>,
         D: Dispatch<ZwpVirtualKeyboardManagerV1, ()>,
-        D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
+        D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData>,
         D: 'static,
     {
         let global = display.create_global::<D, ZwpVirtualKeyboardManagerV1, _>(MANAGER_VERSION, ());
@@ -44,7 +44,7 @@ impl<D> GlobalDispatch<ZwpVirtualKeyboardManagerV1, (), D> for VirtualKeyboardMa
 where
     D: GlobalDispatch<ZwpVirtualKeyboardManagerV1, ()>,
     D: Dispatch<ZwpVirtualKeyboardManagerV1, ()>,
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
+    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData>,
     D: 'static,
 {
     fn bind(
@@ -62,7 +62,7 @@ where
 impl<D> Dispatch<ZwpVirtualKeyboardManagerV1, (), D> for VirtualKeyboardManagerState
 where
     D: Dispatch<ZwpVirtualKeyboardManagerV1, ()>,
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
+    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData>,
     D: 'static,
 {
     fn request(
@@ -87,7 +87,7 @@ where
                     id,
                     VirtualKeyboardUserData {
                         handle: handle.clone(),
-                        seat: seat.clone(),
+                        keyboard_handle: seat.get_keyboard()
                     },
                 );
 

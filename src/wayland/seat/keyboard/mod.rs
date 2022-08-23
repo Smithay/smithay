@@ -270,6 +270,8 @@ pub enum FilterResult<T> {
     Forward,
     /// Do not forward and return value
     Intercept(T),
+    /// Change  modifiers before forwarding key to client
+    Redirect((u32, u32, u32, u32)),
 }
 
 /// Data about the event that started the grab.
@@ -450,10 +452,26 @@ impl KeyboardHandle {
             "mods_state" => format_args!("{:?}", guard.mods_state), "sym" => xkb::keysym_get_name(handle.modified_sym())
         );
 
-        if let FilterResult::Intercept(val) = filter(&guard.mods_state, handle) {
-            // the filter returned false, we do not forward to client
-            trace!(self.arc.logger, "Input was intercepted by filter");
-            return Some(val);
+        match filter(&guard.mods_state, handle) {
+            FilterResult::Intercept(val) => {
+                // the filter returned false, we do not forward to client
+                trace!(self.arc.logger, "Input was intercepted by filter");
+                return Some(val);
+            }
+            FilterResult::Forward => (),
+            FilterResult::Redirect(val) => {
+                let wl_state = match state {
+                    KeyState::Pressed => WlKeyState::Pressed,
+                    KeyState::Released => WlKeyState::Released,
+                };
+                guard.with_grab(
+                    move |mut handle, grab| {
+                        grab.input(dh, &mut handle, keycode, wl_state, Some(val), serial, time);
+                    },
+                    self.arc.logger.clone(),
+                );
+                return None;
+            }
         }
 
         // forward to client if no keybinding is triggered
