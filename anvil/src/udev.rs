@@ -18,6 +18,8 @@ use crate::{
 };
 #[cfg(not(feature = "debug"))]
 use smithay::desktop::space::SpaceRenderElements;
+#[cfg(feature = "debug")]
+use smithay::render_elements;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -33,12 +35,10 @@ use smithay::{
         egl::{EGLContext, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
+            damage::{DamageTrackedRenderer, DamageTrackedRendererError},
+            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
             gles2::Gles2Renderbuffer,
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
-            output::{
-                element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-                DamageTrackedRenderer, OutputRenderError,
-            },
             Bind, Frame, ImportMem, Renderer,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
@@ -80,14 +80,14 @@ use smithay::{
 type UdevRenderer<'a> = MultiRenderer<'a, 'a, EglGlesBackend, EglGlesBackend, Gles2Renderbuffer>;
 
 #[cfg(feature = "debug")]
-smithay::backend::renderer::output::element::render_elements! {
+render_elements! {
     pub CustomRenderElements<='a, UdevRenderer<'a>>;
-    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
-    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<MultiTexture>,
+    Surface=WaylandSurfaceRenderElement,
+    Texture=TextureRenderElement<MultiTexture>,
     Fps=&'a FpsElement<MultiTexture>
 }
 
-smithay::desktop::space::space_elements! {
+smithay::space_elements! {
     CustomSpaceElements<'a, R>[
         WaylandSurfaceRenderElement,
         TextureRenderElement<<R as Renderer>::TextureId>,
@@ -901,11 +901,11 @@ fn render_surface<'a>(
     #[cfg(feature = "debug")]
     let render_res = render::render_output::<_, _, CustomRenderElements<'_>>(
         &output,
-        &mut surface.output_render,
         space,
         &*elements,
         &[CustomRenderElements::Fps(&surface.fps_element)],
         renderer,
+        &mut surface.damage_tracked_renderer,
         age.into(),
         logger,
     )
@@ -925,7 +925,7 @@ fn render_surface<'a>(
     .map(|x| x.is_some());
 
     match render_res.map_err(|err| match err {
-        OutputRenderError::Rendering(err) => err.into(),
+        DamageTrackedRendererError::Rendering(err) => err.into(),
         _ => unreachable!(),
     }) {
         Ok(true) => {

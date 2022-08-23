@@ -8,10 +8,8 @@ use smithay::{
     backend::{
         input::ButtonState,
         renderer::{
-            output::{
-                element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-                DamageTrackedRenderer,
-            },
+            damage::DamageTrackedRenderer,
+            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
             Renderer,
         },
     },
@@ -58,7 +56,7 @@ impl Backend for TestState {
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
-smithay::desktop::space::space_elements! {
+smithay::space_elements! {
     CustomSpaceElements<'a, R>[
         WaylandSurfaceRenderElement,
         TextureRenderElement<<R as Renderer>::TextureId>,
@@ -131,15 +129,13 @@ pub fn run(channel: Channel<WlcsEvent>) {
             let input_method = state.seat.input_method().unwrap();
             let rectangle = input_method.coordinates();
             input_method.with_surface(|surface| {
-                elements.push(CustomSpaceElements::SurfaceTree(
-                    SurfaceTree::from_surface(
-                        surface,
-                        (
-                            rectangle.loc.x + rectangle.size.w,
-                            (rectangle.loc.y + rectangle.size.h),
-                        ),
-                    )
-                ));
+                elements.push(CustomSpaceElements::SurfaceTree(SurfaceTree::from_surface(
+                    surface,
+                    (
+                        rectangle.loc.x + rectangle.size.w,
+                        (rectangle.loc.y + rectangle.size.h),
+                    ),
+                )));
             });
 
             // draw the cursor as relevant

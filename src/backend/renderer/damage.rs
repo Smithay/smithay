@@ -10,11 +10,9 @@ use crate::{
     wayland::output::Output,
 };
 
-use self::element::{Id, RenderElement};
+use super::element::{Id, RenderElement};
 
 use super::{ImportAll, Renderer, Texture};
-
-pub mod element;
 
 #[derive(Debug, Clone, Copy)]
 struct ElementState {
@@ -24,7 +22,7 @@ struct ElementState {
 }
 
 #[derive(Debug, Default)]
-struct OutputRenderState {
+struct RendererState {
     size: Option<Size<i32, Physical>>,
     elements: IndexMap<Id, ElementState>,
     old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
@@ -32,7 +30,7 @@ struct OutputRenderState {
 
 /// Mode for the [`DamageTrackedRenderer`]
 #[derive(Debug, Clone)]
-pub enum Mode {
+pub enum DamageTrackedRendererMode {
     /// Automatic mode based on a output
     Auto(Output),
     /// Static mode
@@ -51,17 +49,17 @@ pub enum Mode {
 #[error("Output has no active mode")]
 pub struct OutputNoMode;
 
-impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for Mode {
+impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for DamageTrackedRendererMode {
     type Error = OutputNoMode;
 
     fn try_into(self) -> Result<(Size<i32, Physical>, Scale<f64>, Transform), Self::Error> {
         match self {
-            Mode::Auto(output) => Ok((
+            DamageTrackedRendererMode::Auto(output) => Ok((
                 output.current_mode().ok_or(OutputNoMode)?.size,
                 output.current_scale().fractional_scale().into(),
                 output.current_transform().into(),
             )),
-            Mode::Static {
+            DamageTrackedRendererMode::Static {
                 size,
                 scale,
                 transform,
@@ -73,13 +71,13 @@ impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for Mode {
 /// Rendering for a single output
 #[derive(Debug)]
 pub struct DamageTrackedRenderer {
-    mode: Mode,
-    last_state: OutputRenderState,
+    mode: DamageTrackedRendererMode,
+    last_state: RendererState,
 }
 
 /// Errors thrown by [`Space::render_output`]
 #[derive(thiserror::Error)]
-pub enum OutputRenderError<R: Renderer> {
+pub enum DamageTrackedRendererError<R: Renderer> {
     /// The provided [`Renderer`] did return an error during an operation
     #[error(transparent)]
     Rendering(R::Error),
@@ -88,11 +86,11 @@ pub enum OutputRenderError<R: Renderer> {
     OutputNoMode(#[from] OutputNoMode),
 }
 
-impl<R: Renderer> std::fmt::Debug for OutputRenderError<R> {
+impl<R: Renderer> std::fmt::Debug for DamageTrackedRendererError<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OutputRenderError::Rendering(err) => std::fmt::Debug::fmt(err, f),
-            OutputRenderError::OutputNoMode(err) => std::fmt::Debug::fmt(err, f),
+            DamageTrackedRendererError::Rendering(err) => std::fmt::Debug::fmt(err, f),
+            DamageTrackedRendererError::OutputNoMode(err) => std::fmt::Debug::fmt(err, f),
         }
     }
 }
@@ -101,7 +99,7 @@ impl DamageTrackedRenderer {
     /// Initialize a new [`DamageTrackedRenderer`]
     pub fn new(size: Size<i32, Physical>, scale: impl Into<Scale<f64>>, transform: Transform) -> Self {
         Self {
-            mode: Mode::Static {
+            mode: DamageTrackedRendererMode::Static {
                 size,
                 scale: scale.into(),
                 transform,
@@ -113,13 +111,13 @@ impl DamageTrackedRenderer {
     /// Initialize a new [`DamageTrackedRenderer`]
     pub fn from_output(output: &Output) -> Self {
         Self {
-            mode: Mode::Auto(output.clone()),
+            mode: DamageTrackedRendererMode::Auto(output.clone()),
             last_state: Default::default(),
         }
     }
 
     /// Get the [`Mode`] of the [`DamageTrackedRenderer`]
-    pub fn mode(&self) -> &Mode {
+    pub fn mode(&self) -> &DamageTrackedRendererMode {
         &self.mode
     }
 
@@ -131,7 +129,7 @@ impl DamageTrackedRenderer {
         elements: &[E],
         clear_color: [f32; 4],
         log: &slog::Logger,
-    ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, OutputRenderError<R>>
+    ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
     where
         E: RenderElement<R>,
         R: Renderer + ImportAll,
@@ -280,7 +278,7 @@ impl DamageTrackedRenderer {
 
         let mut elements_drawn = 0;
 
-        let res = renderer.render(output_size, output_transform.into(), |renderer, frame| {
+        let res = renderer.render(output_size, output_transform, |renderer, frame| {
             frame.clear(clear_color, &*damage)?;
 
             for element in render_elements.iter() {
@@ -310,7 +308,7 @@ impl DamageTrackedRenderer {
             // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
             // thus clean our old states before returning
             self.last_state = Default::default();
-            return Err(OutputRenderError::Rendering(err));
+            return Err(DamageTrackedRendererError::Rendering(err));
         }
 
         let new_elements_state = render_elements

@@ -9,10 +9,10 @@ use crate::{
     state::{AnvilState, Backend, CalloopData},
 };
 use slog::Logger;
-#[cfg(feature = "debug")]
-use smithay::backend::renderer::ImportMem;
 #[cfg(not(feature = "debug"))]
 use smithay::desktop::space::SpaceRenderElements;
+#[cfg(feature = "debug")]
+use smithay::{backend::renderer::ImportMem, render_elements};
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -26,11 +26,9 @@ use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
         renderer::{
+            damage::DamageTrackedRenderer,
+            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
             gles2::Gles2Renderer,
-            output::{
-                element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-                DamageTrackedRenderer,
-            },
             Bind, Renderer,
         },
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
@@ -97,14 +95,14 @@ impl Backend for X11Data {
 }
 
 #[cfg(feature = "debug")]
-smithay::backend::renderer::output::element::render_elements! {
+render_elements! {
     pub CustomRenderElements<'a, R>;
-    Surface=smithay::backend::renderer::output::element::surface::WaylandSurfaceRenderElement,
-    Texture=smithay::backend::renderer::output::element::texture::TextureRenderElement<<R as Renderer>::TextureId>,
+    Surface=WaylandSurfaceRenderElement,
+    Texture=TextureRenderElement<<R as Renderer>::TextureId>,
     Fps=&'a FpsElement<<R as Renderer>::TextureId>
 }
 
-smithay::desktop::space::space_elements! {
+smithay::space_elements! {
     CustomSpaceElements<'a, R>[
         WaylandSurfaceRenderElement,
         TextureRenderElement<<R as Renderer>::TextureId>,
@@ -334,11 +332,12 @@ pub fn run_x11(log: Logger) {
 
             #[cfg(feature = "debug")]
             let render_res = render::render_output::<_, _, CustomRenderElements<'_, _>>(
-                &mut backend_data.output_render,
+                &output,
                 &state.space,
                 &*custom_space_elements,
                 &[CustomRenderElements::Fps(&fps_element)],
                 &mut backend_data.renderer,
+                &mut backend_data.damage_tracked_renderer,
                 age.into(),
                 &log,
             );

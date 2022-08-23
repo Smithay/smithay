@@ -122,7 +122,7 @@ impl ImportDma for DummyRenderer {
 impl ImportEgl for DummyRenderer {
     fn bind_wl_display(
         &mut self,
-        display: &smithay::reexports::wayland_server::DisplayHandle,
+        _display: &smithay::reexports::wayland_server::DisplayHandle,
     ) -> Result<(), smithay::backend::egl::Error> {
         unimplemented!()
     }
@@ -137,9 +137,9 @@ impl ImportEgl for DummyRenderer {
 
     fn import_egl_buffer(
         &mut self,
-        buffer: &wl_buffer::WlBuffer,
-        surface: Option<&smithay::wayland::compositor::SurfaceData>,
-        damage: &[Rectangle<i32, Buffer>],
+        _buffer: &wl_buffer::WlBuffer,
+        _surface: Option<&smithay::wayland::compositor::SurfaceData>,
+        _damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         unimplemented!()
     }
