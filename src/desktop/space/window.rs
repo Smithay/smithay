@@ -37,50 +37,15 @@ impl SpaceElement for Window {
         self.set_activated(activated);
     }
     fn output_enter(&self, output: &Output) {
-        with_surface_tree_downward(
-            self.toplevel().wl_surface(),
-            (),
-            |_, _, _| TraversalAction::DoChildren(()),
-            |wl_surface, _, _| {
-                output.enter(wl_surface);
-            },
-            |_, _, _| true,
-        );
-        for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
-            let surface = popup.wl_surface();
-            with_surface_tree_downward(
-                surface,
-                (),
-                |_, _, _| TraversalAction::DoChildren(()),
-                |wl_surface, _, _| {
-                    output.enter(wl_surface);
-                },
-                |_, _, _| true,
-            )
-        }
+        self.0.outputs.lock().unwrap().push(output.clone());
+        self.update_outputs(None)
     }
     fn output_leave(&self, output: &Output) {
-        with_surface_tree_downward(
-            self.toplevel().wl_surface(),
-            (),
-            |_, _, _| TraversalAction::DoChildren(()),
-            |wl_surface, _, _| {
-                output.leave(wl_surface);
-            },
-            |_, _, _| true,
-        );
-        for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
-            let surface = popup.wl_surface();
-            with_surface_tree_downward(
-                surface,
-                (),
-                |_, _, _| TraversalAction::DoChildren(()),
-                |wl_surface, _, _| {
-                    output.leave(wl_surface);
-                },
-                |_, _, _| true,
-            )
-        }
+        self.0.outputs.lock().unwrap().retain(|o| o != output);
+        self.update_outputs(Some(output))
+    }
+    fn refresh(&self) {
+        self.update_outputs(None)
     }
 }
 
