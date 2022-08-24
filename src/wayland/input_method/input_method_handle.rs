@@ -16,12 +16,12 @@ use wayland_server::{
 use xkbcommon::xkb;
 
 use crate::{
-    utils::{IsAlive, Logical, Physical, Point, Rectangle},
-    wayland::{
-        seat::{keyboard::KeymapFile, KeyboardHandle, XkbConfig},
-        text_input::TextInputHandle,
-        SERIAL_COUNTER,
+    input::{
+        keyboard::{KeyboardHandle, KeymapFile, XkbConfig},
+        SeatHandler,
     },
+    utils::{IsAlive, Logical, Physical, Point, Rectangle, SERIAL_COUNTER},
+    wayland::{seat::WaylandFocus, text_input::TextInputHandle},
 };
 
 use super::{
@@ -126,17 +126,19 @@ impl InputMethodHandle {
 
 /// User data of ZwpInputMethodV2 object
 #[derive(Debug)]
-pub struct InputMethodUserData {
+pub struct InputMethodUserData<D: SeatHandler> {
     pub(super) handle: InputMethodHandle,
     pub(crate) text_input_handle: TextInputHandle,
-    pub(crate) keyboard_handle: KeyboardHandle,
+    pub(crate) keyboard_handle: KeyboardHandle<D>,
 }
 
-impl<D> Dispatch<ZwpInputMethodV2, InputMethodUserData, D> for InputMethodManagerState
+impl<D> Dispatch<ZwpInputMethodV2, InputMethodUserData<D>, D> for InputMethodManagerState
 where
-    D: Dispatch<ZwpInputMethodV2, InputMethodUserData>,
+    D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
     D: Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData>,
-    D: Dispatch<ZwpInputMethodKeyboardGrabV2, InputMethodKeyboardUserData>,
+    D: Dispatch<ZwpInputMethodKeyboardGrabV2, InputMethodKeyboardUserData<D>>,
+    D: SeatHandler,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
@@ -144,7 +146,7 @@ where
         _client: &Client,
         _seat: &ZwpInputMethodV2,
         request: zwp_input_method_v2::Request,
-        data: &InputMethodUserData,
+        data: &InputMethodUserData<D>,
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -219,7 +221,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, _input_method: ObjectId, data: &InputMethodUserData) {
+    fn destroyed(_state: &mut D, _client: ClientId, _input_method: ObjectId, data: &InputMethodUserData<D>) {
         data.handle.inner.lock().unwrap().instance = None;
     }
 }

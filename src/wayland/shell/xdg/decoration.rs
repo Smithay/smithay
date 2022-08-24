@@ -10,7 +10,7 @@
 //! #
 //! use smithay::{delegate_xdg_decoration, delegate_xdg_shell};
 //! use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellHandler};
-//! # use smithay::wayland::Serial;
+//! # use smithay::utils::Serial;
 //! # use smithay::wayland::shell::xdg::{XdgShellState, PopupSurface, PositionerState};
 //! # use smithay::reexports::wayland_server::protocol::wl_seat;
 //! use smithay::wayland::shell::xdg::decoration::{XdgDecorationState, XdgDecorationHandler};

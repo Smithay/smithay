@@ -3,7 +3,6 @@ use std::{
     fs::File,
     io::{Seek, Write},
     os::unix::prelude::{AsRawFd, FromRawFd, RawFd},
-    path::PathBuf,
 };
 
 use nix::{
@@ -13,7 +12,8 @@ use nix::{
 use slog::error;
 
 #[derive(Debug)]
-pub struct KeymapFile {
+#[allow(dead_code)]
+pub(crate) struct KeymapFile {
     sealed: Option<SealedFile>,
     keymap: CString,
 }
@@ -32,10 +32,13 @@ impl KeymapFile {
         }
     }
 
+    #[cfg(feature = "wayland_frontend")]
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
         F: FnOnce(RawFd, usize),
     {
+        use std::path::PathBuf;
+
         if let Some(file) = supports_sealed.then(|| self.sealed.as_ref()).flatten() {
             cb(file.as_raw_fd(), file.size);
             Ok(())
@@ -58,6 +61,7 @@ impl KeymapFile {
 #[derive(Debug)]
 struct SealedFile {
     file: File,
+    #[allow(dead_code)]
     size: usize,
 }
 

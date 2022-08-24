@@ -10,8 +10,9 @@ use smithay::{
         winit::{self, WinitEvent},
     },
     delegate_compositor, delegate_data_device, delegate_seat, delegate_shm, delegate_xdg_shell,
+    input::{keyboard::FilterResult, Seat, SeatHandler, SeatState},
     reexports::wayland_server::{protocol::wl_seat, Display},
-    utils::{Rectangle, Transform},
+    utils::{Rectangle, Serial, Transform},
     wayland::{
         buffer::BufferHandler,
         compositor::{
@@ -19,10 +20,8 @@ use smithay::{
             TraversalAction,
         },
         data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
-        seat::{FilterResult, Seat, SeatHandler, SeatState},
         shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
         shm::{ShmHandler, ShmState},
-        Serial,
     },
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -88,9 +87,15 @@ impl ShmHandler for App {
 }
 
 impl SeatHandler for App {
+    type KeyboardFocus = WlSurface;
+    type PointerFocus = WlSurface;
+
     fn seat_state(&mut self) -> &mut SeatState<Self> {
         &mut self.seat_state
     }
+
+    fn focus_changed(&mut self, _seat: &Seat<Self>, _focused: Option<&WlSurface>) {}
+    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: smithay::input::pointer::CursorImageStatus) {}
 }
 
 struct App {
@@ -118,8 +123,8 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
     let dh = display.handle();
 
-    let seat_state = SeatState::new();
-    let seat = Seat::<App>::new(&dh, "winit", None);
+    let mut seat_state = SeatState::new();
+    let seat = seat_state.new_wl_seat(&dh, "winit", None);
 
     let mut state = {
         App {
@@ -139,10 +144,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
     let start_time = std::time::Instant::now();
 
-    let keyboard = state
-        .seat
-        .add_keyboard(Default::default(), 200, 200, |_, _| {})
-        .unwrap();
+    let keyboard = state.seat.add_keyboard(Default::default(), 200, 200).unwrap();
 
     std::env::set_var("WAYLAND_DISPLAY", "wayland-5");
     std::process::Command::new("weston-terminal").spawn().ok();
@@ -152,20 +154,26 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             WinitEvent::Resized { .. } => {}
             WinitEvent::Input(event) => match event {
                 InputEvent::Keyboard { event } => {
-                    let dh = &mut display.handle();
-                    keyboard.input::<(), _>(dh, event.key_code(), event.state(), 0.into(), 0, |_, _| {
-                        //
-                        FilterResult::Forward
-                    });
+                    keyboard.input::<(), _>(
+                        &mut state,
+                        event.key_code(),
+                        event.state(),
+                        0.into(),
+                        0,
+                        |_, _| {
+                            //
+                            FilterResult::Forward
+                        },
+                    );
                 }
                 InputEvent::PointerMotionAbsolute { .. } => {
-                    let dh = &mut display.handle();
-                    state.xdg_shell_state.toplevel_surfaces(|surfaces| {
-                        if let Some(surface) = surfaces.iter().next() {
-                            let surface = surface.wl_surface();
-                            keyboard.set_focus(dh, Some(surface), 0.into());
-                        }
-                    });
+                    if let Some(surface) = state
+                        .xdg_shell_state
+                        .toplevel_surfaces(|surfaces| surfaces.iter().next().cloned())
+                    {
+                        let surface = surface.wl_surface().clone();
+                        keyboard.set_focus(&mut state, Some(surface), 0.into());
+                    };
                 }
                 _ => {}
             },

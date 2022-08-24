@@ -27,10 +27,8 @@
 //! #
 //! use smithay::delegate_xdg_shell;
 //! use smithay::reexports::wayland_server::protocol::wl_seat;
-//! use smithay::wayland::{
-//!     shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState},
-//!     Serial,
-//! };
+//! use smithay::wayland::shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState};
+//! use smithay::utils::Serial;
 //!
 //! # struct State { xdg_shell_state: XdgShellState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -95,10 +93,10 @@
 
 use crate::utils::alive_tracker::IsAlive;
 use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
+use crate::utils::{Serial, SERIAL_COUNTER};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::shell::is_toplevel_equivalent;
-use crate::wayland::{Serial, SERIAL_COUNTER};
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 

@@ -19,6 +19,7 @@ use smithay::{
         SwapBuffersError,
     },
     desktop::space::RenderError,
+    input::pointer::CursorImageStatus,
     reexports::{
         calloop::EventLoop,
         wayland_server::{
@@ -30,7 +31,6 @@ use smithay::{
     wayland::{
         input_method::InputMethodSeat,
         output::{Mode, Output, PhysicalProperties},
-        seat::CursorImageStatus,
     },
 };
 
@@ -232,13 +232,13 @@ pub fn run_winit(log: Logger) {
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
-            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 reset = !surface.alive();
             }
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
             }
-            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 cursor_visible = false;
                 elements
                     .push(draw_cursor(surface.clone(), state.pointer_location.to_i32_round(), &log).into());

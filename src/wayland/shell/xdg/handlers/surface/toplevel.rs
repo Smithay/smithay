@@ -1,6 +1,6 @@
 use std::sync::{atomic::Ordering, Mutex};
 
-use crate::wayland::{compositor, Serial};
+use crate::{utils::Serial, wayland::compositor};
 
 use wayland_protocols::xdg::shell::server::xdg_toplevel::{self, XdgToplevel};
 

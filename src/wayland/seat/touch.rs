@@ -11,9 +11,9 @@ use wayland_server::{
 
 use super::{SeatHandler, SeatState};
 use crate::backend::input::TouchSlot;
+use crate::utils::Serial;
 use crate::utils::{Logical, Point};
 use crate::wayland::seat::wl_surface::WlSurface;
-use crate::wayland::Serial;
 
 /// An handle to a touch handler.
 ///

@@ -25,6 +25,7 @@ use smithay::{
         renderer::{gles2::Gles2Renderer, Bind},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
+    input::pointer::CursorImageStatus,
     reexports::{
         calloop::EventLoop,
         gbm,
@@ -34,10 +35,7 @@ use smithay::{
         },
     },
     utils::IsAlive,
-    wayland::{
-        output::{Mode, Output, PhysicalProperties},
-        seat::CursorImageStatus,
-    },
+    wayland::output::{Mode, Output, PhysicalProperties},
 };
 
 pub const OUTPUT_NAME: &str = "x11";
@@ -264,13 +262,13 @@ pub fn run_x11(log: Logger) {
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
-            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 reset = !surface.alive();
             }
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
             }
-            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 cursor_visible = false;
                 elements.push(draw_cursor(surface.clone(), (x as i32, y as i32), &log).into());
             } else {

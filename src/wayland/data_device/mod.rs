@@ -31,6 +31,8 @@
 //! # #[macro_use] extern crate smithay;
 //! use smithay::delegate_data_device;
 //! use smithay::wayland::data_device::{ClientDndGrabHandler, DataDeviceState, DataDeviceHandler, ServerDndGrabHandler};
+//! # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 //!
 //! # struct State { data_device_state: DataDeviceState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -44,6 +46,13 @@
 //! // ..
 //!
 //! // implement the necessary traits
+//! # impl SeatHandler for State {
+//! #     type KeyboardFocus = WlSurface;
+//! #     type PointerFocus = WlSurface;
+//! #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
+//! #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
+//! #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
+//! # }
 //! impl ClientDndGrabHandler for State {}
 //! impl ServerDndGrabHandler for State {}
 //! impl DataDeviceHandler for State {
@@ -67,9 +76,13 @@ use wayland_server::{
     Client, DisplayHandle, GlobalDispatch,
 };
 
-use super::{
-    seat::{Focus, PointerGrabStartData, Seat},
-    Serial,
+use crate::{
+    input::{
+        pointer::{Focus, GrabStartData as PointerGrabStartData},
+        Seat, SeatHandler,
+    },
+    utils::Serial,
+    wayland::seat::WaylandFocus,
 };
 
 mod device;
@@ -106,7 +119,7 @@ pub trait DataDeviceHandler: Sized + ClientDndGrabHandler + ServerDndGrabHandler
 
 /// Events that are generated during client initiated drag'n'drop
 #[allow(unused_variables)]
-pub trait ClientDndGrabHandler: Sized {
+pub trait ClientDndGrabHandler: SeatHandler + Sized {
     /// A client started a drag'n'drop as response to a user pointer action
     ///
     /// * `source` - The data source provided by the client.
@@ -208,8 +221,7 @@ pub fn default_action_chooser(available: DndAction, preferred: DndAction) -> Dnd
 /// Set the data device focus to a certain client for a given seat
 pub fn set_data_device_focus<D>(dh: &DisplayHandle, seat: &Seat<D>, client: Option<Client>)
 where
-    D: DataDeviceHandler,
-    D: 'static,
+    D: SeatHandler + DataDeviceHandler + 'static,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::new()));
@@ -225,8 +237,7 @@ where
 /// receive a [`DataDeviceHandler::send_selection`] event.
 pub fn set_data_device_selection<D>(dh: &DisplayHandle, seat: &Seat<D>, mime_types: Vec<String>)
 where
-    D: DataDeviceHandler,
-    D: 'static,
+    D: SeatHandler + DataDeviceHandler + 'static,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::new()));
@@ -246,19 +257,22 @@ where
 /// drag'n'drop in the provided callback. See [`ServerDndGrabHandler`] for details about
 /// which events can be generated and what response is expected from you to them.
 pub fn start_dnd<D, C>(
+    dh: &DisplayHandle,
     seat: &Seat<D>,
+    data: &mut D,
     serial: Serial,
-    start_data: PointerGrabStartData,
+    start_data: PointerGrabStartData<D>,
     metadata: SourceMetadata,
 ) where
-    D: DataDeviceHandler,
-    D: 'static,
+    D: SeatHandler + DataDeviceHandler + 'static,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::new()));
     if let Some(pointer) = seat.get_pointer() {
         pointer.set_grab(
-            server_dnd_grab::ServerDnDGrab::new(start_data, metadata, seat.clone()),
+            data,
+            server_dnd_grab::ServerDnDGrab::new(dh, start_data, metadata, seat.clone()),
             serial,
             Focus::Keep,
         );
@@ -278,7 +292,7 @@ mod handlers {
         Dispatch, DisplayHandle, GlobalDispatch,
     };
 
-    use crate::wayland::seat::Seat;
+    use crate::input::Seat;
 
     use super::{device::DataDeviceUserData, seat_data::SeatData, source::DataSourceUserData};
     use super::{DataDeviceHandler, DataDeviceState};

@@ -6,8 +6,11 @@ use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrL
 use wayland_server::protocol::wl_surface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, Resource};
 
-use crate::utils::alive_tracker::{AliveTracker, IsAlive};
-use crate::wayland::{compositor, shell::wlr_layer::Layer, Serial};
+use crate::utils::{
+    alive_tracker::{AliveTracker, IsAlive},
+    Serial,
+};
+use crate::wayland::{compositor, shell::wlr_layer::Layer};
 
 use super::{
     Anchor, KeyboardInteractivity, LayerSurfaceAttributes, LayerSurfaceCachedState, Margins,

@@ -9,40 +9,48 @@ use wayland_server::{
         wl_data_device_manager::DndAction,
         wl_data_offer::{self, WlDataOffer},
         wl_data_source::{self, WlDataSource},
-        wl_surface,
+        wl_surface::WlSurface,
     },
     DisplayHandle, Resource,
 };
 
 use crate::{
-    utils::IsAlive,
-    wayland::seat::{
-        AxisFrame, ButtonEvent, MotionEvent, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat,
+    input::{
+        pointer::{
+            AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
+            PointerInnerHandle,
+        },
+        Seat, SeatHandler,
     },
+    utils::{IsAlive, Logical, Point},
+    wayland::seat::WaylandFocus,
 };
 
 use super::{seat_data::SeatData, with_source_metadata, ClientDndGrabHandler, DataDeviceHandler};
 
-pub(crate) struct DnDGrab<D> {
-    start_data: PointerGrabStartData,
+pub(crate) struct DnDGrab<D: SeatHandler> {
+    dh: DisplayHandle,
+    start_data: PointerGrabStartData<D>,
     data_source: Option<wl_data_source::WlDataSource>,
-    current_focus: Option<wl_surface::WlSurface>,
+    current_focus: Option<WlSurface>,
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
     offer_data: Option<Arc<Mutex<OfferData>>>,
-    icon: Option<wl_surface::WlSurface>,
-    origin: wl_surface::WlSurface,
+    icon: Option<WlSurface>,
+    origin: WlSurface,
     seat: Seat<D>,
 }
 
-impl<D> DnDGrab<D> {
+impl<D: SeatHandler> DnDGrab<D> {
     pub(crate) fn new(
-        start_data: PointerGrabStartData,
+        dh: &DisplayHandle,
+        start_data: PointerGrabStartData<D>,
         source: Option<wl_data_source::WlDataSource>,
-        origin: wl_surface::WlSurface,
+        origin: WlSurface,
         seat: Seat<D>,
-        icon: Option<wl_surface::WlSurface>,
+        icon: Option<WlSurface>,
     ) -> Self {
         Self {
+            dh: dh.clone(),
             start_data,
             data_source: source,
             current_focus: None,
@@ -58,17 +66,19 @@ impl<D> DnDGrab<D> {
 impl<D> PointerGrab<D> for DnDGrab<D>
 where
     D: DataDeviceHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
     fn motion(
         &mut self,
-        _data: &mut D,
-        dh: &DisplayHandle,
+        data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
-        handle.motion(event.location, None, event.serial, event.time);
+        handle.motion(data, None, event);
 
         let seat_data = self
             .seat
@@ -76,7 +86,7 @@ where
             .get::<RefCell<SeatData>>()
             .unwrap()
             .borrow_mut();
-        if event.focus.as_ref().map(|&(ref s, _)| s) != self.current_focus.as_ref() {
+        if focus.as_ref().and_then(|&(ref s, _)| s.wl_surface()) != self.current_focus.as_ref() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 // only leave if there is a data source or we are on the original client
@@ -94,9 +104,12 @@ where
                 }
             }
         }
-        if let Some((ref surface, surface_location)) = event.focus {
+        if let Some((surface, surface_location)) = focus
+            .as_ref()
+            .and_then(|(h, loc)| h.wl_surface().map(|s| (s, loc)))
+        {
             // early return if the surface is no longer valid
-            let client = match dh.get_client(surface.id()) {
+            let client = match self.dh.get_client(surface.id()) {
                 Ok(c) => c,
                 Err(_) => return,
             };
@@ -115,7 +128,7 @@ where
                         .iter()
                         .filter(|d| d.id().same_client_as(&surface.id()))
                     {
-                        let handle = dh.backend_handle();
+                        let handle = self.dh.backend_handle();
 
                         // create a data offer
                         let offer = handle
@@ -129,7 +142,7 @@ where
                                 }),
                             )
                             .unwrap();
-                        let offer = WlDataOffer::from_id(dh, offer).unwrap();
+                        let offer = WlDataOffer::from_id(&self.dh, offer).unwrap();
 
                         // advertize the offer to the client
                         device.data_offer(&offer);
@@ -168,13 +181,7 @@ where
         }
     }
 
-    fn button(
-        &mut self,
-        handler: &mut D,
-        _dh: &DisplayHandle,
-        handle: &mut PointerInnerHandle<'_, D>,
-        event: &ButtonEvent,
-    ) {
+    fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {
         if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
             let seat_data = self
@@ -213,7 +220,7 @@ where
                 }
             }
 
-            ClientDndGrabHandler::dropped(handler, self.seat.clone());
+            ClientDndGrabHandler::dropped(data, self.seat.clone());
             self.icon = None;
             // in all cases abandon the drop
             // no more buttons are pressed, release the grab
@@ -224,22 +231,16 @@ where
                     }
                 }
             }
-            handle.unset_grab(event.serial, event.time);
+            handle.unset_grab(data, event.serial, event.time);
         }
     }
 
-    fn axis(
-        &mut self,
-        _data: &mut D,
-        _dh: &DisplayHandle,
-        handle: &mut PointerInnerHandle<'_, D>,
-        details: AxisFrame,
-    ) {
+    fn axis(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, details: AxisFrame) {
         // we just forward the axis events as is
-        handle.axis(details);
+        handle.axis(data, details);
     }
 
-    fn start_data(&self) -> &PointerGrabStartData {
+    fn start_data(&self) -> &PointerGrabStartData<D> {
         &self.start_data
     }
 }

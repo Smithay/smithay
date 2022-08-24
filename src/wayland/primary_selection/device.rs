@@ -6,9 +6,12 @@ use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection
 };
 use wayland_server::{protocol::wl_seat::WlSeat, Client, DataInit, Dispatch, DisplayHandle, Resource};
 
-use crate::wayland::{
-    primary_selection::seat_data::{SeatData, Selection},
-    seat::Seat,
+use crate::{
+    input::{Seat, SeatHandler},
+    wayland::{
+        primary_selection::seat_data::{SeatData, Selection},
+        seat::WaylandFocus,
+    },
 };
 
 use super::{PrimarySelectionHandler, PrimarySelectionState};
@@ -23,6 +26,8 @@ impl<D> Dispatch<PrimaryDevice, PrimaryDeviceUserData, D> for PrimarySelectionSt
 where
     D: Dispatch<PrimaryDevice, PrimaryDeviceUserData>,
     D: PrimarySelectionHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(

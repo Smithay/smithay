@@ -39,6 +39,7 @@ use smithay::{
         SwapBuffersError,
     },
     desktop::space::{RenderError, Space, SurfaceTree},
+    input::pointer::CursorImageStatus,
     reexports::{
         calloop::{
             timer::{TimeoutAction, Timer},
@@ -66,10 +67,7 @@ use smithay::{
         signaling::{Linkable, SignalToken, Signaler},
         IsAlive, Logical, Point, Rectangle, Transform,
     },
-    wayland::{
-        output::{Mode, Output, PhysicalProperties},
-        seat::CursorImageStatus,
-    },
+    wayland::output::{Mode, Output, PhysicalProperties},
 };
 
 type UdevRenderer<'a> = MultiRenderer<'a, 'a, EglGlesBackend, EglGlesBackend, Gles2Renderbuffer>;
@@ -838,14 +836,14 @@ fn render_surface(
         {
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
-            if let CursorImageStatus::Image(ref surface) = *cursor_status {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_status {
                 reset = !surface.alive();
             }
             if reset {
                 *cursor_status = CursorImageStatus::Default;
             }
 
-            if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
+            if let CursorImageStatus::Surface(ref wl_surface) = *cursor_status {
                 elements.push(draw_cursor(wl_surface.clone(), ptr_location, logger).into());
             } else {
                 elements.push(PointerElement::new(pointer_image.clone(), ptr_location).into());

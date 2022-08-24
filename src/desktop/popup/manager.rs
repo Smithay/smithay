@@ -1,25 +1,38 @@
 use crate::{
-    utils::{DeadResource, IsAlive, Logical, Point},
+    input::{Seat, SeatHandler},
+    utils::{DeadResource, IsAlive, Logical, Point, Serial},
     wayland::{
         compositor::{get_role, with_states},
-        seat::Seat,
+        seat::WaylandFocus,
         shell::xdg::{XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
-        Serial,
     },
 };
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+};
 use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_wm_base};
 use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
-use super::{PopupGrab, PopupGrabError, PopupGrabInner, PopupKind};
+use super::{PopupFocus, PopupGrab, PopupGrabError, PopupGrabInner, PopupKind};
 
 /// Helper to track popups.
-#[derive(Debug)]
 pub struct PopupManager {
     unmapped_popups: Vec<PopupKind>,
     popup_trees: Vec<PopupTree>,
-    popup_grabs: Vec<PopupGrabInner>,
+    popup_grabs: Vec<Box<dyn super::GrabTrait + 'static>>,
     logger: ::slog::Logger,
+}
+
+impl fmt::Debug for PopupManager {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PopupManager")
+            .field("unmapped_popups", &self.unmapped_popups)
+            .field("popup_trees", &self.popup_trees)
+            .field("popup_grabs", &"..")
+            .field("logger", &self.logger)
+            .finish()
+    }
 }
 
 impl PopupManager {
@@ -65,17 +78,22 @@ impl PopupManager {
     ///
     /// Returns a [`PopupGrab`] on success or an [`PopupGrabError`]
     /// if the grab has been denied.
-    pub fn grab_popup<D: 'static>(
+    pub fn grab_popup<D>(
         &mut self,
-        _dh: &DisplayHandle,
-        popup: PopupKind,
+        dh: &DisplayHandle,
+        popup: <D as SeatHandler>::KeyboardFocus,
         seat: &Seat<D>,
         serial: Serial,
-    ) -> Result<PopupGrab, PopupGrabError> {
-        let surface = popup.wl_surface();
-        let root = find_popup_root_surface(&popup)?;
+    ) -> Result<PopupGrab<D>, PopupGrabError>
+    where
+        D: SeatHandler<KeyboardFocus = <D as SeatHandler>::PointerFocus> + 'static,
+        <D as SeatHandler>::KeyboardFocus: PopupFocus<D>,
+    {
+        let kind = popup.xdg_popup().ok_or(PopupGrabError::NoPopup)?;
+        let surface = popup.wl_surface().unwrap();
+        let root = find_popup_root_surface(&kind)?;
 
-        match popup {
+        match kind {
             PopupKind::Xdg(ref xdg) => {
                 let surface = xdg.wl_surface();
                 let committed = with_states(surface, |states| {
@@ -97,23 +115,23 @@ impl PopupManager {
 
         // The primary store for the grab is the seat, additional we store it
         // in the popupmanager for active cleanup
-        seat.user_data().insert_if_missing(PopupGrabInner::default);
-        let toplevel_popups = seat.user_data().get::<PopupGrabInner>().unwrap().clone();
+        seat.user_data().insert_if_missing(PopupGrabInner::<D>::default);
+        let toplevel_popups = seat.user_data().get::<PopupGrabInner<D>>().unwrap().clone();
 
         // It the popup grab is not alive it is likely
         // that it either is new and have never been
         // added to the popupmanager or that it has been
         // cleaned up.
         if !toplevel_popups.active() {
-            self.popup_grabs.push(toplevel_popups.clone());
+            self.popup_grabs.push(Box::new(toplevel_popups.clone()));
         }
 
-        let previous_serial = match toplevel_popups.grab(&popup, serial) {
+        let previous_serial = match toplevel_popups.grab(popup.clone(), serial) {
             Ok(serial) => serial,
             Err(err) => {
                 match err {
                     PopupGrabError::ParentDismissed => {
-                        let _ = PopupManager::dismiss_popup(&root, &popup);
+                        let _ = PopupManager::dismiss_popup(&root, &kind);
                     }
                     PopupGrabError::NotTheTopmostPopup => {
                         surface.post_error(
@@ -129,8 +147,9 @@ impl PopupManager {
         };
 
         Ok(PopupGrab::new(
+            dh,
             toplevel_popups,
-            root,
+            popup,
             serial,
             previous_serial,
             seat.get_keyboard(),
@@ -203,7 +222,7 @@ impl PopupManager {
     pub fn cleanup(&mut self) {
         // retain_mut is sadly still unstable
         self.popup_grabs.iter_mut().for_each(|grabs| grabs.cleanup());
-        self.popup_grabs.retain(|grabs| grabs.active());
+        self.popup_grabs.retain(|grabs| grabs.alive());
         self.popup_trees.iter_mut().for_each(|tree| tree.cleanup());
         self.popup_trees.retain(|tree| tree.alive());
         self.unmapped_popups.retain(|surf| surf.alive());
