@@ -77,11 +77,7 @@ impl<Backend> AnvilState<Backend> {
         }
     }
 
-    fn keyboard_key_to_action<B: InputBackend>(
-        &mut self,
-        _dh: &DisplayHandle,
-        evt: B::KeyboardKeyEvent,
-    ) -> KeyAction {
+    fn keyboard_key_to_action<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) -> KeyAction {
         let keycode = evt.key_code();
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
@@ -145,14 +141,14 @@ impl<Backend> AnvilState<Backend> {
         action
     }
 
-    fn on_pointer_button<B: InputBackend>(&mut self, dh: &DisplayHandle, evt: B::PointerButtonEvent) {
+    fn on_pointer_button<B: InputBackend>(&mut self, evt: B::PointerButtonEvent) {
         let serial = SCOUNTER.next_serial();
         let button = evt.button_code();
 
         let state = wl_pointer::ButtonState::from(evt.state());
 
         if wl_pointer::ButtonState::Pressed == state {
-            self.update_keyboard_focus(dh, serial);
+            self.update_keyboard_focus(serial);
         };
         self.seat.get_pointer().unwrap().button(
             self,
@@ -165,7 +161,7 @@ impl<Backend> AnvilState<Backend> {
         );
     }
 
-    fn update_keyboard_focus(&mut self, _dh: &DisplayHandle, serial: Serial) {
+    fn update_keyboard_focus(&mut self, serial: Serial) {
         let pointer = self.seat.get_pointer().unwrap();
         let keyboard = self.seat.get_keyboard().unwrap();
         let input_method = self.seat.input_method().unwrap();
@@ -343,7 +339,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
         output_name: &str,
     ) {
         match event {
-            InputEvent::Keyboard { event } => match self.keyboard_key_to_action::<B>(dh, event) {
+            InputEvent::Keyboard { event } => match self.keyboard_key_to_action::<B>(event) {
                 KeyAction::ScaleUp => {
                     let output = self
                         .space
@@ -397,7 +393,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                     .clone();
                 self.on_pointer_move_absolute_windowed::<B>(dh, event, &output)
             }
-            InputEvent::PointerButton { event } => self.on_pointer_button::<B>(dh, event),
+            InputEvent::PointerButton { event } => self.on_pointer_button::<B>(event),
             InputEvent::PointerAxis { event } => self.on_pointer_axis::<B>(dh, event),
             _ => (), // other events are not handled in anvil (yet)
         }
@@ -432,7 +428,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
 impl AnvilState<UdevData> {
     pub fn process_input_event<B: InputBackend>(&mut self, dh: &DisplayHandle, event: InputEvent<B>) {
         match event {
-            InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(dh, event) {
+            InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
                 #[cfg(feature = "udev")]
                 KeyAction::VtSwitch(vt) => {
                     info!(self.log, "Trying to switch to vt {}", vt);
@@ -542,11 +538,11 @@ impl AnvilState<UdevData> {
             },
             InputEvent::PointerMotion { event, .. } => self.on_pointer_move::<B>(dh, event),
             InputEvent::PointerMotionAbsolute { event, .. } => self.on_pointer_move_absolute::<B>(dh, event),
-            InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(dh, event),
+            InputEvent::PointerButton { event, .. } => self.on_pointer_button::<B>(event),
             InputEvent::PointerAxis { event, .. } => self.on_pointer_axis::<B>(dh, event),
             InputEvent::TabletToolAxis { event, .. } => self.on_tablet_tool_axis::<B>(event),
             InputEvent::TabletToolProximity { event, .. } => self.on_tablet_tool_proximity::<B>(dh, event),
-            InputEvent::TabletToolTip { event, .. } => self.on_tablet_tool_tip::<B>(dh, event),
+            InputEvent::TabletToolTip { event, .. } => self.on_tablet_tool_tip::<B>(event),
             InputEvent::TabletToolButton { event, .. } => self.on_tablet_button::<B>(event),
             InputEvent::DeviceAdded { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
@@ -720,7 +716,7 @@ impl AnvilState<UdevData> {
         }
     }
 
-    fn on_tablet_tool_tip<B: InputBackend>(&mut self, dh: &DisplayHandle, evt: B::TabletToolTipEvent) {
+    fn on_tablet_tool_tip<B: InputBackend>(&mut self, evt: B::TabletToolTipEvent) {
         let tool = self.seat.tablet_seat().get_tool(&evt.tool());
 
         if let Some(tool) = tool {
@@ -730,7 +726,7 @@ impl AnvilState<UdevData> {
                     tool.tip_down(serial, evt.time());
 
                     // change the keyboard focus
-                    self.update_keyboard_focus(dh, serial);
+                    self.update_keyboard_focus(serial);
                 }
                 TabletToolTipState::Up => {
                     tool.tip_up(evt.time());
