@@ -59,7 +59,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<Backe
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
+        _focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -143,7 +143,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
+        _focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -358,7 +358,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
                 root = parent;
             }
             if let Some(window) = self.space.elements().find(|w| w.toplevel().wl_surface() == &root) {
-                window.refresh();
+                window.on_commit();
             }
         }
         self.popups.commit(surface);
