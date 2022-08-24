@@ -30,6 +30,12 @@ impl IsAlive for FocusTarget {
     }
 }
 
+impl From<FocusTarget> for WlSurface {
+    fn from(target: FocusTarget) -> Self {
+        target.wl_surface().unwrap().clone()
+    }
+}
+
 impl<Backend> PointerTarget<AnvilState<Backend>> for FocusTarget {
     fn enter(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &MotionEvent) {
         match self {
