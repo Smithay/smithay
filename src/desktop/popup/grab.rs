@@ -546,10 +546,12 @@ where
         // If yes allow it, if not unset the focus.
         if focus
             .as_ref()
-            .and_then(|f| {
+            .and_then(|f1| {
                 self.popup_grab
                     .current_grab()
-                    .and_then(|f2| f.0.wl_surface().map(|s| f2.same_client_as(&s.id())))
+                    .as_ref()
+                    .and_then(|f2| f2.wl_surface())
+                    .map(|s| f1.0.same_client_as(s.id()))
             })
             .unwrap_or(false)
         {
@@ -579,7 +581,7 @@ where
                 .and_then(|f| {
                     self.popup_grab
                         .current_grab()
-                        .and_then(|f2| f.0.wl_surface().map(|s| f2.same_client_as(&s.id())))
+                        .and_then(|f2| f.0.wl_surface().map(|s| f2.same_client_as(s.id())))
                 })
                 .unwrap_or(false)
         {

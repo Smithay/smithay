@@ -1,7 +1,6 @@
-use smithay::input::pointer::Focus;
 pub use smithay::{
     backend::input::KeyState,
-    desktop::{LayerSurface, PopupFocus, PopupKind, Window},
+    desktop::{LayerSurface, PopupKind, Window},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
         pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
@@ -145,16 +144,6 @@ impl WaylandFocus for FocusTarget {
             FocusTarget::Window(w) => w.toplevel().wl_surface().id().same_client_as(&object_id),
             FocusTarget::LayerSurface(l) => l.wl_surface().id().same_client_as(&object_id),
             FocusTarget::Popup(p) => p.wl_surface().id().same_client_as(&object_id),
-        }
-    }
-}
-
-impl<Backend> PopupFocus<AnvilState<Backend>> for FocusTarget {
-    fn xdg_popup(&self) -> Option<PopupKind> {
-        match self {
-            FocusTarget::Window(_) => None,
-            FocusTarget::LayerSurface(_) => None,
-            FocusTarget::Popup(p) => Some(p.clone()),
         }
     }
 }
