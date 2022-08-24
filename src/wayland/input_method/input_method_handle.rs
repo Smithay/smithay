@@ -1,5 +1,6 @@
 use std::{
     ffi::CString,
+    fmt,
     sync::{Arc, Mutex},
 };
 
@@ -125,11 +126,23 @@ impl InputMethodHandle {
 }
 
 /// User data of ZwpInputMethodV2 object
-#[derive(Debug)]
 pub struct InputMethodUserData<D: SeatHandler> {
     pub(super) handle: InputMethodHandle,
     pub(crate) text_input_handle: TextInputHandle,
     pub(crate) keyboard_handle: KeyboardHandle<D>,
+}
+
+impl<D: SeatHandler> fmt::Debug for InputMethodUserData<D>
+where
+    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InputMethodUserData")
+            .field("handle", &self.handle)
+            .field("text_input_handle", &self.text_input_handle)
+            .field("keyboard_handle", &self.keyboard_handle)
+            .finish()
+    }
 }
 
 impl<D> Dispatch<ZwpInputMethodV2, InputMethodUserData<D>, D> for InputMethodManagerState

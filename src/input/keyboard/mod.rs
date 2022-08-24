@@ -66,11 +66,14 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
 }
 
 // focus_hook does not implement debug, so we have to impl Debug manually
-impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
+impl<D: SeatHandler> fmt::Debug for KbdInternal<D>
+where
+    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KbdInternal")
-            .field("focus", &self.focus.as_ref().map(|_| "..."))
-            .field("pending_focus", &self.pending_focus.as_ref().map(|_| "..."))
+            .field("focus", &self.focus)
+            .field("pending_focus", &self.pending_focus)
             .field("pressed_keys", &self.pressed_keys)
             .field("mods_state", &self.mods_state)
             .field("keymap", &self.keymap.get_raw_ptr())
@@ -207,7 +210,6 @@ pub enum Error {
     IoError(io::Error),
 }
 
-#[derive(Debug)]
 pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) internal: Mutex<KbdInternal<D>>,
     #[allow(dead_code)]
@@ -215,6 +217,35 @@ pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) logger: ::slog::Logger,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_kbds: Mutex<Vec<wayland_server::protocol::wl_keyboard::WlKeyboard>>,
+}
+
+#[cfg(not(feature = "wayland_frontend"))]
+impl<D: SeatHandler> fmt::Debug for KbdRc<D>
+where
+    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KbdRc")
+            .field("internal", &self.internal)
+            .field("keymap", &self.keymap)
+            .field("logger", &self.logger)
+            .finish()
+    }
+}
+
+#[cfg(feature = "wayland_frontend")]
+impl<D: SeatHandler> fmt::Debug for KbdRc<D>
+where
+    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KbdRc")
+            .field("internal", &self.internal)
+            .field("keymap", &self.keymap)
+            .field("logger", &self.logger)
+            .field("known_kbds", &self.known_kbds)
+            .finish()
+    }
 }
 
 /// Handle to the underlying keycode to allow for different conversions
@@ -273,10 +304,13 @@ pub struct GrabStartData<D: SeatHandler> {
     pub focus: Option<<D as SeatHandler>::KeyboardFocus>,
 }
 
-impl<D: SeatHandler + 'static> fmt::Debug for GrabStartData<D> {
+impl<D: SeatHandler + 'static> fmt::Debug for GrabStartData<D>
+where
+    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GrabStartData")
-            .field("focus", &self.focus.as_ref().map(|_| "..."))
+            .field("focus", &self.focus)
             .finish()
     }
 }
@@ -342,9 +376,17 @@ pub trait KeyboardGrab<D: SeatHandler> {
 /// - process key inputs from the input backend, allowing them to be caught at the compositor-level
 ///   or forwarded to the client. See the documentation of the [`KeyboardHandle::input`] method for
 ///   details.
-#[derive(Debug)]
 pub struct KeyboardHandle<D: SeatHandler> {
     pub(crate) arc: Arc<KbdRc<D>>,
+}
+
+impl<D: SeatHandler> fmt::Debug for KeyboardHandle<D>
+where
+    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyboardHandle").field("arc", &self.arc).finish()
+    }
 }
 
 impl<D: SeatHandler> Clone for KeyboardHandle<D> {
@@ -544,11 +586,23 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
 /// This inner handle is accessed from inside a keyboard grab logic, and directly
 /// sends event to the client
-#[derive(Debug)]
 pub struct KeyboardInnerHandle<'a, D: SeatHandler> {
     inner: &'a mut KbdInternal<D>,
     seat: &'a Seat<D>,
     logger: ::slog::Logger,
+}
+
+impl<'a, D: SeatHandler> fmt::Debug for KeyboardInnerHandle<'a, D>
+where
+    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyboardInnerHandle")
+            .field("inner", &self.inner)
+            .field("seat", &self.seat.arc.name)
+            .field("logger", &self.logger)
+            .finish()
+    }
 }
 
 impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
