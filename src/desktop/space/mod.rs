@@ -319,6 +319,8 @@ impl<E: SpaceElement + PartialEq> Space<E> {
                 }
             }
         }
+
+        self.elements.iter().for_each(SpaceElement::refresh);
     }
 
     /// Retrieve the render elements for an output
