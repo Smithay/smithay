@@ -690,7 +690,22 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
         let kind = PopupKind::Xdg(surface);
-        if let Some(root) = find_popup_root_surface(&kind).ok() {
+        if let Some(root) = find_popup_root_surface(&kind).ok().and_then(|root| {
+            self.space
+                .elements()
+                .find(|w| w.toplevel().wl_surface() == &root)
+                .cloned()
+                .map(FocusTarget::Window)
+                .or_else(|| {
+                    self.space
+                        .outputs()
+                        .find_map(|o| {
+                            let map = layer_map_for_output(o);
+                            map.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL).cloned()
+                        })
+                        .map(FocusTarget::LayerSurface)
+                })
+        }) {
             let ret = self.popups.grab_popup(root, kind, &seat, serial);
 
             if let Ok(mut grab) = ret {
