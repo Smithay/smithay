@@ -39,6 +39,7 @@ use smithay::{
         SwapBuffersError,
     },
     desktop::space::{RenderError, Space, SurfaceTree},
+    input::pointer::CursorImageStatus,
     reexports::{
         calloop::{
             timer::{TimeoutAction, Timer},
@@ -66,10 +67,7 @@ use smithay::{
         signaling::{Linkable, SignalToken, Signaler},
         IsAlive, Logical, Point, Rectangle, Transform,
     },
-    wayland::{
-        output::{Mode, Output, PhysicalProperties},
-        seat::CursorImageStatus,
-    },
+    wayland::output::{Mode, Output, PhysicalProperties},
 };
 
 type UdevRenderer<'a> = MultiRenderer<'a, 'a, EglGlesBackend, EglGlesBackend, Gles2Renderbuffer>;
@@ -117,12 +115,7 @@ impl DmabufHandler for AnvilState<UdevData> {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
     }
 
-    fn dmabuf_imported(
-        &mut self,
-        _dh: &DisplayHandle,
-        _global: &DmabufGlobal,
-        dmabuf: Dmabuf,
-    ) -> Result<(), ImportError> {
+    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
         self.backend_data
             .gpus
             .renderer::<Gles2Renderbuffer>(&self.backend_data.primary_gpu, &self.backend_data.primary_gpu)
@@ -203,17 +196,6 @@ pub fn run_udev(log: Logger) {
         .renderer::<Gles2Renderbuffer>(&primary_gpu, &primary_gpu)
         .unwrap();
 
-    #[cfg(feature = "egl")]
-    {
-        info!(
-            log,
-            "Trying to initialize EGL Hardware Acceleration via {:?}", primary_gpu
-        );
-        if renderer.bind_wl_display(&display.handle()).is_ok() {
-            info!(log, "EGL hardware-acceleration enabled");
-        }
-    }
-
     #[cfg(feature = "debug")]
     let fps_image =
         image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
@@ -231,15 +213,25 @@ pub fn run_udev(log: Logger) {
     // init dmabuf support with format list from our primary gpu
     // TODO: This does not necessarily depend on egl, but mesa makes no use of it without wl_drm right now
     #[cfg(feature = "egl")]
-    let dmabuf_state = if renderer.bind_wl_display(&display.handle()).is_ok() {
-        info!(log, "EGL hardware-acceleration enabled");
-        let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
-        let mut state = DmabufState::new();
-        let global =
-            state.create_global::<AnvilState<UdevData>, _>(&display.handle(), dmabuf_formats, log.clone());
-        Some((state, global))
-    } else {
-        None
+    let dmabuf_state = {
+        info!(
+            log,
+            "Trying to initialize EGL Hardware Acceleration via {:?}", primary_gpu
+        );
+
+        if renderer.bind_wl_display(&display.handle()).is_ok() {
+            info!(log, "EGL hardware-acceleration enabled");
+            let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+            let mut state = DmabufState::new();
+            let global = state.create_global::<AnvilState<UdevData>, _>(
+                &display.handle(),
+                dmabuf_formats,
+                log.clone(),
+            );
+            Some((state, global))
+        } else {
+            None
+        }
     };
 
     let data = UdevData {
@@ -844,14 +836,14 @@ fn render_surface(
         {
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
-            if let CursorImageStatus::Image(ref surface) = *cursor_status {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_status {
                 reset = !surface.alive();
             }
             if reset {
                 *cursor_status = CursorImageStatus::Default;
             }
 
-            if let CursorImageStatus::Image(ref wl_surface) = *cursor_status {
+            if let CursorImageStatus::Surface(ref wl_surface) = *cursor_status {
                 elements.push(draw_cursor(wl_surface.clone(), ptr_location, logger).into());
             } else {
                 elements.push(PointerElement::new(pointer_image.clone(), ptr_location).into());

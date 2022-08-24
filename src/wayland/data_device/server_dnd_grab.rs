@@ -8,33 +8,42 @@ use wayland_server::{
     protocol::{
         wl_data_device_manager::DndAction,
         wl_data_offer::{self, WlDataOffer},
-        wl_surface,
+        wl_surface::WlSurface,
     },
     DisplayHandle, Resource,
 };
 
-use crate::wayland::seat::{
-    AxisFrame, ButtonEvent, MotionEvent, PointerGrab, PointerGrabStartData, PointerInnerHandle, Seat,
+use crate::input::{
+    pointer::{
+        AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
+        PointerInnerHandle,
+    },
+    Seat, SeatHandler,
 };
+use crate::utils::{Logical, Point};
+use crate::wayland::seat::WaylandFocus;
 
 use super::{DataDeviceHandler, SeatData, ServerDndGrabHandler, SourceMetadata};
 
-pub(crate) struct ServerDnDGrab<D> {
-    start_data: PointerGrabStartData,
+pub(crate) struct ServerDnDGrab<D: SeatHandler> {
+    dh: DisplayHandle,
+    start_data: PointerGrabStartData<D>,
     metadata: super::SourceMetadata,
-    current_focus: Option<wl_surface::WlSurface>,
+    current_focus: Option<WlSurface>,
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
     offer_data: Option<Arc<Mutex<ServerDndOfferData>>>,
     seat: Seat<D>,
 }
 
-impl<D> ServerDnDGrab<D> {
+impl<D: SeatHandler> ServerDnDGrab<D> {
     pub(crate) fn new(
-        start_data: PointerGrabStartData,
+        dh: &DisplayHandle,
+        start_data: PointerGrabStartData<D>,
         metadata: super::SourceMetadata,
         seat: Seat<D>,
     ) -> Self {
         Self {
+            dh: dh.clone(),
             start_data,
             metadata,
             current_focus: None,
@@ -48,22 +57,23 @@ impl<D> ServerDnDGrab<D> {
 impl<D> PointerGrab<D> for ServerDnDGrab<D>
 where
     D: DataDeviceHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
     fn motion(
         &mut self,
-        _data: &mut D,
-        dh: &DisplayHandle,
+        data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
-        let focus = event.focus.clone();
         let location = event.location;
         let serial = event.serial;
         let time = event.time;
 
         // While the grab is active, no client has pointer focus
-        handle.motion(location, None, serial, time);
+        handle.motion(data, None, event);
 
         let seat_data = self
             .seat
@@ -71,7 +81,7 @@ where
             .get::<RefCell<SeatData>>()
             .unwrap()
             .borrow_mut();
-        if focus.as_ref().map(|&(ref s, _)| s) != self.current_focus.as_ref() {
+        if focus.as_ref().and_then(|&(ref s, _)| s.wl_surface()) != self.current_focus.as_ref() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 for device in seat_data.known_devices() {
@@ -86,9 +96,12 @@ where
                 }
             }
         }
-        if let Some((surface, surface_location)) = focus {
+        if let Some((surface, surface_location)) = focus
+            .as_ref()
+            .and_then(|(h, loc)| h.wl_surface().map(|s| (s, loc)))
+        {
             // early return if the surface is no longer valid
-            let client = match dh.get_client(surface.id()) {
+            let client = match self.dh.get_client(surface.id()) {
                 Ok(c) => c,
                 _ => return,
             };
@@ -106,7 +119,7 @@ where
                     .iter()
                     .filter(|d| d.id().same_client_as(&surface.id()))
                 {
-                    let handle = dh.backend_handle();
+                    let handle = self.dh.backend_handle();
                     // create a data offer
                     let offer = handle
                         .create_object::<D>(
@@ -119,7 +132,7 @@ where
                             }),
                         )
                         .unwrap();
-                    let offer = WlDataOffer::from_id(dh, offer).unwrap();
+                    let offer = WlDataOffer::from_id(&self.dh, offer).unwrap();
 
                     // advertize the offer to the client
                     device.data_offer(&offer);
@@ -127,11 +140,11 @@ where
                         offer.offer(mime_type);
                     }
                     offer.source_actions(self.metadata.dnd_action);
-                    device.enter(serial.into(), &surface, x, y, Some(&offer));
+                    device.enter(serial.into(), surface, x, y, Some(&offer));
                     self.pending_offers.push(offer);
                 }
                 self.offer_data = Some(offer_data);
-                self.current_focus = Some(surface);
+                self.current_focus = Some(surface.clone());
             } else {
                 // make a move
                 for device in seat_data.known_devices() {
@@ -143,13 +156,7 @@ where
         }
     }
 
-    fn button(
-        &mut self,
-        data: &mut D,
-        _dh: &DisplayHandle,
-        handle: &mut PointerInnerHandle<'_, D>,
-        event: &ButtonEvent,
-    ) {
+    fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {
         let serial = event.serial;
         let time = event.time;
 
@@ -196,22 +203,16 @@ where
                     }
                 }
             }
-            handle.unset_grab(serial, time);
+            handle.unset_grab(data, serial, time);
         }
     }
 
-    fn axis(
-        &mut self,
-        _data: &mut D,
-        _dh: &DisplayHandle,
-        handle: &mut PointerInnerHandle<'_, D>,
-        details: AxisFrame,
-    ) {
+    fn axis(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, details: AxisFrame) {
         // we just forward the axis events as is
-        handle.axis(details);
+        handle.axis(data, details);
     }
 
-    fn start_data(&self) -> &PointerGrabStartData {
+    fn start_data(&self) -> &PointerGrabStartData<D> {
         &self.start_data
     }
 }
@@ -242,7 +243,7 @@ where
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((resource, request)) = WlDataOffer::parse_request(&dh, msg) {
-            handle_server_dnd(handler, &resource, request, &self, &dh);
+            handle_server_dnd(handler, &resource, request, &self);
         }
 
         None
@@ -256,7 +257,6 @@ fn handle_server_dnd<D>(
     offer: &WlDataOffer,
     request: wl_data_offer::Request,
     data: &ServerDndData,
-    dh: &DisplayHandle,
 ) where
     D: DataDeviceHandler,
 {
@@ -329,7 +329,7 @@ fn handle_server_dnd<D>(
                 return;
             }
             let possible_actions = metadata.dnd_action & dnd_actions;
-            data.chosen_action = handler.action_choice(dh, possible_actions, preferred_action);
+            data.chosen_action = handler.action_choice(possible_actions, preferred_action);
             // check that the user provided callback respects that one precise action should be chosen
             debug_assert!(
                 [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]

@@ -1,8 +1,8 @@
 use std::sync::{atomic::AtomicBool, Mutex};
 
 use crate::{
-    utils::{alive_tracker::AliveTracker, IsAlive},
-    wayland::{shell::xdg::XdgShellState, Serial},
+    utils::{alive_tracker::AliveTracker, IsAlive, Serial},
+    wayland::shell::xdg::XdgShellState,
 };
 
 use wayland_protocols::xdg::shell::server::{
@@ -27,7 +27,7 @@ where
 {
     fn bind(
         state: &mut D,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: New<XdgWmBase>,
         _global_data: &(),
@@ -35,7 +35,7 @@ where
     ) {
         let shell = data_init.init(resource, XdgWmBaseUserData::default());
 
-        XdgShellHandler::new_client(state, dh, ShellClient::new(&shell));
+        XdgShellHandler::new_client(state, ShellClient::new(&shell));
     }
 }
 
@@ -53,7 +53,7 @@ where
         wm_base: &XdgWmBase,
         request: xdg_wm_base::Request,
         data: &XdgWmBaseUserData,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -86,7 +86,7 @@ where
                     }
                 };
                 if valid {
-                    XdgShellHandler::client_pong(state, dh, ShellClient::new(wm_base));
+                    XdgShellHandler::client_pong(state, ShellClient::new(wm_base));
                 }
             }
             xdg_wm_base::Request::Destroy => {

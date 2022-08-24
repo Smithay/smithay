@@ -4,17 +4,17 @@
 //! it must be used in conjunction with the text input module to work.
 //!
 //! ```
-//! # extern crate wayland_server;
 //! use smithay::{
 //!     delegate_seat, delegate_tablet_manager, delegate_input_method_manager,
 //!     delegate_text_input_manager,
 //! };
-//! use smithay::wayland::seat::{Seat, SeatState, SeatHandler, XkbConfig};
+//! use smithay::input::{Seat, SeatState, SeatHandler, keyboard::XkbConfig, pointer::CursorImageStatus};
 //! use smithay::wayland::input_method::{
 //!     InputMethodManagerState,
 //!     InputMethodSeat
 //! };
 //! use smithay::wayland::text_input::TextInputManagerState;
+//! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //!
@@ -26,13 +26,17 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //!
-//! let seat_state = SeatState::<State>::new();
+//! let mut seat_state = SeatState::<State>::new();
 //!
 //! // implement the required traits
 //! impl SeatHandler for State {
+//!     type KeyboardFocus = WlSurface;
+//!     type PointerFocus = WlSurface;
 //!     fn seat_state(&mut self) -> &mut SeatState<Self> {
 //!         &mut self.seat_state
 //!     }
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
+//!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
 //! }
 //!
 //! // Add the seat state to your state and create manager globals
@@ -41,7 +45,7 @@
 //! TextInputManagerState::new::<State>(&display_handle);
 //!
 //! // create the seat
-//! let seat = Seat::<State>::new(
+//! let seat = seat_state.new_wl_seat(
 //!     &display_handle,          // the display
 //!     "seat-0",                 // the name of the seat, will be advertized to clients
 //!     None                      // insert a logger here
@@ -68,13 +72,13 @@ use wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_v2::ZwpInputMethodV2,
 };
 
-use crate::wayland::seat::Seat;
+use crate::input::{keyboard::XkbConfig, Seat, SeatHandler};
 
 pub use input_method_handle::{InputMethodHandle, InputMethodUserData};
 pub use input_method_keyboard_grab::InputMethodKeyboardUserData;
 pub use input_method_popup_surface::InputMethodPopupSurfaceUserData;
 
-use super::{seat::XkbConfig, text_input::TextInputHandle};
+use super::text_input::TextInputHandle;
 
 const MANAGER_VERSION: u32 = 1;
 
@@ -94,7 +98,7 @@ pub trait InputMethodSeat {
     fn input_method(&self) -> Option<&InputMethodHandle>;
 }
 
-impl<D: 'static> InputMethodSeat for Seat<D> {
+impl<D: SeatHandler + 'static> InputMethodSeat for Seat<D> {
     fn add_input_method(&self, xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32) {
         let user_data = self.user_data();
         user_data.insert_if_missing(InputMethodHandle::default);
@@ -120,7 +124,8 @@ impl InputMethodManagerState {
     where
         D: GlobalDispatch<ZwpInputMethodManagerV2, ()>,
         D: Dispatch<ZwpInputMethodManagerV2, ()>,
-        D: Dispatch<ZwpInputMethodV2, InputMethodUserData>,
+        D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
+        D: SeatHandler,
         D: 'static,
     {
         let global = display.create_global::<D, ZwpInputMethodManagerV2, _>(MANAGER_VERSION, ());
@@ -138,7 +143,8 @@ impl<D> GlobalDispatch<ZwpInputMethodManagerV2, (), D> for InputMethodManagerSta
 where
     D: GlobalDispatch<ZwpInputMethodManagerV2, ()>,
     D: Dispatch<ZwpInputMethodManagerV2, ()>,
-    D: Dispatch<ZwpInputMethodV2, InputMethodUserData>,
+    D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
+    D: SeatHandler,
     D: 'static,
 {
     fn bind(
@@ -156,7 +162,8 @@ where
 impl<D> Dispatch<ZwpInputMethodManagerV2, (), D> for InputMethodManagerState
 where
     D: Dispatch<ZwpInputMethodManagerV2, ()>,
-    D: Dispatch<ZwpInputMethodV2, InputMethodUserData>,
+    D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
+    D: SeatHandler,
     D: 'static,
 {
     fn request(
@@ -207,10 +214,10 @@ macro_rules! delegate_input_method_manager {
             $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_manager_v2::ZwpInputMethodManagerV2: ()
         ] => $crate::wayland::input_method::InputMethodManagerState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_v2::ZwpInputMethodV2: $crate::wayland::input_method::InputMethodUserData
+            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_v2::ZwpInputMethodV2: $crate::wayland::input_method::InputMethodUserData<Self>
         ] => $crate::wayland::input_method::InputMethodManagerState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2: $crate::wayland::input_method::InputMethodKeyboardUserData
+            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2: $crate::wayland::input_method::InputMethodKeyboardUserData<Self>
         ] => $crate::wayland::input_method::InputMethodManagerState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2: $crate::wayland::input_method::InputMethodPopupSurfaceUserData

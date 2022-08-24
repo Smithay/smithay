@@ -5,23 +5,23 @@ use std::{
 };
 
 use smithay::{
+    backend::input::ButtonState,
     desktop::WindowSurfaceType,
+    input::pointer::{ButtonEvent, CursorImageStatus, MotionEvent},
     reexports::{
         calloop::{
             channel::{Channel, Event as ChannelEvent},
             EventLoop,
         },
         wayland_server::{
-            protocol::{wl_output, wl_pointer, wl_surface},
+            protocol::{wl_output, wl_surface},
             Client, Display, Resource,
         },
     },
-    utils::IsAlive,
+    utils::{IsAlive, SERIAL_COUNTER as SCOUNTER},
     wayland::{
         input_method::InputMethodSeat,
         output::{Mode, Output, PhysicalProperties},
-        seat::{ButtonEvent, CursorImageStatus, MotionEvent},
-        SERIAL_COUNTER as SCOUNTER,
     },
 };
 
@@ -136,13 +136,13 @@ pub fn run(channel: Channel<WlcsEvent>) {
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
-            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 reset = !surface.alive();
             }
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
             }
-            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 elements.push(draw_cursor(
                     surface.clone(),
                     state.pointer_location.to_i32_round(),
@@ -212,10 +212,9 @@ fn handle_event(
             let time = state.start_time.elapsed().as_millis() as u32;
             state.seat.get_pointer().unwrap().motion(
                 state,
-                &display.handle(),
+                under,
                 &MotionEvent {
                     location,
-                    focus: under,
                     serial,
                     time,
                 },
@@ -228,10 +227,9 @@ fn handle_event(
             let time = state.start_time.elapsed().as_millis() as u32;
             state.seat.get_pointer().unwrap().motion(
                 state,
-                &display.handle(),
+                under,
                 &MotionEvent {
                     location: state.pointer_location,
-                    focus: under,
                     serial,
                     time,
                 },
@@ -249,18 +247,19 @@ fn handle_event(
                     state.space.raise_window(window, true);
                 }
                 state.seat.get_keyboard().unwrap().set_focus(
-                    &display.handle(),
-                    under.as_ref().map(|&(ref w, _)| w.toplevel().wl_surface()),
+                    state,
+                    under
+                        .as_ref()
+                        .map(|&(ref w, _)| w.toplevel().wl_surface().clone()),
                     serial,
                 );
             }
             let time = state.start_time.elapsed().as_millis() as u32;
             pointer.button(
                 state,
-                &display.handle(),
                 &ButtonEvent {
                     button: button_id as u32,
-                    state: wl_pointer::ButtonState::Pressed,
+                    state: ButtonState::Pressed,
                     serial,
                     time,
                 },
@@ -271,10 +270,9 @@ fn handle_event(
             let time = state.start_time.elapsed().as_millis() as u32;
             state.seat.get_pointer().unwrap().button(
                 state,
-                &display.handle(),
                 &ButtonEvent {
                     button: button_id as u32,
-                    state: wl_pointer::ButtonState::Released,
+                    state: ButtonState::Released,
                     serial,
                     time,
                 },

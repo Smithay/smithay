@@ -1,3 +1,4 @@
+#[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::utils::{Logical, Point};
@@ -16,6 +17,9 @@ pub enum CursorImageStatus {
     Hidden,
     /// The compositor should draw its cursor
     Default,
+
+    // TODO bitmap, dmabuf cursor? Or let the compositor handle everything through "Default"
     /// The cursor should be drawn using this surface as an image
-    Image(WlSurface),
+    #[cfg(feature = "wayland_frontend")]
+    Surface(WlSurface),
 }

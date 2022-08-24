@@ -50,7 +50,7 @@
 //!        &mut self.compositor_state
 //!    }
 //!
-//!    fn commit(&mut self, dh: &wayland_server::DisplayHandle, surface: &wayland_server::protocol::wl_surface::WlSurface) {
+//!    fn commit(&mut self, surface: &wayland_server::protocol::wl_surface::WlSurface) {
 //!        // called on every buffer commit.
 //!        // .. your implementation ..
 //!    }
@@ -426,7 +426,7 @@ pub trait CompositorHandler {
     fn compositor_state(&mut self) -> &mut CompositorState;
 
     /// Surface commit handler
-    fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface);
+    fn commit(&mut self, surface: &WlSurface);
 }
 
 /// State of a compositor

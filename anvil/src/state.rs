@@ -9,6 +9,7 @@ use smithay::{
     delegate_text_input_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
     delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
+    input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
         wayland_protocols::xdg::decoration::{
@@ -30,7 +31,6 @@ use smithay::{
         input_method::{InputMethodManagerState, InputMethodSeat},
         output::{Output, OutputManagerState},
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
-        seat::{CursorImageStatus, Seat, SeatHandler, SeatState, XkbConfig},
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{
@@ -72,6 +72,7 @@ impl ClientData for ClientState {
 pub struct AnvilState<BackendData: 'static> {
     pub backend_data: BackendData,
     pub socket_name: Option<String>,
+    pub display_handle: DisplayHandle,
     pub running: Arc<AtomicBool>,
     pub handle: LoopHandle<'static, CalloopData<BackendData>>,
 
@@ -115,7 +116,7 @@ impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
-    fn send_selection(&mut self, _dh: &DisplayHandle, _mime_type: String, _fd: RawFd) {
+    fn send_selection(&mut self, _mime_type: String, _fd: RawFd) {
         unreachable!("Anvil doesn't do server-side selections");
     }
 }
@@ -151,8 +152,23 @@ impl<BackendData> ShmHandler for AnvilState<BackendData> {
 delegate_shm!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> SeatHandler for AnvilState<BackendData> {
+    type KeyboardFocus = WlSurface;
+    type PointerFocus = WlSurface;
+
     fn seat_state(&mut self) -> &mut SeatState<AnvilState<BackendData>> {
         &mut self.seat_state
+    }
+
+    fn focus_changed(&mut self, seat: &Seat<Self>, surface: Option<&WlSurface>) {
+        let dh = &self.display_handle;
+
+        let focus = surface.and_then(|s| dh.get_client(s.id()).ok());
+        let focus2 = surface.and_then(|s| dh.get_client(s.id()).ok());
+        set_data_device_focus(dh, seat, focus);
+        set_primary_focus(dh, seat, focus2);
+    }
+    fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
+        *self.cursor_status.lock().unwrap() = image;
     }
 }
 delegate_seat!(@<BackendData: 'static> AnvilState<BackendData>);
@@ -174,7 +190,6 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
 
     fn request_activation(
         &mut self,
-        _dh: &DisplayHandle,
         token: XdgActivationToken,
         token_data: XdgActivationTokenData,
         surface: WlSurface,
@@ -206,15 +221,15 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
 delegate_xdg_activation!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgDecorationHandler for AnvilState<BackendData> {
-    fn new_decoration(&mut self, _dh: &DisplayHandle, toplevel: ToplevelSurface) {
+    fn new_decoration(&mut self, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ClientSide);
         });
         toplevel.send_configure();
     }
-    fn request_mode(&mut self, _dh: &DisplayHandle, _toplevel: ToplevelSurface, _mode: DecorationMode) {}
-    fn unset_mode(&mut self, _dh: &DisplayHandle, _toplevel: ToplevelSurface) {}
+    fn request_mode(&mut self, _toplevel: ToplevelSurface, _mode: DecorationMode) {}
+    fn unset_mode(&mut self, _toplevel: ToplevelSurface) {}
 }
 delegate_xdg_decoration!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
@@ -267,7 +282,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let layer_shell_state = WlrLayerShellState::new::<Self, _>(&dh, log.clone());
         let output_manager_state = OutputManagerState::new();
         let primary_selection_state = PrimarySelectionState::new::<Self, _>(&dh, log.clone());
-        let seat_state = SeatState::new();
+        let mut seat_state = SeatState::new();
         let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
         let viewporter_state = ViewporterState::new::<Self, _>(&dh, log.clone());
         let xdg_activation_state = XdgActivationState::new::<Self, _>(&dh, log.clone());
@@ -279,24 +294,17 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         // init input
         let seat_name = backend_data.seat_name();
-        let mut seat = Seat::new(&dh, seat_name.clone(), log.clone());
+        let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone(), log.clone());
 
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
+        seat.add_pointer();
+        seat.add_keyboard(XkbConfig::default(), 200, 25)
+            .expect("Failed to initialize the keyboard");
+
         let cursor_status2 = cursor_status.clone();
-        seat.add_pointer(move |new_status| *cursor_status2.lock().unwrap() = new_status);
-
-        seat.add_keyboard(XkbConfig::default(), 200, 25, move |seat, surface| {
-            let focus = surface.and_then(|s| dh.get_client(s.id()).ok());
-            let focus2 = surface.and_then(|s| dh.get_client(s.id()).ok());
-            set_data_device_focus(&dh, seat, focus);
-            set_primary_focus(&dh, seat, focus2);
-        })
-        .expect("Failed to initialize the keyboard");
-
-        let cursor_status3 = cursor_status.clone();
         seat.tablet_seat().on_cursor_surface(move |_tool, new_status| {
             // TODO: tablet tools should have their own cursors
-            *cursor_status3.lock().unwrap() = new_status;
+            *cursor_status2.lock().unwrap() = new_status;
         });
 
         seat.add_input_method(XkbConfig::default(), 200, 25);
@@ -321,6 +329,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         AnvilState {
             backend_data,
+            display_handle: display.handle(),
             socket_name,
             running: Arc::new(AtomicBool::new(true)),
             handle,

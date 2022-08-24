@@ -3,8 +3,9 @@
 use super::{window_inner::WindowInner, Window, WindowTemporary};
 use crate::{
     backend::input::{
-        self, Axis, AxisSource, ButtonState, Device, DeviceCapability, InputBackend, KeyState,
-        KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent, UnusedEvent,
+        self, AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, InputBackend,
+        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
+        UnusedEvent,
     },
     utils::{Logical, Size},
 };
@@ -200,7 +201,8 @@ impl input::Event<X11Input> for X11MouseMovedEvent {
     }
 }
 
-impl PointerMotionAbsoluteEvent<X11Input> for X11MouseMovedEvent {
+impl PointerMotionAbsoluteEvent<X11Input> for X11MouseMovedEvent {}
+impl AbsolutePositionEvent<X11Input> for X11MouseMovedEvent {
     fn x(&self) -> f64 {
         self.x
     }

@@ -3,6 +3,7 @@ use std::{ffi::OsString, sync::Arc};
 use slog::Logger;
 use smithay::{
     desktop::{Space, WindowSurfaceType},
+    input::{pointer::PointerHandle, Seat, SeatState},
     reexports::{
         calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
         wayland_server::{
@@ -13,13 +14,8 @@ use smithay::{
     },
     utils::{Logical, Point},
     wayland::{
-        compositor::CompositorState,
-        data_device::DataDeviceState,
-        output::OutputManagerState,
-        seat::{PointerHandle, Seat, SeatState},
-        shell::xdg::XdgShellState,
-        shm::ShmState,
-        socket::ListeningSocketSource,
+        compositor::CompositorState, data_device::DataDeviceState, output::OutputManagerState,
+        shell::xdg::XdgShellState, shm::ShmState, socket::ListeningSocketSource,
     },
 };
 
@@ -54,21 +50,20 @@ impl Smallvil {
         let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone());
         let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
-        let seat_state = SeatState::new();
+        let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self, _>(&dh, log.clone());
 
         // A seat is a group of keyboards, pointer and touch devices.
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
-        let mut seat: Seat<Self> = Seat::new(&dh, "winit", log.clone());
+        let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "winit", log.clone());
 
         // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
         // You may want to track keyboard hot-plug in real compositor.
-        seat.add_keyboard(Default::default(), 200, 200, |_, _| {})
-            .unwrap();
+        seat.add_keyboard(Default::default(), 200, 200).unwrap();
 
         // Notify clients that we have a pointer (mouse)
         // Here we assume that there is always pointer plugged in
-        seat.add_pointer(|_| {});
+        seat.add_pointer();
 
         // A space represents a two-dimensional plane. Windows and Outputs can be mapped onto it.
         //

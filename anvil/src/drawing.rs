@@ -8,12 +8,10 @@ use smithay::utils::Buffer;
 use smithay::{
     backend::renderer::{Frame, ImportAll, Renderer, Texture},
     desktop::space::{RenderElement, SpaceOutputTuple, SurfaceTree},
+    input::pointer::CursorImageAttributes,
     reexports::wayland_server::protocol::wl_surface,
     utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform},
-    wayland::{
-        compositor::{get_role, with_states},
-        seat::CursorImageAttributes,
-    },
+    wayland::compositor::{get_role, with_states},
 };
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];

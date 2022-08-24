@@ -3,22 +3,22 @@
 //! This module provides helpers to handle graphics tablets.
 //!
 //! ```
-//! # extern crate wayland_server;
 //! use smithay::{delegate_seat, delegate_tablet_manager};
-//! use smithay::wayland::seat::{Seat, SeatState, SeatHandler};
+//! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! use smithay::wayland::tablet_manager::{TabletManagerState, TabletDescriptor};
+//! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //!
 //! # struct State { seat_state: SeatState<Self> };
-//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! # let mut display = Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //!
-//! let seat_state = SeatState::<State>::new();
+//! let mut seat_state = SeatState::<State>::new();
 //! let tablet_state = TabletManagerState::new::<State>(&display_handle);
 //! // add the seat state to your state
 //! // ...
 //!
 //! // create the seat
-//! let seat = Seat::<State>::new(
+//! let seat = seat_state.new_wl_seat(
 //!     &display_handle,          // the display
 //!     "seat-0",                 // the name of the seat, will be advertized to clients
 //!     None                      // insert a logger here
@@ -39,8 +39,16 @@
 //!
 //! // implement the required traits
 //! impl SeatHandler for State {
+//!     type KeyboardFocus = WlSurface;
+//!     type PointerFocus = WlSurface;
 //!     fn seat_state(&mut self) -> &mut SeatState<Self> {
 //!         &mut self.seat_state
+//!     }
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
+//!         // ...
+//!     }
+//!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {
+//!         // ...
 //!     }
 //! }
 //! delegate_seat!(State);
@@ -71,7 +79,7 @@
 //!    );
 //! ```
 
-use crate::wayland::seat::Seat;
+use crate::input::{Seat, SeatHandler};
 use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_manager_v2::{self, ZwpTabletManagerV2},
     zwp_tablet_seat_v2::ZwpTabletSeatV2,
@@ -96,7 +104,7 @@ pub trait TabletSeatTrait {
     fn tablet_seat(&self) -> TabletSeatHandle;
 }
 
-impl<D: 'static> TabletSeatTrait for Seat<D> {
+impl<D: SeatHandler + 'static> TabletSeatTrait for Seat<D> {
     fn tablet_seat(&self) -> TabletSeatHandle {
         let user_data = self.user_data();
         user_data.insert_if_missing(TabletSeatHandle::default);
@@ -156,7 +164,7 @@ where
     D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
     D: Dispatch<ZwpTabletV2, TabletUserData>,
     D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-    D: 'static,
+    D: SeatHandler + 'static,
 {
     fn request(
         _state: &mut D,

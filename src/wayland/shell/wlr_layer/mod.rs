@@ -31,13 +31,12 @@
 //!
 //!     fn new_layer_surface(
 //!         &mut self,
-//!         dh: &wayland_server::DisplayHandle,
 //!         surface: LayerSurface,
 //!         output: Option<WlOutput>,
 //!         layer: Layer,
 //!         namespace: String,
 //!     ) {
-//!         # let _ = (dh, surface, output, layer, namespace);
+//!         # let _ = (surface, output, layer, namespace);
 //!         // your implementation
 //!     }
 //! }
@@ -60,11 +59,10 @@ use wayland_server::{
 };
 
 use crate::{
-    utils::{alive_tracker::IsAlive, Logical, Size},
+    utils::{alive_tracker::IsAlive, Logical, Serial, Size, SERIAL_COUNTER},
     wayland::{
         compositor::{self, Cacheable},
         shell::xdg,
-        Serial, SERIAL_COUNTER,
     },
 };
 
@@ -224,7 +222,6 @@ pub trait WlrLayerShellHandler {
     /// client as to how its layer surface should be sized.
     fn new_layer_surface(
         &mut self,
-        dh: &DisplayHandle,
         surface: LayerSurface,
         output: Option<WlOutput>,
         layer: Layer,
@@ -232,16 +229,10 @@ pub trait WlrLayerShellHandler {
     );
 
     /// A new popup was assigned a layer surface as it's parent
-    fn new_popup(&mut self, dh: &DisplayHandle, parent: LayerSurface, popup: xdg::PopupSurface) {}
+    fn new_popup(&mut self, parent: LayerSurface, popup: xdg::PopupSurface) {}
 
     /// A surface has acknowledged a configure serial.
-    fn ack_configure(
-        &mut self,
-        dh: &DisplayHandle,
-        surface: wl_surface::WlSurface,
-        configure: LayerSurfaceConfigure,
-    ) {
-    }
+    fn ack_configure(&mut self, surface: wl_surface::WlSurface, configure: LayerSurfaceConfigure) {}
 }
 
 /// A handle to a layer surface

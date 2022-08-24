@@ -22,7 +22,6 @@
 //!
 //!     fn request_activation(
 //!         &mut self,
-//!         dh: &DisplayHandle,
 //!         token: XdgActivationToken,
 //!         token_data: XdgActivationTokenData,
 //!         surface: WlSurface
@@ -73,7 +72,7 @@ use wayland_server::{
 
 use rand::distributions::{Alphanumeric, DistString};
 
-use crate::wayland::Serial;
+use crate::utils::Serial;
 
 mod dispatch;
 
@@ -245,7 +244,6 @@ pub trait XdgActivationHandler {
     /// ignore any future requests.
     fn request_activation(
         &mut self,
-        dh: &DisplayHandle,
         token: XdgActivationToken,
         token_data: XdgActivationTokenData,
         surface: WlSurface,

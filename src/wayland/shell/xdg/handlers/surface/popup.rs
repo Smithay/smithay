@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use crate::wayland::{shell::xdg::XdgPositionerUserData, Serial};
+use crate::{utils::Serial, wayland::shell::xdg::XdgPositionerUserData};
 
 use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
@@ -23,7 +23,7 @@ where
         popup: &XdgPopup,
         request: xdg_popup::Request,
         data: &XdgShellSurfaceUserData,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -40,7 +40,7 @@ where
 
                 let serial = Serial::from(serial);
 
-                XdgShellHandler::grab(state, dh, handle, seat, serial);
+                XdgShellHandler::grab(state, handle, seat, serial);
             }
             xdg_popup::Request::Reposition { positioner, token } => {
                 let handle = crate::wayland::shell::xdg::PopupSurface {
@@ -55,7 +55,7 @@ where
                     .lock()
                     .unwrap();
 
-                XdgShellHandler::reposition_request(state, dh, handle, positioner_data, token);
+                XdgShellHandler::reposition_request(state, handle, positioner_data, token);
             }
             _ => unreachable!(),
         }
