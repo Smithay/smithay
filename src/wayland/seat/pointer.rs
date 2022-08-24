@@ -37,7 +37,7 @@ impl<D: SeatHandler> PointerHandle<D> {
 /// WlSurface role of a cursor image icon
 pub const CURSOR_IMAGE_ROLE: &str = "cursor_image";
 
-fn with_focused_pointers<D: SeatHandler + 'static>(
+fn for_each_focused_pointers<D: SeatHandler + 'static>(
     seat: &Seat<D>,
     surface: &WlSurface,
     mut f: impl FnMut(WlPointer),
@@ -58,7 +58,7 @@ where
     D: SeatHandler + 'static,
 {
     fn enter(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
-        with_focused_pointers(seat, self, |ptr| {
+        for_each_focused_pointers(seat, self, |ptr| {
             ptr.enter(event.serial.into(), self, event.location.x, event.location.y);
             if ptr.version() >= 5 {
                 ptr.frame();
@@ -66,7 +66,7 @@ where
         })
     }
     fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial, _time: u32) {
-        with_focused_pointers(seat, self, |ptr| {
+        for_each_focused_pointers(seat, self, |ptr| {
             ptr.leave(serial.into(), self);
             if ptr.version() >= 5 {
                 ptr.frame();
@@ -74,7 +74,7 @@ where
         })
     }
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
-        with_focused_pointers(seat, self, |ptr| {
+        for_each_focused_pointers(seat, self, |ptr| {
             ptr.motion(event.time, event.location.x, event.location.y);
             if ptr.version() >= 5 {
                 ptr.frame();
@@ -82,7 +82,7 @@ where
         })
     }
     fn button(&self, seat: &Seat<D>, _data: &mut D, event: &ButtonEvent) {
-        with_focused_pointers(seat, self, |ptr| {
+        for_each_focused_pointers(seat, self, |ptr| {
             ptr.button(event.serial.into(), event.time, event.button, event.state.into());
             if ptr.version() >= 5 {
                 ptr.frame();
@@ -90,7 +90,7 @@ where
         })
     }
     fn axis(&self, seat: &Seat<D>, _data: &mut D, details: AxisFrame) {
-        with_focused_pointers(seat, self, |ptr| {
+        for_each_focused_pointers(seat, self, |ptr| {
             // axis
             if details.axis.0 != 0.0 {
                 ptr.axis(details.time, WlAxis::HorizontalScroll, details.axis.0);

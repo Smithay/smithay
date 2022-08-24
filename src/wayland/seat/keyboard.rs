@@ -113,7 +113,7 @@ where
     }
 }
 
-fn with_focused_kbds<D: SeatHandler + 'static>(
+fn for_each_focused_kbds<D: SeatHandler + 'static>(
     seat: &Seat<D>,
     surface: &WlSurface,
     mut f: impl FnMut(WlKeyboard),
@@ -135,7 +135,7 @@ fn serialize_pressed_keys(keys: Vec<u32>) -> Vec<u8> {
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
     fn enter(&self, seat: &Seat<D>, _data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        with_focused_kbds(seat, self, |kbd| {
+        for_each_focused_kbds(seat, self, |kbd| {
             kbd.enter(
                 serial.into(),
                 self,
@@ -145,7 +145,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
     }
 
     fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial) {
-        with_focused_kbds(seat, self, |kbd| kbd.leave(serial.into(), self))
+        for_each_focused_kbds(seat, self, |kbd| kbd.leave(serial.into(), self))
     }
 
     fn key(
@@ -157,13 +157,13 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         serial: Serial,
         time: u32,
     ) {
-        with_focused_kbds(seat, self, |kbd| {
+        for_each_focused_kbds(seat, self, |kbd| {
             kbd.key(serial.into(), time, key.raw_code() - 8, state.into())
         })
     }
 
     fn modifiers(&self, seat: &Seat<D>, _data: &mut D, modifiers: ModifiersState, serial: Serial) {
-        with_focused_kbds(seat, self, |kbd| {
+        for_each_focused_kbds(seat, self, |kbd| {
             let modifiers = modifiers.serialized;
             kbd.modifiers(
                 serial.into(),
