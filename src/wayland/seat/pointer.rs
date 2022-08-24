@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{fmt, sync::Mutex};
 
 use wayland_server::{
     backend::{ClientId, ObjectId},
@@ -136,9 +136,19 @@ where
 }
 
 /// User data for pointer
-#[derive(Debug)]
 pub struct PointerUserData<D: SeatHandler> {
     pub(crate) handle: Option<PointerHandle<D>>,
+}
+
+impl<D: SeatHandler> fmt::Debug for PointerUserData<D>
+where
+    <D as SeatHandler>::PointerFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PointerUserData")
+            .field("handle", &self.handle)
+            .finish()
+    }
 }
 
 impl<D> Dispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>
