@@ -50,6 +50,7 @@ pub trait SpaceElement: IsAlive {
     fn set_activate(&self, activated: bool);
     fn output_enter(&self, output: &Output);
     fn output_leave(&self, output: &Output);
+    fn refresh(&self) {}
 }
 
 impl<T: SpaceElement> SpaceElement for &T {
@@ -353,6 +354,18 @@ macro_rules! space_elements_internal {
                         #[$meta]
                     )*
                     Self::$body(x) => $crate::space_elements_internal!(@call output_leave; x, output)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+        fn refresh(&self) {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::space_elements_internal!(@call refresh; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
