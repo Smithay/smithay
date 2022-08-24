@@ -78,14 +78,13 @@ where
         serial: crate::utils::Serial,
     ) {
         let inner = self.inner.lock().unwrap();
-        inner
-            .text_input_handle
-            .as_ref()
-            .unwrap()
-            .set_focus(focus.as_ref().and_then(|f| f.wl_surface()), || {
-            let mut popup = inner.popup_handle.inner.lock().unwrap();
-            popup.surface_role = None;
-        });
+        inner.text_input_handle.as_ref().unwrap().set_focus(
+            focus.as_ref().and_then(|f| f.wl_surface()),
+            || {
+                let mut popup = inner.popup_handle.inner.lock().unwrap();
+                popup.surface_role = None;
+            },
+        );
         handle.set_focus(data, focus, serial)
     }
 
