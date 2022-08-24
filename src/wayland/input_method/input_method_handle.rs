@@ -203,7 +203,7 @@ where
                 );
                 let mut keyboard = input_method.keyboard_grab.inner.lock().unwrap();
                 keyboard.grab = Some(instance.clone());
-                keyboard.text_input_handle = Some(data.text_input_handle.clone());
+                keyboard.text_input_handle = data.text_input_handle.clone();
                 keyboard.popup_handle = input_method.popup.clone();
                 instance.repeat_info(keyboard.repeat_rate, keyboard.repeat_delay);
                 keyboard

@@ -25,7 +25,7 @@ pub(crate) struct InputMethodKeyboard {
     pub repeat_delay: i32,
     pub repeat_rate: i32,
     pub keymap_file: Option<KeymapFile>,
-    pub text_input_handle: Option<TextInputHandle>,
+    pub text_input_handle: TextInputHandle,
     pub popup_handle: InputMethodPopupSurfaceHandle,
 }
 
@@ -52,22 +52,18 @@ where
     ) {
         let inner = self.inner.lock().unwrap();
         let keyboard = inner.grab.as_ref().unwrap();
-        inner
-            .text_input_handle
-            .as_ref()
-            .unwrap()
-            .with_focused_text_input(|_, _, serial| {
-                if let Some(serialized) = modifiers.map(|m| m.serialized) {
-                    keyboard.modifiers(
-                        *serial,
-                        serialized.depressed,
-                        serialized.latched,
-                        serialized.locked,
-                        serialized.layout_locked,
-                    )
-                }
-                keyboard.key(*serial, time, keycode, key_state.into());
-            });
+        inner.text_input_handle.with_focused_text_input(|_, _, serial| {
+            if let Some(serialized) = modifiers.map(|m| m.serialized) {
+                keyboard.modifiers(
+                    *serial,
+                    serialized.depressed,
+                    serialized.latched,
+                    serialized.locked,
+                    serialized.layout_locked,
+                )
+            }
+            keyboard.key(*serial, time, keycode, key_state.into());
+        });
     }
 
     fn set_focus(
@@ -78,13 +74,12 @@ where
         serial: crate::utils::Serial,
     ) {
         let inner = self.inner.lock().unwrap();
-        inner.text_input_handle.as_ref().unwrap().set_focus(
-            focus.as_ref().and_then(|f| f.wl_surface()),
-            || {
+        inner
+            .text_input_handle
+            .set_focus(focus.as_ref().and_then(|f| f.wl_surface()), || {
                 let mut popup = inner.popup_handle.inner.lock().unwrap();
                 popup.surface_role = None;
-            },
-        );
+            });
         handle.set_focus(data, focus, serial)
     }
 
