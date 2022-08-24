@@ -45,8 +45,8 @@ use smithay::{
         viewporter::ViewporterState,
         xdg_activation::{
             XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
-        },
-    },
+        }, virtual_keyboard::VirtualKeyboardManagerState,
+    }, delegate_virtual_keyboard_manager,
 };
 
 #[cfg(feature = "xwayland")]
@@ -163,6 +163,8 @@ delegate_text_input_manager!(@<BackendData: 'static> AnvilState<BackendData>);
 
 delegate_input_method_manager!(@<BackendData: 'static> AnvilState<BackendData>);
 
+delegate_virtual_keyboard_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+
 delegate_viewporter!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
@@ -273,6 +275,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone());
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self>(&dh);
+        VirtualKeyboardManagerState::new::<Self>(&dh);
 
         // init input
         let seat_name = backend_data.seat_name();

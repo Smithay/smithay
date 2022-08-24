@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use wayland_backend::server::{ClientId, ObjectId};
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::{self, ZwpVirtualKeyboardV1};
 use wayland_server::{Dispatch, Client, DisplayHandle, DataInit};
+use xkbcommon::xkb;
 
 use crate::{wayland::{seat::{KeyboardHandle, FilterResult}, SERIAL_COUNTER}, backend::input::KeyState};
 

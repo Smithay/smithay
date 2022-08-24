@@ -6,13 +6,15 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::{
 };
 use wayland_server::{DisplayHandle, GlobalDispatch, Dispatch, Client, New, DataInit};
 
-use self::virtual_keyboard_handle::{VirtualKeyboardUserData, VirtualKeyboardHandle};
+use self::virtual_keyboard_handle::{VirtualKeyboardHandle};
 
 use super::seat::Seat;
 
 const MANAGER_VERSION: u32 = 1;
 
 mod virtual_keyboard_handle;
+
+pub use virtual_keyboard_handle::VirtualKeyboardUserData;
 
 /// State of wp misc virtual keyboard protocol
 #[derive(Debug)]
@@ -81,7 +83,7 @@ where
                 user_data.insert_if_missing(VirtualKeyboardHandle::default);
                 let handle = user_data.get::<VirtualKeyboardHandle>().unwrap();
                 if handle.has_instance() {
-                    return; //TODO: compositor should present an error when an untrusted client requests a new keyboard. ? :/
+                    return; //TODO: Replace with privileged filter, found in dmabuf
                 }
                 let instance = data_init.init(
                     id,
