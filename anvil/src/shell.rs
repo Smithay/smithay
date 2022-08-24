@@ -3,8 +3,8 @@ use std::{cell::RefCell, sync::Mutex};
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
-        layer_map_for_output, Kind as SurfaceKind, LayerSurface, PopupKeyboardGrab, PopupKind, PopupManager,
-        PopupPointerGrab, PopupUngrabStrategy, Space, Window, WindowSurfaceType,
+        find_popup_root_surface, layer_map_for_output, Kind as SurfaceKind, LayerSurface, PopupKeyboardGrab,
+        PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Space, Window, WindowSurfaceType,
     },
     input::{
         pointer::{
@@ -689,34 +689,32 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
-        let ret = self.popups.grab_popup(
-            &self.display_handle,
-            PopupKind::Xdg(surface).into(),
-            &seat,
-            serial,
-        );
+        let kind = PopupKind::Xdg(surface);
+        if let Some(root) = find_popup_root_surface(&kind).ok() {
+            let ret = self.popups.grab_popup(root, kind, &seat, serial);
 
-        if let Ok(mut grab) = ret {
-            if let Some(keyboard) = seat.get_keyboard() {
-                if keyboard.is_grabbed()
-                    && !(keyboard.has_grab(serial)
-                        || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
-                {
-                    grab.ungrab(PopupUngrabStrategy::All);
-                    return;
+            if let Ok(mut grab) = ret {
+                if let Some(keyboard) = seat.get_keyboard() {
+                    if keyboard.is_grabbed()
+                        && !(keyboard.has_grab(serial)
+                            || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
+                    {
+                        grab.ungrab(PopupUngrabStrategy::All);
+                        return;
+                    }
+                    keyboard.set_focus(self, grab.current_grab(), serial);
+                    keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
                 }
-                keyboard.set_focus(self, grab.current_grab().map(|(_, p)| p), serial);
-                keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
-            }
-            if let Some(pointer) = seat.get_pointer() {
-                if pointer.is_grabbed()
-                    && !(pointer.has_grab(serial)
-                        || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
-                {
-                    grab.ungrab(PopupUngrabStrategy::All);
-                    return;
+                if let Some(pointer) = seat.get_pointer() {
+                    if pointer.is_grabbed()
+                        && !(pointer.has_grab(serial)
+                            || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
+                    {
+                        grab.ungrab(PopupUngrabStrategy::All);
+                        return;
+                    }
+                    pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
                 }
-                pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
             }
         }
     }
