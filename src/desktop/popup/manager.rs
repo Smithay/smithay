@@ -73,8 +73,9 @@ impl PopupManager {
         serial: Serial,
     ) -> Result<PopupGrab<D>, PopupGrabError>
     where
-        D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+        D: SeatHandler + 'static,
         <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
+        <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
     {
         let surface = popup.wl_surface();
         assert_eq!(root.wl_surface().cloned(), Some(find_popup_root_surface(&popup)?));

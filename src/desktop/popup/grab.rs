@@ -221,8 +221,9 @@ impl PopupGrabInner {
 /// The grab is obtained by calling [`PopupManager::grap_popup`](super::PopupManager::grab_popup).
 pub struct PopupGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     root: <D as SeatHandler>::KeyboardFocus,
     serial: Serial,
@@ -235,8 +236,9 @@ where
 
 impl<D> fmt::Debug for PopupGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus + fmt::Debug,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PopupGrab")
@@ -252,8 +254,9 @@ where
 
 impl<D> Clone for PopupGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     fn clone(&self) -> Self {
         PopupGrab {
@@ -270,8 +273,9 @@ where
 
 impl<D> PopupGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     pub(super) fn new(
         toplevel_popups: PopupGrabInner,
@@ -297,7 +301,7 @@ where
                 // We set the focus to root as this will make
                 // sure the grab will stay alive until the
                 // toplevel is destroyed or the grab is unset
-                focus: Some((root, (0, 0).into())),
+                focus: Some((root.into(), (0, 0).into())),
                 location: (0f64, 0f64).into(),
             },
         }
@@ -391,16 +395,18 @@ where
 /// and unset the [`KeyboardGrab`]
 pub struct PopupKeyboardGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     popup_grab: PopupGrab<D>,
 }
 
 impl<D> fmt::Debug for PopupKeyboardGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus + fmt::Debug,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PopupKeyboardGrab")
@@ -411,8 +417,9 @@ where
 
 impl<D> PopupKeyboardGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     /// Create a [`PopupKeyboardGrab`] for the provided [`PopupGrab`]
     pub fn new(popup_grab: &PopupGrab<D>) -> Self {
@@ -424,8 +431,9 @@ where
 
 impl<D> KeyboardGrab<D> for PopupKeyboardGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     fn input(
         &mut self,
@@ -493,16 +501,18 @@ where
 /// restore the keyboard focus like described in [`PopupKeyboardGrab`]
 pub struct PopupPointerGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     popup_grab: PopupGrab<D>,
 }
 
 impl<D> fmt::Debug for PopupPointerGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus + fmt::Debug,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PopupPointerGrab")
@@ -513,8 +523,9 @@ where
 
 impl<D> PopupPointerGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     /// Create a [`PopupPointerGrab`] for the provided [`PopupGrab`]
     pub fn new(popup_grab: &PopupGrab<D>) -> Self {
@@ -526,8 +537,9 @@ where
 
 impl<D> PointerGrab<D> for PopupPointerGrab<D>
 where
-    D: SeatHandler<PointerFocus = <D as SeatHandler>::KeyboardFocus> + 'static,
+    D: SeatHandler + 'static,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     fn motion(
         &mut self,
