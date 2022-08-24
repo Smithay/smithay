@@ -11,12 +11,15 @@ use crate::{
     },
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
     wayland::{
-        compositor::with_states,
+        compositor::{with_states, with_surface_tree_downward, TraversalAction},
+        output::Output,
         seat::WaylandFocus,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
 };
 use std::{
+    cell::{RefCell, RefMut},
+    collections::HashSet,
     hash::{Hash, Hasher},
     sync::{
         atomic::{AtomicU8, Ordering},
@@ -95,6 +98,7 @@ pub(super) struct WindowInner {
     toplevel: Kind,
     bbox: Mutex<Rectangle<i32, Logical>>,
     pub(crate) z_index: AtomicU8,
+    pub(crate) outputs: Mutex<Vec<Output>>,
     user_data: UserDataMap,
 }
 
@@ -143,6 +147,17 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Clone, Default)]
+struct OutputState {
+    surfaces: HashSet<wayland_server::backend::ObjectId>,
+}
+type OutputUserdata = RefCell<OutputState>;
+fn window_output_state(o: &Output) -> RefMut<'_, OutputState> {
+    let user_data = o.user_data();
+    user_data.insert_if_missing(OutputUserdata::default);
+    user_data.get::<OutputUserdata>().unwrap().borrow_mut()
+}
+
 impl Window {
     /// Construct a new [`Window`] from a given compatible toplevel surface
     pub fn new(toplevel: Kind) -> Window {
@@ -153,6 +168,7 @@ impl Window {
             toplevel,
             bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
             z_index: AtomicU8::new(RenderZindex::Shell as u8),
+            outputs: Mutex::new(Vec::new()),
             user_data: UserDataMap::new(),
         }))
     }
@@ -227,7 +243,7 @@ impl Window {
     ///
     /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
     /// to correctly update the bounding box of this window.
-    pub fn refresh(&self) {
+    pub fn on_commit(&self) {
         *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0));
     }
 
@@ -269,6 +285,63 @@ impl Window {
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
+    }
+
+    pub(crate) fn update_outputs(&self, left_output: Option<&Output>) {
+        if let Some(output) = left_output {
+            let mut state = window_output_state(output);
+            with_surface_tree_downward(
+                self.toplevel().wl_surface(),
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |wl_surface, _, _| {
+                    state.surfaces.remove(&wl_surface.id());
+                    output.leave(wl_surface);
+                },
+                |_, _, _| true,
+            );
+            for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
+                let surface = popup.wl_surface();
+                with_surface_tree_downward(
+                    surface,
+                    (),
+                    |_, _, _| TraversalAction::DoChildren(()),
+                    |wl_surface, _, _| {
+                        state.surfaces.remove(&wl_surface.id());
+                        output.leave(wl_surface);
+                    },
+                    |_, _, _| true,
+                )
+            }
+        }
+        for output in self.0.outputs.lock().unwrap().iter() {
+            let mut state = window_output_state(output);
+            with_surface_tree_downward(
+                self.toplevel().wl_surface(),
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |wl_surface, _, _| {
+                    if state.surfaces.insert(wl_surface.id()) {
+                        output.enter(wl_surface);
+                    }
+                },
+                |_, _, _| true,
+            );
+            for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
+                let surface = popup.wl_surface();
+                with_surface_tree_downward(
+                    surface,
+                    (),
+                    |_, _, _| TraversalAction::DoChildren(()),
+                    |wl_surface, _, _| {
+                        if state.surfaces.insert(wl_surface.id()) {
+                            output.enter(wl_surface);
+                        }
+                    },
+                    |_, _, _| true,
+                )
+            }
+        }
     }
 }
 
