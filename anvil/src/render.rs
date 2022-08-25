@@ -9,6 +9,8 @@ use smithay::{
     wayland::output::Output,
 };
 
+#[cfg(feature = "debug")]
+use crate::drawing::FpsElement;
 use crate::{
     drawing::{PointerRenderElement, CLEAR_COLOR},
     shell::FullscreenSurface,
