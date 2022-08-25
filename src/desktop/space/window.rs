@@ -9,10 +9,7 @@ use crate::{
     },
     desktop::{window::Window, PopupManager, WindowSurfaceType},
     utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::{
-        compositor::{with_surface_tree_downward, TraversalAction},
-        output::Output,
-    },
+    wayland::output::Output,
 };
 
 impl SpaceElement for Window {
@@ -24,9 +21,8 @@ impl SpaceElement for Window {
         self.bbox_with_popups()
     }
 
-    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
-        self.surface_under(*point, WindowSurfaceType::ALL)
-            .map(|(_s, point)| point)
+    fn input_region(&self, point: &Point<f64, Logical>) -> bool {
+        self.surface_under(*point, WindowSurfaceType::ALL).is_some()
     }
 
     fn z_index(&self) -> u8 {

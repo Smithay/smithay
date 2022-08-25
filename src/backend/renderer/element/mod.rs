@@ -104,12 +104,14 @@ pub trait RenderElement<R: Renderer> {
     ) -> Result<(), R::Error>;
 }
 
+/// Types that can be converted into [`RenderElement`]s
 pub trait AsRenderElements<R>
 where
     R: Renderer,
 {
+    /// RenderElement type
     type RenderElement: RenderElement<R>;
-    /// Gets render elements of this space element
+    /// Returns render elements for a given position and scale
     fn render_elements<C: From<Self::RenderElement>>(
         &self,
         location: Point<i32, Physical>,
@@ -771,6 +773,7 @@ where
 }
 
 #[cfg(all(test, feature = "renderer_gl"))]
+#[allow(dead_code)]
 mod tests {
     use std::marker::PhantomData;
 

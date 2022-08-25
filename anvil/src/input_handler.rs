@@ -272,16 +272,13 @@ impl<Backend> AnvilState<Backend> {
             .get::<FullscreenSurface>()
             .and_then(|f| f.get())
         {
-            under = Some((window.into(), (pos - output_geo.loc.to_f64()).to_i32_round()));
+            under = Some((window.into(), output_geo.loc));
         } else if let Some(layer) = layers
             .layer_under(WlrLayer::Overlay, pos)
             .or_else(|| layers.layer_under(WlrLayer::Top, pos))
         {
             let layer_loc = layers.layer_geometry(layer).unwrap().loc;
-            under = Some((
-                layer.clone().into(),
-                (pos - output_geo.loc.to_f64() - layer_loc.to_f64()).to_i32_round(),
-            ))
+            under = Some((layer.clone().into(), output_geo.loc + layer_loc))
         } else if let Some((window, location)) = self.space.element_under(pos) {
             under = Some((window.clone().into(), location));
         } else if let Some(layer) = layers
@@ -289,10 +286,7 @@ impl<Backend> AnvilState<Backend> {
             .or_else(|| layers.layer_under(WlrLayer::Background, pos))
         {
             let layer_loc = layers.layer_geometry(layer).unwrap().loc;
-            under = Some((
-                layer.clone().into(),
-                (pos - output_geo.loc.to_f64() - layer_loc.to_f64()).to_i32_round(),
-            ));
+            under = Some((layer.clone().into(), output_geo.loc + layer_loc));
         };
         under
     }
@@ -352,7 +346,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                     let new_scale = current_scale + 0.25;
                     output.change_current_state(None, None, Some(Scale::Fractional(new_scale)), None);
 
-                    crate::shell::fixup_positions(dh, &mut self.space);
+                    crate::shell::fixup_positions(&mut self.space);
                     self.backend_data.reset_buffers(&output);
                 }
 
@@ -368,7 +362,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                     let new_scale = f64::max(1.0, current_scale - 0.25);
                     output.change_current_state(None, None, Some(Scale::Fractional(new_scale)), None);
 
-                    crate::shell::fixup_positions(dh, &mut self.space);
+                    crate::shell::fixup_positions(&mut self.space);
                     self.backend_data.reset_buffers(&output);
                 }
 
@@ -472,7 +466,7 @@ impl AnvilState<UdevData> {
                         pointer_output_location.y *= rescale;
                         self.pointer_location = output_location + pointer_output_location;
 
-                        crate::shell::fixup_positions(dh, &mut self.space);
+                        crate::shell::fixup_positions(&mut self.space);
                         let under = self.surface_under();
                         if let Some(ptr) = self.seat.get_pointer() {
                             ptr.motion(
@@ -511,7 +505,7 @@ impl AnvilState<UdevData> {
                         pointer_output_location.y *= rescale;
                         self.pointer_location = output_location + pointer_output_location;
 
-                        crate::shell::fixup_positions(dh, &mut self.space);
+                        crate::shell::fixup_positions(&mut self.space);
                         let under = self.surface_under();
                         if let Some(ptr) = self.seat.get_pointer() {
                             ptr.motion(
