@@ -5,7 +5,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
-    sync::atomic::Ordering,
+    sync::{atomic::Ordering, Mutex},
     time::Duration,
 };
 
@@ -13,13 +13,9 @@ use slog::Logger;
 
 use crate::{
     drawing::*,
-    render,
+    render::*,
     state::{AnvilState, Backend, CalloopData},
 };
-#[cfg(not(feature = "debug"))]
-use smithay::desktop::space::SpaceRenderElements;
-#[cfg(feature = "debug")]
-use smithay::render_elements;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -36,7 +32,7 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::{DamageTrackedRenderer, DamageTrackedRendererError},
-            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
+            element::AsRenderElements,
             gles2::Gles2Renderbuffer,
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
             Bind, Frame, ImportMem, Renderer,
@@ -45,8 +41,11 @@ use smithay::{
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
         SwapBuffersError,
     },
-    desktop::space::{Space, SurfaceTree},
-    input::pointer::CursorImageStatus,
+    desktop::{
+        space::{Space, SurfaceTree},
+        Window,
+    },
+    input::pointer::{CursorImageAttributes, CursorImageStatus},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{
@@ -69,28 +68,16 @@ use smithay::{
     },
     utils::{
         signaling::{Linkable, SignalToken, Signaler},
-        IsAlive, Logical, Point, Rectangle, Transform,
+        IsAlive, Logical, Point, Rectangle, Scale, Transform,
+    },
+    wayland::{
+        compositor,
+        input_method::{InputMethodHandle, InputMethodSeat},
+        output::{Mode, Output, PhysicalProperties},
     },
 };
 
 type UdevRenderer<'a> = MultiRenderer<'a, 'a, EglGlesBackend, EglGlesBackend, Gles2Renderbuffer>;
-
-#[cfg(feature = "debug")]
-render_elements! {
-    pub CustomRenderElements<='a, UdevRenderer<'a>>;
-    Surface=WaylandSurfaceRenderElement,
-    Texture=TextureRenderElement<MultiTexture>,
-    Fps=&'a FpsElement<MultiTexture>
-}
-
-smithay::space_elements! {
-    CustomSpaceElements<'a, R>[
-        WaylandSurfaceRenderElement,
-        TextureRenderElement<<R as Renderer>::TextureId>,
-    ];
-    SurfaceTree=SurfaceTree,
-    PointerElement=&'a PointerElement<<R as Renderer>::TextureId>,
-}
 
 #[derive(Copy, Clone)]
 pub struct SessionFd(RawFd);
@@ -338,7 +325,7 @@ pub fn run_udev(log: Logger) {
         if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
-            state.space.refresh(&display.handle());
+            state.space.refresh();
             state.popups.cleanup();
             display.flush_clients().unwrap();
         }
@@ -382,7 +369,7 @@ fn scan_connectors(
     device: &DrmDevice<SessionFd>,
     gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
     display: &mut Display<AnvilState<UdevData>>,
-    space: &mut Space,
+    space: &mut Space<Window>,
     #[cfg(feature = "debug")] fps_texture: &MultiTexture,
     signaler: &Signaler<SessionSignal>,
     logger: &::slog::Logger,
@@ -765,11 +752,25 @@ impl AnvilState<UdevData> {
                     texture
                 });
 
+            let output = if let Some(output) = self.space.outputs().find(|o| {
+                o.user_data().get::<UdevOutputId>()
+                    == Some(&UdevOutputId {
+                        device_id: surface.borrow().device_id,
+                        crtc,
+                    })
+            }) {
+                output.clone()
+            } else {
+                // somehow we got called with an invalid output
+                continue;
+            };
+
             let result = render_surface(
                 &mut *surface.borrow_mut(),
                 &mut renderer,
-                crtc,
                 &mut self.space,
+                &output,
+                self.seat.input_method().unwrap(),
                 self.pointer_location,
                 &pointer_image,
                 &mut self.backend_data.pointer_element,
@@ -809,8 +810,13 @@ impl AnvilState<UdevData> {
             }
 
             // Send frame events so that client start drawing their next frame
-            self.space
-                .send_frames(self.start_time.elapsed().as_millis() as u32);
+            let space = &self.space;
+            let start_time = &self.start_time;
+            space.elements().for_each(|window| {
+                if space.outputs_for_element(window).contains(&output) {
+                    window.send_frame(start_time.elapsed().as_millis() as u32)
+                }
+            });
         }
     }
 }
@@ -819,8 +825,9 @@ impl AnvilState<UdevData> {
 fn render_surface<'a>(
     surface: &'a mut SurfaceData,
     renderer: &mut UdevRenderer<'a>,
-    crtc: crtc::Handle,
-    space: &mut Space,
+    space: &mut Space<Window>,
+    output: &Output,
+    input_method: &InputMethodHandle,
     pointer_location: Point<f64, Logical>,
     pointer_image: &MultiTexture,
     pointer_element: &mut PointerElement<MultiTexture>,
@@ -830,28 +837,17 @@ fn render_surface<'a>(
 ) -> Result<bool, SwapBuffersError> {
     surface.surface.frame_submitted()?;
 
-    let output = if let Some(output) = space.outputs().find(|o| {
-        o.user_data().get::<UdevOutputId>()
-            == Some(&UdevOutputId {
-                device_id: surface.device_id,
-                crtc,
-            })
-    }) {
-        output.clone()
-    } else {
-        // somehow we got called with an invalid output
-        return Ok(true);
-    };
     let output_geometry = space.output_geometry(&output).unwrap();
 
     let (dmabuf, age) = surface.surface.next_buffer()?;
     renderer.bind(dmabuf)?;
 
-    let mut elements: Vec<CustomSpaceElements<'_, _>> = Vec::new();
+    let mut elements: Vec<CustomRenderElements<_>> = Vec::new();
     // set cursor
     if output_geometry.to_f64().contains(pointer_location) {
         let (ptr_x, ptr_y) = pointer_location.into();
         let ptr_location = Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)); // - output_geometry.loc;
+        let scale = Scale::from(output.current_scale().fractional_scale());
 
         pointer_element.set_position(ptr_location);
         pointer_element.set_texture(pointer_image.clone());
@@ -870,14 +866,44 @@ fn render_surface<'a>(
             pointer_element.set_status(cursor_status.clone());
         }
 
-        elements.push(CustomSpaceElements::PointerElement(pointer_element));
+        elements
+            .extend(pointer_element.render_elements(ptr_location.to_physical_precise_round(scale), scale));
+
+        // draw input method surface if any
+        let rectangle = input_method.coordinates();
+        let position = Point::from((
+            rectangle.loc.x + rectangle.size.w,
+            rectangle.loc.y + rectangle.size.h,
+        ));
+        input_method.with_surface(|surface| {
+            elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
+                &SurfaceTree::from_surface(surface, position),
+                position.to_physical_precise_round(scale),
+                scale,
+            ));
+        });
 
         // draw the dnd icon if applicable
         {
             if let Some(wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.alive() {
-                    elements.push(CustomSpaceElements::SurfaceTree(
-                        smithay::desktop::space::SurfaceTree::from_surface(wl_surface, ptr_location),
+                    let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = cursor_status {
+                        compositor::with_states(surface, |states| {
+                            states
+                                .data_map
+                                .get::<Mutex<CursorImageAttributes>>()
+                                .unwrap()
+                                .lock()
+                                .unwrap()
+                                .hotspot
+                        })
+                    } else {
+                        (0, 0).into()
+                    };
+                    elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
+                        &SurfaceTree::from_surface(wl_surface, ptr_location - cursor_hotspot),
+                        ptr_location.to_physical_precise_round(scale),
+                        scale,
                     ));
                 }
             }
@@ -887,17 +913,17 @@ fn render_surface<'a>(
         {
             surface.fps_element.update_fps(surface.fps.avg().round() as u32);
             surface.fps.tick();
+            elements.push(CustomRenderElements::Fps(fps_element.clone()));
         }
     }
 
     // and draw to our buffer
     // TODO we can pass the damage rectangles inside a AtomicCommitRequest
     #[cfg(feature = "debug")]
-    let render_res = render::render_output::<_, _, CustomRenderElements<'_>>(
+    let render_res = render_output(
         &output,
         space,
-        &*elements,
-        &[CustomRenderElements::Fps(&surface.fps_element)],
+        &elements,
         renderer,
         &mut surface.damage_tracked_renderer,
         age.into(),
@@ -906,11 +932,10 @@ fn render_surface<'a>(
     .map(|x| x.is_some());
 
     #[cfg(not(feature = "debug"))]
-    let render_res = render::render_output::<_, _, SpaceRenderElements<_>>(
+    let render_res = render_output(
         &output,
         space,
         &*elements,
-        &[],
         renderer,
         &mut surface.damage_tracked_renderer,
         age.into(),
