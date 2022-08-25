@@ -1,18 +1,10 @@
 use smithay::{
     backend::renderer::{
         damage::{DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode},
-        element::{
-            surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, AsRenderElements,
-            RenderElement,
-        },
+        element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
         ImportAll, Renderer,
     },
-    desktop::{
-        self,
-        space::{Space, SpaceElement},
-        Window,
-    },
-    render_elements,
+    desktop::{self, space::Space, Window},
     utils::{Physical, Rectangle},
     wayland::output::Output,
 };
@@ -55,8 +47,6 @@ where
 
         let scale = output.current_scale().fractional_scale().into();
         let window_render_elements = AsRenderElements::<R>::render_elements(&window, (0, 0).into(), scale);
-
-        let output_geo = space.output_geometry(output).unwrap();
 
         let render_elements = custom_elements
             .iter()

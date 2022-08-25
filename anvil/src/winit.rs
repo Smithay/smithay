@@ -1,10 +1,8 @@
 use std::{sync::atomic::Ordering, time::Duration};
 
 use slog::Logger;
-#[cfg(not(feature = "debug"))]
-use smithay::desktop::space::SpaceRenderElements;
 #[cfg(feature = "debug")]
-use smithay::{backend::renderer::ImportMem, render_elements};
+use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -17,7 +15,7 @@ use smithay::{
 use smithay::{
     backend::{
         renderer::{
-            damage::DamageTrackedRenderer,
+            damage::{DamageTrackedRenderer, DamageTrackedRendererError},
             element::AsRenderElements,
             gles2::{Gles2Renderer, Gles2Texture},
         },
