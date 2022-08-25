@@ -10,17 +10,12 @@ use smithay::{
         self, Axis, AxisSource, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
         PointerAxisEvent, PointerButtonEvent,
     },
-    desktop::{layer_map_for_output, space::SpaceElement, Window, WindowSurfaceType},
+    desktop::{layer_map_for_output, WindowSurfaceType},
     input::{
         keyboard::{keysyms as xkb, FilterResult, Keysym, ModifiersState},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
-        SeatHandler,
+        pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
-    output::Scale,
-    reexports::wayland_server::{
-        protocol::{wl_pointer, wl_surface::WlSurface},
-        DisplayHandle,
-    },
+    reexports::wayland_server::{protocol::wl_pointer, DisplayHandle},
     utils::{Logical, Point, Serial, SERIAL_COUNTER as SCOUNTER},
     wayland::{
         compositor::with_states,
