@@ -280,6 +280,7 @@ impl Window {
         &self.0.toplevel
     }
 
+    /// Override the z_index of this Window
     pub fn override_z_index(&self, z_index: u8) {
         self.0.z_index.store(z_index, Ordering::SeqCst);
     }

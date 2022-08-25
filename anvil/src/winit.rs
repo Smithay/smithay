@@ -182,7 +182,6 @@ pub fn run_winit(log: Logger) {
         if winit
             .dispatch_new_events(|event| match event {
                 WinitEvent::Resized { size, .. } => {
-                    let dh = display.handle();
                     // We only have one output
                     let output = state.space.outputs().next().unwrap().clone();
                     state.space.map_output(&output, (0, 0));
@@ -192,7 +191,7 @@ pub fn run_winit(log: Logger) {
                     };
                     output.change_current_state(Some(mode), None, None, None);
                     output.set_preferred(mode);
-                    crate::shell::fixup_positions(&dh, &mut state.space);
+                    crate::shell::fixup_positions(&mut state.space);
                 }
                 WinitEvent::Input(event) => {
                     state.process_input_event_windowed(&display.handle(), event, OUTPUT_NAME)

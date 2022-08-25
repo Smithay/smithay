@@ -17,7 +17,7 @@ use smithay::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
             protocol::{wl_buffer::WlBuffer, wl_output, wl_seat, wl_surface::WlSurface},
-            DisplayHandle, Resource,
+            Resource,
         },
     },
     utils::{IsAlive, Logical, Point, Rectangle, Serial, Size},
@@ -363,7 +363,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
         }
         self.popups.commit(surface);
 
-        ensure_initial_configure(&self.display_handle, surface, &self.space, &mut self.popups)
+        ensure_initial_configure(surface, &self.space, &mut self.popups)
     }
 }
 
@@ -752,8 +752,7 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
             .and_then(Output::from_resource)
             .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
         let mut map = layer_map_for_output(&output);
-        map.map_layer(&self.display_handle, &LayerSurface::new(surface, namespace))
-            .unwrap();
+        map.map_layer(&LayerSurface::new(surface, namespace)).unwrap();
     }
 }
 
@@ -793,12 +792,7 @@ pub struct SurfaceData {
     pub resize_state: ResizeState,
 }
 
-fn ensure_initial_configure(
-    dh: &DisplayHandle,
-    surface: &WlSurface,
-    space: &Space<Window>,
-    popups: &mut PopupManager,
-) {
+fn ensure_initial_configure(surface: &WlSurface, space: &Space<Window>, popups: &mut PopupManager) {
     with_surface_tree_upward(
         surface,
         (),
@@ -893,7 +887,7 @@ fn ensure_initial_configure(
             layer.layer_surface().send_configure();
         }
 
-        map.arrange(dh);
+        map.arrange();
     };
 }
 
@@ -923,7 +917,7 @@ fn place_new_window(space: &mut Space<Window>, window: &Window, activate: bool) 
     space.map_element(window.clone(), (x, y), activate);
 }
 
-pub fn fixup_positions(dh: &DisplayHandle, space: &mut Space<Window>) {
+pub fn fixup_positions(space: &mut Space<Window>) {
     // fixup outputs
     let mut offset = Point::<i32, Logical>::from((0, 0));
     for output in space.outputs().cloned().collect::<Vec<_>>().into_iter() {
@@ -932,7 +926,7 @@ pub fn fixup_positions(dh: &DisplayHandle, space: &mut Space<Window>) {
             .map(|geo| geo.size)
             .unwrap_or_else(|| Size::from((0, 0)));
         space.map_output(&output, offset);
-        layer_map_for_output(&output).arrange(dh);
+        layer_map_for_output(&output).arrange();
         offset.x += size.w;
     }
 
