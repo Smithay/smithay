@@ -307,10 +307,8 @@ impl<E: SpaceElement + PartialEq> Space<E> {
                     if e.outputs.remove(output) {
                         e.element.output_leave(output);
                     }
-                } else {
-                    if e.outputs.insert(output.clone()) {
-                        e.element.output_enter(output);
-                    }
+                } else if e.outputs.insert(output.clone()) {
+                    e.element.output_enter(output);
                 }
             }
         }
@@ -477,6 +475,7 @@ where
 }
 
 /// Render a output
+#[allow(clippy::too_many_arguments)]
 pub fn render_output<'a, R, C, E>(
     output: &Output,
     renderer: &mut R,
