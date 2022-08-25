@@ -2,8 +2,8 @@
 
 #[cfg(feature = "debug")]
 use smithay::{
-    backend::renderer::Frame,
-    utils::{Buffer, Size},
+    backend::renderer::{element::RenderElement, Frame},
+    utils::{Buffer, Rectangle, Size},
 };
 use smithay::{
     backend::renderer::{
@@ -103,6 +103,7 @@ where
 pub static FPS_NUMBERS_PNG: &[u8] = include_bytes!("../resources/numbers.png");
 
 #[cfg(feature = "debug")]
+#[derive(Clone)]
 pub struct FpsElement<T: Texture> {
     id: Id,
     value: u32,
