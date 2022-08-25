@@ -99,6 +99,7 @@ pub(super) struct WindowInner {
     bbox: Mutex<Rectangle<i32, Logical>>,
     pub(crate) z_index: AtomicU8,
     pub(crate) outputs: Mutex<Vec<Output>>,
+    focused_surface: Mutex<Option<wl_surface::WlSurface>>,
     user_data: UserDataMap,
 }
 
@@ -169,6 +170,7 @@ impl Window {
             bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
             z_index: AtomicU8::new(RenderZindex::Shell as u8),
             outputs: Mutex::new(Vec::new()),
+            focused_surface: Mutex::new(None),
             user_data: UserDataMap::new(),
         }))
     }
@@ -383,19 +385,38 @@ where
 
 impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
     fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerTarget::<D>::enter(self.0.toplevel.wl_surface(), seat, data, event)
+        if let Some((surface, loc)) = self.surface_under(event.location, WindowSurfaceType::ALL) {
+            let mut new_event = event.clone();
+            new_event.location -= loc.to_f64();
+            if let Some(old_surface) = self.0.focused_surface.lock().unwrap().replace(surface.clone()) {
+                if old_surface != surface {
+                    PointerTarget::<D>::leave(&old_surface, seat, data, event.serial, event.time);
+                    PointerTarget::<D>::enter(&surface, seat, data, &new_event);
+                } else {
+                    PointerTarget::<D>::motion(&surface, seat, data, &new_event)
+                }
+            } else {
+                PointerTarget::<D>::enter(&surface, seat, data, &new_event)
+            }
+        }
     }
     fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerTarget::<D>::motion(self.0.toplevel.wl_surface(), seat, data, event)
+        PointerTarget::<D>::enter(self, seat, data, event)
     }
     fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
-        PointerTarget::<D>::button(self.0.toplevel.wl_surface(), seat, data, event)
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::button(surface, seat, data, event)
+        }
     }
     fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
-        PointerTarget::<D>::axis(self.0.toplevel.wl_surface(), seat, data, frame)
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::axis(surface, seat, data, frame)
+        }
     }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
-        PointerTarget::<D>::leave(self.0.toplevel.wl_surface(), seat, data, serial, time)
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().take() {
+            PointerTarget::<D>::leave(&surface, seat, data, serial, time)
+        }
     }
 }
 
