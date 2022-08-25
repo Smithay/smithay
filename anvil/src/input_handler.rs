@@ -21,6 +21,7 @@ use smithay::{
         compositor::with_states,
         input_method::InputMethodSeat,
         output::Scale,
+        seat::WaylandFocus,
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
     },
 };
@@ -656,7 +657,7 @@ impl AnvilState<UdevData> {
 
                 tool.motion(
                     self.pointer_location,
-                    under,
+                    under.and_then(|(f, loc)| f.wl_surface().map(|s| (s.clone(), loc))),
                     &tablet,
                     SCOUNTER.next_serial(),
                     evt.time(),
@@ -688,7 +689,11 @@ impl AnvilState<UdevData> {
             let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
             let tool = tablet_seat.get_tool(&tool);
 
-            if let (Some(under), Some(tablet), Some(tool)) = (under, tablet, tool) {
+            if let (Some(under), Some(tablet), Some(tool)) = (
+                under.and_then(|(f, loc)| f.wl_surface().map(|s| (s.clone(), loc))),
+                tablet,
+                tool,
+            ) {
                 match evt.state() {
                     ProximityState::In => tool.proximity_in(
                         self.pointer_location,
