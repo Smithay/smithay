@@ -5,14 +5,12 @@ use std::{
 
 use crate::{
     drawing::*,
-    render,
+    render::*,
     state::{AnvilState, Backend, CalloopData},
 };
 use slog::Logger;
-#[cfg(not(feature = "debug"))]
-use smithay::desktop::space::SpaceRenderElements;
 #[cfg(feature = "debug")]
-use smithay::{backend::renderer::ImportMem, render_elements};
+use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -25,15 +23,9 @@ use smithay::{
 use smithay::{
     backend::{
         egl::{EGLContext, EGLDisplay},
-        renderer::{
-            damage::DamageTrackedRenderer,
-            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-            gles2::Gles2Renderer,
-            Bind, Renderer,
-        },
+        renderer::{damage::DamageTrackedRenderer, element::AsRenderElements, gles2::Gles2Renderer, Bind},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
-    desktop::space::SurfaceTree,
     input::pointer::{CursorImageAttributes, CursorImageStatus},
     reexports::{
         calloop::EventLoop,
@@ -43,9 +35,10 @@ use smithay::{
             Display,
         },
     },
-    utils::IsAlive,
+    utils::{IsAlive, Point, Scale},
     wayland::{
         compositor,
+        input_method::InputMethodSeat,
         output::{Mode, Output, PhysicalProperties},
     },
 };
@@ -92,23 +85,6 @@ impl Backend for X11Data {
         self.surface.reset_buffers();
     }
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
-}
-
-#[cfg(feature = "debug")]
-render_elements! {
-    pub CustomRenderElements<'a, R>;
-    Surface=WaylandSurfaceRenderElement,
-    Texture=TextureRenderElement<<R as Renderer>::TextureId>,
-    Fps=&'a FpsElement<<R as Renderer>::TextureId>
-}
-
-smithay::space_elements! {
-    CustomSpaceElements<'a, R>[
-        WaylandSurfaceRenderElement,
-        TextureRenderElement<<R as Renderer>::TextureId>,
-    ];
-    Pointer=&'a PointerElement<<R as Renderer>::TextureId>,
-    SurfaceTree=SurfaceTree,
 }
 
 pub fn run_x11(log: Logger) {
@@ -268,7 +244,6 @@ pub fn run_x11(log: Logger) {
             let backend_data = &mut state.backend_data;
             let cursor_visible: bool;
             // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
-            let (x, y) = state.pointer_location.into();
             let cursor_status = &state.cursor_status;
             #[cfg(feature = "debug")]
             let fps = backend_data.fps.avg().round() as u32;
@@ -282,7 +257,7 @@ pub fn run_x11(log: Logger) {
             }
 
             let mut cursor_guard = cursor_status.lock().unwrap();
-            let mut custom_space_elements: Vec<CustomSpaceElements<'_, _>> = Vec::new();
+            let mut elements: Vec<CustomRenderElements<Gles2Renderer>> = Vec::new();
 
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
@@ -300,9 +275,28 @@ pub fn run_x11(log: Logger) {
                 cursor_visible = true;
             }
 
-            pointer_element.set_position((x as i32, y as i32));
+            let scale = Scale::from(output.current_scale().fractional_scale());
+            let cursor_pos = state.pointer_location;
+            let cursor_pos_scaled = state.pointer_location.to_physical(scale).to_i32_round();
+
+            pointer_element.set_position(cursor_pos.to_i32_round());
             pointer_element.set_status(cursor_guard.clone());
-            custom_space_elements.push(CustomSpaceElements::Pointer(&pointer_element));
+            elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
+
+            // draw input method surface if any
+            let input_method = state.seat.input_method().unwrap();
+            let rectangle = input_method.coordinates();
+            let position = Point::from((
+                rectangle.loc.x + rectangle.size.w,
+                rectangle.loc.y + rectangle.size.h,
+            ));
+            input_method.with_surface(|surface| {
+                elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                    &smithay::desktop::space::SurfaceTree::from_surface(surface, position),
+                    position.to_physical_precise_round(scale),
+                    scale,
+                ));
+            });
 
             // draw the dnd icon if any
             if let Some(surface) = state.dnd_icon.as_ref() {
@@ -320,22 +314,25 @@ pub fn run_x11(log: Logger) {
                     } else {
                         (0, 0).into()
                     };
-
-                    custom_space_elements.push(CustomSpaceElements::SurfaceTree(
-                        smithay::desktop::space::SurfaceTree::from_surface(
+                    elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                        &smithay::desktop::space::SurfaceTree::from_surface(
                             surface,
-                            state.pointer_location.to_i32_round() - cursor_hotspot,
+                            cursor_pos.to_i32_round() - cursor_hotspot,
                         ),
+                        cursor_pos_scaled,
+                        scale,
                     ));
                 }
             }
 
             #[cfg(feature = "debug")]
-            let render_res = render::render_output::<_, _, CustomRenderElements<'_, _>>(
+            elements.push(CustomRenderElements::Fps(fps_element.clone()));
+
+            #[cfg(feature = "debug")]
+            let render_res = render_output(
                 &output,
                 &state.space,
-                &*custom_space_elements,
-                &[CustomRenderElements::Fps(&fps_element)],
+                &elements,
                 &mut backend_data.renderer,
                 &mut backend_data.damage_tracked_renderer,
                 age.into(),
@@ -343,11 +340,10 @@ pub fn run_x11(log: Logger) {
             );
 
             #[cfg(not(feature = "debug"))]
-            let render_res = render::render_output::<_, _, SpaceRenderElements<_>>(
+            let render_res = render_output(
                 &output,
                 &state.space,
-                &*custom_space_elements,
-                &[],
+                &elements,
                 &mut backend_data.renderer,
                 &mut backend_data.damage_tracked_renderer,
                 age.into(),
@@ -377,7 +373,10 @@ pub fn run_x11(log: Logger) {
         }
 
         // Send frame events so that client start drawing their next frame
-        state.space.send_frames(start_time.elapsed().as_millis() as u32);
+        state
+            .space
+            .elements()
+            .for_each(|window| window.send_frame(start_time.elapsed().as_millis() as u32));
 
         let mut calloop_data = CalloopData { state, display };
         let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
@@ -386,7 +385,7 @@ pub fn run_x11(log: Logger) {
         if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
-            state.space.refresh(&display.handle());
+            state.space.refresh();
             state.popups.cleanup();
             display.flush_clients().unwrap();
         }

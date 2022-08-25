@@ -1,48 +1,59 @@
 [package]
-name = "anvil"
-version = "0.0.1"
 authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victoria Brekenfeld)"]
-license = "MIT"
-publish = false
 edition = "2018"
+license = "MIT"
+name = "anvil"
+publish = false
+version = "0.0.1"
 
 [dependencies]
 bitflags = "1.2.1"
-thiserror = "1"
-xcursor = { version = "0.3.3", optional = true }
-image = { version = "0.24.0", default-features = false, optional = true }
-fps_ticker = { version = "1.0.0", optional = true }
+fps_ticker = {version = "1.0.0", optional = true}
+image = {version = "0.24.0", default-features = false, optional = true}
 rand = "0.8"
-slog = { version = "2.1.1" }
-slog-term = "2.8"
+slog = {version = "2.1.1"}
 slog-async = "2.2"
-slog-stdlog = "4.1.0"
 slog-scope = "4.4.0"
+slog-stdlog = "4.1.0"
+slog-term = "2.8"
+thiserror = "1"
+xcursor = {version = "0.3.3", optional = true}
 xkbcommon = "0.4.0"
 
 [dependencies.smithay]
-path = ".."
 default-features = false
-features = [ "desktop", "wayland_frontend", "slog-stdlog" ]
+features = ["desktop", "wayland_frontend", "slog-stdlog"]
+path = ".."
 
 [dependencies.x11rb]
+default-features = false
+features = ["composite"]
 optional = true
 version = "0.10.0"
-default-features = false
-features = [ "composite" ]
 
 [build-dependencies]
 gl_generator = "0.14"
 
 [features]
-default = [ "egl", "winit", "logind", "xwayland" ] #, "x11", "udev"
-egl = [ "smithay/use_system_lib", "smithay/backend_egl" ]
-winit = [ "smithay/backend_winit" ]
-udev = [ "smithay/backend_libinput", "smithay/backend_udev", "smithay/backend_drm", "smithay/backend_gbm", "smithay/backend_egl", "smithay/backend_session", "image", "smithay/renderer_gl", "smithay/renderer_multi", "xcursor" ]
-logind = [ "smithay/backend_session_logind" ]
-elogind = ["logind", "smithay/backend_session_elogind" ]
-libseat = ["smithay/backend_session_libseat" ]
-xwayland = [ "smithay/xwayland", "x11rb", "smithay/x11rb_event_source" ]
-x11 = [ "smithay/backend_x11", "x11rb", "egl", "smithay/renderer_gl" ]
-debug = [ "fps_ticker", "image/png" ]
+debug = ["fps_ticker", "image/png"]
+default = ["egl", "winit", "x11", "logind", "xwayland"] #, "udev"
+egl = ["smithay/use_system_lib", "smithay/backend_egl"]
+elogind = ["logind", "smithay/backend_session_elogind"]
+libseat = ["smithay/backend_session_libseat"]
+logind = ["smithay/backend_session_logind"]
 test_all_features = ["default", "debug"]
+udev = [
+  "smithay/backend_libinput",
+  "smithay/backend_udev",
+  "smithay/backend_drm",
+  "smithay/backend_gbm",
+  "smithay/backend_egl",
+  "smithay/backend_session",
+  "image",
+  "smithay/renderer_gl",
+  "smithay/renderer_multi",
+  "xcursor",
+]
+winit = ["smithay/backend_winit"]
+x11 = ["smithay/backend_x11", "x11rb", "egl", "smithay/renderer_gl"]
+xwayland = ["smithay/xwayland", "x11rb", "smithay/x11rb_event_source"]

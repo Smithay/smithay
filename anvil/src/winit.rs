@@ -1,4 +1,7 @@
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::{atomic::Ordering, Mutex},
+    time::Duration,
+};
 
 use slog::Logger;
 #[cfg(feature = "debug")]
@@ -22,7 +25,7 @@ use smithay::{
         winit::{self, WinitEvent, WinitGraphicsBackend},
         SwapBuffersError,
     },
-    input::pointer::CursorImageStatus,
+    input::pointer::{CursorImageAttributes, CursorImageStatus},
     reexports::{
         calloop::EventLoop,
         wayland_server::{
@@ -32,6 +35,7 @@ use smithay::{
     },
     utils::{IsAlive, Point, Scale},
     wayland::{
+        compositor,
         input_method::InputMethodSeat,
         output::{Mode, Output, PhysicalProperties},
     },
@@ -270,10 +274,23 @@ pub fn run_winit(log: Logger) {
                 // draw the dnd icon if any
                 if let Some(surface) = dnd_icon {
                     if surface.alive() {
+                        let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
+                            compositor::with_states(surface, |states| {
+                                states
+                                    .data_map
+                                    .get::<Mutex<CursorImageAttributes>>()
+                                    .unwrap()
+                                    .lock()
+                                    .unwrap()
+                                    .hotspot
+                            })
+                        } else {
+                            (0, 0).into()
+                        };
                         elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
                             &smithay::desktop::space::SurfaceTree::from_surface(
                                 surface,
-                                cursor_pos.to_i32_round(),
+                                cursor_pos.to_i32_round() - cursor_hotspot,
                             ),
                             cursor_pos_scaled,
                             scale,
