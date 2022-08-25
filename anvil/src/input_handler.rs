@@ -193,12 +193,15 @@ impl<Backend> AnvilState<Backend> {
                     .get::<FullscreenSurface>()
                     .and_then(|f| f.get())
                 {
-                    if let Some((_, point)) = window.surface_under(
-                        self.pointer_location - output_geo.loc.to_f64(),
-                        WindowSurfaceType::ALL,
-                    ) {
+                    if let Some((_, point)) = window
+                        .surface_under(
+                            self.pointer_location - output_geo.loc.to_f64(),
+                            WindowSurfaceType::ALL,
+                        )
+                        .is_some()
+                    {
                         input_method.set_point(&point);
-                        keyboard.set_focus(self, Some(window.clone().into()), serial);
+                        keyboard.set_focus(self, Some(window.into()), serial);
                         return;
                     }
                 }
