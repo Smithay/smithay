@@ -7,14 +7,14 @@ use smithay::{
 };
 use smithay::{
     backend::renderer::{
-        output::element::{
-            surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, AsRenderElements,
+        element::{
+            surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, AsRenderElements, Id,
         },
         ImportAll, Renderer, Texture,
     },
     input::pointer::CursorImageStatus,
     render_elements,
-    utils::{Logical, Physical, Point, Scale},
+    utils::{Logical, Physical, Point, Scale, Transform},
 };
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
@@ -69,21 +69,28 @@ where
             CursorImageStatus::Hidden => vec![],
             CursorImageStatus::Default => {
                 if let Some(texture) = self.texture.as_ref() {
-                    vec![
-                        PointerRenderElement::<R>::from(smithay::backend::renderer::output::element::texture::TextureRenderElement::from_texture(
+                    vec![PointerRenderElement::<R>::from(
+                        smithay::backend::renderer::element::texture::TextureRenderElement::from_texture(
                             location,
                             self.id.clone(),
                             texture.clone(),
-                        ))
-                        .into(),
-                    ]
+                            None,
+                            texture
+                                .size()
+                                .to_logical(1, Transform::Normal)
+                                .to_physical_precise_round(scale),
+                            Transform::Normal,
+                            1,
+                        ),
+                    )
+                    .into()]
                 } else {
                     vec![]
                 }
             }
             CursorImageStatus::Surface(surface) => {
                 let elements: Vec<PointerRenderElement<R>> =
-                    smithay::backend::renderer::output::element::surface::surfaces_from_surface_tree(
+                    smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
                         surface, location, scale,
                     );
                 elements.into_iter().map(E::from).collect()
