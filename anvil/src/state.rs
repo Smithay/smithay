@@ -160,7 +160,7 @@ delegate_shm!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> SeatHandler for AnvilState<BackendData> {
     type KeyboardFocus = FocusTarget;
-    type PointerFocus = WlSurface;
+    type PointerFocus = FocusTarget;
 
     fn seat_state(&mut self) -> &mut SeatState<AnvilState<BackendData>> {
         &mut self.seat_state
