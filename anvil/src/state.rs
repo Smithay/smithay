@@ -380,6 +380,18 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             x11_state: None,
         }
     }
+
+    pub fn send_frames(&self, output: &Output) {
+        self.space.elements().for_each(|window| {
+            if self.space.outputs_for_element(window).contains(output) {
+                window.send_frame(self.start_time.elapsed().as_millis() as u32)
+            }
+        });
+        let map = smithay::desktop::layer_map_for_output(output);
+        for layer_surface in map.layers() {
+            layer_surface.send_frame(self.start_time.elapsed().as_millis() as u32)
+        }
+    }
 }
 
 pub trait Backend {
