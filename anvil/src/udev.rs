@@ -728,6 +728,7 @@ impl AnvilState<UdevData> {
                 &mut surfaces_iter
             };
 
+        let mut outputs = Vec::new();
         for (&crtc, surface) in to_render_iter {
             // TODO get scale from the rendersurface when supporting HiDPI
             let frame = self
@@ -814,14 +815,13 @@ impl AnvilState<UdevData> {
                     .expect("failed to schedule frame timer");
             }
 
+            outputs.push(output.clone());
+        }
+
+        std::mem::drop(surfaces);
+        for output in outputs {
             // Send frame events so that client start drawing their next frame
-            let space = &self.space;
-            let start_time = &self.start_time;
-            space.elements().for_each(|window| {
-                if space.outputs_for_element(window).contains(&output) {
-                    window.send_frame(start_time.elapsed().as_millis() as u32)
-                }
-            });
+            self.send_frames(&output);
         }
     }
 }
