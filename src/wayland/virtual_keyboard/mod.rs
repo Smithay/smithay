@@ -1,14 +1,13 @@
-
 use wayland_backend::server::GlobalId;
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::{
     zwp_virtual_keyboard_manager_v1::{self, ZwpVirtualKeyboardManagerV1},
     zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
 };
-use wayland_server::{DisplayHandle, GlobalDispatch, Dispatch, Client, New, DataInit};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
-use self::virtual_keyboard_handle::{VirtualKeyboardHandle};
+use crate::input::{Seat, SeatHandler};
 
-use super::seat::Seat;
+use self::virtual_keyboard_handle::VirtualKeyboardHandle;
 
 const MANAGER_VERSION: u32 = 1;
 
@@ -28,7 +27,8 @@ impl VirtualKeyboardManagerState {
     where
         D: GlobalDispatch<ZwpVirtualKeyboardManagerV1, ()>,
         D: Dispatch<ZwpVirtualKeyboardManagerV1, ()>,
-        D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData>,
+        D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
+        D: SeatHandler,
         D: 'static,
     {
         let global = display.create_global::<D, ZwpVirtualKeyboardManagerV1, _>(MANAGER_VERSION, ());
@@ -46,7 +46,8 @@ impl<D> GlobalDispatch<ZwpVirtualKeyboardManagerV1, (), D> for VirtualKeyboardMa
 where
     D: GlobalDispatch<ZwpVirtualKeyboardManagerV1, ()>,
     D: Dispatch<ZwpVirtualKeyboardManagerV1, ()>,
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData>,
+    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
+    D: SeatHandler,
     D: 'static,
 {
     fn bind(
@@ -64,7 +65,8 @@ where
 impl<D> Dispatch<ZwpVirtualKeyboardManagerV1, (), D> for VirtualKeyboardManagerState
 where
     D: Dispatch<ZwpVirtualKeyboardManagerV1, ()>,
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData>,
+    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
+    D: SeatHandler,
     D: 'static,
 {
     fn request(
@@ -89,7 +91,7 @@ where
                     id,
                     VirtualKeyboardUserData {
                         handle: handle.clone(),
-                        keyboard_handle: seat.get_keyboard()
+                        seat: seat.clone(),
                     },
                 );
 
@@ -113,7 +115,7 @@ macro_rules! delegate_virtual_keyboard_manager {
         ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1: $crate::wayland::virtual_keyboard::VirtualKeyboardUserData
+            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1: $crate::wayland::virtual_keyboard::VirtualKeyboardUserData<Self>
         ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
     };
 }

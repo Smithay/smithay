@@ -6,8 +6,8 @@ use std::{
 use smithay::{
     delegate_compositor, delegate_data_device, delegate_input_method_manager, delegate_layer_shell,
     delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_tablet_manager,
-    delegate_text_input_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
-    delegate_xdg_shell,
+    delegate_text_input_manager, delegate_viewporter, delegate_virtual_keyboard_manager,
+    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     reexports::{
@@ -43,10 +43,11 @@ use smithay::{
         tablet_manager::TabletSeatTrait,
         text_input::TextInputManagerState,
         viewporter::ViewporterState,
+        virtual_keyboard::VirtualKeyboardManagerState,
         xdg_activation::{
             XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
-        }, virtual_keyboard::VirtualKeyboardManagerState,
-    }, delegate_virtual_keyboard_manager,
+        },
+    },
 };
 
 #[cfg(feature = "xwayland")]

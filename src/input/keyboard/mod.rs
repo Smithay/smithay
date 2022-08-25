@@ -59,7 +59,7 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
     pub(crate) pressed_keys: Vec<u32>,
     pub(crate) mods_state: ModifiersState,
-    keymap: xkb::Keymap,
+    pub(crate) keymap: xkb::Keymap,
     pub(crate) state: xkb::State,
     pub(crate) repeat_rate: i32,
     pub(crate) repeat_delay: i32,
@@ -266,8 +266,6 @@ pub enum FilterResult<T> {
     Forward,
     /// Do not forward and return value
     Intercept(T),
-    /// Change  modifiers before forwarding key to client
-    Redirect((u32, u32, u32, u32)),
 }
 
 /// Data about the event that started the grab.
