@@ -22,7 +22,6 @@ use smithay::{
         input_method::InputMethodSeat,
         keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
         output::Scale,
-        seat::WaylandFocus,
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
     },
 };
@@ -44,7 +43,10 @@ use smithay::{
         },
         session::Session,
     },
-    wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait},
+    wayland::{
+        seat::WaylandFocus,
+        tablet_manager::{TabletDescriptor, TabletSeatTrait},
+    },
 };
 
 impl<Backend> AnvilState<Backend> {
