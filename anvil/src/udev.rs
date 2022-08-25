@@ -918,7 +918,7 @@ fn render_surface<'a>(
         {
             surface.fps_element.update_fps(surface.fps.avg().round() as u32);
             surface.fps.tick();
-            elements.push(CustomRenderElements::Fps(fps_element.clone()));
+            elements.push(CustomRenderElements::Fps(surface.fps_element.clone()));
         }
     }
 
@@ -926,7 +926,7 @@ fn render_surface<'a>(
     // TODO we can pass the damage rectangles inside a AtomicCommitRequest
     #[cfg(feature = "debug")]
     let render_res = render_output(
-        &output,
+        output,
         space,
         &elements,
         renderer,
