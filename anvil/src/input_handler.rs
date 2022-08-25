@@ -248,7 +248,7 @@ impl<Backend> AnvilState<Backend> {
         }
     }
 
-    pub fn surface_under(&self) -> Option<(WlSurface, Point<i32, Logical>)> {
+    pub fn surface_under(&self) -> Option<(FocusTarget, Point<i32, Logical>)> {
         let pos = self.pointer_location;
         let output = self.space.outputs().find(|o| {
             let geometry = self.space.output_geometry(o).unwrap();
@@ -263,30 +263,27 @@ impl<Backend> AnvilState<Backend> {
             .get::<FullscreenSurface>()
             .and_then(|f| f.get())
         {
-            under = window.surface_under(pos - output_geo.loc.to_f64(), WindowSurfaceType::ALL)
+            under = Some((window.into(), (pos - output_geo.loc.to_f64()).to_i32_round()));
         } else if let Some(layer) = layers
             .layer_under(WlrLayer::Overlay, pos)
             .or_else(|| layers.layer_under(WlrLayer::Top, pos))
         {
             let layer_loc = layers.layer_geometry(layer).unwrap().loc;
-            under = layer.surface_under(
-                pos - output_geo.loc.to_f64() - layer_loc.to_f64(),
-                WindowSurfaceType::ALL,
-            )
+            under = Some((
+                layer.clone().into(),
+                (pos - output_geo.loc.to_f64() - layer_loc.to_f64()).to_i32_round(),
+            ))
         } else if let Some((window, location)) = self.space.element_under(pos) {
-            let window_loc = self.space.element_location(window).unwrap();
-            under = window
-                .surface_under(pos - window_loc.to_f64(), WindowSurfaceType::ALL)
-                .map(|(s, _)| (s, location))
+            under = Some((window.clone().into(), location));
         } else if let Some(layer) = layers
             .layer_under(WlrLayer::Bottom, pos)
             .or_else(|| layers.layer_under(WlrLayer::Background, pos))
         {
             let layer_loc = layers.layer_geometry(layer).unwrap().loc;
-            under = layer.surface_under(
-                pos - output_geo.loc.to_f64() - layer_loc.to_f64(),
-                WindowSurfaceType::ALL,
-            )
+            under = Some((
+                layer.clone().into(),
+                (pos - output_geo.loc.to_f64() - layer_loc.to_f64()).to_i32_round(),
+            ));
         };
         under
     }

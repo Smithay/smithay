@@ -58,7 +58,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<Backe
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -142,7 +142,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
