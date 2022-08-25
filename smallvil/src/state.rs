@@ -2,7 +2,7 @@ use std::{ffi::OsString, sync::Arc};
 
 use slog::Logger;
 use smithay::{
-    desktop::{Space, WindowSurfaceType},
+    desktop::{Space, Window, WindowSurfaceType},
     input::{pointer::PointerHandle, Seat, SeatState},
     reexports::{
         calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
@@ -25,7 +25,7 @@ pub struct Smallvil {
     pub start_time: std::time::Instant,
     pub socket_name: OsString,
 
-    pub space: Space,
+    pub space: Space<Window>,
     pub loop_signal: LoopSignal,
     pub log: slog::Logger,
 
@@ -141,9 +141,11 @@ impl Smallvil {
         pointer: &PointerHandle<Self>,
     ) -> Option<(WlSurface, Point<i32, Logical>)> {
         let pos = pointer.current_location();
-        self.space
-            .surface_under(pos, WindowSurfaceType::all())
-            .map(|(_, surface, location)| (surface, location))
+        self.space.element_under(pos).and_then(|(window, location)| {
+            window
+                .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
+                .map(|(s, p)| (s, p + location))
+        })
     }
 }
 

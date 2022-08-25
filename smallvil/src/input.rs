@@ -64,13 +64,17 @@ impl Smallvil {
                 let button_state = event.state();
 
                 if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
-                    if let Some(window) = self.space.window_under(pointer.current_location()).cloned() {
-                        self.space.raise_window(&window, true);
+                    if let Some((window, _loc)) = self
+                        .space
+                        .element_under(pointer.current_location())
+                        .map(|(w, l)| (w.clone(), l))
+                    {
+                        self.space.raise_element(&window, true);
                         keyboard.set_focus(self, Some(window.toplevel().wl_surface().clone()), serial);
                         window.set_activated(true);
                         window.configure();
                     } else {
-                        self.space.windows().for_each(|window| {
+                        self.space.elements().for_each(|window| {
                             window.set_activated(false);
                             window.configure();
                         });
