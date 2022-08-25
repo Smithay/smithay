@@ -275,7 +275,7 @@ pub fn run_winit(log: Logger) {
                 }
 
                 #[cfg(feature = "debug")]
-                elements.push(CustomRenderElements::Fps(&fps_element));
+                elements.push(CustomRenderElements::Fps(fps_element.clone()));
 
                 let res = render_output(
                     &output,
