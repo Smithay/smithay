@@ -21,7 +21,6 @@ use smithay::{
         compositor::with_states,
         input_method::InputMethodSeat,
         output::Scale,
-        seat::WaylandFocus,
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
     },
 };
@@ -43,7 +42,10 @@ use smithay::{
         },
         session::Session,
     },
-    wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait},
+    wayland::{
+        seat::WaylandFocus,
+        tablet_manager::{TabletDescriptor, TabletSeatTrait},
+    },
 };
 
 impl<Backend> AnvilState<Backend> {
