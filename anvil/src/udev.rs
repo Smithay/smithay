@@ -654,7 +654,7 @@ impl AnvilState<UdevData> {
             );
 
             // fixup window coordinates
-            crate::shell::fixup_positions(&display.handle(), &mut self.space);
+            crate::shell::fixup_positions(&mut self.space);
 
             for surface in backends.values() {
                 let logger = logger.clone();
@@ -690,7 +690,7 @@ impl AnvilState<UdevData> {
             {
                 self.space.unmap_output(&output);
             }
-            crate::shell::fixup_positions(&self.backend_data.dh, &mut self.space);
+            crate::shell::fixup_positions(&mut self.space);
 
             self.handle.remove(backend_data.registration_token);
             let _device = backend_data.event_dispatcher.into_source_inner();

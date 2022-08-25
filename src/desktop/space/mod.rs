@@ -10,13 +10,11 @@ use crate::{
         ImportAll, Renderer, Texture,
     },
     desktop::layer::{layer_map_for_output, LayerSurface},
-    input::{keyboard::KeyboardTarget, pointer::PointerTarget},
     output::Output,
     utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform},
-    wayland::compositor::{with_surface_tree_downward, TraversalAction},
 };
 use std::{collections::HashSet, fmt};
-use wayland_server::{protocol::wl_surface::WlSurface, Resource};
+use wayland_server::protocol::wl_surface::WlSurface;
 
 mod element;
 mod layer;
@@ -31,8 +29,7 @@ use super::WindowSurfaceType;
 crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
 
 #[derive(Debug)]
-#[doc(hidden)]
-pub struct InnerElement<E> {
+struct InnerElement<E> {
     element: E,
     location: Point<i32, Logical>,
     outputs: HashSet<Output>,
@@ -45,7 +42,7 @@ pub struct Space<E: SpaceElement> {
     // in z-order, back to front
     elements: Vec<InnerElement<E>>,
     outputs: Vec<Output>,
-    logger: ::slog::Logger,
+    _logger: ::slog::Logger,
 }
 
 impl<E: SpaceElement> PartialEq for Space<E> {
@@ -70,7 +67,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             id: next_space_id(),
             elements: Vec::new(),
             outputs: Vec::new(),
-            logger: crate::slog_or_fallback(log),
+            _logger: crate::slog_or_fallback(log),
         }
     }
 
@@ -161,8 +158,8 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     pub fn element_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<(&E, Point<i32, Logical>)> {
         let point = point.into();
         self.elements.iter().rev().find_map(|e| {
-            if let Some(pos) = e.input_region(&point) {
-                Some((&e.element, pos))
+            if e.input_region(&point) {
+                Some((&e.element, e.location))
             } else {
                 None
             }
@@ -364,7 +361,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             })
             .flat_map(|e| {
                 let location = e.bbox().loc - output_location;
-                e.render_elements(
+                e.render_elements::<SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>>(
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
                 )
@@ -403,10 +400,8 @@ impl<E: SpaceElement> SpaceElement for InnerElement<E> {
         bbox
     }
 
-    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
-        self.element
-            .input_region(&(*point - self.location.to_f64()))
-            .map(|_| self.location)
+    fn input_region(&self, point: &Point<f64, Logical>) -> bool {
+        self.element.input_region(&(*point - self.location.to_f64()))
     }
     fn z_index(&self) -> u8 {
         self.element.z_index()

@@ -3,6 +3,7 @@ use crate::{
     desktop::{space::*, utils as desktop_utils},
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
+    wayland::compositor::{with_surface_tree_downward, TraversalAction},
 };
 use std::hash::Hash;
 
@@ -36,20 +37,28 @@ impl From<RenderZindex> for Option<u8> {
 
 /// Trait for a space element
 pub trait SpaceElement: IsAlive {
-    /// Gets the geometry of this element
+    /// Returns the geometry of this element.
+    ///
+    /// Defaults to be equal to it's bounding box.
     fn geometry(&self) -> Rectangle<i32, Logical> {
         self.bbox()
     }
+    /// Returns the bounding box of this element
     fn bbox(&self) -> Rectangle<i32, Logical>;
-    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>>;
+    /// Returns whenever a given point inside this element will be able to receive input
+    fn input_region(&self, point: &Point<f64, Logical>) -> bool;
     /// Gets the z-index of this element on the specified space
     fn z_index(&self) -> u8 {
         RenderZindex::Overlay as u8
     }
 
+    /// Set the rendered state to activated, if applicable to this element
     fn set_activate(&self, activated: bool);
+    /// The element is displayed on a given output
     fn output_enter(&self, output: &Output);
+    /// The element left a given output
     fn output_leave(&self, output: &Output);
+    /// Periodically called to update internal state, if necessary
     fn refresh(&self) {}
 }
 
@@ -60,7 +69,7 @@ impl<T: SpaceElement> SpaceElement for &T {
     fn bbox(&self) -> Rectangle<i32, Logical> {
         SpaceElement::bbox(*self)
     }
-    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
+    fn input_region(&self, point: &Point<f64, Logical>) -> bool {
         SpaceElement::input_region(*self, point)
     }
     fn z_index(&self) -> u8 {
@@ -79,7 +88,8 @@ impl<T: SpaceElement> SpaceElement for &T {
 }
 
 space_elements! {
-    pub SpaceElements<'a, E>;
+    #[derive(Debug)]
+    pub(super) SpaceElements<'a, E>;
     Layer=LayerSurface,
     Element=&'a InnerElement<E>,
 }
@@ -149,12 +159,12 @@ impl SpaceElement for SurfaceTree {
         desktop_utils::bbox_from_surface_tree(&self.surface, self.location)
     }
 
-    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
+    fn input_region(&self, point: &Point<f64, Logical>) -> bool {
         desktop_utils::under_from_surface_tree(&self.surface, *point, (0, 0), WindowSurfaceType::ALL)
-            .map(|(s, point)| point)
+            .is_some()
     }
 
-    fn set_activate(&self, activated: bool) {}
+    fn set_activate(&self, _activated: bool) {}
     fn output_enter(&self, output: &Output) {
         with_surface_tree_downward(
             &self.surface,
@@ -296,7 +306,7 @@ macro_rules! space_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
-        fn input_region(&self, point: &$crate::utils::Point<f64, $crate::utils::Logical>) -> Option<$crate::utils::Point<i32, $crate::utils::Logical>> {
+        fn input_region(&self, point: &$crate::utils::Point<f64, $crate::utils::Logical>) -> bool {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
@@ -445,15 +455,15 @@ macro_rules! space_elements {
 pub use space_elements;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
-    use super::SurfaceTree;
     use crate::desktop::{LayerSurface, Window};
 
     space_elements! {
         /// Some test space elements
         pub TestSpaceElements;
         /// A complete surface tree
-        SurfaceTree=SurfaceTree,
+        Window=Window,
     }
 
     space_elements! {
@@ -469,7 +479,7 @@ mod tests {
         /// Some test space elements
         pub TestSpaceElements5<'a, C>;
         /// A complete surface tree
-        SurfaceTree=SurfaceTree,
+        Window=Window,
         Custom=&'a C,
     }
 
@@ -477,7 +487,7 @@ mod tests {
         /// Some test space elements
         pub TestSpaceElements7<C>;
         /// A complete surface tree
-        SurfaceTree=SurfaceTree,
+        LayerSurface=LayerSurface,
         Custom=C,
     }
 }
