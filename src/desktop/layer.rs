@@ -80,7 +80,7 @@ pub enum LayerError {
 
 impl LayerMap {
     /// Map a [`LayerSurface`] to this [`LayerMap`].
-    pub fn map_layer(&mut self, dh: &DisplayHandle, layer: &LayerSurface) -> Result<(), LayerError> {
+    pub fn map_layer(&mut self, layer: &LayerSurface) -> Result<(), LayerError> {
         if !self.layers.contains(layer) {
             if layer
                 .0
@@ -93,16 +93,16 @@ impl LayerMap {
             }
 
             self.layers.insert(layer.clone());
-            self.arrange(dh);
+            self.arrange();
         }
         Ok(())
     }
 
     /// Remove a [`LayerSurface`] from this [`LayerMap`].
-    pub fn unmap_layer(&mut self, dh: &DisplayHandle, layer: &LayerSurface) {
+    pub fn unmap_layer(&mut self, layer: &LayerSurface) {
         if self.layers.shift_remove(layer) {
             let _ = layer.user_data().get::<LayerUserdata>().take();
-            self.arrange(dh);
+            self.arrange();
         }
         if let (Some(output), surface) = (self.output(), layer.wl_surface()) {
             with_surface_tree_downward(
@@ -235,7 +235,7 @@ impl LayerMap {
     /// Force re-arranging the layer surfaces, e.g. when the output size changes.
     ///
     /// Note: Mapping or unmapping a layer surface will automatically cause a re-arrangement.
-    pub fn arrange(&mut self, dh: &DisplayHandle) {
+    pub fn arrange(&mut self) {
         if let Some(output) = self.output() {
             let output_rect = Rectangle::from_loc_and_size(
                 (0, 0),
@@ -255,7 +255,6 @@ impl LayerMap {
             for layer in self.layers.iter() {
                 let surface = layer.wl_surface();
 
-                let logger_ref = &self.logger;
                 let surfaces_ref = &mut self.surfaces;
                 with_surface_tree_downward(
                     surface,
@@ -380,7 +379,7 @@ impl LayerMap {
     pub fn cleanup(&mut self, dh: &DisplayHandle) {
         if self.layers.iter().any(|l| !l.alive()) {
             self.layers.retain(|layer| layer.alive());
-            self.arrange(dh);
+            self.arrange();
         }
         self.surfaces
             .retain(|i| dh.backend_handle().object_info(i.clone()).is_ok());
