@@ -191,7 +191,7 @@ impl<Backend> AnvilState<Backend> {
                         )
                         .is_some()
                     {
-                        keyboard.set_focus(self, Some(window.clone().into()), serial);
+                        keyboard.set_focus(self, Some(window.into()), serial);
                         return;
                     }
                 }

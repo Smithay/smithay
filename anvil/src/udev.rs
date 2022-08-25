@@ -842,7 +842,7 @@ fn render_surface<'a>(
 ) -> Result<bool, SwapBuffersError> {
     surface.surface.frame_submitted()?;
 
-    let output_geometry = space.output_geometry(&output).unwrap();
+    let output_geometry = space.output_geometry(output).unwrap();
 
     let (dmabuf, age) = surface.surface.next_buffer()?;
     renderer.bind(dmabuf)?;
@@ -938,7 +938,7 @@ fn render_surface<'a>(
 
     #[cfg(not(feature = "debug"))]
     let render_res = render_output(
-        &output,
+        output,
         space,
         &*elements,
         renderer,

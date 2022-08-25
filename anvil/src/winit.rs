@@ -300,7 +300,7 @@ pub fn run_winit(log: Logger) {
                 #[cfg(feature = "debug")]
                 elements.push(CustomRenderElements::Fps(fps_element.clone()));
 
-                let res = render_output(
+                render_output(
                     &output,
                     space,
                     &elements,
@@ -312,9 +312,7 @@ pub fn run_winit(log: Logger) {
                 .map_err(|err| match err {
                     DamageTrackedRendererError::Rendering(err) => err.into(),
                     _ => unreachable!(),
-                });
-
-                res
+                })
             });
 
             match render_res {
