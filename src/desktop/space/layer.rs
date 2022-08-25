@@ -20,9 +20,8 @@ impl SpaceElement for LayerSurface {
     fn bbox(&self) -> Rectangle<i32, Logical> {
         self.bbox_with_popups()
     }
-    fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
-        self.surface_under(*point, WindowSurfaceType::ALL)
-            .map(|(l, point)| point)
+    fn input_region(&self, point: &Point<f64, Logical>) -> bool {
+        self.surface_under(*point, WindowSurfaceType::ALL).is_some()
     }
     /// Gets the z-index of this element on the specified space
     fn z_index(&self) -> u8 {
@@ -36,7 +35,7 @@ impl SpaceElement for LayerSurface {
         z_index as u8
     }
 
-    fn set_activate(&self, activated: bool) {}
+    fn set_activate(&self, _activated: bool) {}
     fn output_enter(&self, output: &Output) {
         output.enter(self.wl_surface())
     }
