@@ -408,7 +408,7 @@ impl<E: SpaceElement> SpaceElement for InnerElement<E> {
     fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
         self.element
             .input_region(&(*point - self.location.to_f64()))
-            .map(|p| p + self.location)
+            .map(|_| self.location)
     }
     fn z_index(&self) -> u8 {
         self.element.z_index()
