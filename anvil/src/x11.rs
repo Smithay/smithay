@@ -210,7 +210,7 @@ pub fn run_x11(log: Logger) {
                 output.delete_mode(output.current_mode().unwrap());
                 output.change_current_state(Some(data.state.backend_data.mode), None, None, None);
                 output.set_preferred(data.state.backend_data.mode);
-                crate::shell::fixup_positions(&data.display.handle(), &mut data.state.space);
+                crate::shell::fixup_positions(&mut data.state.space);
 
                 data.state.backend_data.render = true;
             }
