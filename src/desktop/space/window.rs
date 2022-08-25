@@ -26,7 +26,7 @@ impl SpaceElement for Window {
 
     fn input_region(&self, point: &Point<f64, Logical>) -> Option<Point<i32, Logical>> {
         self.surface_under(*point, WindowSurfaceType::ALL)
-            .map(|(s, point)| point)
+            .map(|(_s, point)| point)
     }
 
     fn z_index(&self) -> u8 {
