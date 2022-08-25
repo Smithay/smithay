@@ -230,8 +230,6 @@ pub fn run_x11(log: Logger) {
         })
         .expect("Failed to insert X11 Backend into event loop");
 
-    let start_time = std::time::Instant::now();
-
     #[cfg(feature = "xwayland")]
     state.start_xwayland();
 
@@ -373,10 +371,7 @@ pub fn run_x11(log: Logger) {
         }
 
         // Send frame events so that client start drawing their next frame
-        state
-            .space
-            .elements()
-            .for_each(|window| window.send_frame(start_time.elapsed().as_millis() as u32));
+        state.send_frames(&output);
 
         let mut calloop_data = CalloopData { state, display };
         let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
