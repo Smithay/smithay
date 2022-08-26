@@ -160,7 +160,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         self.elements.iter().rev().find_map(|e| {
             // we need to offset the point to the location where the surface is actually drawn
             let render_location = e.render_location();
-            if e.element.input_region(&(point - render_location.to_f64())) {
+            if e.element.is_in_input_region(&(point - render_location.to_f64())) {
                 Some((&e.element, render_location))
             } else {
                 None
