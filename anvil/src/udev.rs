@@ -848,13 +848,25 @@ fn render_surface<'a>(
     renderer.bind(dmabuf)?;
 
     let mut elements: Vec<CustomRenderElements<_>> = Vec::new();
-    // set cursor
     if output_geometry.to_f64().contains(pointer_location) {
-        let (ptr_x, ptr_y) = pointer_location.into();
-        let ptr_location = Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)); // - output_geometry.loc;
         let scale = Scale::from(output.current_scale().fractional_scale());
+        let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = cursor_status {
+            compositor::with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<Mutex<CursorImageAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .hotspot
+            })
+        } else {
+            (0, 0).into()
+        };
+        let cursor_pos = pointer_location - output_geometry.loc.to_f64() - cursor_hotspot.to_f64();
+        let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
-        pointer_element.set_position(ptr_location);
+        // set cursor
         pointer_element.set_texture(pointer_image.clone());
 
         // draw the cursor as relevant
@@ -871,8 +883,7 @@ fn render_surface<'a>(
             pointer_element.set_status(cursor_status.clone());
         }
 
-        elements
-            .extend(pointer_element.render_elements(ptr_location.to_physical_precise_round(scale), scale));
+        elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
 
         // draw input method surface if any
         let rectangle = input_method.coordinates();
@@ -892,22 +903,9 @@ fn render_surface<'a>(
         {
             if let Some(wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.alive() {
-                    let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = cursor_status {
-                        compositor::with_states(surface, |states| {
-                            states
-                                .data_map
-                                .get::<Mutex<CursorImageAttributes>>()
-                                .unwrap()
-                                .lock()
-                                .unwrap()
-                                .hotspot
-                        })
-                    } else {
-                        (0, 0).into()
-                    };
                     elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
-                        &SurfaceTree::from_surface(wl_surface, ptr_location - cursor_hotspot),
-                        ptr_location.to_physical_precise_round(scale),
+                        &SurfaceTree::from_surface(wl_surface, cursor_pos.to_i32_round()),
+                        cursor_pos_scaled,
                         scale,
                     ));
                 }

@@ -3,7 +3,7 @@
 #[cfg(feature = "debug")]
 use smithay::{
     backend::renderer::{element::RenderElement, Frame},
-    utils::{Buffer, Rectangle, Size},
+    utils::{Buffer, Logical, Rectangle, Size},
 };
 use smithay::{
     backend::renderer::{
@@ -14,14 +14,13 @@ use smithay::{
     },
     input::pointer::CursorImageStatus,
     render_elements,
-    utils::{Logical, Physical, Point, Scale, Transform},
+    utils::{Physical, Point, Scale, Transform},
 };
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
 pub struct PointerElement<T: Texture> {
     id: Id,
     texture: Option<T>,
-    position: Point<i32, Logical>,
     status: CursorImageStatus,
 }
 
@@ -30,17 +29,12 @@ impl<T: Texture> Default for PointerElement<T> {
         Self {
             id: Id::new(),
             texture: Default::default(),
-            position: Default::default(),
             status: CursorImageStatus::Default,
         }
     }
 }
 
 impl<T: Texture + 'static> PointerElement<T> {
-    pub fn set_position(&mut self, position: impl Into<Point<i32, Logical>>) {
-        self.position = position.into();
-    }
-
     pub fn set_status(&mut self, status: CursorImageStatus) {
         self.status = status;
     }
