@@ -86,11 +86,46 @@ impl<T: SpaceElement> SpaceElement for &T {
     }
 }
 
-space_elements! {
-    #[derive(Debug)]
-    pub(super) SpaceElements<'a, E>;
-    Layer=LayerSurface,
-    Element=&'a InnerElement<E>,
+#[derive(Debug)]
+pub(super) enum SpaceElements<'a, E> {
+    Layer {
+        surface: LayerSurface,
+        output_location: Point<i32, Logical>,
+    },
+    Element(&'a InnerElement<E>),
+}
+
+impl<'a, E> SpaceElements<'a, E>
+where
+    E: SpaceElement,
+{
+    pub(super) fn z_index(&self) -> u8 {
+        match self {
+            SpaceElements::Layer { surface, .. } => surface.z_index(),
+            SpaceElements::Element(inner) => inner.element.z_index(),
+        }
+    }
+
+    pub(super) fn bbox(&self) -> Rectangle<i32, Logical> {
+        match self {
+            SpaceElements::Layer {
+                surface,
+                output_location,
+            } => {
+                let mut bbox = surface.bbox();
+                bbox.loc += *output_location;
+                bbox
+            }
+            SpaceElements::Element(inner) => inner.bbox(),
+        }
+    }
+
+    pub(super) fn render_location(&self) -> Point<i32, Logical> {
+        match self {
+            SpaceElements::Layer { .. } => self.bbox().loc,
+            SpaceElements::Element(inner) => inner.render_location(),
+        }
+    }
 }
 
 impl<'a, R, E> AsRenderElements<R> for SpaceElements<'a, E>
@@ -110,8 +145,8 @@ where
         scale: Scale<f64>,
     ) -> Vec<C> {
         match &self {
-            SpaceElements::Layer(layer) => {
-                AsRenderElements::<R>::render_elements::<Self::RenderElement>(layer, location, scale)
+            SpaceElements::Layer { surface, .. } => {
+                AsRenderElements::<R>::render_elements::<Self::RenderElement>(surface, location, scale)
                     .into_iter()
                     .map(C::from)
                     .collect()
@@ -122,7 +157,6 @@ where
                 .into_iter()
                 .map(C::from)
                 .collect(),
-            _ => unreachable!(),
         }
     }
 }
