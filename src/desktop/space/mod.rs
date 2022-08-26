@@ -414,6 +414,10 @@ impl<E: SpaceElement> SpaceElement for InnerElement<E> {
     fn output_leave(&self, output: &Output) {
         self.element.output_leave(output)
     }
+
+    fn refresh(&self) {
+        self.element.refresh()
+    }
 }
 
 crate::backend::renderer::element::render_elements! {
