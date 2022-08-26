@@ -121,13 +121,13 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         if activate {
             elem.element.set_activate(true);
             for e in self.elements.iter() {
-                e.set_activate(false);
+                e.element.set_activate(false);
             }
         }
 
         self.elements.push(elem);
         self.elements
-            .sort_by(|e1, e2| e1.z_index().cmp(&e2.element.z_index()));
+            .sort_by(|e1, e2| e1.element.z_index().cmp(&e2.element.z_index()));
     }
 
     /// Unmap a [`Window`] from this space.
@@ -158,8 +158,10 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     pub fn element_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<(&E, Point<i32, Logical>)> {
         let point = point.into();
         self.elements.iter().rev().find_map(|e| {
-            if e.input_region(&point) {
-                Some((&e.element, e.location))
+            // we need to offset the point to the location where the surface is actually drawn
+            let render_location = e.render_location();
+            if e.element.input_region(&(point - render_location.to_f64())) {
+                Some((&e.element, render_location))
             } else {
                 None
             }
@@ -203,6 +205,16 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .iter()
             .find(|e| &e.element == elem)
             .map(|e| e.bbox())
+    }
+
+    /// Returns the geometry of a [`Window`] including its relative position inside the Space.
+    ///
+    /// This area is usually defined as the contents of the window, excluding decorations.
+    pub fn element_geometry(&self, elem: &E) -> Option<Rectangle<i32, Logical>> {
+        self.elements
+            .iter()
+            .find(|e| &e.element == elem)
+            .map(|e| e.geometry())
     }
 
     /// Maps an [`Output`] inside the space.
@@ -313,7 +325,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             }
         }
 
-        self.elements.iter().for_each(SpaceElement::refresh);
+        self.elements.iter().for_each(|e| e.element.refresh());
     }
 
     /// Retrieve the render elements for an output
@@ -343,11 +355,14 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         );
 
         let layer_map = layer_map_for_output(output);
-        let mut space_elements: Vec<SpaceElements<'_, E>> = Vec::new();
+        let mut space_elements: Vec<SpaceElements<'a, E>> = Vec::new();
 
         space_elements.extend(self.elements.iter().rev().map(SpaceElements::Element));
 
-        space_elements.extend(layer_map.layers().rev().cloned().map(SpaceElements::Layer));
+        space_elements.extend(layer_map.layers().rev().cloned().map(|l| SpaceElements::Layer {
+            surface: l,
+            output_location,
+        }));
 
         space_elements.sort_by_key(|e| std::cmp::Reverse(e.z_index()));
 
@@ -358,7 +373,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
                 output_geo.overlaps(geometry)
             })
             .flat_map(|e| {
-                let location = e.bbox().loc - output_location;
+                let location = e.render_location() - output_location;
                 e.render_elements::<SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>>(
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
@@ -385,38 +400,24 @@ impl<E: IsAlive> IsAlive for InnerElement<E> {
     }
 }
 
-impl<E: SpaceElement> SpaceElement for InnerElement<E> {
+impl<E: SpaceElement> InnerElement<E> {
+    // the inner geometry of the element in space coordinates
     fn geometry(&self) -> Rectangle<i32, Logical> {
         let mut geo = self.element.geometry();
-        geo.loc += self.location;
+        geo.loc = self.location;
+        geo.size += geo.loc.to_size();
         geo
     }
 
+    // the bouding box of the element in space coordinates
     fn bbox(&self) -> Rectangle<i32, Logical> {
         let mut bbox = self.element.bbox();
-        bbox.loc += self.location;
+        bbox.loc += self.location - self.element.geometry().loc;
         bbox
     }
 
-    fn input_region(&self, point: &Point<f64, Logical>) -> bool {
-        self.element.input_region(&(*point - self.location.to_f64()))
-    }
-    fn z_index(&self) -> u8 {
-        self.element.z_index()
-    }
-
-    fn set_activate(&self, activated: bool) {
-        self.element.set_activate(activated)
-    }
-    fn output_enter(&self, output: &Output) {
-        self.element.output_enter(output)
-    }
-    fn output_leave(&self, output: &Output) {
-        self.element.output_leave(output)
-    }
-
-    fn refresh(&self) {
-        self.element.refresh()
+    fn render_location(&self) -> Point<i32, Logical> {
+        self.location - self.element.geometry().loc
     }
 }
 
