@@ -10,7 +10,7 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboar
 };
 use wayland_server::{
     protocol::wl_keyboard::{KeyState, KeymapFormat},
-    Client, DataInit, Dispatch, DisplayHandle,
+    Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 use xkbcommon::xkb;
 
@@ -27,12 +27,12 @@ struct SerializedMods {
     depressed: u32,
     latched: u32,
     locked: u32,
-    layout_locked: u32,
+    group: u32,
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct VirtualKeyboard {
-    pub instance: Option<ZwpVirtualKeyboardV1>,
+    pub instances: Vec<ZwpVirtualKeyboardV1>,
     modifiers: Option<SerializedMods>,
     old_keymap: Option<KeymapFile>,
 }
@@ -46,12 +46,7 @@ pub(crate) struct VirtualKeyboardHandle {
 impl VirtualKeyboardHandle {
     pub(super) fn add_instance<D>(&self, instance: &ZwpVirtualKeyboardV1) {
         let mut inner = self.inner.lock().unwrap();
-        inner.instance = Some(instance.clone());
-    }
-
-    pub(super) fn has_instance(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
-        inner.instance.is_some()
+        inner.instances.push(instance.clone());
     }
 }
 
@@ -93,11 +88,13 @@ where
                     )
                     .unwrap();
                     if old_keymap != new_keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1) {
-                        let old_keymap =
-                            CString::new(old_keymap).expect("Keymap should not contain interior null bytes");
                         let mut inner = data.handle.inner.lock().unwrap();
                         let log = crate::slog_or_fallback(None);
-                        inner.old_keymap = Some(KeymapFile::new(old_keymap, log));
+                        if inner.old_keymap.is_none() {
+                            let old_keymap = CString::new(old_keymap)
+                                .expect("Keymap should not contain interior null bytes");
+                            inner.old_keymap = Some(KeymapFile::new(old_keymap, log));
+                        }
                         internal.keymap = new_keymap;
                         let known_kbds = &keyboard_handle.arc.known_kbds;
                         for kbd in &*known_kbds.lock().unwrap() {
@@ -124,7 +121,7 @@ where
                                 mods.depressed,
                                 mods.latched,
                                 mods.locked,
-                                mods.layout_locked,
+                                mods.group,
                             );
                         }
                     });
@@ -140,7 +137,7 @@ where
                     depressed: mods_depressed,
                     latched: mods_latched,
                     locked: mods_locked,
-                    layout_locked: group,
+                    group,
                 });
             }
             zwp_virtual_keyboard_v1::Request::Destroy => {
@@ -153,31 +150,34 @@ where
     fn destroyed(
         _state: &mut D,
         _client: ClientId,
-        _virtual_keyboard: ObjectId,
+        virtual_keyboard: ObjectId,
         data: &VirtualKeyboardUserData<D>,
     ) {
         let mut inner = data.handle.inner.lock().unwrap();
-        inner.instance = None;
-        if let Some(old_keymap) = &inner.old_keymap {
-            old_keymap
-                .with_fd(false, |fd, size| {
-                    let keyboard_handle = data.seat.get_keyboard().unwrap();
-                    let known_kbds = &keyboard_handle.arc.known_kbds;
-                    for kbd in &*known_kbds.lock().unwrap() {
-                        kbd.keymap(KeymapFormat::XkbV1, fd, size as _);
-                    }
-                    let mut internal = keyboard_handle.arc.internal.lock().unwrap();
-                    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
-                    internal.keymap = xkb::Keymap::new_from_fd(
-                        &context,
-                        fd,
-                        size,
-                        KeymapFormat::XkbV1.into(),
-                        xkb::KEYMAP_COMPILE_NO_FLAGS,
-                    )
-                    .unwrap();
-                })
-                .unwrap(); //TODO: log some kind of error here;
+        inner.instances.retain(|i| i.id() != virtual_keyboard);
+        if inner.instances.is_empty() {
+            if let Some(old_keymap) = &inner.old_keymap {
+                old_keymap
+                    .with_fd(false, |fd, size| {
+                        let keyboard_handle = data.seat.get_keyboard().unwrap();
+                        let known_kbds = &keyboard_handle.arc.known_kbds;
+                        for kbd in &*known_kbds.lock().unwrap() {
+                            kbd.keymap(KeymapFormat::XkbV1, fd, size as _);
+                        }
+                        let mut internal = keyboard_handle.arc.internal.lock().unwrap();
+                        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+                        internal.keymap = xkb::Keymap::new_from_fd(
+                            &context,
+                            fd,
+                            size,
+                            KeymapFormat::XkbV1.into(),
+                            xkb::KEYMAP_COMPILE_NO_FLAGS,
+                        )
+                        .unwrap();
+                    })
+                    .unwrap(); //TODO: log some kind of error here;
+                inner.old_keymap = None;
+            }
         }
     }
 }

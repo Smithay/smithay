@@ -291,7 +291,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone());
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self>(&dh);
-        VirtualKeyboardManagerState::new::<Self>(&dh);
+        VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
 
         // init input
         let seat_name = backend_data.seat_name();
