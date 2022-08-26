@@ -21,7 +21,7 @@ impl SpaceElement for Window {
         self.bbox_with_popups()
     }
 
-    fn input_region(&self, point: &Point<f64, Logical>) -> bool {
+    fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
         self.surface_under(*point, WindowSurfaceType::ALL).is_some()
     }
 

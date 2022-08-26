@@ -46,7 +46,7 @@ pub trait SpaceElement: IsAlive {
     /// Returns the bounding box of this element
     fn bbox(&self) -> Rectangle<i32, Logical>;
     /// Returns whenever a given point inside this element will be able to receive input
-    fn input_region(&self, point: &Point<f64, Logical>) -> bool;
+    fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool;
     /// Gets the z-index of this element on the specified space
     fn z_index(&self) -> u8 {
         RenderZindex::Overlay as u8
@@ -69,8 +69,8 @@ impl<T: SpaceElement> SpaceElement for &T {
     fn bbox(&self) -> Rectangle<i32, Logical> {
         SpaceElement::bbox(*self)
     }
-    fn input_region(&self, point: &Point<f64, Logical>) -> bool {
-        SpaceElement::input_region(*self, point)
+    fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
+        SpaceElement::is_in_input_region(*self, point)
     }
     fn z_index(&self) -> u8 {
         SpaceElement::z_index(*self)
@@ -193,7 +193,7 @@ impl SpaceElement for SurfaceTree {
         desktop_utils::bbox_from_surface_tree(&self.surface, self.location)
     }
 
-    fn input_region(&self, point: &Point<f64, Logical>) -> bool {
+    fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
         desktop_utils::under_from_surface_tree(&self.surface, *point, (0, 0), WindowSurfaceType::ALL)
             .is_some()
     }
@@ -340,14 +340,14 @@ macro_rules! space_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
-        fn input_region(&self, point: &$crate::utils::Point<f64, $crate::utils::Logical>) -> bool {
+        fn is_in_input_region(&self, point: &$crate::utils::Point<f64, $crate::utils::Logical>) -> bool {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::space_elements_internal!(@call input_region; x, point)
+                    Self::$body(x) => $crate::space_elements_internal!(@call is_in_input_region; x, point)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
