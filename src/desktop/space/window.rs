@@ -63,9 +63,7 @@ where
         let popup_render_elements =
             PopupManager::popups_for_surface(surface).flat_map(|(popup, popup_offset)| {
                 let offset = (self.geometry().loc + popup_offset - popup.geometry().loc)
-                    .to_f64()
-                    .to_physical(scale)
-                    .to_i32_round();
+                    .to_physical_precise_round(scale);
 
                 render_elements_from_surface_tree(popup.wl_surface(), location + offset, scale)
             });
