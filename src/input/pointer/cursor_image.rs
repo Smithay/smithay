@@ -2,6 +2,7 @@
 use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::utils::{Logical, Point};
+use std::sync::Mutex;
 
 /// The role representing a surface set as the pointer cursor
 #[derive(Debug, Default, Copy, Clone)]
@@ -9,6 +10,21 @@ pub struct CursorImageAttributes {
     /// Location of the hotspot of the pointer in the surface
     pub hotspot: Point<i32, Logical>,
 }
+
+/// Data associated with XDG toplevel surface  
+///
+/// ```no_run
+/// # #[cfg(feature = "wayland_frontend")]
+/// use smithay::wayland::compositor;
+/// use smithay::input::pointer::CursorImageSurfaceData;
+///
+/// # let wl_surface = todo!();
+/// # #[cfg(feature = "wayland_frontend")]
+/// compositor::with_states(&wl_surface, |states| {
+///     states.data_map.get::<CursorImageSurfaceData>();
+/// });
+/// ```
+pub type CursorImageSurfaceData = Mutex<CursorImageAttributes>;
 
 /// Possible status of a cursor as requested by clients
 #[derive(Debug, Clone, PartialEq, Eq)]

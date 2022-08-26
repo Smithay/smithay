@@ -1,8 +1,6 @@
 mod grab;
 mod manager;
 
-use std::sync::Mutex;
-
 pub use grab::*;
 pub use manager::*;
 use wayland_server::protocol::wl_surface::WlSurface;
@@ -14,7 +12,7 @@ use crate::{
     wayland::{
         compositor::with_states,
         seat::WaylandFocus,
-        shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceRoleAttributes},
+        shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceData},
     },
 };
 
@@ -90,7 +88,7 @@ impl PopupKind {
         with_states(wl_surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
