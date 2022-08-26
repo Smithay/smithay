@@ -1,5 +1,9 @@
 use crate::{
-    backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
+    backend::renderer::{
+        element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
+        utils::draw_render_elements,
+        ImportAll, Renderer,
+    },
     desktop::{utils::*, PopupManager},
     output::{Inner as OutputInner, Output, OutputData},
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
@@ -582,17 +586,13 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
     S: Into<Scale<f64>>,
-    P: Into<Point<f64, Physical>>,
+    P: Into<Point<i32, Physical>>,
 {
-    draw_surface_tree(
-        renderer,
-        frame,
-        layer.wl_surface(),
-        scale,
-        location.into(),
-        damage,
-        log,
-    )?;
+    let location = location.into();
+    let scale = scale.into();
+    let elements =
+        AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(layer, location, scale);
 
+    draw_render_elements(renderer, frame, scale, &elements, damage, log)?;
     Ok(())
 }
