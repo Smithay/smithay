@@ -75,6 +75,19 @@ pub use types::{Anchor, ExclusiveZone, KeyboardInteractivity, Layer, Margins};
 /// The role of a wlr_layer_shell_surface
 pub const LAYER_SURFACE_ROLE: &str = "zwlr_layer_surface_v1";
 
+/// Data associated with XDG popup surface  
+///
+/// ```no_run
+/// use smithay::wayland::compositor;
+/// use smithay::wayland::shell::wlr_layer::LayerSurfaceData;
+///
+/// # let wl_surface = todo!();
+/// compositor::with_states(&wl_surface, |states| {
+///     states.data_map.get::<LayerSurfaceData>();
+/// });
+/// ```
+pub type LayerSurfaceData = Mutex<LayerSurfaceAttributes>;
+
 /// Attributes for layer surface
 #[derive(Debug)]
 pub struct LayerSurfaceAttributes {

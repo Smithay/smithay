@@ -1,6 +1,9 @@
-use std::sync::{atomic::Ordering, Mutex};
+use std::sync::atomic::Ordering;
 
-use crate::{utils::Serial, wayland::compositor};
+use crate::{
+    utils::Serial,
+    wayland::{compositor, shell::xdg::XdgToplevelSurfaceData},
+};
 
 use wayland_protocols::xdg::shell::server::xdg_toplevel::{self, XdgToplevel};
 
@@ -140,7 +143,7 @@ where
     compositor::with_states(&data.wl_surface, |states| {
         f(&mut *states
             .data_map
-            .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+            .get::<XdgToplevelSurfaceData>()
             .unwrap()
             .lock()
             .unwrap())

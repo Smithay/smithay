@@ -4,7 +4,7 @@ use crate::{
     wayland::{
         compositor::{get_role, with_states},
         seat::WaylandFocus,
-        shell::xdg::{XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
+        shell::xdg::{XdgPopupSurfaceData, XDG_POPUP_ROLE},
     },
 };
 use std::{
@@ -99,7 +99,7 @@ impl PopupManager {
                 let committed = with_states(surface, |states| {
                     states
                         .data_map
-                        .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                        .get::<XdgPopupSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()
@@ -235,7 +235,7 @@ fn find_popup_root_surface(popup: &PopupKind) -> Result<WlSurface, DeadResource>
         parent = with_states(&parent, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
