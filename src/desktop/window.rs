@@ -1,7 +1,11 @@
 use crate::{
     backend::{
         input::KeyState,
-        renderer::{utils::draw_surface_tree, ImportAll, Renderer},
+        renderer::{
+            element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
+            utils::draw_render_elements,
+            ImportAll, Renderer,
+        },
     },
     desktop::{space::RenderZindex, utils::*, PopupManager},
     input::{
@@ -371,17 +375,15 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
     S: Into<Scale<f64>>,
-    P: Into<Point<f64, Physical>>,
+    P: Into<Point<i32, Physical>>,
 {
-    draw_surface_tree(
-        renderer,
-        frame,
-        window.toplevel().wl_surface(),
-        scale,
-        location.into(),
-        damage,
-        log,
-    )
+    let location = location.into();
+    let scale = scale.into();
+    let elements =
+        AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(window, location, scale);
+
+    draw_render_elements(renderer, frame, scale, &elements, damage, log)?;
+    Ok(())
 }
 
 impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
