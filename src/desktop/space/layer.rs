@@ -20,7 +20,7 @@ impl SpaceElement for LayerSurface {
     fn bbox(&self) -> Rectangle<i32, Logical> {
         self.bbox_with_popups()
     }
-    fn input_region(&self, point: &Point<f64, Logical>) -> bool {
+    fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
         self.surface_under(*point, WindowSurfaceType::ALL).is_some()
     }
     /// Gets the z-index of this element on the specified space
