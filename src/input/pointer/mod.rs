@@ -13,7 +13,7 @@ use crate::{
 };
 
 mod cursor_image;
-pub use cursor_image::{CursorImageAttributes, CursorImageStatus};
+pub use cursor_image::{CursorImageAttributes, CursorImageStatus, CursorImageSurfaceData};
 
 mod grab;
 use grab::{DefaultGrab, GrabStatus};

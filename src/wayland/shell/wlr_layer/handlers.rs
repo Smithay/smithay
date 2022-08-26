@@ -10,11 +10,12 @@ use crate::utils::{
     alive_tracker::{AliveTracker, IsAlive},
     Serial,
 };
+use crate::wayland::shell::xdg::XdgPopupSurfaceData;
 use crate::wayland::{compositor, shell::wlr_layer::Layer};
 
 use super::{
-    Anchor, KeyboardInteractivity, LayerSurfaceAttributes, LayerSurfaceCachedState, Margins,
-    WlrLayerShellHandler, WlrLayerShellState,
+    Anchor, KeyboardInteractivity, LayerSurfaceAttributes, LayerSurfaceCachedState, LayerSurfaceData,
+    Margins, WlrLayerShellHandler, WlrLayerShellState,
 };
 
 use super::LAYER_SURFACE_ROLE;
@@ -262,7 +263,7 @@ where
                 compositor::with_states(&data.wl_surface, move |states| {
                     states
                         .data_map
-                        .get::<Mutex<crate::wayland::shell::xdg::XdgPopupSurfaceRoleAttributes>>()
+                        .get::<XdgPopupSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()
@@ -282,7 +283,7 @@ where
                 let found_configure = compositor::with_states(surface, |states| {
                     states
                         .data_map
-                        .get::<Mutex<LayerSurfaceAttributes>>()
+                        .get::<LayerSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()
