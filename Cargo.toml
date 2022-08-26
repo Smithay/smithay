@@ -62,13 +62,6 @@ x11rb = { version = "0.10.0", optional = true }
 xkbcommon = { version = "0.4.0", features = ["wayland"]}
 scan_fmt = { version = "0.2.3", default-features = false }
 
-[patch.crates-io]
-wayland-protocols-misc = { path = '/home/rano/Public/code/wayland-rs/wayland-protocols-misc/' }
-wayland-server = { path = '/home/rano/Public/code/wayland-rs/wayland-server/' }
-wayland-backend = { path = '/home/rano/Public/code/wayland-rs/wayland-backend/' }
-wayland-sys = { path = '/home/rano/Public/code/wayland-rs/wayland-sys/' }
-wayland-protocols = { path = '/home/rano/Public/code/wayland-rs/wayland-protocols/' }
-
 [dev-dependencies]
 slog-term = "2.3"
 
