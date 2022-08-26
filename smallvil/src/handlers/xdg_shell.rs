@@ -1,5 +1,3 @@
-use std::sync::Mutex;
-
 use smithay::{
     delegate_xdg_shell,
     desktop::{Kind, Space, Window, WindowSurfaceType},
@@ -19,7 +17,7 @@ use smithay::{
         compositor::with_states,
         shell::xdg::{
             PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
-            XdgToplevelSurfaceRoleAttributes,
+            XdgToplevelSurfaceData,
         },
     },
 };
@@ -148,7 +146,7 @@ pub fn handle_commit(space: &Space, surface: &WlSurface) -> Option<()> {
         let initial_configure_sent = with_states(surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()

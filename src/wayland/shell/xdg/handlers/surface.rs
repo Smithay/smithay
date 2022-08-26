@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use crate::utils::alive_tracker::{AliveTracker, IsAlive};
+use crate::wayland::shell::xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use crate::{
     utils::{Rectangle, Serial},
     wayland::{
@@ -165,7 +166,7 @@ where
                     });
                     *states
                         .data_map
-                        .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                        .get::<XdgPopupSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap() = attributes;
@@ -256,7 +257,7 @@ where
                     if states.role == Some(XDG_TOPLEVEL_ROLE) {
                         Ok(states
                             .data_map
-                            .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                            .get::<XdgToplevelSurfaceData>()
                             .unwrap()
                             .lock()
                             .unwrap()
@@ -264,7 +265,7 @@ where
                     } else if states.role == Some(XDG_POPUP_ROLE) {
                         Ok(states
                             .data_map
-                            .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                            .get::<XdgPopupSurfaceData>()
                             .unwrap()
                             .lock()
                             .unwrap()

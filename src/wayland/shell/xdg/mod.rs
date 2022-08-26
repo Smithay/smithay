@@ -333,6 +333,19 @@ xdg_role!(
     }
 );
 
+/// Data associated with XDG toplevel surface  
+///
+/// ```no_run
+/// use smithay::wayland::compositor;
+/// use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+///
+/// # let wl_surface = todo!();
+/// compositor::with_states(&wl_surface, |states| {
+///     states.data_map.get::<XdgToplevelSurfaceData>();
+/// });
+/// ```
+pub type XdgToplevelSurfaceData = Mutex<XdgToplevelSurfaceRoleAttributes>;
+
 xdg_role!(
     PopupState,
     /// A configure message for popup surface
@@ -393,6 +406,19 @@ xdg_role!(
         popup_handle: Option<xdg_popup::XdgPopup>
     }
 );
+
+/// Data associated with XDG popup surface  
+///
+/// ```no_run
+/// use smithay::wayland::compositor;
+/// use smithay::wayland::shell::xdg::XdgPopupSurfaceData;
+///
+/// # let wl_surface = todo!();
+/// compositor::with_states(&wl_surface, |states| {
+///     states.data_map.get::<XdgPopupSurfaceData>();
+/// });
+/// ```
+pub type XdgPopupSurfaceData = Mutex<XdgPopupSurfaceRoleAttributes>;
 
 /// Represents the state of the popup
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -1070,7 +1096,7 @@ impl ToplevelSurface {
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1122,7 +1148,7 @@ impl ToplevelSurface {
         compositor::with_states(surface, |states| {
             let mut guard = states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1144,7 +1170,7 @@ impl ToplevelSurface {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
@@ -1192,7 +1218,7 @@ impl ToplevelSurface {
         compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1210,7 +1236,7 @@ impl ToplevelSurface {
         compositor::with_states(&self.wl_surface, |states| {
             let attributes = states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1287,7 +1313,7 @@ impl PopupSurface {
         compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
@@ -1320,7 +1346,7 @@ impl PopupSurface {
         let next_configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1368,7 +1394,7 @@ impl PopupSurface {
         compositor::with_states(&self.wl_surface, |states| {
             let attributes = states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1410,7 +1436,7 @@ impl PopupSurface {
         let send_error_to = compositor::with_states(surface, |states| {
             let attributes = states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1432,7 +1458,7 @@ impl PopupSurface {
         compositor::with_states(surface, |states| {
             let mut attributes = states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1460,7 +1486,7 @@ impl PopupSurface {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
@@ -1511,7 +1537,7 @@ impl PopupSurface {
         compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();

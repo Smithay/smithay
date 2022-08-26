@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::Mutex};
+use std::cell::RefCell;
 
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
@@ -29,13 +29,12 @@ use smithay::{
         output::Output,
         shell::{
             wlr_layer::{
-                Layer, LayerSurface as WlrLayerSurface, LayerSurfaceAttributes, WlrLayerShellHandler,
+                Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
                 WlrLayerShellState,
             },
             xdg::{
                 Configure, PopupSurface, PositionerState, SurfaceCachedState, ToplevelSurface,
-                XdgPopupSurfaceRoleAttributes, XdgShellHandler, XdgShellState,
-                XdgToplevelSurfaceRoleAttributes,
+                XdgPopupSurfaceData, XdgShellHandler, XdgShellState, XdgToplevelSurfaceData,
             },
         },
     },
@@ -552,7 +551,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 let is_resizing = with_states(&surface, |states| {
                     states
                         .data_map
-                        .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                        .get::<XdgToplevelSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()
@@ -787,7 +786,7 @@ fn ensure_initial_configure(
             let initial_configure_sent = with_states(surface, |states| {
                 states
                     .data_map
-                    .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                    .get::<XdgToplevelSurfaceData>()
                     .unwrap()
                     .lock()
                     .unwrap()
@@ -819,7 +818,7 @@ fn ensure_initial_configure(
         let initial_configure_sent = with_states(surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
@@ -848,7 +847,7 @@ fn ensure_initial_configure(
         let initial_configure_sent = with_states(surface, |states| {
             states
                 .data_map
-                .get::<Mutex<LayerSurfaceAttributes>>()
+                .get::<LayerSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
