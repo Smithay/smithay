@@ -274,10 +274,22 @@ pub fn run_x11(log: Logger) {
             }
 
             let scale = Scale::from(output.current_scale().fractional_scale());
-            let cursor_pos = state.pointer_location;
-            let cursor_pos_scaled = state.pointer_location.to_physical(scale).to_i32_round();
+            let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
+                compositor::with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<Mutex<CursorImageAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .hotspot
+                })
+            } else {
+                (0, 0).into()
+            };
+            let cursor_pos = state.pointer_location - cursor_hotspot.to_f64();
+            let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
-            pointer_element.set_position(cursor_pos.to_i32_round());
             pointer_element.set_status(cursor_guard.clone());
             elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
 
@@ -299,23 +311,10 @@ pub fn run_x11(log: Logger) {
             // draw the dnd icon if any
             if let Some(surface) = state.dnd_icon.as_ref() {
                 if surface.alive() {
-                    let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
-                        compositor::with_states(surface, |states| {
-                            states
-                                .data_map
-                                .get::<Mutex<CursorImageAttributes>>()
-                                .unwrap()
-                                .lock()
-                                .unwrap()
-                                .hotspot
-                        })
-                    } else {
-                        (0, 0).into()
-                    };
                     elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
                         &smithay::desktop::space::SurfaceTree::from_surface(
                             surface,
-                            cursor_pos.to_i32_round() - cursor_hotspot,
+                            cursor_pos.to_i32_round(),
                         ),
                         cursor_pos_scaled,
                         scale,
