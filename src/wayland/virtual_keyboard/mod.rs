@@ -1,9 +1,51 @@
-use wayland_backend::server::GlobalId;
+//! Utilities for virtual keyboard support
+//!
+//! This module provides you with utilities to handle virtual keyboard instances.
+//! It can be used standalone to implement virtual keyboards or together with
+//! an input method to pass through keys from the keyboard.
+//!
+//! ```
+//! use smithay::{
+//!     delegate_seat, delegate_virtual_keyboard_manager,
+//! };
+//! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
+//! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+//!
+//! # struct State { seat_state: SeatState<Self> };
+//!
+//! delegate_seat!(State);
+//! // Delegate virtual keyboard handling for State to VirtualKeyboardManagerState.
+//! delegate_virtual_keyboard_manager!(State);
+//!
+//! # let mut display = Display::<State>::new().unwrap();
+//! # let display_handle = display.handle();
+//!
+//! let seat_state = SeatState::<State>::new();
+//!
+//! // implement the required traits
+//! impl SeatHandler for State {
+//!     type KeyboardFocus = WlSurface;
+//!     type PointerFocus = WlSurface;
+//!     fn seat_state(&mut self) -> &mut SeatState<Self> {
+//!         &mut self.seat_state
+//!     }
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
+//!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
+//! }
+//!
+//! // Add the seat state to your state, create manager global and add client filter
+//! // to avoid untrusted clients requesting a new keyboard
+//! VirtualKeyboardManagerState::new::<State, _>(&display_handle, |_client| true);
+//!
+//! ```
+//!
+
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::{
     zwp_virtual_keyboard_manager_v1::{self, ZwpVirtualKeyboardManagerV1},
     zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
 };
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
+use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
 use crate::input::{Seat, SeatHandler};
 

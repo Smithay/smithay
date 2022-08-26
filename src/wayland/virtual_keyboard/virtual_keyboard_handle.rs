@@ -4,11 +4,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use wayland_backend::server::{ClientId, ObjectId};
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::{
     self, ZwpVirtualKeyboardV1,
 };
 use wayland_server::{
+    backend::{ClientId, ObjectId},
     protocol::wl_keyboard::{KeyState, KeymapFormat},
     Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
