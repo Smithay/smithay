@@ -843,13 +843,27 @@ fn render_surface<'a>(
     surface.surface.frame_submitted()?;
 
     let output_geometry = space.output_geometry(output).unwrap();
+    let scale = Scale::from(output.current_scale().fractional_scale());
 
     let (dmabuf, age) = surface.surface.next_buffer()?;
     renderer.bind(dmabuf)?;
 
     let mut elements: Vec<CustomRenderElements<_>> = Vec::new();
+    // draw input method surface if any
+    let rectangle = input_method.coordinates();
+    let position = Point::from((
+        rectangle.loc.x + rectangle.size.w,
+        rectangle.loc.y + rectangle.size.h,
+    ));
+    input_method.with_surface(|surface| {
+        elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
+            &SurfaceTree::from_surface(surface, position),
+            position.to_physical_precise_round(scale),
+            scale,
+        ));
+    });
+
     if output_geometry.to_f64().contains(pointer_location) {
-        let scale = Scale::from(output.current_scale().fractional_scale());
         let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = cursor_status {
             compositor::with_states(surface, |states| {
                 states
@@ -885,20 +899,6 @@ fn render_surface<'a>(
 
         elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
 
-        // draw input method surface if any
-        let rectangle = input_method.coordinates();
-        let position = Point::from((
-            rectangle.loc.x + rectangle.size.w,
-            rectangle.loc.y + rectangle.size.h,
-        ));
-        input_method.with_surface(|surface| {
-            elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
-                &SurfaceTree::from_surface(surface, position),
-                position.to_physical_precise_round(scale),
-                scale,
-            ));
-        });
-
         // draw the dnd icon if applicable
         {
             if let Some(wl_surface) = dnd_icon.as_ref() {
@@ -911,13 +911,13 @@ fn render_surface<'a>(
                 }
             }
         }
+    }
 
-        #[cfg(feature = "debug")]
-        {
-            surface.fps_element.update_fps(surface.fps.avg().round() as u32);
-            surface.fps.tick();
-            elements.push(CustomRenderElements::Fps(surface.fps_element.clone()));
-        }
+    #[cfg(feature = "debug")]
+    {
+        surface.fps_element.update_fps(surface.fps.avg().round() as u32);
+        surface.fps.tick();
+        elements.push(CustomRenderElements::Fps(surface.fps_element.clone()));
     }
 
     // and draw to our buffer
