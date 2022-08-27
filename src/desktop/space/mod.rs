@@ -91,14 +91,16 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     where
         P: Into<Point<i32, Logical>>,
     {
-        if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
-            self.elements.swap_remove(pos);
-        }
+        let outputs = if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
+            self.elements.swap_remove(pos).outputs
+        } else {
+            HashSet::new()
+        };
 
         let inner = InnerElement {
             element,
             location: location.into(),
-            outputs: HashSet::new(),
+            outputs,
         };
         self.insert_elem(inner, activate);
     }
