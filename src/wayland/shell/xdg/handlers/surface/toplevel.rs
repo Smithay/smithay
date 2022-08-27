@@ -122,7 +122,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
+    fn destroyed(state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
         data.alive_tracker.destroy_notify();
         data.decoration.lock().unwrap().take();
 
@@ -132,6 +132,8 @@ where
             .unwrap()
             .known_toplevels
             .retain(|other| other.shell_surface.id() != object_id);
+
+        XdgShellHandler::toplevel_destroyed(state);
     }
 }
 

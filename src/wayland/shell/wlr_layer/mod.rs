@@ -246,6 +246,9 @@ pub trait WlrLayerShellHandler {
 
     /// A surface has acknowledged a configure serial.
     fn ack_configure(&mut self, surface: wl_surface::WlSurface, configure: LayerSurfaceConfigure) {}
+
+    /// A layer surface was destroyed.
+    fn destroyed(&mut self) {}
 }
 
 /// A handle to a layer surface

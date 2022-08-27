@@ -308,18 +308,21 @@ where
     }
 
     fn destroyed(
-        _state: &mut D,
+        state: &mut D,
         _client_id: wayland_server::backend::ClientId,
         object_id: wayland_server::backend::ObjectId,
         data: &WlrLayerSurfaceUserData,
     ) {
         data.alive_tracker.destroy_notify();
+
         // remove this surface from the known ones (as well as any leftover dead surface)
         data.shell_data
             .known_layers
             .lock()
             .unwrap()
             .retain(|other| other.shell_surface.id() != object_id);
+
+        WlrLayerShellHandler::destroyed(state);
     }
 }
 
