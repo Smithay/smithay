@@ -916,20 +916,6 @@ fn render_surface<'a>(
     }
 
     // and draw to our buffer
-    // TODO we can pass the damage rectangles inside a AtomicCommitRequest
-    #[cfg(feature = "debug")]
-    let render_res = render_output(
-        output,
-        space,
-        &elements,
-        renderer,
-        &mut surface.damage_tracked_renderer,
-        age.into(),
-        logger,
-    )
-    .map(|x| x.is_some());
-
-    #[cfg(not(feature = "debug"))]
     let render_res = render_output(
         output,
         space,
