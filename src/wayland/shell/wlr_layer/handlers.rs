@@ -316,13 +316,14 @@ where
         data.alive_tracker.destroy_notify();
 
         // remove this surface from the known ones (as well as any leftover dead surface)
-        data.shell_data
-            .known_layers
-            .lock()
-            .unwrap()
-            .retain(|other| other.shell_surface.id() != object_id);
-
-        WlrLayerShellHandler::destroyed(state);
+        let layers = &mut data.shell_data.known_layers.lock().unwrap();
+        if let Some(index) = layers
+            .iter()
+            .position(|layer| layer.shell_surface.id() == object_id)
+        {
+            let layer = layers.remove(index);
+            WlrLayerShellHandler::layer_destroyed(state, layer);
+        }
     }
 }
 

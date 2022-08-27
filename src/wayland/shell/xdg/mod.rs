@@ -872,10 +872,10 @@ pub trait XdgShellHandler {
     fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {}
 
     /// A toplevel surface was destroyed.
-    fn toplevel_destroyed(&mut self) {}
+    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {}
 
     /// A popup surface was destroyed.
-    fn popup_destroyed(&mut self) {}
+    fn popup_destroyed(&mut self, surface: PopupSurface) {}
 }
 
 #[derive(Debug)]

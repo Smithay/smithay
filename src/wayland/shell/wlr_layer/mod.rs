@@ -248,7 +248,7 @@ pub trait WlrLayerShellHandler {
     fn ack_configure(&mut self, surface: wl_surface::WlSurface, configure: LayerSurfaceConfigure) {}
 
     /// A layer surface was destroyed.
-    fn destroyed(&mut self) {}
+    fn layer_destroyed(&mut self, surface: LayerSurface) {}
 }
 
 /// A handle to a layer surface

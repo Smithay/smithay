@@ -133,7 +133,11 @@ where
             .known_toplevels
             .retain(|other| other.shell_surface.id() != object_id);
 
-        XdgShellHandler::toplevel_destroyed(state);
+        let toplevels = &mut data.shell_data.lock().unwrap().known_toplevels;
+        if let Some(index) = toplevels.iter().position(|top| top.shell_surface.id() == object_id) {
+            let toplevel = toplevels.remove(index);
+            XdgShellHandler::toplevel_destroyed(state, toplevel);
+        }
     }
 }
 
