@@ -405,7 +405,6 @@ impl<E: SpaceElement> InnerElement<E> {
     fn geometry(&self) -> Rectangle<i32, Logical> {
         let mut geo = self.element.geometry();
         geo.loc = self.location;
-        geo.size += geo.loc.to_size();
         geo
     }
 
