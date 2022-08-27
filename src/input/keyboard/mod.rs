@@ -455,7 +455,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         filter: F,
     ) -> Option<T>
     where
-        F: FnOnce(&ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
+        F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
     {
         trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
         let mut guard = self.arc.internal.lock().unwrap();
@@ -472,7 +472,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             "mods_state" => format_args!("{:?}", guard.mods_state), "sym" => xkb::keysym_get_name(key_handle.modified_sym())
         );
 
-        if let FilterResult::Intercept(val) = filter(&guard.mods_state, key_handle) {
+        if let FilterResult::Intercept(val) = filter(data, &guard.mods_state, key_handle) {
             // the filter returned false, we do not forward to client
             trace!(self.arc.logger, "Input was intercepted by filter");
             return Some(val);

@@ -95,13 +95,15 @@ impl<Backend> AnvilState<Backend> {
                 && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)
             {
                 keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
-                keyboard.input::<(), _>(self, keycode, state, serial, time, |_, _| FilterResult::Forward);
+                keyboard.input::<(), _>(self, keycode, state, serial, time, |_, _, _| {
+                    FilterResult::Forward
+                });
                 return KeyAction::None;
             }
         }
 
         let action = keyboard
-            .input(self, keycode, state, serial, time, |modifiers, handle| {
+            .input(self, keycode, state, serial, time, |_, modifiers, handle| {
                 let keysym = handle.modified_sym();
 
                 debug!(log, "keysym";

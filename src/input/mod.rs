@@ -12,7 +12,7 @@
 //!
 //! To start using this module you need to create a [`SeatState`] and use that to create [`Seat`]s.
 //! Additionally you need to implement the [`SeatHandler`] trait.
-//!  
+//!
 //! ### Initialization
 //!
 //! ```
@@ -77,7 +77,7 @@
 //!         // handle focus changes, if you need to ...
 //!     }
 //!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {
-//!         // handle new images for the cursor ...   
+//!         // handle new images for the cursor ...
 //!     }
 //! }
 //! ```
@@ -99,13 +99,12 @@
 
 use std::sync::{Arc, Mutex};
 
+use self::keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardTarget};
+use self::pointer::{CursorImageStatus, PointerHandle, PointerTarget};
 use crate::utils::user_data::UserDataMap;
 
 pub mod keyboard;
 pub mod pointer;
-
-use self::keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardTarget};
-use self::pointer::{CursorImageStatus, PointerHandle, PointerTarget};
 
 /// Handler trait for Seats
 pub trait SeatHandler: Sized {
@@ -118,9 +117,10 @@ pub trait SeatHandler: Sized {
     fn seat_state(&mut self) -> &mut SeatState<Self>;
 
     /// Callback that will be notified whenever the focus of the seat changes.
-    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Self::KeyboardFocus>);
+    fn focus_changed(&mut self, _seat: &Seat<Self>, _focused: Option<&Self::KeyboardFocus>) {}
+
     /// Callback that will be notified whenever a client requests to set a custom cursor image.
-    fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus);
+    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}
 }
 /// Delegate type for all [Seat] globals.
 ///
