@@ -63,11 +63,16 @@ impl TextInputHandle {
         }
     }
 
-    /// Sets text input focus to a surfacee
-    pub fn set_focus(&self, focus: Option<&WlSurface>) {
+    /// Sets text input focus to a surface, the hook can be used to e.g.
+    /// delete the popup surface role so it does not flicker between focused surfaces
+    pub fn set_focus<F>(&self, focus: Option<&WlSurface>, focus_changed_hook: F)
+    where
+        F: Fn(),
+    {
         let mut inner = self.inner.lock().unwrap();
         let same = inner.focus.as_ref() == focus;
         if !same {
+            focus_changed_hook();
             inner.with_focused_text_input(|ti, surface, _serial| {
                 ti.leave(surface);
             });

@@ -183,13 +183,11 @@ impl<Backend> AnvilState<Backend> {
                     .get::<FullscreenSurface>()
                     .and_then(|f| f.get())
                 {
-                    if window
-                        .surface_under(
-                            self.pointer_location - output_geo.loc.to_f64(),
-                            WindowSurfaceType::ALL,
-                        )
-                        .is_some()
-                    {
+                    if let Some((_, point)) = window.surface_under(
+                        self.pointer_location - output_geo.loc.to_f64(),
+                        WindowSurfaceType::ALL,
+                    ) {
+                        input_method.set_point(&point);
                         keyboard.set_focus(self, Some(window.toplevel().wl_surface().clone()), serial);
                         return;
                     }
@@ -200,27 +198,27 @@ impl<Backend> AnvilState<Backend> {
                     .layer_under(WlrLayer::Overlay, self.pointer_location)
                     .or_else(|| layers.layer_under(WlrLayer::Top, self.pointer_location))
                 {
-                    if layer.can_receive_keyboard_focus()
-                        && layer
-                            .surface_under(
-                                self.pointer_location
-                                    - output_geo.loc.to_f64()
-                                    - layers.layer_geometry(layer).unwrap().loc.to_f64(),
-                                WindowSurfaceType::ALL,
-                            )
-                            .is_some()
-                    {
-                        keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
-                        return;
+                    if layer.can_receive_keyboard_focus() {
+                        if let Some((_, point)) = layer.surface_under(
+                            self.pointer_location
+                                - output_geo.loc.to_f64()
+                                - layers.layer_geometry(layer).unwrap().loc.to_f64(),
+                            WindowSurfaceType::ALL,
+                        ) {
+                            input_method.set_point(&point);
+                            keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
+                            return;
+                        }
                     }
                 }
             }
 
-            if let Some((window, _, _)) = self
+            if let Some((window, _, point)) = self
                 .space
                 .surface_under(self.pointer_location, WindowSurfaceType::ALL)
             {
                 self.space.raise_window(&window, true);
+                input_method.set_point(&point);
                 keyboard.set_focus(self, Some(window.toplevel().wl_surface().clone()), serial);
                 return;
             }
@@ -232,17 +230,16 @@ impl<Backend> AnvilState<Backend> {
                     .layer_under(WlrLayer::Bottom, self.pointer_location)
                     .or_else(|| layers.layer_under(WlrLayer::Background, self.pointer_location))
                 {
-                    if layer.can_receive_keyboard_focus()
-                        && layer
-                            .surface_under(
-                                self.pointer_location
-                                    - output_geo.loc.to_f64()
-                                    - layers.layer_geometry(layer).unwrap().loc.to_f64(),
-                                WindowSurfaceType::ALL,
-                            )
-                            .is_some()
-                    {
-                        keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
+                    if layer.can_receive_keyboard_focus() {
+                        if let Some((_, point)) = layer.surface_under(
+                            self.pointer_location
+                                - output_geo.loc.to_f64()
+                                - layers.layer_geometry(layer).unwrap().loc.to_f64(),
+                            WindowSurfaceType::ALL,
+                        ) {
+                            input_method.set_point(&point);
+                            keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
+                        }
                     }
                 }
             };
@@ -290,10 +287,6 @@ impl<Backend> AnvilState<Backend> {
                 )
                 .map(|(s, loc)| (s, loc + layer_loc));
         };
-        let input_method = self.seat.input_method().unwrap();
-        if let Some((_, point)) = under {
-            input_method.set_point(&point);
-        }
         under
     }
 
