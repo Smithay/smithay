@@ -1,6 +1,8 @@
 use crate::{
     backend::renderer::{
-        element::surface::WaylandSurfaceRenderElement, utils::draw_render_elements, ImportAll, Renderer,
+        element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
+        utils::draw_render_elements,
+        ImportAll, Renderer,
     },
     desktop::{utils::*, PopupManager},
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
@@ -14,17 +16,16 @@ use crate::{
     },
 };
 use indexmap::IndexSet;
-use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle};
+use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 use std::{
     cell::{RefCell, RefMut},
     collections::HashSet,
     hash::{Hash, Hasher},
-    rc::Rc,
     sync::{Arc, Mutex, Weak},
 };
 
-use super::{space::SpaceElement, WindowSurfaceType};
+use super::WindowSurfaceType;
 
 crate::utils::ids::id_gen!(next_layer_id, LAYER_ID, LAYER_IDS);
 
@@ -83,7 +84,7 @@ pub enum LayerError {
 
 impl LayerMap {
     /// Map a [`LayerSurface`] to this [`LayerMap`].
-    pub fn map_layer(&mut self, dh: &DisplayHandle, layer: &LayerSurface) -> Result<(), LayerError> {
+    pub fn map_layer(&mut self, layer: &LayerSurface) -> Result<(), LayerError> {
         if !self.layers.contains(layer) {
             if layer
                 .0
@@ -96,16 +97,16 @@ impl LayerMap {
             }
 
             self.layers.insert(layer.clone());
-            self.arrange(dh);
+            self.arrange();
         }
         Ok(())
     }
 
     /// Remove a [`LayerSurface`] from this [`LayerMap`].
-    pub fn unmap_layer(&mut self, dh: &DisplayHandle, layer: &LayerSurface) {
+    pub fn unmap_layer(&mut self, layer: &LayerSurface) {
         if self.layers.shift_remove(layer) {
             let _ = layer.user_data().get::<LayerUserdata>().take();
-            self.arrange(dh);
+            self.arrange();
         }
         if let (Some(output), surface) = (self.output(), layer.wl_surface()) {
             with_surface_tree_downward(
@@ -113,7 +114,10 @@ impl LayerMap {
                 (),
                 |_, _, _| TraversalAction::DoChildren(()),
                 |wl_surface, _, _| {
-                    output_leave(dh, &output, &mut self.surfaces, wl_surface, &self.logger);
+                    if self.surfaces.contains(&wl_surface.id()) {
+                        output.leave(wl_surface);
+                        self.surfaces.remove(&wl_surface.id());
+                    }
                 },
                 |_, _, _| true,
             );
@@ -124,7 +128,10 @@ impl LayerMap {
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        output_leave(dh, &output, &mut self.surfaces, wl_surface, &self.logger);
+                        if self.surfaces.contains(&wl_surface.id()) {
+                            output.leave(wl_surface);
+                            self.surfaces.remove(&wl_surface.id());
+                        }
                     },
                     |_, _, _| true,
                 )
@@ -227,7 +234,7 @@ impl LayerMap {
     /// Force re-arranging the layer surfaces, e.g. when the output size changes.
     ///
     /// Note: Mapping or unmapping a layer surface will automatically cause a re-arrangement.
-    pub fn arrange(&mut self, dh: &DisplayHandle) {
+    pub fn arrange(&mut self) {
         if let Some(output) = self.output() {
             let output_rect = Rectangle::from_loc_and_size(
                 (0, 0),
@@ -247,14 +254,16 @@ impl LayerMap {
             for layer in self.layers.iter() {
                 let surface = layer.wl_surface();
 
-                let logger_ref = &self.logger;
                 let surfaces_ref = &mut self.surfaces;
                 with_surface_tree_downward(
                     surface,
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        output_enter(dh, &output, surfaces_ref, wl_surface, logger_ref);
+                        if !surfaces_ref.contains(&wl_surface.id()) {
+                            output.enter(wl_surface);
+                            surfaces_ref.insert(wl_surface.id());
+                        }
                     },
                     |_, _, _| true,
                 );
@@ -265,7 +274,10 @@ impl LayerMap {
                         (),
                         |_, _, _| TraversalAction::DoChildren(()),
                         |wl_surface, _, _| {
-                            output_enter(dh, &output, surfaces_ref, wl_surface, logger_ref);
+                            if !surfaces_ref.contains(&wl_surface.id()) {
+                                output.enter(wl_surface);
+                                surfaces_ref.insert(wl_surface.id());
+                            }
                         },
                         |_, _, _| true,
                     )
@@ -366,7 +378,7 @@ impl LayerMap {
     pub fn cleanup(&mut self, dh: &DisplayHandle) {
         if self.layers.iter().any(|l| !l.alive()) {
             self.layers.retain(|layer| layer.alive());
-            self.arrange(dh);
+            self.arrange();
         }
         self.surfaces
             .retain(|i| dh.backend_handle().object_info(i.clone()).is_ok());
@@ -382,6 +394,7 @@ impl LayerMap {
 #[derive(Debug, Default)]
 pub struct LayerState {
     pub location: Point<i32, Logical>,
+    pub outputs: Vec<Output>,
 }
 
 type LayerUserdata = RefCell<Option<LayerState>>;
@@ -398,7 +411,7 @@ pub fn layer_state(layer: &LayerSurface) -> RefMut<'_, LayerState> {
 
 /// A [`LayerSurface`] represents a single layer surface as given by the wlr-layer-shell protocol.
 #[derive(Debug, Clone)]
-pub struct LayerSurface(pub(crate) Rc<LayerSurfaceInner>);
+pub struct LayerSurface(pub(crate) Arc<LayerSurfaceInner>);
 
 impl PartialEq for LayerSurface {
     fn eq(&self, other: &Self) -> bool {
@@ -437,7 +450,7 @@ impl IsAlive for LayerSurface {
 impl LayerSurface {
     /// Create a new [`LayerSurface`] from a given [`WlrLayerSurface`] and its namespace.
     pub fn new(surface: WlrLayerSurface, namespace: String) -> LayerSurface {
-        LayerSurface(Rc::new(LayerSurfaceInner {
+        LayerSurface(Arc::new(LayerSurfaceInner {
             id: next_layer_id(),
             surface,
             namespace,
@@ -568,18 +581,13 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
     S: Into<Scale<f64>>,
-    P: Into<Point<f64, Physical>>,
+    P: Into<Point<i32, Physical>>,
 {
     let location = location.into();
     let scale = scale.into();
+    let elements =
+        AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(layer, location, scale);
 
-    let elements = SpaceElement::<R, WaylandSurfaceRenderElement>::render_elements(
-        layer,
-        location.to_i32_round(),
-        scale,
-    );
-
-    draw_render_elements(renderer, frame, scale, &*elements, damage, log)?;
-
+    draw_render_elements(renderer, frame, scale, &elements, damage, log)?;
     Ok(())
 }

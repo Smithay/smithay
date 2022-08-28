@@ -2,10 +2,9 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
-        renderer::{damage::DamageTrackedRenderer, gles2::Gles2Renderer},
+        renderer::{damage::DamageTrackedRenderer, element::surface::WaylandSurfaceRenderElement},
         winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
     },
-    desktop::space::{SpaceRenderElements, SurfaceTree},
     reexports::{
         calloop::{
             timer::{TimeoutAction, Timer},
@@ -124,15 +123,11 @@ pub fn winit_dispatch(
     let damage = Rectangle::from_loc_and_size((0, 0), size);
 
     backend.bind().ok().and_then(|_| {
-        smithay::desktop::space::render_output::<
-            Gles2Renderer,
-            SurfaceTree,
-            SpaceRenderElements<Gles2Renderer>,
-        >(
+        smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement, _>(
             output,
             backend.renderer(),
             0,
-            &[(&state.space, &[])],
+            &[&state.space],
             &[],
             damage_tracked_renderer,
             [0.1, 0.1, 0.1, 1.0],
@@ -145,9 +140,10 @@ pub fn winit_dispatch(
 
     state
         .space
-        .send_frames(state.start_time.elapsed().as_millis() as u32);
+        .elements()
+        .for_each(|window| window.send_frame(state.start_time.elapsed().as_millis() as u32));
 
-    state.space.refresh(&display.handle());
+    state.space.refresh();
     display.flush_clients()?;
 
     Ok(())

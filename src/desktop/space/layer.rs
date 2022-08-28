@@ -2,39 +2,29 @@ use crate::{
     backend::renderer::{
         element::{
             surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-            RenderElement,
+            AsRenderElements,
         },
-        ImportAll, Renderer, Texture,
+        ImportAll, Renderer,
     },
-    desktop::{
-        layer::{layer_state as output_layer_state, *},
-        PopupManager,
-    },
-    utils::{Physical, Point, Rectangle, Scale},
-    wayland::shell::wlr_layer::Layer,
+    desktop::{LayerSurface, PopupManager, WindowSurfaceType},
+    utils::{Logical, Physical, Point, Rectangle, Scale},
+    wayland::{output::Output, shell::wlr_layer::Layer},
 };
 
 use super::{RenderZindex, SpaceElement};
 
-impl<R, E> SpaceElement<R, E> for LayerSurface
-where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Texture + 'static,
-    E: RenderElement<R> + From<WaylandSurfaceRenderElement>,
-{
-    fn location(&self, _space_id: usize) -> Point<i32, crate::utils::Logical> {
-        let state = output_layer_state(self);
-        state.location
+impl SpaceElement for LayerSurface {
+    fn geometry(&self) -> Rectangle<i32, Logical> {
+        self.bbox_with_popups()
     }
-
-    fn geometry(&self, _space_id: usize) -> Rectangle<i32, crate::utils::Logical> {
-        let state = output_layer_state(self);
-        let mut bbox = self.bbox_with_popups();
-        bbox.loc += state.location;
-        bbox
+    fn bbox(&self) -> Rectangle<i32, Logical> {
+        self.bbox_with_popups()
     }
-
-    fn z_index(&self, _space_id: usize) -> u8 {
+    fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
+        self.surface_under(*point, WindowSurfaceType::ALL).is_some()
+    }
+    /// Gets the z-index of this element on the specified space
+    fn z_index(&self) -> u8 {
         let layer = self.layer();
         let z_index = match layer {
             Layer::Background => RenderZindex::Background,
@@ -45,10 +35,30 @@ where
         z_index as u8
     }
 
-    fn render_elements(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E> {
+    fn set_activate(&self, _activated: bool) {}
+    fn output_enter(&self, output: &Output) {
+        output.enter(self.wl_surface())
+    }
+    fn output_leave(&self, output: &Output) {
+        output.leave(self.wl_surface())
+    }
+}
+
+impl<R> AsRenderElements<R> for LayerSurface
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+{
+    type RenderElement = WaylandSurfaceRenderElement;
+
+    fn render_elements<C: From<WaylandSurfaceRenderElement>>(
+        &self,
+        location: Point<i32, Physical>,
+        scale: Scale<f64>,
+    ) -> Vec<C> {
         let surface = self.wl_surface();
 
-        let mut render_elements: Vec<E> = Vec::new();
+        let mut render_elements: Vec<C> = Vec::new();
         let popup_render_elements =
             PopupManager::popups_for_surface(surface).flat_map(|(popup, popup_offset)| {
                 let offset = (popup_offset - popup.geometry().loc)

@@ -28,11 +28,35 @@ pub use grab::{GrabStartData, PointerGrab};
 ///
 /// When sending events using this handle, they will be intercepted by a pointer
 /// grab if any is active. See the [`PointerGrab`] trait for details.
-#[derive(Debug)]
 pub struct PointerHandle<D: SeatHandler> {
     pub(crate) inner: Arc<Mutex<PointerInternal<D>>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_pointers: Arc<Mutex<Vec<wayland_server::protocol::wl_pointer::WlPointer>>>,
+}
+
+#[cfg(not(feature = "wayland_frontend"))]
+impl<D: SeatHandler> fmt::Debug for PointerHandle<D>
+where
+    <D as SeatHandler>::PointerFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PointerHandle")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
+#[cfg(feature = "wayland_frontend")]
+impl<D: SeatHandler> fmt::Debug for PointerHandle<D>
+where
+    <D as SeatHandler>::PointerFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PointerHandle")
+            .field("inner", &self.inner)
+            .field("known_pointers", &self.known_pointers)
+            .finish()
+    }
 }
 
 impl<D: SeatHandler> Clone for PointerHandle<D> {
@@ -52,10 +76,9 @@ impl<D: SeatHandler> ::std::cmp::PartialEq for PointerHandle<D> {
 }
 
 /// Trait representing object that can receive pointer interactions
-pub trait PointerTarget<D>: IsAlive + PartialEq + Clone
+pub trait PointerTarget<D>: IsAlive + PartialEq + Clone + Send
 where
     D: SeatHandler,
-    Self: std::any::Any + Send + 'static,
 {
     /// A pointer of a given seat entered this handler
     fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);
@@ -194,10 +217,21 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
 
 /// This inner handle is accessed from inside a pointer grab logic, and directly
 /// sends event to the client
-#[derive(Debug)]
 pub struct PointerInnerHandle<'a, D: SeatHandler> {
     inner: &'a mut PointerInternal<D>,
     seat: &'a Seat<D>,
+}
+
+impl<'a, D: SeatHandler> fmt::Debug for PointerInnerHandle<'a, D>
+where
+    <D as SeatHandler>::PointerFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PointerInnerHandle")
+            .field("inner", &self.inner)
+            .field("seat", &self.seat.arc.name)
+            .finish()
+    }
 }
 
 impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
@@ -289,11 +323,14 @@ pub(crate) struct PointerInternal<D: SeatHandler> {
 }
 
 // image_callback does not implement debug, so we have to impl Debug manually
-impl<D: SeatHandler> fmt::Debug for PointerInternal<D> {
+impl<D: SeatHandler> fmt::Debug for PointerInternal<D>
+where
+    <D as SeatHandler>::PointerFocus: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerInternal")
-            .field("focus", &self.focus.as_ref().map(|_| "..."))
-            .field("pending_focus", &self.pending_focus.as_ref().map(|_| "..."))
+            .field("focus", &self.focus)
+            .field("pending_focus", &self.pending_focus)
             .field("location", &self.location)
             .field("grab", &self.grab)
             .field("pressed_buttons", &self.pressed_buttons)

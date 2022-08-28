@@ -1,23 +1,15 @@
 use std::{
     collections::HashMap,
-    sync::{atomic::Ordering, Arc},
+    sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
 };
 
 use smithay::{
     backend::{
         input::ButtonState,
-        renderer::{
-            damage::DamageTrackedRenderer,
-            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-            Renderer,
-        },
+        renderer::{damage::DamageTrackedRenderer, element::AsRenderElements},
     },
-    desktop::{
-        space::{SpaceRenderElements, SurfaceTree},
-        WindowSurfaceType,
-    },
-    input::pointer::{ButtonEvent, CursorImageStatus, MotionEvent},
+    input::pointer::{ButtonEvent, CursorImageAttributes, CursorImageStatus, MotionEvent},
     reexports::{
         calloop::{
             channel::{Channel, Event as ChannelEvent},
@@ -28,18 +20,17 @@ use smithay::{
             Client, Display, Resource,
         },
     },
-    utils::{IsAlive, SERIAL_COUNTER as SCOUNTER},
+    utils::{IsAlive, Point, Scale, SERIAL_COUNTER as SCOUNTER},
     wayland::{
+        compositor,
         input_method::InputMethodSeat,
         output::{Mode, Output, PhysicalProperties},
     },
 };
 
-use anvil::{
-    drawing::PointerElement, render::render_output, state::Backend, AnvilState, CalloopData, ClientState,
-};
+use anvil::{drawing::PointerElement, render::*, state::Backend, AnvilState, CalloopData, ClientState};
 
-use crate::WlcsEvent;
+use crate::{renderer::DummyRenderer, WlcsEvent};
 
 pub const OUTPUT_NAME: &str = "anvil";
 
@@ -54,15 +45,6 @@ impl Backend for TestState {
 
     fn reset_buffers(&mut self, _output: &Output) {}
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
-}
-
-smithay::space_elements! {
-    CustomSpaceElements<'a, R>[
-        WaylandSurfaceRenderElement,
-        TextureRenderElement<<R as Renderer>::TextureId>,
-    ];
-    Pointer=&'a PointerElement<<R as Renderer>::TextureId>,
-    SurfaceTree=SurfaceTree,
 }
 
 pub fn run(channel: Channel<WlcsEvent>) {
@@ -122,20 +104,23 @@ pub fn run(channel: Channel<WlcsEvent>) {
     while state.running.load(Ordering::SeqCst) {
         // pretend to draw something
         {
+            let scale = Scale::from(output.current_scale().fractional_scale());
             let mut cursor_guard = state.cursor_status.lock().unwrap();
-            let mut elements: Vec<CustomSpaceElements<'_, _>> = Vec::new();
+            let mut elements: Vec<CustomRenderElements<_>> = Vec::new();
 
             // draw input method square if any
             let input_method = state.seat.input_method().unwrap();
             let rectangle = input_method.coordinates();
+            let position = Point::from((
+                rectangle.loc.x + rectangle.size.w,
+                rectangle.loc.y + rectangle.size.h,
+            ));
             input_method.with_surface(|surface| {
-                elements.push(CustomSpaceElements::SurfaceTree(SurfaceTree::from_surface(
-                    surface,
-                    (
-                        rectangle.loc.x + rectangle.size.w,
-                        (rectangle.loc.y + rectangle.size.h),
-                    ),
-                )));
+                elements.extend(AsRenderElements::<DummyRenderer>::render_elements(
+                    &smithay::desktop::space::SurfaceTree::from_surface(surface, position),
+                    position.to_physical_precise_round(scale),
+                    scale,
+                ));
             });
 
             // draw the cursor as relevant
@@ -148,27 +133,43 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 *cursor_guard = CursorImageStatus::Default;
             }
 
-            pointer_element.set_position(state.pointer_location.to_i32_round());
+            let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
+                compositor::with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<Mutex<CursorImageAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .hotspot
+                })
+            } else {
+                (0, 0).into()
+            };
+            let cursor_pos = state.pointer_location - cursor_hotspot.to_f64();
+            let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
+
             pointer_element.set_status(cursor_guard.clone());
-            elements.push(CustomSpaceElements::Pointer(&pointer_element));
+            elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
 
             // draw the dnd icon if any
             if let Some(surface) = state.dnd_icon.as_ref() {
                 if surface.alive() {
-                    elements.push(CustomSpaceElements::SurfaceTree(
-                        smithay::desktop::space::SurfaceTree::from_surface(
+                    elements.extend(AsRenderElements::<DummyRenderer>::render_elements(
+                        &smithay::desktop::space::SurfaceTree::from_surface(
                             surface,
-                            state.pointer_location.to_i32_round(),
+                            cursor_pos.to_i32_round(),
                         ),
+                        cursor_pos_scaled,
+                        scale,
                     ));
                 }
             }
 
-            let _ = render_output::<_, _, SpaceRenderElements<_>>(
+            let _ = render_output(
                 &output,
                 &state.space,
-                &*elements,
-                &[],
+                &elements,
                 &mut renderer,
                 &mut damage_tracked_renderer,
                 0,
@@ -179,7 +180,8 @@ pub fn run(channel: Channel<WlcsEvent>) {
         // Send frame events so that client start drawing their next frame
         state
             .space
-            .send_frames(state.start_time.elapsed().as_millis() as u32);
+            .elements()
+            .for_each(|window| window.send_frame(state.start_time.elapsed().as_millis() as u32));
 
         let mut calloop_data = CalloopData { state, display };
         let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
@@ -188,7 +190,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
         if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
-            state.space.refresh(&display.handle());
+            state.space.refresh();
             state.popups.cleanup();
             display.flush_clients().unwrap();
         }
@@ -216,14 +218,14 @@ fn handle_event(
         } => {
             // find the surface
             let client = state.backend_data.clients.get(&client_id);
-            let toplevel = state.space.windows().find(|w| {
+            let toplevel = state.space.elements().find(|w| {
                 let surface = w.toplevel().wl_surface();
                 display.handle().get_client(surface.id()).ok().as_ref() == client
                     && surface.id().protocol_id() == surface_id
             });
             if let Some(toplevel) = toplevel.cloned() {
                 // set its location
-                state.space.map_window(&toplevel, location, None, false);
+                state.space.map_element(toplevel, location, false);
             }
         }
         // pointer inputs
@@ -264,18 +266,16 @@ fn handle_event(
             if !pointer.is_grabbed() {
                 let under = state
                     .space
-                    .surface_under(pointer.current_location(), WindowSurfaceType::ALL)
-                    .map(|(window, surface, _)| (window, surface));
-                if let Some((window, _)) = under.as_ref() {
-                    state.space.raise_window(window, true);
+                    .element_under(pointer.current_location())
+                    .map(|(w, _)| w.clone());
+                if let Some(window) = under.as_ref() {
+                    state.space.raise_element(window, true);
                 }
-                state.seat.get_keyboard().unwrap().set_focus(
-                    state,
-                    under
-                        .as_ref()
-                        .map(|&(ref w, _)| w.toplevel().wl_surface().clone()),
-                    serial,
-                );
+                state
+                    .seat
+                    .get_keyboard()
+                    .unwrap()
+                    .set_focus(state, under.map(Into::into), serial);
             }
             let time = state.start_time.elapsed().as_millis() as u32;
             pointer.button(

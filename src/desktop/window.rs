@@ -1,22 +1,37 @@
 use crate::{
-    backend::renderer::{
-        element::surface::WaylandSurfaceRenderElement, utils::draw_render_elements, ImportAll, Renderer,
+    backend::{
+        input::KeyState,
+        renderer::{
+            element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
+            utils::draw_render_elements,
+            ImportAll, Renderer,
+        },
     },
-    desktop::{utils::*, PopupManager},
-    utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
+    desktop::{space::RenderZindex, utils::*, PopupManager},
+    input::{
+        keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
+        Seat, SeatHandler,
+    },
+    utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
     wayland::{
-        compositor::with_states,
+        compositor::{with_states, with_surface_tree_downward, TraversalAction},
+        output::Output,
+        seat::WaylandFocus,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
 };
 use std::{
+    cell::{RefCell, RefMut},
+    collections::HashSet,
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc, Mutex,
+    },
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
-use wayland_server::protocol::wl_surface;
-
-use super::space::SpaceElement;
+use wayland_server::{backend::ObjectId, protocol::wl_surface, Resource};
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
@@ -86,6 +101,9 @@ pub(super) struct WindowInner {
     pub(super) id: usize,
     toplevel: Kind,
     bbox: Mutex<Rectangle<i32, Logical>>,
+    pub(crate) z_index: AtomicU8,
+    pub(crate) outputs: Mutex<Vec<Output>>,
+    focused_surface: Mutex<Option<wl_surface::WlSurface>>,
     user_data: UserDataMap,
 }
 
@@ -134,6 +152,17 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Clone, Default)]
+struct OutputState {
+    surfaces: HashSet<wayland_server::backend::ObjectId>,
+}
+type OutputUserdata = RefCell<OutputState>;
+fn window_output_state(o: &Output) -> RefMut<'_, OutputState> {
+    let user_data = o.user_data();
+    user_data.insert_if_missing(OutputUserdata::default);
+    user_data.get::<OutputUserdata>().unwrap().borrow_mut()
+}
+
 impl Window {
     /// Construct a new [`Window`] from a given compatible toplevel surface
     pub fn new(toplevel: Kind) -> Window {
@@ -143,6 +172,9 @@ impl Window {
             id,
             toplevel,
             bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
+            z_index: AtomicU8::new(RenderZindex::Shell as u8),
+            outputs: Mutex::new(Vec::new()),
+            focused_surface: Mutex::new(None),
             user_data: UserDataMap::new(),
         }))
     }
@@ -217,7 +249,7 @@ impl Window {
     ///
     /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
     /// to correctly update the bounding box of this window.
-    pub fn refresh(&self) {
+    pub fn on_commit(&self) {
         *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0));
     }
 
@@ -252,9 +284,71 @@ impl Window {
         &self.0.toplevel
     }
 
+    /// Override the z_index of this Window
+    pub fn override_z_index(&self, z_index: u8) {
+        self.0.z_index.store(z_index, Ordering::SeqCst);
+    }
+
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
+    }
+
+    pub(crate) fn update_outputs(&self, left_output: Option<&Output>) {
+        if let Some(output) = left_output {
+            let mut state = window_output_state(output);
+            with_surface_tree_downward(
+                self.toplevel().wl_surface(),
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |wl_surface, _, _| {
+                    state.surfaces.remove(&wl_surface.id());
+                    output.leave(wl_surface);
+                },
+                |_, _, _| true,
+            );
+            for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
+                let surface = popup.wl_surface();
+                with_surface_tree_downward(
+                    surface,
+                    (),
+                    |_, _, _| TraversalAction::DoChildren(()),
+                    |wl_surface, _, _| {
+                        state.surfaces.remove(&wl_surface.id());
+                        output.leave(wl_surface);
+                    },
+                    |_, _, _| true,
+                )
+            }
+        }
+        for output in self.0.outputs.lock().unwrap().iter() {
+            let mut state = window_output_state(output);
+            with_surface_tree_downward(
+                self.toplevel().wl_surface(),
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |wl_surface, _, _| {
+                    if state.surfaces.insert(wl_surface.id()) {
+                        output.enter(wl_surface);
+                    }
+                },
+                |_, _, _| true,
+            );
+            for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
+                let surface = popup.wl_surface();
+                with_surface_tree_downward(
+                    surface,
+                    (),
+                    |_, _, _| TraversalAction::DoChildren(()),
+                    |wl_surface, _, _| {
+                        if state.surfaces.insert(wl_surface.id()) {
+                            output.enter(wl_surface);
+                        }
+                    },
+                    |_, _, _| true,
+                )
+            }
+        }
     }
 }
 
@@ -281,18 +375,83 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
     S: Into<Scale<f64>>,
-    P: Into<Point<f64, Physical>>,
+    P: Into<Point<i32, Physical>>,
 {
     let location = location.into();
     let scale = scale.into();
+    let elements =
+        AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(window, location, scale);
 
-    let elements = SpaceElement::<R, WaylandSurfaceRenderElement>::render_elements(
-        window,
-        location.to_i32_round(),
-        scale,
-    );
-
-    draw_render_elements(renderer, frame, scale, &*elements, damage, log)?;
-
+    draw_render_elements(renderer, frame, scale, &elements, damage, log)?;
     Ok(())
+}
+
+impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
+    fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
+        if let Some((surface, loc)) = self.surface_under(event.location, WindowSurfaceType::ALL) {
+            let mut new_event = event.clone();
+            new_event.location -= loc.to_f64();
+            if let Some(old_surface) = self.0.focused_surface.lock().unwrap().replace(surface.clone()) {
+                if old_surface != surface {
+                    PointerTarget::<D>::leave(&old_surface, seat, data, event.serial, event.time);
+                    PointerTarget::<D>::enter(&surface, seat, data, &new_event);
+                } else {
+                    PointerTarget::<D>::motion(&surface, seat, data, &new_event)
+                }
+            } else {
+                PointerTarget::<D>::enter(&surface, seat, data, &new_event)
+            }
+        }
+    }
+    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
+        PointerTarget::<D>::enter(self, seat, data, event)
+    }
+    fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::button(surface, seat, data, event)
+        }
+    }
+    fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::axis(surface, seat, data, frame)
+        }
+    }
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().take() {
+            PointerTarget::<D>::leave(&surface, seat, data, serial, time)
+        }
+    }
+}
+
+impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
+    fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
+        KeyboardTarget::<D>::enter(self.0.toplevel.wl_surface(), seat, data, keys, serial)
+    }
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
+        KeyboardTarget::<D>::leave(self.0.toplevel.wl_surface(), seat, data, serial)
+    }
+    fn key(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        key: KeysymHandle<'_>,
+        state: KeyState,
+        serial: Serial,
+        time: u32,
+    ) {
+        KeyboardTarget::<D>::key(self.0.toplevel.wl_surface(), seat, data, key, state, serial, time)
+    }
+    fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
+        KeyboardTarget::<D>::modifiers(self.0.toplevel.wl_surface(), seat, data, modifiers, serial)
+    }
+}
+
+impl WaylandFocus for Window {
+    fn wl_surface(&self) -> Option<&wl_surface::WlSurface> {
+        Some(self.toplevel().wl_surface())
+    }
+
+    fn same_client_as(&self, object_id: ObjectId) -> bool {
+        self.toplevel().wl_surface().id().same_client_as(&object_id)
+    }
 }

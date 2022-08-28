@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use smithay::{
     delegate_xdg_shell,
-    desktop::{Kind, Space, Window, WindowSurfaceType},
+    desktop::{Kind, Space, Window},
     input::{
         pointer::{Focus, GrabStartData as PointerGrabStartData},
         Seat,
@@ -36,7 +36,7 @@ impl XdgShellHandler for Smallvil {
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let window = Window::new(Kind::Xdg(surface));
-        self.space.map_window(&window, (0, 0), None, false);
+        self.space.map_element(window, (0, 0), false);
     }
 
     fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
@@ -53,10 +53,11 @@ impl XdgShellHandler for Smallvil {
 
             let window = self
                 .space
-                .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                .elements()
+                .find(|w| w.toplevel().wl_surface() == wl_surface)
                 .unwrap()
                 .clone();
-            let initial_window_location = self.space.window_location(&window).unwrap();
+            let initial_window_location = self.space.element_location(&window).unwrap();
 
             let grab = MoveSurfaceGrab {
                 start_data,
@@ -84,10 +85,11 @@ impl XdgShellHandler for Smallvil {
 
             let window = self
                 .space
-                .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                .elements()
+                .find(|w| w.toplevel().wl_surface() == wl_surface)
                 .unwrap()
                 .clone();
-            let initial_window_location = self.space.window_location(&window).unwrap();
+            let initial_window_location = self.space.element_location(&window).unwrap();
             let initial_window_size = window.geometry().size;
 
             surface.with_pending_state(|state| {
@@ -139,9 +141,10 @@ fn check_grab(
 }
 
 /// Should be called on `WlSurface::commit`
-pub fn handle_commit(space: &Space, surface: &WlSurface) -> Option<()> {
+pub fn handle_commit(space: &Space<Window>, surface: &WlSurface) -> Option<()> {
     let window = space
-        .window_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+        .elements()
+        .find(|w| w.toplevel().wl_surface() == surface)
         .cloned()?;
 
     if let Kind::Xdg(_) = window.toplevel() {

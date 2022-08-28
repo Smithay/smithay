@@ -1,10 +1,11 @@
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::{atomic::Ordering, Mutex},
+    time::Duration,
+};
 
 use slog::Logger;
-#[cfg(not(feature = "debug"))]
-use smithay::desktop::space::SpaceRenderElements;
 #[cfg(feature = "debug")]
-use smithay::{backend::renderer::ImportMem, render_elements};
+use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -18,14 +19,13 @@ use smithay::{
     backend::{
         renderer::{
             damage::{DamageTrackedRenderer, DamageTrackedRendererError},
-            element::{surface::WaylandSurfaceRenderElement, texture::TextureRenderElement},
-            Renderer,
+            element::AsRenderElements,
+            gles2::{Gles2Renderer, Gles2Texture},
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
         SwapBuffersError,
     },
-    desktop::space::SurfaceTree,
-    input::pointer::CursorImageStatus,
+    input::pointer::{CursorImageAttributes, CursorImageStatus},
     reexports::{
         calloop::EventLoop,
         wayland_server::{
@@ -33,15 +33,16 @@ use smithay::{
             Display,
         },
     },
-    utils::IsAlive,
+    utils::{IsAlive, Point, Scale},
     wayland::{
+        compositor,
         input_method::InputMethodSeat,
         output::{Mode, Output, PhysicalProperties},
     },
 };
 
 use crate::state::{AnvilState, Backend, CalloopData};
-use crate::{drawing::*, render};
+use crate::{drawing::*, render::*};
 
 pub const OUTPUT_NAME: &str = "winit";
 
@@ -81,23 +82,6 @@ impl Backend for WinitData {
         self.full_redraw = 4;
     }
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
-}
-
-#[cfg(feature = "debug")]
-render_elements! {
-    pub CustomRenderElements<'a, R>;
-    Surface=WaylandSurfaceRenderElement,
-    Texture=TextureRenderElement<<R as Renderer>::TextureId>,
-    Fps=&'a FpsElement<<R as Renderer>::TextureId>
-}
-
-smithay::space_elements! {
-    CustomSpaceElements<'a, R>[
-        WaylandSurfaceRenderElement,
-        TextureRenderElement<<R as Renderer>::TextureId>,
-    ];
-    Pointer=&'a PointerElement<<R as Renderer>::TextureId>,
-    SurfaceTree=SurfaceTree,
 }
 
 pub fn run_winit(log: Logger) {
@@ -185,20 +169,17 @@ pub fn run_winit(log: Logger) {
     let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
     state.space.map_output(&output, (0, 0));
 
-    let start_time = std::time::Instant::now();
-
     #[cfg(feature = "xwayland")]
     state.start_xwayland();
 
     info!(log, "Initialization completed, starting the main loop.");
 
-    let mut pointer_element = PointerElement::default();
+    let mut pointer_element = PointerElement::<Gles2Texture>::default();
 
     while state.running.load(Ordering::SeqCst) {
         if winit
             .dispatch_new_events(|event| match event {
                 WinitEvent::Resized { size, .. } => {
-                    let dh = display.handle();
                     // We only have one output
                     let output = state.space.outputs().next().unwrap().clone();
                     state.space.map_output(&output, (0, 0));
@@ -208,7 +189,7 @@ pub fn run_winit(log: Logger) {
                     };
                     output.change_current_state(Some(mode), None, None, None);
                     output.set_preferred(mode);
-                    crate::shell::fixup_positions(&dh, &mut state.space);
+                    crate::shell::fixup_positions(&mut state.space);
                 }
                 WinitEvent::Input(event) => {
                     state.process_input_event_windowed(&display.handle(), event, OUTPUT_NAME)
@@ -226,7 +207,6 @@ pub fn run_winit(log: Logger) {
             let backend = &mut state.backend_data.backend;
             let cursor_visible: bool;
 
-            let mut elements = Vec::<CustomSpaceElements<'_, _>>::new();
             let mut cursor_guard = state.cursor_status.lock().unwrap();
 
             // draw the cursor as relevant
@@ -245,36 +225,7 @@ pub fn run_winit(log: Logger) {
                 cursor_visible = true;
             }
 
-            pointer_element.set_position(state.pointer_location.to_i32_round());
             pointer_element.set_status(cursor_guard.clone());
-            elements.push(CustomSpaceElements::Pointer(&pointer_element));
-
-            // draw the dnd icon if any
-            if let Some(surface) = state.dnd_icon.as_ref() {
-                if surface.alive() {
-                    elements.push(CustomSpaceElements::SurfaceTree(
-                        smithay::desktop::space::SurfaceTree::from_surface(
-                            surface,
-                            state.pointer_location.to_i32_round(),
-                        ),
-                    ));
-                }
-            }
-
-            // draw input method surface if any
-            let input_method = state.seat.input_method().unwrap();
-            let rectangle = input_method.coordinates();
-            input_method.with_surface(|surface| {
-                elements.push(CustomSpaceElements::SurfaceTree(
-                    smithay::desktop::space::SurfaceTree::from_surface(
-                        surface,
-                        (
-                            rectangle.loc.x + rectangle.size.w,
-                            (rectangle.loc.y + rectangle.size.h),
-                        ),
-                    ),
-                ));
-            });
 
             #[cfg(feature = "debug")]
             let fps = state.backend_data.fps.avg().round() as u32;
@@ -290,15 +241,69 @@ pub fn run_winit(log: Logger) {
             };
             let space = &mut state.space;
             let damage_tracked_renderer = &mut state.backend_data.damage_tracked_renderer;
+
+            let input_method = state.seat.input_method().unwrap();
+            let dnd_icon = state.dnd_icon.as_ref();
+
+            let scale = Scale::from(output.current_scale().fractional_scale());
+            let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
+                compositor::with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<Mutex<CursorImageAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .hotspot
+                })
+            } else {
+                (0, 0).into()
+            };
+            let cursor_pos = state.pointer_location - cursor_hotspot.to_f64();
+            let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
+
             let render_res = backend.bind().and_then(|_| {
                 let renderer = backend.renderer();
 
+                let mut elements = Vec::<CustomRenderElements<Gles2Renderer>>::new();
+
+                elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
+
+                // draw input method surface if any
+                let rectangle = input_method.coordinates();
+                let position = Point::from((
+                    rectangle.loc.x + rectangle.size.w,
+                    rectangle.loc.y + rectangle.size.h,
+                ));
+                input_method.with_surface(|surface| {
+                    elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                        &smithay::desktop::space::SurfaceTree::from_surface(surface, position),
+                        position.to_physical_precise_round(scale),
+                        scale,
+                    ));
+                });
+
+                // draw the dnd icon if any
+                if let Some(surface) = dnd_icon {
+                    if surface.alive() {
+                        elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                            &smithay::desktop::space::SurfaceTree::from_surface(
+                                surface,
+                                cursor_pos.to_i32_round(),
+                            ),
+                            cursor_pos_scaled,
+                            scale,
+                        ));
+                    }
+                }
+
                 #[cfg(feature = "debug")]
-                let res = render::render_output::<_, _, CustomRenderElements<'_, _>>(
+                elements.push(CustomRenderElements::Fps(fps_element.clone()));
+
+                render_output(
                     &output,
                     space,
-                    &*elements,
-                    &[CustomRenderElements::Fps(&fps_element)],
+                    &elements,
                     renderer,
                     damage_tracked_renderer,
                     age,
@@ -307,25 +312,7 @@ pub fn run_winit(log: Logger) {
                 .map_err(|err| match err {
                     DamageTrackedRendererError::Rendering(err) => err.into(),
                     _ => unreachable!(),
-                });
-
-                #[cfg(not(feature = "debug"))]
-                let res = render::render_output::<_, _, SpaceRenderElements<_>>(
-                    &output,
-                    space,
-                    &*elements,
-                    &[],
-                    renderer,
-                    damage_tracked_renderer,
-                    age,
-                    &log,
-                )
-                .map_err(|err| match err {
-                    DamageTrackedRendererError::Rendering(err) => err.into(),
-                    _ => unreachable!(),
-                });
-
-                res
+                })
             });
 
             match render_res {
@@ -345,7 +332,7 @@ pub fn run_winit(log: Logger) {
         }
 
         // Send frame events so that client start drawing their next frame
-        state.space.send_frames(start_time.elapsed().as_millis() as u32);
+        state.send_frames(&output);
 
         let mut calloop_data = CalloopData { state, display };
         let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
@@ -354,7 +341,7 @@ pub fn run_winit(log: Logger) {
         if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
-            state.space.refresh(&display.handle());
+            state.space.refresh();
             state.popups.cleanup();
             display.flush_clients().unwrap();
         }

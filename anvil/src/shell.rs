@@ -3,8 +3,8 @@ use std::{cell::RefCell, sync::Mutex};
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
-        layer_map_for_output, Kind as SurfaceKind, LayerSurface, PopupKeyboardGrab, PopupKind, PopupManager,
-        PopupPointerGrab, PopupUngrabStrategy, Space, Window, WindowSurfaceType,
+        find_popup_root_surface, layer_map_for_output, Kind as SurfaceKind, LayerSurface, PopupKeyboardGrab,
+        PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Space, Window, WindowSurfaceType,
     },
     input::{
         pointer::{
@@ -17,16 +17,18 @@ use smithay::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
             protocol::{wl_buffer::WlBuffer, wl_output, wl_seat, wl_surface::WlSurface},
-            DisplayHandle, Resource,
+            Resource,
         },
     },
     utils::{IsAlive, Logical, Point, Rectangle, Serial, Size},
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            with_states, with_surface_tree_upward, CompositorHandler, CompositorState, TraversalAction,
+            get_parent, is_sync_subsurface, with_states, with_surface_tree_upward, CompositorHandler,
+            CompositorState, TraversalAction,
         },
         output::Output,
+        seat::WaylandFocus,
         shell::{
             wlr_layer::{
                 Layer, LayerSurface as WlrLayerSurface, LayerSurfaceAttributes, WlrLayerShellHandler,
@@ -41,7 +43,10 @@ use smithay::{
     },
 };
 
-use crate::state::{AnvilState, Backend};
+use crate::{
+    focus::FocusTarget,
+    state::{AnvilState, Backend},
+};
 
 struct MoveSurfaceGrab<B: 'static> {
     start_data: PointerGrabStartData<AnvilState<B>>,
@@ -54,7 +59,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<Backe
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -64,7 +69,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<Backe
         let new_location = self.initial_window_location.to_f64() + delta;
 
         data.space
-            .map_window(&self.window, new_location.to_i32_round(), None, true);
+            .map_element(self.window.clone(), new_location.to_i32_round(), true);
     }
 
     fn button(
@@ -138,7 +143,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -237,7 +242,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                 xdg.send_configure();
                 if self.edges.intersects(ResizeEdge::TOP_LEFT) {
                     let geometry = self.window.geometry();
-                    let mut location = data.space.window_location(&self.window).unwrap();
+                    let mut location = data.space.element_location(&self.window).unwrap();
 
                     if self.edges.intersects(ResizeEdge::LEFT) {
                         location.x =
@@ -248,7 +253,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                             self.initial_window_location.y + (self.initial_window_size.h - geometry.size.h);
                     }
 
-                    data.space.map_window(&self.window, location, None, true);
+                    data.space.map_element(self.window.clone(), location, true);
                 }
 
                 with_states(self.window.toplevel().wl_surface(), |states| {
@@ -297,7 +302,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
 fn fullscreen_output_geometry(
     wl_surface: &WlSurface,
     wl_output: Option<&wl_output::WlOutput>,
-    space: &mut Space,
+    space: &mut Space<Window>,
 ) -> Option<Rectangle<i32, Logical>> {
     // First test if a specific output has been requested
     // if the requested output is not found ignore the request
@@ -305,9 +310,10 @@ fn fullscreen_output_geometry(
         .and_then(Output::from_resource)
         .or_else(|| {
             let w = space
-                .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                .elements()
+                .find(|window| window.toplevel().wl_surface() == wl_surface)
                 .cloned();
-            w.and_then(|w| space.outputs_for_window(&w).get(0).cloned())
+            w.and_then(|w| space.outputs_for_element(&w).get(0).cloned())
         })
         .and_then(|o| space.output_geometry(&o))
 }
@@ -346,10 +352,18 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             super::xwayland::commit_hook(surface, &self.display_handle, x11, &mut self.space);
         }
 
-        self.space.commit(surface);
+        if !is_sync_subsurface(surface) {
+            let mut root = surface.clone();
+            while let Some(parent) = get_parent(&root) {
+                root = parent;
+            }
+            if let Some(window) = self.space.elements().find(|w| w.toplevel().wl_surface() == &root) {
+                window.on_commit();
+            }
+        }
         self.popups.commit(surface);
 
-        ensure_initial_configure(&self.display_handle, surface, &self.space, &mut self.popups)
+        ensure_initial_configure(surface, &self.space, &mut self.popups)
     }
 }
 
@@ -409,6 +423,13 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
         let start_data = pointer.grab_start_data().unwrap();
 
+        let window = self
+            .space
+            .elements()
+            .find(|window| window.toplevel().wl_surface() == surface.wl_surface())
+            .unwrap()
+            .clone();
+
         // If the focus was for a different surface, ignore the request.
         if start_data.focus.is_none()
             || !start_data
@@ -416,18 +437,12 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .unwrap()
                 .0
-                .id()
-                .same_client_as(&surface.wl_surface().id())
+                .same_client_as(surface.wl_surface().id())
         {
             return;
         }
 
-        let window = self
-            .space
-            .window_for_surface(surface.wl_surface(), WindowSurfaceType::TOPLEVEL)
-            .unwrap()
-            .clone();
-        let mut initial_window_location = self.space.window_location(&window).unwrap();
+        let mut initial_window_location = self.space.element_location(&window).unwrap();
 
         // If surface is maximized then unmaximize it
         let current_state = surface.current_state();
@@ -481,6 +496,13 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
         let start_data = pointer.grab_start_data().unwrap();
 
+        let window = self
+            .space
+            .elements()
+            .find(|window| window.toplevel().wl_surface() == surface.wl_surface())
+            .unwrap()
+            .clone();
+
         // If the focus was for a different surface, ignore the request.
         if start_data.focus.is_none()
             || !start_data
@@ -488,19 +510,13 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .as_ref()
                 .unwrap()
                 .0
-                .id()
-                .same_client_as(&surface.wl_surface().id())
+                .same_client_as(surface.wl_surface().id())
         {
             return;
         }
 
-        let window = self
-            .space
-            .window_for_surface(surface.wl_surface(), WindowSurfaceType::TOPLEVEL)
-            .unwrap()
-            .clone();
         let geometry = window.geometry();
-        let loc = self.space.window_location(&window).unwrap();
+        let loc = self.space.element_location(&window).unwrap();
         let (initial_window_location, initial_window_size) = (loc, geometry.size);
 
         with_states(surface.wl_surface(), move |states| {
@@ -593,7 +609,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .and_then(Output::from_resource)
                 .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
             let client = self.display_handle.get_client(wl_surface.id()).unwrap();
-            output.with_client_outputs(&self.display_handle, &client, |_dh, output| {
+            output.with_client_outputs(&client, |output| {
                 wl_output = Some(output.clone());
             });
 
@@ -605,7 +621,8 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
             let window = self
                 .space
-                .window_for_surface(wl_surface, WindowSurfaceType::TOPLEVEL)
+                .elements()
+                .find(|window| window.toplevel().wl_surface() == wl_surface)
                 .unwrap();
             window.configure();
             output.user_data().insert_if_missing(FullscreenSurface::default);
@@ -641,10 +658,11 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         // get the correct maximum size
         let window = self
             .space
-            .window_for_surface(surface.wl_surface(), WindowSurfaceType::TOPLEVEL)
+            .elements()
+            .find(|window| window.toplevel().wl_surface() == surface.wl_surface())
             .unwrap()
             .clone();
-        let outputs_for_window = self.space.outputs_for_window(&window);
+        let outputs_for_window = self.space.outputs_for_element(&window);
         let output = outputs_for_window
             .first()
             // The window hasn't been mapped yet, use the primary output instead
@@ -653,12 +671,12 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             .expect("No outputs found");
         let geometry = self.space.output_geometry(output).unwrap();
 
-        self.space.map_window(&window, geometry.loc, None, true);
         surface.with_pending_state(|state| {
             state.states.set(xdg_toplevel::State::Maximized);
             state.size = Some(geometry.size);
         });
         window.configure();
+        self.space.map_element(window, geometry.loc, true);
     }
 
     fn unmaximize_request(&mut self, surface: ToplevelSurface) {
@@ -671,31 +689,47 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
-        let ret = self
-            .popups
-            .grab_popup(&self.display_handle, surface.wl_surface().clone(), &seat, serial);
+        let kind = PopupKind::Xdg(surface);
+        if let Some(root) = find_popup_root_surface(&kind).ok().and_then(|root| {
+            self.space
+                .elements()
+                .find(|w| w.toplevel().wl_surface() == &root)
+                .cloned()
+                .map(FocusTarget::Window)
+                .or_else(|| {
+                    self.space
+                        .outputs()
+                        .find_map(|o| {
+                            let map = layer_map_for_output(o);
+                            map.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL).cloned()
+                        })
+                        .map(FocusTarget::LayerSurface)
+                })
+        }) {
+            let ret = self.popups.grab_popup(root, kind, &seat, serial);
 
-        if let Ok(mut grab) = ret {
-            if let Some(keyboard) = seat.get_keyboard() {
-                if keyboard.is_grabbed()
-                    && !(keyboard.has_grab(serial)
-                        || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
-                {
-                    grab.ungrab(PopupUngrabStrategy::All);
-                    return;
+            if let Ok(mut grab) = ret {
+                if let Some(keyboard) = seat.get_keyboard() {
+                    if keyboard.is_grabbed()
+                        && !(keyboard.has_grab(serial)
+                            || keyboard.has_grab(grab.previous_serial().unwrap_or(serial)))
+                    {
+                        grab.ungrab(PopupUngrabStrategy::All);
+                        return;
+                    }
+                    keyboard.set_focus(self, grab.current_grab(), serial);
+                    keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
                 }
-                keyboard.set_focus(self, grab.current_grab().map(|(s, _)| s), serial);
-                keyboard.set_grab(PopupKeyboardGrab::new(&grab), serial);
-            }
-            if let Some(pointer) = seat.get_pointer() {
-                if pointer.is_grabbed()
-                    && !(pointer.has_grab(serial)
-                        || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
-                {
-                    grab.ungrab(PopupUngrabStrategy::All);
-                    return;
+                if let Some(pointer) = seat.get_pointer() {
+                    if pointer.is_grabbed()
+                        && !(pointer.has_grab(serial)
+                            || pointer.has_grab(grab.previous_serial().unwrap_or_else(|| grab.serial())))
+                    {
+                        grab.ungrab(PopupUngrabStrategy::All);
+                        return;
+                    }
+                    pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
                 }
-                pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
             }
         }
     }
@@ -718,8 +752,7 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
             .and_then(Output::from_resource)
             .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
         let mut map = layer_map_for_output(&output);
-        map.map_layer(&self.display_handle, &LayerSurface::new(surface, namespace))
-            .unwrap();
+        map.map_layer(&LayerSurface::new(surface, namespace)).unwrap();
     }
 }
 
@@ -759,12 +792,7 @@ pub struct SurfaceData {
     pub resize_state: ResizeState,
 }
 
-fn ensure_initial_configure(
-    dh: &DisplayHandle,
-    surface: &WlSurface,
-    space: &Space,
-    popups: &mut PopupManager,
-) {
+fn ensure_initial_configure(surface: &WlSurface, space: &Space<Window>, popups: &mut PopupManager) {
     with_surface_tree_upward(
         surface,
         (),
@@ -778,7 +806,8 @@ fn ensure_initial_configure(
     );
 
     if let Some(window) = space
-        .window_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+        .elements()
+        .find(|window| window.toplevel().wl_surface() == surface)
         .cloned()
     {
         // send the initial configure if relevant
@@ -858,11 +887,11 @@ fn ensure_initial_configure(
             layer.layer_surface().send_configure();
         }
 
-        map.arrange(dh);
+        map.arrange();
     };
 }
 
-fn place_new_window(space: &mut Space, window: &Window, activate: bool) {
+fn place_new_window(space: &mut Space<Window>, window: &Window, activate: bool) {
     // place the window at a random location on the primary output
     // or if there is not output in a [0;800]x[0;800] square
     use rand::distributions::{Distribution, Uniform};
@@ -885,10 +914,10 @@ fn place_new_window(space: &mut Space, window: &Window, activate: bool) {
     let x = x_range.sample(&mut rng);
     let y = y_range.sample(&mut rng);
 
-    space.map_window(window, (x, y), None, activate);
+    space.map_element(window.clone(), (x, y), activate);
 }
 
-pub fn fixup_positions(dh: &DisplayHandle, space: &mut Space) {
+pub fn fixup_positions(space: &mut Space<Window>) {
     // fixup outputs
     let mut offset = Point::<i32, Logical>::from((0, 0));
     for output in space.outputs().cloned().collect::<Vec<_>>().into_iter() {
@@ -897,7 +926,7 @@ pub fn fixup_positions(dh: &DisplayHandle, space: &mut Space) {
             .map(|geo| geo.size)
             .unwrap_or_else(|| Size::from((0, 0)));
         space.map_output(&output, offset);
-        layer_map_for_output(&output).arrange(dh);
+        layer_map_for_output(&output).arrange();
         offset.x += size.w;
     }
 
@@ -912,8 +941,8 @@ pub fn fixup_positions(dh: &DisplayHandle, space: &mut Space) {
             Some(Rectangle::from_loc_and_size(geo.loc + zone.loc, zone.size))
         })
         .collect::<Vec<_>>();
-    for window in space.windows() {
-        let window_location = match space.window_location(window) {
+    for window in space.elements() {
+        let window_location = match space.element_location(window) {
             Some(loc) => loc,
             None => continue,
         };
