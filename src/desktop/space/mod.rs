@@ -6,7 +6,7 @@ use crate::{
         damage::{
             DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode, OutputNoMode,
         },
-        element::{surface::WaylandSurfaceRenderElement, AsRenderElements, RenderElement},
+        element::{surface::WaylandSurfaceRenderElement, AsRenderElements, RenderElement, Wrap},
         ImportAll, Renderer, Texture,
     },
     desktop::layer::{layer_map_for_output, LayerSurface},
@@ -334,14 +334,14 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     pub fn elements_for_output<'a, R>(
         &'a self,
         output: &Output,
-    ) -> Result<Vec<SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>>, OutputError>
+    ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputError>
     where
         R: Renderer + ImportAll,
         <R as Renderer>::TextureId: Texture + 'static,
         E: AsRenderElements<R>,
         <E as AsRenderElements<R>>::RenderElement: 'a,
-        SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>:
-            From<<E as AsRenderElements<R>>::RenderElement>,
+        SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
+            From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
     {
         if !self.outputs.contains(output) {
             return Err(OutputError::Unmapped);
@@ -376,7 +376,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             })
             .flat_map(|e| {
                 let location = e.render_location() - output_location;
-                e.render_elements::<SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>>(
+                e.render_elements::<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>(
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
                 )
@@ -427,14 +427,14 @@ crate::backend::renderer::element::render_elements! {
     ///
     /// Use them in place of `E` in `space_render_elements` or
     /// `render_output` if you do not need custom render elements
-    pub SpaceRenderElements<'a, R, E>;
+    pub SpaceRenderElements<R, E>;
     /// A single wayland surface
     Surface=WaylandSurfaceRenderElement,
     /// A single texture
-    Element=&'a E,
+    Element=Wrap<E>,
 }
 
-impl<'a, R, E> std::fmt::Debug for SpaceRenderElements<'a, R, E>
+impl<R, E> std::fmt::Debug for SpaceRenderElements<R, E>
 where
     R: Renderer + ImportAll,
     E: RenderElement<R> + std::fmt::Debug,
@@ -450,7 +450,7 @@ where
 
 crate::backend::renderer::element::render_elements! {
     OutputRenderElements<'a, R, E, C>;
-    Space=SpaceRenderElements<'a, R, E>,
+    Space=SpaceRenderElements<R, E>,
     Custom=&'a C,
 }
 
@@ -458,14 +458,14 @@ crate::backend::renderer::element::render_elements! {
 pub fn space_render_elements<'a, R, E>(
     spaces: &[&'a Space<E>],
     output: &Output,
-) -> Result<Vec<SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
+) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
     E: SpaceElement + PartialEq + AsRenderElements<R>,
     <E as AsRenderElements<R>>::RenderElement: 'a,
-    SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>:
-        From<<E as AsRenderElements<R>>::RenderElement>,
+    SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
+        From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
     let mut render_elements = Vec::new();
 
@@ -497,8 +497,8 @@ where
     <R as Renderer>::TextureId: Texture + 'static,
     E: SpaceElement + PartialEq + AsRenderElements<R>,
     <E as AsRenderElements<R>>::RenderElement: 'a,
-    SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>:
-        From<<E as AsRenderElements<R>>::RenderElement>,
+    SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
+        From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
     C: RenderElement<R>,
 {
     if let DamageTrackedRendererMode::Auto(renderer_output) = damage_tracked_renderer.mode() {
