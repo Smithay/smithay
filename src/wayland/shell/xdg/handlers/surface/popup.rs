@@ -68,6 +68,7 @@ where
         let popups = &mut data.shell_data.lock().unwrap().known_popups;
         if let Some(index) = popups.iter().position(|pop| pop.shell_surface.id() == object_id) {
             let popup = popups.remove(index);
+            drop(popups);
             XdgShellHandler::popup_destroyed(state, popup);
         }
     }

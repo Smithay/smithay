@@ -322,6 +322,7 @@ where
             .position(|layer| layer.shell_surface.id() == object_id)
         {
             let layer = layers.remove(index);
+            drop(layers);
             WlrLayerShellHandler::layer_destroyed(state, layer);
         }
     }
