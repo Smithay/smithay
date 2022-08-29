@@ -134,10 +134,10 @@ where
     <R as Renderer>::TextureId: Texture + 'static,
     E: AsRenderElements<R>,
     <E as AsRenderElements<R>>::RenderElement: 'a,
-    SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>:
-        From<<E as AsRenderElements<R>>::RenderElement> + From<WaylandSurfaceRenderElement>,
+    SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
+        From<Wrap<<E as AsRenderElements<R>>::RenderElement>> + From<WaylandSurfaceRenderElement>,
 {
-    type RenderElement = SpaceRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement>;
+    type RenderElement = SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>;
 
     fn render_elements<C: From<Self::RenderElement>>(
         &self,
@@ -153,8 +153,9 @@ where
             }
             SpaceElements::Element(element) => element
                 .element
-                .render_elements::<Self::RenderElement>(location, scale)
+                .render_elements::<Wrap<<E as AsRenderElements<R>>::RenderElement>>(location, scale)
                 .into_iter()
+                .map(SpaceRenderElements::from)
                 .map(C::from)
                 .collect(),
         }
