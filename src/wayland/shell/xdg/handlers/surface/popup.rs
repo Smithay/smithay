@@ -65,10 +65,14 @@ where
         data.alive_tracker.destroy_notify();
 
         // remove this surface from the known ones (as well as any leftover dead surface)
-        let popups = &mut data.shell_data.lock().unwrap().known_popups;
-        if let Some(index) = popups.iter().position(|pop| pop.shell_surface.id() == object_id) {
-            let popup = popups.remove(index);
-            drop(popups);
+        let mut shell_data = data.shell_data.lock().unwrap();
+        if let Some(index) = shell_data
+            .known_popups
+            .iter()
+            .position(|pop| pop.shell_surface.id() == object_id)
+        {
+            let popup = shell_data.known_popups.remove(index);
+            drop(shell_data);
             XdgShellHandler::popup_destroyed(state, popup);
         }
     }
