@@ -2,9 +2,9 @@ use smithay::{
     backend::renderer::{
         damage::{DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode},
         element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
-        ImportAll, Renderer,
+        ImportAll, ImportMem, Renderer,
     },
-    desktop::{self, space::Space, Window},
+    desktop::{self, space::Space},
     utils::{Physical, Rectangle},
     wayland::output::Output,
 };
@@ -14,6 +14,7 @@ use crate::drawing::FpsElement;
 use crate::{
     drawing::{PointerRenderElement, CLEAR_COLOR},
     shell::FullscreenSurface,
+    ssd::DecoratedWindow,
 };
 
 smithay::backend::renderer::element::render_elements! {
@@ -27,7 +28,7 @@ smithay::backend::renderer::element::render_elements! {
 #[allow(clippy::too_many_arguments)]
 pub fn render_output<'a, R>(
     output: &Output,
-    space: &'a Space<Window>,
+    space: &'a Space<DecoratedWindow>,
     custom_elements: &'a [CustomRenderElements<R>],
     renderer: &mut R,
     damage_tracked_renderer: &mut DamageTrackedRenderer,
@@ -35,7 +36,7 @@ pub fn render_output<'a, R>(
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
 where
-    R: Renderer + ImportAll,
+    R: Renderer + ImportAll + ImportMem,
     R::TextureId: Clone + 'static,
 {
     if let Some(window) = output
@@ -57,7 +58,7 @@ where
 
         damage_tracked_renderer.render_output(renderer, age, &render_elements, CLEAR_COLOR, log)
     } else {
-        desktop::space::render_output(
+        desktop::space::render_output::<R, CustomRenderElements<R>, DecoratedWindow>(
             output,
             renderer,
             age,

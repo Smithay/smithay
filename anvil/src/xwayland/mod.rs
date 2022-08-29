@@ -1,6 +1,6 @@
 use std::{collections::HashMap, convert::TryFrom, os::unix::net::UnixStream, sync::Arc};
 
-use crate::AnvilState;
+use crate::{ssd::DecoratedWindow, AnvilState};
 use smithay::{
     desktop::{Kind, Space, Window, X11Surface},
     reexports::wayland_server::{protocol::wl_surface::WlSurface, Client, DisplayHandle, Resource},
@@ -21,7 +21,7 @@ use x11rb::{
     rust_connection::{DefaultStream, RustConnection},
 };
 
-impl<BackendData: 'static> AnvilState<BackendData> {
+impl<BackendData: crate::state::Backend + 'static> AnvilState<BackendData> {
     pub fn start_xwayland(&mut self) {
         if let Err(e) = self.xwayland.start(self.handle.clone()) {
             error!(self.log, "Failed to start XWayland: {}", e);
@@ -127,7 +127,7 @@ impl X11State {
         &mut self,
         event: Event,
         dh: &DisplayHandle,
-        space: &mut Space<Window>,
+        space: &mut Space<DecoratedWindow>,
     ) -> Result<(), ReplyOrIdError> {
         debug!(self.log, "X11: Got event {:?}", event);
         match event {
@@ -215,7 +215,7 @@ impl X11State {
         window: X11Window,
         surface: WlSurface,
         location: Point<i32, Logical>,
-        space: &mut Space<Window>,
+        space: &mut Space<DecoratedWindow>,
     ) {
         debug!(self.log, "Matched X11 surface {:x?} to {:x?}", window, surface);
 
@@ -226,12 +226,23 @@ impl X11State {
         }
 
         let x11surface = X11Surface { surface };
-        space.map_element(Window::new(Kind::X11(x11surface)), location, true);
+        space.map_element(
+            DecoratedWindow {
+                window: Window::new(Kind::X11(x11surface)),
+            },
+            location,
+            true,
+        );
     }
 }
 
 // Called when a WlSurface commits.
-pub fn commit_hook(surface: &WlSurface, dh: &DisplayHandle, state: &mut X11State, space: &mut Space<Window>) {
+pub fn commit_hook(
+    surface: &WlSurface,
+    dh: &DisplayHandle,
+    state: &mut X11State,
+    space: &mut Space<DecoratedWindow>,
+) {
     if let Ok(client) = dh.get_client(surface.id()) {
         // Is this the Xwayland client?
         if client == state.client {

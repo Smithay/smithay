@@ -36,7 +36,7 @@ gl_generator = "0.14"
 
 [features]
 debug = ["fps_ticker", "image/png"]
-default = ["egl", "winit", "x11", "udev", "logind", "xwayland"]
+default = ["egl", "winit", "logind", "xwayland"] #, "x11", "udev"
 egl = ["smithay/use_system_lib", "smithay/backend_egl"]
 elogind = ["logind", "smithay/backend_session_elogind"]
 libseat = ["smithay/backend_session_libseat"]

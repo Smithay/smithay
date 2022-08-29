@@ -8,7 +8,7 @@ use smithay::{
     delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_tablet_manager,
     delegate_text_input_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
     delegate_xdg_shell,
-    desktop::{PopupManager, Space, Window},
+    desktop::{PopupManager, Space},
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
@@ -50,13 +50,13 @@ use smithay::{
     },
 };
 
-use crate::focus::FocusTarget;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::X11State;
+use crate::{focus::FocusTarget, ssd::DecoratedWindow};
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::{XWayland, XWaylandEvent};
 
-pub struct CalloopData<BackendData: 'static> {
+pub struct CalloopData<BackendData: Backend + 'static> {
     pub state: AnvilState<BackendData>,
     pub display: Display<AnvilState<BackendData>>,
 }
@@ -71,7 +71,7 @@ impl ClientData for ClientState {
 }
 
 #[derive(Debug)]
-pub struct AnvilState<BackendData: 'static> {
+pub struct AnvilState<BackendData: Backend + 'static> {
     pub backend_data: BackendData,
     pub socket_name: Option<String>,
     pub display_handle: DisplayHandle,
@@ -79,7 +79,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub handle: LoopHandle<'static, CalloopData<BackendData>>,
 
     // desktop
-    pub space: Space<Window>,
+    pub space: Space<DecoratedWindow>,
     pub popups: PopupManager,
 
     // smithay state
@@ -114,7 +114,7 @@ pub struct AnvilState<BackendData: 'static> {
 
 delegate_compositor!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
@@ -122,7 +122,7 @@ impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
         unreachable!("Anvil doesn't do server-side selections");
     }
 }
-impl<BackendData> ClientDndGrabHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> ClientDndGrabHandler for AnvilState<BackendData> {
     fn started(&mut self, _source: Option<WlDataSource>, icon: Option<WlSurface>, _seat: Seat<Self>) {
         self.dnd_icon = icon;
     }
@@ -130,30 +130,30 @@ impl<BackendData> ClientDndGrabHandler for AnvilState<BackendData> {
         self.dnd_icon = None;
     }
 }
-impl<BackendData> ServerDndGrabHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> ServerDndGrabHandler for AnvilState<BackendData> {
     fn send(&mut self, _mime_type: String, _fd: RawFd) {
         unreachable!("Anvil doesn't do server-side grabs");
     }
 }
-delegate_data_device!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_data_device!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_output!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_output!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> PrimarySelectionHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> PrimarySelectionHandler for AnvilState<BackendData> {
     fn primary_selection_state(&self) -> &PrimarySelectionState {
         &self.primary_selection_state
     }
 }
-delegate_primary_selection!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_primary_selection!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> ShmHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> ShmHandler for AnvilState<BackendData> {
     fn shm_state(&self) -> &ShmState {
         &self.shm_state
     }
 }
-delegate_shm!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_shm!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> SeatHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
     type KeyboardFocus = FocusTarget;
     type PointerFocus = FocusTarget;
 
@@ -176,17 +176,17 @@ impl<BackendData> SeatHandler for AnvilState<BackendData> {
         *self.cursor_status.lock().unwrap() = image;
     }
 }
-delegate_seat!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_seat!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_tablet_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_tablet_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_text_input_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_text_input_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_input_method_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_input_method_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_viewporter!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_viewporter!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
     fn activation_state(&mut self) -> &mut XdgActivationState {
         &mut self.xdg_activation_state
     }
@@ -202,7 +202,7 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
             let w = self
                 .space
                 .elements()
-                .find(|window| window.toplevel().wl_surface() == &surface)
+                .find(|w| w.window.toplevel().wl_surface() == &surface)
                 .cloned();
             if let Some(window) = w {
                 self.space.raise_element(&window, true);
@@ -222,15 +222,22 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
         // The request is cancelled
     }
 }
-delegate_xdg_activation!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_xdg_activation!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> XdgDecorationHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
         toplevel.with_pending_state(|state| {
-            state.decoration_mode = Some(Mode::ClientSide);
+            state.decoration_mode = Some(Mode::ServerSide);
         });
         toplevel.send_configure();
+        if let Some(window) = self
+            .space
+            .elements()
+            .find(|w| w.window.toplevel().wl_surface() == toplevel.wl_surface())
+        {
+            window.set_ssd(true);
+        }
     }
     fn request_mode(&mut self, _toplevel: ToplevelSurface, _mode: DecorationMode) {}
     fn unset_mode(&mut self, _toplevel: ToplevelSurface) {}
@@ -238,7 +245,7 @@ impl<BackendData> XdgDecorationHandler for AnvilState<BackendData> {
 delegate_xdg_decoration!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_xdg_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-delegate_layer_shell!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_layer_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
@@ -367,7 +374,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn send_frames(&self, output: &Output) {
         self.space.elements().for_each(|window| {
             if self.space.outputs_for_element(window).contains(output) {
-                window.send_frame(self.start_time.elapsed().as_millis() as u32)
+                window
+                    .window
+                    .send_frame(self.start_time.elapsed().as_millis() as u32)
             }
         });
         let map = smithay::desktop::layer_map_for_output(output);

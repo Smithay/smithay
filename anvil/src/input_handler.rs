@@ -48,7 +48,7 @@ use smithay::{
     },
 };
 
-impl<Backend> AnvilState<Backend> {
+impl<Backend: crate::state::Backend> AnvilState<Backend> {
     fn process_common_key_action(&mut self, action: KeyAction) {
         match action {
             KeyAction::None => (),

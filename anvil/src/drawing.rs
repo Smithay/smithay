@@ -10,7 +10,7 @@ use smithay::{
         element::{
             surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, AsRenderElements, Id,
         },
-        ImportAll, Renderer, Texture,
+        ImportAll, ImportMem, Renderer, Texture,
     },
     input::pointer::CursorImageStatus,
     render_elements,
@@ -52,7 +52,7 @@ render_elements! {
 
 impl<T: Texture + Clone + 'static, R> AsRenderElements<R> for PointerElement<T>
 where
-    R: Renderer<TextureId = T> + ImportAll,
+    R: Renderer<TextureId = T> + ImportAll + ImportMem,
 {
     type RenderElement = PointerRenderElement<R>;
     fn render_elements<E>(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E>

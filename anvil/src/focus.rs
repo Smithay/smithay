@@ -11,11 +11,11 @@ pub use smithay::{
     wayland::seat::WaylandFocus,
 };
 
-use crate::state::AnvilState;
+use crate::{ssd::DecoratedWindow, state::AnvilState};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FocusTarget {
-    Window(Window),
+    Window(DecoratedWindow),
     LayerSurface(LayerSurface),
     Popup(PopupKind),
 }
@@ -36,7 +36,7 @@ impl From<FocusTarget> for WlSurface {
     }
 }
 
-impl<Backend> PointerTarget<AnvilState<Backend>> for FocusTarget {
+impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for FocusTarget {
     fn enter(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &MotionEvent) {
         match self {
             FocusTarget::Window(w) => PointerTarget::enter(w, seat, data, event),
@@ -80,7 +80,7 @@ impl<Backend> PointerTarget<AnvilState<Backend>> for FocusTarget {
     }
 }
 
-impl<Backend> KeyboardTarget<AnvilState<Backend>> for FocusTarget {
+impl<Backend: crate::state::Backend> KeyboardTarget<AnvilState<Backend>> for FocusTarget {
     fn enter(
         &self,
         seat: &Seat<AnvilState<Backend>>,
@@ -140,14 +140,14 @@ impl<Backend> KeyboardTarget<AnvilState<Backend>> for FocusTarget {
 impl WaylandFocus for FocusTarget {
     fn wl_surface(&self) -> Option<&WlSurface> {
         Some(match self {
-            FocusTarget::Window(w) => w.toplevel().wl_surface(),
+            FocusTarget::Window(w) => w.window.toplevel().wl_surface(),
             FocusTarget::LayerSurface(l) => l.wl_surface(),
             FocusTarget::Popup(p) => p.wl_surface(),
         })
     }
     fn same_client_as(&self, object_id: ObjectId) -> bool {
         match self {
-            FocusTarget::Window(w) => w.toplevel().wl_surface().id().same_client_as(&object_id),
+            FocusTarget::Window(w) => w.window.toplevel().wl_surface().id().same_client_as(&object_id),
             FocusTarget::LayerSurface(l) => l.wl_surface().id().same_client_as(&object_id),
             FocusTarget::Popup(p) => p.wl_surface().id().same_client_as(&object_id),
         }
@@ -156,6 +156,12 @@ impl WaylandFocus for FocusTarget {
 
 impl From<Window> for FocusTarget {
     fn from(w: Window) -> Self {
+        FocusTarget::Window(DecoratedWindow { window: w })
+    }
+}
+
+impl From<DecoratedWindow> for FocusTarget {
+    fn from(w: DecoratedWindow) -> Self {
         FocusTarget::Window(w)
     }
 }

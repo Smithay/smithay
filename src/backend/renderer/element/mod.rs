@@ -450,7 +450,7 @@ macro_rules! render_elements_internal {
     (@impl $name:ident<$renderer:ident>; $($tail:tt)*) => {
         impl<$renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$renderer>
         where
-            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll,
+            $renderer: $crate::backend::renderer::Renderer + $crate::backend::renderer::ImportAll + $crate::backend::renderer::ImportMem,
             <$renderer as Renderer>::TextureId: 'static,
         {
             $crate::render_elements_internal!(@body $renderer; $($tail)*);
