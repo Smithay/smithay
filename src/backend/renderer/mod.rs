@@ -293,12 +293,13 @@ pub trait ImportMem: Renderer {
         flipped: bool,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
 
-    /// Import a given chunk of memory into an existing texture.
+    /// Update a portion of a given chunk of memory into an existing texture.
     ///
     /// This operation needs no bound or default rendering target.
     ///
-    /// The provided data slice needs to be in RGBA8 format, its length should thus be `region.size.w * region.size.h * 4`.
-    /// Anything beyond will be truncated, if the buffer is too small an error will be returned.
+    /// The provided data slice needs to be in RGBA8 format and the same size of the texture.
+    /// Its length should this be `texture.size().w * texture.size().h * 4`.
+    /// Anything beyond will be ignored, if the buffer is too small an error will be returned.
     ///
     /// This function *may* error, if (but not limited to):
     /// - The texture was not created using either [`ImportMemWl::import_shm_buffer`] or [`ImportMem::import_memory`].
