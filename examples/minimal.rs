@@ -160,7 +160,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                         event.state(),
                         0.into(),
                         0,
-                        |_, _| {
+                        |_, _, _| {
                             //
                             FilterResult::Forward
                         },
