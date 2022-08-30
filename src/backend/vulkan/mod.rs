@@ -513,10 +513,9 @@ impl PhysicalDevice {
             })
     }
 
-    /// Gets some physical device properties.
+    /// Get physical device properties.
     ///
-    /// This function is used to get some physical device data associated with an extension and is
-    /// equivalent to calling [`vkGetPhysicalDeviceProperties2`].
+    /// This function is equivalent to calling [`vkGetPhysicalDeviceProperties2`].
     ///
     /// # Safety
     ///
@@ -529,6 +528,23 @@ impl PhysicalDevice {
         // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceProperties2
         // are satisfied.
         unsafe { instance.get_physical_device_properties2(self.handle(), props) }
+    }
+
+    /// Get physical device format properties.
+    ///
+    /// This function is equivalent to calling [`vkGetPhysicalDeviceFormatProperties2`].
+    ///
+    /// # Safety
+    ///
+    /// - All valid usage requirements for [`vkGetPhysicalDeviceFormatProperties2`] apply. Read the specification
+    ///   for more information.
+    ///
+    /// [`vkGetPhysicalDeviceProperties2`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkGetPhysicalDeviceFormatProperties2.html
+    pub unsafe fn get_format_properties(&self, format: vk::Format, props: &mut vk::FormatProperties2) {
+        let instance = self.instance().handle();
+        // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceFormatProperties2
+        // are satisfied.
+        unsafe { instance.get_physical_device_format_properties2(self.handle(), format, props) }
     }
 
     /// Returns the device extensions supported by the physical device.
