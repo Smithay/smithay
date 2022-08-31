@@ -4,8 +4,9 @@ use crate::{
         layer::{layer_state as output_layer_state, *},
         space::Space,
     },
+    output::Output,
     utils::{Physical, Point, Rectangle, Scale},
-    wayland::{output::Output, shell::wlr_layer::Layer},
+    wayland::shell::wlr_layer::Layer,
 };
 use std::{
     any::TypeId,

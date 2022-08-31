@@ -20,18 +20,13 @@ use smithay::{
     },
     desktop::space::RenderError,
     input::pointer::CursorImageStatus,
+    output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::EventLoop,
-        wayland_server::{
-            protocol::{wl_output, wl_surface},
-            Display,
-        },
+        wayland_server::{protocol::wl_surface, Display},
     },
-    utils::IsAlive,
-    wayland::{
-        input_method::InputMethodSeat,
-        output::{Mode, Output, PhysicalProperties},
-    },
+    utils::{IsAlive, Transform},
+    wayland::input_method::InputMethodSeat,
 };
 
 use crate::{
@@ -146,19 +141,14 @@ pub fn run_winit(log: Logger) {
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
-            subpixel: wl_output::Subpixel::Unknown,
+            subpixel: Subpixel::Unknown,
             make: "Smithay".into(),
             model: "Winit".into(),
         },
         log.clone(),
     );
     let _global = output.create_global::<AnvilState<WinitData>>(&display.handle());
-    output.change_current_state(
-        Some(mode),
-        Some(wl_output::Transform::Flipped180),
-        None,
-        Some((0, 0).into()),
-    );
+    output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
 
