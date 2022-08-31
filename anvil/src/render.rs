@@ -4,8 +4,8 @@ use smithay::{
         draw_window, draw_window_popups,
         space::{RenderElement, RenderError, Space},
     },
+    output::Output,
     utils::{Physical, Rectangle},
-    wayland::output::Output,
 };
 
 use crate::{drawing::*, shell::FullscreenSurface};
@@ -28,7 +28,7 @@ where
         .get::<FullscreenSurface>()
         .and_then(|f| f.get())
     {
-        let transform = output.current_transform().into();
+        let transform = output.current_transform();
         let mode = output.current_mode().unwrap();
         let scale = output.current_scale().fractional_scale();
         let output_geo = space

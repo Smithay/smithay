@@ -10,6 +10,7 @@ use smithay::{
     delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
+    output::Output,
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
         wayland_protocols::xdg::decoration::{
@@ -32,7 +33,7 @@ use smithay::{
         keyboard_shortcuts_inhibit::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
-        output::{Output, OutputManagerState},
+        output::OutputManagerState,
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         shell::{
             wlr_layer::WlrLayerShellState,

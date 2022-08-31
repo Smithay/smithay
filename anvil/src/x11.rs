@@ -26,16 +26,13 @@ use smithay::{
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
     input::pointer::CursorImageStatus,
+    output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::EventLoop,
         gbm,
-        wayland_server::{
-            protocol::{wl_output, wl_surface},
-            Display,
-        },
+        wayland_server::{protocol::wl_surface, Display},
     },
     utils::IsAlive,
-    wayland::output::{Mode, Output, PhysicalProperties},
 };
 
 pub const OUTPUT_NAME: &str = "x11";
@@ -179,7 +176,7 @@ pub fn run_x11(log: Logger) {
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
-            subpixel: wl_output::Subpixel::Unknown,
+            subpixel: Subpixel::Unknown,
             make: "Smithay".into(),
             model: "X11".into(),
         },

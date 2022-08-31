@@ -8,21 +8,16 @@ use smithay::{
     backend::input::ButtonState,
     desktop::WindowSurfaceType,
     input::pointer::{ButtonEvent, CursorImageStatus, MotionEvent},
+    output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{
             channel::{Channel, Event as ChannelEvent},
             EventLoop,
         },
-        wayland_server::{
-            protocol::{wl_output, wl_surface},
-            Client, Display, Resource,
-        },
+        wayland_server::{protocol::wl_surface, Client, Display, Resource},
     },
     utils::{IsAlive, SERIAL_COUNTER as SCOUNTER},
-    wayland::{
-        input_method::InputMethodSeat,
-        output::{Mode, Output, PhysicalProperties},
-    },
+    wayland::input_method::InputMethodSeat,
 };
 
 use anvil::{
@@ -89,7 +84,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
-            subpixel: wl_output::Subpixel::Unknown,
+            subpixel: Subpixel::Unknown,
             make: "Smithay".into(),
             model: "WLCS".into(),
         },
@@ -121,16 +116,13 @@ pub fn run(channel: Channel<WlcsEvent>) {
             let input_method = state.seat.input_method().unwrap();
             let rectangle = input_method.coordinates();
             input_method.with_surface(|surface| {
-                elements.push(
-                    draw_input_popup_surface(
-                        surface.clone(),
-                        (
-                            rectangle.loc.x + rectangle.size.w,
-                            (rectangle.loc.y + rectangle.size.h),
-                        ),
-                    )
-                    .into(),
-                );
+                elements.push(draw_input_popup_surface(
+                    surface.clone(),
+                    (
+                        rectangle.loc.x + rectangle.size.w,
+                        (rectangle.loc.y + rectangle.size.h),
+                    ),
+                ));
             });
 
             // draw the cursor as relevant

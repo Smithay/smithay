@@ -4,8 +4,8 @@ use crate::{
         space::Space,
         window::{draw_window, Window},
     },
+    output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::output::Output,
 };
 use std::{
     any::TypeId,

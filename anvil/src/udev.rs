@@ -40,6 +40,7 @@ use smithay::{
     },
     desktop::space::{RenderError, Space, SurfaceTree},
     input::pointer::CursorImageStatus,
+    output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{
             timer::{TimeoutAction, Timer},
@@ -57,17 +58,12 @@ use smithay::{
         gbm::Device as GbmDevice,
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
-        wayland_server::{
-            backend::GlobalId,
-            protocol::{wl_output, wl_surface},
-            Display, DisplayHandle,
-        },
+        wayland_server::{backend::GlobalId, protocol::wl_surface, Display, DisplayHandle},
     },
     utils::{
         signaling::{Linkable, SignalToken, Signaler},
         IsAlive, Logical, Point, Rectangle, Transform,
     },
-    wayland::output::{Mode, Output, PhysicalProperties},
 };
 
 type UdevRenderer<'a> = MultiRenderer<'a, 'a, EglGlesBackend, EglGlesBackend, Gles2Renderbuffer>;
@@ -465,7 +461,7 @@ fn scan_connectors(
                 output_name,
                 PhysicalProperties {
                     size: (phys_w as i32, phys_h as i32).into(),
-                    subpixel: wl_output::Subpixel::Unknown,
+                    subpixel: Subpixel::Unknown,
                     make: "Smithay".into(),
                     model: "Generic DRM".into(),
                 },
