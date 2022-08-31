@@ -8,7 +8,7 @@ use crate::{
     wayland::compositor::{self, TraversalAction},
 };
 
-use super::{Id, RenderElement, UnderlyingStorage};
+use super::{CommitCounter, Id, RenderElement, UnderlyingStorage};
 
 /// Retrieve the render surfaces for a surface tree
 pub fn render_elements_from_surface_tree<E>(
@@ -106,7 +106,7 @@ where
         &self.id
     }
 
-    fn current_commit(&self) -> usize {
+    fn current_commit(&self) -> CommitCounter {
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
             data.map(|d| d.borrow().current_commit())
@@ -118,7 +118,11 @@ where
         Rectangle::from_loc_and_size(self.location.to_i32_round(), self.size(scale))
     }
 
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(
+        &self,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
+    ) -> Vec<Rectangle<i32, Physical>> {
         let dst_size = self.size(scale);
 
         compositor::with_states(&self.surface, |states| {
