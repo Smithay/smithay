@@ -10,6 +10,7 @@ use smithay::{
         element::{
             surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, AsRenderElements, Id,
         },
+        utils::CommitCounter,
         ImportAll, ImportMem, Renderer, Texture,
     },
     input::pointer::CursorImageStatus,
@@ -74,7 +75,7 @@ where
                                 .to_logical(1, Transform::Normal)
                                 .to_physical_precise_round(scale),
                             Transform::Normal,
-                            1,
+                            CommitCounter::default(),
                         ),
                     )
                     .into()]
@@ -102,7 +103,7 @@ pub struct FpsElement<T: Texture> {
     id: Id,
     value: u32,
     texture: T,
-    commit_counter: usize,
+    commit_counter: CommitCounter,
 }
 
 #[cfg(feature = "debug")]
@@ -112,14 +113,14 @@ impl<T: Texture> FpsElement<T> {
             id: Id::new(),
             texture,
             value: 0,
-            commit_counter: 0,
+            commit_counter: CommitCounter::default(),
         }
     }
 
     pub fn update_fps(&mut self, fps: u32) {
         if self.value != fps {
             self.value = fps;
-            self.commit_counter = self.commit_counter.wrapping_add(1);
+            self.commit_counter.increment();
         }
     }
 }
@@ -149,7 +150,7 @@ where
         Rectangle::from_loc_and_size((0, 0), (24 * digits, 35)).to_physical_precise_round(scale)
     }
 
-    fn current_commit(&self) -> usize {
+    fn current_commit(&self) -> CommitCounter {
         self.commit_counter
     }
 

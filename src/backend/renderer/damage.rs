@@ -10,13 +10,16 @@ use crate::{
     wayland::output::Output,
 };
 
-use super::element::{Id, RenderElement};
+use super::{
+    element::{Id, RenderElement},
+    utils::CommitCounter,
+};
 
 use super::{ImportAll, Renderer, Texture};
 
 #[derive(Debug, Clone, Copy)]
 struct ElementState {
-    last_commit: usize,
+    last_commit: CommitCounter,
     last_geometry: Rectangle<i32, Physical>,
     last_z_index: usize,
 }
