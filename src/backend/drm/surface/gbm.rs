@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
-use drm::buffer::PlanarBuffer;
 use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
 use gbm::BufferObject;
 
@@ -408,7 +407,7 @@ where
         Ok(fb) => fb,
         Err(source) => {
             // We only support this as a fallback of last resort like xf86-video-modesetting does.
-            if bo.handles()[1].is_some() {
+            if bo.plane_count().unwrap() > 1 {
                 return Err(Error::DrmError(DrmError::Access {
                     errmsg: "Failed to add framebuffer",
                     dev: drm.dev_path(),

@@ -203,7 +203,8 @@ where
                 );
                 let mut keyboard = input_method.keyboard_grab.inner.lock().unwrap();
                 keyboard.grab = Some(instance.clone());
-                keyboard.text_input_handle = Some(data.text_input_handle.clone());
+                keyboard.text_input_handle = data.text_input_handle.clone();
+                keyboard.popup_handle = input_method.popup.clone();
                 instance.repeat_info(keyboard.repeat_rate, keyboard.repeat_delay);
                 keyboard
                     .keymap_file
@@ -223,5 +224,8 @@ where
 
     fn destroyed(_state: &mut D, _client: ClientId, _input_method: ObjectId, data: &InputMethodUserData<D>) {
         data.handle.inner.lock().unwrap().instance = None;
+        data.text_input_handle.with_focused_text_input(|ti, surface, _| {
+            ti.leave(surface);
+        });
     }
 }

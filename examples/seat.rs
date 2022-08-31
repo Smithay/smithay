@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             smithay::backend::input::KeyState::Pressed,
             0.into(),
             0,
-            |_, _| {
+            |_, _, _| {
                 if false {
                     FilterResult::Intercept(0)
                 } else {

@@ -974,6 +974,7 @@ impl ImportMem for Gles2Renderer {
                 .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
             self.gl
                 .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+            self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, texture.0.size.w);
             self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
             self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
             self.gl.TexSubImage2D(
@@ -987,6 +988,7 @@ impl ImportMem for Gles2Renderer {
                 ffi::UNSIGNED_BYTE as u32,
                 data.as_ptr() as *const _,
             );
+            self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
             self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
             self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);
             self.gl.BindTexture(ffi::TEXTURE_2D, 0);

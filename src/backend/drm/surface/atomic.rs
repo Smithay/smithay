@@ -264,11 +264,14 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         }
 
         self.ensure_props_known(&[conn])?;
-        let info = self.fd.get_connector(conn).map_err(|source| Error::Access {
-            errmsg: "Error loading connector info",
-            dev: self.fd.dev_path(),
-            source,
-        })?;
+        let info = self
+            .fd
+            .get_connector(conn, false)
+            .map_err(|source| Error::Access {
+                errmsg: "Error loading connector info",
+                dev: self.fd.dev_path(),
+                source,
+            })?;
 
         let mut pending = self.pending.write().unwrap();
 
@@ -513,7 +516,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         let mut added = pending_conns.difference(&current_conns);
 
         for conn in removed.clone() {
-            if let Ok(info) = self.fd.get_connector(*conn) {
+            if let Ok(info) = self.fd.get_connector(*conn, false) {
                 info!(self.logger, "Removing connector: {:?}", info.interface());
             } else {
                 info!(self.logger, "Removing unknown connector");
@@ -521,7 +524,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         }
 
         for conn in added.clone() {
-            if let Ok(info) = self.fd.get_connector(*conn) {
+            if let Ok(info) = self.fd.get_connector(*conn, false) {
                 info!(self.logger, "Adding connector: {:?}", info.interface());
             } else {
                 info!(self.logger, "Adding unknown connector");

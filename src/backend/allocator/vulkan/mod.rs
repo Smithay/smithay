@@ -541,10 +541,7 @@ impl VulkanAllocator {
                 .format_properties(format_properties)
                 .push_next(&mut list);
 
-            self.phd
-                .instance()
-                .handle()
-                .get_physical_device_format_properties2(self.phd.handle(), format, &mut format_properties2)
+            self.phd.get_format_properties(format, &mut format_properties2)
         };
 
         let mut data = Vec::with_capacity(list.drm_format_modifier_count as usize);
@@ -556,10 +553,7 @@ impl VulkanAllocator {
                 .format_properties(format_properties)
                 .push_next(&mut list);
 
-            self.phd
-                .instance()
-                .handle()
-                .get_physical_device_format_properties2(self.phd.handle(), format, &mut format_properties2);
+            self.phd.get_format_properties(format, &mut format_properties2);
 
             // SAFETY: Vulkan just initialized the elements of the vector.
             data.set_len(list.drm_format_modifier_count as usize);
