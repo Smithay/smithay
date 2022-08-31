@@ -26,6 +26,38 @@ use super::element::{
     RenderElement,
 };
 
+/// A commit counter for damage tracking
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct CommitCounter(usize);
+
+impl CommitCounter {
+    /// Increment the commit counter
+    pub fn increment(&mut self) {
+        self.0 = self.0.wrapping_add(1)
+    }
+
+    /// Get the distance between two [`CommitCounter`]
+    ///
+    /// If the [`CommitCounter`] is incremented on each recorded
+    /// damage this returns the count of damage that happened
+    /// between the [`CommitCounter`]s
+    pub fn distance(&self, previous_commit: Option<CommitCounter>) -> Option<usize> {
+        // if commit > commit_count we have overflown, in that case the following map might result
+        // in a false-positive, if commit is still very large. So we force false in those cases.
+        // That will result in a potentially sub-optimal full damage every usize::MAX frames,
+        // which is acceptable.
+        previous_commit
+            .filter(|commit| commit <= self)
+            .map(|commit| self.0.wrapping_sub(commit.0))
+    }
+}
+
+impl From<usize> for CommitCounter {
+    fn from(counter: usize) -> Self {
+        CommitCounter(counter)
+    }
+}
+
 /// Type stored in WlSurface states data_map
 ///
 /// ```rs
@@ -38,7 +70,7 @@ pub type RendererSurfaceStateUserData = RefCell<RendererSurfaceState>;
 /// Surface state for rendering related data
 #[derive(Default, Debug)]
 pub struct RendererSurfaceState {
-    pub(crate) commit_count: usize,
+    pub(crate) commit_count: CommitCounter,
     pub(crate) buffer_dimensions: Option<Size<i32, BufferCoord>>,
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
@@ -46,7 +78,7 @@ pub struct RendererSurfaceState {
     pub(crate) buffer_has_alpha: Option<bool>,
     pub(crate) buffer: Option<WlBuffer>,
     pub(crate) damage: VecDeque<Vec<Rectangle<i32, BufferCoord>>>,
-    pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
+    pub(crate) renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
     pub(crate) opaque_regions: Vec<Rectangle<i32, Logical>>,
@@ -84,7 +116,7 @@ impl RendererSurfaceState {
                     }
                 }
                 self.textures.clear();
-                self.commit_count = self.commit_count.wrapping_add(1);
+                self.commit_count.increment();
 
                 let surface_size = self
                     .buffer_dimensions
@@ -177,7 +209,7 @@ impl RendererSurfaceState {
                     buffer.release();
                 };
                 self.textures.clear();
-                self.commit_count = self.commit_count.wrapping_add(1);
+                self.commit_count.increment();
                 self.damage.clear();
                 self.surface_view = None;
                 self.buffer_has_alpha = None;
@@ -191,7 +223,7 @@ impl RendererSurfaceState {
     ///
     /// The position should be saved after calling [`damage_since`] and
     /// provided as the commit in the next call.
-    pub fn current_commit(&self) -> usize {
+    pub fn current_commit(&self) -> CommitCounter {
         self.commit_count
     }
 
@@ -199,20 +231,16 @@ impl RendererSurfaceState {
     ///
     /// If either the commit is `None` or the commit is too old
     /// the whole buffer will be returned as damage.
-    pub fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, BufferCoord>> {
-        // on overflow the wrapping_sub should end up
-        let recent_enough = commit
-            // if commit > commit_count we have overflown, in that case the following map might result
-            // in a false-positive, if commit is still very large. So we force false in those cases.
-            // That will result in a potentially sub-optimal full damage every usize::MAX frames,
-            // which is acceptable.
-            .filter(|commit| *commit <= self.commit_count)
-            .map(|commit| self.commit_count.wrapping_sub(self.damage.len()) <= commit)
-            .unwrap_or(false);
-        if recent_enough {
+    pub fn damage_since(&self, commit: Option<CommitCounter>) -> Vec<Rectangle<i32, BufferCoord>> {
+        let distance = self.commit_count.distance(commit);
+
+        if distance
+            .map(|distance| distance <= self.damage.len())
+            .unwrap_or(false)
+        {
             self.damage
                 .iter()
-                .take(self.commit_count.wrapping_sub(commit.unwrap()))
+                .take(distance.unwrap())
                 .fold(Vec::new(), |mut acc, elem| {
                     acc.extend(elem);
                     acc
