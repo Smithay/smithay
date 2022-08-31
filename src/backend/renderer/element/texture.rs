@@ -5,7 +5,7 @@ use crate::{
     utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{Id, RenderElement, UnderlyingStorage};
+use super::{CommitCounter, Id, RenderElement, UnderlyingStorage};
 
 /// A single texture render element
 #[derive(Debug)]
@@ -16,7 +16,7 @@ pub struct TextureRenderElement<T: Texture> {
     src: Option<Rectangle<f64, Buffer>>,
     size: Size<i32, Physical>,
     transform: Transform,
-    commit: usize,
+    commit: CommitCounter,
 }
 
 impl<T: Texture> TextureRenderElement<T> {
@@ -28,7 +28,7 @@ impl<T: Texture> TextureRenderElement<T> {
         src: Option<Rectangle<f64, Buffer>>,
         size: Size<i32, Physical>,
         transform: Transform,
-        commit: usize,
+        commit: CommitCounter,
     ) -> Self {
         Self {
             location: location.into(),
@@ -51,7 +51,7 @@ where
         &self.id
     }
 
-    fn current_commit(&self) -> usize {
+    fn current_commit(&self) -> CommitCounter {
         self.commit
     }
 
