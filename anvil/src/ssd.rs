@@ -3,10 +3,12 @@ use smithay::{
         input::KeyState,
         renderer::{
             element::{
-                render_elements, surface::WaylandSurfaceRenderElement, AsRenderElements, Id, RenderElement,
-                UnderlyingStorage,
+                memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+                render_elements,
+                surface::WaylandSurfaceRenderElement,
+                AsRenderElements,
             },
-            Frame, ImportAll, ImportMem, Renderer, Texture,
+            ImportAll, ImportMem, Renderer, Texture,
         },
     },
     desktop::{space::SpaceElement, Kind, Window},
@@ -19,14 +21,11 @@ use smithay::{
     wayland::{output::Output, shell::xdg::XdgShellHandler},
 };
 
-use std::{
-    cell::{RefCell, RefMut},
-    collections::HashMap,
-};
+use std::cell::{RefCell, RefMut};
 
 use crate::AnvilState;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DecoratedWindow {
     pub window: Window,
 }
@@ -37,14 +36,13 @@ struct State {
     header_bar: HeaderBar,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 struct HeaderBar {
-    id: Id,
     pointer_loc: Option<Point<f64, Logical>>,
     width: u32,
     close_button_hover: bool,
     maximize_button_hover: bool,
-    last_draw: (Vec<u8>, Option<Rectangle<i32, Logical>>),
+    buffer: MemoryRenderBuffer,
 }
 
 const BG_COLOR: &[u8] = &[255, 231, 199, 255];
@@ -104,27 +102,27 @@ impl HeaderBar {
     }
 
     fn redraw(&mut self, width: u32) {
-        let buffer = &mut self.last_draw.0;
         if width == 0 {
-            buffer.clear();
             self.width = 0;
             return;
         }
 
-        let mut damage = None;
+        let mut render_context = self.buffer.render();
+        render_context.resize((4 * HEADER_BAR_HEIGHT as u32 * width) as usize);
+        let mut needs_redraw_buttons = false;
         if width != self.width {
-            *buffer = vec![0; (4 * HEADER_BAR_HEIGHT as u32 * width) as usize];
-            buffer.chunks_exact_mut(4).for_each(|chunk| {
-                chunk.copy_from_slice(BG_COLOR);
+            render_context.draw(|buffer| {
+                buffer.chunks_exact_mut(4).for_each(|chunk| {
+                    chunk.copy_from_slice(BG_COLOR);
+                });
+                vec![Rectangle::from_loc_and_size(
+                    (0, 0),
+                    (HEADER_BAR_HEIGHT, width as i32),
+                )]
             });
-            damage = Some(Rectangle::from_loc_and_size(
-                (0, 0),
-                (HEADER_BAR_HEIGHT, width as i32),
-            ));
+            needs_redraw_buttons = true;
             self.width = width;
         }
-
-        let needs_redraw_buttons = damage.is_some();
 
         if self
             .pointer_loc
@@ -133,21 +131,19 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || !self.close_button_hover)
         {
-            buffer
-                .chunks_exact_mut((width * 4) as usize)
-                .flat_map(|x| {
-                    x[((width - BUTTON_WIDTH) * 4) as usize..(width * 4) as usize].chunks_exact_mut(4)
-                })
-                .for_each(|chunk| chunk.copy_from_slice(CLOSE_COLOR_HOVER));
-            self.close_button_hover = true;
-            let new_damage = Rectangle::from_loc_and_size(
-                ((width - BUTTON_WIDTH) as i32, 0),
-                (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
-            );
-            damage = Some(match damage {
-                Some(rect) => rect.merge(new_damage),
-                None => new_damage,
+            render_context.draw(|buffer| {
+                buffer
+                    .chunks_exact_mut((width * 4) as usize)
+                    .flat_map(|x| {
+                        x[((width - BUTTON_WIDTH) * 4) as usize..(width * 4) as usize].chunks_exact_mut(4)
+                    })
+                    .for_each(|chunk| chunk.copy_from_slice(CLOSE_COLOR_HOVER));
+                vec![Rectangle::from_loc_and_size(
+                    ((width - BUTTON_WIDTH) as i32, 0),
+                    (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
+                )]
             });
+            self.close_button_hover = true;
         } else if !self
             .pointer_loc
             .as_ref()
@@ -155,19 +151,18 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || self.close_button_hover)
         {
-            buffer
-                .chunks_exact_mut((width * 4) as usize)
-                .flat_map(|x| x[((width - 32) * 4) as usize..(width * 4) as usize].chunks_exact_mut(4))
-                .for_each(|chunk| chunk.copy_from_slice(CLOSE_COLOR));
-            self.close_button_hover = false;
-            let new_damage = Rectangle::from_loc_and_size(
-                ((width - BUTTON_WIDTH) as i32, 0),
-                (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
-            );
-            damage = Some(match damage {
-                Some(rect) => rect.merge(new_damage),
-                None => new_damage,
+            render_context.draw(|buffer| {
+                buffer
+                    .chunks_exact_mut((width * 4) as usize)
+                    .flat_map(|x| x[((width - 32) * 4) as usize..(width * 4) as usize].chunks_exact_mut(4))
+                    .for_each(|chunk| chunk.copy_from_slice(CLOSE_COLOR));
+                vec![Rectangle::from_loc_and_size(
+                    ((width - BUTTON_WIDTH) as i32, 0),
+                    (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
+                )]
             });
+
+            self.close_button_hover = false;
         }
 
         if self
@@ -177,22 +172,21 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || !self.maximize_button_hover)
         {
-            buffer
-                .chunks_exact_mut((width * 4) as usize)
-                .flat_map(|x| {
-                    x[((width - (BUTTON_WIDTH * 2)) * 4) as usize..((width - BUTTON_WIDTH) * 4) as usize]
-                        .chunks_exact_mut(4)
-                })
-                .for_each(|chunk| chunk.copy_from_slice(MAX_COLOR_HOVER));
-            self.maximize_button_hover = true;
-            let new_damage = Rectangle::from_loc_and_size(
-                ((width - BUTTON_WIDTH * 2) as i32, 0),
-                (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
-            );
-            damage = Some(match damage {
-                Some(rect) => rect.merge(new_damage),
-                None => new_damage,
+            render_context.draw(|buffer| {
+                buffer
+                    .chunks_exact_mut((width * 4) as usize)
+                    .flat_map(|x| {
+                        x[((width - (BUTTON_WIDTH * 2)) * 4) as usize..((width - BUTTON_WIDTH) * 4) as usize]
+                            .chunks_exact_mut(4)
+                    })
+                    .for_each(|chunk| chunk.copy_from_slice(MAX_COLOR_HOVER));
+                vec![Rectangle::from_loc_and_size(
+                    ((width - BUTTON_WIDTH * 2) as i32, 0),
+                    (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
+                )]
             });
+
+            self.maximize_button_hover = true;
         } else if !self
             .pointer_loc
             .as_ref()
@@ -200,25 +194,22 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || self.maximize_button_hover)
         {
-            buffer
-                .chunks_exact_mut((width * 4) as usize)
-                .flat_map(|x| {
-                    x[((width - (BUTTON_WIDTH * 2)) * 4) as usize..((width - BUTTON_WIDTH) * 4) as usize]
-                        .chunks_exact_mut(4)
-                })
-                .for_each(|chunk| chunk.copy_from_slice(MAX_COLOR));
-            self.maximize_button_hover = false;
-            let new_damage = Rectangle::from_loc_and_size(
-                ((width - BUTTON_WIDTH * 2) as i32, 0),
-                (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
-            );
-            damage = Some(match damage {
-                Some(rect) => rect.merge(new_damage),
-                None => new_damage,
+            render_context.draw(|buffer| {
+                buffer
+                    .chunks_exact_mut((width * 4) as usize)
+                    .flat_map(|x| {
+                        x[((width - (BUTTON_WIDTH * 2)) * 4) as usize..((width - BUTTON_WIDTH) * 4) as usize]
+                            .chunks_exact_mut(4)
+                    })
+                    .for_each(|chunk| chunk.copy_from_slice(MAX_COLOR));
+                vec![Rectangle::from_loc_and_size(
+                    ((width - BUTTON_WIDTH * 2) as i32, 0),
+                    (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
+                )]
             });
-        }
 
-        self.last_draw.1 = damage;
+            self.maximize_button_hover = false;
+        }
     }
 }
 
@@ -229,12 +220,11 @@ impl DecoratedWindow {
                 is_ssd: false,
                 ptr_entered_window: false,
                 header_bar: HeaderBar {
-                    id: Id::new(),
                     pointer_loc: None,
                     width: 128,
                     close_button_hover: false,
                     maximize_button_hover: false,
-                    last_draw: (Vec::new(), None),
+                    buffer: MemoryRenderBuffer::default(),
                 },
             })
         });
@@ -380,19 +370,27 @@ impl<Backend: crate::state::Backend> KeyboardTarget<AnvilState<Backend>> for Dec
 impl SpaceElement for DecoratedWindow {
     fn geometry(&self) -> Rectangle<i32, Logical> {
         let mut geo = SpaceElement::geometry(&self.window);
-        geo.size.h += HEADER_BAR_HEIGHT;
+        if self.decoration_state().is_ssd {
+            geo.size.h += HEADER_BAR_HEIGHT;
+        }
         geo
     }
     fn bbox(&self) -> Rectangle<i32, Logical> {
         let mut bbox = SpaceElement::bbox(&self.window);
-        bbox.size.h += HEADER_BAR_HEIGHT;
+        if self.decoration_state().is_ssd {
+            bbox.size.h += HEADER_BAR_HEIGHT;
+        }
         bbox
     }
     fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
-        point.y < HEADER_BAR_HEIGHT as f64
-            || self
-                .window
-                .is_in_input_region(&(*point - Point::from((0.0, 32.0))))
+        if self.decoration_state().is_ssd {
+            point.y < HEADER_BAR_HEIGHT as f64
+                || self
+                    .window
+                    .is_in_input_region(&(*point - Point::from((0.0, 32.0))))
+        } else {
+            self.window.is_in_input_region(point)
+        }
     }
     fn z_index(&self) -> u8 {
         self.window.z_index()
@@ -415,102 +413,10 @@ impl SpaceElement for DecoratedWindow {
 render_elements!(
     pub DecoratedWindowElements<R>;
     Window=WaylandSurfaceRenderElement,
-    Decoration=HeaderBarElement,
+    Decoration=MemoryRenderBufferRenderElement,
 );
 
-pub struct HeaderBarElement {
-    window: DecoratedWindow,
-    id: Id,
-    location: Point<i32, Physical>,
-    scale: Scale<f64>,
-}
-
-impl HeaderBarElement {
-    fn new(window: &DecoratedWindow, location: Point<i32, Physical>, scale: Scale<f64>) -> HeaderBarElement {
-        let width = window.window.geometry().size.w;
-        window.decoration_state().header_bar.redraw(width as u32);
-        HeaderBarElement {
-            window: window.clone(),
-            id: Id::new(),
-            location,
-            scale,
-        }
-    }
-}
-
-impl<R> RenderElement<R> for HeaderBarElement
-where
-    R: Renderer + ImportMem,
-    <R as Renderer>::TextureId: 'static,
-{
-    fn id(&self) -> &Id {
-        &self.id
-    }
-    fn current_commit(&self) -> usize {
-        1
-    }
-    fn location(&self, _scale: Scale<f64>) -> Point<i32, Physical> {
-        self.location
-    }
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        let width = (SpaceElement::bbox(&self.window.window).size.w as f64 * scale.x) as i32;
-        Rectangle::from_loc_and_size((0, 0), (width, (HEADER_BAR_HEIGHT as f64 * scale.y) as i32))
-    }
-    fn damage_since(&self, scale: Scale<f64>, _commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
-        vec![Rectangle::from_loc_and_size(
-            (0, 0),
-            RenderElement::<R>::geometry(self, scale).size,
-        )]
-    }
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        let width = (SpaceElement::bbox(&self.window.window).size.w as f64 * scale.x) as i32;
-        vec![Rectangle::from_loc_and_size((0, 0), (width, HEADER_BAR_HEIGHT))]
-    }
-    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
-        None
-    }
-    fn draw(
-        &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
-        scale: Scale<f64>,
-        damage: &[Rectangle<i32, Physical>],
-        _log: &slog::Logger,
-    ) -> Result<(), R::Error> {
-        let user_data = self.window.window.user_data();
-        user_data.insert_if_missing(|| RefCell::new(HashMap::<usize, R::TextureId>::new()));
-
-        let state = self.window.decoration_state();
-        let (ref buffer, ref import_damage) = &state.header_bar.last_draw;
-        let size: Size<i32, Logical> = (state.header_bar.width as i32, HEADER_BAR_HEIGHT).into();
-
-        if state.header_bar.width == 0 {
-            return Ok(());
-        }
-
-        let mut map = user_data
-            .get::<RefCell<HashMap<usize, R::TextureId>>>()
-            .unwrap()
-            .borrow_mut();
-        let tex = map
-            .entry(renderer.id())
-            .and_modify(|tex| {
-                if let Some(region) = import_damage {
-                    renderer
-                        .update_memory(tex, buffer, dbg!(region.to_buffer(1, Transform::Normal, &size)))
-                        .unwrap();
-                }
-            })
-            .or_insert_with(|| {
-                renderer
-                    .import_memory(buffer, size.to_buffer(1, Transform::Normal), false)
-                    .unwrap()
-            });
-        frame.render_texture_at(tex, self.location, 1, scale, Transform::Normal, damage, 1.0)
-    }
-}
-
-impl<'a, R> AsRenderElements<R> for DecoratedWindow
+impl<R> AsRenderElements<R> for DecoratedWindow
 where
     R: Renderer + ImportAll + ImportMem,
     <R as Renderer>::TextureId: Texture + 'static,
@@ -519,22 +425,42 @@ where
 
     fn render_elements<C: From<Self::RenderElement>>(
         &self,
-        location: Point<i32, Physical>,
+        mut location: Point<i32, Physical>,
         scale: Scale<f64>,
     ) -> Vec<C> {
-        if self.decoration_state().is_ssd {
-            let header_bar = HeaderBarElement::new(self, location, scale);
+        if self.decoration_state().is_ssd
+            && !self.window.bbox().is_empty()
+            && !self.window.geometry().is_empty()
+        {
+            let mut state = self.decoration_state();
+            let width = self.window.geometry().size.w;
+            state.header_bar.redraw(width as u32);
+            let size = Size::from((state.header_bar.width as i32, HEADER_BAR_HEIGHT));
+            let decoration_render_element = MemoryRenderBufferRenderElement::from_buffer(
+                location,
+                &state.header_bar.buffer,
+                1,
+                Transform::Normal,
+                size,
+                vec![Rectangle::from_loc_and_size(
+                    Point::default(),
+                    (state.header_bar.width as i32, HEADER_BAR_HEIGHT),
+                )],
+            );
 
-            let mut location = location.clone();
             location.y += (scale.y * HEADER_BAR_HEIGHT as f64) as i32;
 
-            let mut vec = AsRenderElements::<R>::render_elements::<DecoratedWindowElements<R>>(
+            let vec = AsRenderElements::<R>::render_elements::<DecoratedWindowElements<R>>(
                 &self.window,
                 location,
                 scale,
             );
-            vec.push(DecoratedWindowElements::Decoration(header_bar));
-            vec.into_iter().map(C::from).collect()
+            vec.into_iter()
+                .chain(std::iter::once(DecoratedWindowElements::Decoration(
+                    decoration_render_element,
+                )))
+                .map(C::from)
+                .collect()
         } else {
             AsRenderElements::<R>::render_elements::<DecoratedWindowElements<R>>(
                 &self.window,
