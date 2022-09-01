@@ -10,6 +10,7 @@ use super::{utils::CommitCounter, Renderer};
 
 pub mod surface;
 pub mod texture;
+pub mod memory;
 
 crate::utils::ids::id_gen!(next_external_id, EXTERNAL_ID, EXTERNAL_IDS);
 
