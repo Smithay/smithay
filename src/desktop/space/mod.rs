@@ -159,15 +159,19 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// where the point is within the surface input regions.
     pub fn element_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<(&E, Point<i32, Logical>)> {
         let point = point.into();
-        self.elements.iter().rev().find_map(|e| {
-            // we need to offset the point to the location where the surface is actually drawn
-            let render_location = e.render_location();
-            if e.element.is_in_input_region(&(point - render_location.to_f64())) {
-                Some((&e.element, render_location))
-            } else {
-                None
-            }
-        })
+        self.elements
+            .iter()
+            .rev()
+            .filter(|e| e.bbox().to_f64().contains(point))
+            .find_map(|e| {
+                // we need to offset the point to the location where the surface is actually drawn
+                let render_location = e.render_location();
+                if e.element.is_in_input_region(&(point - render_location.to_f64())) {
+                    Some((&e.element, render_location))
+                } else {
+                    None
+                }
+            })
     }
 
     /// Get a reference to the outputs under a given point
