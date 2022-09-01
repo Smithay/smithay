@@ -1,46 +1,49 @@
 #![allow(clippy::too_many_arguments)]
 
-#[cfg(feature = "debug")]
-use smithay::{
-    backend::renderer::{element::RenderElement, Frame},
-    utils::{Buffer, Logical, Rectangle, Size},
-};
 use smithay::{
     backend::renderer::{
         element::{
-            surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, AsRenderElements, Id,
+            surface::WaylandSurfaceRenderElement,
+            texture::{TextureBuffer, TextureRenderElement},
+            AsRenderElements,
         },
-        utils::CommitCounter,
         ImportAll, Renderer, Texture,
     },
     input::pointer::CursorImageStatus,
     render_elements,
-    utils::{Physical, Point, Scale, Transform},
+    utils::{Physical, Point, Scale},
+};
+#[cfg(feature = "debug")]
+use smithay::{
+    backend::renderer::{
+        element::{Id, RenderElement},
+        utils::CommitCounter,
+        Frame,
+    },
+    utils::{Buffer, Logical, Rectangle, Size, Transform},
 };
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
 pub struct PointerElement<T: Texture> {
-    id: Id,
-    texture: Option<T>,
+    texture: Option<TextureBuffer<T>>,
     status: CursorImageStatus,
 }
 
 impl<T: Texture> Default for PointerElement<T> {
     fn default() -> Self {
         Self {
-            id: Id::new(),
             texture: Default::default(),
             status: CursorImageStatus::Default,
         }
     }
 }
 
-impl<T: Texture + 'static> PointerElement<T> {
+impl<T: Texture> PointerElement<T> {
     pub fn set_status(&mut self, status: CursorImageStatus) {
         self.status = status;
     }
 
-    pub fn set_texture(&mut self, texture: T) {
+    pub fn set_texture(&mut self, texture: TextureBuffer<T>) {
         self.texture = Some(texture);
     }
 }
@@ -64,21 +67,15 @@ where
             CursorImageStatus::Hidden => vec![],
             CursorImageStatus::Default => {
                 if let Some(texture) = self.texture.as_ref() {
-                    vec![PointerRenderElement::<R>::from(
-                        smithay::backend::renderer::element::texture::TextureRenderElement::from_texture(
-                            location,
-                            self.id.clone(),
-                            texture.clone(),
+                    vec![
+                        PointerRenderElement::<R>::from(TextureRenderElement::from_texture_buffer(
+                            location.to_f64(),
+                            texture,
                             None,
-                            texture
-                                .size()
-                                .to_logical(1, Transform::Normal)
-                                .to_physical_precise_round(scale),
-                            Transform::Normal,
-                            CommitCounter::default(),
-                        ),
-                    )
-                    .into()]
+                            None,
+                        ))
+                        .into(),
+                    ]
                 } else {
                     vec![]
                 }

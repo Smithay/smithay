@@ -16,6 +16,8 @@ use crate::{
     render::*,
     state::{AnvilState, Backend, CalloopData},
 };
+#[cfg(feature = "debug")]
+use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -32,10 +34,10 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::{DamageTrackedRenderer, DamageTrackedRendererError},
-            element::AsRenderElements,
+            element::{texture::TextureBuffer, AsRenderElements},
             gles2::{Gles2Renderbuffer, Gles2Renderer},
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
-            Bind, Frame, ImportMem, Renderer,
+            Bind, Frame, Renderer,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
@@ -101,7 +103,7 @@ pub struct UdevData {
     primary_gpu: DrmNode,
     gpus: GpuManager<EglGlesBackend<Gles2Renderer>>,
     backends: HashMap<DrmNode, BackendData>,
-    pointer_images: Vec<(xcursor::parser::Image, MultiTexture)>,
+    pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<MultiTexture>)>,
     pointer_element: PointerElement<MultiTexture>,
     #[cfg(feature = "debug")]
     fps_texture: MultiTexture,
@@ -739,16 +741,24 @@ impl AnvilState<UdevData> {
             let pointer_images = &mut self.backend_data.pointer_images;
             let pointer_image = pointer_images
                 .iter()
-                .find_map(|(image, texture)| if image == &frame { Some(texture) } else { None })
-                .cloned()
+                .find_map(|(image, texture)| {
+                    if image == &frame {
+                        Some(texture.clone())
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or_else(|| {
-                    let texture = renderer
-                        .import_memory(
-                            &frame.pixels_rgba,
-                            (frame.width as i32, frame.height as i32).into(),
-                            false,
-                        )
-                        .expect("Failed to import cursor bitmap");
+                    let texture = TextureBuffer::from_memory(
+                        &mut renderer,
+                        &frame.pixels_rgba,
+                        (frame.width as i32, frame.height as i32),
+                        false,
+                        1,
+                        Transform::Normal,
+                        None,
+                    )
+                    .expect("Failed to import cursor bitmap");
                     pointer_images.push((frame, texture.clone()));
                     texture
                 });
@@ -829,7 +839,7 @@ fn render_surface<'a>(
     output: &Output,
     input_method: &InputMethodHandle,
     pointer_location: Point<f64, Logical>,
-    pointer_image: &MultiTexture,
+    pointer_image: &TextureBuffer<MultiTexture>,
     pointer_element: &mut PointerElement<MultiTexture>,
     dnd_icon: &Option<wl_surface::WlSurface>,
     cursor_status: &mut CursorImageStatus,
