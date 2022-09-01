@@ -8,6 +8,7 @@ use crate::utils::{Physical, Point, Rectangle, Scale};
 
 use super::{utils::CommitCounter, Renderer};
 
+pub mod memory;
 pub mod surface;
 pub mod texture;
 
