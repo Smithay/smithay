@@ -563,7 +563,7 @@ where
                     .current_grab()
                     .as_ref()
                     .and_then(|f2| f2.wl_surface())
-                    .map(|s| f1.0.same_client_as(s.id()))
+                    .map(|s| f1.0.same_client_as(&s.id()))
             })
             .unwrap_or(false)
         {
@@ -593,7 +593,7 @@ where
                 .and_then(|f| {
                     self.popup_grab
                         .current_grab()
-                        .and_then(|f2| f.0.wl_surface().map(|s| f2.same_client_as(s.id())))
+                        .and_then(|f2| f.0.wl_surface().map(|s| f2.same_client_as(&s.id())))
                 })
                 .unwrap_or(false)
         {
