@@ -145,11 +145,11 @@ impl WaylandFocus for FocusTarget {
             FocusTarget::Popup(p) => p.wl_surface(),
         })
     }
-    fn same_client_as(&self, object_id: ObjectId) -> bool {
+    fn same_client_as(&self, object_id: &ObjectId) -> bool {
         match self {
-            FocusTarget::Window(w) => w.toplevel().wl_surface().id().same_client_as(&object_id),
-            FocusTarget::LayerSurface(l) => l.wl_surface().id().same_client_as(&object_id),
-            FocusTarget::Popup(p) => p.wl_surface().id().same_client_as(&object_id),
+            FocusTarget::Window(w) => w.toplevel().wl_surface().id().same_client_as(object_id),
+            FocusTarget::LayerSurface(l) => l.wl_surface().id().same_client_as(object_id),
+            FocusTarget::Popup(p) => p.wl_surface().id().same_client_as(object_id),
         }
     }
 }

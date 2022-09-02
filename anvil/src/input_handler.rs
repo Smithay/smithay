@@ -94,9 +94,18 @@ impl<Backend> AnvilState<Backend> {
             if data.keyboard_interactivity == KeyboardInteractivity::Exclusive
                 && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)
             {
-                keyboard.set_focus(self, Some(layer.clone()), serial);
-                keyboard.input::<(), _>(self, keycode, state, serial, time, |_, _| FilterResult::Forward);
-                return KeyAction::None;
+                let surface = self.space.outputs().find_map(|o| {
+                    let map = layer_map_for_output(o);
+                    let cloned = map.layers().find(|l| l.layer_surface() == &layer).cloned();
+                    cloned
+                });
+                if let Some(surface) = surface {
+                    keyboard.set_focus(self, Some(surface.into()), serial);
+                    keyboard.input::<(), _>(self, keycode, state, serial, time, |_, _, _| {
+                        FilterResult::Forward
+                    });
+                    return KeyAction::None;
+                };
             }
         }
 
@@ -183,13 +192,10 @@ impl<Backend> AnvilState<Backend> {
                     .get::<FullscreenSurface>()
                     .and_then(|f| f.get())
                 {
-                    if let Some((_, point)) = window
-                        .surface_under(
-                            self.pointer_location - output_geo.loc.to_f64(),
-                            WindowSurfaceType::ALL,
-                        )
-                        .is_some()
-                    {
+                    if let Some((_, point)) = window.surface_under(
+                        self.pointer_location - output_geo.loc.to_f64(),
+                        WindowSurfaceType::ALL,
+                    ) {
                         input_method.set_point(&point);
                         keyboard.set_focus(self, Some(window.into()), serial);
                         return;
