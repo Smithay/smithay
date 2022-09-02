@@ -452,7 +452,7 @@ impl WaylandFocus for Window {
         Some(self.toplevel().wl_surface())
     }
 
-    fn same_client_as(&self, object_id: ObjectId) -> bool {
-        self.toplevel().wl_surface().id().same_client_as(&object_id)
+    fn same_client_as(&self, object_id: &ObjectId) -> bool {
+        self.toplevel().wl_surface().id().same_client_as(object_id)
     }
 }
