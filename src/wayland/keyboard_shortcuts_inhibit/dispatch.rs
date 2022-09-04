@@ -13,7 +13,7 @@ use wayland_server::{
     Dispatch, GlobalDispatch, Resource,
 };
 
-use crate::wayland::seat::Seat;
+use crate::input::{Seat, SeatHandler};
 
 use super::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState};
 
@@ -48,6 +48,7 @@ where
 impl<D> Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, (), D> for KeyboardShortcutsInhibitState
 where
     D: KeyboardShortcutsInhibitHandler,
+    D: SeatHandler,
     D: Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, ()>,
     D: Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData>,
 {

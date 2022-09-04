@@ -18,7 +18,7 @@ use wayland_server::{
 mod dispatch;
 pub use dispatch::KeyboardShortcutsInhibitorUserData;
 
-use super::seat::Seat;
+use crate::input::{Seat, SeatHandler};
 
 type SeatId = ObjectId;
 
@@ -145,7 +145,11 @@ struct SeatData {
 }
 
 impl SeatData {
-    fn get<D: 'static>(seat: &Seat<D>) -> &RefCell<Self> {
+    fn get<D>(seat: &Seat<D>) -> &RefCell<Self>
+    where
+        D: SeatHandler,
+        D: 'static,
+    {
         seat.user_data()
             .insert_if_missing(|| RefCell::new(SeatData::default()));
         seat.user_data().get().unwrap()
@@ -171,10 +175,19 @@ pub trait KeyboardShortcutsInhibitorSeat {
     ///
     /// Can be used to check if certain surface has inhibitor on it
     /// ```no_run
-    /// use smithay::wayland::seat::Seat;
+    /// use smithay::input::Seat;
     /// use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat;
+    /// # use smithay::input::{SeatHandler, SeatState, pointer::CursorImageStatus};
     /// # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
     /// # struct State;
+    /// # impl SeatHandler for State {
+    /// #     type KeyboardFocus = WlSurface;
+    /// #     type PointerFocus = WlSurface;
+    /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
+    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
+    /// #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
+    /// # }
+    ///
     /// # let wl_surface: WlSurface = todo!();
     ///
     /// let seat: Seat<State> = todo!();
@@ -189,7 +202,11 @@ pub trait KeyboardShortcutsInhibitorSeat {
     ) -> Option<KeyboardShortcutsInhibitor>;
 }
 
-impl<D: 'static> KeyboardShortcutsInhibitorSeat for Seat<D> {
+impl<D> KeyboardShortcutsInhibitorSeat for Seat<D>
+where
+    D: SeatHandler,
+    D: 'static,
+{
     fn keyboard_shortcuts_inhibited(&self) -> bool {
         SeatData::get(self).borrow().is_inhibited()
     }
