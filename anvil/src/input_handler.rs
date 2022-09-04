@@ -23,6 +23,7 @@ use smithay::{
     wayland::{
         compositor::with_states,
         input_method::InputMethodSeat,
+        keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
         output::Scale,
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
     },
@@ -102,6 +103,13 @@ impl<Backend> AnvilState<Backend> {
             }
         }
 
+        let inhibited = self
+            .space
+            .surface_under(self.pointer_location, WindowSurfaceType::all())
+            .and_then(|(_, surface, _)| self.seat.keyboard_shortcuts_inhibitor_for_surface(&surface))
+            .map(|inhibitor| inhibitor.is_active())
+            .unwrap_or(false);
+
         let action = keyboard
             .input(self, keycode, state, serial, time, |_, modifiers, handle| {
                 let keysym = handle.modified_sym();
@@ -118,15 +126,19 @@ impl<Backend> AnvilState<Backend> {
                 // so that we can decide on a release if the key
                 // should be forwarded to the client or not.
                 if let KeyState::Pressed = state {
-                    let action = process_keyboard_shortcut(*modifiers, keysym);
+                    if !inhibited {
+                        let action = process_keyboard_shortcut(*modifiers, keysym);
 
-                    if action.is_some() {
-                        suppressed_keys.push(keysym);
+                        if action.is_some() {
+                            suppressed_keys.push(keysym);
+                        }
+
+                        action
+                            .map(FilterResult::Intercept)
+                            .unwrap_or(FilterResult::Forward)
+                    } else {
+                        FilterResult::Forward
                     }
-
-                    action
-                        .map(FilterResult::Intercept)
-                        .unwrap_or(FilterResult::Forward)
                 } else {
                     let suppressed = suppressed_keys.contains(&keysym);
                     if suppressed {

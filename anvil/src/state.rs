@@ -4,10 +4,10 @@ use std::{
 };
 
 use smithay::{
-    delegate_compositor, delegate_data_device, delegate_input_method_manager, delegate_layer_shell,
-    delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_tablet_manager,
-    delegate_text_input_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
-    delegate_xdg_shell,
+    delegate_compositor, delegate_data_device, delegate_input_method_manager,
+    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_primary_selection,
+    delegate_seat, delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
+    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     reexports::{
@@ -29,6 +29,9 @@ use smithay::{
             ServerDndGrabHandler,
         },
         input_method::{InputMethodManagerState, InputMethodSeat},
+        keyboard_shortcuts_inhibit::{
+            KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
+        },
         output::{Output, OutputManagerState},
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         shell::{
@@ -87,6 +90,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub output_manager_state: OutputManagerState,
     pub primary_selection_state: PrimarySelectionState,
     pub seat_state: SeatState<AnvilState<BackendData>>,
+    pub keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     pub shm_state: ShmState,
     pub viewporter_state: ViewporterState,
     pub xdg_activation_state: XdgActivationState,
@@ -178,6 +182,19 @@ delegate_tablet_manager!(@<BackendData: 'static> AnvilState<BackendData>);
 delegate_text_input_manager!(@<BackendData: 'static> AnvilState<BackendData>);
 
 delegate_input_method_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+
+impl<BackendData> KeyboardShortcutsInhibitHandler for AnvilState<BackendData> {
+    fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState {
+        &mut self.keyboard_shortcuts_inhibit_state
+    }
+
+    fn new_inhibitor(&mut self, inhibitor: KeyboardShortcutsInhibitor) {
+        // Just grant the wish for everyone
+        inhibitor.activate();
+    }
+}
+
+delegate_keyboard_shortcuts_inhibit!(@<BackendData: 'static> AnvilState<BackendData>);
 
 delegate_viewporter!(@<BackendData: 'static> AnvilState<BackendData>);
 
@@ -306,6 +323,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         seat.add_input_method(XkbConfig::default(), 200, 25);
 
+        let keyboard_shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&display.handle());
+
         #[cfg(feature = "xwayland")]
         let xwayland = {
             let (xwayland, channel) = XWayland::new(log.clone(), &display.handle());
@@ -338,6 +357,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             output_manager_state,
             primary_selection_state,
             seat_state,
+            keyboard_shortcuts_inhibit_state,
             shm_state,
             viewporter_state,
             xdg_activation_state,
