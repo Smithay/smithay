@@ -58,7 +58,6 @@ where
                     icon,
                     serial,
                 } => {
-                    /* TODO: handle the icon */
                     let serial = Serial::from(serial);
                     if let Some(pointer) = seat.get_pointer() {
                         if pointer.has_grab(serial) {
