@@ -15,13 +15,13 @@ use smithay::{
         keyboard::{keysyms as xkb, FilterResult, Keysym, ModifiersState},
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
+    output::Scale,
     reexports::wayland_server::{protocol::wl_pointer, DisplayHandle},
     utils::{Logical, Point, Serial, SERIAL_COUNTER as SCOUNTER},
     wayland::{
         compositor::with_states,
         input_method::InputMethodSeat,
         keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
-        output::Scale,
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
     },
 };
@@ -112,8 +112,11 @@ impl<Backend> AnvilState<Backend> {
 
         let inhibited = self
             .space
-            .surface_under(self.pointer_location, WindowSurfaceType::all())
-            .and_then(|(_, surface, _)| self.seat.keyboard_shortcuts_inhibitor_for_surface(&surface))
+            .element_under(self.pointer_location)
+            .and_then(|(window, _)| {
+                self.seat
+                    .keyboard_shortcuts_inhibitor_for_surface(window.toplevel().wl_surface())
+            })
             .map(|inhibitor| inhibitor.is_active())
             .unwrap_or(false);
 

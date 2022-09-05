@@ -29,12 +29,9 @@ use smithay::{
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::EventLoop,
-        wayland_server::{
-            protocol::{wl_output, wl_surface},
-            Display,
-        },
+        wayland_server::{protocol::wl_surface, Display},
     },
-    utils::{IsAlive, Point, Scale},
+    utils::{IsAlive, Point, Scale, Transform},
     wayland::{compositor, input_method::InputMethodSeat},
 };
 
