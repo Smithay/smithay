@@ -60,7 +60,7 @@ use slog::{info, o};
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::output::xdg::XdgOutput;
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::wl_output::WlOutput;
+use wayland_server::{backend::WeakHandle, protocol::wl_output::WlOutput};
 
 use crate::utils::{user_data::UserDataMap, Logical, Physical, Point, Raw, Size, Transform};
 
@@ -164,6 +164,8 @@ pub(crate) struct Inner {
     pub(crate) description: String,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) instances: Vec<WlOutput>,
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) handle: Option<WeakHandle>,
     pub(crate) physical: PhysicalProperties,
     pub(crate) location: Point<i32, Logical>,
     pub(crate) transform: Transform,
@@ -215,6 +217,8 @@ impl Output {
                 description: format!("{} - {} - {}", physical.make, physical.model, name),
                 #[cfg(feature = "wayland_frontend")]
                 instances: Vec::new(),
+                #[cfg(feature = "wayland_frontend")]
+                handle: None,
                 physical,
                 location: (0, 0).into(),
                 transform: Transform::Normal,
