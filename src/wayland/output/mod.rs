@@ -159,7 +159,7 @@ impl Output {
         D: GlobalDispatch<WlOutput, OutputData>,
         D: 'static,
     {
-        self.data.inner.0.lock().unwrap().dh = Some(display.clone());
+        self.data.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
         display.create_global::<D, WlOutput, _>(4, self.data.clone())
     }
 
@@ -221,7 +221,14 @@ impl Output {
 
     /// This function allows to run a [FnMut] on every
     /// [WlOutput] matching the same [Client] as provided
-    pub fn with_client_outputs<F>(&self, client: &Client, mut f: F)
+    pub fn with_client_outputs<F>(&self, client: &Client, f: F)
+    where
+        F: FnMut(&WlOutput),
+    {
+        self.with_client_outputs_internal(client.id(), f)
+    }
+
+    fn with_client_outputs_internal<F>(&self, client: wayland_server::backend::ClientId, mut f: F)
     where
         F: FnMut(&WlOutput),
     {
@@ -230,13 +237,11 @@ impl Output {
             data.instances
                 .iter()
                 .filter(|output| {
-                    data.dh
+                    data.handle
                         .as_ref()
-                        .map(|dh| {
-                            dh.get_client(output.id())
-                                .map(|output_client| &output_client == client)
-                                .unwrap_or(false)
-                        })
+                        .and_then(|handle| handle.upgrade())
+                        .and_then(|handle| handle.get_client(output.id()).ok())
+                        .map(|output_client| output_client == client)
                         .unwrap_or(false)
                 })
                 .cloned()
@@ -257,11 +262,12 @@ impl Output {
             .0
             .lock()
             .unwrap()
-            .dh
+            .handle
             .as_ref()
-            .and_then(|dh| dh.get_client(surface.id()).ok());
+            .and_then(|handle| handle.upgrade())
+            .and_then(|handle| handle.get_client(surface.id()).ok());
         if let Some(client) = client {
-            self.with_client_outputs(&client, |output| surface.enter(output))
+            self.with_client_outputs_internal(client, |output| surface.enter(output))
         }
     }
 
@@ -274,11 +280,12 @@ impl Output {
             .0
             .lock()
             .unwrap()
-            .dh
+            .handle
             .as_ref()
-            .and_then(|dh| dh.get_client(surface.id()).ok());
+            .and_then(|handle| handle.upgrade())
+            .and_then(|handle| handle.get_client(surface.id()).ok());
         if let Some(client) = client {
-            self.with_client_outputs(&client, |output| surface.leave(output))
+            self.with_client_outputs_internal(client, |output| surface.leave(output))
         }
     }
 }
