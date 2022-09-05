@@ -18,7 +18,6 @@ use std::{
     cell::{RefCell, RefMut},
     collections::HashSet,
     hash::{Hash, Hasher},
-    rc::Rc,
     sync::{Arc, Mutex, Weak},
 };
 
@@ -396,7 +395,7 @@ pub fn layer_state(layer: &LayerSurface) -> RefMut<'_, LayerState> {
 
 /// A [`LayerSurface`] represents a single layer surface as given by the wlr-layer-shell protocol.
 #[derive(Debug, Clone)]
-pub struct LayerSurface(pub(crate) Rc<LayerSurfaceInner>);
+pub struct LayerSurface(pub(crate) Arc<LayerSurfaceInner>);
 
 impl PartialEq for LayerSurface {
     fn eq(&self, other: &Self) -> bool {
@@ -435,7 +434,7 @@ impl IsAlive for LayerSurface {
 impl LayerSurface {
     /// Create a new [`LayerSurface`] from a given [`WlrLayerSurface`] and its namespace.
     pub fn new(surface: WlrLayerSurface, namespace: String) -> LayerSurface {
-        LayerSurface(Rc::new(LayerSurfaceInner {
+        LayerSurface(Arc::new(LayerSurfaceInner {
             id: next_layer_id(),
             surface,
             namespace,
