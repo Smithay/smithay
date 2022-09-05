@@ -117,23 +117,23 @@ fn planes(
         source,
     })?;
 
-    for plane in planes.planes() {
-        let info = dev.get_plane(*plane).map_err(|source| DrmError::Access {
+    for plane in planes {
+        let info = dev.get_plane(plane).map_err(|source| DrmError::Access {
             errmsg: "Failed to get plane information",
             dev: dev.dev_path(),
             source,
         })?;
         let filter = info.possible_crtcs();
         if resources.filter_crtcs(filter).contains(crtc) {
-            match plane_type(dev, *plane)? {
+            match plane_type(dev, plane)? {
                 PlaneType::Primary => {
-                    primary = Some(*plane);
+                    primary = Some(plane);
                 }
                 PlaneType::Cursor => {
-                    cursor = Some(*plane);
+                    cursor = Some(plane);
                 }
                 PlaneType::Overlay => {
-                    overlay.push(*plane);
+                    overlay.push(plane);
                 }
             };
         }

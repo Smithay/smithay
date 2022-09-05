@@ -26,7 +26,7 @@ impl Smallvil {
                     event.state(),
                     serial,
                     time,
-                    |_, _| FilterResult::Forward,
+                    |_, _, _| FilterResult::Forward,
                 );
             }
             InputEvent::PointerMotion { .. } => {}

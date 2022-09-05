@@ -124,6 +124,7 @@ where
 
     fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
         data.alive_tracker.destroy_notify();
+        data.decoration.lock().unwrap().take();
 
         // remove this surface from the known ones (as well as any leftover dead surface)
         data.shell_data

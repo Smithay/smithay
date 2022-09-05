@@ -40,7 +40,7 @@ impl State {
             source,
         })?;
         for &con in res_handles.connectors() {
-            let con_info = fd.get_connector(con).map_err(|source| Error::Access {
+            let con_info = fd.get_connector(con, false).map_err(|source| Error::Access {
                 errmsg: "Error loading connector info",
                 dev: fd.dev_path(),
                 source,
@@ -189,7 +189,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
         for connector in &pending.connectors {
             if !self
                 .fd
-                .get_connector(*connector)
+                .get_connector(*connector, false)
                 .map_err(|source| Error::Access {
                     errmsg: "Error loading connector info",
                     dev: self.fd.dev_path(),
@@ -225,7 +225,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
 
             let mut conn_removed = false;
             for conn in removed.clone() {
-                if let Ok(info) = self.fd.get_connector(*conn) {
+                if let Ok(info) = self.fd.get_connector(*conn, false) {
                     info!(self.logger, "Removing connector: {:?}", info.interface());
                 } else {
                     info!(self.logger, "Removing unknown connector");
@@ -248,7 +248,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             }
 
             for conn in added.clone() {
-                if let Ok(info) = self.fd.get_connector(*conn) {
+                if let Ok(info) = self.fd.get_connector(*conn, false) {
                     info!(self.logger, "Adding connector: {:?}", info.interface());
                 } else {
                     info!(self.logger, "Adding unknown connector");
@@ -358,11 +358,14 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
     // Better would be some kind of test commit to ask the driver,
     // but that only exists for the atomic api.
     fn check_connector(&self, conn: connector::Handle, mode: &Mode) -> Result<bool, Error> {
-        let info = self.fd.get_connector(conn).map_err(|source| Error::Access {
-            errmsg: "Error loading connector info",
-            dev: self.fd.dev_path(),
-            source,
-        })?;
+        let info = self
+            .fd
+            .get_connector(conn, false)
+            .map_err(|source| Error::Access {
+                errmsg: "Error loading connector info",
+                dev: self.fd.dev_path(),
+                source,
+            })?;
 
         // check if the connector can handle the current mode
         if info.modes().contains(mode) {
@@ -370,7 +373,6 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
             let encoders = info
                 .encoders()
                 .iter()
-                .flatten()
                 .map(|encoder| {
                     self.fd.get_encoder(*encoder).map_err(|source| Error::Access {
                         errmsg: "Error loading encoder info",
