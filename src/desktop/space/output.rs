@@ -1,8 +1,8 @@
 use crate::{
     backend::renderer::{ImportAll, Renderer},
     desktop::space::{RenderElement, SpaceElement},
+    output::Output,
     utils::{Logical, Physical, Point, Rectangle},
-    wayland::output::Output,
 };
 use indexmap::IndexMap;
 use wayland_server::backend::ObjectId;

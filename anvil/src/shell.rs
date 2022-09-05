@@ -13,6 +13,7 @@ use smithay::{
         },
         Seat,
     },
+    output::Output,
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
@@ -26,7 +27,6 @@ use smithay::{
         compositor::{
             with_states, with_surface_tree_upward, CompositorHandler, CompositorState, TraversalAction,
         },
-        output::Output,
         shell::{
             wlr_layer::{
                 Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,

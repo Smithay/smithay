@@ -15,6 +15,7 @@ use smithay::{
         keyboard::{keysyms as xkb, FilterResult, Keysym, ModifiersState},
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
+    output::Scale,
     reexports::wayland_server::{
         protocol::{wl_pointer, wl_surface::WlSurface},
         DisplayHandle,
@@ -24,7 +25,6 @@ use smithay::{
         compositor::with_states,
         input_method::InputMethodSeat,
         keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
-        output::Scale,
         shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
     },
 };
@@ -33,7 +33,7 @@ use smithay::{
 use smithay::backend::input::AbsolutePositionEvent;
 
 #[cfg(any(feature = "winit", feature = "x11"))]
-use smithay::wayland::output::Output;
+use smithay::output::Output;
 
 #[cfg(feature = "udev")]
 use crate::state::Backend;

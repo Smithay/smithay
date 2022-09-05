@@ -1,10 +1,10 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager, Space},
+    output::{Inner as OutputInner, Output, OutputData},
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, TraversalAction},
-        output::{Inner as OutputInner, Output, OutputData},
         shell::wlr_layer::{
             Anchor, ExclusiveZone, KeyboardInteractivity, Layer as WlrLayer, LayerSurface as WlrLayerSurface,
             LayerSurfaceCachedState,

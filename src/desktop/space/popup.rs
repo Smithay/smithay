@@ -11,8 +11,9 @@ use crate::{
         },
         window::Window,
     },
+    output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::{output::Output, shell::wlr_layer::Layer},
+    wayland::shell::wlr_layer::Layer,
 };
 use std::any::TypeId;
 
