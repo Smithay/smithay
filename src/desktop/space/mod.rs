@@ -6,24 +6,32 @@ use crate::{
         damage::{
             DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode, OutputNoMode,
         },
-        element::{surface::WaylandSurfaceRenderElement, AsRenderElements, RenderElement, Wrap},
-        ImportAll, Renderer, Texture,
+        element::{AsRenderElements, RenderElement, Wrap},
+        Renderer, Texture,
     },
-    desktop::layer::{layer_map_for_output, LayerSurface},
     output::Output,
     utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform},
 };
+#[cfg(feature = "wayland_frontend")]
+use crate::{
+    backend::renderer::{element::surface::WaylandSurfaceRenderElement, ImportAll},
+    desktop::layer::{layer_map_for_output, LayerSurface},
+};
 use std::{collections::HashSet, fmt};
+#[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_surface::WlSurface;
 
 mod element;
+#[cfg(feature = "wayland_frontend")]
 mod layer;
 mod output;
+#[cfg(feature = "wayland_frontend")]
 mod window;
 
 pub use self::element::*;
 use self::output::*;
 
+#[cfg(feature = "wayland_frontend")]
 use super::WindowSurfaceType;
 
 crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
@@ -186,6 +194,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// Returns the layer matching a given surface, if any
     ///
     /// `surface_type` can be used to limit the types of surfaces queried for equality.
+    #[cfg(feature = "wayland_frontend")]
     pub fn layer_for_surface(
         &self,
         surface: &WlSurface,
@@ -335,12 +344,15 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     }
 
     /// Retrieve the render elements for an output
-    pub fn elements_for_output<'a, R>(
+    pub fn elements_for_output<
+        'a,
+        #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
+        #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
+    >(
         &'a self,
         output: &Output,
     ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputError>
     where
-        R: Renderer + ImportAll,
         <R as Renderer>::TextureId: Texture + 'static,
         E: AsRenderElements<R>,
         <E as AsRenderElements<R>>::RenderElement: 'a,
@@ -360,15 +372,17 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             output_size.to_f64().to_logical(output_scale).to_i32_ceil(),
         );
 
-        let layer_map = layer_map_for_output(output);
-        let mut space_elements: Vec<SpaceElements<'a, E>> = Vec::new();
+        let mut space_elements: Vec<SpaceElements<'a, E>> =
+            self.elements.iter().rev().map(SpaceElements::Element).collect();
 
-        space_elements.extend(self.elements.iter().rev().map(SpaceElements::Element));
-
-        space_elements.extend(layer_map.layers().rev().cloned().map(|l| SpaceElements::Layer {
-            surface: l,
-            output_location,
-        }));
+        #[cfg(feature = "wayland_frontend")]
+        {
+            let layer_map = layer_map_for_output(output);
+            space_elements.extend(layer_map.layers().rev().cloned().map(|l| SpaceElements::Layer {
+                surface: l,
+                output_location,
+            }));
+        }
 
         space_elements.sort_by_key(|e| std::cmp::Reverse(e.z_index()));
 
@@ -426,25 +440,39 @@ impl<E: SpaceElement> InnerElement<E> {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
+crate::backend::renderer::element::render_elements! {
+    /// Defines the render elements used internally by a [`Space`]
+    ///
+    /// Use them in place of `E` in `space_render_elements` or
+    /// `render_output` if you do not need custom render elements
+    pub SpaceRenderElements<R, E> where
+        R: ImportAll;
+    /// A single wayland surface
+    Surface=WaylandSurfaceRenderElement,
+    /// A single texture
+    Element=Wrap<E>,
+}
+#[cfg(not(feature = "wayland_frontend"))]
 crate::backend::renderer::element::render_elements! {
     /// Defines the render elements used internally by a [`Space`]
     ///
     /// Use them in place of `E` in `space_render_elements` or
     /// `render_output` if you do not need custom render elements
     pub SpaceRenderElements<R, E>;
-    /// A single wayland surface
-    Surface=WaylandSurfaceRenderElement,
     /// A single texture
     Element=Wrap<E>,
 }
 
-impl<R, E> std::fmt::Debug for SpaceRenderElements<R, E>
-where
-    R: Renderer + ImportAll,
-    E: RenderElement<R> + std::fmt::Debug,
+impl<
+        #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
+        #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
+        E: RenderElement<R> + std::fmt::Debug,
+    > std::fmt::Debug for SpaceRenderElements<R, E>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(feature = "wayland_frontend")]
             Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),
             Self::Element(arg0) => f.debug_tuple("Element").field(arg0).finish(),
             Self::_GenericCatcher(_) => unreachable!(),
@@ -452,6 +480,14 @@ where
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
+crate::backend::renderer::element::render_elements! {
+    OutputRenderElements<'a, R, E, C> where
+        R: ImportAll;
+    Space=SpaceRenderElements<R, E>,
+    Custom=&'a C,
+}
+#[cfg(not(feature = "wayland_frontend"))]
 crate::backend::renderer::element::render_elements! {
     OutputRenderElements<'a, R, E, C>;
     Space=SpaceRenderElements<R, E>,
@@ -459,14 +495,17 @@ crate::backend::renderer::element::render_elements! {
 }
 
 /// Get the render elements for a specific output
-pub fn space_render_elements<'a, R, E>(
+pub fn space_render_elements<
+    'a,
+    #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
+    #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
+    E: SpaceElement + PartialEq + AsRenderElements<R>,
+>(
     spaces: &[&'a Space<E>],
     output: &Output,
 ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
 where
-    R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
-    E: SpaceElement + PartialEq + AsRenderElements<R>,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
@@ -486,7 +525,13 @@ where
 
 /// Render a output
 #[allow(clippy::too_many_arguments)]
-pub fn render_output<'a, R, C, E>(
+pub fn render_output<
+    'a,
+    #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
+    #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
+    C: RenderElement<R>,
+    E: SpaceElement + PartialEq + AsRenderElements<R>,
+>(
     output: &Output,
     renderer: &mut R,
     age: usize,
@@ -497,13 +542,10 @@ pub fn render_output<'a, R, C, E>(
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
 where
-    R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
-    E: SpaceElement + PartialEq + AsRenderElements<R>,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
-    C: RenderElement<R>,
 {
     if let DamageTrackedRendererMode::Auto(renderer_output) = damage_tracked_renderer.mode() {
         assert!(renderer_output == output);
