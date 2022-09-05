@@ -73,7 +73,6 @@ use smithay::{
     wayland::{
         compositor,
         input_method::{InputMethodHandle, InputMethodSeat},
-        output::{Mode, Output, PhysicalProperties},
     },
 };
 

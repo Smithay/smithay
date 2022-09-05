@@ -6,8 +6,7 @@ pub use manager::*;
 use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::{
-    input::{keyboard::KeyboardTarget, pointer::PointerTarget, SeatHandler},
-    utils::{IsAlive, Logical, Point, Rectangle, Scale},
+    utils::{IsAlive, Logical, Point, Rectangle},
     wayland::{
         compositor::with_states,
         shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceData},

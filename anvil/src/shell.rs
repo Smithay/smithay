@@ -28,7 +28,6 @@ use smithay::{
             get_parent, is_sync_subsurface, with_states, with_surface_tree_upward, CompositorHandler,
             CompositorState, TraversalAction,
         },
-        output::Output,
         seat::WaylandFocus,
         shell::{
             wlr_layer::{

@@ -17,7 +17,6 @@ use crate::{
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, TraversalAction},
-        output::Output,
         seat::WaylandFocus,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
