@@ -43,7 +43,7 @@
 //! // implement the necessary traits
 //! impl XdgShellHandler for State {
 //!     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
-//!         &mut self.xdg_shell_state    
+//!         &mut self.xdg_shell_state
 //!     }
 //!
 //!     // handle the shell requests here.
@@ -870,6 +870,12 @@ pub trait XdgShellHandler {
     ///     is acknowledged by the client. See xdg_popup.repositioned for details.
     ///     The token itself is opaque, and has no other special meaning.
     fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {}
+
+    /// A toplevel surface was destroyed.
+    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {}
+
+    /// A popup surface was destroyed.
+    fn popup_destroyed(&mut self, surface: PopupSurface) {}
 }
 
 #[derive(Debug)]
