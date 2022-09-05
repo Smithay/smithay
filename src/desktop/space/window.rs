@@ -8,8 +8,8 @@ use crate::{
         ImportAll, Renderer,
     },
     desktop::{window::Window, PopupManager, WindowSurfaceType},
+    output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::output::Output,
 };
 
 impl SpaceElement for Window {
