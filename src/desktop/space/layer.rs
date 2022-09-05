@@ -7,8 +7,9 @@ use crate::{
         ImportAll, Renderer,
     },
     desktop::{LayerSurface, PopupManager, WindowSurfaceType},
+    output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::{output::Output, shell::wlr_layer::Layer},
+    wayland::shell::wlr_layer::Layer,
 };
 
 use super::{RenderZindex, SpaceElement};
