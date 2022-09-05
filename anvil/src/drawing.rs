@@ -49,7 +49,8 @@ impl<T: Texture> PointerElement<T> {
 }
 
 render_elements! {
-    pub PointerRenderElement<R>;
+    pub PointerRenderElement<R> where
+        R: ImportAll;
     Surface=WaylandSurfaceRenderElement,
     Texture=TextureRenderElement<<R as Renderer>::TextureId>,
 }

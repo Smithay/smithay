@@ -1,8 +1,12 @@
 use crate::{
-    backend::renderer::{ImportAll, Renderer},
-    desktop::{space::*, utils as desktop_utils},
+    backend::renderer::{element::Wrap, Renderer},
+    desktop::space::*,
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
+};
+#[cfg(feature = "wayland_frontend")]
+use crate::{
+    desktop::utils as desktop_utils,
     wayland::compositor::{with_surface_tree_downward, TraversalAction},
 };
 use std::hash::Hash;
@@ -89,6 +93,7 @@ impl<T: SpaceElement> SpaceElement for &T {
 
 #[derive(Debug)]
 pub(super) enum SpaceElements<'a, E> {
+    #[cfg(feature = "wayland_frontend")]
     Layer {
         surface: LayerSurface,
         output_location: Point<i32, Logical>,
@@ -102,6 +107,7 @@ where
 {
     pub(super) fn z_index(&self) -> u8 {
         match self {
+            #[cfg(feature = "wayland_frontend")]
             SpaceElements::Layer { surface, .. } => surface.z_index(),
             SpaceElements::Element(inner) => inner.element.z_index(),
         }
@@ -109,6 +115,7 @@ where
 
     pub(super) fn bbox(&self) -> Rectangle<i32, Logical> {
         match self {
+            #[cfg(feature = "wayland_frontend")]
             SpaceElements::Layer {
                 surface,
                 output_location,
@@ -123,20 +130,24 @@ where
 
     pub(super) fn render_location(&self) -> Point<i32, Logical> {
         match self {
+            #[cfg(feature = "wayland_frontend")]
             SpaceElements::Layer { .. } => self.bbox().loc,
             SpaceElements::Element(inner) => inner.render_location(),
         }
     }
 }
 
-impl<'a, R, E> AsRenderElements<R> for SpaceElements<'a, E>
+impl<
+        'a,
+        #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
+        #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
+        E: AsRenderElements<R>,
+    > AsRenderElements<R> for SpaceElements<'a, E>
 where
-    R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
-    E: AsRenderElements<R>,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
-        From<Wrap<<E as AsRenderElements<R>>::RenderElement>> + From<WaylandSurfaceRenderElement>,
+        From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
     type RenderElement = SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>;
 
@@ -146,22 +157,26 @@ where
         scale: Scale<f64>,
     ) -> Vec<C> {
         match &self {
-            SpaceElements::Layer { surface, .. } => {
-                AsRenderElements::<R>::render_elements::<Self::RenderElement>(surface, location, scale)
-                    .into_iter()
-                    .map(C::from)
-                    .collect()
-            }
+            #[cfg(feature = "wayland_frontend")]
+            SpaceElements::Layer { surface, .. } => AsRenderElements::<R>::render_elements::<
+                WaylandSurfaceRenderElement,
+            >(surface, location, scale)
+            .into_iter()
+            .map(SpaceRenderElements::Surface)
+            .map(C::from)
+            .collect(),
             SpaceElements::Element(element) => element
                 .element
                 .render_elements::<Wrap<<E as AsRenderElements<R>>::RenderElement>>(location, scale)
                 .into_iter()
-                .map(SpaceRenderElements::from)
+                .map(SpaceRenderElements::Element)
                 .map(C::from)
                 .collect(),
         }
     }
 }
+
+#[cfg(feature = "wayland_frontend")]
 /// A custom surface tree
 #[derive(Debug)]
 pub struct SurfaceTree {
@@ -169,6 +184,7 @@ pub struct SurfaceTree {
     surface: WlSurface,
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl SurfaceTree {
     /// Create a surface tree from a surface
     pub fn from_surface(surface: &WlSurface, location: impl Into<Point<i32, Logical>>) -> Self {
@@ -179,12 +195,14 @@ impl SurfaceTree {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl IsAlive for SurfaceTree {
     fn alive(&self) -> bool {
         self.surface.alive()
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl SpaceElement for SurfaceTree {
     fn geometry(&self) -> Rectangle<i32, Logical> {
         self.bbox()
@@ -224,6 +242,7 @@ impl SpaceElement for SurfaceTree {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl<R> AsRenderElements<R> for SurfaceTree
 where
     R: Renderer + ImportAll,
@@ -490,6 +509,7 @@ macro_rules! space_elements {
 pub use space_elements;
 
 #[cfg(test)]
+#[cfg(feature = "wayland_frontend")]
 #[allow(dead_code)]
 mod tests {
     use crate::desktop::{LayerSurface, Window};

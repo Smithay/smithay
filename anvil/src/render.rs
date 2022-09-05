@@ -17,7 +17,8 @@ use crate::{
 };
 
 smithay::backend::renderer::element::render_elements! {
-    pub CustomRenderElements<R>;
+    pub CustomRenderElements<R> where
+        R: ImportAll;
     Pointer=PointerRenderElement<R>,
     Surface=WaylandSurfaceRenderElement,
     #[cfg(feature = "debug")]
