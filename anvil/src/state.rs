@@ -4,10 +4,10 @@ use std::{
 };
 
 use smithay::{
-    delegate_compositor, delegate_data_device, delegate_input_method_manager, delegate_layer_shell,
-    delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_tablet_manager,
-    delegate_text_input_manager, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration,
-    delegate_xdg_shell,
+    delegate_compositor, delegate_data_device, delegate_input_method_manager,
+    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_primary_selection,
+    delegate_seat, delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
+    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{PopupManager, Space, Window},
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     output::Output,
@@ -169,7 +169,9 @@ impl<BackendData> SeatHandler for AnvilState<BackendData> {
     fn focus_changed(&mut self, seat: &Seat<Self>, target: Option<&FocusTarget>) {
         let dh = &self.display_handle;
 
-        let focus = target.and_then(WaylandFocus::wl_surface).map(|s| s.id());
+        let focus = target
+            .and_then(WaylandFocus::wl_surface)
+            .and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, focus.clone());
         set_primary_focus(dh, seat, focus);
     }

@@ -2,8 +2,7 @@
 
 use crate::{
     backend::renderer::utils::RendererSurfaceState,
-    output::Output,
-    utils::{Logical, Point, Rectangle, Scale},
+    utils::{Logical, Point, Rectangle},
     wayland::compositor::{with_surface_tree_downward, SurfaceAttributes, TraversalAction},
 };
 use std::cell::RefCell;

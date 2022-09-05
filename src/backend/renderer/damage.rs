@@ -6,8 +6,8 @@ use indexmap::IndexMap;
 
 use crate::{
     backend::renderer::Frame,
+    output::Output,
     utils::{Physical, Rectangle, Scale, Size, Transform},
-    wayland::output::Output,
 };
 
 use super::element::{Id, RenderElement};
@@ -57,7 +57,7 @@ impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for DamageTrackedRend
             DamageTrackedRendererMode::Auto(output) => Ok((
                 output.current_mode().ok_or(OutputNoMode)?.size,
                 output.current_scale().fractional_scale().into(),
-                output.current_transform().into(),
+                output.current_transform(),
             )),
             DamageTrackedRendererMode::Static {
                 size,
