@@ -97,8 +97,8 @@ impl IsAlive for Kind {
 }
 
 #[derive(Debug)]
-pub(super) struct WindowInner {
-    pub(super) id: usize,
+pub(crate) struct WindowInner {
+    pub(crate) id: usize,
     toplevel: Kind,
     bbox: Mutex<Rectangle<i32, Logical>>,
     pub(crate) z_index: AtomicU8,
@@ -115,7 +115,7 @@ impl Drop for WindowInner {
 
 /// Represents a single application window
 #[derive(Debug, Clone)]
-pub struct Window(pub(super) Arc<WindowInner>);
+pub struct Window(pub(crate) Arc<WindowInner>);
 
 impl PartialEq for Window {
     fn eq(&self, other: &Self) -> bool {
