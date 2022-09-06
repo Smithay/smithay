@@ -15,24 +15,23 @@ use crate::{
 #[cfg(feature = "wayland_frontend")]
 use crate::{
     backend::renderer::{element::surface::WaylandSurfaceRenderElement, ImportAll},
-    desktop::layer::{layer_map_for_output, LayerSurface},
+    desktop::{layer_map_for_output, LayerSurface, WindowSurfaceType},
 };
 use std::{collections::HashSet, fmt};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_surface::WlSurface;
 
 mod element;
-#[cfg(feature = "wayland_frontend")]
-mod layer;
 mod output;
+
 #[cfg(feature = "wayland_frontend")]
-mod window;
+mod wayland {
+    mod layer;
+    mod window;
+}
 
 pub use self::element::*;
 use self::output::*;
-
-#[cfg(feature = "wayland_frontend")]
-use super::WindowSurfaceType;
 
 crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
 

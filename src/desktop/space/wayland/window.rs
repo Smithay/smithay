@@ -1,4 +1,3 @@
-use super::SpaceElement;
 use crate::{
     backend::renderer::{
         element::{
@@ -7,7 +6,7 @@ use crate::{
         },
         ImportAll, Renderer,
     },
-    desktop::{window::Window, PopupManager, WindowSurfaceType},
+    desktop::{space::SpaceElement, PopupManager, Window, WindowSurfaceType},
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
 };

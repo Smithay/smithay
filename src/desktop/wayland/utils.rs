@@ -2,13 +2,12 @@
 
 use crate::{
     backend::renderer::utils::RendererSurfaceState,
+    desktop::WindowSurfaceType,
     utils::{Logical, Point, Rectangle},
     wayland::compositor::{with_surface_tree_downward, SurfaceAttributes, TraversalAction},
 };
 use std::cell::RefCell;
 use wayland_server::protocol::wl_surface;
-
-use super::WindowSurfaceType;
 
 impl RendererSurfaceState {
     fn contains_point<P: Into<Point<f64, Logical>>>(&self, attrs: &SurfaceAttributes, point: P) -> bool {
