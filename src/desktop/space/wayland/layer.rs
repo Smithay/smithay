@@ -6,13 +6,14 @@ use crate::{
         },
         ImportAll, Renderer,
     },
-    desktop::{LayerSurface, PopupManager, WindowSurfaceType},
+    desktop::{
+        space::{RenderZindex, SpaceElement},
+        LayerSurface, PopupManager, WindowSurfaceType,
+    },
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::shell::wlr_layer::Layer,
 };
-
-use super::{RenderZindex, SpaceElement};
 
 impl SpaceElement for LayerSurface {
     fn geometry(&self) -> Rectangle<i32, Logical> {
