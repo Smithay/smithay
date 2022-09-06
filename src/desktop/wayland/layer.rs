@@ -25,7 +25,7 @@ use std::{
     sync::{Arc, Mutex, Weak},
 };
 
-use super::WindowSurfaceType;
+use crate::desktop::WindowSurfaceType;
 
 crate::utils::ids::id_gen!(next_layer_id, LAYER_ID, LAYER_IDS);
 
