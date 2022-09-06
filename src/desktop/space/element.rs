@@ -379,7 +379,7 @@ macro_rules! space_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
-        fn output_enter(&self, output: &$crate::wayland::output::Output) {
+        fn output_enter(&self, output: &$crate::output::Output) {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
@@ -391,7 +391,7 @@ macro_rules! space_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
-        fn output_leave(&self, output: &$crate::wayland::output::Output) {
+        fn output_leave(&self, output: &$crate::output::Output) {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
