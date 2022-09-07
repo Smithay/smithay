@@ -21,11 +21,13 @@ use crate::{
         egl::display::EGLBufferReader,
         renderer::{
             multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
-            ImportEgl, Offscreen,
+            ExportDma, ExportMem, ImportDma, ImportEgl, ImportMem, Offscreen,
         },
     },
     utils::{Buffer as BufferCoords, Rectangle},
 };
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+use std::borrow::BorrowMut;
 
 /// Errors raised by the [`EglGlesBackend`]
 #[derive(Debug, thiserror::Error)]
@@ -57,9 +59,16 @@ impl From<Error> for SwapBuffersError {
 /// [`Gles2Renderbuffer`](crate::backend::renderer::gles2::Gles2Renderbuffer)
 /// as a `Target`, when creating [`MultiRenderer`](super::MultiRenderer)s
 #[derive(Debug)]
-pub struct EglGlesBackend;
-impl GraphicsApi for EglGlesBackend {
-    type Device = EglGlesDevice;
+pub struct EglGlesBackend<R>(std::marker::PhantomData<R>);
+
+impl<R> Default for EglGlesBackend<R> {
+    fn default() -> Self {
+        EglGlesBackend(std::marker::PhantomData)
+    }
+}
+
+impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglGlesBackend<R> {
+    type Device = EglGlesDevice<R>;
     type Error = Error;
 
     fn enumerate(&self, list: &mut Vec<Self::Device>, log: &slog::Logger) -> Result<(), Self::Error> {
@@ -80,7 +89,7 @@ impl GraphicsApi for EglGlesBackend {
                 slog::info!(log, "Trying to initialize {:?} from {}", device, node);
                 let display = EGLDisplay::new(&device, None).map_err(Error::Egl)?;
                 let context = EGLContext::new(&display, None).map_err(Error::Egl)?;
-                let renderer = unsafe { Gles2Renderer::new(context, None).map_err(Error::Gl)? };
+                let renderer = unsafe { Gles2Renderer::new(context, None).map_err(Error::Gl)? }.into();
 
                 Ok(EglGlesDevice {
                     node,
@@ -89,14 +98,14 @@ impl GraphicsApi for EglGlesBackend {
                     renderer,
                 })
             })
-            .flat_map(|x: Result<EglGlesDevice, Error>| match x {
+            .flat_map(|x: Result<EglGlesDevice<R>, Error>| match x {
                 Ok(x) => Some(x),
                 Err(x) => {
                     slog::warn!(log, "Skipping EGLDevice: {}", x);
                     None
                 }
             })
-            .collect::<Vec<EglGlesDevice>>();
+            .collect::<Vec<EglGlesDevice<R>>>();
         list.extend(new_renderers);
         // but don't replace already initialized renderers
 
@@ -105,27 +114,28 @@ impl GraphicsApi for EglGlesBackend {
 }
 
 // TODO: Replace with specialization impl in multigpu/mod once possible
-impl<T: GraphicsApi> std::convert::From<Gles2Error> for MultiError<EglGlesBackend, T>
+impl<T: GraphicsApi, R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> std::convert::From<Gles2Error>
+    for MultiError<EglGlesBackend<R>, T>
 where
     T::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn from(err: Gles2Error) -> MultiError<EglGlesBackend, T> {
+    fn from(err: Gles2Error) -> MultiError<EglGlesBackend<R>, T> {
         MultiError::Render(err)
     }
 }
 
 /// [`ApiDevice`] of the [`EglGlesBackend`]
 #[derive(Debug)]
-pub struct EglGlesDevice {
+pub struct EglGlesDevice<R> {
     node: DrmNode,
-    renderer: Gles2Renderer,
+    renderer: R,
     _display: EGLDisplay,
     _device: EGLDevice,
 }
 
-impl ApiDevice for EglGlesDevice {
-    type Renderer = Gles2Renderer;
+impl<R: Renderer> ApiDevice for EglGlesDevice<R> {
+    type Renderer = R;
 
     fn renderer(&self) -> &Self::Renderer {
         &self.renderer
@@ -139,9 +149,18 @@ impl ApiDevice for EglGlesDevice {
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, Target> ImportEgl for MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Target>
+impl<'a, 'b, Target, R> ImportEgl for MultiRenderer<'a, 'b, EglGlesBackend<R>, EglGlesBackend<R>, Target>
 where
-    Gles2Renderer: Offscreen<Target>,
+    R: From<Gles2Renderer>
+        + BorrowMut<Gles2Renderer>
+        + Renderer<Error = Gles2Error>
+        + Offscreen<Target>
+        + ImportDma
+        + ImportMem
+        + ImportEgl
+        + ExportDma
+        + ExportMem
+        + 'static,
 {
     fn bind_wl_display(&mut self, display: &wayland_server::DisplayHandle) -> Result<(), EGLError> {
         self.render.renderer_mut().bind_wl_display(display)
@@ -192,12 +211,29 @@ where
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, Target> MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Target> {
+impl<'a, 'b, Target, R> MultiRenderer<'a, 'b, EglGlesBackend<R>, EglGlesBackend<R>, Target>
+where
+    R: From<Gles2Renderer>
+        + BorrowMut<Gles2Renderer>
+        + Renderer<Error = Gles2Error>
+        + Offscreen<Target>
+        + ImportDma
+        + ImportMem
+        + ImportEgl
+        + ExportDma
+        + ExportMem
+        + 'static,
+{
     fn try_import_egl(
-        renderer: &mut Gles2Renderer,
+        renderer: &mut R,
         buffer: &wl_buffer::WlBuffer,
-    ) -> Result<Dmabuf, MultigpuError<EglGlesBackend, EglGlesBackend>> {
-        if !renderer.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
+    ) -> Result<Dmabuf, MultigpuError<EglGlesBackend<R>, EglGlesBackend<R>>> {
+        if !renderer
+            .borrow_mut()
+            .extensions
+            .iter()
+            .any(|ext| ext == "GL_OES_EGL_image")
+        {
             return Err(MultigpuError::Render(Gles2Error::GLExtensionNotSupported(&[
                 "GL_OES_EGL_image",
             ])));
@@ -208,7 +244,9 @@ impl<'a, 'b, Target> MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Targe
                 crate::backend::egl::BufferAccessError::NotManaged(crate::backend::egl::EGLError::BadDisplay),
             )));
         }
+
         renderer
+            .borrow_mut()
             .make_current()
             .map_err(Gles2Error::from)
             .map_err(MultigpuError::Render)?;
@@ -221,6 +259,7 @@ impl<'a, 'b, Target> MultiRenderer<'a, 'b, EglGlesBackend, EglGlesBackend, Targe
             .map_err(Gles2Error::EGLBufferAccessError)
             .map_err(MultigpuError::Render)?;
         renderer
+            .borrow_mut()
             .egl_context()
             .display()
             .create_dmabuf_from_image(egl.image(0).unwrap(), egl.size, egl.y_inverted)

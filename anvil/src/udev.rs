@@ -30,7 +30,7 @@ use smithay::{
         egl::{EGLContext, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
-            gles2::Gles2Renderbuffer,
+            gles2::{Gles2Renderbuffer, Gles2Renderer},
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
             Bind, Frame, ImportMem, Renderer,
         },
@@ -66,7 +66,8 @@ use smithay::{
     },
 };
 
-type UdevRenderer<'a> = MultiRenderer<'a, 'a, EglGlesBackend, EglGlesBackend, Gles2Renderbuffer>;
+type UdevRenderer<'a> =
+    MultiRenderer<'a, 'a, EglGlesBackend<Gles2Renderer>, EglGlesBackend<Gles2Renderer>, Gles2Renderbuffer>;
 smithay::custom_elements! {
     pub CustomElem<=UdevRenderer<'_>>;
     SurfaceTree=SurfaceTree,
@@ -95,7 +96,7 @@ pub struct UdevData {
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     primary_gpu: DrmNode,
-    gpus: GpuManager<EglGlesBackend>,
+    gpus: GpuManager<EglGlesBackend<Gles2Renderer>>,
     backends: HashMap<DrmNode, BackendData>,
     pointer_images: Vec<(xcursor::parser::Image, MultiTexture)>,
     #[cfg(feature = "debug")]
@@ -185,7 +186,7 @@ pub fn run_udev(log: Logger) {
     info!(log, "Using {} as primary gpu.", primary_gpu);
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let mut gpus = GpuManager::new(EglGlesBackend, log.clone()).unwrap();
+    let mut gpus = GpuManager::new(EglGlesBackend::default(), log.clone()).unwrap();
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     #[cfg(any(feature = "egl", feature = "debug"))]
     let mut renderer = gpus
@@ -873,7 +874,7 @@ fn render_surface(
 }
 
 fn schedule_initial_render(
-    gpus: &mut GpuManager<EglGlesBackend>,
+    gpus: &mut GpuManager<EglGlesBackend<Gles2Renderer>>,
     surface: Rc<RefCell<SurfaceData>>,
     evt_handle: &LoopHandle<'static, CalloopData<UdevData>>,
     logger: ::slog::Logger,

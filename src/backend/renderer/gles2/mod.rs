@@ -287,7 +287,7 @@ pub struct Gles2Renderer {
     max_filter: TextureFilter,
     supports_instancing: bool,
     logger_ptr: Option<*mut ::slog::Logger>,
-    logger: ::slog::Logger,
+    pub(crate) logger: ::slog::Logger,
     _not_send: *mut (),
 }
 
@@ -551,7 +551,7 @@ unsafe fn solid_program(gl: &ffi::Gles2) -> Result<Gles2SolidProgram, Gles2Error
 }
 
 impl Gles2Renderer {
-    /// Creates a new OpenGL ES 2 renderer from a given [`EGLContext`](crate::backend::egl::EGLBuffer).
+    /// Creates a new OpenGL ES 2 renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
     ///
     /// # Safety
     ///

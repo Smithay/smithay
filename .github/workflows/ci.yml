@@ -189,6 +189,7 @@ jobs:
         - backend_x11
         - desktop
         - renderer_gl
+        - renderer_glow
         - renderer_multi
         - wayland_frontend
         - xwayland
