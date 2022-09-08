@@ -6,8 +6,9 @@ use wayland_server::{backend::ObjectId, protocol::wl_buffer, Resource};
 
 use crate::utils::{Physical, Point, Rectangle, Scale};
 
-use super::Renderer;
+use super::{utils::CommitCounter, Renderer};
 
+pub mod memory;
 pub mod surface;
 pub mod texture;
 
@@ -70,7 +71,7 @@ pub trait RenderElement<R: Renderer> {
     /// Get the unique id of this element
     fn id(&self) -> &Id;
     /// Get the current commit position of this element
-    fn current_commit(&self) -> usize;
+    fn current_commit(&self) -> CommitCounter;
     /// Get the location relative to the output
     fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
         self.geometry(scale).loc
@@ -78,7 +79,11 @@ pub trait RenderElement<R: Renderer> {
     /// Get the geometry relative to the output
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical>;
     /// Get the damage since the provided commit relative to the element
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(
+        &self,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
+    ) -> Vec<Rectangle<i32, Physical>> {
         if commit != Some(self.current_commit()) {
             vec![Rectangle::from_loc_and_size((0, 0), self.geometry(scale).size)]
         } else {
@@ -128,7 +133,7 @@ where
         (*self).id()
     }
 
-    fn current_commit(&self) -> usize {
+    fn current_commit(&self) -> CommitCounter {
         (*self).current_commit()
     }
 
@@ -140,7 +145,11 @@ where
         (*self).geometry(scale)
     }
 
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(
+        &self,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
+    ) -> Vec<Rectangle<i32, Physical>> {
         (*self).damage_since(scale, commit)
     }
 
@@ -355,7 +364,7 @@ macro_rules! render_elements_internal {
             }
         }
 
-        fn current_commit(&self) -> usize {
+        fn current_commit(&self) -> $crate::backend::renderer::utils::CommitCounter {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
@@ -368,7 +377,7 @@ macro_rules! render_elements_internal {
             }
         }
 
-        fn damage_since(&self, scale: $crate::utils::Scale<f64>, commit: Option<usize>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>> {
+        fn damage_since(&self, scale: $crate::utils::Scale<f64>, commit: Option<$crate::backend::renderer::utils::CommitCounter>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>> {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
@@ -742,7 +751,7 @@ where
         self.0.id()
     }
 
-    fn current_commit(&self) -> usize {
+    fn current_commit(&self) -> CommitCounter {
         self.0.current_commit()
     }
 
@@ -765,7 +774,11 @@ where
         self.0.draw(renderer, frame, scale, damage, log)
     }
 
-    fn damage_since(&self, scale: Scale<f64>, commit: Option<usize>) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(
+        &self,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
+    ) -> Vec<Rectangle<i32, Physical>> {
         self.0.damage_since(scale, commit)
     }
 
@@ -788,7 +801,7 @@ mod tests {
         utils::{Physical, Point, Rectangle, Scale},
     };
 
-    use super::{Id, RenderElement, Wrap};
+    use super::{CommitCounter, Id, RenderElement, Wrap};
 
     render_elements! {
         ImportMemTest<R> where R: ImportMem;
@@ -912,7 +925,7 @@ mod tests {
             todo!()
         }
 
-        fn current_commit(&self) -> usize {
+        fn current_commit(&self) -> CommitCounter {
             todo!()
         }
 
@@ -940,7 +953,7 @@ mod tests {
             todo!()
         }
 
-        fn current_commit(&self) -> usize {
+        fn current_commit(&self) -> CommitCounter {
             todo!()
         }
 
@@ -978,7 +991,7 @@ mod tests {
             todo!()
         }
 
-        fn current_commit(&self) -> usize {
+        fn current_commit(&self) -> CommitCounter {
             todo!()
         }
 
@@ -1015,7 +1028,7 @@ mod tests {
             todo!()
         }
 
-        fn current_commit(&self) -> usize {
+        fn current_commit(&self) -> CommitCounter {
             todo!()
         }
 

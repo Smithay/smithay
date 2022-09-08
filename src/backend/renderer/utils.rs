@@ -17,6 +17,7 @@ use std::{
     any::TypeId,
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},
+    fmt,
 };
 
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
@@ -25,6 +26,259 @@ use super::element::{
     surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
     RenderElement,
 };
+
+/// A commit counter for damage tracking
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct CommitCounter(usize);
+
+impl CommitCounter {
+    /// Increment the commit counter
+    pub fn increment(&mut self) {
+        self.0 = self.0.wrapping_add(1)
+    }
+
+    /// Get the distance between two [`CommitCounter`]
+    ///
+    /// If the [`CommitCounter`] is incremented on each recorded
+    /// damage this returns the count of damage that happened
+    /// between the [`CommitCounter`]s
+    pub fn distance(&self, previous_commit: Option<CommitCounter>) -> Option<usize> {
+        // if commit > commit_count we have overflown, in that case the following map might result
+        // in a false-positive, if commit is still very large. So we force false in those cases.
+        // That will result in a potentially sub-optimal full damage every usize::MAX frames,
+        // which is acceptable.
+        previous_commit
+            .filter(|commit| commit <= self)
+            .map(|commit| self.0.wrapping_sub(commit.0))
+    }
+}
+
+impl From<usize> for CommitCounter {
+    fn from(counter: usize) -> Self {
+        CommitCounter(counter)
+    }
+}
+
+/// A damage tracker
+pub struct DamageTracker<N, Kind> {
+    limit: usize,
+    state: DamageTrackerSnapshot<N, Kind>,
+}
+
+/// A snapshot of the current damage tracking state
+pub struct DamageTrackerSnapshot<N, Kind> {
+    limit: usize,
+    commit_counter: CommitCounter,
+    damage: VecDeque<Vec<Rectangle<N, Kind>>>,
+}
+
+impl<N: Clone, Kind> Clone for DamageTrackerSnapshot<N, Kind> {
+    fn clone(&self) -> Self {
+        Self {
+            limit: self.limit,
+            commit_counter: self.commit_counter,
+            damage: self.damage.clone(),
+        }
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageTracker<N, BufferCoord> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageTracker")
+            .field("limit", &self.limit)
+            .field("state", &self.state)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageTracker<N, Physical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageTracker")
+            .field("limit", &self.limit)
+            .field("state", &self.state)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageTracker<N, Logical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageTracker")
+            .field("limit", &self.limit)
+            .field("state", &self.state)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageTrackerSnapshot<N, BufferCoord> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageTrackerSnapshot")
+            .field("commit_counter", &self.commit_counter)
+            .field("damage", &self.damage)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageTrackerSnapshot<N, Physical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageTrackerSnapshot")
+            .field("commit_counter", &self.commit_counter)
+            .field("damage", &self.damage)
+            .finish()
+    }
+}
+
+impl<N: fmt::Debug> fmt::Debug for DamageTrackerSnapshot<N, Logical> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DamageTrackerSnapshot")
+            .field("commit_counter", &self.commit_counter)
+            .field("damage", &self.damage)
+            .finish()
+    }
+}
+
+impl<N, Kind> Default for DamageTracker<N, Kind> {
+    fn default() -> Self {
+        DamageTracker::new(MAX_DAMAGE)
+    }
+}
+
+impl<N, Kind> DamageTrackerSnapshot<N, Kind> {
+    fn new(limit: usize) -> Self {
+        DamageTrackerSnapshot {
+            limit,
+            commit_counter: CommitCounter::default(),
+            damage: VecDeque::with_capacity(limit),
+        }
+    }
+
+    /// Create an empty damage snapshot
+    pub fn empty() -> Self {
+        DamageTrackerSnapshot {
+            limit: 0,
+            commit_counter: CommitCounter::default(),
+            damage: VecDeque::default(),
+        }
+    }
+
+    /// Gets the current [`CommitCounter`] of this tracker
+    pub fn current_commit(&self) -> CommitCounter {
+        self.commit_counter
+    }
+
+    /// Allows access to the stored damage
+    pub fn damage(&self) -> impl Iterator<Item = &Vec<Rectangle<N, Kind>>> {
+        self.damage.iter()
+    }
+
+    fn reset(&mut self) {
+        self.damage.clear();
+        self.commit_counter.increment();
+    }
+}
+
+impl<N: Coordinate, Kind> DamageTrackerSnapshot<N, Kind> {
+    /// Get the damage since the last commit
+    ///
+    /// Returns `None` in case the [`CommitCounter`] is too old
+    /// or the damage has been reset. In that case the whole
+    /// element geometry should be considered as damaged
+    ///
+    /// If the commit is recent enough and no damage has occurred
+    /// an empty `Vec` will be returned
+    pub fn damage_since(&self, commit: Option<CommitCounter>) -> Option<Vec<Rectangle<N, Kind>>> {
+        let distance = self.commit_counter.distance(commit);
+
+        if distance
+            .map(|distance| distance <= self.damage.len())
+            .unwrap_or(false)
+        {
+            Some(
+                self.damage
+                    .iter()
+                    .take(distance.unwrap())
+                    .fold(Vec::new(), |mut acc, elem| {
+                        acc.extend(elem);
+                        acc
+                    }),
+            )
+        } else {
+            None
+        }
+    }
+
+    fn add(&mut self, damage: &[Rectangle<N, Kind>]) {
+        if damage.is_empty() || damage.iter().all(|d| d.is_empty()) {
+            // do not track empty damage
+            return;
+        }
+
+        let mut damage = damage
+            .iter()
+            .copied()
+            .filter(|d| !d.is_empty())
+            .collect::<Vec<_>>();
+        damage.dedup();
+
+        self.damage.push_front(damage);
+        self.damage.truncate(self.limit);
+
+        self.commit_counter.increment();
+    }
+}
+
+impl<N, Kind> DamageTracker<N, Kind> {
+    /// Initialize a a new [`DamageTracker`]
+    pub fn new(limit: usize) -> Self {
+        DamageTracker {
+            limit,
+            state: DamageTrackerSnapshot::new(limit),
+        }
+    }
+
+    /// Gets the current [`CommitCounter`] of this tracker
+    pub fn current_commit(&self) -> CommitCounter {
+        self.state.current_commit()
+    }
+
+    /// Allows access to the stored damage
+    pub fn damage(&self) -> impl Iterator<Item = &Vec<Rectangle<N, Kind>>> {
+        self.state.damage()
+    }
+
+    /// Reset the damage
+    ///
+    /// This should be called when the
+    /// tracked item is resized
+    pub fn reset(&mut self) {
+        self.state.reset()
+    }
+}
+
+impl<N: Clone, Kind> DamageTracker<N, Kind> {
+    /// Get a snapshot of the current damage
+    pub fn snapshot(&self) -> DamageTrackerSnapshot<N, Kind> {
+        self.state.clone()
+    }
+}
+
+impl<N: Coordinate, Kind> DamageTracker<N, Kind> {
+    /// Add some damage to the tracker
+    pub fn add(&mut self, damage: &[Rectangle<N, Kind>]) {
+        self.state.add(damage)
+    }
+
+    /// Get the damage since the last commit
+    ///
+    /// Returns `None` in case the [`CommitCounter`] is too old
+    /// or the damage has been reset. In that case the whole
+    /// element geometry should be considered as damaged
+    ///
+    /// If the commit is recent enough and no damage has occurred
+    /// an empty `Vec` will be returned
+    pub fn damage_since(&self, commit: Option<CommitCounter>) -> Option<Vec<Rectangle<N, Kind>>> {
+        self.state.damage_since(commit)
+    }
+}
 
 /// Type stored in WlSurface states data_map
 ///
@@ -38,15 +292,14 @@ pub type RendererSurfaceStateUserData = RefCell<RendererSurfaceState>;
 /// Surface state for rendering related data
 #[derive(Default, Debug)]
 pub struct RendererSurfaceState {
-    pub(crate) commit_count: usize,
     pub(crate) buffer_dimensions: Option<Size<i32, BufferCoord>>,
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
     pub(crate) buffer_delta: Option<Point<i32, Logical>>,
     pub(crate) buffer_has_alpha: Option<bool>,
     pub(crate) buffer: Option<WlBuffer>,
-    pub(crate) damage: VecDeque<Vec<Rectangle<i32, BufferCoord>>>,
-    pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
+    pub(crate) damage: DamageTracker<i32, BufferCoord>,
+    pub(crate) renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
     pub(crate) opaque_regions: Vec<Rectangle<i32, Logical>>,
@@ -84,7 +337,6 @@ impl RendererSurfaceState {
                     }
                 }
                 self.textures.clear();
-                self.commit_count = self.commit_count.wrapping_add(1);
 
                 let surface_size = self
                     .buffer_dimensions
@@ -112,8 +364,7 @@ impl RendererSurfaceState {
                     })
                     .collect::<Vec<Rectangle<i32, BufferCoord>>>();
                 buffer_damage.dedup();
-                self.damage.push_front(buffer_damage);
-                self.damage.truncate(MAX_DAMAGE);
+                self.damage.add(&buffer_damage);
 
                 self.opaque_regions.clear();
                 if !self.buffer_has_alpha.unwrap_or(true) {
@@ -177,8 +428,7 @@ impl RendererSurfaceState {
                     buffer.release();
                 };
                 self.textures.clear();
-                self.commit_count = self.commit_count.wrapping_add(1);
-                self.damage.clear();
+                self.damage.reset();
                 self.surface_view = None;
                 self.buffer_has_alpha = None;
                 self.opaque_regions.clear();
@@ -191,38 +441,26 @@ impl RendererSurfaceState {
     ///
     /// The position should be saved after calling [`damage_since`] and
     /// provided as the commit in the next call.
-    pub fn current_commit(&self) -> usize {
-        self.commit_count
+    pub fn current_commit(&self) -> CommitCounter {
+        self.damage.current_commit()
     }
 
     /// Gets the damage since the last commit
     ///
     /// If either the commit is `None` or the commit is too old
     /// the whole buffer will be returned as damage.
-    pub fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, BufferCoord>> {
-        // on overflow the wrapping_sub should end up
-        let recent_enough = commit
-            // if commit > commit_count we have overflown, in that case the following map might result
-            // in a false-positive, if commit is still very large. So we force false in those cases.
-            // That will result in a potentially sub-optimal full damage every usize::MAX frames,
-            // which is acceptable.
-            .filter(|commit| *commit <= self.commit_count)
-            .map(|commit| self.commit_count.wrapping_sub(self.damage.len()) <= commit)
-            .unwrap_or(false);
-        if recent_enough {
-            self.damage
-                .iter()
-                .take(self.commit_count.wrapping_sub(commit.unwrap()))
-                .fold(Vec::new(), |mut acc, elem| {
-                    acc.extend(elem);
-                    acc
-                })
-        } else {
+    pub fn damage_since(&self, commit: Option<CommitCounter>) -> Vec<Rectangle<i32, BufferCoord>> {
+        self.damage.damage_since(commit).unwrap_or_else(|| {
             self.buffer_dimensions
                 .as_ref()
                 .map(|size| vec![Rectangle::from_loc_and_size((0, 0), *size)])
                 .unwrap_or_else(Vec::new)
-        }
+        })
+    }
+
+    /// Gets the raw damage of this surface
+    pub fn damage(&self) -> impl Iterator<Item = &Vec<Rectangle<i32, BufferCoord>>> {
+        self.damage.damage()
     }
 
     /// Returns the logical size of the current attached buffer
@@ -460,7 +698,7 @@ where
                         match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 e.insert(Box::new(m));
-                                data.renderer_seen.insert(texture_id, data.commit_count);
+                                data.renderer_seen.insert(texture_id, data.current_commit());
                             }
                             Some(Err(err)) => {
                                 slog::warn!(log, "Error loading buffer: {}", err);

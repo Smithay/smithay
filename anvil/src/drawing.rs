@@ -1,45 +1,49 @@
 #![allow(clippy::too_many_arguments)]
 
-#[cfg(feature = "debug")]
-use smithay::{
-    backend::renderer::{element::RenderElement, Frame},
-    utils::{Buffer, Logical, Rectangle, Size},
-};
 use smithay::{
     backend::renderer::{
         element::{
-            surface::WaylandSurfaceRenderElement, texture::TextureRenderElement, AsRenderElements, Id,
+            surface::WaylandSurfaceRenderElement,
+            texture::{TextureBuffer, TextureRenderElement},
+            AsRenderElements,
         },
         ImportAll, Renderer, Texture,
     },
     input::pointer::CursorImageStatus,
     render_elements,
-    utils::{Physical, Point, Scale, Transform},
+    utils::{Physical, Point, Scale},
+};
+#[cfg(feature = "debug")]
+use smithay::{
+    backend::renderer::{
+        element::{Id, RenderElement},
+        utils::CommitCounter,
+        Frame,
+    },
+    utils::{Buffer, Logical, Rectangle, Size, Transform},
 };
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
 pub struct PointerElement<T: Texture> {
-    id: Id,
-    texture: Option<T>,
+    texture: Option<TextureBuffer<T>>,
     status: CursorImageStatus,
 }
 
 impl<T: Texture> Default for PointerElement<T> {
     fn default() -> Self {
         Self {
-            id: Id::new(),
             texture: Default::default(),
             status: CursorImageStatus::Default,
         }
     }
 }
 
-impl<T: Texture + 'static> PointerElement<T> {
+impl<T: Texture> PointerElement<T> {
     pub fn set_status(&mut self, status: CursorImageStatus) {
         self.status = status;
     }
 
-    pub fn set_texture(&mut self, texture: T) {
+    pub fn set_texture(&mut self, texture: TextureBuffer<T>) {
         self.texture = Some(texture);
     }
 }
@@ -63,21 +67,15 @@ where
             CursorImageStatus::Hidden => vec![],
             CursorImageStatus::Default => {
                 if let Some(texture) = self.texture.as_ref() {
-                    vec![PointerRenderElement::<R>::from(
-                        smithay::backend::renderer::element::texture::TextureRenderElement::from_texture(
-                            location,
-                            self.id.clone(),
-                            texture.clone(),
+                    vec![
+                        PointerRenderElement::<R>::from(TextureRenderElement::from_texture_buffer(
+                            location.to_f64(),
+                            texture,
                             None,
-                            texture
-                                .size()
-                                .to_logical(1, Transform::Normal)
-                                .to_physical_precise_round(scale),
-                            Transform::Normal,
-                            1,
-                        ),
-                    )
-                    .into()]
+                            None,
+                        ))
+                        .into(),
+                    ]
                 } else {
                     vec![]
                 }
@@ -102,7 +100,7 @@ pub struct FpsElement<T: Texture> {
     id: Id,
     value: u32,
     texture: T,
-    commit_counter: usize,
+    commit_counter: CommitCounter,
 }
 
 #[cfg(feature = "debug")]
@@ -112,14 +110,14 @@ impl<T: Texture> FpsElement<T> {
             id: Id::new(),
             texture,
             value: 0,
-            commit_counter: 0,
+            commit_counter: CommitCounter::default(),
         }
     }
 
     pub fn update_fps(&mut self, fps: u32) {
         if self.value != fps {
             self.value = fps;
-            self.commit_counter = self.commit_counter.wrapping_add(1);
+            self.commit_counter.increment();
         }
     }
 }
@@ -149,7 +147,7 @@ where
         Rectangle::from_loc_and_size((0, 0), (24 * digits, 35)).to_physical_precise_round(scale)
     }
 
-    fn current_commit(&self) -> usize {
+    fn current_commit(&self) -> CommitCounter {
         self.commit_counter
     }
 
