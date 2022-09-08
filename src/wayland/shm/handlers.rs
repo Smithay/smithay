@@ -5,6 +5,7 @@ use super::{
     BufferData, ShmHandler, ShmPoolUserData, ShmState,
 };
 
+use nix::unistd;
 use std::sync::Arc;
 use wayland_server::{
     protocol::{
@@ -62,13 +63,18 @@ where
 
         if size <= 0 {
             shm.post_error(Error::InvalidStride, "invalid wl_shm_pool size");
+            // If we receive invalid parameters, we must take ownership of the file descriptor by closing it.
+            let _ = unistd::close(fd);
             return;
         }
 
         let mmap_pool = match Pool::new(fd, size as usize, state.shm_state().log.clone()) {
             Ok(p) => p,
-            Err(()) => {
+            Err(_) => {
                 shm.post_error(wl_shm::Error::InvalidFd, format!("Failed to mmap fd {}", fd));
+                // No need to close the file descriptor if creating the pool fails since Pool::new takes
+                // ownership of the file descriptor.
+                // let _ = unistd::close(fd);
                 return;
             }
         };
