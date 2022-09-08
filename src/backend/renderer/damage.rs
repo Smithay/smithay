@@ -12,7 +12,7 @@ use crate::{
 
 use super::element::{Id, RenderElement};
 
-use super::{ImportAll, Renderer, Texture};
+use super::{Renderer, Texture};
 
 #[derive(Debug, Clone, Copy)]
 struct ElementState {
@@ -97,10 +97,14 @@ impl<R: Renderer> std::fmt::Debug for DamageTrackedRendererError<R> {
 
 impl DamageTrackedRenderer {
     /// Initialize a new [`DamageTrackedRenderer`]
-    pub fn new(size: Size<i32, Physical>, scale: impl Into<Scale<f64>>, transform: Transform) -> Self {
+    pub fn new(
+        size: impl Into<Size<i32, Physical>>,
+        scale: impl Into<Scale<f64>>,
+        transform: Transform,
+    ) -> Self {
         Self {
             mode: DamageTrackedRendererMode::Static {
-                size,
+                size: size.into(),
                 scale: scale.into(),
                 transform,
             },
@@ -132,7 +136,7 @@ impl DamageTrackedRenderer {
     ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
     where
         E: RenderElement<R>,
-        R: Renderer + ImportAll,
+        R: Renderer,
         <R as Renderer>::TextureId: Texture,
     {
         let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
