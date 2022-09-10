@@ -150,7 +150,7 @@ where
                 let user_data = seat.user_data();
                 user_data.insert_if_missing(VirtualKeyboardHandle::default);
                 let virtual_keyboard_handle = user_data.get::<VirtualKeyboardHandle>().unwrap();
-                let instance = data_init.init(
+                data_init.init(
                     id,
                     VirtualKeyboardUserData {
                         handle: virtual_keyboard_handle.clone(),
@@ -158,7 +158,7 @@ where
                     },
                 );
 
-                virtual_keyboard_handle.add_instance::<D>(&instance);
+                virtual_keyboard_handle.count_instance();
             }
             _ => unreachable!(),
         }

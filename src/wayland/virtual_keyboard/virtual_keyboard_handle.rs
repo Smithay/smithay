@@ -10,7 +10,7 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboar
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::wl_keyboard::{KeyState, KeymapFormat},
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
+    Client, DataInit, Dispatch, DisplayHandle
 };
 use xkbcommon::xkb;
 
@@ -32,7 +32,7 @@ struct SerializedMods {
 
 #[derive(Debug, Default)]
 pub(crate) struct VirtualKeyboard {
-    pub instances: Vec<ZwpVirtualKeyboardV1>,
+    instances: u8,
     modifiers: Option<SerializedMods>,
     old_keymap: Option<KeymapFile>,
 }
@@ -44,9 +44,9 @@ pub(crate) struct VirtualKeyboardHandle {
 }
 
 impl VirtualKeyboardHandle {
-    pub(super) fn add_instance<D>(&self, instance: &ZwpVirtualKeyboardV1) {
+    pub(super) fn count_instance(&self) {
         let mut inner = self.inner.lock().unwrap();
-        inner.instances.push(instance.clone());
+        inner.instances+=1;
     }
 }
 
@@ -74,6 +74,7 @@ where
     ) {
         match request {
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
+                //This should be wl_keyboard::KeymapFormat::XkbV1, but the protocol does not state the parameter is an enum.
                 if format == 1 {
                     let keyboard_handle = data.seat.get_keyboard().unwrap();
                     let mut internal = keyboard_handle.arc.internal.lock().unwrap();
@@ -150,12 +151,12 @@ where
     fn destroyed(
         _state: &mut D,
         _client: ClientId,
-        virtual_keyboard: ObjectId,
+        _virtual_keyboard: ObjectId,
         data: &VirtualKeyboardUserData<D>,
     ) {
         let mut inner = data.handle.inner.lock().unwrap();
-        inner.instances.retain(|i| i.id() != virtual_keyboard);
-        if inner.instances.is_empty() {
+        inner.instances-=1;
+        if inner.instances == 0 {
             if let Some(old_keymap) = &inner.old_keymap {
                 old_keymap
                     .with_fd(false, |fd, size| {
