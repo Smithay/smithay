@@ -50,6 +50,7 @@ pub mod compositor;
 pub mod data_device;
 pub mod dmabuf;
 pub mod input_method;
+pub mod keyboard_shortcuts_inhibit;
 pub mod output;
 pub mod primary_selection;
 pub mod seat;

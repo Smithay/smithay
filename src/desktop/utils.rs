@@ -3,12 +3,10 @@
 use crate::{
     backend::renderer::utils::RendererSurfaceState,
     desktop::Space,
+    output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::{
-        compositor::{
-            with_surface_tree_downward, with_surface_tree_upward, SurfaceAttributes, TraversalAction,
-        },
-        output::Output,
+    wayland::compositor::{
+        with_surface_tree_downward, with_surface_tree_upward, SurfaceAttributes, TraversalAction,
     },
 };
 use wayland_server::{backend::ObjectId, protocol::wl_surface, DisplayHandle, Resource};

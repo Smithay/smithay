@@ -4,12 +4,13 @@ use std::{
 };
 
 use smithay::{
-    delegate_compositor, delegate_data_device, delegate_input_method_manager, delegate_layer_shell,
-    delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_tablet_manager,
-    delegate_text_input_manager, delegate_viewporter, delegate_virtual_keyboard_manager,
-    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_compositor, delegate_data_device, delegate_input_method_manager,
+    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_primary_selection,
+    delegate_seat, delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
+    delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{PopupManager, Space, WindowSurfaceType},
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
+    output::Output,
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
         wayland_protocols::xdg::decoration::{
@@ -29,7 +30,10 @@ use smithay::{
             ServerDndGrabHandler,
         },
         input_method::{InputMethodManagerState, InputMethodSeat},
-        output::{Output, OutputManagerState},
+        keyboard_shortcuts_inhibit::{
+            KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
+        },
+        output::OutputManagerState,
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         shell::{
             wlr_layer::WlrLayerShellState,
@@ -88,6 +92,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub output_manager_state: OutputManagerState,
     pub primary_selection_state: PrimarySelectionState,
     pub seat_state: SeatState<AnvilState<BackendData>>,
+    pub keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     pub shm_state: ShmState,
     pub viewporter_state: ViewporterState,
     pub xdg_activation_state: XdgActivationState,
@@ -164,9 +169,8 @@ impl<BackendData> SeatHandler for AnvilState<BackendData> {
         let dh = &self.display_handle;
 
         let focus = surface.and_then(|s| dh.get_client(s.id()).ok());
-        let focus2 = surface.and_then(|s| dh.get_client(s.id()).ok());
-        set_data_device_focus(dh, seat, focus);
-        set_primary_focus(dh, seat, focus2);
+        set_data_device_focus(dh, seat, focus.clone());
+        set_primary_focus(dh, seat, focus);
     }
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
         *self.cursor_status.lock().unwrap() = image;
@@ -179,6 +183,19 @@ delegate_tablet_manager!(@<BackendData: 'static> AnvilState<BackendData>);
 delegate_text_input_manager!(@<BackendData: 'static> AnvilState<BackendData>);
 
 delegate_input_method_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+
+impl<BackendData> KeyboardShortcutsInhibitHandler for AnvilState<BackendData> {
+    fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState {
+        &mut self.keyboard_shortcuts_inhibit_state
+    }
+
+    fn new_inhibitor(&mut self, inhibitor: KeyboardShortcutsInhibitor) {
+        // Just grant the wish for everyone
+        inhibitor.activate();
+    }
+}
+
+delegate_keyboard_shortcuts_inhibit!(@<BackendData: 'static> AnvilState<BackendData>);
 
 delegate_virtual_keyboard_manager!(@<BackendData: 'static> AnvilState<BackendData>);
 
@@ -310,6 +327,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         seat.add_input_method(XkbConfig::default(), 200, 25);
 
+        let keyboard_shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&display.handle());
+
         #[cfg(feature = "xwayland")]
         let xwayland = {
             let (xwayland, channel) = XWayland::new(log.clone(), &display.handle());
@@ -342,6 +361,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             output_manager_state,
             primary_selection_state,
             seat_state,
+            keyboard_shortcuts_inhibit_state,
             shm_state,
             viewporter_state,
             xdg_activation_state,

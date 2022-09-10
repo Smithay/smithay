@@ -9,11 +9,9 @@ use crate::{
         utils::{output_leave, output_update},
         window::Window,
     },
+    output::Output,
     utils::{IsAlive, Logical, Physical, Point, Rectangle, Transform},
-    wayland::{
-        compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
-        output::Output,
-    },
+    wayland::compositor::{get_parent, is_sync_subsurface, with_surface_tree_downward, TraversalAction},
 };
 use indexmap::{IndexMap, IndexSet};
 use std::{collections::VecDeque, fmt};
@@ -324,7 +322,7 @@ impl Space {
             return None;
         }
 
-        let transform: Transform = o.current_transform().into();
+        let transform: Transform = o.current_transform();
         let state = output_state(self.id, o);
         o.current_mode().map(|mode| {
             Rectangle::from_loc_and_size(
@@ -619,7 +617,7 @@ impl Space {
             return Ok(None);
         }
 
-        let output_transform: Transform = output.current_transform().into();
+        let output_transform: Transform = output.current_transform();
         let res = renderer.render(
             output_transform.transform_size(output_size),
             output_transform,

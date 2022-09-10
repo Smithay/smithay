@@ -4,7 +4,7 @@ use std::ffi::{CStr, CString};
 
 use ash::{prelude::VkResult, vk};
 
-use super::{version::Version, DriverInfo, PhdInfo};
+use super::{version::Version, DriverInfo, PhdInfo, UnsupportedProperty};
 
 impl super::PhysicalDevice {
     /// # Safety:
@@ -123,6 +123,15 @@ impl super::PhdInfo {
         info.driver = info.properties_driver.map(DriverInfo::from_driver_properties);
 
         Some(info)
+    }
+
+    #[cfg_attr(not(feature = "backend_drm"), allow(dead_code))]
+    pub(super) fn get_drm_properties(
+        &self,
+    ) -> Result<vk::PhysicalDeviceDrmPropertiesEXT, UnsupportedProperty> {
+        const EXTENSIONS: &[&CStr] = &[vk::ExtPhysicalDeviceDrmFn::name()];
+        self.properties_drm
+            .ok_or(UnsupportedProperty::Extensions(EXTENSIONS))
     }
 }
 

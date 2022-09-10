@@ -1,4 +1,5 @@
 use slog::{error, trace, warn};
+use std::fmt;
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::{
@@ -80,9 +81,19 @@ where
 }
 
 /// User data for keyboard
-#[derive(Debug)]
 pub struct KeyboardUserData<D: SeatHandler> {
     pub(crate) handle: Option<KeyboardHandle<D>>,
+}
+
+impl<D: SeatHandler> fmt::Debug for KeyboardUserData<D>
+where
+    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyboardUserData")
+            .field("handle", &self.handle)
+            .finish()
+    }
 }
 
 impl<D> Dispatch<WlKeyboard, KeyboardUserData<D>, D> for SeatState<D>

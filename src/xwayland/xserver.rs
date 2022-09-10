@@ -158,8 +158,8 @@ impl Drop for XWayland {
 #[derive(Debug)]
 struct XWaylandInstance {
     display_lock: X11Lock,
-    wayland_client: Option<Client>,
-    wayland_client_fd: Option<RawFd>,
+    wayland_client: Client,
+    wayland_client_fd: RawFd,
     wm_fd: Option<UnixStream>,
     child_stdout: ChildStdout,
 }
@@ -236,8 +236,8 @@ fn launch<D>(
     let client = dh.insert_client(wl_me, Arc::new(XWaylandClientData { inner: inner.clone() }))?;
     guard.instance = Some(XWaylandInstance {
         display_lock: lock,
-        wayland_client: Some(client),
-        wayland_client_fd: Some(client_fd),
+        wayland_client: client,
+        wayland_client_fd: client_fd,
         wm_fd: Some(x_wm_me),
         child_stdout,
     });
@@ -306,11 +306,9 @@ impl Inner {
         // don't do anything if not running
         if let Some(instance) = self.instance.take() {
             info!(self.log, "Shutting down XWayland.");
-            if let Some(client) = instance.wayland_client {
-                self.dh
-                    .backend_handle()
-                    .kill_client(client.id(), DisconnectReason::ConnectionClosed);
-            }
+            self.dh
+                .backend_handle()
+                .kill_client(instance.wayland_client.id(), DisconnectReason::ConnectionClosed);
 
             // send error occurs if the user dropped the channel... We cannot do much except ignore.
             let _ = self.sender.send(XWaylandEvent::Exited);
@@ -360,8 +358,8 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
         // send error occurs if the user dropped the channel... We cannot do much except ignore.
         let _ = guard.sender.send(XWaylandEvent::Ready {
             connection: instance.wm_fd.take().unwrap(), // This is a bug if None
-            client: instance.wayland_client.take().unwrap(), // TODO: .clone().unwrap(),
-            client_fd: instance.wayland_client_fd.take().unwrap(),
+            client: instance.wayland_client.clone(),
+            client_fd: instance.wayland_client_fd,
             display: instance.display_lock.display(),
         });
     } else {
