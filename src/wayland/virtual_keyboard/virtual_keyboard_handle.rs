@@ -86,7 +86,7 @@ where
     ) {
         match request {
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
-                //This should be wl_keyboard::KeymapFormat::XkbV1,
+                // This should be wl_keyboard::KeymapFormat::XkbV1,
                 // but the protocol does not state the parameter is an enum.
                 if format == 1 {
                     let keyboard_handle = data.seat.get_keyboard().unwrap();
@@ -126,6 +126,8 @@ where
                 let inner = data.handle.inner.lock().unwrap();
                 if let Some(focus) = internal.focus.as_ref().and_then(|f| f.0.wl_surface()) {
                     for_each_focused_kbds(&data.seat, focus, |kbd| {
+                        // This should be wl_keyboard::KeyState,
+                        // but the protocol does not state the parameter is an enum.
                         let key_state = if state == 1 {
                             KeyState::Pressed
                         } else {
