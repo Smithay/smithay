@@ -1,9 +1,8 @@
-#![allow(dead_code)]
-
 use crate::utils::sealed_file::SealedFile;
 use slog::error;
 use xkbcommon::xkb::{Keymap, KEYMAP_FORMAT_TEXT_V1};
 
+use std::ffi::CString;
 #[cfg(feature = "wayland_frontend")]
 use std::os::unix::prelude::RawFd;
 #[cfg(feature = "wayland_frontend")]
@@ -18,12 +17,17 @@ pub struct KeymapFile {
 
 impl KeymapFile {
     /// Turn the keymap into a string using KEYMAP_FORMAT_TEXT_V1, create a sealed file for it, and store the string
-    pub fn new(keymap: &Keymap, log: slog::Logger) -> Self {
+    pub fn new<L>(keymap: &Keymap, logger: L) -> Self
+    where
+        L: Into<Option<slog::Logger>>,
+    {
+        let logger = crate::slog_or_fallback(logger);
+        let name = CString::new("smithay-keymap").unwrap();
         let keymap = keymap.get_as_string(KEYMAP_FORMAT_TEXT_V1);
-        let sealed = SealedFile::new("smithay-keymap", &keymap);
+        let sealed = SealedFile::new(name, CString::new(keymap.as_str()).unwrap());
 
         if let Err(err) = sealed.as_ref() {
-            error!(log, "Error when creating sealed keymap file: {}", err);
+            error!(logger, "Error when creating sealed keymap file: {}", err);
         }
 
         Self {

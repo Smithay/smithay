@@ -21,10 +21,7 @@ pub(crate) struct SealedFile {
 }
 
 impl SealedFile {
-    pub fn new(name: &str, contents: &str) -> Result<Self, std::io::Error> {
-        let name = CString::new(name).expect("File name should not contain interior null bytes");
-        let contents =
-            CString::new(contents).expect("Sealed file contents should not contain interior null bytes");
+    pub fn new(name: CString, contents: CString) -> Result<Self, std::io::Error> {
         let contents = contents.as_bytes_with_nul();
 
         let fd = nix::sys::memfd::memfd_create(

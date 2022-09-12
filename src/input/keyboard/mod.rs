@@ -425,7 +425,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         Ok(Self {
             arc: Arc::new(KbdRc {
-                keymap: KeymapFile::new(internal.keymap.clone(), log.clone()),
+                keymap: KeymapFile::new(&internal.keymap, log.clone()),
                 internal: Mutex::new(internal),
                 logger: log,
                 #[cfg(feature = "wayland_frontend")]
