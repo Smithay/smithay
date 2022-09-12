@@ -51,6 +51,7 @@ impl SealedFile {
         })
     }
 
+    // Only used in KeymapFile which is under the wayland_frontend feature
     #[allow(dead_code)]
     pub fn size(&self) -> usize {
         self.size
