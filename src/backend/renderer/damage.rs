@@ -150,22 +150,6 @@ impl DamageTrackedRenderer {
         let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
         let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
 
-        if self.last_state.size.map(|geo| geo != output_size).unwrap_or(true) {
-            // The output geometry changed, so just damage everything
-            slog::trace!(log, "Output geometry changed, damaging whole output geometry. previous geometry: {:?}, current geometry: {:?}", self.last_state.size, output_geo);
-            damage = vec![output_geo];
-        }
-
-        // We now add old damage states, if we have an age value
-        if age > 0 && self.last_state.old_damage.len() >= age {
-            // We do not need even older states anymore
-            self.last_state.old_damage.truncate(age);
-            damage.extend(self.last_state.old_damage.iter().flatten().copied());
-        } else {
-            // just damage everything, if we have no damage
-            damage = vec![output_geo];
-        }
-
         for element in elements {
             let element_geometry = element.geometry(output_scale);
 
@@ -259,6 +243,32 @@ impl DamageTrackedRenderer {
             }
         }
 
+        if self.last_state.size.map(|geo| geo != output_size).unwrap_or(true) {
+            // The output geometry changed, so just damage everything
+            slog::trace!(log, "Output geometry changed, damaging whole output geometry. previous geometry: {:?}, current geometry: {:?}", self.last_state.size, output_geo);
+            damage = vec![output_geo];
+        }
+
+        // That is all completely new damage, which we need to store for subsequent renders
+        let new_damage = damage.clone();
+
+        // We now add old damage states, if we have an age value
+        if age > 0 && self.last_state.old_damage.len() >= age {
+            slog::trace!(log, "age of {} recent enough, using old damage", age);
+            // We do not need even older states anymore
+            self.last_state.old_damage.truncate(age);
+            damage.extend(self.last_state.old_damage.iter().flatten().copied());
+        } else {
+            slog::trace!(
+                log,
+                "no old damage available, re-render everything. age: {} old_damage len: {}",
+                age,
+                self.last_state.old_damage.len(),
+            );
+            // just damage everything, if we have no damage
+            damage = vec![output_geo];
+        };
+
         // Optimize the damage for rendering
         damage.dedup();
         damage.retain(|rect| rect.overlaps(output_geo));
@@ -280,8 +290,11 @@ impl DamageTrackedRenderer {
             });
 
         if damage.is_empty() {
+            slog::trace!(log, "nothing damaged, exiting early");
             return Ok(None);
         }
+
+        slog::trace!(log, "damage to be rendered: {:#?}", &damage);
 
         let mut elements_drawn = 0;
 
@@ -335,8 +348,8 @@ impl DamageTrackedRenderer {
             .collect();
         self.last_state.size = Some(output_size);
         self.last_state.elements = new_elements_state;
-        self.last_state.old_damage.push_front(damage.clone());
+        self.last_state.old_damage.push_front(new_damage.clone());
 
-        Ok(Some(damage))
+        Ok(Some(new_damage))
     }
 }
