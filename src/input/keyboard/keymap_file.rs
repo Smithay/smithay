@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::utils::sealed_file::SealedFile;
 use slog::error;
 use xkbcommon::xkb::{Keymap, KEYMAP_FORMAT_TEXT_V1};
