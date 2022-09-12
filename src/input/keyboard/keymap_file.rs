@@ -7,6 +7,7 @@ use std::os::unix::prelude::RawFd;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_keyboard::WlKeyboard;
 
+/// Wraps an XKB keymap into a sealed file or stores as just a string for sending to WlKeyboard over an fd
 #[derive(Debug)]
 pub struct KeymapFile {
     sealed: Option<SealedFile>,
@@ -14,9 +15,10 @@ pub struct KeymapFile {
 }
 
 impl KeymapFile {
+    /// Turn the keymap into a string using KEYMAP_FORMAT_TEXT_V1, create a sealed file for it, and store the string
     pub fn new(keymap: Keymap, log: slog::Logger) -> Self {
         let keymap = keymap.get_as_string(KEYMAP_FORMAT_TEXT_V1);
-        let sealed = SealedFile::new(&keymap);
+        let sealed = SealedFile::new("smithay-keymap", &keymap);
 
         if let Err(err) = sealed.as_ref() {
             error!(log, "Error when creating sealed keymap file: {}", err);
@@ -28,6 +30,7 @@ impl KeymapFile {
         }
     }
 
+    /// Run a closure with the file descriptor to ensure safety
     #[cfg(feature = "wayland_frontend")]
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
@@ -51,6 +54,7 @@ impl KeymapFile {
         Ok(())
     }
 
+    /// Send the keymap contained within to a WlKeyboard
     #[cfg(feature = "wayland_frontend")]
     pub fn send(&self, keyboard: &WlKeyboard) -> Result<(), std::io::Error> {
         use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};

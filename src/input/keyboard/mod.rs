@@ -16,7 +16,7 @@ pub use xkbcommon::xkb::{self, keysyms, Keysym};
 use super::{Seat, SeatHandler};
 
 mod keymap_file;
-pub(crate) use keymap_file::KeymapFile;
+pub use keymap_file::KeymapFile;
 
 mod modifiers_state;
 pub use modifiers_state::ModifiersState;
