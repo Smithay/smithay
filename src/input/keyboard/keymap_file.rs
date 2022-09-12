@@ -18,7 +18,7 @@ pub struct KeymapFile {
 
 impl KeymapFile {
     /// Turn the keymap into a string using KEYMAP_FORMAT_TEXT_V1, create a sealed file for it, and store the string
-    pub fn new(keymap: Keymap, log: slog::Logger) -> Self {
+    pub fn new(keymap: &Keymap, log: slog::Logger) -> Self {
         let keymap = keymap.get_as_string(KEYMAP_FORMAT_TEXT_V1);
         let sealed = SealedFile::new("smithay-keymap", &keymap);
 
