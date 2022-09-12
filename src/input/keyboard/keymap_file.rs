@@ -8,7 +8,6 @@ use std::os::unix::prelude::RawFd;
 use wayland_server::protocol::wl_keyboard::WlKeyboard;
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct KeymapFile {
     sealed: Option<SealedFile>,
     keymap: String,

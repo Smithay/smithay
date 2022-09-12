@@ -17,7 +17,6 @@ use std::{
 #[derive(Debug)]
 pub(crate) struct SealedFile {
     file: File,
-    #[allow(dead_code)]
     size: usize,
 }
 
@@ -55,6 +54,7 @@ impl SealedFile {
         })
     }
 
+    #[allow(dead_code)]
     pub fn size(&self) -> usize {
         self.size
     }
