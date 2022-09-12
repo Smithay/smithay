@@ -32,6 +32,7 @@ impl KeymapFile {
         }
     }
 
+    #[cfg(feature = "wayland_frontend")]
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
         F: FnOnce(RawFd, usize),
