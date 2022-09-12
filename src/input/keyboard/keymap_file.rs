@@ -1,12 +1,9 @@
 use crate::utils::sealed_file::SealedFile;
 use slog::error;
-use std::{
-    io::Write,
-    os::unix::prelude::{AsRawFd, RawFd},
-    path::PathBuf,
-};
 use xkbcommon::xkb::{Keymap, KEYMAP_FORMAT_TEXT_V1};
 
+#[cfg(feature = "wayland_frontend")]
+use std::os::unix::prelude::RawFd;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_keyboard::WlKeyboard;
 
@@ -37,6 +34,8 @@ impl KeymapFile {
     where
         F: FnOnce(RawFd, usize),
     {
+        use std::{io::Write, os::unix::prelude::AsRawFd, path::PathBuf};
+
         if let Some(file) = supports_sealed.then(|| self.sealed.as_ref()).flatten() {
             cb(file.as_raw_fd(), file.size());
         } else {
