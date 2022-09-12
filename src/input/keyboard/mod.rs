@@ -6,7 +6,6 @@ use slog::{debug, error, info, o, trace};
 use std::collections::HashSet;
 use std::{
     default::Default,
-    ffi::CString,
     fmt, io,
     sync::{Arc, Mutex},
 };
@@ -424,13 +423,10 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
 
-        let keymap = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-        let keymap = CString::new(keymap).expect("Keymap should not contain interior nul bytes");
-
         Ok(Self {
             arc: Arc::new(KbdRc {
+                keymap: KeymapFile::new(internal.keymap.clone(), log.clone()),
                 internal: Mutex::new(internal),
-                keymap: KeymapFile::new(keymap, log.clone()),
                 logger: log,
                 #[cfg(feature = "wayland_frontend")]
                 known_kbds: Mutex::new(Vec::new()),

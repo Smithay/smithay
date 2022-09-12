@@ -1,5 +1,4 @@
 use std::{
-    ffi::CString,
     fmt,
     sync::{Arc, Mutex},
 };
@@ -72,8 +71,6 @@ impl InputMethodHandle {
         )
         .ok_or(())
         .unwrap();
-        let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-        let keymap = CString::new(keymap).expect("Keymap should not contain interior null bytes");
         let log = crate::slog_or_fallback(None);
         keyboard_inner.keymap_file = Some(KeymapFile::new(keymap, log));
     }

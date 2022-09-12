@@ -12,6 +12,8 @@ pub mod user_data;
 pub(crate) mod alive_tracker;
 pub use self::alive_tracker::IsAlive;
 
+pub(crate) mod sealed_file;
+
 pub use self::geometry::{
     Buffer, Coordinate, Logical, Physical, Point, Raw, Rectangle, Scale, Size, Transform,
 };

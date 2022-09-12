@@ -3,7 +3,7 @@ use std::fmt;
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::{
-        wl_keyboard::{self, KeyState as WlKeyState, KeymapFormat, WlKeyboard},
+        wl_keyboard::{self, KeyState as WlKeyState, WlKeyboard},
         wl_surface::WlSurface,
     },
     Dispatch, DisplayHandle, Resource,
@@ -45,9 +45,7 @@ where
         trace!(self.arc.logger, "Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
-        let ret = self.arc.keymap.with_fd(kbd.version() >= 7, |fd, size| {
-            kbd.keymap(KeymapFormat::XkbV1, fd, size as u32);
-        });
+        let ret = self.arc.keymap.send(&kbd);
 
         if let Err(e) = ret {
             warn!(self.arc.logger,

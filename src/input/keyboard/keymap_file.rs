@@ -1,25 +1,25 @@
-use std::{
-    ffi::{CStr, CString},
-    fs::File,
-    io::{Seek, Write},
-    os::unix::prelude::{AsRawFd, FromRawFd, RawFd},
-};
-
-use nix::{
-    fcntl::{FcntlArg, SealFlag},
-    sys::memfd::MemFdCreateFlag,
-};
+use crate::utils::sealed_file::SealedFile;
 use slog::error;
+use std::{
+    io::Write,
+    os::unix::prelude::{AsRawFd, RawFd},
+    path::PathBuf,
+};
+use xkbcommon::xkb::{Keymap, KEYMAP_FORMAT_TEXT_V1};
+
+#[cfg(feature = "wayland_frontend")]
+use wayland_server::protocol::wl_keyboard::WlKeyboard;
 
 #[derive(Debug)]
 #[allow(dead_code)]
-pub(crate) struct KeymapFile {
+pub struct KeymapFile {
     sealed: Option<SealedFile>,
-    keymap: CString,
+    keymap: String,
 }
 
 impl KeymapFile {
-    pub fn new(keymap: CString, log: slog::Logger) -> Self {
+    pub fn new(keymap: Keymap, log: slog::Logger) -> Self {
+        let keymap = keymap.get_as_string(KEYMAP_FORMAT_TEXT_V1);
         let sealed = SealedFile::new(&keymap);
 
         if let Err(err) = sealed.as_ref() {
@@ -32,74 +32,32 @@ impl KeymapFile {
         }
     }
 
-    #[cfg(feature = "wayland_frontend")]
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
         F: FnOnce(RawFd, usize),
     {
-        use std::path::PathBuf;
-
         if let Some(file) = supports_sealed.then(|| self.sealed.as_ref()).flatten() {
-            cb(file.as_raw_fd(), file.size);
-            Ok(())
+            cb(file.as_raw_fd(), file.size());
         } else {
             let dir = std::env::var_os("XDG_RUNTIME_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(std::env::temp_dir);
 
-            let keymap = self.keymap.as_bytes_with_nul();
             let mut file = tempfile::tempfile_in(dir)?;
-            file.write_all(keymap)?;
+            file.write_all(self.keymap.as_bytes())?;
             file.flush()?;
 
-            cb(file.as_raw_fd(), keymap.len());
-            Ok(())
+            cb(file.as_raw_fd(), self.keymap.len());
         }
+        Ok(())
     }
-}
 
-#[derive(Debug)]
-struct SealedFile {
-    file: File,
-    #[allow(dead_code)]
-    size: usize,
-}
+    #[cfg(feature = "wayland_frontend")]
+    pub fn send(&self, keyboard: &WlKeyboard) -> Result<(), std::io::Error> {
+        use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
 
-impl SealedFile {
-    fn new(keymap: &CStr) -> Result<Self, std::io::Error> {
-        let name = CString::new("smithay-keymap").expect("File name should not contain interior nul byte");
-        let keymap = keymap.to_bytes_with_nul();
-
-        let fd = nix::sys::memfd::memfd_create(
-            &name,
-            MemFdCreateFlag::MFD_CLOEXEC | MemFdCreateFlag::MFD_ALLOW_SEALING,
-        )?;
-
-        let mut file = unsafe { File::from_raw_fd(fd) };
-        file.write_all(keymap)?;
-        file.flush()?;
-
-        file.seek(std::io::SeekFrom::Start(0))?;
-
-        nix::fcntl::fcntl(
-            file.as_raw_fd(),
-            FcntlArg::F_ADD_SEALS(
-                SealFlag::F_SEAL_SEAL
-                    | SealFlag::F_SEAL_SHRINK
-                    | SealFlag::F_SEAL_GROW
-                    | SealFlag::F_SEAL_WRITE,
-            ),
-        )?;
-
-        Ok(Self {
-            file,
-            size: keymap.len(),
+        self.with_fd(keyboard.version() >= 7, |fd, size| {
+            keyboard.keymap(KeymapFormat::XkbV1, fd, size as u32);
         })
-    }
-}
-
-impl AsRawFd for SealedFile {
-    fn as_raw_fd(&self) -> RawFd {
-        self.file.as_raw_fd()
     }
 }
