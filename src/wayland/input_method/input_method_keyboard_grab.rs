@@ -62,7 +62,7 @@ where
                     serialized.depressed,
                     serialized.latched,
                     serialized.locked,
-                    serialized.layout_locked,
+                    serialized.layout_effective,
                 )
             }
             keyboard.key(*serial, time, keycode, key_state.into());
