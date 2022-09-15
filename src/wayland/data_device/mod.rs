@@ -64,8 +64,9 @@
 //! // You're now ready to go!
 //! ```
 
-use std::{cell::RefCell, os::unix::prelude::RawFd};
+use std::cell::RefCell;
 
+use io_lifetimes::OwnedFd;
 use wayland_server::{
     backend::GlobalId,
     protocol::{
@@ -114,7 +115,7 @@ pub trait DataDeviceHandler: Sized + ClientDndGrabHandler + ServerDndGrabHandler
     ///
     /// * `mime_type` - the requested mime type
     /// * `fd` - the fd to write into
-    fn send_selection(&mut self, mime_type: String, fd: RawFd) {}
+    fn send_selection(&mut self, mime_type: String, fd: OwnedFd) {}
 }
 
 /// Events that are generated during client initiated drag'n'drop
@@ -160,7 +161,7 @@ pub trait ServerDndGrabHandler {
     ///
     /// * `mime_type` - The requested mime type
     /// * `fd` - The FD to write into
-    fn send(&mut self, mime_type: String, fd: RawFd) {}
+    fn send(&mut self, mime_type: String, fd: OwnedFd) {}
 
     /// The client has finished interacting with the resource
     ///

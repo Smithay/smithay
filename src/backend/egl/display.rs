@@ -1,12 +1,12 @@
 //! Type safe native types for safe egl initialisation
 
-use std::collections::HashSet;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use std::sync::{Mutex, Weak};
+use std::{collections::HashSet, os::unix::prelude::AsRawFd};
 
 use libc::c_void;
 use nix::libc::c_int;
@@ -668,7 +668,7 @@ impl EGLDisplay {
         {
             out.extend(&[
                 names[i][0] as i32,
-                fd,
+                fd.as_raw_fd(),
                 names[i][1] as i32,
                 offset as i32,
                 names[i][2] as i32,
