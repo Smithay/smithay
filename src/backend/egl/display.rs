@@ -906,6 +906,10 @@ impl EGLBufferReader {
         &self,
         buffer: &WlBuffer,
     ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
+        if !buffer.is_alive() {
+            return Err(BufferAccessError::Destroyed);
+        }
+
         let mut format: i32 = 0;
         let query = wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
@@ -1022,6 +1026,10 @@ impl EGLBufferReader {
         &self,
         buffer: &WlBuffer,
     ) -> Option<crate::utils::Size<i32, crate::utils::Buffer>> {
+        if !buffer.is_alive() {
+            return None;
+        }
+
         let mut width: i32 = 0;
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(
