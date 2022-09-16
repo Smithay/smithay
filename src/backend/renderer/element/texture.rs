@@ -171,7 +171,7 @@
 //! ## [`TextureRenderBuffer`]
 //!
 //! ```no_run
-//! # use crate::{
+//! # use smithay::{
 //! #     backend::renderer::{Frame, ImportMem, Renderer, Texture, TextureFilter},
 //! #     utils::{Buffer, Physical},
 //! # };
