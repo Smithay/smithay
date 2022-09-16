@@ -90,26 +90,9 @@ where
 unsafe impl<D: SeatHandler> Send for KbdInternal<D> {}
 
 impl<D: SeatHandler + 'static> KbdInternal<D> {
-    fn new(xkb_config: XkbConfig<'_>, repeat_rate: i32, repeat_delay: i32) -> Result<KbdInternal<D>, ()> {
-        // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
-        // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
-        // sure nothing goes wrong.
-        //
-        // FIXME: This is an issue with the xkbcommon-rs crate that does not reflect this
-        // non-threadsafety properly.
-        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
-        let keymap = xkb::Keymap::new_from_names(
-            &context,
-            &xkb_config.rules,
-            &xkb_config.model,
-            &xkb_config.layout,
-            &xkb_config.variant,
-            xkb_config.options,
-            xkb::KEYMAP_COMPILE_NO_FLAGS,
-        )
-        .ok_or(())?;
+    fn new(keymap: xkb::Keymap, repeat_rate: i32, repeat_delay: i32) -> KbdInternal<D> {
         let state = xkb::State::new(&keymap);
-        Ok(KbdInternal {
+        KbdInternal {
             focus: None,
             pending_focus: None,
             pressed_keys: Vec::new(),
@@ -119,7 +102,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             repeat_rate,
             repeat_delay,
             grab: GrabStatus::None,
-        })
+        }
     }
 
     // return true if modifier state has changed
@@ -417,10 +400,59 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             "rules" => xkb_config.rules, "model" => xkb_config.model, "layout" => xkb_config.layout,
             "variant" => xkb_config.variant, "options" => &xkb_config.options
         );
-        let internal = KbdInternal::new(xkb_config, repeat_rate, repeat_delay).map_err(|_| {
+
+        // we create a new contex for each keyboard because libxkbcommon is actually NOT threadsafe
+        // so confining it inside the KbdInternal allows us to use Rusts mutability rules to make
+        // sure nothing goes wrong.
+        //
+        // FIXME: This is an issue with the xkbcommon-rs crate that does not reflect this
+        // non-threadsafety properly.
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap = xkb::Keymap::new_from_names(
+            &context,
+            &xkb_config.rules,
+            &xkb_config.model,
+            &xkb_config.layout,
+            &xkb_config.variant,
+            xkb_config.options,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+        .ok_or_else(|| {
             debug!(log, "Loading keymap failed");
             Error::BadKeymap
         })?;
+        Self::new_inner(keymap, repeat_delay, repeat_rate, log)
+    }
+
+    /// Create a keyboard handler from a keymap string
+    pub(crate) fn from_keymap_string(
+        string: String,
+        repeat_delay: i32,
+        repeat_rate: i32,
+        logger: &::slog::Logger,
+    ) -> Result<Self, Error> {
+        let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap = xkb::Keymap::new_from_string(
+            &context,
+            string,
+            xkb::KEYMAP_FORMAT_TEXT_V1,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+        .ok_or_else(|| {
+            debug!(log, "Loading keymap failed");
+            Error::BadKeymap
+        })?;
+        Self::new_inner(keymap, repeat_delay, repeat_rate, log)
+    }
+
+    fn new_inner(
+        keymap: xkb::Keymap,
+        repeat_delay: i32,
+        repeat_rate: i32,
+        log: ::slog::Logger,
+    ) -> Result<Self, Error> {
+        let internal = KbdInternal::new(keymap, repeat_rate, repeat_delay);
 
         info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
 
