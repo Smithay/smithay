@@ -95,7 +95,7 @@ pub fn run_x11(log: Logger) {
     // Create the gbm device for buffer allocation.
     let device = gbm::Device::new(fd).expect("Failed to create gbm device");
     // Initialize EGL using the GBM device.
-    let egl = EGLDisplay::new(&device, log.clone()).expect("Failed to create EGLDisplay");
+    let egl = unsafe { EGLDisplay::new(&device, log.clone()).expect("Failed to create EGLDisplay") };
     // Create the OpenGL context
     let context = EGLContext::new(&egl, log.clone()).expect("Failed to create EGLContext");
 

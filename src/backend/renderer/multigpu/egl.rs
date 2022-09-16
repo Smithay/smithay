@@ -78,7 +78,7 @@ impl GraphicsApi for EglGlesBackend {
             .filter(|(_, node)| !list.iter().any(|renderer| &renderer.node == node))
             .map(|(device, node)| {
                 slog::info!(log, "Trying to initialize {:?} from {}", device, node);
-                let display = EGLDisplay::new(&device, None).map_err(Error::Egl)?;
+                let display = unsafe { EGLDisplay::new(&device, None).map_err(Error::Egl)? };
                 let context = EGLContext::new(&display, None).map_err(Error::Egl)?;
                 let renderer = unsafe { Gles2Renderer::new(context, None).map_err(Error::Gl)? };
 
