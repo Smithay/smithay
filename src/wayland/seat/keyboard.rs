@@ -124,7 +124,7 @@ where
     }
 }
 
-pub fn for_each_focused_kbds<D: SeatHandler + 'static>(
+pub(crate) fn for_each_focused_kbds<D: SeatHandler + 'static>(
     seat: &Seat<D>,
     surface: &WlSurface,
     mut f: impl FnMut(WlKeyboard),
