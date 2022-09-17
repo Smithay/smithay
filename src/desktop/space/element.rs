@@ -2,8 +2,8 @@ use crate::desktop::space::popup::RenderPopup;
 use crate::{
     backend::renderer::{ImportAll, Renderer, Texture},
     desktop::{space::*, utils::*},
+    output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::output::Output,
 };
 use std::{
     any::{Any, TypeId},

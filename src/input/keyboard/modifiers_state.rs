@@ -22,6 +22,9 @@ pub struct ModifiersState {
     pub logo: bool,
     /// The "Num lock" key
     pub num_lock: bool,
+
+    /// Serialized modifier state, as send e.g. by the wl_keyboard protocol
+    pub serialized: SerializedMods,
 }
 
 impl ModifiersState {
@@ -32,5 +35,28 @@ impl ModifiersState {
         self.caps_lock = state.mod_name_is_active(&xkb::MOD_NAME_CAPS, xkb::STATE_MODS_EFFECTIVE);
         self.logo = state.mod_name_is_active(&xkb::MOD_NAME_LOGO, xkb::STATE_MODS_EFFECTIVE);
         self.num_lock = state.mod_name_is_active(&xkb::MOD_NAME_NUM, xkb::STATE_MODS_EFFECTIVE);
+        self.serialized = serialize_modifiers(state);
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct SerializedMods {
+    pub depressed: u32,
+    pub latched: u32,
+    pub locked: u32,
+    pub layout_locked: u32,
+}
+
+fn serialize_modifiers(state: &xkb::State) -> SerializedMods {
+    let depressed = state.serialize_mods(xkb::STATE_MODS_DEPRESSED);
+    let latched = state.serialize_mods(xkb::STATE_MODS_LATCHED);
+    let locked = state.serialize_mods(xkb::STATE_MODS_LOCKED);
+    let layout_locked = state.serialize_layout(xkb::STATE_LAYOUT_LOCKED);
+
+    SerializedMods {
+        depressed,
+        latched,
+        locked,
+        layout_locked,
     }
 }

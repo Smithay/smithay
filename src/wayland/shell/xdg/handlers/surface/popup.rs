@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use crate::wayland::{shell::xdg::XdgPositionerUserData, Serial};
+use crate::{utils::Serial, wayland::shell::xdg::XdgPositionerUserData};
 
 use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
@@ -23,7 +23,7 @@ where
         popup: &XdgPopup,
         request: xdg_popup::Request,
         data: &XdgShellSurfaceUserData,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -40,7 +40,7 @@ where
 
                 let serial = Serial::from(serial);
 
-                XdgShellHandler::grab(state, dh, handle, seat, serial);
+                XdgShellHandler::grab(state, handle, seat, serial);
             }
             xdg_popup::Request::Reposition { positioner, token } => {
                 let handle = crate::wayland::shell::xdg::PopupSurface {
@@ -55,21 +55,26 @@ where
                     .lock()
                     .unwrap();
 
-                XdgShellHandler::reposition_request(state, dh, handle, positioner_data, token);
+                XdgShellHandler::reposition_request(state, handle, positioner_data, token);
             }
             _ => unreachable!(),
         }
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
+    fn destroyed(state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
         data.alive_tracker.destroy_notify();
 
         // remove this surface from the known ones (as well as any leftover dead surface)
-        data.shell_data
-            .lock()
-            .unwrap()
+        let mut shell_data = data.shell_data.lock().unwrap();
+        if let Some(index) = shell_data
             .known_popups
-            .retain(|other| other.shell_surface.id() != object_id);
+            .iter()
+            .position(|pop| pop.shell_surface.id() == object_id)
+        {
+            let popup = shell_data.known_popups.remove(index);
+            drop(shell_data);
+            XdgShellHandler::popup_destroyed(state, popup);
+        }
     }
 }
 

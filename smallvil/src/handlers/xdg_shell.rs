@@ -1,24 +1,24 @@
-use std::sync::Mutex;
-
 use smithay::{
     delegate_xdg_shell,
     desktop::{Kind, Space, Window, WindowSurfaceType},
+    input::{
+        pointer::{Focus, GrabStartData as PointerGrabStartData},
+        Seat,
+    },
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
             protocol::{wl_seat, wl_surface::WlSurface},
-            DisplayHandle, Resource,
+            Resource,
         },
     },
-    utils::Rectangle,
+    utils::{Rectangle, Serial},
     wayland::{
         compositor::with_states,
-        seat::{Focus, PointerGrabStartData, Seat},
         shell::xdg::{
             PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
-            XdgToplevelSurfaceRoleAttributes,
+            XdgToplevelSurfaceData,
         },
-        Serial,
     },
 };
 
@@ -32,19 +32,16 @@ impl XdgShellHandler for Smallvil {
         &mut self.xdg_shell_state
     }
 
-    fn new_toplevel(&mut self, _dh: &DisplayHandle, surface: ToplevelSurface) {
+    fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let window = Window::new(Kind::Xdg(surface));
         self.space.map_window(&window, (0, 0), None, false);
     }
-    fn new_popup(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _positioner: PositionerState) {}
 
-    fn move_request(
-        &mut self,
-        _dh: &DisplayHandle,
-        surface: ToplevelSurface,
-        seat: wl_seat::WlSeat,
-        serial: Serial,
-    ) {
+    fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
+        // TODO: Popup handling using PopupManager
+    }
+
+    fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let seat = Seat::from_resource(&seat).unwrap();
 
         let wl_surface = surface.wl_surface();
@@ -65,13 +62,12 @@ impl XdgShellHandler for Smallvil {
                 initial_window_location,
             };
 
-            pointer.set_grab(grab, serial, Focus::Clear);
+            pointer.set_grab(self, grab, serial, Focus::Clear);
         }
     }
 
     fn resize_request(
         &mut self,
-        _dh: &DisplayHandle,
         surface: ToplevelSurface,
         seat: wl_seat::WlSeat,
         serial: Serial,
@@ -105,11 +101,11 @@ impl XdgShellHandler for Smallvil {
                 Rectangle::from_loc_and_size(initial_window_location, initial_window_size),
             );
 
-            pointer.set_grab(grab, serial, Focus::Clear);
+            pointer.set_grab(self, grab, serial, Focus::Clear);
         }
     }
 
-    fn grab(&mut self, _dh: &DisplayHandle, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
+    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
         // TODO popup grabs
     }
 }
@@ -117,7 +113,11 @@ impl XdgShellHandler for Smallvil {
 // Xdg Shell
 delegate_xdg_shell!(Smallvil);
 
-fn check_grab(seat: &Seat<Smallvil>, surface: &WlSurface, serial: Serial) -> Option<PointerGrabStartData> {
+fn check_grab(
+    seat: &Seat<Smallvil>,
+    surface: &WlSurface,
+    serial: Serial,
+) -> Option<PointerGrabStartData<Smallvil>> {
     let pointer = seat.get_pointer()?;
 
     // Check that this surface has a click grab.
@@ -146,7 +146,7 @@ pub fn handle_commit(space: &Space, surface: &WlSurface) -> Option<()> {
         let initial_configure_sent = with_states(surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()

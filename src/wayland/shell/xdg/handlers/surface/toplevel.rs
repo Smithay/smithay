@@ -1,6 +1,9 @@
-use std::sync::{atomic::Ordering, Mutex};
+use std::sync::atomic::Ordering;
 
-use crate::wayland::{compositor, Serial};
+use crate::{
+    utils::Serial,
+    wayland::{compositor, shell::xdg::XdgToplevelSurfaceData},
+};
 
 use wayland_protocols::xdg::shell::server::xdg_toplevel::{self, XdgToplevel};
 
@@ -27,7 +30,7 @@ where
         toplevel: &XdgToplevel,
         request: xdg_toplevel::Request,
         data: &XdgShellSurfaceUserData,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -65,14 +68,14 @@ where
                 let handle = make_toplevel_handle(toplevel);
                 let serial = Serial::from(serial);
 
-                XdgShellHandler::show_window_menu(state, dh, handle, seat, serial, (x, y).into());
+                XdgShellHandler::show_window_menu(state, handle, seat, serial, (x, y).into());
             }
             xdg_toplevel::Request::Move { seat, serial } => {
                 // This has to be handled by the compositor
                 let handle = make_toplevel_handle(toplevel);
                 let serial = Serial::from(serial);
 
-                XdgShellHandler::move_request(state, dh, handle, seat, serial);
+                XdgShellHandler::move_request(state, handle, seat, serial);
             }
             xdg_toplevel::Request::Resize { seat, serial, edges } => {
                 if let WEnum::Value(edges) = edges {
@@ -80,7 +83,7 @@ where
                     let handle = make_toplevel_handle(toplevel);
                     let serial = Serial::from(serial);
 
-                    XdgShellHandler::resize_request(state, dh, handle, seat, serial, edges);
+                    XdgShellHandler::resize_request(state, handle, seat, serial, edges);
                 }
             }
             xdg_toplevel::Request::SetMaxSize { width, height } => {
@@ -95,32 +98,33 @@ where
             }
             xdg_toplevel::Request::SetMaximized => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::maximize_request(state, dh, handle);
+                XdgShellHandler::maximize_request(state, handle);
             }
             xdg_toplevel::Request::UnsetMaximized => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::unmaximize_request(state, dh, handle);
+                XdgShellHandler::unmaximize_request(state, handle);
             }
             xdg_toplevel::Request::SetFullscreen { output } => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::fullscreen_request(state, dh, handle, output);
+                XdgShellHandler::fullscreen_request(state, handle, output);
             }
             xdg_toplevel::Request::UnsetFullscreen => {
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::unfullscreen_request(state, dh, handle);
+                XdgShellHandler::unfullscreen_request(state, handle);
             }
             xdg_toplevel::Request::SetMinimized => {
                 // This has to be handled by the compositor, may not be
                 // supported and just ignored
                 let handle = make_toplevel_handle(toplevel);
-                XdgShellHandler::minimize_request(state, dh, handle);
+                XdgShellHandler::minimize_request(state, handle);
             }
             _ => unreachable!(),
         }
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
+    fn destroyed(state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
         data.alive_tracker.destroy_notify();
+        data.decoration.lock().unwrap().take();
 
         // remove this surface from the known ones (as well as any leftover dead surface)
         data.shell_data
@@ -128,6 +132,17 @@ where
             .unwrap()
             .known_toplevels
             .retain(|other| other.shell_surface.id() != object_id);
+
+        let mut shell_data = data.shell_data.lock().unwrap();
+        if let Some(index) = shell_data
+            .known_toplevels
+            .iter()
+            .position(|top| top.shell_surface.id() == object_id)
+        {
+            let toplevel = shell_data.known_toplevels.remove(index);
+            drop(shell_data);
+            XdgShellHandler::toplevel_destroyed(state, toplevel);
+        }
     }
 }
 
@@ -140,7 +155,7 @@ where
     compositor::with_states(&data.wl_surface, |states| {
         f(&mut *states
             .data_map
-            .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+            .get::<XdgToplevelSurfaceData>()
             .unwrap()
             .lock()
             .unwrap())

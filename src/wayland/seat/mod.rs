@@ -8,28 +8,37 @@
 //! ### Initialization
 //!
 //! ```
-//! # extern crate wayland_server;
 //! use smithay::delegate_seat;
-//! use smithay::wayland::seat::{Seat, SeatState, SeatHandler};
+//! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //!
 //! # struct State { seat_state: SeatState<Self> };
-//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! # let mut display = Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
-//! // create the seat
-//! let seat = Seat::<State>::new(
-//!     &display_handle,          // the display
-//!     "seat-0",          // the name of the seat, will be advertized to clients
-//!     None                      // insert a logger here
-//! );
 //!
-//! let seat_state = SeatState::<State>::new();
+//! let mut seat_state = SeatState::<State>::new();
 //! // add the seat state to your state
 //! // ...
 //!
+//! // create the wl_seat
+//! let seat = seat_state.new_wl_seat(
+//!     &display_handle,          // the display
+//!     "seat-0",                 // the name of the seat, will be advertized to clients
+//!     None                      // insert a logger here
+//! );
+//!
 //! // implement the required traits
 //! impl SeatHandler for State {
+//!     type KeyboardFocus = WlSurface;
+//!     type PointerFocus = WlSurface;
 //!     fn seat_state(&mut self) -> &mut SeatState<Self> {
 //!         &mut self.seat_state
+//!     }
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
+//!         // ...
+//!     }
+//!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {
+//!         // ...
 //!     }
 //! }
 //! delegate_seat!(State);
@@ -53,25 +62,13 @@ pub(crate) mod keyboard;
 mod pointer;
 mod touch;
 
-use std::{
-    marker::PhantomData,
-    sync::{Arc, Mutex},
-};
+use std::{fmt, sync::Arc};
 
-use crate::utils::user_data::UserDataMap;
+use crate::input::{Inner, Seat, SeatHandler, SeatRc, SeatState};
 
-// TODO: Just make the keyboard, pointer and touch modules public.
 pub use self::{
-    keyboard::{
-        keysyms, Error as KeyboardError, FilterResult, GrabStartData as KeyboardGrabStartData, KeyboardGrab,
-        KeyboardHandle, KeyboardInnerHandle, KeyboardUserData, Keysym, KeysymHandle, ModifiersState,
-        XkbConfig,
-    },
-    pointer::{
-        AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus, Focus,
-        GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab, PointerHandle, PointerInnerHandle,
-        PointerUserData, CURSOR_IMAGE_ROLE,
-    },
+    keyboard::KeyboardUserData,
+    pointer::{PointerUserData, CURSOR_IMAGE_ROLE},
     touch::{TouchHandle, TouchUserData},
 };
 
@@ -87,24 +84,31 @@ use wayland_server::{
     DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-#[derive(Debug)]
-struct Inner<D> {
-    pointer: Option<PointerHandle<D>>,
-    keyboard: Option<KeyboardHandle>,
-    touch: Option<TouchHandle>,
-    known_seats: Vec<wl_seat::WlSeat>,
-    global_id: Option<GlobalId>,
+/// Focused objects that *might* have an underlying wl_surface.
+pub trait WaylandFocus {
+    /// Returns the underlying wl_surface, if any.
+    ///
+    /// *Note*: This has to return `Some`, if `same_client_as` can return true
+    /// for any provided `ObjectId`
+    fn wl_surface(&self) -> Option<&wl_surface::WlSurface>;
+    /// Returns true, if the underlying wayland object originates from
+    /// the same client connection as the provided `ObjectId`.
+    ///
+    /// *Must* return false, if there is not underlying wayland object.
+    fn same_client_as(&self, object_id: &ObjectId) -> bool {
+        self.wl_surface()
+            .map(|s| s.id().same_client_as(object_id))
+            .unwrap_or(false)
+    }
 }
 
-#[derive(Debug)]
-struct SeatRc<D> {
-    name: String,
-    inner: Mutex<Inner<D>>,
-    user_data_map: UserDataMap,
-    log: ::slog::Logger,
+impl WaylandFocus for wl_surface::WlSurface {
+    fn wl_surface(&self) -> Option<&wl_surface::WlSurface> {
+        Some(self)
+    }
 }
 
-impl<D> Inner<D> {
+impl<D: SeatHandler> Inner<D> {
     fn compute_caps(&self) -> wl_seat::Capability {
         let mut caps = wl_seat::Capability::empty();
         if self.pointer.is_some() {
@@ -119,7 +123,7 @@ impl<D> Inner<D> {
         caps
     }
 
-    fn send_all_caps(&self) {
+    pub(crate) fn send_all_caps(&self) {
         let capabilities = self.compute_caps();
         for seat in &self.known_seats {
             seat.capabilities(capabilities);
@@ -127,41 +131,22 @@ impl<D> Inner<D> {
     }
 }
 
-/// Handler trait for WlSeat
-pub trait SeatHandler: Sized {
-    /// [SeatState] getter
-    fn seat_state(&mut self) -> &mut SeatState<Self>;
-}
-
 /// Global data of WlSeat
-#[derive(Debug)]
-pub struct SeatGlobalData<D> {
+pub struct SeatGlobalData<D: SeatHandler> {
     arc: Arc<SeatRc<D>>,
 }
 
-/// A Seat handle
-/// This struct gives you access to the control of the
-/// capabilities of the associated seat.
-///
-/// It is directly inserted in the wayland display by its [`new`](Seat::new) method.
-///
-/// This is an handle to the inner logic, it can be cloned.
-///
-/// See module-level documentation for details of use.
-#[derive(Debug)]
-pub struct Seat<D> {
-    arc: Arc<SeatRc<D>>,
-}
-
-impl<D> Clone for Seat<D> {
-    fn clone(&self) -> Self {
-        Self {
-            arc: self.arc.clone(),
-        }
+impl<D: SeatHandler> fmt::Debug for SeatGlobalData<D>
+where
+    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
+    <D as SeatHandler>::PointerFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SeatGlobalData").field("arc", &self.arc).finish()
     }
 }
 
-impl<D: 'static> Seat<D> {
+impl<D: SeatHandler + 'static> SeatState<D> {
     /// Create a new seat global
     ///
     /// A new seat global is created with given name and inserted
@@ -170,36 +155,24 @@ impl<D: 'static> Seat<D> {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new<N, L>(display: &DisplayHandle, name: N, logger: L) -> Self
+    pub fn new_wl_seat<N, L>(&mut self, display: &DisplayHandle, name: N, logger: L) -> Seat<D>
     where
-        D: GlobalDispatch<WlSeat, SeatGlobalData<D>> + 'static,
+        D: GlobalDispatch<WlSeat, SeatGlobalData<D>> + SeatHandler + 'static,
+        <D as SeatHandler>::PointerFocus: WaylandFocus,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         N: Into<String>,
         L: Into<Option<::slog::Logger>>,
     {
-        let name = name.into();
-
-        let log = crate::slog_or_fallback(logger);
-        let log = log.new(slog::o!("smithay_module" => "seat_handler", "seat_name" => name.clone()));
-
-        let arc = Arc::new(SeatRc {
-            name,
-            inner: Mutex::new(Inner {
-                pointer: None,
-                keyboard: None,
-                touch: None,
-                known_seats: Default::default(),
-                global_id: None,
-            }),
-            user_data_map: UserDataMap::new(),
-            log,
-        });
+        let Seat { arc } = self.new_seat(name, logger);
 
         let global_id = display.create_global::<D, _, _>(7, SeatGlobalData { arc: arc.clone() });
-        arc.inner.lock().unwrap().global_id = Some(global_id);
+        arc.inner.lock().unwrap().global = Some(global_id);
 
-        Self { arc }
+        Seat { arc }
     }
+}
 
+impl<D: SeatHandler + 'static> Seat<D> {
     /// Checks whether a given [`WlSeat`](wl_seat::WlSeat) is associated with this [`Seat`]
     pub fn owns(&self, seat: &wl_seat::WlSeat) -> bool {
         let inner = self.arc.inner.lock().unwrap();
@@ -213,163 +186,11 @@ impl<D: 'static> Seat<D> {
             .map(|arc| Self { arc })
     }
 
-    /// Access the `UserDataMap` associated with this `Seat`
-    pub fn user_data(&self) -> &UserDataMap {
-        &self.arc.user_data_map
-    }
-
     /// Get the id of WlSeat global
-    pub fn global(&self) -> GlobalId {
-        self.arc.inner.lock().unwrap().global_id.as_ref().unwrap().clone()
-    }
-}
-
-// Pointer
-impl<D> Seat<D> {
-    /// Adds the pointer capability to this seat
-    ///
-    /// You are provided a [`PointerHandle`], which allows you to send input events
-    /// to this pointer. This handle can be cloned.
-    ///
-    /// Calling this method on a seat that already has a pointer capability
-    /// will overwrite it, and will be seen by the clients as if the
-    /// mouse was unplugged and a new one was plugged.
-    ///
-    /// You need to provide a callback that will be notified whenever a client requests
-    /// to set a custom cursor image.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # extern crate wayland_server;
-    /// #
-    /// # use smithay::wayland::seat::Seat;
-    /// #
-    /// # let mut seat: Seat<()> = unimplemented!();
-    /// let pointer_handle = seat.add_pointer(
-    ///     |new_status| { /* a closure handling requests from clients to change the cursor icon */ }
-    /// );
-    /// ```
-    pub fn add_pointer<F>(&mut self, cb: F) -> PointerHandle<D>
-    where
-        F: FnMut(CursorImageStatus) + Send + Sync + 'static,
-    {
-        let mut inner = self.arc.inner.lock().unwrap();
-        let pointer = self::pointer::PointerHandle::new(cb);
-        if inner.pointer.is_some() {
-            // there is already a pointer, remove it and notify the clients
-            // of the change
-            inner.pointer = None;
-            inner.send_all_caps();
-        }
-        inner.pointer = Some(pointer.clone());
-        inner.send_all_caps();
-        pointer
+    pub fn global(&self) -> Option<GlobalId> {
+        self.arc.inner.lock().unwrap().global.as_ref().cloned()
     }
 
-    /// Access the pointer of this seat if any
-    pub fn get_pointer(&self) -> Option<PointerHandle<D>> {
-        self.arc.inner.lock().unwrap().pointer.clone()
-    }
-
-    /// Remove the pointer capability from this seat
-    ///
-    /// Clients will be appropriately notified.
-    pub fn remove_pointer(&mut self) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        if inner.pointer.is_some() {
-            inner.pointer = None;
-            inner.send_all_caps();
-        }
-    }
-}
-
-// Keyboard
-impl<D: 'static> Seat<D> {
-    /// Adds the keyboard capability to this seat
-    ///
-    /// You are provided a [`KeyboardHandle`], which allows you to send input events
-    /// to this keyboard. This handle can be cloned.
-    ///
-    /// You also provide a Model/Layout/Variant/Options specification of the
-    /// keymap to be used for this keyboard, as well as any repeat-info that
-    /// will be forwarded to the clients.
-    ///
-    /// Calling this method on a seat that already has a keyboard capability
-    /// will overwrite it, and will be seen by the clients as if the
-    /// keyboard was unplugged and a new one was plugged.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # extern crate smithay;
-    /// # use smithay::wayland::seat::{Seat, XkbConfig};
-    /// # let mut seat: Seat<()> = unimplemented!();
-    /// let keyboard = seat
-    ///     .add_keyboard(
-    ///         XkbConfig {
-    ///             layout: "de",
-    ///             variant: "nodeadkeys",
-    ///             ..XkbConfig::default()
-    ///         },
-    ///         200,
-    ///         25,
-    ///         |seat, focus| {
-    ///             /* This closure is called whenever the keyboard focus
-    ///              * changes, with the new focus as argument */
-    ///         }
-    ///     )
-    ///     .expect("Failed to initialize the keyboard");
-    /// ```
-    pub fn add_keyboard<F>(
-        &mut self,
-        xkb_config: keyboard::XkbConfig<'_>,
-        repeat_delay: i32,
-        repeat_rate: i32,
-        mut focus_hook: F,
-    ) -> Result<KeyboardHandle, KeyboardError>
-    where
-        F: FnMut(&Self, Option<&wl_surface::WlSurface>) + 'static,
-    {
-        let me = self.clone();
-        let mut inner = self.arc.inner.lock().unwrap();
-        let keyboard = self::keyboard::KeyboardHandle::new(
-            xkb_config,
-            repeat_delay,
-            repeat_rate,
-            move |focus| focus_hook(&me, focus),
-            &self.arc.log,
-        )?;
-        if inner.keyboard.is_some() {
-            // there is already a keyboard, remove it and notify the clients
-            // of the change
-            inner.keyboard = None;
-            inner.send_all_caps();
-        }
-        inner.keyboard = Some(keyboard.clone());
-        inner.send_all_caps();
-        Ok(keyboard)
-    }
-
-    /// Access the keyboard of this seat if any
-    pub fn get_keyboard(&self) -> Option<KeyboardHandle> {
-        self.arc.inner.lock().unwrap().keyboard.clone()
-    }
-
-    /// Remove the keyboard capability from this seat
-    ///
-    /// Clients will be appropriately notified.
-    pub fn remove_keyboard(&mut self) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        if inner.keyboard.is_some() {
-            inner.keyboard = None;
-            inner.send_all_caps();
-        }
-    }
-}
-
-// Touch
-impl<D> Seat<D> {
     /// Adds the touch capability to this seat
     ///
     /// You are provided a [`TouchHandle`], which allows you to send input events
@@ -382,10 +203,18 @@ impl<D> Seat<D> {
     /// # Examples
     ///
     /// ```no_run
-    /// # extern crate wayland_server;
+    /// # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+    /// # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
     /// #
-    /// # use smithay::wayland::seat::Seat;
-    /// # let mut seat: Seat<()> = unimplemented!();
+    /// # struct State;
+    /// # impl SeatHandler for State {
+    /// #     type KeyboardFocus = WlSurface;
+    /// #     type PointerFocus = WlSurface;
+    /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
+    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
+    /// #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
+    /// # }
+    /// # let mut seat: Seat<State> = unimplemented!();
     /// let touch_handle = seat.add_touch();
     /// ```
     pub fn add_touch(&mut self) -> TouchHandle {
@@ -418,32 +247,19 @@ impl<D> Seat<D> {
     }
 }
 
-impl<D> ::std::cmp::PartialEq for Seat<D> {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.arc, &other.arc)
-    }
-}
-
-/// Delegate type for all [Seat] globals.
-///
-/// Events will be forwarded to an instance of the Seat global.
-#[derive(Debug)]
-pub struct SeatState<D> {
-    pd: PhantomData<D>,
-}
-
-impl<D> SeatState<D> {
-    /// Create new delegate SeatState
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        Self { pd: PhantomData }
-    }
-}
-
 /// User data for seat
-#[derive(Debug)]
-pub struct SeatUserData<D> {
+pub struct SeatUserData<D: SeatHandler> {
     arc: Arc<SeatRc<D>>,
+}
+
+impl<D: SeatHandler> fmt::Debug for SeatUserData<D>
+where
+    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
+    <D as SeatHandler>::PointerFocus: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SeatUserData").field("arc", &self.arc).finish()
+    }
 }
 
 #[allow(missing_docs)] // TODO
@@ -452,30 +268,31 @@ macro_rules! delegate_seat {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatGlobalData<$ty>
-        ] => $crate::wayland::seat::SeatState<$ty>);
+        ] => $crate::input::SeatState<$ty>);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatUserData<$ty>
-        ] => $crate::wayland::seat::SeatState<$ty>);
+        ] => $crate::input::SeatState<$ty>);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer: $crate::wayland::seat::PointerUserData<$ty>
-        ] => $crate::wayland::seat::SeatState<$ty>);
+        ] => $crate::input::SeatState<$ty>);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard: $crate::wayland::seat::KeyboardUserData
-        ] => $crate::wayland::seat::SeatState<$ty>);
+            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard: $crate::wayland::seat::KeyboardUserData<$ty>
+        ] => $crate::input::SeatState<$ty>);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?$ty: [
             $crate::reexports::wayland_server::protocol::wl_touch::WlTouch: $crate::wayland::seat::TouchUserData
-        ] => $crate::wayland::seat::SeatState<$ty>);
+        ] => $crate::input::SeatState<$ty>);
     };
 }
 
 impl<D> Dispatch<WlSeat, SeatUserData<D>, D> for SeatState<D>
 where
     D: Dispatch<WlSeat, SeatUserData<D>>,
-    D: Dispatch<WlKeyboard, KeyboardUserData>,
+    D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
     D: Dispatch<WlPointer, PointerUserData<D>>,
     D: Dispatch<WlTouch, TouchUserData>,
     D: SeatHandler,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
@@ -558,7 +375,7 @@ impl<D> GlobalDispatch<WlSeat, SeatGlobalData<D>, D> for SeatState<D>
 where
     D: GlobalDispatch<WlSeat, SeatGlobalData<D>>,
     D: Dispatch<WlSeat, SeatUserData<D>>,
-    D: Dispatch<WlKeyboard, KeyboardUserData>,
+    D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
     D: Dispatch<WlPointer, PointerUserData<D>>,
     D: Dispatch<WlTouch, TouchUserData>,
     D: SeatHandler,
@@ -584,7 +401,6 @@ where
 
         let mut inner = global_data.arc.inner.lock().unwrap();
         resource.capabilities(inner.compute_caps());
-
         inner.known_seats.push(resource);
     }
 }

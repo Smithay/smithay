@@ -1,4 +1,4 @@
-use crate::wayland::Serial;
+use crate::utils::Serial;
 
 use super::{
     cache::MultiCache,

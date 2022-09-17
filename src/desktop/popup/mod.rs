@@ -1,8 +1,6 @@
 mod grab;
 mod manager;
 
-use std::sync::Mutex;
-
 pub use grab::*;
 pub use manager::*;
 use wayland_server::protocol::wl_surface::WlSurface;
@@ -12,12 +10,12 @@ use crate::{
     utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::with_states,
-        shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceRoleAttributes},
+        shell::xdg::{PopupSurface, SurfaceCachedState, XdgPopupSurfaceData},
     },
 };
 
 /// Represents a popup surface
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PopupKind {
     /// xdg-shell [`PopupSurface`]
     Xdg(PopupSurface),
@@ -28,6 +26,12 @@ impl IsAlive for PopupKind {
         match self {
             PopupKind::Xdg(ref p) => p.alive(),
         }
+    }
+}
+
+impl From<PopupKind> for WlSurface {
+    fn from(p: PopupKind) -> Self {
+        p.wl_surface().clone()
     }
 }
 
@@ -70,7 +74,7 @@ impl PopupKind {
         with_states(wl_surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()

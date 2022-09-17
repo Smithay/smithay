@@ -252,7 +252,7 @@ where
                     "Calling user implementation for wl_surface.commit"
                 );
 
-                state.commit(handle, surface);
+                state.commit(surface);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
                 if let WEnum::Value(transform) = transform {

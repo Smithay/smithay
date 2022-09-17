@@ -509,9 +509,10 @@ impl VulkanAllocator {
     fn init_formats(&mut self) {
         for &fourcc in format::known_formats() {
             let vk_format = format::get_vk_format(fourcc).unwrap();
-            let format_properties = vk::FormatProperties::default();
-            let modifier_properties =
-                unsafe { self.get_drm_format_properties_list(vk_format, format_properties) };
+            let modifier_properties = self
+                .phd
+                .get_format_modifier_properties(vk_format)
+                .expect("The Vulkan allocator requires VK_EXT_image_drm_format_modifier");
 
             for modifier_properties in modifier_properties {
                 self.formats.push(FormatEntry {
@@ -523,49 +524,6 @@ impl VulkanAllocator {
                 });
             }
         }
-    }
-
-    /// # Safety
-    ///
-    /// See valid usage requirements for https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/VkDrmFormatModifierPropertiesListEXT.html
-    unsafe fn get_drm_format_properties_list(
-        &self,
-        format: vk::Format,
-        format_properties: vk::FormatProperties,
-    ) -> Vec<vk::DrmFormatModifierPropertiesEXT> {
-        let mut list = vk::DrmFormatModifierPropertiesListEXT::default();
-
-        // Get the number of entries
-        unsafe {
-            let mut format_properties2 = vk::FormatProperties2::builder()
-                .format_properties(format_properties)
-                .push_next(&mut list);
-
-            self.phd
-                .instance()
-                .handle()
-                .get_physical_device_format_properties2(self.phd.handle(), format, &mut format_properties2)
-        };
-
-        let mut data = Vec::with_capacity(list.drm_format_modifier_count as usize);
-        list.p_drm_format_modifier_properties = data.as_mut_ptr();
-
-        // Read the properties into the vector
-        unsafe {
-            let mut format_properties2 = vk::FormatProperties2::builder()
-                .format_properties(format_properties)
-                .push_next(&mut list);
-
-            self.phd
-                .instance()
-                .handle()
-                .get_physical_device_format_properties2(self.phd.handle(), format, &mut format_properties2);
-
-            // SAFETY: Vulkan just initialized the elements of the vector.
-            data.set_len(list.drm_format_modifier_count as usize);
-        }
-
-        data
     }
 
     /// Returns whether the format + modifier combination and the usage flags are supported.

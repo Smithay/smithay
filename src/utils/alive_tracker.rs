@@ -1,5 +1,10 @@
 //! Utilities to track object's life cycle
 
+// All our AliveTracker usage is internal and only
+// used, when the wayland_frontend feature is enabled.
+// So we need to silence some warnings in other cases.
+#![allow(dead_code)]
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Util to track wayland object's life time

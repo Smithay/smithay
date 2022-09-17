@@ -10,7 +10,6 @@ use smithay::{
         renderer::{ImportDma, ImportEgl},
     },
     delegate_dmabuf,
-    reexports::wayland_server::DisplayHandle,
     wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
 };
 use smithay::{
@@ -20,19 +19,14 @@ use smithay::{
         SwapBuffersError,
     },
     desktop::space::RenderError,
+    input::pointer::CursorImageStatus,
+    output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::EventLoop,
-        wayland_server::{
-            protocol::{wl_output, wl_surface},
-            Display,
-        },
+        wayland_server::{protocol::wl_surface, Display},
     },
-    utils::IsAlive,
-    wayland::{
-        input_method::InputMethodSeat,
-        output::{Mode, Output, PhysicalProperties},
-        seat::CursorImageStatus,
-    },
+    utils::{IsAlive, Transform},
+    wayland::input_method::InputMethodSeat,
 };
 
 use crate::{
@@ -59,12 +53,7 @@ impl DmabufHandler for AnvilState<WinitData> {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
     }
 
-    fn dmabuf_imported(
-        &mut self,
-        _dh: &DisplayHandle,
-        _global: &DmabufGlobal,
-        dmabuf: Dmabuf,
-    ) -> Result<(), ImportError> {
+    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
         self.backend_data
             .backend
             .borrow_mut()
@@ -164,19 +153,14 @@ pub fn run_winit(log: Logger) {
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
-            subpixel: wl_output::Subpixel::Unknown,
+            subpixel: Subpixel::Unknown,
             make: "Smithay".into(),
             model: "Winit".into(),
         },
         log.clone(),
     );
     let _global = output.create_global::<AnvilState<WinitData>>(&display.handle());
-    output.change_current_state(
-        Some(mode),
-        Some(wl_output::Transform::Flipped180),
-        None,
-        Some((0, 0).into()),
-    );
+    output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
 
@@ -250,13 +234,13 @@ pub fn run_winit(log: Logger) {
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
-            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 reset = !surface.alive();
             }
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
             }
-            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 cursor_visible = false;
                 elements
                     .push(draw_cursor(surface.clone(), state.pointer_location.to_i32_round(), &log).into());

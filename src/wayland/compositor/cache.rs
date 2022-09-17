@@ -31,7 +31,7 @@ use std::{
 use downcast_rs::{impl_downcast, Downcast};
 use wayland_server::DisplayHandle;
 
-use crate::wayland::Serial;
+use crate::utils::Serial;
 
 /// Trait representing a value that can be used in double-buffered storage
 ///

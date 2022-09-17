@@ -32,6 +32,11 @@ cgmath = "0.18.0"
 dbus = { version = "0.9.4", optional = true }
 downcast-rs = "1.2.0"
 cfg-if = "1.0.0"
+drm-fourcc = "^2.2.0"
+drm = { version = "0.7.0", optional = true }
+drm-ffi = { version = "0.3.0", optional = true }
+gbm = { version = "0.9.0", optional = true, default-features = false, features = ["drm-support"] }
+input = { version = "0.7", default-features = false, features=["libinput_1_14"], optional = true }
 indexmap = { version = "1.7", optional = true }
 lazy_static = "1"
 libc = "0.2.103"
@@ -44,17 +49,28 @@ slog = "2"
 slog-stdlog = { version = "4", optional = true }
 tempfile = { version = "3.0", optional = true }
 thiserror = "1.0.25"
-wayland-egl = { version = "=0.30.0-beta.9", optional = true }
-wayland-protocols = { version = "=0.30.0-beta.9", features = ["unstable", "staging", "server"], optional = true }
+wayland-egl = { version = "=0.30.0-beta.10", optional = true }
+wayland-protocols = { version = "=0.30.0-beta.10", features = ["unstable", "staging", "server"], optional = true }
 wayland-protocols-wlr = { version = "=0.1.0-beta.8", features = ["server"]}
 wayland-protocols-misc = { version = "=0.1.0-beta.8", features = ["server"]}
-wayland-server = { version = "=0.30.0-beta.9", optional = true }
-wayland-sys = { version = "=0.30.0-beta.9", optional = true }
+wayland-server = { version = "=0.30.0-beta.10", optional = true }
+wayland-sys = { version = "=0.30.0-beta.10", optional = true }
 wayland-backend = { version = "=0.1.0-beta.8", optional = true }
 winit = { version = "0.27.1", default-features = false, features = ["wayland", "wayland-dlopen", "x11"], optional = true }
 x11rb = { version = "0.10.0", optional = true }
 xkbcommon = "0.4.0"
 drm-fourcc = "^2.1.1"
+udev = { version = "0.6", optional = true }
+wayland-egl = { version = "=0.30.0-beta.10", optional = true }
+wayland-protocols = { version = "=0.30.0-beta.10", features = ["unstable", "staging", "server"], optional = true }
+wayland-protocols-wlr = { version = "=0.1.0-beta.9", features = ["server"]}
+wayland-protocols-misc = { version = "=0.1.0-beta.9", features = ["server"]}
+wayland-server = { version = "=0.30.0-beta.10", optional = true }
+wayland-sys = { version = "=0.30.0-beta.10", optional = true }
+wayland-backend = { version = "=0.1.0-beta.9", optional = true }
+winit = { version = "0.27.1", default-features = false, features = ["wayland", "wayland-dlopen", "x11"], optional = true }
+x11rb = { version = "0.10.0", optional = true }
+xkbcommon = "0.5.0"
 scan_fmt = { version = "0.2.3", default-features = false }
 
 # This dependency will only be included when targeting Android
@@ -107,10 +123,6 @@ wayland_frontend = ["wayland-server", "wayland-protocols", "tempfile"]
 x11rb_event_source = ["x11rb"]
 xwayland = ["wayland_frontend"]
 test_all_features = ["default"]
-
-[[example]]
-name = "raw_drm"
-required-features = ["backend_drm"]
 
 [[example]]
 name = "minimal"

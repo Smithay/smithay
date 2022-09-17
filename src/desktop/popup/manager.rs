@@ -1,15 +1,15 @@
 use crate::{
-    utils::{DeadResource, IsAlive, Logical, Point},
+    input::{Seat, SeatHandler},
+    utils::{DeadResource, IsAlive, Logical, Point, Serial},
     wayland::{
         compositor::{get_role, with_states},
-        seat::Seat,
-        shell::xdg::{XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
-        Serial,
+        seat::WaylandFocus,
+        shell::xdg::{XdgPopupSurfaceData, XDG_POPUP_ROLE},
     },
 };
 use std::sync::{Arc, Mutex};
 use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_wm_base};
-use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
+use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 
 use super::{PopupGrab, PopupGrabError, PopupGrabInner, PopupKind};
 
@@ -65,15 +65,20 @@ impl PopupManager {
     ///
     /// Returns a [`PopupGrab`] on success or an [`PopupGrabError`]
     /// if the grab has been denied.
-    pub fn grab_popup<D: 'static>(
+    pub fn grab_popup<D>(
         &mut self,
-        dh: &DisplayHandle,
+        root: <D as SeatHandler>::KeyboardFocus,
         popup: PopupKind,
         seat: &Seat<D>,
         serial: Serial,
-    ) -> Result<PopupGrab, PopupGrabError> {
+    ) -> Result<PopupGrab<D>, PopupGrabError>
+    where
+        D: SeatHandler + 'static,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus + From<PopupKind>,
+        <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+    {
         let surface = popup.wl_surface();
-        let root = find_popup_root_surface(&popup)?;
+        assert_eq!(root.wl_surface().cloned(), Some(find_popup_root_surface(&popup)?));
 
         match popup {
             PopupKind::Xdg(ref xdg) => {
@@ -81,7 +86,7 @@ impl PopupManager {
                 let committed = with_states(surface, |states| {
                     states
                         .data_map
-                        .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                        .get::<XdgPopupSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()
@@ -113,7 +118,7 @@ impl PopupManager {
             Err(err) => {
                 match err {
                     PopupGrabError::ParentDismissed => {
-                        let _ = PopupManager::dismiss_popup(dh, &root, &popup);
+                        let _ = PopupManager::dismiss_popup(root.wl_surface().unwrap(), &popup);
                     }
                     PopupGrabError::NotTheTopmostPopup => {
                         surface.post_error(
@@ -184,11 +189,7 @@ impl PopupManager {
         })
     }
 
-    pub(crate) fn dismiss_popup(
-        dh: &DisplayHandle,
-        surface: &WlSurface,
-        popup: &PopupKind,
-    ) -> Result<(), DeadResource> {
+    pub(crate) fn dismiss_popup(surface: &WlSurface, popup: &PopupKind) -> Result<(), DeadResource> {
         if !surface.alive() {
             return Err(DeadResource);
         }
@@ -196,7 +197,7 @@ impl PopupManager {
             let tree = states.data_map.get::<PopupTree>();
 
             if let Some(tree) = tree {
-                tree.dismiss_popup(dh, popup);
+                tree.dismiss_popup(popup);
             }
         });
         Ok(())
@@ -214,13 +215,17 @@ impl PopupManager {
     }
 }
 
-fn find_popup_root_surface(popup: &PopupKind) -> Result<WlSurface, DeadResource> {
+/// Finds the toplevel wl_surface this popup belongs to.
+///
+/// Either because the parent of this popup is said toplevel
+/// or because its parent popup belongs (indirectly) to said toplevel.
+pub fn find_popup_root_surface(popup: &PopupKind) -> Result<WlSurface, DeadResource> {
     let mut parent = popup.parent().ok_or(DeadResource)?;
     while get_role(&parent) == Some(XDG_POPUP_ROLE) {
         parent = with_states(&parent, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
@@ -263,14 +268,14 @@ impl PopupTree {
         children.push(PopupNode::new(popup));
     }
 
-    fn dismiss_popup(&self, dh: &DisplayHandle, popup: &PopupKind) {
+    fn dismiss_popup(&self, popup: &PopupKind) {
         let mut children = self.0.lock().unwrap();
 
         let mut i = 0;
         while i < children.len() {
             let child = &mut children[i];
 
-            if child.dismiss_popup(dh, popup) {
+            if child.dismiss_popup(popup) {
                 let _ = children.remove(i);
                 break;
             } else {
@@ -326,17 +331,17 @@ impl PopupNode {
         }
     }
 
-    fn send_done(&self, dh: &DisplayHandle) {
+    fn send_done(&self) {
         for child in self.children.iter().rev() {
-            child.send_done(dh);
+            child.send_done();
         }
 
         self.surface.send_done();
     }
 
-    fn dismiss_popup(&mut self, dh: &DisplayHandle, popup: &PopupKind) -> bool {
+    fn dismiss_popup(&mut self, popup: &PopupKind) -> bool {
         if self.surface.wl_surface() == popup.wl_surface() {
-            self.send_done(dh);
+            self.send_done();
             return true;
         }
 
@@ -344,7 +349,7 @@ impl PopupNode {
         while i < self.children.len() {
             let child = &mut self.children[i];
 
-            if child.dismiss_popup(dh, popup) {
+            if child.dismiss_popup(popup) {
                 let _ = self.children.remove(i);
                 return false;
             } else {

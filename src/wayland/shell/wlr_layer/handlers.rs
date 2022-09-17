@@ -6,12 +6,16 @@ use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrL
 use wayland_server::protocol::wl_surface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, Resource};
 
-use crate::utils::alive_tracker::{AliveTracker, IsAlive};
-use crate::wayland::{compositor, shell::wlr_layer::Layer, Serial};
+use crate::utils::{
+    alive_tracker::{AliveTracker, IsAlive},
+    Serial,
+};
+use crate::wayland::shell::xdg::XdgPopupSurfaceData;
+use crate::wayland::{compositor, shell::wlr_layer::Layer};
 
 use super::{
-    Anchor, KeyboardInteractivity, LayerSurfaceAttributes, LayerSurfaceCachedState, Margins,
-    WlrLayerShellHandler, WlrLayerShellState,
+    Anchor, KeyboardInteractivity, LayerSurfaceAttributes, LayerSurfaceCachedState, LayerSurfaceData,
+    Margins, WlrLayerShellHandler, WlrLayerShellState,
 };
 
 use super::LAYER_SURFACE_ROLE;
@@ -53,7 +57,7 @@ where
         shell: &ZwlrLayerShellV1,
         request: zwlr_layer_shell_v1::Request,
         _data: &(),
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -142,7 +146,7 @@ where
                     .unwrap()
                     .push(handle.clone());
 
-                WlrLayerShellHandler::new_layer_surface(state, dh, handle, output, layer, namespace);
+                WlrLayerShellHandler::new_layer_surface(state, handle, output, layer, namespace);
             }
             zwlr_layer_shell_v1::Request::Destroy => {
                 // Handled by destructor
@@ -182,7 +186,7 @@ where
         layer_surface: &ZwlrLayerSurfaceV1,
         request: zwlr_layer_surface_v1::Request,
         data: &WlrLayerSurfaceUserData,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -259,7 +263,7 @@ where
                 compositor::with_states(&data.wl_surface, move |states| {
                     states
                         .data_map
-                        .get::<Mutex<crate::wayland::shell::xdg::XdgPopupSurfaceRoleAttributes>>()
+                        .get::<XdgPopupSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()
@@ -268,7 +272,6 @@ where
 
                 WlrLayerShellHandler::new_popup(
                     state,
-                    dh,
                     make_surface_handle(layer_surface),
                     crate::wayland::shell::xdg::handlers::make_popup_handle(&popup),
                 );
@@ -280,7 +283,7 @@ where
                 let found_configure = compositor::with_states(surface, |states| {
                     states
                         .data_map
-                        .get::<Mutex<LayerSurfaceAttributes>>()
+                        .get::<LayerSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap()
@@ -298,25 +301,30 @@ where
                     }
                 };
 
-                WlrLayerShellHandler::ack_configure(state, dh, data.wl_surface.clone(), configure);
+                WlrLayerShellHandler::ack_configure(state, data.wl_surface.clone(), configure);
             }
             _ => {}
         }
     }
 
     fn destroyed(
-        _state: &mut D,
+        state: &mut D,
         _client_id: wayland_server::backend::ClientId,
         object_id: wayland_server::backend::ObjectId,
         data: &WlrLayerSurfaceUserData,
     ) {
         data.alive_tracker.destroy_notify();
+
         // remove this surface from the known ones (as well as any leftover dead surface)
-        data.shell_data
-            .known_layers
-            .lock()
-            .unwrap()
-            .retain(|other| other.shell_surface.id() != object_id);
+        let mut layers = data.shell_data.known_layers.lock().unwrap();
+        if let Some(index) = layers
+            .iter()
+            .position(|layer| layer.shell_surface.id() == object_id)
+        {
+            let layer = layers.remove(index);
+            drop(layers);
+            WlrLayerShellHandler::layer_destroyed(state, layer);
+        }
     }
 }
 

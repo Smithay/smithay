@@ -119,6 +119,14 @@ pub enum InstanceError {
     Vk(#[from] vk::Result),
 }
 
+/// Error returned when a physical device property is not supported
+#[derive(Debug, thiserror::Error)]
+pub enum UnsupportedProperty {
+    /// Some required extensions are not available.
+    #[error("The following extensions are not available {0:?}")]
+    Extensions(&'static [&'static CStr]),
+}
+
 /// App info to be passed to the Vulkan implementation.
 #[derive(Debug)]
 pub struct AppInfo {
@@ -489,13 +497,15 @@ impl PhysicalDevice {
     /// Returns the major and minor numbers of the primary node which corresponds to this physical device's DRM
     /// device.
     #[cfg(feature = "backend_drm")]
-    pub fn primary_node(&self) -> Option<DrmNode> {
-        self.info
-            .properties_drm
+    pub fn primary_node(&self) -> Result<Option<DrmNode>, UnsupportedProperty> {
+        let properties_drm = self.info.get_drm_properties()?;
+        let node = Some(properties_drm)
             .filter(|props| props.has_primary == vk::TRUE)
             .and_then(|props| {
                 DrmNode::from_dev_id(stat::makedev(props.primary_major as _, props.primary_minor as _)).ok()
-            })
+            });
+
+        Ok(node)
     }
 
     /// Returns the major and minor numbers of the render node which corresponds to this physical device's DRM
@@ -504,19 +514,20 @@ impl PhysicalDevice {
     /// Note that not every device has a render node. If there is no render node (this function returns [`None`])
     /// then try to use the primary node.
     #[cfg(feature = "backend_drm")]
-    pub fn render_node(&self) -> Option<DrmNode> {
-        self.info
-            .properties_drm
+    pub fn render_node(&self) -> Result<Option<DrmNode>, UnsupportedProperty> {
+        let properties_drm = self.info.get_drm_properties()?;
+        let node = Some(properties_drm)
             .filter(|props| props.has_render == vk::TRUE)
             .and_then(|props| {
                 DrmNode::from_dev_id(stat::makedev(props.render_major as _, props.render_minor as _)).ok()
-            })
+            });
+
+        Ok(node)
     }
 
-    /// Gets some physical device properties.
+    /// Get physical device properties.
     ///
-    /// This function is used to get some physical device data associated with an extension and is
-    /// equivalent to calling [`vkGetPhysicalDeviceProperties2`].
+    /// This function is equivalent to calling [`vkGetPhysicalDeviceProperties2`].
     ///
     /// # Safety
     ///
@@ -529,6 +540,64 @@ impl PhysicalDevice {
         // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceProperties2
         // are satisfied.
         unsafe { instance.get_physical_device_properties2(self.handle(), props) }
+    }
+
+    /// Get physical device format properties.
+    ///
+    /// This function is equivalent to calling [`vkGetPhysicalDeviceFormatProperties2`].
+    ///
+    /// # Safety
+    ///
+    /// - All valid usage requirements for [`vkGetPhysicalDeviceFormatProperties2`] apply. Read the specification
+    ///   for more information.
+    ///
+    /// [`vkGetPhysicalDeviceProperties2`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkGetPhysicalDeviceFormatProperties2.html
+    pub unsafe fn get_format_properties(&self, format: vk::Format, props: &mut vk::FormatProperties2) {
+        let instance = self.instance().handle();
+        // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceFormatProperties2
+        // are satisfied.
+        unsafe { instance.get_physical_device_format_properties2(self.handle(), format, props) }
+    }
+
+    /// Returns properties for each supported DRM modifier for the specified format.
+    ///
+    /// Returns [`Err`] if the `VK_EXT_image_drm_format_modifier` extension is not supported.
+    pub fn get_format_modifier_properties(
+        &self,
+        format: vk::Format,
+    ) -> Result<Vec<vk::DrmFormatModifierPropertiesEXT>, UnsupportedProperty> {
+        if !self.has_device_extension(vk::ExtImageDrmFormatModifierFn::name()) {
+            const EXTENSIONS: &[&CStr] = &[vk::ExtImageDrmFormatModifierFn::name()];
+            return Err(UnsupportedProperty::Extensions(EXTENSIONS));
+        }
+
+        // First get the number of modifiers the driver supports.
+        let count = unsafe {
+            let mut list = vk::DrmFormatModifierPropertiesListEXT::default();
+            let mut format_properties2 = vk::FormatProperties2::builder().push_next(&mut list);
+            self.get_format_properties(format, &mut format_properties2);
+            list.drm_format_modifier_count as usize
+        };
+
+        // Allocate the vector to receive the modifiers in.
+        let mut data = Vec::with_capacity(count);
+
+        unsafe {
+            let mut list = vk::DrmFormatModifierPropertiesListEXT {
+                // We cannot use the builder here because the Vec is currently empty, so we need to tell Vulkan
+                // where to write out the modifier properties and tell it how large the Vec is.
+                p_drm_format_modifier_properties: data.as_mut_ptr(),
+                drm_format_modifier_count: count as u32,
+                ..Default::default()
+            };
+
+            let mut format_properties2 = vk::FormatProperties2::builder().push_next(&mut list);
+            self.get_format_properties(format, &mut format_properties2);
+            // SAFETY: Vulkan just initialized the elements of the vector.
+            data.set_len(list.drm_format_modifier_count as usize);
+        }
+
+        Ok(data)
     }
 
     /// Returns the device extensions supported by the physical device.

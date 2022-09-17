@@ -3,12 +3,12 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use crate::utils::alive_tracker::{AliveTracker, IsAlive};
+use crate::wayland::shell::xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use crate::{
-    utils::Rectangle,
+    utils::{Rectangle, Serial},
     wayland::{
         compositor,
         shell::xdg::{PopupState, XdgShellState, XDG_POPUP_ROLE, XDG_TOPLEVEL_ROLE},
-        Serial,
     },
 };
 
@@ -55,7 +55,7 @@ where
         xdg_surface: &XdgSurface,
         request: xdg_surface::Request,
         data: &XdgSurfaceUserData,
-        dh: &DisplayHandle,
+        _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
         match request {
@@ -121,7 +121,7 @@ where
 
                 let handle = make_toplevel_handle(&toplevel);
 
-                XdgShellHandler::new_toplevel(state, dh, handle);
+                XdgShellHandler::new_toplevel(state, handle);
             }
             xdg_surface::Request::GetPopup {
                 id,
@@ -166,7 +166,7 @@ where
                     });
                     *states
                         .data_map
-                        .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                        .get::<XdgPopupSurfaceData>()
                         .unwrap()
                         .lock()
                         .unwrap() = attributes;
@@ -196,7 +196,7 @@ where
 
                 let handle = make_popup_handle(&popup);
 
-                XdgShellHandler::new_popup(state, dh, handle, positioner_data);
+                XdgShellHandler::new_popup(state, handle, positioner_data);
             }
             xdg_surface::Request::SetWindowGeometry { x, y, width, height } => {
                 // Check the role of the surface, this can be either xdg_toplevel
@@ -257,7 +257,7 @@ where
                     if states.role == Some(XDG_TOPLEVEL_ROLE) {
                         Ok(states
                             .data_map
-                            .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                            .get::<XdgToplevelSurfaceData>()
                             .unwrap()
                             .lock()
                             .unwrap()
@@ -265,7 +265,7 @@ where
                     } else if states.role == Some(XDG_POPUP_ROLE) {
                         Ok(states
                             .data_map
-                            .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                            .get::<XdgPopupSurfaceData>()
                             .unwrap()
                             .lock()
                             .unwrap()
@@ -293,7 +293,7 @@ where
                     }
                 };
 
-                XdgShellHandler::ack_configure(state, dh, surface.clone(), configure);
+                XdgShellHandler::ack_configure(state, surface.clone(), configure);
             }
             _ => unreachable!(),
         }

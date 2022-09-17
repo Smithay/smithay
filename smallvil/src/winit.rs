@@ -6,15 +6,12 @@ use smithay::{
         winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
     },
     desktop::space::SurfaceTree,
-    reexports::{
-        calloop::{
-            timer::{TimeoutAction, Timer},
-            EventLoop,
-        },
-        wayland_server::protocol::wl_output,
+    output::{Mode, Output, PhysicalProperties, Subpixel},
+    reexports::calloop::{
+        timer::{TimeoutAction, Timer},
+        EventLoop,
     },
-    utils::Rectangle,
-    wayland::output::{Mode, Output, PhysicalProperties},
+    utils::{Rectangle, Transform},
 };
 
 use slog::Logger;
@@ -43,19 +40,14 @@ pub fn init_winit(
         "winit".to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
-            subpixel: wl_output::Subpixel::Unknown,
+            subpixel: Subpixel::Unknown,
             make: "Smithay".into(),
             model: "Winit".into(),
         },
         log.clone(),
     );
     let _global = output.create_global::<Smallvil>(&display.handle());
-    output.change_current_state(
-        Some(mode),
-        Some(wl_output::Transform::Flipped180),
-        None,
-        Some((0, 0).into()),
-    );
+    output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
     output.set_preferred(mode);
 
     state.space.map_output(&output, (0, 0));
@@ -95,7 +87,7 @@ pub fn winit_dispatch(
                 None,
             );
         }
-        WinitEvent::Input(event) => state.process_input_event(display, event),
+        WinitEvent::Input(event) => state.process_input_event(event),
         _ => (),
     });
 

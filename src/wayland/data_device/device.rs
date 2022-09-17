@@ -9,11 +9,14 @@ use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
-use crate::wayland::{
-    compositor,
-    data_device::seat_data::{SeatData, Selection},
-    seat::{Focus, Seat},
-    Serial,
+use crate::{
+    input::{pointer::Focus, Seat, SeatHandler},
+    utils::Serial,
+    wayland::{
+        compositor,
+        data_device::seat_data::{SeatData, Selection},
+        seat::WaylandFocus,
+    },
 };
 
 use super::{dnd_grab, DataDeviceHandler, DataDeviceState};
@@ -31,6 +34,9 @@ impl<D> Dispatch<WlDataDevice, DataDeviceUserData, D> for DataDeviceState
 where
     D: Dispatch<WlDataDevice, DataDeviceUserData>,
     D: DataDeviceHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
@@ -52,7 +58,6 @@ where
                     icon,
                     serial,
                 } => {
-                    /* TODO: handle the icon */
                     let serial = Serial::from(serial);
                     if let Some(pointer) = seat.get_pointer() {
                         if pointer.has_grab(serial) {
@@ -69,7 +74,8 @@ where
                             handler.started(source.clone(), icon.clone(), seat.clone());
                             let start_data = pointer.grab_start_data().unwrap();
                             pointer.set_grab(
-                                dnd_grab::DnDGrab::new(start_data, source, origin, seat, icon),
+                                handler,
+                                dnd_grab::DnDGrab::new(dh, start_data, source, origin, seat, icon),
                                 serial,
                                 Focus::Clear,
                             );
@@ -86,7 +92,7 @@ where
                         if keyboard.client_of_object_has_focus(&resource.id()) {
                             let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
 
-                            handler.new_selection(dh, source.clone());
+                            handler.new_selection(source.clone());
                             // The client has kbd focus, it can set the selection
                             seat_data.borrow_mut().set_selection::<D>(
                                 dh,

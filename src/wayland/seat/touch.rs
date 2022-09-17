@@ -11,9 +11,9 @@ use wayland_server::{
 
 use super::{SeatHandler, SeatState};
 use crate::backend::input::TouchSlot;
+use crate::utils::Serial;
 use crate::utils::{Logical, Point};
 use crate::wayland::seat::wl_surface::WlSurface;
-use crate::wayland::Serial;
 
 /// An handle to a touch handler.
 ///
@@ -40,8 +40,6 @@ impl TouchHandle {
         self.inner.lock().unwrap().known_handles.push(touch);
     }
 
-    // TODO: Any ideas how to group some of those args?
-    #[allow(clippy::too_many_arguments)]
     /// Notify clients about new touch points.
     pub fn down(
         &mut self,
@@ -101,8 +99,6 @@ struct TouchInternal {
 }
 
 impl TouchInternal {
-    // TODO: Any ideas how to group some of those args?
-    #[allow(clippy::too_many_arguments)]
     fn down(
         &mut self,
         serial: Serial,

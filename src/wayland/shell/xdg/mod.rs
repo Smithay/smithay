@@ -27,10 +27,8 @@
 //! #
 //! use smithay::delegate_xdg_shell;
 //! use smithay::reexports::wayland_server::protocol::wl_seat;
-//! use smithay::wayland::{
-//!     shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState},
-//!     Serial,
-//! };
+//! use smithay::wayland::shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState};
+//! use smithay::utils::Serial;
 //!
 //! # struct State { xdg_shell_state: XdgShellState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -45,17 +43,16 @@
 //! // implement the necessary traits
 //! impl XdgShellHandler for State {
 //!     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
-//!         &mut self.xdg_shell_state    
+//!         &mut self.xdg_shell_state
 //!     }
 //!
 //!     // handle the shell requests here.
 //!     // more optional methods can be used to further customized
-//!     fn new_toplevel(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {
+//!     fn new_toplevel(&mut self, surface: ToplevelSurface) {
 //!         // ...
 //!     }
 //!     fn new_popup(
 //!         &mut self,
-//!         dh: &wayland_server::DisplayHandle,
 //!         surface: PopupSurface,
 //!         positioner: PositionerState,
 //!     ) {
@@ -63,7 +60,6 @@
 //!     }
 //!     fn grab(
 //!         &mut self,
-//!         dh: &wayland_server::DisplayHandle,
 //!         surface: PopupSurface,
 //!         seat: wl_seat::WlSeat,
 //!         serial: Serial,
@@ -97,10 +93,10 @@
 
 use crate::utils::alive_tracker::IsAlive;
 use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
+use crate::utils::{Serial, SERIAL_COUNTER};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::shell::is_toplevel_equivalent;
-use crate::wayland::{Serial, SERIAL_COUNTER};
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
@@ -337,6 +333,19 @@ xdg_role!(
     }
 );
 
+/// Data associated with XDG toplevel surface  
+///
+/// ```no_run
+/// use smithay::wayland::compositor;
+/// use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+///
+/// # let wl_surface = todo!();
+/// compositor::with_states(&wl_surface, |states| {
+///     states.data_map.get::<XdgToplevelSurfaceData>();
+/// });
+/// ```
+pub type XdgToplevelSurfaceData = Mutex<XdgToplevelSurfaceRoleAttributes>;
+
 xdg_role!(
     PopupState,
     /// A configure message for popup surface
@@ -397,6 +406,19 @@ xdg_role!(
         popup_handle: Option<xdg_popup::XdgPopup>
     }
 );
+
+/// Data associated with XDG popup surface  
+///
+/// ```no_run
+/// use smithay::wayland::compositor;
+/// use smithay::wayland::shell::xdg::XdgPopupSurfaceData;
+///
+/// # let wl_surface = todo!();
+/// compositor::with_states(&wl_surface, |states| {
+///     states.data_map.get::<XdgPopupSurfaceData>();
+/// });
+/// ```
+pub type XdgPopupSurfaceData = Mutex<XdgPopupSurfaceRoleAttributes>;
 
 /// Represents the state of the popup
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -755,19 +777,19 @@ pub trait XdgShellHandler {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState;
 
     /// A new shell client was instantiated
-    fn new_client(&mut self, dh: &wayland_server::DisplayHandle, client: ShellClient) {}
+    fn new_client(&mut self, client: ShellClient) {}
 
     /// The pong for a pending ping of this shell client was received
     ///
     /// The `ShellHandler` already checked for you that the serial matches the one
     /// from the pending ping.
-    fn client_pong(&mut self, dh: &wayland_server::DisplayHandle, client: ShellClient) {}
+    fn client_pong(&mut self, client: ShellClient) {}
 
     /// A new toplevel surface was created
     ///
     /// You likely need to send a [`ToplevelConfigure`] to the surface, to hint the
     /// client as to how its window should be sized.
-    fn new_toplevel(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface);
+    fn new_toplevel(&mut self, surface: ToplevelSurface);
 
     /// A new popup surface was created
     ///
@@ -781,27 +803,14 @@ pub trait XdgShellHandler {
     ///     to calculate the best placement for the popup.
     ///     For example the compositor should prevent that a popup
     ///     is placed outside the visible rectangle of a output.
-    fn new_popup(
-        &mut self,
-        dh: &wayland_server::DisplayHandle,
-        surface: PopupSurface,
-        positioner: PositionerState,
-    );
+    fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState);
 
     /// The client requested the start of an interactive move for this surface
-    fn move_request(
-        &mut self,
-        dh: &wayland_server::DisplayHandle,
-        surface: ToplevelSurface,
-        seat: wl_seat::WlSeat,
-        serial: Serial,
-    ) {
-    }
+    fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {}
 
     /// The client requested the start of an interactive resize for this surface
     fn resize_request(
         &mut self,
-        dh: &wayland_server::DisplayHandle,
         surface: ToplevelSurface,
         seat: wl_seat::WlSeat,
         serial: Serial,
@@ -813,34 +822,22 @@ pub trait XdgShellHandler {
     ///
     /// This means it requests to be sent a `popup_done` event when the pointer leaves
     /// the grab area.
-    fn grab(
-        &mut self,
-        dh: &wayland_server::DisplayHandle,
-        surface: PopupSurface,
-        seat: wl_seat::WlSeat,
-        serial: Serial,
-    );
+    fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial);
 
     /// A toplevel surface requested to be maximized
-    fn maximize_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+    fn maximize_request(&mut self, surface: ToplevelSurface) {}
 
     /// A toplevel surface requested to stop being maximized
-    fn unmaximize_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {}
 
     /// A toplevel surface requested to be set fullscreen
-    fn fullscreen_request(
-        &mut self,
-        dh: &wayland_server::DisplayHandle,
-        surface: ToplevelSurface,
-        output: Option<wl_output::WlOutput>,
-    ) {
-    }
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, output: Option<wl_output::WlOutput>) {}
 
     /// A toplevel surface request to stop being fullscreen
-    fn unfullscreen_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {}
 
     /// A toplevel surface requested to be minimized
-    fn minimize_request(&mut self, dh: &wayland_server::DisplayHandle, surface: ToplevelSurface) {}
+    fn minimize_request(&mut self, surface: ToplevelSurface) {}
 
     /// The client requests the window menu to be displayed on this surface at this location
     ///
@@ -848,7 +845,6 @@ pub trait XdgShellHandler {
     /// control of the window (maximize/minimize/close/move/etc...).
     fn show_window_menu(
         &mut self,
-        dh: &wayland_server::DisplayHandle,
         surface: ToplevelSurface,
         seat: wl_seat::WlSeat,
         serial: Serial,
@@ -857,13 +853,7 @@ pub trait XdgShellHandler {
     }
 
     /// A surface has acknowledged a configure serial.
-    fn ack_configure(
-        &mut self,
-        dh: &wayland_server::DisplayHandle,
-        surface: wl_surface::WlSurface,
-        configure: Configure,
-    ) {
-    }
+    fn ack_configure(&mut self, surface: wl_surface::WlSurface, configure: Configure) {}
 
     /// A client requested a reposition, providing a new
     /// positioner, of a popup.
@@ -879,14 +869,13 @@ pub trait XdgShellHandler {
     ///     The new popup position will not take effect until the corresponding configure event
     ///     is acknowledged by the client. See xdg_popup.repositioned for details.
     ///     The token itself is opaque, and has no other special meaning.
-    fn reposition_request(
-        &mut self,
-        dh: &wayland_server::DisplayHandle,
-        surface: PopupSurface,
-        positioner: PositionerState,
-        token: u32,
-    ) {
-    }
+    fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {}
+
+    /// A toplevel surface was destroyed.
+    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {}
+
+    /// A popup surface was destroyed.
+    fn popup_destroyed(&mut self, surface: PopupSurface) {}
 }
 
 #[derive(Debug)]
@@ -1113,7 +1102,7 @@ impl ToplevelSurface {
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1165,7 +1154,7 @@ impl ToplevelSurface {
         compositor::with_states(surface, |states| {
             let mut guard = states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1187,7 +1176,7 @@ impl ToplevelSurface {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
@@ -1235,7 +1224,7 @@ impl ToplevelSurface {
         compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1253,7 +1242,7 @@ impl ToplevelSurface {
         compositor::with_states(&self.wl_surface, |states| {
             let attributes = states
                 .data_map
-                .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                .get::<XdgToplevelSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1330,7 +1319,7 @@ impl PopupSurface {
         compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
@@ -1363,7 +1352,7 @@ impl PopupSurface {
         let next_configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1411,7 +1400,7 @@ impl PopupSurface {
         compositor::with_states(&self.wl_surface, |states| {
             let attributes = states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1453,7 +1442,7 @@ impl PopupSurface {
         let send_error_to = compositor::with_states(surface, |states| {
             let attributes = states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1475,7 +1464,7 @@ impl PopupSurface {
         compositor::with_states(surface, |states| {
             let mut attributes = states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();
@@ -1503,7 +1492,7 @@ impl PopupSurface {
         let configured = compositor::with_states(&self.wl_surface, |states| {
             states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap()
@@ -1554,7 +1543,7 @@ impl PopupSurface {
         compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
-                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .get::<XdgPopupSurfaceData>()
                 .unwrap()
                 .lock()
                 .unwrap();

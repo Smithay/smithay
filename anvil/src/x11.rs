@@ -25,19 +25,14 @@ use smithay::{
         renderer::{gles2::Gles2Renderer, Bind},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
+    input::pointer::CursorImageStatus,
+    output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::EventLoop,
         gbm,
-        wayland_server::{
-            protocol::{wl_output, wl_surface},
-            Display, DisplayHandle,
-        },
+        wayland_server::{protocol::wl_surface, Display},
     },
     utils::IsAlive,
-    wayland::{
-        output::{Mode, Output, PhysicalProperties},
-        seat::CursorImageStatus,
-    },
 };
 
 pub const OUTPUT_NAME: &str = "x11";
@@ -64,12 +59,7 @@ impl DmabufHandler for AnvilState<X11Data> {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
     }
 
-    fn dmabuf_imported(
-        &mut self,
-        _dh: &DisplayHandle,
-        _global: &DmabufGlobal,
-        dmabuf: Dmabuf,
-    ) -> Result<(), ImportError> {
+    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
         self.backend_data
             .renderer
             .import_dmabuf(&dmabuf, None)
@@ -186,7 +176,7 @@ pub fn run_x11(log: Logger) {
         OUTPUT_NAME.to_string(),
         PhysicalProperties {
             size: (0, 0).into(),
-            subpixel: wl_output::Subpixel::Unknown,
+            subpixel: Subpixel::Unknown,
             make: "Smithay".into(),
             model: "X11".into(),
         },
@@ -269,13 +259,13 @@ pub fn run_x11(log: Logger) {
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
             let mut reset = false;
-            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 reset = !surface.alive();
             }
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
             }
-            if let CursorImageStatus::Image(ref surface) = *cursor_guard {
+            if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 cursor_visible = false;
                 elements.push(draw_cursor(surface.clone(), (x as i32, y as i32), &log).into());
             } else {
