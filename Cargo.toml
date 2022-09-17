@@ -36,7 +36,7 @@ indexmap = { version = "1.7", optional = true }
 lazy_static = "1"
 libc = "0.2.103"
 libloading = { version="0.7.0", optional = true } 
-nix = "0.22"
+nix = "0.25"
 once_cell = "1.8.0"
 rand = "0.8.4"
 scopeguard = { version = "1.1.0", optional = true }
@@ -60,7 +60,6 @@ scan_fmt = { version = "0.2.3", default-features = false }
 # This dependency will only be included when targeting Android
 [target.'cfg(target_os = "android")'.dependencies]
 ndk-glue = "0.6.2" # Substitute this with the latest ndk-glue version you wish to use
-
 
 ndk = "0.5.0"
 
@@ -88,7 +87,7 @@ cfg-if = "1.0.0"
 [features]
 default = ["backend_winit", "desktop", "renderer_gl", "wayland_frontend", "slog-stdlog", "backend_vulkan"]
 # default = [ "backend_session_logind", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_multi", "xwayland", "wayland_frontend", "slog-stdlog"]
-backend_winit = ["winit", "wayland-server/dlopen", "backend_egl", "wayland-egl", "renderer_gl"]
+backend_winit = ["winit","backend_egl", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
 backend_gbm = ["gbm"]
