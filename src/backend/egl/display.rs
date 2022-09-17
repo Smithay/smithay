@@ -168,7 +168,7 @@ impl EGLDisplay {
             let mut minor: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
             wrap_egl_call(|| unsafe {
-                println!(
+                info!(log, 
                     "Initialized EGL with result {:?}",
                     ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr())
                 );
