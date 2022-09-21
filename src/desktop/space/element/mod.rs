@@ -1,11 +1,15 @@
 use crate::{
-    backend::renderer::{ImportAll, Renderer},
-    desktop::{space::*, utils as desktop_utils},
+    backend::renderer::{element::Wrap, Renderer},
+    desktop::space::*,
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::compositor::{with_surface_tree_downward, TraversalAction},
 };
 use std::hash::Hash;
+
+#[cfg(feature = "wayland_frontend")]
+mod wayland;
+#[cfg(feature = "wayland_frontend")]
+pub use self::wayland::SurfaceTree;
 
 /// Indicates default values for some zindexs inside smithay
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -89,6 +93,7 @@ impl<T: SpaceElement> SpaceElement for &T {
 
 #[derive(Debug)]
 pub(super) enum SpaceElements<'a, E> {
+    #[cfg(feature = "wayland_frontend")]
     Layer {
         surface: LayerSurface,
         output_location: Point<i32, Logical>,
@@ -102,6 +107,7 @@ where
 {
     pub(super) fn z_index(&self) -> u8 {
         match self {
+            #[cfg(feature = "wayland_frontend")]
             SpaceElements::Layer { surface, .. } => surface.z_index(),
             SpaceElements::Element(inner) => inner.element.z_index(),
         }
@@ -109,6 +115,7 @@ where
 
     pub(super) fn bbox(&self) -> Rectangle<i32, Logical> {
         match self {
+            #[cfg(feature = "wayland_frontend")]
             SpaceElements::Layer {
                 surface,
                 output_location,
@@ -123,20 +130,24 @@ where
 
     pub(super) fn render_location(&self) -> Point<i32, Logical> {
         match self {
+            #[cfg(feature = "wayland_frontend")]
             SpaceElements::Layer { .. } => self.bbox().loc,
             SpaceElements::Element(inner) => inner.render_location(),
         }
     }
 }
 
-impl<'a, R, E> AsRenderElements<R> for SpaceElements<'a, E>
+impl<
+        'a,
+        #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
+        #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
+        E: AsRenderElements<R>,
+    > AsRenderElements<R> for SpaceElements<'a, E>
 where
-    R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
-    E: AsRenderElements<R>,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
-        From<Wrap<<E as AsRenderElements<R>>::RenderElement>> + From<WaylandSurfaceRenderElement>,
+        From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
     type RenderElement = SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>;
 
@@ -146,101 +157,22 @@ where
         scale: Scale<f64>,
     ) -> Vec<C> {
         match &self {
-            SpaceElements::Layer { surface, .. } => {
-                AsRenderElements::<R>::render_elements::<Self::RenderElement>(surface, location, scale)
-                    .into_iter()
-                    .map(C::from)
-                    .collect()
-            }
+            #[cfg(feature = "wayland_frontend")]
+            SpaceElements::Layer { surface, .. } => AsRenderElements::<R>::render_elements::<
+                WaylandSurfaceRenderElement,
+            >(surface, location, scale)
+            .into_iter()
+            .map(SpaceRenderElements::Surface)
+            .map(C::from)
+            .collect(),
             SpaceElements::Element(element) => element
                 .element
                 .render_elements::<Wrap<<E as AsRenderElements<R>>::RenderElement>>(location, scale)
                 .into_iter()
-                .map(SpaceRenderElements::from)
+                .map(SpaceRenderElements::Element)
                 .map(C::from)
                 .collect(),
         }
-    }
-}
-/// A custom surface tree
-#[derive(Debug)]
-pub struct SurfaceTree {
-    location: Point<i32, Logical>,
-    surface: WlSurface,
-}
-
-impl SurfaceTree {
-    /// Create a surface tree from a surface
-    pub fn from_surface(surface: &WlSurface, location: impl Into<Point<i32, Logical>>) -> Self {
-        SurfaceTree {
-            location: location.into(),
-            surface: surface.clone(),
-        }
-    }
-}
-
-impl IsAlive for SurfaceTree {
-    fn alive(&self) -> bool {
-        self.surface.alive()
-    }
-}
-
-impl SpaceElement for SurfaceTree {
-    fn geometry(&self) -> Rectangle<i32, Logical> {
-        self.bbox()
-    }
-
-    fn bbox(&self) -> Rectangle<i32, Logical> {
-        desktop_utils::bbox_from_surface_tree(&self.surface, self.location)
-    }
-
-    fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
-        desktop_utils::under_from_surface_tree(&self.surface, *point, (0, 0), WindowSurfaceType::ALL)
-            .is_some()
-    }
-
-    fn set_activate(&self, _activated: bool) {}
-    fn output_enter(&self, output: &Output) {
-        with_surface_tree_downward(
-            &self.surface,
-            (),
-            |_, _, _| TraversalAction::DoChildren(()),
-            |wl_surface, _, _| {
-                output.enter(wl_surface);
-            },
-            |_, _, _| true,
-        );
-    }
-    fn output_leave(&self, output: &Output) {
-        with_surface_tree_downward(
-            &self.surface,
-            (),
-            |_, _, _| TraversalAction::DoChildren(()),
-            |wl_surface, _, _| {
-                output.leave(wl_surface);
-            },
-            |_, _, _| true,
-        );
-    }
-}
-
-impl<R> AsRenderElements<R> for SurfaceTree
-where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
-{
-    type RenderElement = WaylandSurfaceRenderElement;
-
-    fn render_elements<C: From<WaylandSurfaceRenderElement>>(
-        &self,
-        location: Point<i32, Physical>,
-        scale: Scale<f64>,
-    ) -> Vec<C> {
-        crate::backend::renderer::element::surface::render_elements_from_surface_tree(
-            &self.surface,
-            location,
-            scale,
-        )
     }
 }
 
@@ -490,6 +422,7 @@ macro_rules! space_elements {
 pub use space_elements;
 
 #[cfg(test)]
+#[cfg(feature = "wayland_frontend")]
 #[allow(dead_code)]
 mod tests {
     use crate::desktop::{LayerSurface, Window};

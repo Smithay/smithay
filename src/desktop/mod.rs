@@ -49,13 +49,20 @@
 //! to manage client buffers to do so. If you plan to use the provided drawing functions, you need to use
 //! [`on_commit_buffer_handler`](crate::backend::renderer::utils::on_commit_buffer_handler).
 
-pub(crate) mod layer;
-mod popup;
 pub mod space;
-pub mod utils;
-mod window;
-
-pub use self::layer::{draw_layer_surface, layer_map_for_output, LayerMap, LayerSurface};
-pub use self::popup::*;
 pub use self::space::Space;
-pub use self::window::*;
+
+#[cfg(feature = "wayland_frontend")]
+pub use self::wayland::{
+    layer::{draw_layer_surface, layer_map_for_output, LayerMap, LayerSurface},
+    popup::*,
+    utils,
+    window::*,
+};
+#[cfg(feature = "wayland_frontend")]
+mod wayland {
+    pub(crate) mod layer;
+    pub mod popup;
+    pub mod utils;
+    pub mod window;
+}

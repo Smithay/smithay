@@ -34,13 +34,10 @@ use crate::backend::egl::{
 #[cfg(feature = "renderer_multi")]
 pub mod multigpu;
 
-#[cfg(feature = "wayland_frontend")]
 pub mod utils;
 
-#[cfg(feature = "wayland_frontend")]
 pub mod element;
 
-#[cfg(feature = "wayland_frontend")]
 pub mod damage;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
