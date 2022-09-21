@@ -1,6 +1,7 @@
 use std::{
     ffi::CString,
     fmt::Debug,
+    os::unix::prelude::AsRawFd,
     sync::{Arc, Mutex},
 };
 
@@ -96,7 +97,7 @@ where
                     let new_keymap = unsafe {
                         xkb::Keymap::new_from_fd(
                             &context,
-                            fd,
+                            fd.as_raw_fd(),
                             size as usize,
                             format,
                             xkb::KEYMAP_COMPILE_NO_FLAGS,
@@ -115,7 +116,7 @@ where
                         internal.keymap = new_keymap;
                         let known_kbds = &keyboard_handle.arc.known_kbds;
                         for kbd in &*known_kbds.lock().unwrap() {
-                            kbd.keymap(KeymapFormat::XkbV1, fd, size);
+                            kbd.keymap(KeymapFormat::XkbV1, fd.as_raw_fd(), size);
                         }
                     }
                 }
