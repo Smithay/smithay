@@ -1,12 +1,12 @@
 //! Type safe native types for safe egl initialisation
 
-use std::collections::HashSet;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use std::sync::{Mutex, Weak};
+use std::{collections::HashSet, os::unix::prelude::AsRawFd};
 
 use libc::c_void;
 use nix::libc::c_int;
@@ -78,7 +78,7 @@ pub struct EGLDisplay {
     logger: slog::Logger,
 }
 
-fn select_platform_display<N: EGLNativeDisplay + 'static>(
+unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
     native: &N,
     dp_extensions: &[String],
     log: &::slog::Logger,
@@ -102,16 +102,14 @@ fn select_platform_display<N: EGLNativeDisplay + 'static>(
             continue;
         }
 
-        let display = unsafe {
-            wrap_egl_call(|| {
-                ffi::egl::GetPlatformDisplayEXT(
-                    platform.platform,
-                    platform.native_display,
-                    platform.attrib_list.as_ptr(),
-                )
-            })
-            .map_err(Error::DisplayCreationError)
-        };
+        let display = wrap_egl_call(|| {
+            ffi::egl::GetPlatformDisplayEXT(
+                platform.platform,
+                platform.native_display,
+                platform.attrib_list.as_ptr(),
+            )
+        })
+        .map_err(Error::DisplayCreationError);
 
         let display = match display {
             Ok(display) => {
@@ -144,7 +142,12 @@ fn select_platform_display<N: EGLNativeDisplay + 'static>(
 
 impl EGLDisplay {
     /// Create a new [`EGLDisplay`] from a given [`EGLNativeDisplay`]
-    pub fn new<N, L>(native: &N, logger: L) -> Result<EGLDisplay, Error>
+    ///
+    /// # Safety
+    ///
+    /// - `native`: The native display handle has to be kept alive for the lifetime of the
+    ///   created [`EGLDisplay`]
+    pub unsafe fn new<N, L>(native: &N, logger: L) -> Result<EGLDisplay, Error>
     where
         N: EGLNativeDisplay + 'static,
         L: Into<Option<::slog::Logger>>,
@@ -161,13 +164,11 @@ impl EGLDisplay {
             let mut major: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
             let mut minor: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
-            wrap_egl_call(|| unsafe {
-                ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr())
-            })
-            .map_err(Error::InitFailed)?;
+            wrap_egl_call(|| ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr()))
+                .map_err(Error::InitFailed)?;
 
-            let major = unsafe { major.assume_init() };
-            let minor = unsafe { minor.assume_init() };
+            let major = major.assume_init();
+            let minor = minor.assume_init();
 
             info!(log, "EGL Initialized");
             info!(log, "EGL Version: {:?}", (major, minor));
@@ -187,7 +188,7 @@ impl EGLDisplay {
         if egl_version <= (1, 2) {
             return Err(Error::OpenGlesNotSupported(None));
         }
-        wrap_egl_call(|| unsafe { ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) })
+        wrap_egl_call(|| ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API))
             .map_err(|source| Error::OpenGlesNotSupported(Some(source)))?;
 
         Ok(EGLDisplay {
@@ -668,7 +669,7 @@ impl EGLDisplay {
         {
             out.extend(&[
                 names[i][0] as i32,
-                fd,
+                fd.as_raw_fd(),
                 names[i][1] as i32,
                 offset as i32,
                 names[i][2] as i32,
@@ -906,6 +907,10 @@ impl EGLBufferReader {
         &self,
         buffer: &WlBuffer,
     ) -> ::std::result::Result<EGLBuffer, BufferAccessError> {
+        if !buffer.is_alive() {
+            return Err(BufferAccessError::Destroyed);
+        }
+
         let mut format: i32 = 0;
         let query = wrap_egl_call(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
@@ -1022,6 +1027,10 @@ impl EGLBufferReader {
         &self,
         buffer: &WlBuffer,
     ) -> Option<crate::utils::Size<i32, crate::utils::Buffer>> {
+        if !buffer.is_alive() {
+            return None;
+        }
+
         let mut width: i32 = 0;
         if unsafe {
             ffi::egl::QueryWaylandBufferWL(

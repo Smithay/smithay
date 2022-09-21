@@ -49,9 +49,6 @@
 //! `log` crate. If not, the logs will discarded. This cargo feature is part of the default set of
 //! features of Smithay.
 
-#[doc(hidden)]
-pub extern crate nix;
-
 pub mod backend;
 #[cfg(feature = "desktop")]
 pub mod desktop;

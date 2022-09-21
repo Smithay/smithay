@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use io_lifetimes::OwnedFd;
 use wayland_server::{
     backend::{protocol::Message, ClientId, Handle, ObjectData, ObjectId},
     protocol::{
@@ -239,7 +240,7 @@ where
         dh: &Handle,
         handler: &mut D,
         _client_id: ClientId,
-        msg: Message<ObjectId>,
+        msg: Message<ObjectId, OwnedFd>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((resource, request)) = WlDataOffer::parse_request(&dh, msg) {

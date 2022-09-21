@@ -94,7 +94,7 @@ mod dispatch;
 use std::{
     collections::HashMap,
     convert::TryFrom,
-    os::unix::io::IntoRawFd,
+    os::unix::{io::IntoRawFd, prelude::AsRawFd},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -425,9 +425,9 @@ impl DmabufParamsData {
                 }
             };
 
-            if let Ok(size) = unistd::lseek(plane.fd.unwrap(), 0, unistd::Whence::SeekEnd) {
+            if let Ok(size) = unistd::lseek(plane.fd.as_raw_fd(), 0, unistd::Whence::SeekEnd) {
                 // Reset seek point
-                let _ = unistd::lseek(plane.fd.unwrap(), 0, unistd::Whence::SeekSet);
+                let _ = unistd::lseek(plane.fd.as_raw_fd(), 0, unistd::Whence::SeekSet);
 
                 if plane.offset as libc::off_t > size {
                     params.post_error(

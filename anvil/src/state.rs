@@ -1,5 +1,5 @@
 use std::{
-    os::unix::io::RawFd,
+    os::unix::prelude::AsRawFd,
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
@@ -13,6 +13,7 @@ use smithay::{
     output::Output,
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
+        io_lifetimes::OwnedFd,
         wayland_protocols::xdg::decoration::{
             self as xdg_decoration, zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode,
         },
@@ -122,7 +123,7 @@ impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
-    fn send_selection(&mut self, _mime_type: String, _fd: RawFd) {
+    fn send_selection(&mut self, _mime_type: String, _fd: OwnedFd) {
         unreachable!("Anvil doesn't do server-side selections");
     }
 }
@@ -135,7 +136,7 @@ impl<BackendData> ClientDndGrabHandler for AnvilState<BackendData> {
     }
 }
 impl<BackendData> ServerDndGrabHandler for AnvilState<BackendData> {
-    fn send(&mut self, _mime_type: String, _fd: RawFd) {
+    fn send(&mut self, _mime_type: String, _fd: OwnedFd) {
         unreachable!("Anvil doesn't do server-side grabs");
     }
 }
@@ -285,7 +286,11 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         };
         handle
             .insert_source(
-                Generic::new(display.backend().poll_fd(), Interest::READ, Mode::Level),
+                Generic::new(
+                    display.backend().poll_fd().as_raw_fd(),
+                    Interest::READ,
+                    Mode::Level,
+                ),
                 |_, _, data| {
                     data.display.dispatch_clients(&mut data.state).unwrap();
                     Ok(PostAction::Continue)

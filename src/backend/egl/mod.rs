@@ -105,6 +105,9 @@ pub enum BufferAccessError {
     /// We currently do not support multi-planar buffers
     #[error("Multi-planar formats (like {0:?}) are unsupported")]
     UnsupportedMultiPlanarFormat(Format),
+    /// This buffer has been destroyed
+    #[error("This buffer has been destroyed")]
+    Destroyed,
 }
 
 #[cfg(feature = "wayland_frontend")]
@@ -122,6 +125,7 @@ impl fmt::Debug for BufferAccessError {
                 "BufferAccessError::UnsupportedMultiPlanerFormat({:?})",
                 fmt
             ),
+            BufferAccessError::Destroyed => write!(formatter, "BufferAccessError::Destroyed"),
         }
     }
 }

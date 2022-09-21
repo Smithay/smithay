@@ -1,4 +1,4 @@
-use std::{ffi::OsString, sync::Arc};
+use std::{ffi::OsString, os::unix::prelude::AsRawFd, sync::Arc};
 
 use slog::Logger;
 use smithay::{
@@ -125,7 +125,11 @@ impl Smallvil {
         // You also need to add the display itself to the event loop, so that client events will be processed by wayland-server.
         handle
             .insert_source(
-                Generic::new(display.backend().poll_fd(), Interest::READ, Mode::Level),
+                Generic::new(
+                    display.backend().poll_fd().as_raw_fd(),
+                    Interest::READ,
+                    Mode::Level,
+                ),
                 |_, _, state| {
                     state.display.dispatch_clients(&mut state.state).unwrap();
                     Ok(PostAction::Continue)

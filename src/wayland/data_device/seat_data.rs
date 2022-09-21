@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{os::unix::prelude::AsRawFd, sync::Arc};
 
+use io_lifetimes::OwnedFd;
 use slog::debug;
 use wayland_server::{
     backend::{protocol::Message, ClientId, Handle, ObjectData, ObjectId},
@@ -192,7 +193,7 @@ where
         dh: &Handle,
         handler: &mut D,
         _client_id: ClientId,
-        msg: Message<ObjectId>,
+        msg: Message<ObjectId, OwnedFd>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((_resource, request)) = WlDataOffer::parse_request(&dh, msg) {
@@ -225,9 +226,8 @@ where
                 "Denying a wl_data_offer.receive with invalid source."
             );
         } else {
-            source.send(mime_type, fd);
+            source.send(mime_type, fd.as_raw_fd());
         }
-        let _ = ::nix::unistd::close(fd);
     }
 }
 
@@ -244,7 +244,7 @@ where
         dh: &Handle,
         handler: &mut D,
         _client_id: ClientId,
-        msg: Message<ObjectId>,
+        msg: Message<ObjectId, OwnedFd>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((_resource, request)) = WlDataOffer::parse_request(&dh, msg) {
@@ -275,7 +275,6 @@ pub fn handle_server_selection<D>(
                 data_device_state.log,
                 "Denying a wl_data_offer.receive with invalid source."
             );
-            let _ = ::nix::unistd::close(fd);
         } else {
             handler.send_selection(mime_type, fd);
         }
