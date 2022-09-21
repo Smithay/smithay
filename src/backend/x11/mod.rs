@@ -41,7 +41,7 @@
 //!     // Create the gbm device for allocating buffers
 //!     let device = gbm::Device::new(fd)?;
 //!     // Initialize EGL to retrieve the support modifier list
-//!     let egl = EGLDisplay::new(&device, logger.clone()).expect("Failed to create EGLDisplay");
+//!     let egl = unsafe { EGLDisplay::new(&device, logger.clone()).expect("Failed to create EGLDisplay") };
 //!     let context = EGLContext::new(&egl, logger).expect("Failed to create EGLContext");
 //!     let modifiers = context.dmabuf_render_formats().iter().map(|format| format.modifier).collect::<HashSet<_>>();
 //!
@@ -927,7 +927,7 @@ impl X11Inner {
 }
 
 fn egl_init(_: &X11Inner) -> Result<(DrmNode, RawFd), EGLInitError> {
-    let display = EGLDisplay::new(&X11DefaultDisplay, None)?;
+    let display = unsafe { EGLDisplay::new(&X11DefaultDisplay, None)? };
     let device = EGLDevice::device_for_display(&display)?;
     let path = path_to_type(device.drm_device_path()?, NodeType::Render)?;
     let node = DrmNode::from_path(&path)

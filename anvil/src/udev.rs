@@ -378,7 +378,7 @@ fn scan_connectors(
     let mut backends = HashMap::new();
 
     let (render_node, formats) = {
-        let display = EGLDisplay::new(&*gbm.borrow(), logger.clone()).unwrap();
+        let display = unsafe { EGLDisplay::new(&*gbm.borrow(), logger.clone()).unwrap() };
         let node = match EGLDevice::device_for_display(&display)
             .ok()
             .and_then(|x| x.try_get_render_node().ok().flatten())
