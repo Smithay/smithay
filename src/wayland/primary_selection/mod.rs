@@ -59,8 +59,9 @@
 //! // You're now ready to go!
 //! ```
 
-use std::{cell::RefCell, os::unix::prelude::RawFd};
+use std::cell::RefCell;
 
+use io_lifetimes::OwnedFd;
 use wayland_protocols::wp::primary_selection::zv1::server::{
     zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager,
     zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1 as PrimarySource,
@@ -92,7 +93,7 @@ pub trait PrimarySelectionHandler: Sized {
     /// * `mime_type` - the requested mime type
     /// * `fd` - the fd to write into
     #[allow(unused_variables)]
-    fn send_selection(&mut self, mime_type: String, fd: RawFd) {}
+    fn send_selection(&mut self, mime_type: String, fd: OwnedFd) {}
 }
 
 /// State of data device

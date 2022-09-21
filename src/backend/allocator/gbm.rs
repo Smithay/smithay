@@ -128,7 +128,7 @@ impl Dmabuf {
     ) -> std::io::Result<GbmBuffer<T>> {
         let mut handles = [0; MAX_PLANES];
         for (i, handle) in self.handles().take(MAX_PLANES).enumerate() {
-            handles[i] = handle;
+            handles[i] = handle.as_raw_fd();
         }
         let mut strides = [0i32; MAX_PLANES];
         for (i, stride) in self.strides().take(MAX_PLANES).enumerate() {

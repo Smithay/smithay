@@ -5,7 +5,7 @@ use super::{
     BufferData, ShmHandler, ShmPoolUserData, ShmState,
 };
 
-use std::sync::Arc;
+use std::{os::unix::prelude::AsRawFd, sync::Arc};
 use wayland_server::{
     protocol::{
         wl_buffer,
@@ -67,8 +67,11 @@ where
 
         let mmap_pool = match Pool::new(fd, size as usize, state.shm_state().log.clone()) {
             Ok(p) => p,
-            Err(()) => {
-                shm.post_error(wl_shm::Error::InvalidFd, format!("Failed to mmap fd {}", fd));
+            Err(fd) => {
+                shm.post_error(
+                    wl_shm::Error::InvalidFd,
+                    format!("Failed to mmap fd {}", fd.as_raw_fd()),
+                );
                 return;
             }
         };
