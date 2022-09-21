@@ -52,6 +52,9 @@
 #[doc(hidden)]
 pub extern crate nix;
 
+#[cfg(feature = "backend_wayland")]
+extern crate smithay_client_toolkit as sctk;
+
 pub mod backend;
 #[cfg(feature = "desktop")]
 pub mod desktop;

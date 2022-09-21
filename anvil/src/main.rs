@@ -7,6 +7,8 @@ static POSSIBLE_BACKENDS: &[&str] = &[
     "--tty-udev : Run anvil as a tty udev client (requires root if without logind).",
     #[cfg(feature = "x11")]
     "--x11 : Run anvil as an X11 client.",
+    #[cfg(feature = "wayland")]
+    "--wayland : Run anvil as a wayland client.",
 ];
 
 fn main() {
@@ -39,6 +41,11 @@ fn main() {
         Some("--x11") => {
             slog::info!(log, "Starting anvil with x11 backend");
             anvil::x11::run_x11(log);
+        }
+        #[cfg(feature = "wayland")]
+        Some("--wayland") => {
+            slog::info!(log, "Starting anvil with wayland backend");
+            anvil::wayland::run_wayland(log);
         }
         Some(other) => {
             crit!(log, "Unknown backend: {}", other);
