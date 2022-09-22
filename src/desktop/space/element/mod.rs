@@ -58,8 +58,11 @@ pub trait SpaceElement: IsAlive {
 
     /// Set the rendered state to activated, if applicable to this element
     fn set_activate(&self, activated: bool);
-    /// The element is displayed on a given output
-    fn output_enter(&self, output: &Output);
+    /// The element is displayed on a given output.
+    ///
+    /// Maybe called for an already entered output,
+    /// if the overlap changes
+    fn output_enter(&self, output: &Output, overlap: Rectangle<i32, Logical>);
     /// The element left a given output
     fn output_leave(&self, output: &Output);
     /// Periodically called to update internal state, if necessary
@@ -83,11 +86,14 @@ impl<T: SpaceElement> SpaceElement for &T {
     fn set_activate(&self, activated: bool) {
         SpaceElement::set_activate(*self, activated)
     }
-    fn output_enter(&self, output: &Output) {
-        SpaceElement::output_enter(*self, output)
+    fn output_enter(&self, output: &Output, overlap: Rectangle<i32, Logical>) {
+        SpaceElement::output_enter(*self, output, overlap)
     }
     fn output_leave(&self, output: &Output) {
         SpaceElement::output_leave(*self, output)
+    }
+    fn refresh(&self) {
+        SpaceElement::refresh(*self)
     }
 }
 
@@ -108,7 +114,17 @@ where
     pub(super) fn z_index(&self) -> u8 {
         match self {
             #[cfg(feature = "wayland_frontend")]
-            SpaceElements::Layer { surface, .. } => surface.z_index(),
+            SpaceElements::Layer { surface, .. } => {
+                use crate::wayland::shell::wlr_layer::Layer;
+
+                let layer = match surface.layer() {
+                    Layer::Background => RenderZindex::Background,
+                    Layer::Bottom => RenderZindex::Bottom,
+                    Layer::Top => RenderZindex::Top,
+                    Layer::Overlay => RenderZindex::Overlay,
+                };
+                layer as u8
+            }
             SpaceElements::Element(inner) => inner.element.z_index(),
         }
     }
@@ -311,14 +327,14 @@ macro_rules! space_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
-        fn output_enter(&self, output: &$crate::output::Output) {
+        fn output_enter(&self, output: &$crate::output::Output, overlap: $crate::utils::Rectangle<i32, $crate::utils::Logical>) {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::space_elements_internal!(@call output_enter; x, output)
+                    Self::$body(x) => $crate::space_elements_internal!(@call output_enter; x, output, overlap)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
