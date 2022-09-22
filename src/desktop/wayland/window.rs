@@ -13,17 +13,14 @@ use crate::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
         Seat, SeatHandler,
     },
-    output::Output,
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
     wayland::{
-        compositor::{with_states, with_surface_tree_downward, TraversalAction},
+        compositor::with_states,
         seat::WaylandFocus,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
 };
 use std::{
-    cell::{RefCell, RefMut},
-    collections::HashSet,
     hash::{Hash, Hasher},
     sync::{
         atomic::{AtomicU8, Ordering},
@@ -102,7 +99,6 @@ pub(crate) struct WindowInner {
     toplevel: Kind,
     bbox: Mutex<Rectangle<i32, Logical>>,
     pub(crate) z_index: AtomicU8,
-    pub(crate) outputs: Mutex<Vec<Output>>,
     focused_surface: Mutex<Option<wl_surface::WlSurface>>,
     user_data: UserDataMap,
 }
@@ -152,17 +148,6 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Clone, Default)]
-struct OutputState {
-    surfaces: HashSet<wayland_server::backend::ObjectId>,
-}
-type OutputUserdata = RefCell<OutputState>;
-fn window_output_state(o: &Output) -> RefMut<'_, OutputState> {
-    let user_data = o.user_data();
-    user_data.insert_if_missing(OutputUserdata::default);
-    user_data.get::<OutputUserdata>().unwrap().borrow_mut()
-}
-
 impl Window {
     /// Construct a new [`Window`] from a given compatible toplevel surface
     pub fn new(toplevel: Kind) -> Window {
@@ -173,7 +158,6 @@ impl Window {
             toplevel,
             bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
             z_index: AtomicU8::new(RenderZindex::Shell as u8),
-            outputs: Mutex::new(Vec::new()),
             focused_surface: Mutex::new(None),
             user_data: UserDataMap::new(),
         }))
@@ -292,63 +276,6 @@ impl Window {
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.user_data
-    }
-
-    pub(crate) fn update_outputs(&self, left_output: Option<&Output>) {
-        if let Some(output) = left_output {
-            let mut state = window_output_state(output);
-            with_surface_tree_downward(
-                self.toplevel().wl_surface(),
-                (),
-                |_, _, _| TraversalAction::DoChildren(()),
-                |wl_surface, _, _| {
-                    state.surfaces.remove(&wl_surface.id());
-                    output.leave(wl_surface);
-                },
-                |_, _, _| true,
-            );
-            for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
-                let surface = popup.wl_surface();
-                with_surface_tree_downward(
-                    surface,
-                    (),
-                    |_, _, _| TraversalAction::DoChildren(()),
-                    |wl_surface, _, _| {
-                        state.surfaces.remove(&wl_surface.id());
-                        output.leave(wl_surface);
-                    },
-                    |_, _, _| true,
-                )
-            }
-        }
-        for output in self.0.outputs.lock().unwrap().iter() {
-            let mut state = window_output_state(output);
-            with_surface_tree_downward(
-                self.toplevel().wl_surface(),
-                (),
-                |_, _, _| TraversalAction::DoChildren(()),
-                |wl_surface, _, _| {
-                    if state.surfaces.insert(wl_surface.id()) {
-                        output.enter(wl_surface);
-                    }
-                },
-                |_, _, _| true,
-            );
-            for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
-                let surface = popup.wl_surface();
-                with_surface_tree_downward(
-                    surface,
-                    (),
-                    |_, _, _| TraversalAction::DoChildren(()),
-                    |wl_surface, _, _| {
-                        if state.surfaces.insert(wl_surface.id()) {
-                            output.enter(wl_surface);
-                        }
-                    },
-                    |_, _, _| true,
-                )
-            }
-        }
     }
 }
 

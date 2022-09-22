@@ -6,45 +6,9 @@ use crate::{
         },
         ImportAll, Renderer,
     },
-    desktop::{
-        space::{RenderZindex, SpaceElement},
-        LayerSurface, PopupManager, WindowSurfaceType,
-    },
-    output::Output,
-    utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::shell::wlr_layer::Layer,
+    desktop::{LayerSurface, PopupManager},
+    utils::{Physical, Point, Scale},
 };
-
-impl SpaceElement for LayerSurface {
-    fn geometry(&self) -> Rectangle<i32, Logical> {
-        self.bbox_with_popups()
-    }
-    fn bbox(&self) -> Rectangle<i32, Logical> {
-        self.bbox_with_popups()
-    }
-    fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
-        self.surface_under(*point, WindowSurfaceType::ALL).is_some()
-    }
-    /// Gets the z-index of this element on the specified space
-    fn z_index(&self) -> u8 {
-        let layer = self.layer();
-        let z_index = match layer {
-            Layer::Background => RenderZindex::Background,
-            Layer::Bottom => RenderZindex::Bottom,
-            Layer::Top => RenderZindex::Top,
-            Layer::Overlay => RenderZindex::Overlay,
-        };
-        z_index as u8
-    }
-
-    fn set_activate(&self, _activated: bool) {}
-    fn output_enter(&self, output: &Output) {
-        output.enter(self.wl_surface())
-    }
-    fn output_leave(&self, output: &Output) {
-        output.leave(self.wl_surface())
-    }
-}
 
 impl<R> AsRenderElements<R> for LayerSurface
 where
