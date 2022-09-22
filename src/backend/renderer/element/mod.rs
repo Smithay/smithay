@@ -5,7 +5,7 @@ use std::sync::Arc;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{backend::ObjectId, protocol::wl_buffer, Resource};
 
-use crate::utils::{Physical, Point, Rectangle, Scale};
+use crate::utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform};
 
 use super::{utils::CommitCounter, Renderer};
 
@@ -81,6 +81,12 @@ pub trait RenderElement<R: Renderer> {
     fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
         self.geometry(scale).loc
     }
+    /// Get the src of the underlying buffer
+    fn src(&self) -> Rectangle<f64, BufferCoords>;
+    /// Get the transform of the underlying buffer
+    fn transform(&self) -> Transform {
+        Transform::Normal
+    }
     /// Get the geometry relative to the output
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical>;
     /// Get the damage since the provided commit relative to the element
@@ -108,6 +114,7 @@ pub trait RenderElement<R: Renderer> {
         &self,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
+        location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
@@ -146,6 +153,14 @@ where
         (*self).location(scale)
     }
 
+    fn src(&self) -> Rectangle<f64, BufferCoords> {
+        (*self).src()
+    }
+
+    fn transform(&self) -> Transform {
+        (*self).transform()
+    }
+
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
         (*self).geometry(scale)
     }
@@ -170,11 +185,12 @@ where
         &self,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
+        location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        (*self).draw(renderer, frame, scale, damage, log)
+        (*self).draw(renderer, frame, location, scale, damage, log)
     }
 }
 
@@ -342,6 +358,32 @@ macro_rules! render_elements_internal {
             }
         }
 
+        fn src(&self) -> $crate::utils::Rectangle<f64, $crate::utils::Buffer> {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; src; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn transform(&self) -> $crate::utils::Transform {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; transform; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
         fn geometry(&self, scale: $crate::utils::Scale<f64>) -> $crate::utils::Rectangle<i32, $crate::utils::Physical> {
             match self {
                 $(
@@ -413,6 +455,7 @@ macro_rules! render_elements_internal {
             &self,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
+            location: $crate::utils::Point<i32, $crate::utils::Physical>,
             scale: $crate::utils::Scale<f64>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             log: &slog::Logger,
@@ -432,7 +475,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, location, scale, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -443,6 +486,7 @@ macro_rules! render_elements_internal {
             &self,
             renderer: &mut $renderer,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
+            location: $crate::utils::Point<i32, $crate::utils::Physical>,
             scale: $crate::utils::Scale<f64>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             log: &slog::Logger,
@@ -454,7 +498,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, scale, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, location, scale, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -764,6 +808,14 @@ where
         self.0.location(scale)
     }
 
+    fn src(&self) -> Rectangle<f64, BufferCoords> {
+        self.0.src()
+    }
+
+    fn transform(&self) -> Transform {
+        self.0.transform()
+    }
+
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
         self.0.geometry(scale)
     }
@@ -772,11 +824,12 @@ where
         &self,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
+        location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        self.0.draw(renderer, frame, scale, damage, log)
+        self.0.draw(renderer, frame, location, scale, damage, log)
     }
 
     fn damage_since(
@@ -803,7 +856,7 @@ mod tests {
 
     use crate::{
         backend::renderer::{gles2::Gles2Renderer, ImportDma, ImportMem, Renderer, Texture},
-        utils::{Physical, Point, Rectangle, Scale},
+        utils::{Buffer, Physical, Point, Rectangle, Scale},
     };
 
     use super::{CommitCounter, Id, RenderElement, Wrap};
@@ -942,10 +995,15 @@ mod tests {
             &self,
             _renderer: &mut R,
             _frame: &mut <R as Renderer>::Frame,
+            _location: Point<i32, Physical>,
             _scale: Scale<f64>,
             _damage: &[Rectangle<i32, Physical>],
             _log: &slog::Logger,
         ) -> Result<(), <R as Renderer>::Error> {
+            todo!()
+        }
+
+        fn src(&self) -> Rectangle<f64, Buffer> {
             todo!()
         }
     }
@@ -966,6 +1024,10 @@ mod tests {
             todo!()
         }
 
+        fn src(&self) -> Rectangle<f64, Buffer> {
+            todo!()
+        }
+
         fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
             todo!()
         }
@@ -974,6 +1036,7 @@ mod tests {
             &self,
             _renderer: &mut R,
             _frame: &mut <R as Renderer>::Frame,
+            _location: Point<i32, Physical>,
             _scale: Scale<f64>,
             _damage: &[Rectangle<i32, Physical>],
             _log: &slog::Logger,
@@ -1004,6 +1067,10 @@ mod tests {
             todo!()
         }
 
+        fn src(&self) -> Rectangle<f64, Buffer> {
+            todo!()
+        }
+
         fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
             todo!()
         }
@@ -1012,6 +1079,7 @@ mod tests {
             &self,
             _renderer: &mut R,
             _frame: &mut <R as Renderer>::Frame,
+            _location: Point<i32, Physical>,
             _scale: Scale<f64>,
             _damage: &[Rectangle<i32, Physical>],
             _log: &slog::Logger,
@@ -1041,6 +1109,10 @@ mod tests {
             todo!()
         }
 
+        fn src(&self) -> Rectangle<f64, Buffer> {
+            todo!()
+        }
+
         fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
             todo!()
         }
@@ -1049,6 +1121,7 @@ mod tests {
             &self,
             _renderer: &mut R,
             _frame: &mut <R as Renderer>::Frame,
+            _location: Point<i32, Physical>,
             _scale: Scale<f64>,
             _damage: &[Rectangle<i32, Physical>],
             _log: &slog::Logger,

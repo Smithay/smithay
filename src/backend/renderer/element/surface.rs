@@ -4,7 +4,7 @@ use wayland_server::protocol::wl_surface;
 
 use crate::{
     backend::renderer::{utils::RendererSurfaceStateUserData, Frame, ImportAll, Renderer, Texture},
-    utils::{Physical, Point, Rectangle, Scale, Size},
+    utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::compositor::{self, TraversalAction},
 };
 
@@ -118,6 +118,36 @@ where
         Rectangle::from_loc_and_size(self.location.to_i32_round(), self.size(scale))
     }
 
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        compositor::with_states(&self.surface, |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            if let Some(data) = data {
+                let data = data.borrow();
+
+                if let Some(view) = data.view() {
+                    Some(view.src.to_buffer(
+                        data.buffer_scale as f64,
+                        data.buffer_transform,
+                        &data.buffer_size().unwrap().to_f64(),
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default()
+    }
+
+    fn transform(&self) -> Transform {
+        compositor::with_states(&self.surface, |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            data.map(|d| d.borrow().buffer_transform)
+        })
+        .unwrap_or_default()
+    }
+
     fn damage_since(
         &self,
         scale: Scale<f64>,
@@ -200,6 +230,7 @@ where
         &self,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
+        location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
@@ -220,7 +251,7 @@ where
                             &data.buffer_size().unwrap().to_f64(),
                         );
 
-                        let dst = Rectangle::from_loc_and_size(self.location.to_i32_round(), dst_size);
+                        let dst = Rectangle::from_loc_and_size(location, dst_size);
 
                         frame.render_texture_from_to(
                             texture,
