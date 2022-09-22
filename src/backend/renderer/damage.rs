@@ -317,7 +317,14 @@ impl DamageTrackedRenderer {
                     continue;
                 }
 
-                element.draw(renderer, frame, output_scale, &*element_damage, log)?;
+                element.draw(
+                    renderer,
+                    frame,
+                    element.location(output_scale),
+                    output_scale,
+                    &*element_damage,
+                    log,
+                )?;
                 elements_drawn += 1;
             }
 
