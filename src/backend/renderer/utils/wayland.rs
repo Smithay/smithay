@@ -603,7 +603,14 @@ where
             continue;
         }
 
-        element.draw(renderer, frame, scale, &*element_damage, log)?;
+        element.draw(
+            renderer,
+            frame,
+            element.location(scale),
+            scale,
+            &*element_damage,
+            log,
+        )?;
     }
 
     Ok(Some(render_damage))

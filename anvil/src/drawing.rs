@@ -137,6 +137,17 @@ where
         (0, 0).into()
     }
 
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        let digits = if self.value < 10 {
+            1
+        } else if self.value < 100 {
+            2
+        } else {
+            3
+        };
+        Rectangle::from_loc_and_size((0, 0), (24 * digits, 35)).to_f64()
+    }
+
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
         let digits = if self.value < 10 {
             1
@@ -156,6 +167,7 @@ where
         &self,
         _renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
+        location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         _log: &slog::Logger,
@@ -163,7 +175,7 @@ where
         let value_str = std::cmp::min(self.value, 999).to_string();
         let mut offset: Point<f64, Physical> = Point::from((0.0, 0.0));
         for digit in value_str.chars().map(|d| d.to_digit(10).unwrap()) {
-            let digit_location = offset;
+            let digit_location = location.to_f64() + offset;
             let digit_size = Size::<i32, Logical>::from((22, 35)).to_f64().to_physical(scale);
             let dst = Rectangle::from_loc_and_size(
                 digit_location.to_i32_round(),
