@@ -466,7 +466,7 @@ where
     fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.and_then(|d| d.borrow().wl_buffer().cloned())
+            data.and_then(|d| d.borrow().buffer().cloned())
                 .map(|b| UnderlyingStorage::Wayland(b))
         })
     }

@@ -21,13 +21,15 @@
 use std::{collections::HashMap, sync::Arc};
 
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{backend::ObjectId, protocol::wl_buffer, Resource};
+use wayland_server::{backend::ObjectId, Resource};
 
 use crate::{
     output::{Output, WeakOutput},
     utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform},
 };
 
+#[cfg(feature = "wayland_frontend")]
+use super::utils::Buffer;
 use super::{utils::CommitCounter, Renderer};
 
 pub mod memory;
@@ -95,7 +97,7 @@ impl<R: Resource> From<&R> for Id {
 pub enum UnderlyingStorage<'a, R: Renderer> {
     /// A wayland buffer
     #[cfg(feature = "wayland_frontend")]
-    Wayland(wl_buffer::WlBuffer),
+    Wayland(Buffer),
     /// A texture
     External(&'a R::TextureId),
 }
