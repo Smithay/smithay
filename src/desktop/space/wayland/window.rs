@@ -4,12 +4,143 @@ use crate::{
             surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
             AsRenderElements,
         },
+        utils::RendererSurfaceStateUserData,
         ImportAll, Renderer,
     },
     desktop::{space::SpaceElement, PopupManager, Window, WindowSurfaceType},
-    output::Output,
-    utils::{Logical, Physical, Point, Rectangle, Scale},
+    output::{Inner as OutputInner, Output, OutputData},
+    utils::{user_data::UserDataMap, Logical, Physical, Point, Rectangle, Scale},
+    wayland::compositor::{with_surface_tree_downward, TraversalAction},
 };
+use wayland_server::{protocol::wl_surface::WlSurface, Resource, Weak as WlWeak};
+
+use std::{
+    cell::{RefCell, RefMut},
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex, Weak},
+};
+
+type OutputSurfacesUserdata = RefCell<HashSet<WlWeak<WlSurface>>>;
+fn output_surfaces(o: &Output) -> RefMut<'_, HashSet<WlWeak<WlSurface>>> {
+    let userdata = o.user_data();
+    userdata.insert_if_missing(OutputSurfacesUserdata::default);
+    let mut surfaces = userdata.get::<OutputSurfacesUserdata>().unwrap().borrow_mut();
+    surfaces.retain(|s| s.upgrade().is_ok());
+    surfaces
+}
+
+fn output_update(
+    output: &Output,
+    output_overlap: Rectangle<i32, Logical>,
+    surface: &WlSurface,
+    logger: &slog::Logger,
+) {
+    let mut surface_list = output_surfaces(output);
+
+    with_surface_tree_downward(
+        surface,
+        (Point::from((0, 0)), false),
+        |_, states, (location, parent_unmapped)| {
+            let mut location = *location;
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+
+            // If the parent is unmapped we still have to traverse
+            // our children to send a leave events
+            if *parent_unmapped {
+                TraversalAction::DoChildren((location, true))
+            } else if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
+                location += surface_view.offset;
+                TraversalAction::DoChildren((location, false))
+            } else {
+                // If we are unmapped we still have to traverse
+                // our children to send leave events
+                TraversalAction::DoChildren((location, true))
+            }
+        },
+        |wl_surface, states, (location, parent_unmapped)| {
+            let mut location = *location;
+
+            if *parent_unmapped {
+                // The parent is unmapped, just send a leave event
+                // if we were previously mapped and exit early
+                output_leave(output, &mut *surface_list, wl_surface, logger);
+                return;
+            }
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+
+            if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
+                location += surface_view.offset;
+                let surface_rectangle = Rectangle::from_loc_and_size(location, surface_view.dst);
+                if output_overlap.overlaps(surface_rectangle) {
+                    // We found a matching output, check if we already sent enter
+                    output_enter(output, &mut *surface_list, wl_surface, logger);
+                } else {
+                    // Surface does not match output, if we sent enter earlier
+                    // we should now send leave
+                    output_leave(output, &mut *surface_list, wl_surface, logger);
+                }
+            } else {
+                // Maybe the the surface got unmapped, send leave on output
+                output_leave(output, &mut *surface_list, wl_surface, logger);
+            }
+        },
+        |_, _, _| true,
+    );
+}
+
+fn output_enter(
+    output: &Output,
+    surface_list: &mut HashSet<WlWeak<WlSurface>>,
+    surface: &WlSurface,
+    logger: &slog::Logger,
+) {
+    let weak = surface.downgrade();
+    if !surface_list.contains(&weak) {
+        slog::debug!(
+            logger,
+            "surface ({:?}) entering output {:?}",
+            surface,
+            output.name()
+        );
+        output.enter(surface);
+        surface_list.insert(weak);
+    }
+}
+
+fn output_leave(
+    output: &Output,
+    surface_list: &mut HashSet<WlWeak<WlSurface>>,
+    surface: &WlSurface,
+    logger: &slog::Logger,
+) {
+    let weak = surface.downgrade();
+    if surface_list.contains(&weak) {
+        slog::debug!(
+            logger,
+            "surface ({:?}) leaving output {:?}",
+            surface,
+            output.name()
+        );
+        output.leave(surface);
+        surface_list.remove(&weak);
+    }
+}
+
+// Ptr otherwise it is not hash-able
+type WeakOutput = *const (Mutex<OutputInner>, UserDataMap);
+
+#[derive(Debug, Default)]
+struct WindowOutputState {
+    output_overlap: HashMap<WeakOutput, Rectangle<i32, Logical>>,
+}
+impl Drop for WindowOutputState {
+    fn drop(&mut self) {
+        for (weak, _) in self.output_overlap.drain() {
+            let _ = unsafe { Weak::from_raw(weak) };
+        }
+    }
+}
+type WindowOutputUserData = RefCell<WindowOutputState>;
 
 impl SpaceElement for Window {
     fn geometry(&self) -> Rectangle<i32, Logical> {
@@ -31,16 +162,102 @@ impl SpaceElement for Window {
     fn set_activate(&self, activated: bool) {
         self.set_activated(activated);
     }
-    fn output_enter(&self, output: &Output) {
-        self.0.outputs.lock().unwrap().push(output.clone());
-        self.update_outputs(None)
+    fn output_enter(&self, output: &Output, overlap: Rectangle<i32, Logical>) {
+        self.user_data().insert_if_missing(WindowOutputUserData::default);
+        {
+            let mut state = self
+                .user_data()
+                .get::<WindowOutputUserData>()
+                .unwrap()
+                .borrow_mut();
+            state
+                .output_overlap
+                .insert(Arc::downgrade(&output.data.inner).into_raw(), overlap);
+            state.output_overlap.retain(|weak, _| {
+                let weak = unsafe { Weak::from_raw(*weak) };
+                let is_valid = weak.upgrade().is_some();
+                std::mem::forget(weak);
+                is_valid
+            });
+        }
+        self.refresh()
     }
     fn output_leave(&self, output: &Output) {
-        self.0.outputs.lock().unwrap().retain(|o| o != output);
-        self.update_outputs(Some(output))
+        if let Some(state) = self.user_data().get::<WindowOutputUserData>() {
+            state.borrow_mut().output_overlap.retain(|weak, _| {
+                let weak = unsafe { Weak::from_raw(*weak) };
+                let result = if let Some(strong) = weak.upgrade() {
+                    !Arc::ptr_eq(&strong, &output.data.inner)
+                } else {
+                    false
+                };
+                std::mem::forget(weak);
+                result
+            });
+        }
+
+        let mut surface_list = output_surfaces(output);
+        with_surface_tree_downward(
+            self.toplevel().wl_surface(),
+            (),
+            |_, _, _| TraversalAction::DoChildren(()),
+            |wl_surface, _, _| {
+                output_leave(
+                    output,
+                    &mut *surface_list,
+                    wl_surface,
+                    &crate::slog_or_fallback(None),
+                );
+            },
+            |_, _, _| true,
+        );
+        for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
+            with_surface_tree_downward(
+                popup.wl_surface(),
+                (),
+                |_, _, _| TraversalAction::DoChildren(()),
+                |wl_surface, _, _| {
+                    output_leave(
+                        output,
+                        &mut *surface_list,
+                        wl_surface,
+                        &crate::slog_or_fallback(None),
+                    );
+                },
+                |_, _, _| true,
+            );
+        }
     }
+
     fn refresh(&self) {
-        self.update_outputs(None)
+        self.user_data().insert_if_missing(WindowOutputUserData::default);
+        let state = self.user_data().get::<WindowOutputUserData>().unwrap().borrow();
+
+        for (output, overlap) in state.output_overlap.iter() {
+            let weak = unsafe { Weak::from_raw(*output) };
+            if let Some(output) = weak.upgrade() {
+                let output = Output {
+                    data: OutputData { inner: output },
+                };
+                output_update(
+                    &output,
+                    *overlap,
+                    self.toplevel().wl_surface(),
+                    &crate::slog_or_fallback(None),
+                );
+                for (popup, location) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
+                    let mut overlap = *overlap;
+                    overlap.loc -= location;
+                    output_update(
+                        &output,
+                        overlap,
+                        popup.wl_surface(),
+                        &crate::slog_or_fallback(None),
+                    );
+                }
+            }
+            std::mem::forget(weak);
+        }
     }
 }
 
