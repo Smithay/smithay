@@ -554,6 +554,18 @@ where
         self.buffer.current_commit()
     }
 
+    fn transform(&self) -> Transform {
+        self.buffer.inner.lock().unwrap().transform
+    }
+
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        let logical_size = self.logical_size();
+        let guard = self.buffer.inner.lock().unwrap();
+        self.src
+            .map(|src| src.to_buffer(guard.scale as f64, guard.transform, &logical_size.to_f64()))
+            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), guard.size).to_f64())
+    }
+
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
         Rectangle::from_loc_and_size(self.location.to_i32_round(), self.physical_size(scale))
     }
@@ -562,6 +574,7 @@ where
         &self,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
+        location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
@@ -583,7 +596,7 @@ where
             })
             .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), texture.size()).to_f64());
 
-        let dst = Rectangle::from_loc_and_size(self.location.to_i32_round(), physical_size);
+        let dst = Rectangle::from_loc_and_size(location, physical_size);
         frame.render_texture_from_to(texture, src, dst, damage, transform, 1.0)
     }
 
