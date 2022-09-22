@@ -17,7 +17,7 @@ use crate::{
     backend::renderer::{element::surface::WaylandSurfaceRenderElement, ImportAll},
     desktop::{layer_map_for_output, LayerSurface, WindowSurfaceType},
 };
-use std::{collections::HashSet, fmt};
+use std::{collections::HashMap, fmt};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_surface::WlSurface;
 
@@ -39,7 +39,7 @@ crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
 struct InnerElement<E> {
     element: E,
     location: Point<i32, Logical>,
-    outputs: HashSet<Output>,
+    outputs: HashMap<Output, Rectangle<i32, Logical>>,
 }
 
 /// Represents two dimensional plane to map windows and outputs upon.
@@ -101,7 +101,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         let outputs = if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
             self.elements.swap_remove(pos).outputs
         } else {
-            HashSet::new()
+            HashMap::new()
         };
 
         let inner = InnerElement {
@@ -145,7 +145,10 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     // TODO: Requirements for E? Also provide retain?
     pub fn unmap_elem(&mut self, element: &E) {
         if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
-            self.elements.swap_remove(pos);
+            let elem = self.elements.swap_remove(pos);
+            for output in elem.outputs.keys() {
+                elem.element.output_leave(output);
+            }
         }
     }
 
@@ -299,6 +302,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .find(|e| &e.element == elem)
             .into_iter()
             .flat_map(|e| &e.outputs)
+            .map(|(o, _)| o)
             .cloned()
             .collect()
     }
@@ -327,16 +331,24 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             let bbox = e.bbox();
 
             for (output, output_geometry) in &outputs {
-                // Check if the bounding box of the toplevel intersects with
-                // the output
-                if !output_geometry.overlaps(bbox) {
-                    if e.outputs.remove(output) {
-                        e.element.output_leave(output);
+                // Check if the bounding box of the toplevel intersects with the output
+                if let Some(overlap) = output_geometry.intersection(bbox) {
+                    let old = e.outputs.insert(output.clone(), overlap);
+                    if old.is_none() || matches!(old, Some(old_overlap) if old_overlap != overlap) {
+                        e.element.output_enter(output, overlap);
                     }
-                } else if e.outputs.insert(output.clone()) {
-                    e.element.output_enter(output);
+                } else if e.outputs.remove(output).is_some() {
+                    e.element.output_leave(output);
                 }
             }
+            e.outputs.retain(|output, _| {
+                if !outputs.iter().any(|(o, _)| o == output) {
+                    e.element.output_leave(output);
+                    false
+                } else {
+                    true
+                }
+            });
         }
 
         self.elements.iter().for_each(|e| e.element.refresh());
