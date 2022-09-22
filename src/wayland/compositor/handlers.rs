@@ -168,7 +168,7 @@ where
         match request {
             wl_surface::Request::Attach { buffer, x, y } => {
                 let offset: Point<i32, Logical> = (x, y).into();
-                let offset = (x != 0 || y != 0).then(|| offset);
+                let offset = (x != 0 || y != 0).then_some(offset);
 
                 // If version predates 5 just use the offset
                 // Otherwise error out and use None
