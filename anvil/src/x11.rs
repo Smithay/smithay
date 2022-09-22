@@ -296,7 +296,7 @@ pub fn run_x11(log: Logger) {
             ));
             input_method.with_surface(|surface| {
                 elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
-                    &smithay::desktop::space::SurfaceTree::from_surface(surface, position),
+                    &smithay::desktop::space::SurfaceTree::from_surface(surface),
                     position.to_physical_precise_round(scale),
                     scale,
                 ));
@@ -306,10 +306,7 @@ pub fn run_x11(log: Logger) {
             if let Some(surface) = state.dnd_icon.as_ref() {
                 if surface.alive() {
                     elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
-                        &smithay::desktop::space::SurfaceTree::from_surface(
-                            surface,
-                            cursor_pos.to_i32_round(),
-                        ),
+                        &smithay::desktop::space::SurfaceTree::from_surface(surface),
                         cursor_pos_scaled,
                         scale,
                     ));

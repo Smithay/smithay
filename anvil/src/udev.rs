@@ -861,7 +861,7 @@ fn render_surface<'a>(
     ));
     input_method.with_surface(|surface| {
         elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
-            &SurfaceTree::from_surface(surface, position),
+            &SurfaceTree::from_surface(surface),
             position.to_physical_precise_round(scale),
             scale,
         ));
@@ -908,7 +908,7 @@ fn render_surface<'a>(
             if let Some(wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.alive() {
                     elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
-                        &SurfaceTree::from_surface(wl_surface, cursor_pos.to_i32_round()),
+                        &SurfaceTree::from_surface(wl_surface),
                         cursor_pos_scaled,
                         scale,
                     ));
