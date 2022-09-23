@@ -151,6 +151,10 @@ impl backend::KeyboardKeyEvent<LibinputInputBackend> for event::keyboard::Keyboa
     fn count(&self) -> u32 {
         self.seat_key_count()
     }
+
+    fn update_state(&self) -> bool {
+        true
+    }
 }
 
 impl backend::Event<LibinputInputBackend> for event::pointer::PointerAxisEvent {

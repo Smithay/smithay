@@ -100,6 +100,8 @@ pub trait KeyboardKeyEvent<B: InputBackend>: Event<B> {
 
     /// Total number of keys pressed on all devices on the associated [`Seat`](crate::input::Seat)
     fn count(&self) -> u32;
+
+    fn update_state(&self) -> bool;
 }
 
 impl<B: InputBackend> KeyboardKeyEvent<B> for UnusedEvent {
@@ -112,6 +114,10 @@ impl<B: InputBackend> KeyboardKeyEvent<B> for UnusedEvent {
     }
 
     fn count(&self) -> u32 {
+        match *self {}
+    }
+
+    fn update_state(&self) -> bool {
         match *self {}
     }
 }

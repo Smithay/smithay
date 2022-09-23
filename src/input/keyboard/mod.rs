@@ -123,7 +123,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
     }
 
     // return true if modifier state has changed
-    fn key_input(&mut self, keycode: u32, state: KeyState) -> bool {
+    fn key_input(&mut self, keycode: u32, state: KeyState, update_state: bool) -> bool {
         // track pressed keys as xkbcommon does not seem to expose it :(
         let direction = match state {
             KeyState::Pressed => {
@@ -136,11 +136,26 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             }
         };
 
-        // update state
-        // Offset the keycode by 8, as the evdev XKB rules reflect X's
-        // broken keycode system, which starts at 8.
-        let state_components = self.state.update_key(keycode + 8, direction);
+        if update_state {
+            // Offset the keycode by 8, as the evdev XKB rules reflect X's
+            // broken keycode system, which starts at 8.
+            let state_components = self.state.update_key(keycode + 8, direction);
 
+            if state_components != 0 {
+                self.mods_state.update_with(&self.state);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    fn modifiers(&mut self, mods_depressed: u32, mods_latched: u32, mods_locked: u32, group: u32) -> bool {
+        let state_components = self
+            .state
+            .update_mask(mods_depressed, mods_latched, mods_locked, group, 0, 0);
         if state_components != 0 {
             self.mods_state.update_with(&self.state);
             true
@@ -494,6 +509,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         state: KeyState,
         serial: Serial,
         time: u32,
+        update_state: bool,
         filter: F,
     ) -> Option<T>
     where
@@ -501,7 +517,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     {
         trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
         let mut guard = self.arc.internal.lock().unwrap();
-        let mods_changed = guard.key_input(keycode, state);
+        let mods_changed = guard.key_input(keycode, state, update_state);
         let key_handle = KeysymHandle {
             // Offset the keycode by 8, as the evdev XKB rules reflect X's
             // broken keycode system, which starts at 8.
@@ -537,6 +553,18 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         }
 
         None
+    }
+
+    pub fn modifiers(
+        &self,
+        serial: Serial,
+        mods_depressed: u32,
+        mods_latched: u32,
+        mods_locked: u32,
+        group: u32,
+    ) {
+        let mut guard = self.arc.internal.lock().unwrap();
+        let mods_changed = guard.modifiers(mods_depressed, mods_latched, mods_locked, group);
     }
 
     /// Set the current focus of this keyboard
