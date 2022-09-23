@@ -234,7 +234,6 @@ pub fn run_x11(log: Logger) {
     while state.running.load(Ordering::SeqCst) {
         if state.backend_data.render {
             let backend_data = &mut state.backend_data;
-            let cursor_visible: bool;
             // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
             let cursor_status = &state.cursor_status;
             #[cfg(feature = "debug")]
@@ -260,12 +259,7 @@ pub fn run_x11(log: Logger) {
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
             }
-
-            if let CursorImageStatus::Surface(_) = *cursor_guard {
-                cursor_visible = false;
-            } else {
-                cursor_visible = true;
-            }
+            let cursor_visible = !matches!(*cursor_guard, CursorImageStatus::Surface(_));
 
             let scale = Scale::from(output.current_scale().fractional_scale());
             let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
