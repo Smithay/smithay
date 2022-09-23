@@ -194,7 +194,6 @@ pub fn run_winit(log: Logger) {
         // drawing logic
         {
             let backend = &mut state.backend_data.backend;
-            let cursor_visible: bool;
 
             let mut cursor_guard = state.cursor_status.lock().unwrap();
 
@@ -207,12 +206,7 @@ pub fn run_winit(log: Logger) {
             if reset {
                 *cursor_guard = CursorImageStatus::Default;
             }
-
-            if let CursorImageStatus::Surface(_) = *cursor_guard {
-                cursor_visible = false;
-            } else {
-                cursor_visible = true;
-            }
+            let cursor_visible = !matches!(*cursor_guard, CursorImageStatus::Surface(_));
 
             pointer_element.set_status(cursor_guard.clone());
 
