@@ -419,8 +419,20 @@ macro_rules! space_elements_internal {
 ///
 /// # Example
 ///
-/// ```rust
-/// use smithay::desktop::{Window, space::space_elements};
+/// ```
+/// use smithay::desktop::space::space_elements;
+/// # use smithay::{desktop::space::SpaceElement, output::Output, utils::{Point, Rectangle, Logical, IsAlive}};
+/// # struct Window;
+/// # impl SpaceElement for Window {
+/// #     fn bbox(&self) -> Rectangle<i32, Logical> { unimplemented!() }
+/// #     fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool { unimplemented!() }
+/// #     fn set_activate(&self, activated: bool) {}
+/// #     fn output_enter(&self, output: &Output, overlap: Rectangle<i32, Logical>) {}
+/// #     fn output_leave(&self, output: &Output) {}
+/// # }
+/// # impl IsAlive for Window {
+/// #     fn alive(&self) -> bool { unimplemented!() }
+/// # }
 ///
 /// space_elements! {
 ///     /// Name of the type
@@ -452,32 +464,51 @@ macro_rules! space_elements {
 pub use space_elements;
 
 #[cfg(test)]
-#[cfg(feature = "wayland_frontend")]
 #[allow(dead_code)]
 mod tests {
-    use crate::desktop::{LayerSurface, Window};
+    use crate::{
+        desktop::space::SpaceElement,
+        output::Output,
+        utils::{IsAlive, Logical, Point, Rectangle},
+    };
+
+    pub struct TestElement;
+    impl SpaceElement for TestElement {
+        fn bbox(&self) -> Rectangle<i32, Logical> {
+            unimplemented!()
+        }
+        fn is_in_input_region(&self, _point: &Point<f64, Logical>) -> bool {
+            unimplemented!()
+        }
+        fn set_activate(&self, _activated: bool) {}
+        fn output_enter(&self, _output: &Output, _overlap: Rectangle<i32, Logical>) {}
+        fn output_leave(&self, _output: &Output) {}
+    }
+    impl IsAlive for TestElement {
+        fn alive(&self) -> bool {
+            unimplemented!()
+        }
+    }
 
     space_elements! {
         /// Some test space elements
         pub TestSpaceElements;
         /// A complete surface tree
-        Window=Window,
+        Window=TestElement,
     }
 
     space_elements! {
         /// Some test space elements
         pub TestSpaceElements2<'a>;
         /// A complete surface tree
-        Window=&'a Window,
-        /// A layer surface
-        LayerSurface=&'a LayerSurface,
+        Window=&'a TestElement,
     }
 
     space_elements! {
         /// Some test space elements
         pub TestSpaceElements5<'a, C>;
         /// A complete surface tree
-        Window=Window,
+        Window=TestElement,
         Custom=&'a C,
     }
 
@@ -485,7 +516,7 @@ mod tests {
         /// Some test space elements
         pub TestSpaceElements7<C>;
         /// A complete surface tree
-        LayerSurface=LayerSurface,
+        Window=TestElement,
         Custom=C,
     }
 }
