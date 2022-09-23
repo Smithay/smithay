@@ -522,7 +522,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         // forward to client if no keybinding is triggered
         let seat = self.get_seat(data);
-        let modifiers = mods_changed.then_some(guard.mods_state);
+        let modifiers = mods_changed.then(|| guard.mods_state);
         guard.with_grab(
             &seat,
             move |mut handle, grab| {
