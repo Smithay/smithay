@@ -39,7 +39,7 @@ impl From<RenderZindex> for Option<u8> {
     }
 }
 
-/// Trait for a space element
+/// Element mappable onto a [`Space`](super::Space)
 pub trait SpaceElement: IsAlive {
     /// Returns the geometry of this element.
     ///
@@ -414,7 +414,21 @@ macro_rules! space_elements_internal {
     };
 }
 
-/// TODO: Docs
+/// Aggregate multiple types implementing [`SpaceElement`] into a single enum type to be used
+/// with a [`Space`].
+///
+/// # Example
+///
+/// ```rust
+/// use smithay::desktop::{Window, space::space_elements};
+///
+/// space_elements! {
+///     /// Name of the type
+///     pub MySpaceElements<'a, C>; // can be generic if necessary
+///     Window=Window, // variant name = type
+///     Custom=&'a C, // also supports references or usage of generic types
+/// }
+/// ```
 #[macro_export]
 macro_rules! space_elements {
     ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $custom:ident>; $($tail:tt)*) => {

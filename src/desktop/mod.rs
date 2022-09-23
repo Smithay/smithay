@@ -23,7 +23,7 @@
 //! ### [`Space`]
 //!
 //! A space represents a two-dimensional plane of undefined dimensions.
-//! [`Window`]s and [`Output`](crate::wayland::output::Output)s can be mapped onto it.
+//! [`Window`]s (and other types implementing [`SpaceElement`](space::SpaceElement)) and [`Output`](crate::wayland::output::Output)s can be mapped onto it.
 //!
 //! Windows get a position and stacking order through mapping. Outputs become views of a part of the [`Space`]
 //! and can be rendered via [`Space::render_output`]. Rendering results of spaces are automatically damage-tracked.
