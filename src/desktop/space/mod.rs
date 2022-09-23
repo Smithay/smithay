@@ -43,6 +43,11 @@ struct InnerElement<E> {
 }
 
 /// Represents two dimensional plane to map windows and outputs upon.
+///
+/// Space is generic over the types of elements mapped onto it.
+/// The simplest usecase is a `Space<Window>`, but other types can be used
+/// by implementing [`SpaceElement`]. Multiple types might be quickly aggregated into
+/// an enum by using the [`space_elements!`]-macro.
 #[derive(Debug)]
 pub struct Space<E: SpaceElement> {
     pub(super) id: usize,
@@ -83,7 +88,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         self.id
     }
 
-    /// Map a [`Window`] and move it to top of the stack
+    /// Map a [`SpaceElement`] and move it to top of the stack
     ///
     /// If a z_index is provided it will override the default
     /// z_index of [`RenderZindex::Shell`] for the mapped window.
@@ -112,7 +117,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         self.insert_elem(inner, activate);
     }
 
-    /// Moves an already mapped [`Window`] to top of the stack
+    /// Moves an already mapped [`SpaceElement`] to top of the stack
     ///
     /// This function does nothing for unmapped windows.
     ///
@@ -139,10 +144,9 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .sort_by(|e1, e2| e1.element.z_index().cmp(&e2.element.z_index()));
     }
 
-    /// Unmap a [`Window`] from this space.
+    /// Unmap a [`SpaceElement`] from this space.
     ///
     /// This function does nothing for already unmapped windows
-    // TODO: Requirements for E? Also provide retain?
     pub fn unmap_elem(&mut self, element: &E) {
         if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
             let elem = self.elements.swap_remove(pos);
@@ -157,13 +161,13 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         self.elements.iter().map(|e| &e.element)
     }
 
-    /// Finds the topmost surface under this point if any and returns it
-    /// together with the location of this surface relative to this space
-    /// and the window the surface belongs to.
+    /// Finds the topmost element under this point if any and returns it
+    /// together with the location of this element relative to this space.
     ///
-    /// This is equivalent to iterating the windows in the space from
-    /// top to bottom and calling [`Window::surface_under`] for each
-    /// window and returning the first matching surface.
+    /// This is equivalent to iterating the elements in the space from
+    /// top to bottom and calling for example [`Window::surface_under`] for each
+    /// window and returning the first matching one.
+    ///
     /// As [`Window::surface_under`] internally uses the surface input regions
     /// the same applies to this method and it will only return a surface
     /// where the point is within the surface input regions.
@@ -193,7 +197,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         })
     }
 
-    /// Returns the layer matching a given surface, if any
+    /// Returns the layer surface matching a given surface, if any
     ///
     /// `surface_type` can be used to limit the types of surfaces queried for equality.
     #[cfg(feature = "wayland_frontend")]
@@ -208,7 +212,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         })
     }
 
-    /// Returns the location of a [`Window`] inside the Space.
+    /// Returns the location of a [`SpaceElement`] inside the Space.
     pub fn element_location(&self, elem: &E) -> Option<Point<i32, Logical>> {
         self.elements
             .iter()
@@ -216,7 +220,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .map(|e| e.location)
     }
 
-    /// Returns the bounding box of a [`Window`] including its relative position inside the Space.
+    /// Returns the bounding box of a [`SpaceElement`] including its relative position inside the Space.
     pub fn element_bbox(&self, elem: &E) -> Option<Rectangle<i32, Logical>> {
         self.elements
             .iter()
@@ -224,7 +228,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .map(|e| e.bbox())
     }
 
-    /// Returns the geometry of a [`Window`] including its relative position inside the Space.
+    /// Returns the geometry of a [`SpaceElement`] including its relative position inside the Space.
     ///
     /// This area is usually defined as the contents of the window, excluding decorations.
     pub fn element_geometry(&self, elem: &E) -> Option<Rectangle<i32, Logical>> {
@@ -291,7 +295,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         })
     }
 
-    /// Returns all [`Output`]s a [`Window`] overlaps with.
+    /// Returns all [`Output`]s a [`SpaceElement`] overlaps with.
     pub fn outputs_for_element(&self, elem: &E) -> Vec<Output> {
         if !self.elements.iter().any(|e| &e.element == elem) {
             return Vec::new();
