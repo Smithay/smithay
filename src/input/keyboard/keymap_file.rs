@@ -39,7 +39,7 @@ impl KeymapFile {
     {
         use std::path::PathBuf;
 
-        if let Some(file) = supports_sealed.then_some(self.sealed.as_ref()).flatten() {
+        if let Some(file) = supports_sealed.then(|| self.sealed.as_ref()).flatten() {
             cb(file.as_raw_fd(), file.size);
             Ok(())
         } else {
