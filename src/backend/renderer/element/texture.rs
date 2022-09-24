@@ -724,10 +724,21 @@ where
         Rectangle::from_loc_and_size(self.location.to_i32_round(), self.physical_size(scale))
     }
 
+    fn transform(&self) -> Transform {
+        self.transform
+    }
+
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        let size = self.logical_size();
+        self.src()
+            .to_buffer(self.scale as f64, self.transform, &size.to_f64())
+    }
+
     fn draw(
         &self,
         renderer: &mut R,
         frame: &mut <R as Renderer>::Frame,
+        location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
@@ -750,7 +761,7 @@ where
             })
             .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), texture_size).to_f64());
 
-        let dst = Rectangle::from_loc_and_size(self.location.to_i32_round(), self.physical_size(scale));
+        let dst = Rectangle::from_loc_and_size(location, self.physical_size(scale));
         frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, 1.0)
     }
 
