@@ -1,4 +1,163 @@
-//! TODO: Docs
+//! Helper for effective damage tracked rendering
+//!
+//! # Why use this implementation
+//!
+//! The [`DamageTrackedRenderer`] in combination with the [`RenderElement`] trait
+//! can help you to reduce resource consumption by tracking what elements have
+//! been damaged and only redraw the damaged parts on an output.
+//!
+//! It does so by keeping track of the last used [`CommitCounter`] for all provided
+//! [`RenderElement`]s and queries the element for new damage on each call to [`render_output`](DamageTrackedRenderer::render_output).
+//!
+//! You can initialize it with a static output by using [`DamageTrackedRenderer::new`] or
+//! allow it to track a specific [`Output`] with [`DamageTrackedRenderer::from_output`].
+//!
+//! See the [`renderer::element`](crate::backend::renderer::element) module for more information
+//! about how to use [`RenderElement`].
+//!
+//! # How to use it
+//!
+//! ```no_run
+//! # use smithay::{
+//! #     backend::renderer::{Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #     utils::{Buffer, Physical, Rectangle, Size},
+//! # };
+//! # use slog::Drain;
+//! #
+//! # #[derive(Clone)]
+//! # struct FakeTexture;
+//! #
+//! # impl Texture for FakeTexture {
+//! #     fn width(&self) -> u32 {
+//! #         unimplemented!()
+//! #     }
+//! #     fn height(&self) -> u32 {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! #
+//! # struct FakeFrame;
+//! #
+//! # impl Frame for FakeFrame {
+//! #     type Error = std::convert::Infallible;
+//! #     type TextureId = FakeTexture;
+//! #
+//! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn render_texture_from_to(
+//! #         &mut self,
+//! #         _: &Self::TextureId,
+//! #         _: Rectangle<f64, Buffer>,
+//! #         _: Rectangle<i32, Physical>,
+//! #         _: &[Rectangle<i32, Physical>],
+//! #         _: Transform,
+//! #         _: f32,
+//! #     ) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn transformation(&self) -> Transform {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! #
+//! # struct FakeRenderer;
+//! #
+//! # impl Renderer for FakeRenderer {
+//! #     type Error = std::convert::Infallible;
+//! #     type TextureId = FakeTexture;
+//! #     type Frame = FakeFrame;
+//! #
+//! #     fn id(&self) -> usize {
+//! #         unimplemented!()
+//! #     }
+//! #     fn downscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn render<F, R>(&mut self, _: Size<i32, Physical>, _: Transform, _: F) -> Result<R, Self::Error>
+//! #     where
+//! #         F: FnOnce(&mut Self, &mut Self::Frame) -> R,
+//! #     {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! #
+//! # impl ImportMem for FakeRenderer {
+//! #     fn import_memory(
+//! #         &mut self,
+//! #         _: &[u8],
+//! #         _: Size<i32, Buffer>,
+//! #         _: bool,
+//! #     ) -> Result<Self::TextureId, Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn update_memory(
+//! #         &mut self,
+//! #         _: &Self::TextureId,
+//! #         _: &[u8],
+//! #         _: Rectangle<i32, Buffer>,
+//! #     ) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! use smithay::{
+//!     backend::renderer::{
+//!         damage::DamageTrackedRenderer,
+//!         element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement}
+//!     },
+//!     utils::{Point, Transform},
+//! };
+//! use std::time::{Duration, Instant};
+//!
+//! const WIDTH: i32 = 10;
+//! const HEIGHT: i32 = 10;
+//! # let mut renderer = FakeRenderer;
+//! # let buffer_age = 0;
+//! # let log = slog::Logger::root(slog::Discard.fuse(), slog::o!());
+//!
+//! // Initialize a new damage tracked renderer
+//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//!
+//! // Initialize a buffer to render
+//! let mut memory_buffer = MemoryRenderBuffer::new((WIDTH, HEIGHT), 1, Transform::Normal, None);
+//!
+//! let mut last_update = Instant::now();
+//!
+//! loop {
+//!     let now = Instant::now();
+//!     if now.duration_since(last_update) >= Duration::from_secs(3) {
+//!         let mut render_context = memory_buffer.render();
+//!
+//!         render_context.draw(|_buffer| {
+//!             // Update the changed parts of the buffer
+//!
+//!             // Return the updated parts
+//!             vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))]
+//!         });
+//!
+//!         last_update = now;
+//!     }
+//!
+//!     // Create a render element from the buffer
+//!     let location = Point::from((100.0, 100.0));
+//!     let render_element =
+//!         MemoryRenderBufferRenderElement::from_buffer(location, &memory_buffer, None, None);
+//!
+//!     // Render the output
+//!     damage_tracked_renderer
+//!         .render_output(
+//!             &mut renderer,
+//!             buffer_age,
+//!             &[render_element],
+//!             [0.8, 0.8, 0.9, 1.0],
+//!             &log,
+//!         )
+//!         .expect("failed to render the output");
+//! }
+//! ```
 
 use std::collections::VecDeque;
 
@@ -71,20 +230,20 @@ impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for DamageTrackedRend
     }
 }
 
-/// Rendering for a single output
+/// Damage tracked renderer for a single output
 #[derive(Debug)]
 pub struct DamageTrackedRenderer {
     mode: DamageTrackedRendererMode,
     last_state: RendererState,
 }
 
-/// Errors thrown by [`Space::render_output`]
+/// Errors thrown by [`DamageTrackedRenderer::render_output`]
 #[derive(thiserror::Error)]
 pub enum DamageTrackedRendererError<R: Renderer> {
-    /// The provided [`Renderer`] did return an error during an operation
+    /// The provided [`Renderer`] returned an error
     #[error(transparent)]
     Rendering(R::Error),
-    /// The given [`Output`] has no set mode
+    /// The given [`Output`] has no mode set
     #[error(transparent)]
     OutputNoMode(#[from] OutputNoMode),
 }
@@ -99,7 +258,7 @@ impl<R: Renderer> std::fmt::Debug for DamageTrackedRendererError<R> {
 }
 
 impl DamageTrackedRenderer {
-    /// Initialize a new [`DamageTrackedRenderer`]
+    /// Initialize a static [`DamageTrackedRenderer`]
     pub fn new(
         size: impl Into<Size<i32, Physical>>,
         scale: impl Into<Scale<f64>>,
@@ -115,7 +274,11 @@ impl DamageTrackedRenderer {
         }
     }
 
-    /// Initialize a new [`DamageTrackedRenderer`]
+    /// Initialize a new [`DamageTrackedRenderer`] from an [`Output`]
+    ///
+    /// The renderer will keep track of changes to the [`Output`]
+    /// and handle size and scaling changes automatically on the
+    /// next call to [`render_output`]
     pub fn from_output(output: &Output) -> Self {
         Self {
             mode: DamageTrackedRendererMode::Auto(output.clone()),

@@ -1,4 +1,197 @@
-//! TODO: Docs
+//! Element to render a wayland surface
+//!
+//! # Why use this implementation
+//!
+//! The [`WaylandSurfaceRenderElement`] provides an easy way to
+//! integrate a [`WlSurface`](wayland_server::protocol::wl_surface::WlSurface) in the smithay rendering pipeline
+//!
+//! # How to use it
+//!
+//! [`WaylandSurfaceRenderElement::from_surface`] allows you to obtain a [`WaylandSurfaceRenderElement`] for a single [`WlSurface`](wayland_server::protocol::wl_surface::WlSurface).
+//! To retrieve [`WaylandSurfaceRenderElement`]s for a whole surface tree you can use [`render_elements_from_surface_tree`].
+//!
+//! ```no_run
+//! # #[cfg(all(
+//! #     feature = "wayland_frontend",
+//! #     feature = "backend_egl",
+//! #     feature = "use_system_lib"
+//! # ))]
+//! # use smithay::backend::{
+//! #     egl::{self, display::EGLBufferReader},
+//! #     renderer::ImportEgl,
+//! # };
+//! # use smithay::{
+//! #     backend::allocator::dmabuf::Dmabuf,
+//! #     backend::renderer::{
+//! #         Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
+//! #         TextureFilter,
+//! #     },
+//! #     utils::{Buffer, Physical},
+//! #     wayland::compositor::SurfaceData,
+//! # };
+//! # use slog::Drain;
+//! #
+//! # #[derive(Clone)]
+//! # struct FakeTexture;
+//! #
+//! # impl Texture for FakeTexture {
+//! #     fn width(&self) -> u32 {
+//! #         unimplemented!()
+//! #     }
+//! #     fn height(&self) -> u32 {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! #
+//! # struct FakeFrame;
+//! #
+//! # impl Frame for FakeFrame {
+//! #     type Error = std::convert::Infallible;
+//! #     type TextureId = FakeTexture;
+//! #
+//! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn render_texture_from_to(
+//! #         &mut self,
+//! #         _: &Self::TextureId,
+//! #         _: Rectangle<f64, Buffer>,
+//! #         _: Rectangle<i32, Physical>,
+//! #         _: &[Rectangle<i32, Physical>],
+//! #         _: Transform,
+//! #         _: f32,
+//! #     ) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn transformation(&self) -> Transform {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! #
+//! # struct FakeRenderer;
+//! #
+//! # impl Renderer for FakeRenderer {
+//! #     type Error = std::convert::Infallible;
+//! #     type TextureId = FakeTexture;
+//! #     type Frame = FakeFrame;
+//! #
+//! #     fn id(&self) -> usize {
+//! #         unimplemented!()
+//! #     }
+//! #     fn downscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn render<F, R>(&mut self, _: Size<i32, Physical>, _: Transform, _: F) -> Result<R, Self::Error>
+//! #     where
+//! #         F: FnOnce(&mut Self, &mut Self::Frame) -> R,
+//! #     {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! #
+//! # impl ImportMem for FakeRenderer {
+//! #     fn import_memory(
+//! #         &mut self,
+//! #         _: &[u8],
+//! #         _: Size<i32, Buffer>,
+//! #         _: bool,
+//! #     ) -> Result<Self::TextureId, Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn update_memory(
+//! #         &mut self,
+//! #         _: &Self::TextureId,
+//! #         _: &[u8],
+//! #         _: Rectangle<i32, Buffer>,
+//! #     ) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! #
+//! # impl ImportMemWl for FakeRenderer {
+//! #     fn import_shm_buffer(
+//! #         &mut self,
+//! #         _buffer: &wayland_server::protocol::wl_buffer::WlBuffer,
+//! #         _surface: Option<&SurfaceData>,
+//! #         _damage: &[Rectangle<i32, Buffer>],
+//! #     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! # #[cfg(all(
+//! #     feature = "wayland_frontend",
+//! #     feature = "backend_egl",
+//! #     feature = "use_system_lib"
+//! # ))]
+//! # impl ImportEgl for FakeRenderer {
+//! #     fn bind_wl_display(
+//! #         &mut self,
+//! #         _display: &wayland_server::DisplayHandle,
+//! #     ) -> Result<(), egl::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #
+//! #     fn unbind_wl_display(&mut self) {
+//! #         unimplemented!()
+//! #     }
+//! #
+//! #     fn egl_reader(&self) -> Option<&EGLBufferReader> {
+//! #         unimplemented!()
+//! #     }
+//! #
+//! #     fn import_egl_buffer(
+//! #         &mut self,
+//! #         _buffer: &wayland_server::protocol::wl_buffer::WlBuffer,
+//! #         _surface: Option<&SurfaceData>,
+//! #         _damage: &[Rectangle<i32, Buffer>],
+//! #     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! #
+//! # impl ImportDma for FakeRenderer {
+//! #     fn import_dmabuf(
+//! #         &mut self,
+//! #         _dmabuf: &Dmabuf,
+//! #         _damage: Option<&[Rectangle<i32, Buffer>]>,
+//! #     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
+//! #         unimplemented!()
+//! #     }
+//! # }
+//! #
+//! # impl ImportDmaWl for FakeRenderer {}
+//! use smithay::{
+//!     backend::renderer::{
+//!         damage::DamageTrackedRenderer,
+//!         element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+//!     },
+//!     utils::{Point, Rectangle, Size, Transform},
+//! };
+//! # use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, Resource};
+//! # let log = slog::Logger::root(slog::Discard.fuse(), slog::o!());
+//! # let display = wayland_server::Display::<()>::new().unwrap();
+//! # let dh = display.handle();
+//! # let surface = WlSurface::from_id(&dh, ObjectId::null()).unwrap();
+//!
+//! // Initialize a static damage tracked renderer
+//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//! # let mut renderer = FakeRenderer;
+//!
+//! loop {
+//!     // Create the render elements from the surface
+//!     let location = Point::from((100, 100));
+//!     let render_elements: Vec<WaylandSurfaceRenderElement> =
+//!         render_elements_from_surface_tree(&surface, location, 1.0);
+//!
+//!     // Render the element(s)
+//!     damage_tracked_renderer
+//!         .render_output(&mut renderer, 0, &*render_elements, [0.8, 0.8, 0.9, 1.0], &log)
+//!         .expect("failed to render output");
+//! }
+//! ```
 
 use wayland_server::protocol::wl_surface;
 
@@ -10,7 +203,7 @@ use crate::{
 
 use super::{CommitCounter, Id, RenderElement, UnderlyingStorage};
 
-/// Retrieve the render surfaces for a surface tree
+/// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
 pub fn render_elements_from_surface_tree<E>(
     surface: &wl_surface::WlSurface,
     location: impl Into<Point<i32, Physical>>,
