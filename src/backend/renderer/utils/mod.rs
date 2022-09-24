@@ -9,7 +9,12 @@ mod wayland;
 #[cfg(feature = "wayland_frontend")]
 pub use self::wayland::*;
 
-/// A commit counter for damage tracking
+/// A simple wrapper for counting commits
+///
+/// The purpose of the counter is to keep track
+/// on the number of times something has changed.
+/// It provides an easy way to obtain the distance
+/// between two instances of a [`CommitCounter`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct CommitCounter(usize);
 
@@ -19,11 +24,15 @@ impl CommitCounter {
         self.0 = self.0.wrapping_add(1)
     }
 
-    /// Get the distance between two [`CommitCounter`]
+    /// Get the distance between two [`CommitCounter`]s
     ///
     /// If the [`CommitCounter`] is incremented on each recorded
     /// damage this returns the count of damage that happened
     /// between the [`CommitCounter`]s
+    ///
+    /// Returns `None` in case the distance could not be calculated.
+    /// If uses as part of damage tracking the tracked element
+    /// should be considered as fully damaged.
     pub fn distance(&self, previous_commit: Option<CommitCounter>) -> Option<usize> {
         // if commit > commit_count we have overflown, in that case the following map might result
         // in a false-positive, if commit is still very large. So we force false in those cases.
@@ -41,13 +50,25 @@ impl From<usize> for CommitCounter {
     }
 }
 
-/// A damage tracker
+/// A tracker for holding damage
+///
+/// It keeps track of the submitted damage
+/// and automatically caps the damage
+/// with the specified limit.
+///
+/// See [`DamageTrackerSnapshot`] for more
+/// information.
 pub struct DamageTracker<N, Kind> {
     limit: usize,
     state: DamageTrackerSnapshot<N, Kind>,
 }
 
-/// A snapshot of the current damage tracking state
+/// A snapshot of the current state of a [`DamageTracker`]
+///
+/// The snapshot can be used to get an immutable view
+/// into the current state of a [`DamageTracker`].
+/// It provides an easy way to get the damage between two
+/// [`CommitCounter`]s.
 pub struct DamageTrackerSnapshot<N, Kind> {
     limit: usize,
     commit_counter: CommitCounter,
@@ -144,12 +165,17 @@ impl<N, Kind> DamageTrackerSnapshot<N, Kind> {
         }
     }
 
-    /// Gets the current [`CommitCounter`] of this tracker
+    /// Gets the current [`CommitCounter`] of this snapshot
+    ///
+    /// The returned [`CommitCounter`] should be stored after
+    /// calling [`damage_since`](DamageTrackerSnapshot::damage_since)
+    /// and provided to the next call of [`damage_since`](DamageTrackerSnapshot::damage_since)
+    /// to query the damage between these two [`CommitCounter`]s.
     pub fn current_commit(&self) -> CommitCounter {
         self.commit_counter
     }
 
-    /// Allows access to the stored damage
+    /// Provides raw access to the stored damage
     pub fn damage(&self) -> impl Iterator<Item = &Vec<Rectangle<N, Kind>>> {
         self.damage.iter()
     }
@@ -224,7 +250,7 @@ impl<N, Kind> DamageTracker<N, Kind> {
         self.state.current_commit()
     }
 
-    /// Allows access to the stored damage
+    /// Provides raw access to the stored damage
     pub fn damage(&self) -> impl Iterator<Item = &Vec<Rectangle<N, Kind>>> {
         self.state.damage()
     }
@@ -232,7 +258,7 @@ impl<N, Kind> DamageTracker<N, Kind> {
     /// Reset the damage
     ///
     /// This should be called when the
-    /// tracked item is resized
+    /// tracked item has been resized
     pub fn reset(&mut self) {
         self.state.reset()
     }

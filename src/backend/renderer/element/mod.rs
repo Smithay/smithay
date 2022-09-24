@@ -1,4 +1,22 @@
-//! TODO: docs
+//! Common base for elements that can be drawn by a [`Renderer`]
+//!
+//! A [`RenderElement`] defines what should be [`draw`](RenderElement::draw)n where.
+//! Additionally it provides the foundation for effective damage tracked rendering
+//! by allowing to query for damage between two [`CommitCounter`]s.
+//!
+//! For specialized renderers it can optionally provide access to the [`UnderlyingStorage`]
+//! of the element.
+//!
+//! Out of the box smithay provides the following elements
+//! - [`memory`](crate::backend::renderer::element::memory) - Memory based render element
+//! - [`texture`](crate::backend::renderer::element::texture) - Texture based render element
+//! - [`surface`](crate::backend::renderer::element::surface) - Wayland surface render element
+//!
+//! The [`render_elements!`] macro provides an easy way to aggregate multiple different [RenderElement]s
+//! into a single enum.
+//!
+//! See the [`damage`](crate::backend::renderer::damage) module for more information on
+//! damage tracking.
 
 use std::sync::Arc;
 
@@ -126,7 +144,7 @@ pub trait AsRenderElements<R>
 where
     R: Renderer,
 {
-    /// RenderElement type
+    /// Type of the render element
     type RenderElement: RenderElement<R>;
     /// Returns render elements for a given position and scale
     fn render_elements<C: From<Self::RenderElement>>(
@@ -509,7 +527,7 @@ macro_rules! render_elements_internal {
         impl<$renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@body $renderer; $($tail)*);
@@ -520,7 +538,7 @@ macro_rules! render_elements_internal {
         impl<$lt, $renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@body $renderer; $($tail)*);
@@ -531,7 +549,7 @@ macro_rules! render_elements_internal {
         impl<$renderer, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $(
                 $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
             )+
@@ -545,7 +563,7 @@ macro_rules! render_elements_internal {
         impl<$lt, $renderer, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $(
                 $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
             )+
@@ -559,7 +577,7 @@ macro_rules! render_elements_internal {
         impl<$renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name
         where
             $renderer: $crate::backend::renderer::Renderer,
-            <$renderer as Renderer>::TextureId: 'static,
+            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
         {
             $crate::render_elements_internal!(@body $renderer; $($tail)*);
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
@@ -709,7 +727,214 @@ macro_rules! render_elements_internal {
     };
 }
 
-/// TODO: Docs
+/// Aggregate multiple types implementing [`RenderElement`] into a single enum type
+///
+/// ```
+/// # use smithay::{
+/// #     backend::renderer::{
+/// #         element::{Id, RenderElement},
+/// #         utils::CommitCounter,
+/// #         Renderer,
+/// #     },
+/// #     utils::{Buffer, Point, Physical, Rectangle, Scale, Transform},
+/// # };
+/// #
+/// # struct MyRenderElement1;
+/// # struct MyRenderElement2;
+/// #
+/// # impl<R: Renderer> RenderElement<R> for MyRenderElement1 {
+/// #     fn id(&self) -> &Id {
+/// #         unimplemented!()
+/// #     }
+/// #
+/// #     fn current_commit(&self) -> CommitCounter {
+/// #         unimplemented!()
+/// #     }
+/// #
+/// #     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
+/// #         unimplemented!()
+/// #     }
+/// #
+/// #     fn src(&self) -> Rectangle<f64, Buffer> {
+/// #         unimplemented!()
+/// #     }
+/// #
+/// #     fn draw(
+/// #         &self,
+/// #         _renderer: &mut R,
+/// #         _frame: &mut <R as Renderer>::Frame,
+/// #         _location: Point<i32, Physical>,
+/// #         _scale: Scale<f64>,
+/// #         _damage: &[Rectangle<i32, Physical>],
+/// #         _log: &slog::Logger,
+/// #     ) -> Result<(), <R as Renderer>::Error> {
+/// #         unimplemented!()
+/// #     }
+/// # }
+/// #
+/// # impl<R: Renderer> RenderElement<R> for MyRenderElement2 {
+/// #     fn id(&self) -> &Id {
+/// #         unimplemented!()
+/// #     }
+/// #
+/// #     fn current_commit(&self) -> CommitCounter {
+/// #         unimplemented!()
+/// #     }
+/// #
+/// #     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
+/// #         unimplemented!()
+/// #     }
+/// #
+/// #     fn src(&self) -> Rectangle<f64, Buffer> {
+/// #         unimplemented!()
+/// #     }
+/// #
+/// #     fn draw(
+/// #         &self,
+/// #         _renderer: &mut R,
+/// #         _frame: &mut <R as Renderer>::Frame,
+/// #         _location: Point<i32, Physical>,
+/// #         _scale: Scale<f64>,
+/// #         _damage: &[Rectangle<i32, Physical>],
+/// #         _log: &slog::Logger,
+/// #     ) -> Result<(), <R as Renderer>::Error> {
+/// #         unimplemented!()
+/// #     }
+/// # }
+/// use smithay::backend::renderer::element::render_elements;
+///
+/// render_elements! {
+///     MyRenderElements;
+///     First=MyRenderElement1,
+///     Second=MyRenderElement2,
+/// }
+/// ```
+///
+/// If the [`RenderElement`] has special requirements on the [`Renderer`] you can
+/// express them with a syntax similar to HRTBs.
+///
+/// For example the [`MemoryRenderBufferRenderElement`](crate::backend::renderer::element::memory::MemoryRenderBufferRenderElement) requires
+/// the [`Renderer`] to implement the [`ImportMem`](crate::backend::renderer::ImportMem) trait.
+///
+/// ```
+/// use smithay::backend::renderer::{
+///     element::{memory::MemoryRenderBufferRenderElement, render_elements},
+///     ImportMem,
+/// };
+///
+/// render_elements! {
+///     MyRenderElements<R> where R: ImportMem;
+///     Memory=MemoryRenderBufferRenderElement,
+/// }
+/// ```
+///
+/// In case you want to use a reference or an element with an explicit lifetime the macro
+/// additionally takes a lifetime on the defined enum.
+///
+/// ```
+/// use smithay::backend::renderer::{
+///     element::{memory::MemoryRenderBufferRenderElement, render_elements},
+///     ImportMem,
+/// };
+///
+/// render_elements! {
+///     MyRenderElements<'a, R> where R: ImportMem;
+///     Memory=&'a MemoryRenderBufferRenderElement,
+/// }
+/// ```
+///
+/// Additionally the macro can be used to define generic enums
+///
+/// ```
+/// use smithay::backend::renderer::{
+///     element::{memory::MemoryRenderBufferRenderElement, render_elements},
+///     ImportMem,
+/// };
+///
+/// render_elements! {
+///     MyRenderElements<'a, R, A, B> where R: ImportMem;
+///     Memory=&'a MemoryRenderBufferRenderElement,
+///     Owned=A,
+///     Borrowed=&'a B,
+/// }
+/// ```
+///
+/// If your elements require a specific [`Renderer`] instead of being
+/// generic over it you can specify the type like in the following example.
+///
+/// ```
+/// # use smithay::{
+/// #     backend::renderer::{Frame, Renderer, Texture, TextureFilter},
+/// #     utils::{Buffer, Physical, Rectangle, Size, Transform},
+/// # };
+/// #
+/// # #[derive(Clone)]
+/// # struct MyRendererTextureId;
+/// #
+/// # impl Texture for MyRendererTextureId {
+/// #     fn width(&self) -> u32 {
+/// #         unimplemented!()
+/// #     }
+/// #     fn height(&self) -> u32 {
+/// #         unimplemented!()
+/// #     }
+/// # }
+/// #
+/// # struct MyRendererFrame;
+/// #
+/// # impl Frame for MyRendererFrame {
+/// #     type Error = std::convert::Infallible;
+/// #     type TextureId = MyRendererTextureId;
+/// #
+/// #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+/// #         unimplemented!()
+/// #     }
+/// #     fn render_texture_from_to(
+/// #         &mut self,
+/// #         _: &Self::TextureId,
+/// #         _: Rectangle<f64, Buffer>,
+/// #         _: Rectangle<i32, Physical>,
+/// #         _: &[Rectangle<i32, Physical>],
+/// #         _: Transform,
+/// #         _: f32,
+/// #     ) -> Result<(), Self::Error> {
+/// #         unimplemented!()
+/// #     }
+/// #     fn transformation(&self) -> Transform {
+/// #         unimplemented!()
+/// #     }
+/// # }
+/// #
+/// # struct MyRenderer;
+/// #
+/// # impl Renderer for MyRenderer {
+/// #     type Error = std::convert::Infallible;
+/// #     type TextureId = MyRendererTextureId;
+/// #     type Frame = MyRendererFrame;
+/// #
+/// #     fn id(&self) -> usize {
+/// #         unimplemented!()
+/// #     }
+/// #     fn downscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+/// #         unimplemented!()
+/// #     }
+/// #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+/// #         unimplemented!()
+/// #     }
+/// #     fn render<F, R>(&mut self, _: Size<i32, Physical>, _: Transform, _: F) -> Result<R, Self::Error>
+/// #     where
+/// #         F: FnOnce(&mut Self, &mut Self::Frame) -> R,
+/// #     {
+/// #         unimplemented!()
+/// #     }
+/// # }
+/// use smithay::backend::renderer::element::{render_elements, texture::TextureRenderElement};
+///
+/// render_elements! {
+///     MyRenderElements<=MyRenderer>;
+///     Texture=TextureRenderElement<MyRendererTextureId>,
+/// }
+/// ```
 #[macro_export]
 macro_rules! render_elements {
     ($(#[$attr:meta])* $vis:vis $name:ident<=$lt:lifetime, $renderer:ty, $custom:ident> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
@@ -740,8 +965,6 @@ macro_rules! render_elements {
         $crate::render_elements_internal!(@impl $name<=$renderer>; $($tail)*);
         $crate::render_elements_internal!(@from $name; $($tail)*);
     };
-
-
 
     ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $custom:ident> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $renderer, $custom>; $($tail)*);
