@@ -64,7 +64,7 @@ where
         if let Some((focused, serial)) = guard.focus.as_ref() {
             if focused.same_client_as(&kbd.id()) {
                 let serialized = guard.mods_state.serialized;
-                let keys = serialize_pressed_keys(guard.pressed_keys.clone());
+                let keys = serialize_pressed_keys(guard.pressed_keys.iter().cloned().collect());
                 kbd.enter((*serial).into(), focused.wl_surface().unwrap(), keys);
                 // Modifiers must be send after enter event.
                 kbd.modifiers(
