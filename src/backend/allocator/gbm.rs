@@ -10,7 +10,8 @@ use super::{
 };
 use crate::utils::{Buffer as BufferCoords, Size};
 pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
-use std::os::unix::io::AsRawFd;
+use io_lifetimes::OwnedFd;
+use std::os::unix::io::{AsRawFd, FromRawFd};
 
 impl<A: AsRawFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
     type Error = std::io::Error;
@@ -108,7 +109,8 @@ impl<T> AsDmabuf for GbmBuffer<T> {
         let mut builder = Dmabuf::builder_from_buffer(self, DmabufFlags::empty());
         for idx in 0..planes {
             builder.add_plane(
-                fd,
+                // SAFETY: `gbm_bo_get_fd` returns a new fd owned by the caller.
+                unsafe { OwnedFd::from_raw_fd(fd) },
                 idx as u32,
                 self.offset(idx)?,
                 self.stride_for_plane(idx)?,

@@ -6,8 +6,12 @@ use std::ops::Deref;
 use std::sync::Arc;
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use std::sync::{Mutex, Weak};
-use std::{collections::HashSet, os::unix::prelude::AsRawFd};
+use std::{
+    collections::HashSet,
+    os::unix::prelude::{AsRawFd, FromRawFd},
+};
 
+use io_lifetimes::OwnedFd;
 use libc::c_void;
 use nix::libc::c_int;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
@@ -584,7 +588,9 @@ impl EGLDisplay {
         );
         for i in 0..num_planes {
             dma.add_plane(
-                fds[i as usize],
+                // SAFETY: The fds returned by `ExportDMABUFImageMESA` are defined to be owned by
+                // the caller.
+                unsafe { OwnedFd::from_raw_fd(fds[i as usize]) },
                 i as u32,
                 offsets[i as usize] as u32,
                 strides[i as usize] as u32,

@@ -23,6 +23,7 @@ pub mod format;
 use std::{
     ffi::CStr,
     fmt,
+    os::unix::io::FromRawFd,
     sync::{mpsc, Arc, Weak},
 };
 
@@ -32,6 +33,7 @@ use ash::{
 };
 use bitflags::bitflags;
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
+use io_lifetimes::OwnedFd;
 
 use crate::{
     backend::{
@@ -444,7 +446,8 @@ impl AsDmabuf for VulkanImage {
             let subresource = vk::ImageSubresource::builder().aspect_mask(aspect_mask).build();
             let layout = unsafe { device.get_image_subresource_layout(self.inner.image, subresource) };
             builder.add_plane(
-                fd,
+                // SAFETY: `vkGetMemoryFdKHR` creates a new file descriptor owned by the caller.
+                unsafe { OwnedFd::from_raw_fd(fd) },
                 idx,
                 layout.offset as u32,
                 layout.row_pitch as u32,
