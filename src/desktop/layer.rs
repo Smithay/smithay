@@ -142,7 +142,7 @@ impl LayerMap {
         if !self.layers.contains(layer) {
             return None;
         }
-        let mut bbox = layer.bbox_with_popups();
+        let mut bbox = layer.bbox();
         let state = layer_state(layer);
         bbox.loc += state.location;
         Some(bbox)
@@ -156,8 +156,13 @@ impl LayerMap {
     ) -> Option<&LayerSurface> {
         let point = point.into();
         self.layers_on(layer).rev().find(|l| {
-            let bbox = self.layer_geometry(l).unwrap();
-            bbox.to_f64().contains(point)
+            let bbox_with_popups = {
+                let mut bbox = l.bbox_with_popups();
+                let state = layer_state(l);
+                bbox.loc += state.location;
+                bbox
+            };
+            bbox_with_popups.to_f64().contains(point)
         })
     }
 
