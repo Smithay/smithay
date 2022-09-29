@@ -278,7 +278,7 @@ impl DamageTrackedRenderer {
     ///
     /// The renderer will keep track of changes to the [`Output`]
     /// and handle size and scaling changes automatically on the
-    /// next call to [`render_output`]
+    /// next call to [`render_output`](DamageTrackedRenderer::render_output)
     pub fn from_output(output: &Output) -> Self {
         Self {
             mode: DamageTrackedRendererMode::Auto(output.clone()),
@@ -286,7 +286,7 @@ impl DamageTrackedRenderer {
         }
     }
 
-    /// Get the [`Mode`] of the [`DamageTrackedRenderer`]
+    /// Get the [`DamageTrackedRendererMode`] of the [`DamageTrackedRenderer`]
     pub fn mode(&self) -> &DamageTrackedRendererMode {
         &self.mode
     }
