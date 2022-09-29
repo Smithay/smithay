@@ -184,7 +184,7 @@ impl RendererSurfaceState {
 
     /// Get the current commit position of this surface
     ///
-    /// The position should be saved after calling [`damage_since`] and
+    /// The position should be saved after calling [`damage_since`](RendererSurfaceState::damage_since) and
     /// provided as the commit in the next call.
     pub fn current_commit(&self) -> CommitCounter {
         self.damage.current_commit()
@@ -465,7 +465,7 @@ where
     result
 }
 
-/// Draws a surface and its subsurfaces using a given [`Renderer`] and [`Frame`].
+/// Draws a surface and its subsurfaces using a given [`Renderer`] and [`Frame`](crate::backend::renderer::Frame).
 ///
 /// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
 /// - `location` is the position the surface should be drawn at.
@@ -499,7 +499,7 @@ where
     Ok(())
 }
 
-/// Draws the render elements using a given [`Renderer`] and [`Frame`]
+/// Draws the render elements using a given [`Renderer`] and [`Frame`](crate::backend::renderer::Frame)
 ///
 /// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
 /// - `location` is the position the surface should be drawn at.
