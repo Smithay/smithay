@@ -165,12 +165,11 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// together with the location of this element relative to this space.
     ///
     /// This is equivalent to iterating the elements in the space from
-    /// top to bottom and calling for example [`Window::surface_under`] for each
-    /// window and returning the first matching one.
+    /// top to bottom and testing if the point is within the elements
+    /// input region and returning the first matching one.
     ///
-    /// As [`Window::surface_under`] internally uses the surface input regions
-    /// the same applies to this method and it will only return a surface
-    /// where the point is within the surface input regions.
+    /// Note that [`SpaceElement::is_in_input_region`] expects the point
+    /// to be relative to the elements origin.
     pub fn element_under<P: Into<Point<f64, Logical>>>(&self, point: P) -> Option<(&E, Point<i32, Logical>)> {
         let point = point.into();
         self.elements
@@ -418,7 +417,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     }
 }
 
-/// Errors thrown by [`Space::render_elements_for_output`]
+/// Errors thrown by [`Space::elements_for_output`]
 #[derive(thiserror::Error, Debug)]
 pub enum OutputError {
     /// The given [`Output`] has no set mode
