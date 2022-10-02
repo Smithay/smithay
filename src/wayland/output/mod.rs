@@ -159,13 +159,13 @@ impl Output {
         D: GlobalDispatch<WlOutput, OutputData>,
         D: 'static,
     {
-        display.create_global::<D, WlOutput, _>(4, self.data.clone())
+        display.create_global::<D, WlOutput, _>(4, self.inner.clone())
     }
 
     /// Attempt to retrieve a [`Output`] from an existing resource
     pub fn from_resource(output: &WlOutput) -> Option<Output> {
         output.data::<OutputUserData>().map(|ud| Output {
-            data: ud.global_data.clone(),
+            inner: ud.global_data.clone(),
         })
     }
 
@@ -176,7 +176,7 @@ impl Output {
         new_scale: Option<Scale>,
         new_location: Option<Point<i32, Logical>>,
     ) {
-        let inner = self.data.inner.0.lock().unwrap();
+        let inner = self.inner.0.lock().unwrap();
         // XdgOutput has to be updated before WlOutput
         // Because WlOutput::done() has to allways be called last
         if let Some(xdg_output) = inner.xdg_output.as_ref() {
@@ -208,8 +208,7 @@ impl Output {
 
     /// Check is given [`wl_output`](WlOutput) instance is managed by this [`Output`].
     pub fn owns(&self, output: &WlOutput) -> bool {
-        self.data
-            .inner
+        self.inner
             .0
             .lock()
             .unwrap()
@@ -225,7 +224,6 @@ impl Output {
         F: FnMut(&DisplayHandle, &WlOutput),
     {
         let list: Vec<_> = self
-            .data
             .inner
             .0
             .lock()

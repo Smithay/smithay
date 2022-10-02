@@ -35,7 +35,7 @@ where
             },
         );
 
-        let mut inner = global_data.inner.0.lock().unwrap();
+        let mut inner = global_data.0.lock().unwrap();
 
         trace!(inner.log, "New WlOutput global instantiated."; "name" => &inner.name);
 
@@ -98,7 +98,6 @@ where
         data: &OutputUserData,
     ) {
         data.global_data
-            .inner
             .0
             .lock()
             .unwrap()
@@ -151,7 +150,7 @@ where
                 output: wl_output,
             } => {
                 let output = Output::from_resource(&wl_output).unwrap();
-                let mut inner = output.data.inner.0.lock().unwrap();
+                let mut inner = output.inner.0.lock().unwrap();
 
                 let xdg_output = XdgOutput::new(&inner, inner.log.clone());
 

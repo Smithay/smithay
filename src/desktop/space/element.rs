@@ -302,7 +302,7 @@ pub struct SpaceOutputTuple<'a, 'b>(pub &'a Space, pub &'b Output);
 impl<'a, 'b> Hash for SpaceOutputTuple<'a, 'b> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.id.hash(state);
-        (std::sync::Arc::as_ptr(&self.1.data.inner) as *const () as usize).hash(state);
+        (std::sync::Arc::as_ptr(&self.1.inner) as *const () as usize).hash(state);
     }
 }
 
@@ -311,7 +311,7 @@ impl<'a, 'b> SpaceOutputTuple<'a, 'b> {
     pub fn owned_hash(&self) -> SpaceOutputHash {
         SpaceOutputHash(
             self.0.id,
-            std::sync::Arc::as_ptr(&self.1.data.inner) as *const () as usize,
+            std::sync::Arc::as_ptr(&self.1.inner) as *const () as usize,
         )
     }
 }

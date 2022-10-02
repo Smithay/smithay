@@ -158,8 +158,9 @@ impl Scale {
     }
 }
 
+/// Inner output data
 #[derive(Debug)]
-pub(crate) struct Inner {
+pub struct Inner {
     pub(crate) name: String,
     pub(crate) description: String,
     #[cfg(feature = "wayland_frontend")]
@@ -178,20 +179,17 @@ pub(crate) struct Inner {
     pub(crate) log: ::slog::Logger,
 }
 
-/// Clonable Data of an Outut
-#[derive(Debug, Clone)]
-pub struct OutputData {
-    pub(crate) inner: Arc<(Mutex<Inner>, UserDataMap)>,
-}
-
 /// An abstract output.
 ///
 /// This handle is stored in the event loop, and allows you to notify clients
 /// about any change in the properties of this output.
 #[derive(Debug, Clone)]
 pub struct Output {
-    pub(crate) data: OutputData,
+    pub(crate) inner: OutputData,
 }
+
+/// Data of an Output
+pub type OutputData = Arc<(Mutex<Inner>, UserDataMap)>;
 
 impl Output {
     /// Create a new output with given name and physical properties.
@@ -203,29 +201,27 @@ impl Output {
 
         info!(log, "Creating new wl_output"; "name" => &name);
 
-        let data = OutputData {
-            inner: Arc::new((
-                Mutex::new(Inner {
-                    name: name.clone(),
-                    description: format!("{} - {} - {}", physical.make, physical.model, name),
-                    #[cfg(feature = "wayland_frontend")]
-                    instances: Vec::new(),
-                    physical,
-                    location: (0, 0).into(),
-                    transform: Transform::Normal,
-                    scale: Scale::Integer(1),
-                    modes: Vec::new(),
-                    current_mode: None,
-                    preferred_mode: None,
-                    #[cfg(feature = "wayland_frontend")]
-                    xdg_output: None,
-                    log,
-                }),
-                UserDataMap::default(),
-            )),
-        };
+        let data = Arc::new((
+            Mutex::new(Inner {
+                name: name.clone(),
+                description: format!("{} - {} - {}", physical.make, physical.model, name),
+                #[cfg(feature = "wayland_frontend")]
+                instances: Vec::new(),
+                physical,
+                location: (0, 0).into(),
+                transform: Transform::Normal,
+                scale: Scale::Integer(1),
+                modes: Vec::new(),
+                current_mode: None,
+                preferred_mode: None,
+                #[cfg(feature = "wayland_frontend")]
+                xdg_output: None,
+                log,
+            }),
+            UserDataMap::default(),
+        ));
 
-        Output { data }
+        Output { inner: data }
     }
 
     /// Sets the preferred mode of this output
@@ -233,7 +229,7 @@ impl Output {
     /// If the provided mode was not previously known to this output, it is added to its
     /// internal list.
     pub fn set_preferred(&self, mode: Mode) {
-        let mut inner = self.data.inner.0.lock().unwrap();
+        let mut inner = self.inner.0.lock().unwrap();
         inner.preferred_mode = Some(mode);
         if inner.modes.iter().all(|&m| m != mode) {
             inner.modes.push(mode);
@@ -242,7 +238,7 @@ impl Output {
 
     /// Adds a mode to the list of known modes to this output
     pub fn add_mode(&self, mode: Mode) {
-        let mut inner = self.data.inner.0.lock().unwrap();
+        let mut inner = self.inner.0.lock().unwrap();
         if inner.modes.iter().all(|&m| m != mode) {
             inner.modes.push(mode);
         }
@@ -250,47 +246,47 @@ impl Output {
 
     /// Returns the currently advertised mode of the output
     pub fn current_mode(&self) -> Option<Mode> {
-        self.data.inner.0.lock().unwrap().current_mode
+        self.inner.0.lock().unwrap().current_mode
     }
 
     /// Returns the preferred mode of the output
     pub fn preferred_mode(&self) -> Option<Mode> {
-        self.data.inner.0.lock().unwrap().preferred_mode
+        self.inner.0.lock().unwrap().preferred_mode
     }
 
     /// Returns the currently advertised transformation of the output
     pub fn current_transform(&self) -> Transform {
-        self.data.inner.0.lock().unwrap().transform
+        self.inner.0.lock().unwrap().transform
     }
 
     /// Returns the currenly set scale of the output
     pub fn current_scale(&self) -> Scale {
-        self.data.inner.0.lock().unwrap().scale
+        self.inner.0.lock().unwrap().scale
     }
 
     /// Returns the currenly advertised location of the output
     pub fn current_location(&self) -> Point<i32, Logical> {
-        self.data.inner.0.lock().unwrap().location
+        self.inner.0.lock().unwrap().location
     }
 
     /// Returns the name of the output
     pub fn name(&self) -> String {
-        self.data.inner.0.lock().unwrap().name.clone()
+        self.inner.0.lock().unwrap().name.clone()
     }
 
     /// Returns the description of the output, if xdg-output is initialized
     pub fn description(&self) -> String {
-        self.data.inner.0.lock().unwrap().description.clone()
+        self.inner.0.lock().unwrap().description.clone()
     }
 
     /// Returns the physical properties of the output
     pub fn physical_properties(&self) -> PhysicalProperties {
-        self.data.inner.0.lock().unwrap().physical.clone()
+        self.inner.0.lock().unwrap().physical.clone()
     }
 
     /// Returns the currently advertised modes of the output
     pub fn modes(&self) -> Vec<Mode> {
-        self.data.inner.0.lock().unwrap().modes.clone()
+        self.inner.0.lock().unwrap().modes.clone()
     }
 
     /// Removes a mode from the list of known modes
@@ -298,7 +294,7 @@ impl Output {
     /// It will not de-advertise it from existing clients (the protocol does not
     /// allow it), but it won't be advertised to now clients from now on.
     pub fn delete_mode(&self, mode: Mode) {
-        let mut inner = self.data.inner.0.lock().unwrap();
+        let mut inner = self.inner.0.lock().unwrap();
         inner.modes.retain(|&m| m != mode);
         if inner.current_mode == Some(mode) {
             inner.current_mode = None;
@@ -325,7 +321,7 @@ impl Output {
         new_location: Option<Point<i32, Logical>>,
     ) {
         {
-            let mut inner = self.data.inner.0.lock().unwrap();
+            let mut inner = self.inner.0.lock().unwrap();
             if let Some(mode) = new_mode {
                 if inner.modes.iter().all(|&m| m != mode) {
                     inner.modes.push(mode);
@@ -349,13 +345,13 @@ impl Output {
 
     /// Returns the user data of this output
     pub fn user_data(&self) -> &UserDataMap {
-        &self.data.inner.1
+        &self.inner.1
     }
 }
 
 impl PartialEq for Output {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.data.inner, &other.data.inner)
+        Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
 
@@ -363,6 +359,6 @@ impl Eq for Output {}
 
 impl Hash for Output {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Arc::as_ptr(&self.data.inner).hash(state);
+        Arc::as_ptr(&self.inner).hash(state);
     }
 }
