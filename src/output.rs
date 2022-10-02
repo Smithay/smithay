@@ -52,7 +52,7 @@
 
 use std::{
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 
 use slog::{info, o};
@@ -186,6 +186,15 @@ pub struct Inner {
 #[derive(Debug, Clone)]
 pub struct Output {
     pub(crate) inner: OutputData,
+}
+
+/// Weak variant of an [`Output`]
+///
+/// Does not keep associated user data alive,
+/// and can be used to referr to a potentially already destroyed output.
+#[derive(Debug, Clone)]
+pub struct WeakOutput {
+    pub(crate) inner: Weak<(Mutex<Inner>, UserDataMap)>,
 }
 
 /// Data of an Output
@@ -347,6 +356,13 @@ impl Output {
     pub fn user_data(&self) -> &UserDataMap {
         &self.inner.1
     }
+
+    /// Create a weak reference to this output
+    pub fn downgrade(&self) -> WeakOutput {
+        WeakOutput {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
 }
 
 impl PartialEq for Output {
@@ -360,5 +376,38 @@ impl Eq for Output {}
 impl Hash for Output {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.inner).hash(state);
+    }
+}
+
+impl WeakOutput {
+    /// Try to retrieve the original `Output`, if it still exists
+    pub fn upgrade(&self) -> Option<Output> {
+        self.inner.upgrade().map(|inner| Output { inner })
+    }
+}
+
+impl PartialEq for WeakOutput {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl Eq for WeakOutput {}
+
+impl Hash for WeakOutput {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Weak::as_ptr(&self.inner).hash(state);
+    }
+}
+
+impl PartialEq<WeakOutput> for Output {
+    fn eq(&self, other: &WeakOutput) -> bool {
+        other.upgrade().map(|o| &o == self).unwrap_or(false)
+    }
+}
+
+impl PartialEq<Output> for WeakOutput {
+    fn eq(&self, other: &Output) -> bool {
+        self.upgrade().map(|o| &o == other).unwrap_or(false)
     }
 }
