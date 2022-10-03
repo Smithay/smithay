@@ -162,10 +162,6 @@ impl Scale {
 pub(crate) struct Inner {
     pub(crate) name: String,
     pub(crate) description: String,
-    #[cfg(feature = "wayland_frontend")]
-    pub(crate) instances: Vec<WlOutput>,
-    #[cfg(feature = "wayland_frontend")]
-    pub(crate) handle: Option<WeakHandle>,
     pub(crate) physical: PhysicalProperties,
     pub(crate) location: Point<i32, Logical>,
     pub(crate) transform: Transform,
@@ -174,8 +170,14 @@ pub(crate) struct Inner {
     pub(crate) current_mode: Option<Mode>,
     pub(crate) preferred_mode: Option<Mode>,
 
+    // used by the wayland::output module.
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) instances: Vec<WlOutput>,
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) handle: Option<WeakHandle>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) xdg_output: Option<XdgOutput>,
+
     #[allow(dead_code)]
     pub(crate) log: ::slog::Logger,
 }

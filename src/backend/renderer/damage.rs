@@ -153,7 +153,7 @@
 //!             buffer_age,
 //!             &[render_element],
 //!             [0.8, 0.8, 0.9, 1.0],
-//!             &log,
+//!             log.clone(),
 //!         )
 //!         .expect("failed to render the output");
 //! }
@@ -298,13 +298,15 @@ impl DamageTrackedRenderer {
         age: usize,
         elements: &[E],
         clear_color: [f32; 4],
-        log: &slog::Logger,
+        log: impl Into<Option<slog::Logger>>,
     ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
     where
         E: RenderElement<R>,
         R: Renderer,
         <R as Renderer>::TextureId: Texture,
     {
+        let log = crate::slog_or_fallback(log);
+
         let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
         let output_geo = Rectangle::from_loc_and_size((0, 0), output_size);
 
@@ -537,7 +539,7 @@ impl DamageTrackedRenderer {
                     element.location(output_scale),
                     output_scale,
                     &*element_damage,
-                    log,
+                    &log,
                 )?;
             }
 

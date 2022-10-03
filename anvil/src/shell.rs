@@ -356,7 +356,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            if let Some(window) = self.space.elements().find(|w| w.toplevel().wl_surface() == &root) {
+            if let Some(window) = self.window_for_surface(&root) {
                 window.on_commit();
             }
         }
@@ -422,12 +422,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
         let start_data = pointer.grab_start_data().unwrap();
 
-        let window = self
-            .space
-            .elements()
-            .find(|window| window.toplevel().wl_surface() == surface.wl_surface())
-            .unwrap()
-            .clone();
+        let window = self.window_for_surface(surface.wl_surface()).unwrap();
 
         // If the focus was for a different surface, ignore the request.
         if start_data.focus.is_none()
@@ -495,12 +490,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
         let start_data = pointer.grab_start_data().unwrap();
 
-        let window = self
-            .space
-            .elements()
-            .find(|window| window.toplevel().wl_surface() == surface.wl_surface())
-            .unwrap()
-            .clone();
+        let window = self.window_for_surface(surface.wl_surface()).unwrap();
 
         // If the focus was for a different surface, ignore the request.
         if start_data.focus.is_none()
@@ -655,12 +645,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
     fn maximize_request(&mut self, surface: ToplevelSurface) {
         // NOTE: This should use layer-shell when it is implemented to
         // get the correct maximum size
-        let window = self
-            .space
-            .elements()
-            .find(|window| window.toplevel().wl_surface() == surface.wl_surface())
-            .unwrap()
-            .clone();
+        let window = self.window_for_surface(surface.wl_surface()).unwrap();
         let outputs_for_window = self.space.outputs_for_element(&window);
         let output = outputs_for_window
             .first()
@@ -752,6 +737,15 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
             .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
         let mut map = layer_map_for_output(&output);
         map.map_layer(&LayerSurface::new(surface, namespace)).unwrap();
+    }
+}
+
+impl<BackendData> AnvilState<BackendData> {
+    fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
+        self.space
+            .elements()
+            .find(|window| window.toplevel().wl_surface() == surface)
+            .cloned()
     }
 }
 

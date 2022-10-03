@@ -174,7 +174,7 @@
 //!
 //!     // Render the element(s)
 //!     damage_tracked_renderer
-//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0], &log)
+//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0], log.clone())
 //!         .expect("failed to render output");
 //! }
 //! ```
