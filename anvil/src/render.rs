@@ -56,7 +56,7 @@ where
             .chain(window_render_elements.iter())
             .collect::<Vec<_>>();
 
-        damage_tracked_renderer.render_output(renderer, age, &render_elements, CLEAR_COLOR, log)
+        damage_tracked_renderer.render_output(renderer, age, &render_elements, CLEAR_COLOR, log.clone())
     } else {
         desktop::space::render_output(
             output,
@@ -66,7 +66,7 @@ where
             custom_elements,
             damage_tracked_renderer,
             CLEAR_COLOR,
-            log,
+            log.clone(),
         )
     }
 }
