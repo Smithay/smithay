@@ -545,6 +545,7 @@ pub fn render_output<
     #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
     C: RenderElement<R>,
     E: SpaceElement + PartialEq + AsRenderElements<R>,
+    L: Into<Option<slog::Logger>>,
 >(
     output: &Output,
     renderer: &mut R,
@@ -553,7 +554,7 @@ pub fn render_output<
     custom_elements: &'a [C],
     damage_tracked_renderer: &mut DamageTrackedRenderer,
     clear_color: [f32; 4],
-    log: &slog::Logger,
+    log: L,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
 where
     <R as Renderer>::TextureId: Texture + 'static,
