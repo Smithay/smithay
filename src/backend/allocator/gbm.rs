@@ -74,10 +74,36 @@ pub enum GbmConvertError {
 impl<T> AsDmabuf for GbmBuffer<T> {
     type Error = GbmConvertError;
 
+    #[cfg(feature = "backend_gbm_has_fd_for_plane")]
     fn export(&self) -> Result<Dmabuf, GbmConvertError> {
         let planes = self.plane_count()? as i32;
 
-        //TODO switch to gbm_bo_get_plane_fd when it lands
+        let mut builder = Dmabuf::builder_from_buffer(self, DmabufFlags::empty());
+        for idx in 0..planes {
+            let fd = self.fd_for_plane(idx)?;
+
+            // gbm_bo_get_fd_for_plane returns -1 if an error occurs
+            if fd == -1 {
+                return Err(GbmConvertError::InvalidFD);
+            }
+
+            builder.add_plane(
+                // SAFETY: `gbm_bo_get_fd_for_plane` returns a new fd owned by the caller.
+                unsafe { OwnedFd::from_raw_fd(fd) },
+                idx as u32,
+                self.offset(idx)?,
+                self.stride_for_plane(idx)?,
+                self.modifier()?,
+            );
+        }
+
+        Ok(builder.build().unwrap())
+    }
+
+    #[cfg(not(feature = "backend_gbm_has_fd_for_plane"))]
+    fn export(&self) -> Result<Dmabuf, GbmConvertError> {
+        let planes = self.plane_count()? as i32;
+
         let mut iter = (0i32..planes).map(|i| self.handle_for_plane(i));
         let first = iter.next().expect("Encountered a buffer with zero planes");
         // check that all handles are the same
