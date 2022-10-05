@@ -62,7 +62,7 @@ where
             output,
             renderer,
             age,
-            &[space],
+            [space],
             custom_elements,
             damage_tracked_renderer,
             CLEAR_COLOR,

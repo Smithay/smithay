@@ -115,11 +115,11 @@ pub fn winit_dispatch(
     let damage = Rectangle::from_loc_and_size((0, 0), size);
 
     backend.bind().ok().and_then(|_| {
-        smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement, _, _>(
+        smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement, _, _, _>(
             output,
             backend.renderer(),
             0,
-            &[&state.space],
+            [&state.space],
             &[],
             damage_tracked_renderer,
             [0.1, 0.1, 0.1, 1.0],
