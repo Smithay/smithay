@@ -158,9 +158,8 @@ impl Scale {
     }
 }
 
-/// Inner output data
 #[derive(Debug)]
-pub struct Inner {
+pub(crate) struct Inner {
     pub(crate) name: String,
     pub(crate) description: String,
     #[cfg(feature = "wayland_frontend")]
@@ -198,7 +197,7 @@ pub struct WeakOutput {
 }
 
 /// Data of an Output
-pub type OutputData = Arc<(Mutex<Inner>, UserDataMap)>;
+pub(crate) type OutputData = Arc<(Mutex<Inner>, UserDataMap)>;
 
 impl Output {
     /// Create a new output with given name and physical properties.

@@ -83,6 +83,12 @@ pub struct OutputManagerState {
     xdg_output_manager: Option<GlobalId>,
 }
 
+/// Internal data of a wl_output global
+#[derive(Debug)]
+pub struct WlOutputData {
+    inner: OutputData,
+}
+
 impl OutputManagerState {
     /// Create new output manager
     pub fn new() -> Self {
@@ -94,7 +100,7 @@ impl OutputManagerState {
     /// Create new output manager with xdg output support
     pub fn new_with_xdg_output<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlOutput, OutputData>,
+        D: GlobalDispatch<WlOutput, WlOutputData>,
         D: GlobalDispatch<ZxdgOutputManagerV1, ()>,
         D: 'static,
     {
@@ -156,10 +162,15 @@ impl Output {
     /// multiple times.
     pub fn create_global<D>(&self, display: &DisplayHandle) -> GlobalId
     where
-        D: GlobalDispatch<WlOutput, OutputData>,
+        D: GlobalDispatch<WlOutput, WlOutputData>,
         D: 'static,
     {
-        display.create_global::<D, WlOutput, _>(4, self.inner.clone())
+        display.create_global::<D, WlOutput, _>(
+            4,
+            WlOutputData {
+                inner: self.inner.clone(),
+            },
+        )
     }
 
     /// Attempt to retrieve a [`Output`] from an existing resource
@@ -265,7 +276,7 @@ impl Output {
 macro_rules! delegate_output {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::output::OutputData
+            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::WlOutputData
         ] => $crate::wayland::output::OutputManagerState);
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()
