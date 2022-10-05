@@ -513,9 +513,10 @@ pub fn space_render_elements<
     'a,
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
     #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
-    E: SpaceElement + PartialEq + AsRenderElements<R>,
+    E: SpaceElement + PartialEq + AsRenderElements<R> + 'a,
+    S: IntoIterator<Item = &'a Space<E>>,
 >(
-    spaces: &[&'a Space<E>],
+    spaces: S,
     output: &Output,
 ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
 where
@@ -544,13 +545,14 @@ pub fn render_output<
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
     #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
     C: RenderElement<R>,
-    E: SpaceElement + PartialEq + AsRenderElements<R>,
+    E: SpaceElement + PartialEq + AsRenderElements<R> + 'a,
     L: Into<Option<slog::Logger>>,
+    S: IntoIterator<Item = &'a Space<E>>,
 >(
     output: &Output,
     renderer: &mut R,
     age: usize,
-    spaces: &[&'a Space<E>],
+    spaces: S,
     custom_elements: &'a [C],
     damage_tracked_renderer: &mut DamageTrackedRenderer,
     clear_color: [f32; 4],
