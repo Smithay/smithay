@@ -165,7 +165,7 @@ impl Output {
         D: GlobalDispatch<WlOutput, WlOutputData>,
         D: 'static,
     {
-        self.data.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
+        self.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
         display.create_global::<D, WlOutput, _>(
             4,
             WlOutputData {
@@ -267,7 +267,6 @@ impl Output {
     /// with the matching client output
     pub fn enter(&self, surface: &wl_surface::WlSurface) {
         let client = self
-            .data
             .inner
             .0
             .lock()
@@ -285,7 +284,6 @@ impl Output {
     /// with the matching client output
     pub fn leave(&self, surface: &wl_surface::WlSurface) {
         let client = self
-            .data
             .inner
             .0
             .lock()
