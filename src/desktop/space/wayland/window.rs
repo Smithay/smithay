@@ -8,8 +8,8 @@ use crate::{
         ImportAll, Renderer,
     },
     desktop::{space::SpaceElement, PopupManager, Window, WindowSurfaceType},
-    output::{Inner as OutputInner, Output, OutputData},
-    utils::{user_data::UserDataMap, Logical, Physical, Point, Rectangle, Scale},
+    output::{Output, WeakOutput},
+    utils::{Logical, Physical, Point, Rectangle, Scale},
     wayland::compositor::{with_surface_tree_downward, TraversalAction},
 };
 use wayland_server::{protocol::wl_surface::WlSurface, Resource, Weak as WlWeak};
@@ -17,7 +17,6 @@ use wayland_server::{protocol::wl_surface::WlSurface, Resource, Weak as WlWeak};
 use std::{
     cell::{RefCell, RefMut},
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex, Weak},
 };
 
 type OutputSurfacesUserdata = RefCell<HashSet<WlWeak<WlSurface>>>;
@@ -126,20 +125,11 @@ fn output_leave(
     }
 }
 
-// Ptr otherwise it is not hash-able
-type WeakOutput = *const (Mutex<OutputInner>, UserDataMap);
-
 #[derive(Debug, Default)]
 struct WindowOutputState {
     output_overlap: HashMap<WeakOutput, Rectangle<i32, Logical>>,
 }
-impl Drop for WindowOutputState {
-    fn drop(&mut self) {
-        for (weak, _) in self.output_overlap.drain() {
-            let _ = unsafe { Weak::from_raw(weak) };
-        }
-    }
-}
+
 type WindowOutputUserData = RefCell<WindowOutputState>;
 
 impl SpaceElement for Window {
@@ -170,30 +160,14 @@ impl SpaceElement for Window {
                 .get::<WindowOutputUserData>()
                 .unwrap()
                 .borrow_mut();
-            state
-                .output_overlap
-                .insert(Arc::downgrade(&output.data.inner).into_raw(), overlap);
-            state.output_overlap.retain(|weak, _| {
-                let weak = unsafe { Weak::from_raw(*weak) };
-                let is_valid = weak.upgrade().is_some();
-                std::mem::forget(weak);
-                is_valid
-            });
+            state.output_overlap.insert(output.downgrade(), overlap);
+            state.output_overlap.retain(|weak, _| weak.upgrade().is_some());
         }
         self.refresh()
     }
     fn output_leave(&self, output: &Output) {
         if let Some(state) = self.user_data().get::<WindowOutputUserData>() {
-            state.borrow_mut().output_overlap.retain(|weak, _| {
-                let weak = unsafe { Weak::from_raw(*weak) };
-                let result = if let Some(strong) = weak.upgrade() {
-                    !Arc::ptr_eq(&strong, &output.data.inner)
-                } else {
-                    false
-                };
-                std::mem::forget(weak);
-                result
-            });
+            state.borrow_mut().output_overlap.retain(|weak, _| weak == output);
         }
 
         let mut surface_list = output_surfaces(output);
@@ -233,12 +207,8 @@ impl SpaceElement for Window {
         self.user_data().insert_if_missing(WindowOutputUserData::default);
         let state = self.user_data().get::<WindowOutputUserData>().unwrap().borrow();
 
-        for (output, overlap) in state.output_overlap.iter() {
-            let weak = unsafe { Weak::from_raw(*output) };
+        for (weak, overlap) in state.output_overlap.iter() {
             if let Some(output) = weak.upgrade() {
-                let output = Output {
-                    data: OutputData { inner: output },
-                };
                 output_update(
                     &output,
                     *overlap,
@@ -256,7 +226,6 @@ impl SpaceElement for Window {
                     );
                 }
             }
-            std::mem::forget(weak);
         }
     }
 }
