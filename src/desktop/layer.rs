@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
     desktop::{utils::*, PopupManager, Space},
-    output::{Inner as OutputInner, Output, OutputData},
+    output::{Output, WeakOutput},
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, TraversalAction},
@@ -18,7 +18,7 @@ use std::{
     cell::{RefCell, RefMut},
     collections::HashSet,
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex, Weak},
+    sync::Arc,
 };
 
 use super::WindowSurfaceType;
@@ -29,7 +29,7 @@ crate::utils::ids::id_gen!(next_layer_id, LAYER_ID, LAYER_IDS);
 #[derive(Debug)]
 pub struct LayerMap {
     layers: IndexSet<LayerSurface>,
-    output: Weak<(Mutex<OutputInner>, UserDataMap)>,
+    output: WeakOutput,
     zone: Rectangle<i32, Logical>,
     // surfaces for tracking enter and leave events
     surfaces: HashSet<ObjectId>,
@@ -47,11 +47,10 @@ pub struct LayerMap {
 /// of the same output using this function *will* result in a panic.
 pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
     let userdata = o.user_data();
-    let weak_output = Arc::downgrade(&o.data.inner);
     userdata.insert_if_missing(|| {
         RefCell::new(LayerMap {
             layers: IndexSet::new(),
-            output: weak_output,
+            output: o.downgrade(),
             zone: Rectangle::from_loc_and_size(
                 (0, 0),
                 o.current_mode()
@@ -64,7 +63,7 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
                     .unwrap_or_else(|| (0, 0).into()),
             ),
             surfaces: HashSet::new(),
-            logger: (*o.data.inner.0.lock().unwrap())
+            logger: (*o.inner.0.lock().unwrap())
                 .log
                 .new(slog::o!("smithay_module" => "layer_map")),
         })
@@ -356,9 +355,7 @@ impl LayerMap {
     }
 
     fn output(&self) -> Option<Output> {
-        self.output.upgrade().map(|inner| Output {
-            data: OutputData { inner },
-        })
+        self.output.upgrade()
     }
 
     /// Cleanup some internally used resources.
