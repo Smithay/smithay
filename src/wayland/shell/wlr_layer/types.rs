@@ -10,7 +10,7 @@ use wayland_server::WEnum;
 /// Traditional shell surfaces will typically be rendered between the bottom and top layers.
 /// Fullscreen shell surfaces are typically rendered at the top layer.
 /// Multiple surfaces can share a single layer, and ordering within a single layer is undefined.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Layer {
     /// The lowest layer, used usualy for wallpapers
     Background,

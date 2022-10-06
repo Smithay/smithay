@@ -375,13 +375,20 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     {
         let scale = scale.into();
 
-        self.elements
+        let mut space_elements = self
+            .elements
             .iter()
             .rev()
             .filter(|e| {
                 let geometry = e.bbox();
                 region.overlaps(geometry)
             })
+            .collect::<Vec<_>>();
+
+        space_elements.sort_by_key(|e| std::cmp::Reverse(e.element.z_index()));
+
+        space_elements
+            .into_iter()
             .flat_map(|e| {
                 let location = e.render_location() - region.loc;
                 e.element
@@ -575,10 +582,12 @@ where
     let layer_map = layer_map_for_output(output);
     #[cfg(feature = "wayland_frontend")]
     let lower = {
-        let (upper, lower): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
+        let (mut lower, mut upper): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
             .layers()
-            .rev()
             .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
+
+        lower.sort_by_key(|l| std::cmp::Reverse(l.layer()));
+        upper.sort_by_key(|l| std::cmp::Reverse(l.layer()));
 
         render_elements.extend(upper.into_iter().flat_map(|surface| {
             let loc = surface.bbox().loc;
