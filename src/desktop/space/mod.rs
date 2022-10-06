@@ -358,7 +358,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     }
 
     /// Retrieve the render elements for an output
-    pub fn elements_for_output<
+    pub fn render_elements_for_output<
         'a,
         #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
         #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
@@ -528,7 +528,7 @@ where
     let mut render_elements = Vec::new();
 
     for space in spaces {
-        match space.elements_for_output(output) {
+        match space.render_elements_for_output(output) {
             Ok(elements) => render_elements.extend(elements),
             Err(OutputError::Unmapped) => {}
             Err(OutputError::NoMode(_)) => return Err(OutputNoMode),
