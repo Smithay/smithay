@@ -16,6 +16,7 @@ use crate::{
 use crate::{
     backend::renderer::{element::surface::WaylandSurfaceRenderElement, ImportAll},
     desktop::{layer_map_for_output, LayerSurface, WindowSurfaceType},
+    wayland::shell::wlr_layer::Layer,
 };
 use std::{collections::HashMap, fmt};
 #[cfg(feature = "wayland_frontend")]
@@ -357,6 +358,41 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         self.elements.iter().for_each(|e| e.element.refresh());
     }
 
+    /// Retrieve the render elements for a given region of the space.
+    ///
+    /// *Note:* Because this is not rendering a specific output,
+    /// this will not contain layer surfaces.
+    /// Use [`Space::render_elements_for_output`], if you care about this.
+    pub fn render_elements_for_region<'a, R: Renderer, S: Into<Scale<f64>>>(
+        &'a self,
+        region: &Rectangle<i32, Logical>,
+        scale: S,
+    ) -> Vec<<E as AsRenderElements<R>>::RenderElement>
+    where
+        <R as Renderer>::TextureId: Texture + 'static,
+        E: AsRenderElements<R>,
+        <E as AsRenderElements<R>>::RenderElement: 'a,
+    {
+        let scale = scale.into();
+
+        self.elements
+            .iter()
+            .rev()
+            .filter(|e| {
+                let geometry = e.bbox();
+                region.overlaps(geometry)
+            })
+            .flat_map(|e| {
+                let location = e.render_location() - region.loc;
+                e.element
+                    .render_elements::<<E as AsRenderElements<R>>::RenderElement>(
+                        location.to_physical_precise_round(scale),
+                        scale,
+                    )
+            })
+            .collect::<Vec<_>>()
+    }
+
     /// Retrieve the render elements for an output
     pub fn render_elements_for_output<
         'a,
@@ -377,14 +413,9 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             return Err(OutputError::Unmapped);
         }
 
-        let state = output_state(self.id, output);
-        let output_size = output.current_mode().ok_or(OutputNoMode)?.size;
         let output_scale = output.current_scale().fractional_scale();
-        let output_location = state.location;
-        let output_geo = Rectangle::from_loc_and_size(
-            state.location,
-            output_size.to_f64().to_logical(output_scale).to_i32_ceil(),
-        );
+        // The unwrap is safe or we would have returned OutputError::Unmapped already
+        let output_geo = self.output_geometry(output).unwrap();
 
         let mut space_elements: Vec<SpaceElements<'a, E>> =
             self.elements.iter().rev().map(SpaceElements::Element).collect();
@@ -394,7 +425,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             let layer_map = layer_map_for_output(output);
             space_elements.extend(layer_map.layers().rev().cloned().map(|l| SpaceElements::Layer {
                 surface: l,
-                output_location,
+                output_location: output_geo.loc,
             }));
         }
 
@@ -407,7 +438,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
                 output_geo.overlaps(geometry)
             })
             .flat_map(|e| {
-                let location = e.render_location() - output_location;
+                let location = e.render_location() - output_geo.loc;
                 e.render_elements::<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>(
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
@@ -509,6 +540,18 @@ crate::backend::renderer::element::render_elements! {
 }
 
 /// Get the render elements for a specific output
+//
+/// Elements of multiple spaces will only be sorted relative to elements
+/// of the same space. The elements will thus be stacked the same
+/// way as they are retrieved from the `spaces` argument.
+///
+/// This also means they cannot be sorted relative to layer-surfaces
+/// (which will be added, if the `wayland_frontend` feature is enabled)
+/// and will always appear between `Overlay`/`Top` and `Bottom`/`Background`
+/// layers.
+///
+/// If you want to sort mapped elements **and** layer_surfaces by z_index,
+/// you need to map everything to one space and use [`Space::render_elements_for_output`] instead.
 pub fn space_render_elements<
     'a,
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
@@ -526,19 +569,72 @@ where
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
     let mut render_elements = Vec::new();
+    let output_scale = output.current_scale().fractional_scale();
+
+    #[cfg(feature = "wayland_frontend")]
+    let layer_map = layer_map_for_output(output);
+    #[cfg(feature = "wayland_frontend")]
+    let lower = {
+        let (upper, lower): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
+            .layers()
+            .rev()
+            .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
+
+        render_elements.extend(upper.into_iter().flat_map(|surface| {
+            let loc = surface.bbox().loc;
+            AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(
+                surface,
+                loc.to_physical_precise_round(output_scale),
+                Scale::from(output_scale),
+            )
+            .into_iter()
+            .map(SpaceRenderElements::Surface)
+        }));
+
+        lower
+    };
 
     for space in spaces {
-        match space.render_elements_for_output(output) {
-            Ok(elements) => render_elements.extend(elements),
-            Err(OutputError::Unmapped) => {}
-            Err(OutputError::NoMode(_)) => return Err(OutputNoMode),
+        if let Some(output_geo) = space.output_geometry(output) {
+            render_elements.extend(
+                space
+                    .render_elements_for_region(&output_geo, output_scale)
+                    .into_iter()
+                    .map(|e| SpaceRenderElements::Element(Wrap::from(e))),
+            );
         }
     }
+
+    #[cfg(feature = "wayland_frontend")]
+    render_elements.extend(lower.into_iter().flat_map(|surface| {
+        let loc = surface.bbox().loc;
+        AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(
+            surface,
+            loc.to_physical_precise_round(output_scale),
+            Scale::from(output_scale),
+        )
+        .into_iter()
+        .map(SpaceRenderElements::Surface)
+    }));
 
     Ok(render_elements)
 }
 
 /// Render a output
+///
+/// Elements of multiple spaces will only be sorted relative to elements
+/// of the same space. The elements will thus be stacked the same
+/// way as they are retrieved from the `spaces` argument.
+///
+/// This also means they cannot be sorted relative to layer-surfaces
+/// (which will be added, if the `wayland_frontend` feature is enabled)
+/// and will always appear between `Overlay`/`Top` and `Bottom`/`Background`
+/// layers.
+///
+/// If you want to sort mapped elements **and** layer_surfaces by z_index,
+/// you need to map everything to one space and use [`Space::render_elements_for_output`] instead.
+///
+/// Any given `custom_elements` will be rendered on top of everything else.
 #[allow(clippy::too_many_arguments)]
 pub fn render_output<
     'a,

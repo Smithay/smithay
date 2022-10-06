@@ -115,8 +115,6 @@ where
         match self {
             #[cfg(feature = "wayland_frontend")]
             SpaceElements::Layer { surface, .. } => {
-                use crate::wayland::shell::wlr_layer::Layer;
-
                 let layer = match surface.layer() {
                     Layer::Background => RenderZindex::Background,
                     Layer::Bottom => RenderZindex::Bottom,
