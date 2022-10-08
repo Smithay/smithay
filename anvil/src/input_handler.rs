@@ -82,6 +82,7 @@ impl<Backend> AnvilState<Backend> {
         let keycode = evt.key_code();
         let state = evt.state();
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
+        let update_state = evt.update_state();
         let serial = SCOUNTER.next_serial();
         let log = self.log.clone();
         let time = Event::time(&evt);
@@ -96,7 +97,7 @@ impl<Backend> AnvilState<Backend> {
                 && (data.layer == WlrLayer::Top || data.layer == WlrLayer::Overlay)
             {
                 keyboard.set_focus(self, Some(layer.wl_surface().clone()), serial);
-                keyboard.input::<(), _>(self, keycode, state, serial, time, |_, _, _| {
+                keyboard.input::<(), _>(self, keycode, state, serial, time, update_state, |_, _, _| {
                     FilterResult::Forward
                 });
                 return KeyAction::None;
@@ -111,44 +112,52 @@ impl<Backend> AnvilState<Backend> {
             .unwrap_or(false);
 
         let action = keyboard
-            .input(self, keycode, state, serial, time, |_, modifiers, handle| {
-                let keysym = handle.modified_sym();
+            .input(
+                self,
+                keycode,
+                state,
+                serial,
+                time,
+                update_state,
+                |_, modifiers, handle| {
+                    let keysym = handle.modified_sym();
 
-                debug!(log, "keysym";
-                    "state" => format!("{:?}", state),
-                    "mods" => format!("{:?}", modifiers),
-                    "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
-                );
+                    debug!(log, "keysym";
+                        "state" => format!("{:?}", state),
+                        "mods" => format!("{:?}", modifiers),
+                        "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
+                    );
 
-                // If the key is pressed and triggered a action
-                // we will not forward the key to the client.
-                // Additionally add the key to the suppressed keys
-                // so that we can decide on a release if the key
-                // should be forwarded to the client or not.
-                if let KeyState::Pressed = state {
-                    if !inhibited {
-                        let action = process_keyboard_shortcut(*modifiers, keysym);
+                    // If the key is pressed and triggered a action
+                    // we will not forward the key to the client.
+                    // Additionally add the key to the suppressed keys
+                    // so that we can decide on a release if the key
+                    // should be forwarded to the client or not.
+                    if let KeyState::Pressed = state {
+                        if !inhibited {
+                            let action = process_keyboard_shortcut(*modifiers, keysym);
 
-                        if action.is_some() {
-                            suppressed_keys.push(keysym);
+                            if action.is_some() {
+                                suppressed_keys.push(keysym);
+                            }
+
+                            action
+                                .map(FilterResult::Intercept)
+                                .unwrap_or(FilterResult::Forward)
+                        } else {
+                            FilterResult::Forward
                         }
-
-                        action
-                            .map(FilterResult::Intercept)
-                            .unwrap_or(FilterResult::Forward)
                     } else {
-                        FilterResult::Forward
+                        let suppressed = suppressed_keys.contains(&keysym);
+                        if suppressed {
+                            suppressed_keys.retain(|k| *k != keysym);
+                            FilterResult::Intercept(KeyAction::None)
+                        } else {
+                            FilterResult::Forward
+                        }
                     }
-                } else {
-                    let suppressed = suppressed_keys.contains(&keysym);
-                    if suppressed {
-                        suppressed_keys.retain(|k| *k != keysym);
-                        FilterResult::Intercept(KeyAction::None)
-                    } else {
-                        FilterResult::Forward
-                    }
-                }
-            })
+                },
+            )
             .unwrap_or(KeyAction::None);
 
         self.suppressed_keys = suppressed_keys;

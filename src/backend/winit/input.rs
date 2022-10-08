@@ -78,6 +78,10 @@ impl KeyboardKeyEvent<WinitInput> for WinitKeyboardInputEvent {
     fn count(&self) -> u32 {
         self.count
     }
+
+    fn update_state(&self) -> bool {
+        true
+    }
 }
 
 /// Winit-Backend internal event wrapping `winit`'s types into a [`PointerMotionAbsoluteEvent`]

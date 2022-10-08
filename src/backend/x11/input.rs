@@ -85,6 +85,10 @@ impl KeyboardKeyEvent<X11Input> for X11KeyboardInputEvent {
     fn count(&self) -> u32 {
         self.count
     }
+
+    fn update_state(&self) -> bool {
+        true
+    }
 }
 
 /// X11-Backend internal event wrapping `X11`'s types into a [`PointerAxisEvent`]
