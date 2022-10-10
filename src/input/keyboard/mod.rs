@@ -586,6 +586,23 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     }
 }
 
+impl<D> KeyboardHandle<D>
+where
+    D: SeatHandler,
+    <D as SeatHandler>::KeyboardFocus: Clone,
+{
+    /// Retrieve the current keyboard focus
+    pub fn current_focus(&self) -> Option<<D as SeatHandler>::KeyboardFocus> {
+        self.arc
+            .internal
+            .lock()
+            .unwrap()
+            .focus
+            .clone()
+            .map(|(focus, _)| focus)
+    }
+}
+
 /// This inner handle is accessed from inside a keyboard grab logic, and directly
 /// sends event to the client
 pub struct KeyboardInnerHandle<'a, D: SeatHandler> {
