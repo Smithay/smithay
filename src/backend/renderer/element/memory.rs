@@ -396,6 +396,8 @@ impl<'a> RenderContext<'a> {
     }
 
     /// Draw to the buffer
+    ///
+    /// Provided closure has to return updated regions.
     pub fn draw<F>(&mut self, f: F)
     where
         F: FnOnce(&mut [u8]) -> Vec<Rectangle<i32, Buffer>>,
