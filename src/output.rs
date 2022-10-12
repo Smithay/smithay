@@ -60,7 +60,7 @@ use slog::{info, o};
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::output::xdg::XdgOutput;
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::wl_output::WlOutput;
+use wayland_server::{backend::WeakHandle, protocol::wl_output::WlOutput};
 
 use crate::utils::{user_data::UserDataMap, Logical, Physical, Point, Raw, Size, Transform};
 
@@ -162,8 +162,6 @@ impl Scale {
 pub(crate) struct Inner {
     pub(crate) name: String,
     pub(crate) description: String,
-    #[cfg(feature = "wayland_frontend")]
-    pub(crate) instances: Vec<WlOutput>,
     pub(crate) physical: PhysicalProperties,
     pub(crate) location: Point<i32, Logical>,
     pub(crate) transform: Transform,
@@ -172,8 +170,14 @@ pub(crate) struct Inner {
     pub(crate) current_mode: Option<Mode>,
     pub(crate) preferred_mode: Option<Mode>,
 
+    // used by the wayland::output module.
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) instances: Vec<WlOutput>,
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) handle: Option<WeakHandle>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) xdg_output: Option<XdgOutput>,
+
     #[allow(dead_code)]
     pub(crate) log: ::slog::Logger,
 }
@@ -215,6 +219,8 @@ impl Output {
                 description: format!("{} - {} - {}", physical.make, physical.model, name),
                 #[cfg(feature = "wayland_frontend")]
                 instances: Vec::new(),
+                #[cfg(feature = "wayland_frontend")]
+                handle: None,
                 physical,
                 location: (0, 0).into(),
                 transform: Transform::Normal,

@@ -37,8 +37,11 @@ use crate::backend::egl::{
 #[cfg(feature = "renderer_multi")]
 pub mod multigpu;
 
-#[cfg(feature = "wayland_frontend")]
 pub mod utils;
+
+pub mod element;
+
+pub mod damage;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Texture filtering methods

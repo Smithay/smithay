@@ -165,6 +165,7 @@ impl Output {
         D: GlobalDispatch<WlOutput, WlOutputData>,
         D: 'static,
     {
+        self.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
         display.create_global::<D, WlOutput, _>(
             4,
             WlOutputData {
@@ -230,43 +231,69 @@ impl Output {
 
     /// This function allows to run a [FnMut] on every
     /// [WlOutput] matching the same [Client] as provided
-    pub fn with_client_outputs<F>(&self, dh: &DisplayHandle, client: &Client, mut f: F)
+    pub fn with_client_outputs<F>(&self, client: &Client, f: F)
     where
-        F: FnMut(&DisplayHandle, &WlOutput),
+        F: FnMut(&WlOutput),
     {
-        let list: Vec<_> = self
-            .inner
-            .0
-            .lock()
-            .unwrap()
-            .instances
-            .iter()
-            .filter(|output| {
-                dh.get_client(output.id())
-                    .map(|output_client| &output_client == client)
-                    .unwrap_or(false)
-            })
-            .cloned()
-            .collect();
+        self.with_client_outputs_internal(client.id(), f)
+    }
+
+    fn with_client_outputs_internal<F>(&self, client: wayland_server::backend::ClientId, mut f: F)
+    where
+        F: FnMut(&WlOutput),
+    {
+        let list: Vec<WlOutput> = {
+            let data = self.inner.0.lock().unwrap();
+            data.instances
+                .iter()
+                .filter(|output| {
+                    data.handle
+                        .as_ref()
+                        .and_then(|handle| handle.upgrade())
+                        .and_then(|handle| handle.get_client(output.id()).ok())
+                        .map(|output_client| output_client == client)
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect()
+        };
 
         for o in list {
-            f(dh, &o);
+            f(&o);
         }
     }
 
     /// Sends `wl_surface.enter` for the provided surface
     /// with the matching client output
-    pub fn enter(&self, dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
-        if let Ok(client) = dh.get_client(surface.id()) {
-            self.with_client_outputs(dh, &client, |_dh, output| surface.enter(output))
+    pub fn enter(&self, surface: &wl_surface::WlSurface) {
+        let client = self
+            .inner
+            .0
+            .lock()
+            .unwrap()
+            .handle
+            .as_ref()
+            .and_then(|handle| handle.upgrade())
+            .and_then(|handle| handle.get_client(surface.id()).ok());
+        if let Some(client) = client {
+            self.with_client_outputs_internal(client, |output| surface.enter(output))
         }
     }
 
     /// Sends `wl_surface.leave` for the provided surface
     /// with the matching client output
-    pub fn leave(&self, dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
-        if let Ok(client) = dh.get_client(surface.id()) {
-            self.with_client_outputs(dh, &client, |_dh, output| surface.leave(output))
+    pub fn leave(&self, surface: &wl_surface::WlSurface) {
+        let client = self
+            .inner
+            .0
+            .lock()
+            .unwrap()
+            .handle
+            .as_ref()
+            .and_then(|handle| handle.upgrade())
+            .and_then(|handle| handle.get_client(surface.id()).ok());
+        if let Some(client) = client {
+            self.with_client_outputs_internal(client, |output| surface.leave(output))
         }
     }
 }
