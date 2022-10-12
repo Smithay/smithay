@@ -8,7 +8,7 @@ use smithay::{
     delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_primary_selection,
     delegate_seat, delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
     delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
-    desktop::{PopupManager, Space, WindowSurfaceType},
+    desktop::{PopupManager, Space, Window},
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     output::Output,
     reexports::{
@@ -36,6 +36,7 @@ use smithay::{
         },
         output::OutputManagerState,
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
+        seat::WaylandFocus,
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{
@@ -54,6 +55,7 @@ use smithay::{
     },
 };
 
+use crate::focus::FocusTarget;
 #[cfg(feature = "xwayland")]
 use crate::xwayland::X11State;
 #[cfg(feature = "xwayland")]
@@ -82,7 +84,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub handle: LoopHandle<'static, CalloopData<BackendData>>,
 
     // desktop
-    pub space: Space,
+    pub space: Space<Window>,
     pub popups: PopupManager,
 
     // smithay state
@@ -158,17 +160,19 @@ impl<BackendData> ShmHandler for AnvilState<BackendData> {
 delegate_shm!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> SeatHandler for AnvilState<BackendData> {
-    type KeyboardFocus = WlSurface;
-    type PointerFocus = WlSurface;
+    type KeyboardFocus = FocusTarget;
+    type PointerFocus = FocusTarget;
 
     fn seat_state(&mut self) -> &mut SeatState<AnvilState<BackendData>> {
         &mut self.seat_state
     }
 
-    fn focus_changed(&mut self, seat: &Seat<Self>, surface: Option<&WlSurface>) {
+    fn focus_changed(&mut self, seat: &Seat<Self>, target: Option<&FocusTarget>) {
         let dh = &self.display_handle;
 
-        let focus = surface.and_then(|s| dh.get_client(s.id()).ok());
+        let focus = target
+            .and_then(WaylandFocus::wl_surface)
+            .and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, focus.clone());
         set_primary_focus(dh, seat, focus);
     }
@@ -214,10 +218,11 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
             // Just grant the wish
             let w = self
                 .space
-                .window_for_surface(&surface, WindowSurfaceType::TOPLEVEL)
+                .elements()
+                .find(|window| window.toplevel().wl_surface() == &surface)
                 .cloned();
             if let Some(window) = w {
-                self.space.raise_window(&window, true);
+                self.space.raise_element(&window, true);
             }
         } else {
             // Discard the request
@@ -380,6 +385,18 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             xwayland,
             #[cfg(feature = "xwayland")]
             x11_state: None,
+        }
+    }
+
+    pub fn send_frames(&self, output: &Output) {
+        self.space.elements().for_each(|window| {
+            if self.space.outputs_for_element(window).contains(output) {
+                window.send_frame(self.start_time.elapsed().as_millis() as u32)
+            }
+        });
+        let map = smithay::desktop::layer_map_for_output(output);
+        for layer_surface in map.layers() {
+            layer_surface.send_frame(self.start_time.elapsed().as_millis() as u32)
         }
     }
 }

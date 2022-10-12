@@ -1,6 +1,10 @@
 use crate::{
-    backend::renderer::{utils::draw_surface_tree, ImportAll, Renderer},
-    desktop::{utils::*, PopupManager, Space},
+    backend::renderer::{
+        element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
+        utils::draw_render_elements,
+        ImportAll, Renderer,
+    },
+    desktop::{utils::*, PopupManager},
     output::{Output, WeakOutput},
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
@@ -12,7 +16,7 @@ use crate::{
     },
 };
 use indexmap::IndexSet;
-use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle};
+use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 use std::{
     cell::{RefCell, RefMut},
@@ -21,7 +25,7 @@ use std::{
     sync::Arc,
 };
 
-use super::WindowSurfaceType;
+use crate::desktop::WindowSurfaceType;
 
 crate::utils::ids::id_gen!(next_layer_id, LAYER_ID, LAYER_IDS);
 
@@ -79,7 +83,7 @@ pub enum LayerError {
 
 impl LayerMap {
     /// Map a [`LayerSurface`] to this [`LayerMap`].
-    pub fn map_layer(&mut self, dh: &DisplayHandle, layer: &LayerSurface) -> Result<(), LayerError> {
+    pub fn map_layer(&mut self, layer: &LayerSurface) -> Result<(), LayerError> {
         if !self.layers.contains(layer) {
             if layer
                 .0
@@ -92,16 +96,16 @@ impl LayerMap {
             }
 
             self.layers.insert(layer.clone());
-            self.arrange(dh);
+            self.arrange();
         }
         Ok(())
     }
 
     /// Remove a [`LayerSurface`] from this [`LayerMap`].
-    pub fn unmap_layer(&mut self, dh: &DisplayHandle, layer: &LayerSurface) {
+    pub fn unmap_layer(&mut self, layer: &LayerSurface) {
         if self.layers.shift_remove(layer) {
             let _ = layer.user_data().get::<LayerUserdata>().take();
-            self.arrange(dh);
+            self.arrange();
         }
         if let (Some(output), surface) = (self.output(), layer.wl_surface()) {
             with_surface_tree_downward(
@@ -109,7 +113,10 @@ impl LayerMap {
                 (),
                 |_, _, _| TraversalAction::DoChildren(()),
                 |wl_surface, _, _| {
-                    output_leave(dh, &output, &mut self.surfaces, wl_surface, &self.logger);
+                    if self.surfaces.contains(&wl_surface.id()) {
+                        output.leave(wl_surface);
+                        self.surfaces.remove(&wl_surface.id());
+                    }
                 },
                 |_, _, _| true,
             );
@@ -120,7 +127,10 @@ impl LayerMap {
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        output_leave(dh, &output, &mut self.surfaces, wl_surface, &self.logger);
+                        if self.surfaces.contains(&wl_surface.id()) {
+                            output.leave(wl_surface);
+                            self.surfaces.remove(&wl_surface.id());
+                        }
                     },
                     |_, _, _| true,
                 )
@@ -228,7 +238,7 @@ impl LayerMap {
     /// Force re-arranging the layer surfaces, e.g. when the output size changes.
     ///
     /// Note: Mapping or unmapping a layer surface will automatically cause a re-arrangement.
-    pub fn arrange(&mut self, dh: &DisplayHandle) {
+    pub fn arrange(&mut self) {
         if let Some(output) = self.output() {
             let output_rect = Rectangle::from_loc_and_size(
                 (0, 0),
@@ -248,14 +258,16 @@ impl LayerMap {
             for layer in self.layers.iter() {
                 let surface = layer.wl_surface();
 
-                let logger_ref = &self.logger;
                 let surfaces_ref = &mut self.surfaces;
                 with_surface_tree_downward(
                     surface,
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        output_enter(dh, &output, surfaces_ref, wl_surface, logger_ref);
+                        if !surfaces_ref.contains(&wl_surface.id()) {
+                            output.enter(wl_surface);
+                            surfaces_ref.insert(wl_surface.id());
+                        }
                     },
                     |_, _, _| true,
                 );
@@ -266,7 +278,10 @@ impl LayerMap {
                         (),
                         |_, _, _| TraversalAction::DoChildren(()),
                         |wl_surface, _, _| {
-                            output_enter(dh, &output, surfaces_ref, wl_surface, logger_ref);
+                            if !surfaces_ref.contains(&wl_surface.id()) {
+                                output.enter(wl_surface);
+                                surfaces_ref.insert(wl_surface.id());
+                            }
                         },
                         |_, _, _| true,
                     )
@@ -365,7 +380,7 @@ impl LayerMap {
     pub fn cleanup(&mut self, dh: &DisplayHandle) {
         if self.layers.iter().any(|l| !l.alive()) {
             self.layers.retain(|layer| layer.alive());
-            self.arrange(dh);
+            self.arrange();
         }
         self.surfaces
             .retain(|i| dh.backend_handle().object_info(i.clone()).is_ok());
@@ -381,6 +396,7 @@ impl LayerMap {
 #[derive(Debug, Default)]
 pub struct LayerState {
     pub location: Point<i32, Logical>,
+    pub outputs: Vec<Output>,
 }
 
 type LayerUserdata = RefCell<Option<LayerState>>;
@@ -506,33 +522,6 @@ impl LayerSurface {
         bounding_box
     }
 
-    /// Returns the [`Physical`] bounding box over this layer surface, it subsurfaces as well as any popups.
-    ///
-    /// This differs from using [`bbox_with_popups`](LayerSurface::bbox_with_popups) and translating the returned [`Rectangle`]
-    /// to [`Physical`] space as it rounds the subsurface and popup offsets.
-    /// See [`physical_bbox_from_surface_tree`] for more information.
-    ///
-    /// Note: You need to use a [`PopupManager`] to track popups, otherwise the bounding box
-    /// will not include the popups.
-    pub fn physical_bbox_with_popups(
-        &self,
-        location: impl Into<Point<f64, Physical>>,
-        scale: impl Into<Scale<f64>>,
-    ) -> Rectangle<i32, Physical> {
-        let location = location.into();
-        let scale = scale.into();
-        let surface = self.0.surface.wl_surface();
-        let mut geo = physical_bbox_from_surface_tree(surface, location, scale);
-        for (popup, p_location) in PopupManager::popups_for_surface(surface) {
-            geo = geo.merge(physical_bbox_from_surface_tree(
-                popup.wl_surface(),
-                location + p_location.to_f64().to_physical(scale),
-                scale,
-            ));
-        }
-        geo
-    }
-
     /// Finds the topmost surface under this point if any and returns it together with the location of this
     /// surface.
     ///
@@ -552,31 +541,6 @@ impl LayerSurface {
         }
 
         under_from_surface_tree(surface, point, (0, 0), surface_type)
-    }
-
-    /// Returns the damage of all the surfaces of this layer surface.
-    ///
-    /// If `for_values` is `Some(_)` it will only return the damage on the
-    /// first call for a given [`Space`] and [`Output`], if the buffer hasn't changed.
-    /// Subsequent calls will return an empty vector until the buffer is updated again.
-    pub(super) fn accumulated_damage(
-        &self,
-        location: impl Into<Point<f64, Physical>>,
-        scale: impl Into<Scale<f64>>,
-        for_values: Option<(&Space, &Output)>,
-    ) -> Vec<Rectangle<i32, Physical>> {
-        let surface = self.wl_surface();
-        damage_from_surface_tree(surface, location, scale, for_values)
-    }
-
-    /// Returns the opaque regions of all the surfaces of this layer surface.
-    pub fn opaque_regions(
-        &self,
-        location: impl Into<Point<f64, Physical>>,
-        scale: impl Into<Scale<f64>>,
-    ) -> Option<Vec<Rectangle<i32, Physical>>> {
-        let surface = self.wl_surface();
-        opaque_regions_from_surface_tree(surface, location, scale)
     }
 
     /// Sends the frame callback to all the subsurfaces in this
@@ -619,39 +583,13 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
     S: Into<Scale<f64>>,
-    P: Into<Point<f64, Physical>>,
+    P: Into<Point<i32, Physical>>,
 {
     let location = location.into();
-    let surface = layer.wl_surface();
-    draw_surface_tree(renderer, frame, surface, scale.into(), location, damage, log)
-}
+    let scale = scale.into();
+    let elements =
+        AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(layer, location, scale);
 
-/// Renders popups of a given [`LayerSurface`] using a provided renderer and frame
-///
-/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
-/// - `location` is the position the layer surface would be drawn at (popups will be drawn relative to that coordiante).
-/// - `damage` is the set of regions of the layer surface that should be drawn.
-///
-/// Note: This function will render nothing, if you are not using
-/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
-/// to let smithay handle buffer management.
-#[allow(clippy::too_many_arguments)]
-pub fn draw_layer_popups<R, S, P>(
-    renderer: &mut R,
-    frame: &mut <R as Renderer>::Frame,
-    layer: &LayerSurface,
-    scale: S,
-    location: P,
-    damage: &[Rectangle<i32, Physical>],
-    log: &slog::Logger,
-) -> Result<(), <R as Renderer>::Error>
-where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
-    S: Into<Scale<f64>>,
-    P: Into<Point<f64, Physical>>,
-{
-    let location = location.into();
-    let surface = layer.wl_surface();
-    super::popup::draw_popups(renderer, frame, surface, location, (0, 0), scale, damage, log)
+    draw_render_elements(renderer, frame, scale, &elements, damage, log)?;
+    Ok(())
 }
