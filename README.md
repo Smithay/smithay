@@ -14,6 +14,8 @@ Smithay aims to provide building blocks to create wayland compositors in Rust. W
 being a full-blown compositor, it'll provide objects and interfaces implementing common
 functionalities that pretty much any compositor will need, in a generic fashion.
 
+It tries to support some commonly used Wayland protocol extensions, such as relevant ones made by [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots) for use with docks and standalone window managers. See https://github.com/Smithay/smithay/issues/778 for more information.
+
 Also:
 
 - **Documented:** Smithay strives to maintain a clear and detailed documentation of its API and its
@@ -24,6 +26,7 @@ Also:
   part you don't want to use, you should not be forced to use it.
 - **High-level:** You should be able to not have to worry about gory low-level stuff (but 
   Smithay won't stop you if you really want to dive into it).
+
 
 ## Anvil
 
