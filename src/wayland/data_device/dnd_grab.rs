@@ -19,7 +19,7 @@ use crate::{
     input::{
         pointer::{
             AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-            PointerInnerHandle,
+            PointerInnerHandle, RelativeMotionEvent,
         },
         Seat, SeatHandler,
     },
@@ -180,6 +180,16 @@ where
                 }
             }
         }
+    }
+
+    fn relative_motion(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        handle.relative_motion(data, focus, event);
     }
 
     fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {

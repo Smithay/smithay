@@ -55,6 +55,7 @@ pub mod keyboard_shortcuts_inhibit;
 pub mod output;
 pub mod presentation;
 pub mod primary_selection;
+pub mod relative_pointer;
 pub mod seat;
 pub mod shell;
 pub mod shm;

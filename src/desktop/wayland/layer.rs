@@ -3,7 +3,7 @@ use crate::{
     desktop::{utils::*, PopupManager},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
+        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget, RelativeMotionEvent},
         Seat, SeatHandler,
     },
     output::{Output, WeakOutput},
@@ -668,6 +668,11 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for LayerSurface {
     }
     fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
         PointerTarget::<D>::enter(self, seat, data, event)
+    }
+    fn relative_motion(&self, seat: &Seat<D>, data: &mut D, event: &RelativeMotionEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::relative_motion(surface, seat, data, event)
+        }
     }
     fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
         if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {

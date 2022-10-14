@@ -42,6 +42,7 @@ use smithay::{
         },
         session::Session,
     },
+    input::pointer::RelativeMotionEvent,
     wayland::{
         seat::WaylandFocus,
         tablet_manager::{TabletDescriptor, TabletSeatTrait},
@@ -646,13 +647,23 @@ impl AnvilState<UdevData> {
         if let Some(ptr) = self.seat.get_pointer() {
             ptr.motion(
                 self,
-                under,
+                under.clone(),
                 &MotionEvent {
                     location: self.pointer_location,
                     serial,
                     time: evt.time(),
                 },
             );
+
+            ptr.relative_motion(
+                self,
+                under,
+                &RelativeMotionEvent {
+                    delta: evt.delta(),
+                    delta_unaccel: evt.delta_unaccel(),
+                    utime: evt.utime(),
+                },
+            )
         }
     }
 

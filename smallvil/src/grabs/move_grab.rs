@@ -3,7 +3,7 @@ use smithay::{
     desktop::Window,
     input::pointer::{
         AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-        PointerInnerHandle,
+        PointerInnerHandle, RelativeMotionEvent,
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
     utils::{Logical, Point},
@@ -30,6 +30,16 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         let new_location = self.initial_window_location.to_f64() + delta;
         data.space
             .map_element(self.window.clone(), new_location.to_i32_round(), true);
+    }
+
+    fn relative_motion(
+        &mut self,
+        data: &mut Smallvil,
+        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        handle.relative_motion(data, focus, event);
     }
 
     fn button(

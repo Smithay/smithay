@@ -1,5 +1,6 @@
 use std::{fmt, sync::Mutex};
 
+use wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1;
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::{
@@ -17,7 +18,7 @@ use crate::{
     input::{
         pointer::{
             AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus, MotionEvent, PointerHandle,
-            PointerInternal, PointerTarget,
+            PointerInternal, PointerTarget, RelativeMotionEvent,
         },
         Seat,
     },
@@ -32,6 +33,11 @@ impl<D: SeatHandler> PointerHandle<D> {
         let mut guard = self.known_pointers.lock().unwrap();
         guard.push(pointer);
     }
+
+    pub(crate) fn new_relative_pointer(&self, pointer: ZwpRelativePointerV1) {
+        let mut guard = self.known_relative_pointers.lock().unwrap();
+        guard.push(pointer);
+    }
 }
 
 /// WlSurface role of a cursor image icon
@@ -44,6 +50,21 @@ fn for_each_focused_pointers<D: SeatHandler + 'static>(
 ) {
     if let Some(pointer) = seat.get_pointer() {
         let inner = pointer.known_pointers.lock().unwrap();
+        for ptr in &*inner {
+            if ptr.id().same_client_as(&surface.id()) {
+                f(ptr.clone())
+            }
+        }
+    }
+}
+
+fn for_each_focused_relative_pointers<D: SeatHandler + 'static>(
+    seat: &Seat<D>,
+    surface: &WlSurface,
+    mut f: impl FnMut(ZwpRelativePointerV1),
+) {
+    if let Some(pointer) = seat.get_pointer() {
+        let inner = pointer.known_relative_pointers.lock().unwrap();
         for ptr in &*inner {
             if ptr.id().same_client_as(&surface.id()) {
                 f(ptr.clone())
@@ -79,6 +100,20 @@ where
             if ptr.version() >= 5 {
                 ptr.frame();
             }
+        })
+    }
+    fn relative_motion(&self, seat: &Seat<D>, _data: &mut D, event: &RelativeMotionEvent) {
+        for_each_focused_relative_pointers(seat, self, |ptr| {
+            let utime_hi = (event.utime >> 32) as u32;
+            let utime_lo = (event.utime & 0xffffffff) as u32;
+            ptr.relative_motion(
+                utime_hi,
+                utime_lo,
+                event.delta.x,
+                event.delta.y,
+                event.delta_unaccel.x,
+                event.delta_unaccel.y,
+            );
         })
     }
     fn button(&self, seat: &Seat<D>, _data: &mut D, event: &ButtonEvent) {

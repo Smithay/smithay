@@ -379,7 +379,7 @@ jobs:
             gtest_filter: "XdgOutputV1Test*"
             flag: output
           - job_name: "Pointer input tests"
-            gtest_filter: "*/SurfacePointerMotionTest*"
+            gtest_filter: "*/SurfacePointerMotionTest*:RelativePointer*"
             flag: pointer-input
 
     name: "WLCS: ${{ matrix.job_name }}"

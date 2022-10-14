@@ -7,7 +7,7 @@ use crate::{
     utils::{Logical, Point},
 };
 
-use super::{AxisFrame, ButtonEvent, Focus, MotionEvent, PointerInnerHandle};
+use super::{AxisFrame, ButtonEvent, Focus, MotionEvent, PointerInnerHandle, RelativeMotionEvent};
 
 /// A trait to implement a pointer grab
 ///
@@ -44,6 +44,18 @@ pub trait PointerGrab<D: SeatHandler>: Send {
         handle: &mut PointerInnerHandle<'_, D>,
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
+    );
+    /// Relative motion was reported
+    ///
+    /// This method allows you attach additional behavior to a relative motion event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::relative_motion()` as part of your processing.
+    /// If you don't, the rest of the compositor will behave as if the motion event never occurred.
+    fn relative_motion(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
     );
     /// A button press was reported
     ///
@@ -124,6 +136,16 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
         handle.motion(data, focus, event);
     }
 
+    fn relative_motion(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        handle.relative_motion(data, focus, event);
+    }
+
     fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {
         handle.button(data, event);
         if event.state == ButtonState::Pressed {
@@ -169,6 +191,16 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
         event: &MotionEvent,
     ) {
         handle.motion(data, self.start_data.focus.clone(), event);
+    }
+
+    fn relative_motion(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        handle.relative_motion(data, focus, event);
     }
 
     fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {

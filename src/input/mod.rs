@@ -19,7 +19,7 @@
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! # use smithay::backend::input::KeyState;
 //! # use smithay::input::{
-//! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent},
+//! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent},
 //! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
@@ -45,6 +45,7 @@
 //! # impl PointerTarget<State> for Target {
 //! #   fn enter(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
 //! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+//! #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
 //! #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
 //! #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
 //! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
@@ -318,7 +319,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
     /// # use smithay::backend::input::KeyState;
     /// # use smithay::input::{
-    /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent},
+    /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent},
     /// #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
     /// # };
     /// # use smithay::utils::{IsAlive, Serial};
@@ -331,6 +332,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # impl PointerTarget<State> for Target {
     /// #   fn enter(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
     /// #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+    /// #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
     /// #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
     /// #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
     /// #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
@@ -413,7 +415,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # use smithay::input::{Seat, SeatState, SeatHandler, keyboard::XkbConfig, pointer::CursorImageStatus};
     /// # use smithay::backend::input::KeyState;
     /// # use smithay::input::{
-    /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent},
+    /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent},
     /// #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
     /// # };
     /// # use smithay::utils::{IsAlive, Serial};
@@ -426,6 +428,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # impl PointerTarget<State> for Target {
     /// #   fn enter(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
     /// #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+    /// #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
     /// #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
     /// #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
     /// #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}

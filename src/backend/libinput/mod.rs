@@ -193,8 +193,21 @@ impl backend::PointerMotionEvent<LibinputInputBackend> for event::pointer::Point
     fn delta_x(&self) -> f64 {
         self.dx()
     }
+
     fn delta_y(&self) -> f64 {
         self.dy()
+    }
+
+    fn delta_x_unaccel(&self) -> f64 {
+        self.dx_unaccelerated()
+    }
+
+    fn delta_y_unaccel(&self) -> f64 {
+        self.dy_unaccelerated()
+    }
+
+    fn utime(&self) -> u64 {
+        event::pointer::PointerEventTrait::time_usec(self)
     }
 }
 

@@ -3,7 +3,7 @@ pub use smithay::{
     desktop::{LayerSurface, PopupKind},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
+        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget, RelativeMotionEvent},
         Seat,
     },
     reexports::wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, Resource},
@@ -62,6 +62,18 @@ impl<BackendData: Backend> PointerTarget<AnvilState<BackendData>> for FocusTarge
             FocusTarget::Window(w) => PointerTarget::motion(w, seat, data, event),
             FocusTarget::LayerSurface(l) => PointerTarget::motion(l, seat, data, event),
             FocusTarget::Popup(p) => PointerTarget::motion(p.wl_surface(), seat, data, event),
+        }
+    }
+    fn relative_motion(
+        &self,
+        seat: &Seat<AnvilState<BackendData>>,
+        data: &mut AnvilState<BackendData>,
+        event: &RelativeMotionEvent,
+    ) {
+        match self {
+            FocusTarget::Window(w) => PointerTarget::relative_motion(w, seat, data, event),
+            FocusTarget::LayerSurface(l) => PointerTarget::relative_motion(l.wl_surface(), seat, data, event),
+            FocusTarget::Popup(p) => PointerTarget::relative_motion(p.wl_surface(), seat, data, event),
         }
     }
     fn button(
