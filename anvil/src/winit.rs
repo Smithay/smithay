@@ -41,7 +41,7 @@ use crate::{drawing::*, render::*};
 pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData {
-    backend: WinitGraphicsBackend,
+    backend: Rc<RefCell<WinitGraphicsBackend>>,
     damage_tracked_renderer: DamageTrackedRenderer,
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
@@ -59,6 +59,7 @@ impl DmabufHandler for AnvilState<WinitData> {
     fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
         self.backend_data
             .backend
+            .borrow_mut()
             .renderer()
             .import_dmabuf(&dmabuf, None)
             .map(|_| ())
@@ -83,14 +84,14 @@ pub fn run_winit(log: Logger) {
     let mut display = Display::new().unwrap();
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let (mut backend, mut winit) = match winit::init(log.clone()) {
+    let (backend, mut winit) = match winit::init(log.clone()) {
         Ok(ret) => ret,
         Err(err) => {
             slog::crit!(log, "Failed to initialize Winit backend: {}", err);
             return;
         }
     };
-    let size = backend.window_size().physical_size;
+    let size = backend.borrow().window_size().physical_size;
 
     let mode = Mode {
         size,
@@ -192,8 +193,9 @@ pub fn run_winit(log: Logger) {
         }
 
         // drawing logic
-        {
-            let backend = &mut state.backend_data.backend;
+        let backend = &mut state.backend_data.backend;
+        if backend.borrow().is_surface_available() {
+            let cursor_visible: bool;
 
             let mut cursor_guard = state.cursor_status.lock().unwrap();
 
@@ -220,9 +222,10 @@ pub fn run_winit(log: Logger) {
             let age = if *full_redraw > 0 {
                 0
             } else {
-                backend.buffer_age().unwrap_or(0)
+                backend.borrow().buffer_age().unwrap_or(0)
             };
             let space = &mut state.space;
+            let mut backend = backend.borrow_mut();
             let damage_tracked_renderer = &mut state.backend_data.damage_tracked_renderer;
 
             let input_method = state.seat.input_method().unwrap();

@@ -106,14 +106,19 @@ unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
             continue;
         }
 
-        let display = wrap_egl_call(|| {
-            ffi::egl::GetPlatformDisplayEXT(
-                platform.platform,
-                platform.native_display,
-                platform.attrib_list.as_ptr(),
-            )
-        })
-        .map_err(Error::DisplayCreationError);
+        cfg_if::cfg_if! {
+            if #[cfg(target_os = "android")] {
+                let display = ffi::egl::GetDisplay(ffi::egl::DEFAULT_DISPLAY)
+            } else {
+                let display = wrap_egl_call(|| {
+                    ffi::egl::GetPlatformDisplayEXT(
+                        platform.platform,
+                        platform.native_display,
+                        platform.attrib_list.as_ptr(),
+                    )
+                })
+                .map_err(Error::DisplayCreationError);
+        }};
 
         let display = match display {
             Ok(display) => {

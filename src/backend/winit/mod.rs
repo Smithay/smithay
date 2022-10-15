@@ -41,9 +41,11 @@ use winit::{
     event::{ElementState, Event, KeyboardInput, Touch, TouchPhase, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     platform::run_return::EventLoopExtRunReturn,
-    platform::unix::WindowExtUnix,
     window::{Window as WinitWindow, WindowBuilder},
 };
+
+#[cfg(not(target_os = "android"))]
+use winit::platform::unix::WindowExtUnix;
 
 use slog::{debug, error, info, o, trace, warn};
 use std::cell::Cell;
@@ -91,11 +93,22 @@ pub struct WinitGraphicsBackend {
     renderer: Gles2Renderer,
     // The display isn't used past this point but must be kept alive.
     _display: EGLDisplay,
-    egl: Rc<EGLSurface>,
+    egl: Rc<RefCell<Option<Rc<EGLSurface>>>>,
     window: Rc<WinitWindow>,
     size: Rc<RefCell<WindowSize>>,
     damage_tracking: bool,
     resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
+}
+
+impl WinitGraphicsBackend {
+    ///
+    /// Check if the [EGLSurface] inside the backend struct is available or not.
+    ///
+    /// On other platforms outside of Android, this is always set to true. On Android, this is only after the [WinitEvent::Resumed] event and before the [WinitEvent::Suspended] event.
+    ///
+    pub fn is_surface_available(&self) -> bool {
+        self.egl.borrow().is_some()
+    }
 }
 
 /// Abstracted event loop of a [`WinitWindow`].
@@ -114,12 +127,13 @@ pub struct WinitEventLoop {
     resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
     /// Whether winit is using Wayland or X11 as it's backend.
     is_x11: bool,
+    backend: Rc<RefCell<WinitGraphicsBackend>>,
 }
 
 /// Create a new [`WinitGraphicsBackend`], which implements the
 /// [`Renderer`](crate::backend::renderer::Renderer) trait and a corresponding
 /// [`WinitEventLoop`].
-pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitEventLoop), Error>
+pub fn init<L>(logger: L) -> Result<(Rc<RefCell<WinitGraphicsBackend>>, WinitEventLoop), Error>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -138,7 +152,7 @@ where
 pub fn init_from_builder<L>(
     builder: WindowBuilder,
     logger: L,
-) -> Result<(WinitGraphicsBackend, WinitEventLoop), Error>
+) -> Result<(Rc<RefCell<WinitGraphicsBackend>>, WinitEventLoop), Error>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -162,7 +176,7 @@ pub fn init_from_builder_with_gl_attr<L>(
     builder: WindowBuilder,
     attributes: GlAttributes,
     logger: L,
-) -> Result<(WinitGraphicsBackend, WinitEventLoop), Error>
+) -> Result<(Rc<RefCell<WinitGraphicsBackend>>, WinitEventLoop), Error>
 where
     L: Into<Option<::slog::Logger>>,
 {
@@ -179,40 +193,52 @@ where
         let display = unsafe { EGLDisplay::new(&winit_window, log.clone())? };
         let context = EGLContext::new_with_config(&display, attributes, reqs, log.clone())?;
 
-        let (surface, is_x11) = if let Some(wl_surface) = winit_window.wayland_surface() {
-            debug!(log, "Winit backend: Wayland");
-            let size = winit_window.inner_size();
-            let surface = unsafe {
-                wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
-            }
-            .map_err(|err| Error::Surface(err.into()))?;
-            (
-                EGLSurface::new(
-                    &display,
-                    context.pixel_format().unwrap(),
-                    context.config_id(),
-                    surface,
-                    log.clone(),
+        let surface: Option<EGLSurface>;
+        let is_x11: bool;
+        cfg_if::cfg_if! {
+
+            if #[cfg(not(target_os = "android"))] {
+                (surface, is_x11) = if let Some(wl_surface) = winit_window.wayland_surface() {
+                    debug!(log, "Winit backend: Wayland");
+                    let size = winit_window.inner_size();
+                    let surface = unsafe {
+                        wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
+                    }
+                    .map_err(|err| Error::Surface(err.into()))?;
+                    (
+                        Some(EGLSurface::new(
+                            &display,
+                            context.pixel_format().unwrap(),
+                            context.config_id(),
+                            surface,
+                            log.clone(),
+                        )
+                    .map_err(EGLError::CreationFailed)?),
+                    false,
                 )
-                .map_err(EGLError::CreationFailed)?,
-                false,
-            )
-        } else if let Some(xlib_window) = winit_window.xlib_window().map(native::XlibWindow) {
-            debug!(log, "Winit backend: X11");
-            (
-                EGLSurface::new(
-                    &display,
-                    context.pixel_format().unwrap(),
-                    context.config_id(),
-                    xlib_window,
-                    log.clone(),
+            } else if let Some(xlib_window) = winit_window.xlib_window().map(native::XlibWindow) {
+                debug!(log, "Winit backend: X11");
+                (
+                    Some(EGLSurface::new(
+                        &display,
+                        context.pixel_format().unwrap(),
+                        context.config_id(),
+                        xlib_window,
+                        log.clone(),
+                    )
+                    .map_err(EGLError::CreationFailed)?),
+                    true,
                 )
-                .map_err(EGLError::CreationFailed)?,
-                true,
-            )
-        } else {
-            unreachable!("No backends for winit other then Wayland and X11 are supported")
-        };
+            } else {
+                            unreachable!("No backends for winit other then Wayland and X11 are supported on desktop Unix")
+
+            };
+            } else {
+                debug!(log, "Winit backend: Android");
+                is_x11 = false;
+                surface = None
+          }
+        }
 
         let _ = context.unbind();
 
@@ -226,24 +252,27 @@ where
     }));
 
     let window = Rc::new(winit_window);
-    let egl = Rc::new(surface);
+    let egl = Rc::new(RefCell::new(
+        surface.map_or_else(|| None, |surface| Some(Rc::new(surface))),
+    ));
+    //let egl = Rc::new(surface);
     let renderer = unsafe { Gles2Renderer::new(context, log.clone())? };
     let resize_notification = Rc::new(Cell::new(None));
     let damage_tracking = display.extensions().iter().any(|ext| ext == "EGL_EXT_buffer_age")
         && display.extensions().iter().any(|ext| {
             ext == "EGL_KHR_swap_buffers_with_damage" || ext == "EGL_EXT_swap_buffers_with_damage"
         });
-
+    let backend = Rc::new(RefCell::new(WinitGraphicsBackend {
+        window: window.clone(),
+        _display: display,
+        egl,
+        renderer,
+        damage_tracking,
+        size: size.clone(),
+        resize_notification: resize_notification.clone(),
+    }));
     Ok((
-        WinitGraphicsBackend {
-            window: window.clone(),
-            _display: display,
-            egl,
-            renderer,
-            damage_tracking,
-            size: size.clone(),
-            resize_notification: resize_notification.clone(),
-        },
+        backend.clone(),
         WinitEventLoop {
             resize_notification,
             events_loop,
@@ -254,6 +283,7 @@ where
             logger: log.new(o!("smithay_winit_component" => "event_loop")),
             size,
             is_x11,
+            backend,
         },
     ))
 }
@@ -268,7 +298,10 @@ pub enum WinitEvent {
         /// The new scale factor
         scale_factor: f64,
     },
-
+    /// The application is now suspended and on Android, the window is destroyed
+    Suspended,
+    /// The application is now resumed and on Android, the window is recreated/created.
+    Resumed,
     /// The focus state of the window changed
     Focus(bool),
 
@@ -297,12 +330,17 @@ impl WinitGraphicsBackend {
 
     /// Bind the underlying window to the underlying renderer
     pub fn bind(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
-        // Were we told to resize?
-        if let Some(size) = self.resize_notification.take() {
-            self.egl.resize(size.w, size.h, 0, 0);
+        if let Some(egl) = &*self.egl.borrow() {
+            // Were we told to resize?
+            if let Some(size) = self.resize_notification.take() {
+                egl.resize(size.w, size.h, 0, 0);
+            }
+
+            self.renderer.bind(egl.clone())?;
+        } else {
+            panic!("No EGLSurface in backend");
         }
 
-        self.renderer.bind(self.egl.clone())?;
         Ok(())
     }
 
@@ -315,10 +353,14 @@ impl WinitGraphicsBackend {
     /// If you are using this value actively e.g. for damage-tracking you should
     /// likely interpret an error just as if "0" was returned.
     pub fn buffer_age(&self) -> Option<usize> {
-        if self.damage_tracking {
-            self.egl.buffer_age().map(|x| x as usize)
+        if let Some(egl) = &*self.egl.borrow() {
+            if self.damage_tracking {
+                egl.buffer_age().map(|x| x as usize)
+            } else {
+                Some(0)
+            }
         } else {
-            Some(0)
+            panic!("No EGLSurface in backend")
         }
     }
 
@@ -343,7 +385,13 @@ impl WinitGraphicsBackend {
             }
             _ => None,
         };
-        self.egl.swap_buffers(damage.as_deref_mut())?;
+
+        if let Some(egl) = &*self.egl.borrow() {
+            egl.swap_buffers(damage.as_deref_mut())?;
+        } else {
+            panic!("No EGLSurface in backend")
+        }
+
         Ok(())
     }
 }
@@ -400,6 +448,16 @@ impl WinitEventLoop {
                 self.initialized = true;
             }
 
+            cfg_if::cfg_if! {
+                if #[cfg(target_os = "android")] {
+                    let backend = self.backend.borrow();
+                    let (context, egl, display) = (
+                            backend.renderer.egl_context(),
+                            backend.egl.clone(),
+                            &backend._display,
+                    );
+                }
+            }
             self.events_loop
                 .run_return(move |event, _target, control_flow| match event {
                     Event::RedrawEventsCleared => {
@@ -407,6 +465,29 @@ impl WinitEventLoop {
                     }
                     Event::RedrawRequested(_id) => {
                         callback(WinitEvent::Refresh);
+                    }
+                    Event::Suspended => {
+                        #[cfg(target_os = "android")]
+                        egl.replace(None);
+                        callback(WinitEvent::Suspended);
+                    }
+                    Event::Resumed => {
+                        #[cfg(target_os = "android")]
+                        if let Some(window) = ndk_glue::native_window().as_ref() {
+                            egl.replace(Some(Rc::new(
+                                EGLSurface::new(
+                                    display,
+                                    context.pixel_format().unwrap(),
+                                    context.config_id(),
+                                    window.clone(),
+                                    logger.clone(),
+                                )
+                                .map_err(EGLError::CreationFailed)
+                                .unwrap(),
+                            )));
+                        }
+
+                        callback(WinitEvent::Resumed);
                     }
                     Event::WindowEvent { event, .. } => {
                         let duration = Instant::now().duration_since(*time);

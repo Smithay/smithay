@@ -7,6 +7,7 @@ publish = false
 version = "0.0.1"
 
 [dependencies]
+cfg-if = "1.0.0"
 bitflags = "1.2.1"
 fps_ticker = {version = "1.0.0", optional = true}
 image = {version = "0.24.0", default-features = false, optional = true}
@@ -19,6 +20,19 @@ slog-term = "2.8"
 thiserror = "1"
 xcursor = {version = "0.3.3", optional = true}
 xkbcommon = "0.5.0"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+# This dependency will only be included when targeting Android
+[target.'cfg(target_os = "android")'.dependencies]
+# Winit still uses the 0.5.* versions of the ndk-* crates ^^
+ndk-glue = { version = "0.5.2", features = ["logger"] } # Substitute this with the latest ndk-glue version you wish to use
+ndk = "0.5.0"
+ndk-context = "0.1.1"
+jni = "0.19.0"
+ndk-sys = "0.2.2"
+tar = "0.4.38"
 
 [dependencies.smithay]
 default-features = false
@@ -35,8 +49,9 @@ version = "0.10.0"
 gl_generator = "0.14"
 
 [features]
+default = [ "egl", "winit", ]
+
 debug = ["fps_ticker", "image/png"]
-default = ["egl", "winit", "x11", "udev", "logind", "xwayland"]
 egl = ["smithay/use_system_lib", "smithay/backend_egl"]
 elogind = ["logind", "smithay/backend_session_elogind"]
 libseat = ["smithay/backend_session_libseat"]
@@ -57,3 +72,28 @@ udev = [
 winit = ["smithay/backend_winit"]
 x11 = ["smithay/backend_x11", "x11rb", "egl", "smithay/renderer_gl"]
 xwayland = ["smithay/xwayland", "x11rb", "smithay/x11rb_event_source"]
+[package.metadata.android]
+# Specifies the package property of the manifest.
+package = "com.github.lovelyyfiaaa.Waylovely"
+assets = "../assets"
+# Specifies the array of targets to build for.
+build_targets = [ "aarch64-linux-android" ] # For now we'll just build for Aarch64 <3
+
+# Name for final APK file.
+# Defaults to package name.
+apk_name = "waylovely"
+runtime_libs = "../prebuilt-libs"
+
+
+# Anvil needs this to create socket files for Wayland
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
+
+# See https://developer.android.com/guide/topics/manifest/uses-sdk-element
+
+[package.metadata.android.sdk]
+min_sdk_version = 29
+target_sdk_version = 32
+
+[package.metadata.android.application]
+label = "Waylovely"

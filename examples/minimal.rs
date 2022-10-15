@@ -145,7 +145,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let listener = ListeningSocket::bind("wayland-5").unwrap();
     let mut clients = Vec::new();
 
-    let (mut backend, mut winit) = winit::init(None)?;
+    let (backend, mut winit) = winit::init(None)?;
 
     let start_time = std::time::Instant::now();
 
@@ -185,12 +185,13 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             _ => (),
         })?;
 
-        backend.bind().unwrap();
+        backend.borrow_mut().bind().unwrap();
 
-        let size = backend.window_size().physical_size;
+        let size = backend.borrow().window_size().physical_size;
         let damage = Rectangle::from_loc_and_size((0, 0), size);
 
         backend
+            .borrow_mut()
             .renderer()
             .render(size, Transform::Flipped180, |renderer, frame| {
                 frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
@@ -221,7 +222,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
         // It is important that all events on the display have been dispatched and flushed to clients before
         // swapping buffers because this operation may block.
-        backend.submit(Some(&[damage])).unwrap();
+        backend.borrow_mut().submit(Some(&[damage])).unwrap();
     }
 }
 

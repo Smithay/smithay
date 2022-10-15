@@ -31,18 +31,14 @@ calloop = "0.10.1"
 cgmath = "0.18.0"
 dbus = { version = "0.9.4", optional = true }
 downcast-rs = "1.2.0"
-drm-fourcc = "^2.2.0"
-drm = { version = "0.7.0", optional = true }
-drm-ffi = { version = "0.3.0", optional = true }
-gbm = { version = "0.9.0", optional = true, default-features = false, features = ["drm-support"] }
-glow = { version = "0.11.2", optional = true }
+cfg-if = "1.0.0"
+
 input = { version = "0.7", default-features = false, features=["libinput_1_14"], optional = true }
 indexmap = "1.7"
 lazy_static = "1"
 libc = "0.2.103"
-libseat= { version = "0.1.1", optional = true }
 libloading = { version="0.7.0", optional = true } 
-nix = "0.24.1"
+nix = "0.25"
 once_cell = "1.8.0"
 rand = "0.8.4"
 scopeguard = { version = "1.1.0", optional = true }
@@ -50,7 +46,8 @@ slog = "2"
 slog-stdlog = { version = "4", optional = true }
 tempfile = { version = "3.0", optional = true }
 thiserror = "1.0.25"
-udev = { version = "0.6", optional = true }
+x11rb = { version = "0.10.0", optional = true }
+
 wayland-egl = { version = "=0.30.0-beta.10", optional = true }
 wayland-protocols = { version = "=0.30.0-beta.10", features = ["unstable", "staging", "server"], optional = true }
 wayland-protocols-wlr = { version = "=0.1.0-beta.10", features = ["server"]}
@@ -59,10 +56,29 @@ wayland-server = { version = "=0.30.0-beta.10", optional = true }
 wayland-sys = { version = "=0.30.0-beta.10", optional = true }
 wayland-backend = { version = "=0.1.0-beta.10", optional = true }
 winit = { version = "0.27.1", default-features = false, features = ["wayland", "wayland-dlopen", "x11"], optional = true }
-x11rb = { version = "0.10.0", optional = true }
 xkbcommon = "0.5.0"
 scan_fmt = { version = "0.2.3", default-features = false }
 io-lifetimes = "=1.0.0-rc1"
+
+# This dependency will only be included when targeting Android
+[target.'cfg(target_os = "android")'.dependencies]
+ndk-glue = "0.6.2" # Substitute this with the latest ndk-glue version you wish to use
+
+ndk = "0.5.0"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+udev = { version = "0.6", optional = true }
+libseat= { version = "0.1.1", optional = true }
+input = { version = "0.7", default-features = false, features=["libinput_1_19"], optional = true }
+
+drm-fourcc = "^2.2.0"
+drm = { version = "0.7.0", optional = true }
+drm-ffi = { version = "0.3.0", optional = true }
+gbm = { version = "0.9.0", optional = true, default-features = false, features = ["drm-support"] }
+glow = { version = "0.11.2", optional = true }
+
+[patch.crates-io]
+winit = { git = "https://github.com/rust-windowing/winit", rev = "4c39b3188cee29548761b57f38e4aa046cbe31ea" }
 
 [dev-dependencies]
 slog-term = "2.3"
@@ -70,11 +86,13 @@ slog-term = "2.3"
 [build-dependencies]
 gl_generator = { version = "0.14", optional = true }
 pkg-config = { version = "0.3.17", optional = true }
+cfg-if = "1.0.0"
 cc = { version = "1.0", optional = true }
 
 [features]
-default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_logind", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_multi", "xwayland", "wayland_frontend", "slog-stdlog", "backend_vulkan"]
-backend_winit = ["winit", "backend_egl", "wayland-egl", "renderer_gl"]
+default = ["backend_winit", "desktop", "renderer_gl", "wayland_frontend", "slog-stdlog", "backend_vulkan"]
+# default = [ "backend_session_logind", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_multi", "xwayland", "wayland_frontend", "slog-stdlog"]
+backend_winit = ["winit","backend_egl", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
 backend_gbm = ["gbm", "cc", "pkg-config"]
@@ -88,8 +106,8 @@ backend_session_logind = ["dbus", "backend_session", "pkg-config"]
 backend_session_elogind = ["backend_session_logind"]
 backend_session_libseat = ["backend_session", "libseat"]
 desktop = []
-renderer_gl = ["gl_generator", "backend_egl"]
 renderer_glow = ["renderer_gl", "glow"]
+renderer_gl = ["gl_generator", "backend_egl"]
 renderer_multi = ["backend_drm"]
 use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys"]
 wayland_frontend = ["wayland-server", "wayland-protocols", "tempfile"]
@@ -112,3 +130,4 @@ required-features = ["wayland_frontend"]
 [[example]]
 name = "vulkan"
 required-features = ["backend_vulkan"]
+
