@@ -60,7 +60,7 @@ pub fn init_winit(
     let timer = Timer::immediate();
     event_loop.handle().insert_source(timer, move |_, _, data| {
         winit_dispatch(
-            &mut backend,
+            &mut backend.borrow_mut(),
             &mut winit,
             data,
             &output,
