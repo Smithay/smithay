@@ -37,7 +37,6 @@ fn gl_generate() {
                 "EGL_EXT_image_dma_buf_import",
                 "EGL_EXT_image_dma_buf_import_modifiers",
                 "EGL_MESA_image_dma_buf_export",
-                #[cfg(target_os = "android")]
                 "EGL_KHR_platform_android",
                 "EGL_KHR_gl_image",
                 "EGL_EXT_buffer_age",
