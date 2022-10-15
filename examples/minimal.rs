@@ -1,4 +1,4 @@
-use std::{os::unix::prelude::RawFd, sync::Arc};
+use std::sync::Arc;
 
 use smithay::{
     backend::{
@@ -11,7 +11,10 @@ use smithay::{
     },
     delegate_compositor, delegate_data_device, delegate_seat, delegate_shm, delegate_xdg_shell,
     input::{keyboard::FilterResult, Seat, SeatHandler, SeatState},
-    reexports::wayland_server::{protocol::wl_seat, Display},
+    reexports::{
+        io_lifetimes::OwnedFd,
+        wayland_server::{protocol::wl_seat, Display},
+    },
     utils::{Rectangle, Serial, Transform},
     wayland::{
         buffer::BufferHandler,
@@ -67,7 +70,7 @@ impl DataDeviceHandler for App {
 
 impl ClientDndGrabHandler for App {}
 impl ServerDndGrabHandler for App {
-    fn send(&mut self, _mime_type: String, _fd: RawFd) {}
+    fn send(&mut self, _mime_type: String, _fd: OwnedFd) {}
 }
 
 impl CompositorHandler for App {
@@ -123,14 +126,16 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
     let dh = display.handle();
 
+    let compositor_state = CompositorState::new::<App, _>(&dh, None);
+    let shm_state = ShmState::new::<App, _>(&dh, vec![], None);
     let mut seat_state = SeatState::new();
     let seat = seat_state.new_wl_seat(&dh, "winit", None);
 
     let mut state = {
         App {
-            compositor_state: CompositorState::new::<App, _>(&dh, None),
+            compositor_state,
             xdg_shell_state: XdgShellState::new::<App, _>(&dh, None),
-            shm_state: ShmState::new::<App, _>(&dh, vec![], None),
+            shm_state,
             seat_state,
             data_device_state: DataDeviceState::new::<App, _>(&dh, None),
             seat,

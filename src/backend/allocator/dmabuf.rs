@@ -12,8 +12,8 @@
 
 use super::{Buffer, Format, Fourcc, Modifier};
 use crate::utils::{Buffer as BufferCoords, Size};
+use io_lifetimes::{AsFd, BorrowedFd, OwnedFd};
 use std::hash::{Hash, Hasher};
-use std::os::unix::io::{IntoRawFd, RawFd};
 use std::sync::{Arc, Weak};
 
 /// Maximum amount of planes this implementation supports
@@ -35,7 +35,7 @@ pub(crate) struct DmabufInternal {
 
 #[derive(Debug)]
 pub(crate) struct Plane {
-    pub fd: Option<RawFd>,
+    pub fd: OwnedFd,
     /// The plane index
     pub plane_idx: u32,
     /// Offset from the start of the Fd
@@ -46,17 +46,9 @@ pub(crate) struct Plane {
     pub modifier: Modifier,
 }
 
-impl IntoRawFd for Plane {
-    fn into_raw_fd(mut self) -> RawFd {
-        self.fd.take().unwrap()
-    }
-}
-
-impl Drop for Plane {
-    fn drop(&mut self) {
-        if let Some(fd) = self.fd.take() {
-            let _ = nix::unistd::close(fd);
-        }
+impl From<Plane> for OwnedFd {
+    fn from(plane: Plane) -> OwnedFd {
+        plane.fd
     }
 }
 
@@ -129,12 +121,12 @@ impl DmabufBuilder {
     ///
     /// *Note*: Each Dmabuf needs at least one plane.
     /// MAX_PLANES notes the maximum amount of planes any format may use with this implementation.
-    pub fn add_plane(&mut self, fd: RawFd, idx: u32, offset: u32, stride: u32, modifier: Modifier) -> bool {
+    pub fn add_plane(&mut self, fd: OwnedFd, idx: u32, offset: u32, stride: u32, modifier: Modifier) -> bool {
         if self.internal.planes.len() == MAX_PLANES {
             return false;
         }
         self.internal.planes.push(Plane {
-            fd: Some(fd),
+            fd,
             plane_idx: idx,
             offset,
             stride,
@@ -196,8 +188,8 @@ impl Dmabuf {
     }
 
     /// Returns raw handles of the planes of this buffer
-    pub fn handles(&self) -> impl Iterator<Item = RawFd> + '_ {
-        self.0.planes.iter().map(|p| *p.fd.as_ref().unwrap())
+    pub fn handles(&self) -> impl Iterator<Item = BorrowedFd<'_>> + '_ {
+        self.0.planes.iter().map(|p| p.fd.as_fd())
     }
 
     /// Returns offsets for the planes of this buffer

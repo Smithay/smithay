@@ -1,18 +1,18 @@
+use std::{
+    cell::Cell,
+    os::unix::{io::RawFd, prelude::AsRawFd},
+    ptr,
+    sync::{Once, RwLock},
+};
+
+use io_lifetimes::OwnedFd;
 use nix::{
     libc,
     sys::{
         mman,
         signal::{self, SigAction, SigHandler, Signal},
     },
-    unistd,
 };
-use std::{
-    cell::Cell,
-    os::unix::io::RawFd,
-    ptr,
-    sync::{Once, RwLock},
-};
-
 use slog::{debug, trace};
 
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
@@ -25,7 +25,7 @@ pub struct Pool {
     // TODO: We may need to change this to a Mutex in order to support protocols like wlr screencopy which may
     // require we write to a memmap.
     map: RwLock<MemMap>,
-    fd: RawFd,
+    fd: OwnedFd,
     log: ::slog::Logger,
 }
 
@@ -40,9 +40,14 @@ pub enum ResizeError {
 }
 
 impl Pool {
-    pub fn new(fd: RawFd, size: usize, log: ::slog::Logger) -> Result<Pool, ()> {
-        let memmap = MemMap::new(fd, size)?;
-        trace!(log, "Creating new shm pool"; "fd" => fd as i32, "size" => size);
+    pub fn new(fd: OwnedFd, size: usize, log: ::slog::Logger) -> Result<Pool, OwnedFd> {
+        let memmap = match MemMap::new(fd.as_raw_fd(), size) {
+            Ok(memmap) => memmap,
+            Err(_) => {
+                return Err(fd);
+            }
+        };
+        trace!(log, "Creating new shm pool"; "fd" => fd.as_raw_fd() as i32, "size" => size);
         Ok(Pool {
             map: RwLock::new(memmap),
             fd,
@@ -58,10 +63,10 @@ impl Pool {
             return Err(ResizeError::InvalidSize);
         }
 
-        trace!(self.log, "Resizing shm pool"; "fd" => self.fd as i32, "oldsize" => oldsize, "newsize" => newsize);
+        trace!(self.log, "Resizing shm pool"; "fd" => self.fd.as_raw_fd() as i32, "oldsize" => oldsize, "newsize" => newsize);
 
         guard.remap(newsize as usize).map_err(|()| {
-            debug!(self.log, "SHM pool resize failed"; "fd" => self.fd as i32, "oldsize" => oldsize, "newsize" => newsize);
+            debug!(self.log, "SHM pool resize failed"; "fd" => self.fd.as_raw_fd() as i32, "oldsize" => oldsize, "newsize" => newsize);
             ResizeError::MremapFailed
         })
     }
@@ -78,7 +83,7 @@ impl Pool {
 
         let pool_guard = self.map.read().unwrap();
 
-        trace!(self.log, "Buffer access on shm pool"; "fd" => self.fd as i32);
+        trace!(self.log, "Buffer access on shm pool"; "fd" => self.fd.as_raw_fd() as i32);
 
         // Prepare the access
         SIGBUS_GUARD.with(|guard| {
@@ -98,19 +103,12 @@ impl Pool {
             let (_, triggered) = guard.get();
             guard.set((ptr::null_mut(), false));
             if triggered {
-                debug!(self.log, "SIGBUS caught on access on shm pool"; "fd" => self.fd);
+                debug!(self.log, "SIGBUS caught on access on shm pool"; "fd" => self.fd.as_raw_fd());
                 Err(())
             } else {
                 Ok(t)
             }
         })
-    }
-}
-
-impl Drop for Pool {
-    fn drop(&mut self) {
-        trace!(self.log, "Deleting SHM pool"; "fd" => self.fd);
-        let _ = unistd::close(self.fd);
     }
 }
 

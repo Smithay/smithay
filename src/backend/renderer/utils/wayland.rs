@@ -1,7 +1,12 @@
-//! Utility module for helpers around drawing [`WlSurface`]s with [`Renderer`]s.
-
 use crate::{
-    backend::renderer::{buffer_dimensions, buffer_has_alpha, Frame, ImportAll, Renderer},
+    backend::renderer::{
+        buffer_dimensions, buffer_has_alpha,
+        element::{
+            surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+            RenderElement,
+        },
+        ImportAll, Renderer,
+    },
     utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
@@ -12,14 +17,15 @@ use crate::{
         viewporter,
     },
 };
-use slog::trace;
-use std::collections::VecDeque;
 use std::{
     any::TypeId,
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},
 };
+
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
+
+use super::{CommitCounter, DamageTracker, SurfaceView};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -33,25 +39,20 @@ pub type RendererSurfaceStateUserData = RefCell<RendererSurfaceState>;
 /// Surface state for rendering related data
 #[derive(Default, Debug)]
 pub struct RendererSurfaceState {
-    pub(crate) commit_count: usize,
     pub(crate) buffer_dimensions: Option<Size<i32, BufferCoord>>,
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
     pub(crate) buffer_delta: Option<Point<i32, Logical>>,
     pub(crate) buffer_has_alpha: Option<bool>,
     pub(crate) buffer: Option<WlBuffer>,
-    pub(crate) damage: VecDeque<Vec<Rectangle<i32, BufferCoord>>>,
-    pub(crate) renderer_seen: HashMap<(TypeId, usize), usize>,
+    pub(crate) damage: DamageTracker<i32, BufferCoord>,
+    pub(crate) renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
     pub(crate) opaque_regions: Vec<Rectangle<i32, Logical>>,
-    #[cfg(feature = "desktop")]
-    pub(crate) space_seen: HashMap<crate::desktop::space::SpaceOutputHash, usize>,
 
     accumulated_buffer_delta: Point<i32, Logical>,
 }
-
-const MAX_DAMAGE: usize = 4;
 
 impl RendererSurfaceState {
     pub(crate) fn update_buffer(&mut self, states: &SurfaceData) {
@@ -72,13 +73,6 @@ impl RendererSurfaceState {
                     return;
                 }
                 self.buffer_has_alpha = buffer_has_alpha(&buffer);
-
-                #[cfg(feature = "desktop")]
-                if self.buffer_scale != attrs.buffer_scale
-                    || self.buffer_transform != attrs.buffer_transform.into()
-                {
-                    self.reset_space_damage();
-                }
                 self.buffer_scale = attrs.buffer_scale;
                 self.buffer_transform = attrs.buffer_transform.into();
 
@@ -88,7 +82,6 @@ impl RendererSurfaceState {
                     }
                 }
                 self.textures.clear();
-                self.commit_count = self.commit_count.wrapping_add(1);
 
                 let surface_size = self
                     .buffer_dimensions
@@ -116,8 +109,7 @@ impl RendererSurfaceState {
                     })
                     .collect::<Vec<Rectangle<i32, BufferCoord>>>();
                 buffer_damage.dedup();
-                self.damage.push_front(buffer_damage);
-                self.damage.truncate(MAX_DAMAGE);
+                self.damage.add(&buffer_damage);
 
                 self.opaque_regions.clear();
                 if !self.buffer_has_alpha.unwrap_or(true) {
@@ -181,8 +173,7 @@ impl RendererSurfaceState {
                     buffer.release();
                 };
                 self.textures.clear();
-                self.commit_count = self.commit_count.wrapping_add(1);
-                self.damage.clear();
+                self.damage.reset();
                 self.surface_view = None;
                 self.buffer_has_alpha = None;
                 self.opaque_regions.clear();
@@ -191,35 +182,30 @@ impl RendererSurfaceState {
         }
     }
 
-    pub(crate) fn damage_since(&self, commit: Option<usize>) -> Vec<Rectangle<i32, BufferCoord>> {
-        // on overflow the wrapping_sub should end up
-        let recent_enough = commit
-            // if commit > commit_count we have overflown, in that case the following map might result
-            // in a false-positive, if commit is still very large. So we force false in those cases.
-            // That will result in a potentially sub-optimal full damage every usize::MAX frames,
-            // which is acceptable.
-            .filter(|commit| *commit <= self.commit_count)
-            .map(|commit| self.commit_count.wrapping_sub(self.damage.len()) <= commit)
-            .unwrap_or(false);
-        if recent_enough {
-            self.damage
-                .iter()
-                .take(self.commit_count.wrapping_sub(commit.unwrap()))
-                .fold(Vec::new(), |mut acc, elem| {
-                    acc.extend(elem);
-                    acc
-                })
-        } else {
+    /// Get the current commit position of this surface
+    ///
+    /// The position should be saved after calling [`damage_since`](RendererSurfaceState::damage_since) and
+    /// provided as the commit in the next call.
+    pub fn current_commit(&self) -> CommitCounter {
+        self.damage.current_commit()
+    }
+
+    /// Gets the damage since the last commit
+    ///
+    /// If either the commit is `None` or the commit is too old
+    /// the whole buffer will be returned as damage.
+    pub fn damage_since(&self, commit: Option<CommitCounter>) -> Vec<Rectangle<i32, BufferCoord>> {
+        self.damage.damage_since(commit).unwrap_or_else(|| {
             self.buffer_dimensions
                 .as_ref()
                 .map(|size| vec![Rectangle::from_loc_and_size((0, 0), *size)])
                 .unwrap_or_else(Vec::new)
-        }
+        })
     }
 
-    #[cfg(feature = "desktop")]
-    pub(crate) fn reset_space_damage(&mut self) {
-        self.space_seen.clear();
+    /// Gets the raw damage of this surface
+    pub fn damage(&self) -> impl Iterator<Item = &Vec<Rectangle<i32, BufferCoord>>> {
+        self.damage.damage()
     }
 
     /// Returns the logical size of the current attached buffer
@@ -277,6 +263,11 @@ impl RendererSurfaceState {
 
         Some(&self.opaque_regions[..])
     }
+
+    /// Gets the [`SurfaceView`] of this surface
+    pub fn view(&self) -> Option<SurfaceView> {
+        self.surface_view
+    }
 }
 
 /// Handler to let smithay take over buffer management.
@@ -325,13 +316,6 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Clone, Copy)]
-pub(crate) struct SurfaceView {
-    pub src: Rectangle<f64, Logical>,
-    pub dst: Size<i32, Logical>,
-    pub offset: Point<i32, Logical>,
-}
-
 impl SurfaceView {
     fn from_states(states: &SurfaceData, surface_size: Size<i32, Logical>) -> SurfaceView {
         viewporter::ensure_viewport_valid(states, surface_size);
@@ -348,7 +332,6 @@ impl SurfaceView {
         SurfaceView { src, dst, offset }
     }
 
-    #[cfg(feature = "desktop")]
     pub(crate) fn rect_to_global<N>(&self, rect: Rectangle<N, Logical>) -> Rectangle<f64, Logical>
     where
         N: Coordinate,
@@ -449,7 +432,7 @@ where
                         match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
                             Some(Ok(m)) => {
                                 e.insert(Box::new(m));
-                                data.renderer_seen.insert(texture_id, data.commit_count);
+                                data.renderer_seen.insert(texture_id, data.current_commit());
                             }
                             Some(Err(err)) => {
                                 slog::warn!(log, "Error loading buffer: {}", err);
@@ -482,14 +465,7 @@ where
     result
 }
 
-#[derive(Debug, Default)]
-struct RenderOp {
-    src: Rectangle<f64, BufferCoord>,
-    dst: Rectangle<i32, Physical>,
-    damage: Vec<Rectangle<i32, Physical>>,
-}
-
-/// Draws a surface and its subsurfaces using a given [`Renderer`] and [`Frame`].
+/// Draws a surface and its subsurfaces using a given [`Renderer`] and [`Frame`](crate::backend::renderer::Frame).
 ///
 /// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
 /// - `location` is the position the surface should be drawn at.
@@ -513,168 +489,129 @@ where
     <R as Renderer>::TextureId: 'static,
     S: Into<Scale<f64>>,
 {
-    trace!(
-        log,
-        "Rendering surface tree at {:?} with damage {:#?}",
-        location,
-        damage
-    );
-
-    // First pass is from near to far and will set-up everything we need for rendering
-    // We use two passes so that we can reduce the damage from near to far by the opaque
-    // region
-    let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
-    let mut result = Ok(());
     let scale = scale.into();
-    let mut damage = damage.to_vec();
-    let _ = import_surface_tree_and(
-        renderer,
-        surface,
-        scale,
-        log,
-        location,
-        |_surface, states, location| {
-            let mut location = *location;
-            if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
-                let mut data = data.borrow_mut();
-                let surface_view = data.surface_view;
-                let buffer_scale = data.buffer_scale;
-                let buffer_transform = data.buffer_transform;
-                let buffer_dimensions = data.buffer_dimensions;
-                let opaque_regions = data.opaque_regions().map(|regions| regions.to_vec());
-                if data
-                    .textures
-                    .get_mut(&texture_id)
-                    .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
-                    .is_some()
-                {
-                    let surface_view = surface_view.unwrap();
-                    // Add the surface offset again to the location as
-                    // with_surface_tree_upward only passes the updated
-                    // location to its children
-                    location += surface_view.offset.to_f64().to_physical(scale);
 
-                    let dst = Rectangle::from_loc_and_size(
-                        location.to_i32_round(),
-                        ((surface_view.dst.to_f64().to_physical(scale).to_point() + location).to_i32_round()
-                            - location.to_i32_round())
-                        .to_size(),
-                    );
+    let elements: Vec<WaylandSurfaceRenderElement> =
+        render_elements_from_surface_tree(surface, location.to_i32_round(), scale);
 
-                    states
-                        .data_map
-                        .insert_if_missing(|| RefCell::new(RenderOp::default()));
-                    let render_op = states.data_map.get::<RefCell<RenderOp>>().unwrap();
-                    let mut render_op = render_op.borrow_mut();
-                    render_op.damage.clear();
-                    render_op.damage.extend(
-                        damage
-                            .iter()
-                            .cloned()
-                            // clamp to surface size
-                            .flat_map(|geo| geo.intersection(dst))
-                            // move relative to surface
-                            .map(|mut geo| {
-                                geo.loc -= dst.loc;
-                                geo
-                            }),
-                    );
+    draw_render_elements(renderer, frame, scale, &*elements, damage, log)?;
 
-                    let src = surface_view.src.to_buffer(
-                        buffer_scale as f64,
-                        buffer_transform,
-                        &buffer_dimensions
-                            .unwrap()
-                            .to_logical(buffer_scale, buffer_transform)
-                            .to_f64(),
-                    );
+    Ok(())
+}
 
-                    render_op.src = src;
-                    render_op.dst = dst;
+/// Draws the render elements using a given [`Renderer`] and [`Frame`](crate::backend::renderer::Frame)
+///
+/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
+/// - `location` is the position the surface should be drawn at.
+/// - `damage` is the set of regions that should be drawn relative to the same origin as the location.
+///
+/// Note: This element will render nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
+pub fn draw_render_elements<R, S, E>(
+    renderer: &mut R,
+    frame: &mut <R as Renderer>::Frame,
+    scale: S,
+    elements: &[E],
+    damage: &[Rectangle<i32, Physical>],
+    log: &slog::Logger,
+) -> Result<Option<Vec<Rectangle<i32, Physical>>>, <R as Renderer>::Error>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+    S: Into<Scale<f64>>,
+    E: RenderElement<R>,
+{
+    let scale = scale.into();
 
-                    // Now that we know the damage of the current surface we can
-                    // remove all opaque regions from it so that any surface below
-                    // us will only receive damage outside of the opaque regions
-                    if let Some(opaque_regions) = opaque_regions {
-                        damage = opaque_regions
-                            .iter()
-                            .map(|r| {
-                                let loc = (r.loc.to_f64().to_physical(scale) + location).to_i32_round();
-                                let size = ((r.size.to_f64().to_physical(scale).to_point() + location)
-                                    .to_i32_round()
-                                    - location.to_i32_round())
-                                .to_size();
-                                Rectangle::<i32, Physical>::from_loc_and_size(loc, size)
-                            })
-                            .fold(damage.clone(), |damage, region| {
-                                damage
-                                    .into_iter()
-                                    .flat_map(|geo| geo.subtract_rect(region))
-                                    .collect::<Vec<_>>()
-                            })
-                            .into_iter()
-                            .collect::<Vec<_>>();
-                    }
-                }
+    let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
+    let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
+    let mut render_damage: Vec<Rectangle<i32, Physical>> = Vec::with_capacity(damage.len());
+
+    for element in elements {
+        let element_geometry = element.geometry(scale);
+
+        // Then test if the element is completely hidden behind opaque regions
+        let is_hidden = opaque_regions
+            .iter()
+            .fold([element_geometry].to_vec(), |geometry, opaque_region| {
+                geometry
+                    .into_iter()
+                    .flat_map(|g| g.subtract_rect(*opaque_region))
+                    .collect::<Vec<_>>()
+            })
+            .is_empty();
+
+        if is_hidden {
+            // No need to draw a completely hidden element
+            continue;
+        }
+
+        let damage = opaque_regions
+            .iter()
+            .fold(damage.to_vec(), |damage, opaque_region| {
+                damage
+                    .into_iter()
+                    .flat_map(|damage| damage.subtract_rect(*opaque_region))
+                    .collect::<Vec<_>>()
+            });
+
+        render_damage.extend(damage);
+
+        opaque_regions.extend(element.opaque_regions(scale).into_iter().map(|mut region| {
+            region.loc += element_geometry.loc;
+            region
+        }));
+        render_elements.insert(0, element);
+    }
+
+    // Optimize the damage for rendering
+    render_damage.dedup();
+    render_damage.retain(|rect| !rect.is_empty());
+    // filter damage outside of the output gep and merge overlapping rectangles
+    render_damage = render_damage
+        .into_iter()
+        .fold(Vec::new(), |new_damage, mut rect| {
+            // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
+            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
+                new_damage.into_iter().partition(|other| other.overlaps(rect));
+
+            for overlap in overlapping {
+                rect = rect.merge(overlap);
             }
-        },
-    );
+            new_damage.push(rect);
+            new_damage
+        });
 
-    // Second pass actually renders the surfaces with the reduced damage
-    with_surface_tree_upward(
-        surface,
-        (),
-        |_, states, _| {
-            if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
-                let mut data_ref = data.borrow_mut();
-                let data = &mut *data_ref;
+    if render_damage.is_empty() {
+        return Ok(None);
+    }
 
-                // Now, should we be drawn ?
-                if data.textures.contains_key(&texture_id) {
-                    // if yes, also process the children
-                    TraversalAction::DoChildren(())
-                } else {
-                    // we are not displayed, so our children are neither
-                    TraversalAction::SkipChildren
-                }
-            } else {
-                // we are not displayed, so our children are neither
-                TraversalAction::SkipChildren
-            }
-        },
-        |_, states, _| {
-            if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
-                let mut data = data.borrow_mut();
-                let buffer_transform = data.buffer_transform;
-                if let Some(texture) = data
-                    .textures
-                    .get_mut(&texture_id)
-                    .and_then(|x| x.downcast_mut::<<R as Renderer>::TextureId>())
-                {
-                    let render_op = states.data_map.get::<RefCell<RenderOp>>().unwrap();
-                    let render_op = render_op.borrow();
+    for element in render_elements.iter() {
+        let element_geometry = element.geometry(scale);
 
-                    if render_op.damage.is_empty() {
-                        return;
-                    }
+        let element_damage = damage
+            .iter()
+            .filter_map(|d| d.intersection(element_geometry))
+            .map(|mut d| {
+                d.loc -= element_geometry.loc;
+                d
+            })
+            .collect::<Vec<_>>();
 
-                    trace!(log, "Rendering surface {:#?}", render_op);
+        if element_damage.is_empty() {
+            continue;
+        }
 
-                    if let Err(err) = frame.render_texture_from_to(
-                        texture,
-                        render_op.src,
-                        render_op.dst,
-                        &render_op.damage,
-                        buffer_transform,
-                        1.0,
-                    ) {
-                        result = Err(err);
-                    }
-                }
-            }
-        },
-        |_, _, _| true,
-    );
+        element.draw(
+            renderer,
+            frame,
+            element.location(scale),
+            scale,
+            &*element_damage,
+            log,
+        )?;
+    }
 
-    result
+    Ok(Some(render_damage))
 }

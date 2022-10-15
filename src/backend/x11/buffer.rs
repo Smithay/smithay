@@ -27,7 +27,7 @@
 //! ensure you read the `presentproto.txt` file (link in the non-public comments of the
 //! x11 mod.rs).
 
-use std::sync::atomic::Ordering;
+use std::{os::unix::prelude::AsRawFd, sync::atomic::Ordering};
 
 use super::{PresentError, Window, X11Error};
 use drm_fourcc::DrmFourcc;
@@ -87,7 +87,7 @@ where
         // XCB closes the file descriptor after sending, so duplicate the file descriptors.
         for handle in dmabuf.handles() {
             let fd = fcntl::fcntl(
-                handle,
+                handle.as_raw_fd(),
                 fcntl::FcntlArg::F_DUPFD_CLOEXEC(3), // Set to 3 so the fd cannot become stdin, stdout or stderr
             )
             .map_err(|e| PresentError::DupFailed(e.to_string()))?;

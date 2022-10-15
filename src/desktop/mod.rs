@@ -23,25 +23,25 @@
 //! ### [`Space`]
 //!
 //! A space represents a two-dimensional plane of undefined dimensions.
-//! [`Window`]s and [`Output`](crate::wayland::output::Output)s can be mapped onto it.
+//! [`Window`]s (and other types implementing [`SpaceElement`](space::SpaceElement)) and [`Output`](crate::output::Output)s can be mapped onto it.
 //!
-//! Windows get a position and stacking order through mapping. Outputs become views of a part of the [`Space`]
-//! and can be rendered via [`Space::render_output`]. Rendering results of spaces are automatically damage-tracked.
+//! Elements get a position and stacking order through mapping. Outputs become views of a part of the [`Space`]
+//! and can be rendered via [`render_output`](crate::desktop::space::render_output).
 //!
 //! ### Layer Shell
 //!
 //! A [`LayerSurface`] represents a surface as provided by e.g. the layer-shell protocol.
 //! It provides similar helper methods as a [`Window`] does to toplevel surfaces.
 //!
-//! Each [`Output`](crate::wayland::output::Output) can be associated a [`LayerMap`] by calling [`layer_map_for_output`],
-//! which [`LayerSurface`]s can be mapped upon. Associated layer maps are automatically rendered by [`Space::render_output`],
+//! Each [`Output`](crate::output::Output) can be associated a [`LayerMap`] by calling [`layer_map_for_output`],
+//! which [`LayerSurface`]s can be mapped upon. Associated layer maps are automatically rendered by [`render_output`](crate::desktop::space::render_output),
 //! but a [draw function](`draw_layer_surface`) is also provided for manual layer-surface management.
 //!
 //! ### Popups
 //!
 //! Provides a [`PopupManager`], which can be used to automatically keep track of popups and their
 //! relations to one-another. Popups are then automatically rendered with their matching toplevel surfaces,
-//! when either [`draw_window`], [`draw_layer_surface`] or [`Space::render_output`] is called.
+//! when either [`draw_window`], [`draw_layer_surface`] or [`render_output`](crate::desktop::space::render_output) is called.
 //!
 //! ## Remarks
 //!
@@ -49,13 +49,20 @@
 //! to manage client buffers to do so. If you plan to use the provided drawing functions, you need to use
 //! [`on_commit_buffer_handler`](crate::backend::renderer::utils::on_commit_buffer_handler).
 
-pub(crate) mod layer;
-mod popup;
 pub mod space;
-pub mod utils;
-mod window;
-
-pub use self::layer::{draw_layer_popups, draw_layer_surface, layer_map_for_output, LayerMap, LayerSurface};
-pub use self::popup::*;
 pub use self::space::Space;
-pub use self::window::*;
+
+#[cfg(feature = "wayland_frontend")]
+pub use self::wayland::{
+    layer::{draw_layer_surface, layer_map_for_output, LayerMap, LayerSurface},
+    popup::*,
+    utils,
+    window::*,
+};
+#[cfg(feature = "wayland_frontend")]
+mod wayland {
+    pub(crate) mod layer;
+    pub mod popup;
+    pub mod utils;
+    pub mod window;
+}

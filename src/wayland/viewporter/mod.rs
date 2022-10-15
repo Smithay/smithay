@@ -179,7 +179,7 @@ where
     ) {
         match request {
             wp_viewport::Request::Destroy => {
-                let _ = with_states(&data.surface, |states| {
+                with_states(&data.surface, |states| {
                     states
                         .data_map
                         .get::<RefCell<Option<ViewportMarker>>>()
@@ -277,7 +277,7 @@ pub struct ViewportState {
 struct ViewportMarker(wp_viewport::WpViewport);
 
 fn viewport_commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
-    let _ = with_states(surface, |states| {
+    with_states(surface, |states| {
         states
             .data_map
             .insert_if_missing(|| RefCell::new(Option::<ViewportMarker>::None));

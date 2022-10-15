@@ -190,7 +190,7 @@ where
 
     let reqs = Default::default();
     let (display, context, surface, is_x11) = {
-        let display = EGLDisplay::new(&winit_window, log.clone())?;
+        let display = unsafe { EGLDisplay::new(&winit_window, log.clone())? };
         let context = EGLContext::new_with_config(&display, attributes, reqs, log.clone())?;
 
         let surface: Option<EGLSurface>;

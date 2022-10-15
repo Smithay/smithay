@@ -8,15 +8,15 @@ use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-use super::{xdg::XdgOutput, Output, OutputData, OutputManagerState, OutputUserData};
+use super::{xdg::XdgOutput, Output, OutputManagerState, OutputUserData, WlOutputData};
 
 /*
  * Wl Output
  */
 
-impl<D> GlobalDispatch<WlOutput, OutputData, D> for OutputManagerState
+impl<D> GlobalDispatch<WlOutput, WlOutputData, D> for OutputManagerState
 where
-    D: GlobalDispatch<WlOutput, OutputData>,
+    D: GlobalDispatch<WlOutput, WlOutputData>,
     D: Dispatch<WlOutput, OutputUserData>,
     D: 'static,
 {
@@ -25,13 +25,13 @@ where
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<WlOutput>,
-        global_data: &OutputData,
+        global_data: &WlOutputData,
         data_init: &mut DataInit<'_, D>,
     ) {
         let output = data_init.init(
             resource,
             OutputUserData {
-                global_data: global_data.clone(),
+                global_data: global_data.inner.clone(),
             },
         );
 
@@ -98,7 +98,6 @@ where
         data: &OutputUserData,
     ) {
         data.global_data
-            .inner
             .0
             .lock()
             .unwrap()
@@ -151,7 +150,7 @@ where
                 output: wl_output,
             } => {
                 let output = Output::from_resource(&wl_output).unwrap();
-                let mut inner = output.data.inner.0.lock().unwrap();
+                let mut inner = output.inner.0.lock().unwrap();
 
                 let xdg_output = XdgOutput::new(&inner, inner.log.clone());
 

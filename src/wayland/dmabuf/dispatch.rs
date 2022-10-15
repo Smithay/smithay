@@ -176,7 +176,7 @@ where
 
                 let modifier = ((modifier_hi as u64) << 32) + (modifier_lo as u64);
                 planes.push(Plane {
-                    fd: Some(fd),
+                    fd,
                     plane_idx,
                     offset,
                     stride,

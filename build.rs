@@ -98,10 +98,35 @@ fn find_logind() {
     }
 }
 
+#[cfg(all(feature = "backend_gbm", not(feature = "backend_gbm_has_fd_for_plane")))]
+fn test_gbm_bo_fd_for_plane() {
+    let gbm = match pkg_config::probe_library("gbm") {
+        Ok(lib) => lib,
+        Err(_) => {
+            println!("cargo:warning=failed to find gbm, assuming gbm_bo_get_fd_for_plane is unavailable");
+            return;
+        }
+    };
+
+    let has_gbm_bo_get_fd_for_plane = cc::Build::new()
+        .file("test_gbm_bo_get_fd_for_plane.c")
+        .includes(gbm.include_paths)
+        .warnings_into_errors(true)
+        .try_compile("test_gbm_bo_get_fd_for_plane")
+        .is_ok();
+
+    if has_gbm_bo_get_fd_for_plane {
+        println!("cargo:rustc-cfg=feature=\"backend_gbm_has_fd_for_plane\"");
+    }
+}
+
 fn main() {
     #[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
     gl_generate();
 
     #[cfg(feature = "backend_session_logind")]
     find_logind();
+
+    #[cfg(all(feature = "backend_gbm", not(feature = "backend_gbm_has_fd_for_plane")))]
+    test_gbm_bo_fd_for_plane();
 }

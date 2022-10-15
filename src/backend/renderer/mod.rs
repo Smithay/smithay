@@ -21,6 +21,9 @@ use wayland_server::protocol::{wl_buffer, wl_shm};
 #[cfg(feature = "renderer_gl")]
 pub mod gles2;
 
+#[cfg(feature = "renderer_glow")]
+pub mod glow;
+
 use crate::backend::allocator::{dmabuf::Dmabuf, Format};
 #[cfg(all(
     feature = "wayland_frontend",
@@ -34,8 +37,11 @@ use crate::backend::egl::{
 #[cfg(feature = "renderer_multi")]
 pub mod multigpu;
 
-#[cfg(feature = "wayland_frontend")]
 pub mod utils;
+
+pub mod element;
+
+pub mod damage;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Texture filtering methods
