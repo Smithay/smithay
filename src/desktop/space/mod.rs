@@ -105,7 +105,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         P: Into<Point<i32, Logical>>,
     {
         let outputs = if let Some(pos) = self.elements.iter().position(|inner| inner.element == element) {
-            self.elements.swap_remove(pos).outputs
+            self.elements.remove(pos).outputs
         } else {
             HashMap::new()
         };
@@ -127,7 +127,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// other mapped window.
     pub fn raise_element(&mut self, element: &E, activate: bool) {
         if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
-            let inner = self.elements.swap_remove(pos);
+            let inner = self.elements.remove(pos);
             self.insert_elem(inner, activate);
         }
     }
@@ -150,7 +150,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// This function does nothing for already unmapped windows
     pub fn unmap_elem(&mut self, element: &E) {
         if let Some(pos) = self.elements.iter().position(|inner| &inner.element == element) {
-            let elem = self.elements.swap_remove(pos);
+            let elem = self.elements.remove(pos);
             for output in elem.outputs.keys() {
                 elem.element.output_leave(output);
             }
