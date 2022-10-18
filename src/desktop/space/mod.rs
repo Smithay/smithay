@@ -575,16 +575,20 @@ where
             .rev()
             .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
 
-        render_elements.extend(upper.into_iter().flat_map(|surface| {
-            let loc = surface.bbox().loc;
-            AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(
-                surface,
-                loc.to_physical_precise_round(output_scale),
-                Scale::from(output_scale),
-            )
-            .into_iter()
-            .map(SpaceRenderElements::Surface)
-        }));
+        render_elements.extend(
+            upper
+                .into_iter()
+                .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.loc, surface)))
+                .flat_map(|(loc, surface)| {
+                    AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(
+                        surface,
+                        loc.to_physical_precise_round(output_scale),
+                        Scale::from(output_scale),
+                    )
+                    .into_iter()
+                    .map(SpaceRenderElements::Surface)
+                }),
+        );
 
         lower
     };
@@ -601,16 +605,20 @@ where
     }
 
     #[cfg(feature = "wayland_frontend")]
-    render_elements.extend(lower.into_iter().flat_map(|surface| {
-        let loc = surface.bbox().loc;
-        AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(
-            surface,
-            loc.to_physical_precise_round(output_scale),
-            Scale::from(output_scale),
-        )
-        .into_iter()
-        .map(SpaceRenderElements::Surface)
-    }));
+    render_elements.extend(
+        lower
+            .into_iter()
+            .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.loc, surface)))
+            .flat_map(|(loc, surface)| {
+                AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(
+                    surface,
+                    loc.to_physical_precise_round(output_scale),
+                    Scale::from(output_scale),
+                )
+                .into_iter()
+                .map(SpaceRenderElements::Surface)
+            }),
+    );
 
     Ok(render_elements)
 }
