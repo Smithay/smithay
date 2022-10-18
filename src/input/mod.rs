@@ -99,6 +99,7 @@
 
 use std::{
     fmt,
+    hash::Hash,
     sync::{Arc, Mutex},
 };
 
@@ -161,6 +162,19 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Seat").field("arc", &self.arc).finish()
+    }
+}
+
+impl<D: SeatHandler> PartialEq for Seat<D> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.arc, &other.arc)
+    }
+}
+impl<D: SeatHandler> Eq for Seat<D> {}
+
+impl<D: SeatHandler> Hash for Seat<D> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.arc).hash(state)
     }
 }
 
@@ -490,11 +504,5 @@ impl<D: SeatHandler + 'static> Seat<D> {
             #[cfg(feature = "wayland_frontend")]
             inner.send_all_caps();
         }
-    }
-}
-
-impl<D: SeatHandler> ::std::cmp::PartialEq for Seat<D> {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.arc, &other.arc)
     }
 }
