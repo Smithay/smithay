@@ -11,7 +11,7 @@ use crate::{
         compositor::{with_states, with_surface_tree_downward, TraversalAction},
         shell::wlr_layer::{
             Anchor, ExclusiveZone, KeyboardInteractivity, Layer as WlrLayer, LayerSurface as WlrLayerSurface,
-            LayerSurfaceCachedState,
+            LayerSurfaceCachedState, LayerSurfaceData,
         },
     },
 };
@@ -357,7 +357,23 @@ impl LayerMap {
                 let size_changed = layer.0.surface.with_pending_state(|state| {
                     state.size.replace(size).map(|old| old != size).unwrap_or(true)
                 });
-                if size_changed {
+                let initial_configure_sent = with_states(surface, |states| {
+                    states
+                        .data_map
+                        .get::<LayerSurfaceData>()
+                        .map(|data| data.lock().unwrap().initial_configure_sent)
+                })
+                .unwrap_or_default();
+
+                // arrange should never automatically send an configure
+                // event if the surface has not been configured already.
+                // The spec mandates that the initial configure has to be
+                // send in response of the initial commit of the surface.
+                // That also guarantees that the client is able set a size
+                // before committing the surface. By not respecting that
+                // we would send a wrong size to the client and also violate
+                // the spec by sending a configure event before a prior commit.
+                if size_changed && initial_configure_sent {
                     layer.0.surface.send_configure();
                 }
 

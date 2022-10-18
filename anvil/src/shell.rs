@@ -861,12 +861,6 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<Window>, popups: 
         map.layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
             .is_some()
     }) {
-        let mut map = layer_map_for_output(output);
-        let layer = map
-            .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
-            .unwrap();
-
-        // send the initial configure if relevant
         let initial_configure_sent = with_states(surface, |states| {
             states
                 .data_map
@@ -876,11 +870,21 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<Window>, popups: 
                 .unwrap()
                 .initial_configure_sent
         });
+
+        // send the initial configure if relevant
         if !initial_configure_sent {
+            let mut map = layer_map_for_output(output);
+
+            // arrange the layers before sending the initial configure
+            // to respect any size the client may have sent
+            map.arrange();
+
+            let layer = map
+                .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+                .unwrap();
+
             layer.layer_surface().send_configure();
         }
-
-        map.arrange();
     };
 }
 
