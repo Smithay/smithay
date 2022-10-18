@@ -16,7 +16,7 @@ use crate::{
     },
 };
 use indexmap::IndexSet;
-use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle, Resource};
+use wayland_server::{protocol::wl_surface::WlSurface, Resource, Weak};
 
 use std::{
     cell::{RefCell, RefMut},
@@ -36,7 +36,7 @@ pub struct LayerMap {
     output: WeakOutput,
     zone: Rectangle<i32, Logical>,
     // surfaces for tracking enter and leave events
-    surfaces: HashSet<ObjectId>,
+    surfaces: HashSet<Weak<WlSurface>>,
     logger: ::slog::Logger,
 }
 
@@ -113,9 +113,10 @@ impl LayerMap {
                 (),
                 |_, _, _| TraversalAction::DoChildren(()),
                 |wl_surface, _, _| {
-                    if self.surfaces.contains(&wl_surface.id()) {
+                    let weak = wl_surface.downgrade();
+                    if self.surfaces.contains(&weak) {
                         output.leave(wl_surface);
-                        self.surfaces.remove(&wl_surface.id());
+                        self.surfaces.remove(&weak);
                     }
                 },
                 |_, _, _| true,
@@ -127,9 +128,10 @@ impl LayerMap {
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        if self.surfaces.contains(&wl_surface.id()) {
+                        let weak = wl_surface.downgrade();
+                        if self.surfaces.contains(&weak) {
                             output.leave(wl_surface);
-                            self.surfaces.remove(&wl_surface.id());
+                            self.surfaces.remove(&weak);
                         }
                     },
                     |_, _, _| true,
@@ -264,9 +266,10 @@ impl LayerMap {
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        if !surfaces_ref.contains(&wl_surface.id()) {
+                        let weak = wl_surface.downgrade();
+                        if !surfaces_ref.contains(&weak) {
                             output.enter(wl_surface);
-                            surfaces_ref.insert(wl_surface.id());
+                            surfaces_ref.insert(weak);
                         }
                     },
                     |_, _, _| true,
@@ -278,9 +281,10 @@ impl LayerMap {
                         (),
                         |_, _, _| TraversalAction::DoChildren(()),
                         |wl_surface, _, _| {
-                            if !surfaces_ref.contains(&wl_surface.id()) {
+                            let weak = wl_surface.downgrade();
+                            if !surfaces_ref.contains(&weak) {
                                 output.enter(wl_surface);
-                                surfaces_ref.insert(wl_surface.id());
+                                surfaces_ref.insert(weak);
                             }
                         },
                         |_, _, _| true,
@@ -393,13 +397,12 @@ impl LayerMap {
     ///
     /// This function needs to be called periodically (though not necessarily frequently)
     /// to be able cleanup internally used resources.
-    pub fn cleanup(&mut self, dh: &DisplayHandle) {
+    pub fn cleanup(&mut self) {
         if self.layers.iter().any(|l| !l.alive()) {
             self.layers.retain(|layer| layer.alive());
             self.arrange();
         }
-        self.surfaces
-            .retain(|i| dh.backend_handle().object_info(i.clone()).is_ok());
+        self.surfaces.retain(|weak| weak.upgrade().is_ok());
     }
 
     /// Returns layers count
