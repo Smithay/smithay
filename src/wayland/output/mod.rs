@@ -83,6 +83,12 @@ pub struct OutputManagerState {
     xdg_output_manager: Option<GlobalId>,
 }
 
+/// Internal data of a wl_output global
+#[derive(Debug)]
+pub struct WlOutputData {
+    inner: OutputData,
+}
+
 impl OutputManagerState {
     /// Create new output manager
     pub fn new() -> Self {
@@ -94,7 +100,7 @@ impl OutputManagerState {
     /// Create new output manager with xdg output support
     pub fn new_with_xdg_output<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlOutput, OutputData>,
+        D: GlobalDispatch<WlOutput, WlOutputData>,
         D: GlobalDispatch<ZxdgOutputManagerV1, ()>,
         D: 'static,
     {
@@ -156,16 +162,22 @@ impl Output {
     /// multiple times.
     pub fn create_global<D>(&self, display: &DisplayHandle) -> GlobalId
     where
-        D: GlobalDispatch<WlOutput, OutputData>,
+        D: GlobalDispatch<WlOutput, WlOutputData>,
         D: 'static,
     {
-        display.create_global::<D, WlOutput, _>(4, self.data.clone())
+        self.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
+        display.create_global::<D, WlOutput, _>(
+            4,
+            WlOutputData {
+                inner: self.inner.clone(),
+            },
+        )
     }
 
     /// Attempt to retrieve a [`Output`] from an existing resource
     pub fn from_resource(output: &WlOutput) -> Option<Output> {
         output.data::<OutputUserData>().map(|ud| Output {
-            data: ud.global_data.clone(),
+            inner: ud.global_data.clone(),
         })
     }
 
@@ -176,7 +188,7 @@ impl Output {
         new_scale: Option<Scale>,
         new_location: Option<Point<i32, Logical>>,
     ) {
-        let inner = self.data.inner.0.lock().unwrap();
+        let inner = self.inner.0.lock().unwrap();
         // XdgOutput has to be updated before WlOutput
         // Because WlOutput::done() has to allways be called last
         if let Some(xdg_output) = inner.xdg_output.as_ref() {
@@ -208,8 +220,7 @@ impl Output {
 
     /// Check is given [`wl_output`](WlOutput) instance is managed by this [`Output`].
     pub fn owns(&self, output: &WlOutput) -> bool {
-        self.data
-            .inner
+        self.inner
             .0
             .lock()
             .unwrap()
@@ -220,44 +231,69 @@ impl Output {
 
     /// This function allows to run a [FnMut] on every
     /// [WlOutput] matching the same [Client] as provided
-    pub fn with_client_outputs<F>(&self, dh: &DisplayHandle, client: &Client, mut f: F)
+    pub fn with_client_outputs<F>(&self, client: &Client, f: F)
     where
-        F: FnMut(&DisplayHandle, &WlOutput),
+        F: FnMut(&WlOutput),
     {
-        let list: Vec<_> = self
-            .data
-            .inner
-            .0
-            .lock()
-            .unwrap()
-            .instances
-            .iter()
-            .filter(|output| {
-                dh.get_client(output.id())
-                    .map(|output_client| &output_client == client)
-                    .unwrap_or(false)
-            })
-            .cloned()
-            .collect();
+        self.with_client_outputs_internal(client.id(), f)
+    }
+
+    fn with_client_outputs_internal<F>(&self, client: wayland_server::backend::ClientId, mut f: F)
+    where
+        F: FnMut(&WlOutput),
+    {
+        let list: Vec<WlOutput> = {
+            let data = self.inner.0.lock().unwrap();
+            data.instances
+                .iter()
+                .filter(|output| {
+                    data.handle
+                        .as_ref()
+                        .and_then(|handle| handle.upgrade())
+                        .and_then(|handle| handle.get_client(output.id()).ok())
+                        .map(|output_client| output_client == client)
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect()
+        };
 
         for o in list {
-            f(dh, &o);
+            f(&o);
         }
     }
 
     /// Sends `wl_surface.enter` for the provided surface
     /// with the matching client output
-    pub fn enter(&self, dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
-        if let Ok(client) = dh.get_client(surface.id()) {
-            self.with_client_outputs(dh, &client, |_dh, output| surface.enter(output))
+    pub fn enter(&self, surface: &wl_surface::WlSurface) {
+        let client = self
+            .inner
+            .0
+            .lock()
+            .unwrap()
+            .handle
+            .as_ref()
+            .and_then(|handle| handle.upgrade())
+            .and_then(|handle| handle.get_client(surface.id()).ok());
+        if let Some(client) = client {
+            self.with_client_outputs_internal(client, |output| surface.enter(output))
         }
     }
 
     /// Sends `wl_surface.leave` for the provided surface
     /// with the matching client output
-    pub fn leave(&self, dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
-        if let Ok(client) = dh.get_client(surface.id()) {
-            self.with_client_outputs(dh, &client, |_dh, output| surface.leave(output))
+    pub fn leave(&self, surface: &wl_surface::WlSurface) {
+        let client = self
+            .inner
+            .0
+            .lock()
+            .unwrap()
+            .handle
+            .as_ref()
+            .and_then(|handle| handle.upgrade())
+            .and_then(|handle| handle.get_client(surface.id()).ok());
+        if let Some(client) = client {
+            self.with_client_outputs_internal(client, |output| surface.leave(output))
         }
     }
 }
@@ -267,7 +303,7 @@ impl Output {
 macro_rules! delegate_output {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::output::OutputData
+            $crate::reexports::wayland_server::protocol::wl_output::WlOutput: $crate::wayland::output::WlOutputData
         ] => $crate::wayland::output::OutputManagerState);
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()

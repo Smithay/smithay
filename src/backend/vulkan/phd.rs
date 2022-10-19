@@ -119,6 +119,7 @@ impl super::PhdInfo {
 
         unsafe { instance.get_physical_device_properties2(phd, &mut properties) };
 
+        info.properties = properties.build().properties;
         // Initialize the driver info
         info.driver = info.properties_driver.map(DriverInfo::from_driver_properties);
 

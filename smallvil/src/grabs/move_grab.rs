@@ -29,7 +29,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         let delta = event.location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
         data.space
-            .map_window(&self.window, new_location.to_i32_round(), None, true);
+            .map_element(self.window.clone(), new_location.to_i32_round(), true);
     }
 
     fn button(

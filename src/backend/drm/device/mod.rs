@@ -14,6 +14,8 @@ use nix::sys::stat::fstat;
 
 pub(super) mod atomic;
 pub(super) mod legacy;
+use crate::utils::{Physical, Size};
+
 use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurface, DrmSurfaceInternal};
 use super::{error::Error, planes, Planes};
 use atomic::AtomicDrmDevice;
@@ -30,6 +32,7 @@ pub struct DrmDevice<A: AsRawFd + 'static> {
     pub(super) links: RefCell<Vec<crate::utils::signaling::SignalToken>>,
     has_universal_planes: bool,
     has_monotonic_timestamps: bool,
+    cursor_size: Size<u32, Physical>,
     resources: ResourceHandles,
     pub(super) logger: ::slog::Logger,
     token: Option<Token>,
@@ -143,6 +146,13 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             .get_driver_capability(DriverCapability::MonotonicTimestamp)
             .unwrap_or(0)
             == 1;
+        let cursor_width = dev
+            .get_driver_capability(DriverCapability::CursorWidth)
+            .unwrap_or(64);
+        let cursor_height = dev
+            .get_driver_capability(DriverCapability::CursorHeight)
+            .unwrap_or(64);
+        let cursor_size = Size::from((cursor_width as u32, cursor_height as u32));
         let resources = dev.resource_handles().map_err(|source| Error::Access {
             errmsg: "Error loading resource handles",
             dev: dev.dev_path(),
@@ -162,6 +172,7 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
             links: RefCell::new(Vec::new()),
             has_universal_planes,
             has_monotonic_timestamps,
+            cursor_size,
             resources,
             logger: log,
             token: None,
@@ -210,6 +221,15 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
     /// Returns a set of available planes for a given crtc
     pub fn planes(&self, crtc: &crtc::Handle) -> Result<Planes, Error> {
         planes(self, crtc, self.has_universal_planes)
+    }
+
+    /// Returns the size of the hardware cursor
+    ///
+    /// Note: In case of universal planes this is the
+    /// maximum size of a buffer that can be used on
+    /// the cursor plane.
+    pub fn cursor_size(&self) -> Size<u32, Physical> {
+        self.cursor_size
     }
 
     /// Creates a new rendering surface.

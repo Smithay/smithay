@@ -215,6 +215,17 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     }
 }
 
+impl<D> PointerHandle<D>
+where
+    D: SeatHandler,
+    <D as SeatHandler>::PointerFocus: Clone,
+{
+    /// Retrieve the current pointer focus
+    pub fn current_focus(&self) -> Option<<D as SeatHandler>::PointerFocus> {
+        self.inner.lock().unwrap().focus.clone().map(|(focus, _)| focus)
+    }
+}
+
 /// This inner handle is accessed from inside a pointer grab logic, and directly
 /// sends event to the client
 pub struct PointerInnerHandle<'a, D: SeatHandler> {

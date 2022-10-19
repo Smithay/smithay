@@ -16,32 +16,55 @@ pub type NativeDisplayType = *const c_void;
 pub type NativePixmapType = *const c_void;
 pub type NativeWindowType = *const c_void;
 
+fn error_str(error: egl::types::EGLenum) -> &'static str {
+    match error {
+        egl::SUCCESS => "SUCCESS",
+        egl::NOT_INITIALIZED => "NOT_INITIALIZED",
+        egl::BAD_ACCESS => "BAD_ACCESS",
+        egl::BAD_ALLOC => "BAD_ALLOC",
+        egl::BAD_ATTRIBUTE => "BAD_ATTRIBUTE",
+        egl::BAD_CONFIG => "BAD_CONFIG",
+        egl::BAD_CONTEXT => "BAD_CONTEXT",
+        egl::BAD_CURRENT_SURFACE => "BAD_CURRENT_SURFACE",
+        egl::BAD_DISPLAY => "BAD_DISPLAY",
+        egl::BAD_MATCH => "BAD_MATCH",
+        egl::BAD_NATIVE_PIXMAP => "BAD_NATIVE_PIXMAP",
+        egl::BAD_NATIVE_WINDOW => "BAD_NATIVE_WINDOW",
+        egl::BAD_PARAMETER => "BAD_PARAMETER",
+        egl::BAD_SURFACE => "BAD_SURFACE",
+        egl::CONTEXT_LOST => "CONTEXT_LOST",
+        _ => "UNKNOWN",
+    }
+}
+
 extern "system" fn egl_debug_log(
-    severity: egl::types::EGLenum,
+    error: egl::types::EGLenum,
     command: *const EGLchar,
-    _id: EGLint,
+    message_type: EGLint,
     _thread: EGLLabelKHR,
     _obj: EGLLabelKHR,
     message: *const EGLchar,
 ) {
     let _ = std::panic::catch_unwind(move || unsafe {
-        let msg = std::ffi::CStr::from_ptr(message as *const _);
-        let message_utf8 = msg.to_string_lossy();
-        let command_utf8 = if !command.is_null() {
-            let cmd = std::ffi::CStr::from_ptr(command as *const _);
-            cmd.to_string_lossy()
-        } else {
-            std::borrow::Cow::Borrowed("")
-        };
         let logger = crate::slog_or_fallback(None).new(slog::o!("backend" => "egl"));
-        match severity {
-            egl::DEBUG_MSG_CRITICAL_KHR | egl::DEBUG_MSG_ERROR_KHR => {
-                slog::error!(logger, "[EGL] {}: {}", command_utf8, message_utf8)
-            }
-            egl::DEBUG_MSG_WARN_KHR => slog::warn!(logger, "[EGL] {}: {}", command_utf8, message_utf8),
-            egl::DEBUG_MSG_INFO_KHR => slog::info!(logger, "[EGL] {}: {}", command_utf8, message_utf8),
-            _ => {}
+        let mut text = format!("[EGL] 0x{:x} ({})", error, error_str(error));
+        if !command.is_null() {
+            let cmd = std::ffi::CStr::from_ptr(command as *const _);
+            text.push(' ');
+            text.push_str(&cmd.to_string_lossy());
+        }
+        if !message.is_null() {
+            let msg = std::ffi::CStr::from_ptr(message as *const _);
+            text.push_str(": ");
+            text.push_str(&msg.to_string_lossy());
         };
+        match message_type {
+            egl::DEBUG_MSG_CRITICAL_KHR => slog::crit!(logger, "{}", text),
+            egl::DEBUG_MSG_ERROR_KHR => slog::error!(logger, "{}", text),
+            egl::DEBUG_MSG_WARN_KHR => slog::warn!(logger, "{}", text),
+            egl::DEBUG_MSG_INFO_KHR => slog::info!(logger, "{}", text),
+            _ => {}
+        }
     });
 }
 
@@ -143,13 +166,13 @@ pub mod egl {
         ),
     >;
     #[allow(dead_code, non_upper_case_globals)]
-    pub const DEBUG_MSG_CRITICAL_KHR: types::EGLenum = 0x33B9;
+    pub const DEBUG_MSG_CRITICAL_KHR: types::EGLint = 0x33B9;
     #[allow(dead_code, non_upper_case_globals)]
-    pub const DEBUG_MSG_ERROR_KHR: types::EGLenum = 0x33BA;
+    pub const DEBUG_MSG_ERROR_KHR: types::EGLint = 0x33BA;
     #[allow(dead_code, non_upper_case_globals)]
-    pub const DEBUG_MSG_INFO_KHR: types::EGLenum = 0x33BC;
+    pub const DEBUG_MSG_INFO_KHR: types::EGLint = 0x33BC;
     #[allow(dead_code, non_upper_case_globals)]
-    pub const DEBUG_MSG_WARN_KHR: types::EGLenum = 0x33BB;
+    pub const DEBUG_MSG_WARN_KHR: types::EGLint = 0x33BB;
 
     #[allow(non_snake_case, unused_variables, dead_code)]
     #[inline]

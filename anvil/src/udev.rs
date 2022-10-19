@@ -5,7 +5,7 @@ use std::{
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
-    sync::atomic::Ordering,
+    sync::{atomic::Ordering, Mutex},
     time::Duration,
 };
 
@@ -13,8 +13,11 @@ use slog::Logger;
 
 use crate::{
     drawing::*,
+    render::*,
     state::{AnvilState, Backend, CalloopData},
 };
+#[cfg(feature = "debug")]
+use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
@@ -30,16 +33,21 @@ use smithay::{
         egl::{EGLContext, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
-            gles2::Gles2Renderbuffer,
+            damage::{DamageTrackedRenderer, DamageTrackedRendererError},
+            element::{texture::TextureBuffer, AsRenderElements},
+            gles2::{Gles2Renderbuffer, Gles2Renderer},
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
-            Bind, Frame, ImportMem, Renderer,
+            Bind, Frame, Renderer,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
         SwapBuffersError,
     },
-    desktop::space::{RenderError, Space, SurfaceTree},
-    input::pointer::CursorImageStatus,
+    desktop::{
+        space::{Space, SurfaceTree},
+        Window,
+    },
+    input::pointer::{CursorImageAttributes, CursorImageStatus},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{
@@ -62,18 +70,16 @@ use smithay::{
     },
     utils::{
         signaling::{Linkable, SignalToken, Signaler},
-        IsAlive, Logical, Point, Rectangle, Transform,
+        IsAlive, Logical, Point, Rectangle, Scale, Transform,
+    },
+    wayland::{
+        compositor,
+        input_method::{InputMethodHandle, InputMethodSeat},
     },
 };
 
-type UdevRenderer<'a> = MultiRenderer<'a, 'a, EglGlesBackend, EglGlesBackend, Gles2Renderbuffer>;
-smithay::custom_elements! {
-    pub CustomElem<=UdevRenderer<'_>>;
-    SurfaceTree=SurfaceTree,
-    PointerElement=PointerElement::<MultiTexture>,
-    #[cfg(feature = "debug")]
-    FpsElement=FpsElement::<MultiTexture>,
-}
+type UdevRenderer<'a> =
+    MultiRenderer<'a, 'a, EglGlesBackend<Gles2Renderer>, EglGlesBackend<Gles2Renderer>, Gles2Renderbuffer>;
 
 #[derive(Copy, Clone)]
 pub struct SessionFd(RawFd);
@@ -95,9 +101,10 @@ pub struct UdevData {
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     primary_gpu: DrmNode,
-    gpus: GpuManager<EglGlesBackend>,
+    gpus: GpuManager<EglGlesBackend<Gles2Renderer>>,
     backends: HashMap<DrmNode, BackendData>,
-    pointer_images: Vec<(xcursor::parser::Image, MultiTexture)>,
+    pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<MultiTexture>)>,
+    pointer_element: PointerElement<MultiTexture>,
     #[cfg(feature = "debug")]
     fps_texture: MultiTexture,
     signaler: Signaler<SessionSignal>,
@@ -185,7 +192,7 @@ pub fn run_udev(log: Logger) {
     info!(log, "Using {} as primary gpu.", primary_gpu);
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let mut gpus = GpuManager::new(EglGlesBackend, log.clone()).unwrap();
+    let mut gpus = GpuManager::new(EglGlesBackend::default(), log.clone()).unwrap();
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     #[cfg(any(feature = "egl", feature = "debug"))]
     let mut renderer = gpus
@@ -241,6 +248,7 @@ pub fn run_udev(log: Logger) {
         signaler: session_signal.clone(),
         pointer_image: crate::cursor::Cursor::load(&log),
         pointer_images: Vec::new(),
+        pointer_element: PointerElement::default(),
         #[cfg(feature = "debug")]
         fps_texture,
         logger: log.clone(),
@@ -319,7 +327,7 @@ pub fn run_udev(log: Logger) {
         if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
-            state.space.refresh(&display.handle());
+            state.space.refresh();
             state.popups.cleanup();
             display.flush_clients().unwrap();
         }
@@ -334,8 +342,11 @@ struct SurfaceData {
     render_node: DrmNode,
     surface: RenderSurface,
     global: Option<GlobalId>,
+    damage_tracked_renderer: DamageTrackedRenderer,
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
+    #[cfg(feature = "debug")]
+    fps_element: FpsElement<MultiTexture>,
 }
 
 impl Drop for SurfaceData {
@@ -354,12 +365,14 @@ struct BackendData {
     event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, CalloopData<UdevData>>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn scan_connectors(
     device_id: DrmNode,
     device: &DrmDevice<SessionFd>,
     gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
     display: &mut Display<AnvilState<UdevData>>,
-    space: &mut Space,
+    space: &mut Space<Window>,
+    #[cfg(feature = "debug")] fps_texture: &MultiTexture,
     signaler: &Signaler<SessionSignal>,
     logger: &::slog::Logger,
 ) -> HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>> {
@@ -483,14 +496,21 @@ fn scan_connectors(
                 .user_data()
                 .insert_if_missing(|| UdevOutputId { crtc, device_id });
 
+            let damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
+            #[cfg(feature = "debug")]
+            let fps_element = FpsElement::new(fps_texture.clone());
+
             entry.insert(Rc::new(RefCell::new(SurfaceData {
                 dh: display.handle(),
                 device_id,
                 render_node,
                 surface: gbm_surface,
                 global: Some(global),
+                damage_tracked_renderer,
                 #[cfg(feature = "debug")]
                 fps: fps_ticker::Fps::default(),
+                #[cfg(feature = "debug")]
+                fps_element,
             })));
 
             break;
@@ -544,6 +564,8 @@ impl AnvilState<UdevData> {
             &gbm,
             display,
             &mut self.space,
+            #[cfg(feature = "debug")]
+            &self.backend_data.fps_texture,
             &self.backend_data.signaler,
             &self.log,
         )));
@@ -626,12 +648,14 @@ impl AnvilState<UdevData> {
                 &backend_data.gbm,
                 display,
                 &mut self.space,
+                #[cfg(feature = "debug")]
+                &self.backend_data.fps_texture,
                 &signaler,
                 &logger,
             );
 
             // fixup window coordinates
-            crate::shell::fixup_positions(&display.handle(), &mut self.space);
+            crate::shell::fixup_positions(&mut self.space);
 
             for surface in backends.values() {
                 let logger = logger.clone();
@@ -667,7 +691,7 @@ impl AnvilState<UdevData> {
             {
                 self.space.unmap_output(&output);
             }
-            crate::shell::fixup_positions(&self.backend_data.dh, &mut self.space);
+            crate::shell::fixup_positions(&mut self.space);
 
             self.handle.remove(backend_data.registration_token);
             let _device = backend_data.event_dispatcher.into_source_inner();
@@ -701,6 +725,7 @@ impl AnvilState<UdevData> {
                 &mut surfaces_iter
             };
 
+        let mut outputs = Vec::new();
         for (&crtc, surface) in to_render_iter {
             // TODO get scale from the rendersurface when supporting HiDPI
             let frame = self
@@ -716,29 +741,50 @@ impl AnvilState<UdevData> {
             let pointer_images = &mut self.backend_data.pointer_images;
             let pointer_image = pointer_images
                 .iter()
-                .find_map(|(image, texture)| if image == &frame { Some(texture) } else { None })
-                .cloned()
+                .find_map(|(image, texture)| {
+                    if image == &frame {
+                        Some(texture.clone())
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or_else(|| {
-                    let texture = renderer
-                        .import_memory(
-                            &frame.pixels_rgba,
-                            (frame.width as i32, frame.height as i32).into(),
-                            false,
-                        )
-                        .expect("Failed to import cursor bitmap");
+                    let texture = TextureBuffer::from_memory(
+                        &mut renderer,
+                        &frame.pixels_rgba,
+                        (frame.width as i32, frame.height as i32),
+                        false,
+                        1,
+                        Transform::Normal,
+                        None,
+                    )
+                    .expect("Failed to import cursor bitmap");
                     pointer_images.push((frame, texture.clone()));
                     texture
                 });
 
+            let output = if let Some(output) = self.space.outputs().find(|o| {
+                o.user_data().get::<UdevOutputId>()
+                    == Some(&UdevOutputId {
+                        device_id: surface.borrow().device_id,
+                        crtc,
+                    })
+            }) {
+                output.clone()
+            } else {
+                // somehow we got called with an invalid output
+                continue;
+            };
+
             let result = render_surface(
                 &mut *surface.borrow_mut(),
                 &mut renderer,
-                crtc,
                 &mut self.space,
+                &output,
+                self.seat.input_method().unwrap(),
                 self.pointer_location,
                 &pointer_image,
-                #[cfg(feature = "debug")]
-                &self.backend_data.fps_texture,
+                &mut self.backend_data.pointer_element,
                 &self.dnd_icon,
                 &mut *self.cursor_status.lock().unwrap(),
                 &self.log,
@@ -774,58 +820,73 @@ impl AnvilState<UdevData> {
                     .expect("failed to schedule frame timer");
             }
 
+            outputs.push(output.clone());
+        }
+
+        std::mem::drop(surfaces);
+        for output in outputs {
             // Send frame events so that client start drawing their next frame
-            self.space
-                .send_frames(self.start_time.elapsed().as_millis() as u32);
+            self.send_frames(&output);
         }
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn render_surface(
-    surface: &mut SurfaceData,
-    renderer: &mut UdevRenderer<'_>,
-    crtc: crtc::Handle,
-    space: &mut Space,
+fn render_surface<'a>(
+    surface: &'a mut SurfaceData,
+    renderer: &mut UdevRenderer<'a>,
+    space: &mut Space<Window>,
+    output: &Output,
+    input_method: &InputMethodHandle,
     pointer_location: Point<f64, Logical>,
-    pointer_image: &MultiTexture,
-    #[cfg(feature = "debug")] fps_texture: &MultiTexture,
+    pointer_image: &TextureBuffer<MultiTexture>,
+    pointer_element: &mut PointerElement<MultiTexture>,
     dnd_icon: &Option<wl_surface::WlSurface>,
     cursor_status: &mut CursorImageStatus,
     logger: &slog::Logger,
 ) -> Result<bool, SwapBuffersError> {
     surface.surface.frame_submitted()?;
 
-    let output = if let Some(output) = space.outputs().find(|o| {
-        o.user_data().get::<UdevOutputId>()
-            == Some(&UdevOutputId {
-                device_id: surface.device_id,
-                crtc,
-            })
-    }) {
-        output.clone()
-    } else {
-        // somehow we got called with an invalid output
-        return Ok(true);
-    };
-    let output_geometry = space.output_geometry(&output).unwrap();
+    let output_geometry = space.output_geometry(output).unwrap();
+    let scale = Scale::from(output.current_scale().fractional_scale());
 
     let (dmabuf, age) = surface.surface.next_buffer()?;
     renderer.bind(dmabuf)?;
 
-    let mut elements: Vec<CustomElem> = Vec::new();
-    // set cursor
+    let mut elements: Vec<CustomRenderElements<_>> = Vec::new();
+    // draw input method surface if any
+    let rectangle = input_method.coordinates();
+    let position = Point::from((
+        rectangle.loc.x + rectangle.size.w,
+        rectangle.loc.y + rectangle.size.h,
+    ));
+    input_method.with_surface(|surface| {
+        elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
+            &SurfaceTree::from_surface(surface),
+            position.to_physical_precise_round(scale),
+            scale,
+        ));
+    });
+
     if output_geometry.to_f64().contains(pointer_location) {
-        let (ptr_x, ptr_y) = pointer_location.into();
-        let ptr_location = Point::<i32, Logical>::from((ptr_x as i32, ptr_y as i32)); // - output_geometry.loc;
-                                                                                      // draw the dnd icon if applicable
-        {
-            if let Some(wl_surface) = dnd_icon.as_ref() {
-                if wl_surface.alive() {
-                    elements.push(draw_dnd_icon(wl_surface.clone(), ptr_location, logger).into());
-                }
-            }
-        }
+        let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = cursor_status {
+            compositor::with_states(surface, |states| {
+                states
+                    .data_map
+                    .get::<Mutex<CursorImageAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .hotspot
+            })
+        } else {
+            (0, 0).into()
+        };
+        let cursor_pos = pointer_location - output_geometry.loc.to_f64() - cursor_hotspot.to_f64();
+        let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
+
+        // set cursor
+        pointer_element.set_texture(pointer_image.clone());
 
         // draw the cursor as relevant
         {
@@ -838,27 +899,46 @@ fn render_surface(
                 *cursor_status = CursorImageStatus::Default;
             }
 
-            if let CursorImageStatus::Surface(ref wl_surface) = *cursor_status {
-                elements.push(draw_cursor(wl_surface.clone(), ptr_location, logger).into());
-            } else {
-                elements.push(PointerElement::new(pointer_image.clone(), ptr_location).into());
-            }
+            pointer_element.set_status(cursor_status.clone());
         }
 
-        #[cfg(feature = "debug")]
+        elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
+
+        // draw the dnd icon if applicable
         {
-            elements.push(draw_fps::<UdevRenderer<'_>>(fps_texture, surface.fps.avg().round() as u32).into());
-            surface.fps.tick();
+            if let Some(wl_surface) = dnd_icon.as_ref() {
+                if wl_surface.alive() {
+                    elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
+                        &SurfaceTree::from_surface(wl_surface),
+                        cursor_pos_scaled,
+                        scale,
+                    ));
+                }
+            }
         }
     }
 
+    #[cfg(feature = "debug")]
+    {
+        surface.fps_element.update_fps(surface.fps.avg().round() as u32);
+        surface.fps.tick();
+        elements.push(CustomRenderElements::Fps(surface.fps_element.clone()));
+    }
+
     // and draw to our buffer
-    // TODO we can pass the damage rectangles inside a AtomicCommitRequest
-    let render_res = crate::render::render_output(&output, space, renderer, age.into(), &*elements, logger)
-        .map(|x| x.is_some());
+    let render_res = render_output(
+        output,
+        space,
+        &*elements,
+        renderer,
+        &mut surface.damage_tracked_renderer,
+        age.into(),
+        logger,
+    )
+    .map(|x| x.is_some());
 
     match render_res.map_err(|err| match err {
-        RenderError::Rendering(err) => err.into(),
+        DamageTrackedRendererError::Rendering(err) => err.into(),
         _ => unreachable!(),
     }) {
         Ok(true) => {
@@ -873,7 +953,7 @@ fn render_surface(
 }
 
 fn schedule_initial_render(
-    gpus: &mut GpuManager<EglGlesBackend>,
+    gpus: &mut GpuManager<EglGlesBackend<Gles2Renderer>>,
     surface: Rc<RefCell<SurfaceData>>,
     evt_handle: &LoopHandle<'static, CalloopData<UdevData>>,
     logger: ::slog::Logger,

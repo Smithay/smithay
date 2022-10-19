@@ -235,6 +235,7 @@ mod handlers {
                         }
                     }
                 }
+                primary_device_manager::Request::Destroy => {}
                 _ => unreachable!(),
             }
         }

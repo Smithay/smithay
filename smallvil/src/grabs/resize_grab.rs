@@ -1,6 +1,6 @@
 use crate::Smallvil;
 use smithay::{
-    desktop::{Kind, Space, Window, WindowSurfaceType},
+    desktop::{Kind, Space, Window},
     input::pointer::{
         AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
         PointerInnerHandle,
@@ -228,12 +228,13 @@ impl ResizeSurfaceState {
 }
 
 /// Should be called on `WlSurface::commit`
-pub fn handle_commit(space: &mut Space, surface: &WlSurface) -> Option<()> {
+pub fn handle_commit(space: &mut Space<Window>, surface: &WlSurface) -> Option<()> {
     let window = space
-        .window_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+        .elements()
+        .find(|w| w.toplevel().wl_surface() == surface)
         .cloned()?;
 
-    let mut window_loc = space.window_location(&window)?;
+    let mut window_loc = space.element_location(&window)?;
     let geometry = window.geometry();
 
     let new_loc: Point<Option<i32>, Logical> = ResizeSurfaceState::with(surface, |state| {
@@ -266,7 +267,7 @@ pub fn handle_commit(space: &mut Space, surface: &WlSurface) -> Option<()> {
 
     if new_loc.x.is_some() || new_loc.y.is_some() {
         // If TOP or LEFT side of the window got resized, we have to move it
-        space.map_window(&window, window_loc, None, false);
+        space.map_element(window, window_loc, false);
     }
 
     Some(())

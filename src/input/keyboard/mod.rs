@@ -3,6 +3,7 @@
 use crate::backend::input::KeyState;
 use crate::utils::{IsAlive, Serial};
 use slog::{debug, error, info, o, trace};
+use std::collections::HashSet;
 use std::{
     default::Default,
     ffi::CString,
@@ -11,8 +12,7 @@ use std::{
 };
 use thiserror::Error;
 
-use xkbcommon::xkb;
-pub use xkbcommon::xkb::{keysyms, Keysym};
+pub use xkbcommon::xkb::{self, keysyms, Keysym};
 
 use super::{Seat, SeatHandler};
 
@@ -57,7 +57,7 @@ enum GrabStatus<D> {
 pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::KeyboardFocus, Serial)>,
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
-    pub(crate) pressed_keys: Vec<u32>,
+    pub(crate) pressed_keys: HashSet<u32>,
     pub(crate) mods_state: ModifiersState,
     pub(crate) keymap: xkb::Keymap,
     pub(crate) state: xkb::State,
@@ -112,7 +112,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         Ok(KbdInternal {
             focus: None,
             pending_focus: None,
-            pressed_keys: Vec::new(),
+            pressed_keys: HashSet::new(),
             mods_state: ModifiersState::default(),
             keymap,
             state,
@@ -127,11 +127,11 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         // track pressed keys as xkbcommon does not seem to expose it :(
         let direction = match state {
             KeyState::Pressed => {
-                self.pressed_keys.push(keycode);
+                self.pressed_keys.insert(keycode);
                 xkb::KeyDirection::Down
             }
             KeyState::Released => {
-                self.pressed_keys.retain(|&k| k != keycode);
+                self.pressed_keys.remove(&keycode);
                 xkb::KeyDirection::Up
             }
         };
@@ -582,6 +582,23 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             .find(|seat| seat.get_keyboard().map(|h| &h == self).unwrap_or(false))
             .cloned()
             .unwrap()
+    }
+}
+
+impl<D> KeyboardHandle<D>
+where
+    D: SeatHandler,
+    <D as SeatHandler>::KeyboardFocus: Clone,
+{
+    /// Retrieve the current keyboard focus
+    pub fn current_focus(&self) -> Option<<D as SeatHandler>::KeyboardFocus> {
+        self.arc
+            .internal
+            .lock()
+            .unwrap()
+            .focus
+            .clone()
+            .map(|(focus, _)| focus)
     }
 }
 
