@@ -1,4 +1,4 @@
-use crate::utils::Serial;
+use crate::{utils::Serial, wayland::compositor::CompositorHandler};
 
 use super::{
     cache::MultiCache,
@@ -10,7 +10,11 @@ use std::{
     fmt,
     sync::{atomic::Ordering, Mutex},
 };
-use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle, Resource};
+use wayland_server::{
+    backend::ObjectId,
+    protocol::{wl_callback::WlCallback, wl_surface::WlSurface},
+    Dispatch, DisplayHandle, Resource,
+};
 
 pub(crate) static SUBSURFACE_ROLE: &str = "subsurface";
 
@@ -113,7 +117,13 @@ impl PrivateSurfaceData {
     }
 
     /// Cleans the `as_ref().user_data` of that surface, must be called when it is destroyed
-    pub fn cleanup(surface_data: &SurfaceUserData, surface_id: ObjectId) {
+    pub fn cleanup<D>(_state: &D, surface_data: &SurfaceUserData, surface_id: ObjectId)
+    where
+        D: Dispatch<WlSurface, SurfaceUserData>,
+        D: Dispatch<WlCallback, ()>,
+        D: CompositorHandler,
+        D: 'static,
+    {
         let my_data_mutex = &surface_data.inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         if let Some(old_parent) = my_data.parent.take() {

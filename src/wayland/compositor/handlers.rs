@@ -294,13 +294,13 @@ where
     }
 
     fn destroyed(
-        _state: &mut D,
+        state: &mut D,
         _client_id: wayland_server::backend::ClientId,
         object_id: wayland_server::backend::ObjectId,
         data: &SurfaceUserData,
     ) {
         data.alive_tracker.destroy_notify();
-        PrivateSurfaceData::cleanup(data, object_id);
+        PrivateSurfaceData::cleanup::<D>(state, data, object_id);
     }
 }
 
