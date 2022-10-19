@@ -303,7 +303,7 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
             |_, _, _| true,
         );
         for surf in &new_surfaces {
-            add_destruction_hook(surf, |data| {
+            add_destruction_hook(surf, |_, data| {
                 if let Some(buffer) = data
                     .data_map
                     .get::<RendererSurfaceStateUserData>()

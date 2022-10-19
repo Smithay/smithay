@@ -105,6 +105,8 @@ mod handlers;
 mod transaction;
 mod tree;
 
+use std::any::Any;
+
 pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
 use self::tree::PrivateSurfaceData;
@@ -415,8 +417,9 @@ pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSur
 /// Register a destruction hook to be invoked on surface destruction
 ///
 /// It'll be invoked when the surface is destroyed (either explicitly by the client or on
-/// client disconnect).
-pub fn add_destruction_hook(surface: &WlSurface, hook: fn(&SurfaceData)) {
+/// client disconnect). The compositor state is passed back as `Any` and may be downcast as needed
+/// by the callee.
+pub fn add_destruction_hook(surface: &WlSurface, hook: fn(&mut dyn Any, &SurfaceData)) {
     PrivateSurfaceData::add_destruction_hook(surface, hook)
 }
 

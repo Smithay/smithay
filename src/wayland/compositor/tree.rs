@@ -7,6 +7,7 @@ use super::{
     BufferAssignment, SurfaceAttributes, SurfaceData,
 };
 use std::{
+    any::Any,
     fmt,
     sync::{atomic::Ordering, Mutex},
 };
@@ -39,7 +40,7 @@ pub struct PrivateSurfaceData {
     current_txid: Serial,
     pre_commit_hooks: Vec<fn(&DisplayHandle, &WlSurface)>,
     post_commit_hooks: Vec<fn(&DisplayHandle, &WlSurface)>,
-    destruction_hooks: Vec<fn(&SurfaceData)>,
+    destruction_hooks: Vec<fn(&mut dyn Any, &SurfaceData)>,
 }
 
 impl fmt::Debug for PrivateSurfaceData {
@@ -117,7 +118,7 @@ impl PrivateSurfaceData {
     }
 
     /// Cleans the `as_ref().user_data` of that surface, must be called when it is destroyed
-    pub fn cleanup<D>(_state: &D, surface_data: &SurfaceUserData, surface_id: ObjectId)
+    pub fn cleanup<D>(state: &mut D, surface_data: &SurfaceUserData, surface_id: ObjectId)
     where
         D: Dispatch<WlSurface, SurfaceUserData>,
         D: Dispatch<WlCallback, ()>,
@@ -163,7 +164,7 @@ impl PrivateSurfaceData {
         };
 
         for hook in &my_data.destruction_hooks {
-            hook(&my_data.public_data)
+            hook(state, &my_data.public_data)
         }
     }
 
@@ -201,7 +202,7 @@ impl PrivateSurfaceData {
         my_data.post_commit_hooks.push(hook);
     }
 
-    pub fn add_destruction_hook(surface: &WlSurface, hook: fn(&SurfaceData)) {
+    pub fn add_destruction_hook(surface: &WlSurface, hook: fn(&mut dyn Any, &SurfaceData)) {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         my_data.destruction_hooks.push(hook);
