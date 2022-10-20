@@ -32,7 +32,7 @@ impl IsAlive for FocusTarget {
 
 impl From<FocusTarget> for WlSurface {
     fn from(target: FocusTarget) -> Self {
-        target.wl_surface().unwrap().clone()
+        target.wl_surface().unwrap()
     }
 }
 
@@ -138,11 +138,11 @@ impl<Backend> KeyboardTarget<AnvilState<Backend>> for FocusTarget {
 }
 
 impl WaylandFocus for FocusTarget {
-    fn wl_surface(&self) -> Option<&WlSurface> {
+    fn wl_surface(&self) -> Option<WlSurface> {
         Some(match self {
-            FocusTarget::Window(w) => w.toplevel().wl_surface(),
-            FocusTarget::LayerSurface(l) => l.wl_surface(),
-            FocusTarget::Popup(p) => p.wl_surface(),
+            FocusTarget::Window(w) => w.toplevel().wl_surface().clone(),
+            FocusTarget::LayerSurface(l) => l.wl_surface().clone(),
+            FocusTarget::Popup(p) => p.wl_surface().clone(),
         })
     }
     fn same_client_as(&self, object_id: &ObjectId) -> bool {

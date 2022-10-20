@@ -677,7 +677,7 @@ impl AnvilState<UdevData> {
 
                 tool.motion(
                     self.pointer_location,
-                    under.and_then(|(f, loc)| f.wl_surface().map(|s| (s.clone(), loc))),
+                    under.and_then(|(f, loc)| f.wl_surface().map(|s| (s, loc))),
                     &tablet,
                     SCOUNTER.next_serial(),
                     evt.time(),
@@ -710,7 +710,7 @@ impl AnvilState<UdevData> {
             let tool = tablet_seat.get_tool(&tool);
 
             if let (Some(under), Some(tablet), Some(tool)) = (
-                under.and_then(|(f, loc)| f.wl_surface().map(|s| (s.clone(), loc))),
+                under.and_then(|(f, loc)| f.wl_surface().map(|s| (s, loc))),
                 tablet,
                 tool,
             ) {

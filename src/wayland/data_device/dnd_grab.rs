@@ -88,7 +88,7 @@ where
             .get::<RefCell<SeatData>>()
             .unwrap()
             .borrow_mut();
-        if focus.as_ref().and_then(|&(ref s, _)| s.wl_surface()) != self.current_focus.as_ref() {
+        if focus.as_ref().and_then(|&(ref s, _)| s.wl_surface()) != self.current_focus.clone() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 // only leave if there is a data source or we are on the original client
@@ -155,7 +155,7 @@ where
                             offer.source_actions(meta.dnd_action);
                         })
                         .unwrap();
-                        device.enter(event.serial.into(), surface, x, y, Some(&offer));
+                        device.enter(event.serial.into(), &surface, x, y, Some(&offer));
                         self.pending_offers.push(offer);
                     }
                     self.offer_data = Some(offer_data);
@@ -164,12 +164,12 @@ where
                     if self.origin.id().same_client_as(&surface.id()) {
                         for device in seat_data.known_devices() {
                             if device.id().same_client_as(&surface.id()) {
-                                device.enter(event.serial.into(), surface, x, y, None);
+                                device.enter(event.serial.into(), &surface, x, y, None);
                             }
                         }
                     }
                 }
-                self.current_focus = Some(surface.clone());
+                self.current_focus = Some(surface);
             } else {
                 // make a move
                 if self.data_source.is_some() || self.origin.id().same_client_as(&surface.id()) {

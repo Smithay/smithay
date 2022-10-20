@@ -374,8 +374,8 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
 }
 
 impl WaylandFocus for Window {
-    fn wl_surface(&self) -> Option<&wl_surface::WlSurface> {
-        Some(self.toplevel().wl_surface())
+    fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
+        Some(self.toplevel().wl_surface().clone())
     }
 
     fn same_client_as(&self, object_id: &ObjectId) -> bool {

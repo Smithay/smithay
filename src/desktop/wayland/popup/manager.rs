@@ -78,7 +78,7 @@ impl PopupManager {
         <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
     {
         let surface = popup.wl_surface();
-        assert_eq!(root.wl_surface().cloned(), Some(find_popup_root_surface(&popup)?));
+        assert_eq!(root.wl_surface(), Some(find_popup_root_surface(&popup)?));
 
         match popup {
             PopupKind::Xdg(ref xdg) => {
@@ -118,7 +118,7 @@ impl PopupManager {
             Err(err) => {
                 match err {
                     PopupGrabError::ParentDismissed => {
-                        let _ = PopupManager::dismiss_popup(root.wl_surface().unwrap(), &popup);
+                        let _ = PopupManager::dismiss_popup(&root.wl_surface().unwrap(), &popup);
                     }
                     PopupGrabError::NotTheTopmostPopup => {
                         surface.post_error(
