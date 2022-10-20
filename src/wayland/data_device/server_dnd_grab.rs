@@ -82,7 +82,7 @@ where
             .get::<RefCell<SeatData>>()
             .unwrap()
             .borrow_mut();
-        if focus.as_ref().and_then(|&(ref s, _)| s.wl_surface()) != self.current_focus.as_ref() {
+        if focus.as_ref().and_then(|&(ref s, _)| s.wl_surface()) != self.current_focus.clone() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 for device in seat_data.known_devices() {
@@ -141,11 +141,11 @@ where
                         offer.offer(mime_type);
                     }
                     offer.source_actions(self.metadata.dnd_action);
-                    device.enter(serial.into(), surface, x, y, Some(&offer));
+                    device.enter(serial.into(), &surface, x, y, Some(&offer));
                     self.pending_offers.push(offer);
                 }
                 self.offer_data = Some(offer_data);
-                self.current_focus = Some(surface.clone());
+                self.current_focus = Some(surface);
             } else {
                 // make a move
                 for device in seat_data.known_devices() {

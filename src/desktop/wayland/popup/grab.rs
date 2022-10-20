@@ -350,7 +350,7 @@ where
     /// Returns the new topmost popup in case of nested popups
     /// or if the grab has ended the root surface
     pub fn ungrab(&mut self, strategy: PopupUngrabStrategy) -> Option<WlSurface> {
-        let root_surface = self.root.wl_surface()?.clone();
+        let root_surface = self.root.wl_surface()?;
         self.toplevel_grab
             .ungrab(&root_surface, strategy)
             .or(Some(root_surface))

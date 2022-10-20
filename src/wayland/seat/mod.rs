@@ -90,7 +90,7 @@ pub trait WaylandFocus {
     ///
     /// *Note*: This has to return `Some`, if `same_client_as` can return true
     /// for any provided `ObjectId`
-    fn wl_surface(&self) -> Option<&wl_surface::WlSurface>;
+    fn wl_surface(&self) -> Option<wl_surface::WlSurface>;
     /// Returns true, if the underlying wayland object originates from
     /// the same client connection as the provided `ObjectId`.
     ///
@@ -103,8 +103,8 @@ pub trait WaylandFocus {
 }
 
 impl WaylandFocus for wl_surface::WlSurface {
-    fn wl_surface(&self) -> Option<&wl_surface::WlSurface> {
-        Some(self)
+    fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
+        Some(self.clone())
     }
 }
 
