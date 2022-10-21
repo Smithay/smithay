@@ -799,7 +799,17 @@ fn get_dmabuf_formats(
 
     for fourcc in formats {
         let mut num = 0i32;
-        wrap_egl_call(|| unsafe {
+        // Some drivers return EGL_BAD_PARAMETER here for formats
+        // they themselves returned for the query above.. *sigh*
+        //
+        // - NVIDIA proprietary since 520
+        //
+        // So lets ignore any errors of this call on purpose(!),
+        // which will let `num` stay at `0` and handle the format
+        // as unsupported by explicit modifiers.
+        // Which is probably what the error is suppose to indicate
+        // although the spec doesn't seem to demand it...
+        match wrap_egl_call(|| unsafe {
             ffi::egl::QueryDmaBufModifiersEXT(
                 *display,
                 fourcc as i32,
@@ -808,7 +818,15 @@ fn get_dmabuf_formats(
                 std::ptr::null_mut(),
                 &mut num as *mut _,
             )
-        })?;
+        }) {
+            Ok(_) => {}
+            Err(EGLError::BadParameter) => {
+                num = 0;
+            }
+            Err(x) => {
+                return Err(x);
+            }
+        };
 
         if num == 0 {
             texture_formats.insert(DrmFormat {
