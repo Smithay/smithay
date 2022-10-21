@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{
         element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
-        utils::draw_render_elements,
+        utils::{draw_render_elements, is_obscured_by},
         ImportAll, Renderer,
     },
     desktop::{utils::*, PopupManager},
@@ -539,6 +539,53 @@ impl LayerSurface {
         }
 
         bounding_box
+    }
+
+    /// Return the opaque regions of this layer surface and its children
+    pub fn opaque_regions(&self) -> Vec<Rectangle<i32, Logical>> {
+        opaque_regions_from_surface_tree(self.wl_surface(), (0, 0))
+    }
+
+    /// Return the opaque regions of this layer surface and its children including popups
+    ///
+    /// Note: You need to use a [`PopupManager`] to track popups, otherwise the opaque regions
+    /// will not include the popups.
+    pub fn opaque_regions_with_popups(&self) -> Vec<Rectangle<i32, Logical>> {
+        let mut opaque_regions = self.opaque_regions();
+
+        let surface = self.wl_surface();
+        for (popup, location) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            // TODO: Subtract the existing opaque regions to de-duplicate them
+            opaque_regions.extend(opaque_regions_from_surface_tree(surface, location));
+        }
+
+        opaque_regions
+    }
+
+    /// Test if this window is completely obscured by the specified regions
+    pub fn is_obscured_by(&self, opaque_regions: &[Rectangle<i32, Logical>]) -> bool {
+        let surface = self.wl_surface();
+
+        // First we can test the bounding box, if this is inconclusive we
+        // need to do a more in depth test of the surfaces and popups
+        let bbox = self.bbox_with_popups();
+
+        let bbox_obscured = is_obscured_by([bbox], opaque_regions.iter().copied());
+
+        if bbox_obscured {
+            // if the bbox is completely obscured we can exit early
+            return true;
+        }
+
+        let mut visible_regions = visible_regions_from_surface_tree(surface, (0, 0));
+        for (popup, location) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            // TODO: Subtract the existing visible regions to de-duplicate them
+            visible_regions.extend(visible_regions_from_surface_tree(surface, location));
+        }
+
+        is_obscured_by(visible_regions, opaque_regions.iter().copied())
     }
 
     /// Finds the topmost surface under this point if any and returns it together with the location of this

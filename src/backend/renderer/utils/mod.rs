@@ -300,3 +300,20 @@ pub struct SurfaceView {
     /// The logical offset for a sub-surface
     pub offset: Point<i32, Logical>,
 }
+
+/// Test if a set of rectangles is completely obscured by another set
+pub fn is_obscured_by<N: Coordinate, Kind>(
+    test: impl IntoIterator<Item = Rectangle<N, Kind>>,
+    by: impl IntoIterator<Item = Rectangle<N, Kind>>,
+) -> bool {
+    let test = test.into_iter().collect::<Vec<Rectangle<N, Kind>>>();
+
+    by.into_iter()
+        .fold(test, |visible_regions, opaque_region| {
+            visible_regions
+                .into_iter()
+                .flat_map(|visible_region| visible_region.subtract_rect(opaque_region))
+                .collect::<Vec<_>>()
+        })
+        .is_empty()
+}

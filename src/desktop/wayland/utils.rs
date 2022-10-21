@@ -1,7 +1,7 @@
 //! Helper functions to ease dealing with surface trees
 
 use crate::{
-    backend::renderer::utils::RendererSurfaceState,
+    backend::renderer::utils::{RendererSurfaceState, RendererSurfaceStateUserData},
     desktop::WindowSurfaceType,
     utils::{Logical, Point, Rectangle},
     wayland::compositor::{with_surface_tree_downward, SurfaceAttributes, TraversalAction},
@@ -131,6 +131,97 @@ where
         },
     );
     found.into_inner()
+}
+
+/// Returns the visible regions for a whole surface tree
+pub fn visible_regions_from_surface_tree<P>(
+    surface: &wl_surface::WlSurface,
+    location: P,
+) -> Vec<Rectangle<i32, Logical>>
+where
+    P: Into<Point<i32, Logical>>,
+{
+    let location = location.into();
+    let mut visible_regions = Vec::new();
+
+    with_surface_tree_downward(
+        surface,
+        location,
+        |_, states, location| {
+            let mut location = *location;
+
+            if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
+                let data = data.borrow();
+
+                if let Some(surface_view) = data.surface_view.as_ref() {
+                    location += surface_view.offset;
+
+                    if let Some(surface_size) = data.surface_size() {
+                        // TODO: Subtract the existing visible regions to de-duplicate them
+                        visible_regions.push(Rectangle::from_loc_and_size(location, surface_size));
+                    }
+
+                    TraversalAction::DoChildren(location)
+                } else {
+                    TraversalAction::SkipChildren
+                }
+            } else {
+                TraversalAction::SkipChildren
+            }
+        },
+        |_, _, _| {},
+        |_, _, _| true,
+    );
+
+    visible_regions
+}
+
+/// Returns the opaque regions for a whole surface tree
+pub fn opaque_regions_from_surface_tree<P>(
+    surface: &wl_surface::WlSurface,
+    location: P,
+) -> Vec<Rectangle<i32, Logical>>
+where
+    P: Into<Point<i32, Logical>>,
+{
+    let location = location.into();
+    let mut surface_tree_opaque_regions = Vec::new();
+
+    with_surface_tree_downward(
+        surface,
+        location,
+        |_, states, location| {
+            let mut location = *location;
+
+            if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
+                let data = data.borrow();
+
+                if let Some(surface_view) = data.surface_view.as_ref() {
+                    location += surface_view.offset;
+
+                    if let Some(opaque_regions) = data.opaque_regions() {
+                        // TODO: Subtract the existing opaque regions to de-duplicate them
+                        surface_tree_opaque_regions.extend(opaque_regions.iter().copied().map(
+                            |mut region| {
+                                region.loc += location;
+                                region
+                            },
+                        ));
+                    }
+
+                    TraversalAction::DoChildren(location)
+                } else {
+                    TraversalAction::SkipChildren
+                }
+            } else {
+                TraversalAction::SkipChildren
+            }
+        },
+        |_, _, _| {},
+        |_, _, _| true,
+    );
+
+    surface_tree_opaque_regions
 }
 
 /// Sends frame callbacks for a surface and its subsurfaces with the given `time`.

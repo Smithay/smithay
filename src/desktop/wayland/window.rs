@@ -3,7 +3,7 @@ use crate::{
         input::KeyState,
         renderer::{
             element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
-            utils::draw_render_elements,
+            utils::{draw_render_elements, is_obscured_by},
             ImportAll, Renderer,
         },
     },
@@ -98,6 +98,7 @@ pub(crate) struct WindowInner {
     pub(crate) id: usize,
     toplevel: Kind,
     bbox: Mutex<Rectangle<i32, Logical>>,
+    opaque_regions: Mutex<Vec<Rectangle<i32, Logical>>>,
     pub(crate) z_index: AtomicU8,
     focused_surface: Mutex<Option<wl_surface::WlSurface>>,
     user_data: UserDataMap,
@@ -157,6 +158,7 @@ impl Window {
             id,
             toplevel,
             bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
+            opaque_regions: Mutex::new(Vec::new()),
             z_index: AtomicU8::new(RenderZindex::Shell as u8),
             focused_surface: Mutex::new(None),
             user_data: UserDataMap::new(),
@@ -192,6 +194,55 @@ impl Window {
         }
 
         bounding_box
+    }
+
+    /// Return the opaque regions of this window and its children
+    pub fn opaque_regions(&self) -> Vec<Rectangle<i32, Logical>> {
+        self.0.opaque_regions.lock().unwrap().clone()
+    }
+
+    /// Return the opaque regions of this window and its children including popups
+    ///
+    /// Note: You need to use a [`PopupManager`] to track popups, otherwise the opaque regions
+    /// will not include the popups.
+    pub fn opaque_regions_with_popups(&self) -> Vec<Rectangle<i32, Logical>> {
+        let mut opaque_regions = self.opaque_regions();
+
+        let surface = self.0.toplevel.wl_surface();
+        for (popup, location) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            let offset = self.geometry().loc + location - popup.geometry().loc;
+            // TODO: Subtract the existing opaque regions to de-duplicate them
+            opaque_regions.extend(opaque_regions_from_surface_tree(surface, offset));
+        }
+
+        opaque_regions
+    }
+
+    /// Test if this window is completely obscured by the specified regions
+    pub fn is_obscured_by(&self, opaque_regions: &[Rectangle<i32, Logical>]) -> bool {
+        let surface = self.0.toplevel.wl_surface();
+
+        // First we can test the bounding box, if this is inconclusive we
+        // need to do a more in depth test of the surfaces and popups
+        let bbox = self.bbox_with_popups();
+
+        let bbox_obscured = is_obscured_by([bbox], opaque_regions.iter().copied());
+
+        if bbox_obscured {
+            // if the bbox is completely obscured we can exit early
+            return true;
+        }
+
+        let mut visible_regions = visible_regions_from_surface_tree(surface, (0, 0));
+        for (popup, location) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            let offset = self.geometry().loc + location - popup.geometry().loc;
+            // TODO: Subtract the existing visible regions to de-duplicate them
+            visible_regions.extend(visible_regions_from_surface_tree(surface, offset));
+        }
+
+        is_obscured_by(visible_regions, opaque_regions.iter().copied())
     }
 
     /// Activate/Deactivate this window
@@ -232,9 +283,11 @@ impl Window {
     /// Updates internal values
     ///
     /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
-    /// to correctly update the bounding box of this window.
+    /// to correctly update the bounding box and opaque regions of this window.
     pub fn on_commit(&self) {
         *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0));
+        *self.0.opaque_regions.lock().unwrap() =
+            opaque_regions_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0));
     }
 
     /// Finds the topmost surface under this point matching the input regions of the surface and returns
