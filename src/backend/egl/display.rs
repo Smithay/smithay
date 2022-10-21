@@ -517,6 +517,32 @@ impl EGLDisplay {
         &self.dmabuf_import_formats
     }
 
+    /// Returns when the display supports extensions required for smithays
+    /// damage tracking helpers.
+    pub fn supports_damage(&self) -> bool {
+        self.supports_damage_impl().supported()
+    }
+
+    pub(super) fn supports_damage_impl(&self) -> DamageSupport {
+        if self.extensions.iter().any(|ext| ext == "EGL_EXT_buffer_age") {
+            if self
+                .extensions
+                .iter()
+                .any(|ext| ext == "EGL_KHR_swap_buffers_with_damage")
+            {
+                return DamageSupport::KHR;
+            } else if self
+                .extensions
+                .iter()
+                .any(|ext| ext == "EGL_EXT_swap_buffers_with_damage")
+            {
+                return DamageSupport::EXT;
+            }
+        }
+
+        DamageSupport::No
+    }
+
     /// Exports an [`EGLImage`] as a [`Dmabuf`]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn create_dmabuf_from_image(
@@ -1109,4 +1135,25 @@ pub struct PixelFormat {
     pub multisampling: Option<u16>,
     /// is srgb enabled
     pub srgb: bool,
+}
+
+/// Denotes if damage tracking is supported.
+///
+/// Additionally notes which variant of the `EGL_*_swap_buffers_with_damage` extension was found.
+/// Prefers `KHR` over `EXT`, if both are available.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DamageSupport {
+    /// `EGL_KHR_swap_buffers_with_damage`
+    KHR,
+    /// `EGL_EXT_swap_buffers_with_damage`
+    EXT,
+    /// Some required extensions are missing
+    No,
+}
+
+impl DamageSupport {
+    /// Returns true, if any valid combination of required extensions was found.
+    pub fn supported(&self) -> bool {
+        self != &DamageSupport::No
+    }
 }

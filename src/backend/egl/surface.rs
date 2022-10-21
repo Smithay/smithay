@@ -7,7 +7,7 @@ use std::sync::{
 };
 
 use crate::backend::egl::{
-    display::{EGLDisplay, EGLDisplayHandle, PixelFormat},
+    display::{DamageSupport, EGLDisplay, EGLDisplayHandle, PixelFormat},
     ffi,
     native::EGLNativeSurface,
     EGLError, SwapBuffersError,
@@ -23,6 +23,7 @@ pub struct EGLSurface {
     pub(crate) surface: AtomicPtr<nix::libc::c_void>,
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
+    damage_impl: DamageSupport,
     logger: ::slog::Logger,
 }
 
@@ -76,6 +77,7 @@ impl EGLSurface {
             surface: AtomicPtr::new(surface as *mut _),
             config_id: config,
             pixel_format,
+            damage_impl: display.supports_damage_impl(),
             logger: log,
         })
     }
@@ -147,7 +149,8 @@ impl EGLSurface {
         let surface = self.surface.load(Ordering::SeqCst);
 
         let result = if !surface.is_null() {
-            self.native.swap_buffers(&self.display, surface, damage)
+            self.native
+                .swap_buffers(&self.display, surface, damage, self.damage_impl)
         } else {
             Err(SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface))
         };
