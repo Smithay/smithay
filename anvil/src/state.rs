@@ -8,7 +8,7 @@ use smithay::{
     delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_primary_selection,
     delegate_seat, delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
     delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
-    desktop::{PopupManager, Space, Window},
+    desktop::{LayerSurface, PopupManager, Space, Window},
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     output::Output,
     reexports::{
@@ -23,7 +23,7 @@ use smithay::{
             Display, DisplayHandle, Resource,
         },
     },
-    utils::{Logical, Point},
+    utils::{Logical, Point, Rectangle},
     wayland::{
         compositor::CompositorState,
         data_device::{
@@ -38,7 +38,7 @@ use smithay::{
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         seat::WaylandFocus,
         shell::{
-            wlr_layer::WlrLayerShellState,
+            wlr_layer::{Layer, WlrLayerShellState},
             xdg::{
                 decoration::{XdgDecorationHandler, XdgDecorationState},
                 ToplevelSurface, XdgShellState,
@@ -111,6 +111,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub seat_name: String,
     pub seat: Seat<AnvilState<BackendData>>,
     pub start_time: std::time::Instant,
+    pub last_throttled_frame: Option<std::time::Instant>,
 
     #[cfg(feature = "xwayland")]
     pub xwayland: XWayland,
@@ -381,6 +382,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             seat_name,
             seat,
             start_time: std::time::Instant::now(),
+            last_throttled_frame: None,
             #[cfg(feature = "xwayland")]
             xwayland,
             #[cfg(feature = "xwayland")]
@@ -388,16 +390,95 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         }
     }
 
-    pub fn send_frames(&self, output: &Output) {
-        self.space.elements().for_each(|window| {
-            if self.space.outputs_for_element(window).contains(output) {
-                window.send_frame(self.start_time.elapsed().as_millis() as u32)
+    pub fn send_frames(&mut self, output: &Output) {
+        let mut opaque_regions: Vec<Rectangle<i32, Logical>> = Vec::new();
+
+        let now = std::time::Instant::now();
+        let send_throttled_frame = self
+            .last_throttled_frame
+            .map(|t| now.duration_since(t) >= std::time::Duration::from_secs(1))
+            .unwrap_or(true);
+
+        if send_throttled_frame {
+            self.last_throttled_frame = Some(now);
+        }
+
+        let layer_map = smithay::desktop::layer_map_for_output(output);
+        let (upper, lower): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
+            .layers()
+            .rev()
+            .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
+
+        upper
+            .iter()
+            .filter_map(|layer| layer_map.layer_geometry(layer).map(|geo| (geo.loc, layer)))
+            .for_each(|(location, layer)| {
+                if send_throttled_frame
+                    || !layer.is_obscured_by(
+                        &*opaque_regions
+                            .iter()
+                            .copied()
+                            .map(|mut rect| {
+                                rect.loc -= location;
+                                rect
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                {
+                    layer.send_frame(self.start_time.elapsed().as_millis() as u32);
+                    opaque_regions.extend(layer.opaque_regions_with_popups().into_iter().map(|mut rect| {
+                        rect.loc += location;
+                        rect
+                    }));
+                }
+            });
+
+        self.space.elements().rev().for_each(|window| {
+            let location = self.space.element_bbox(window).unwrap().loc;
+            if self.space.outputs_for_element(window).contains(output)
+                && (send_throttled_frame
+                    || !window.is_obscured_by(
+                        &*opaque_regions
+                            .iter()
+                            .copied()
+                            .map(|mut rect| {
+                                rect.loc -= location;
+                                rect
+                            })
+                            .collect::<Vec<_>>(),
+                    ))
+            {
+                window.send_frame(self.start_time.elapsed().as_millis() as u32);
+                opaque_regions.extend(window.opaque_regions_with_popups().into_iter().map(|mut rect| {
+                    rect.loc += location;
+                    rect
+                }));
             }
         });
-        let map = smithay::desktop::layer_map_for_output(output);
-        for layer_surface in map.layers() {
-            layer_surface.send_frame(self.start_time.elapsed().as_millis() as u32)
-        }
+
+        lower
+            .iter()
+            .filter_map(|layer| layer_map.layer_geometry(layer).map(|geo| (geo.loc, layer)))
+            .for_each(|(location, layer)| {
+                if send_throttled_frame
+                    || !layer.is_obscured_by(
+                        &*opaque_regions
+                            .iter()
+                            .copied()
+                            .map(|mut rect| {
+                                rect.loc -= location;
+                                rect
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                {
+                    layer.send_frame(self.start_time.elapsed().as_millis() as u32);
+                    opaque_regions.extend(layer.opaque_regions_with_popups().into_iter().map(|mut rect| {
+                        rect.loc += location;
+                        rect
+                    }));
+                }
+            });
     }
 }
 
