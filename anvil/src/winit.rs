@@ -217,11 +217,6 @@ pub fn run_winit(log: Logger) {
 
             let full_redraw = &mut state.backend_data.full_redraw;
             *full_redraw = full_redraw.saturating_sub(1);
-            let age = if *full_redraw > 0 {
-                0
-            } else {
-                backend.buffer_age().unwrap_or(0)
-            };
             let space = &mut state.space;
             let damage_tracked_renderer = &mut state.backend_data.damage_tracked_renderer;
 
@@ -246,6 +241,12 @@ pub fn run_winit(log: Logger) {
             let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
             let render_res = backend.bind().and_then(|_| {
+                let age = if *full_redraw > 0 {
+                    0
+                } else {
+                    backend.buffer_age().unwrap_or(0)
+                };
+
                 let renderer = backend.renderer();
 
                 let mut elements = Vec::<CustomRenderElements<Gles2Renderer>>::new();
@@ -297,7 +298,7 @@ pub fn run_winit(log: Logger) {
 
             match render_res {
                 Ok(Some(damage)) => {
-                    if let Err(err) = backend.submit(if age == 0 { None } else { Some(&*damage) }) {
+                    if let Err(err) = backend.submit(Some(&*damage)) {
                         warn!(log, "Failed to submit buffer: {}", err);
                     }
                     backend.window().set_cursor_visible(cursor_visible);

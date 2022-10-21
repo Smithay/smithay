@@ -1,6 +1,9 @@
 //! Type safe native types for safe context/surface creation
 
-use super::{display::EGLDisplayHandle, ffi, wrap_egl_call, EGLDevice, SwapBuffersError};
+use super::{
+    display::{DamageSupport, EGLDisplayHandle},
+    ffi, wrap_egl_call, EGLDevice, SwapBuffersError,
+};
 use crate::utils::{Physical, Rectangle};
 #[cfg(feature = "backend_winit")]
 use std::os::raw::c_int;
@@ -248,15 +251,25 @@ pub unsafe trait EGLNativeSurface: Send {
         display: &Arc<EGLDisplayHandle>,
         surface: ffi::egl::types::EGLSurface,
         damage: Option<&mut [Rectangle<i32, Physical>]>,
+        damage_impl: DamageSupport,
     ) -> Result<(), SwapBuffersError> {
         wrap_egl_call(|| unsafe {
             if let Some(damage) = damage {
-                ffi::egl::SwapBuffersWithDamageEXT(
-                    ***display,
-                    surface as *const _,
-                    damage.as_mut_ptr() as *mut _,
-                    damage.len() as i32,
-                );
+                match damage_impl {
+                    DamageSupport::KHR => ffi::egl::SwapBuffersWithDamageKHR(
+                        ***display,
+                        surface as *const _,
+                        damage.as_mut_ptr() as *mut _,
+                        damage.len() as i32,
+                    ),
+                    DamageSupport::EXT => ffi::egl::SwapBuffersWithDamageEXT(
+                        ***display,
+                        surface as *const _,
+                        damage.as_mut_ptr() as *mut _,
+                        damage.len() as i32,
+                    ),
+                    DamageSupport::No => ffi::egl::SwapBuffers(***display, surface as *const _),
+                };
             } else {
                 ffi::egl::SwapBuffers(***display, surface as *const _);
             }
