@@ -90,14 +90,8 @@ where
                 // but the protocol does not state the parameter is an enum.
                 if format == 1 {
                     let keyboard_handle = data.seat.get_keyboard().unwrap();
-                    let internal = keyboard_handle
-                        .arc
-                        .internal
-                        .lock()
-                        .unwrap();
-                    let old_keymap = internal
-                        .keymap
-                        .get_as_string(xkb::FORMAT_TEXT_V1);
+                    let internal = keyboard_handle.arc.internal.lock().unwrap();
+                    let old_keymap = internal.keymap.get_as_string(xkb::FORMAT_TEXT_V1);
                     let new_keymap = unsafe {
                         xkb::Keymap::new_from_fd(
                             &xkb::Context::new(xkb::CONTEXT_NO_FLAGS),
@@ -111,7 +105,7 @@ where
                     };
                     if old_keymap != new_keymap.get_as_string(xkb::FORMAT_TEXT_V1) {
                         let mut inner = data.handle.inner.lock().unwrap();
-                        inner.old_keymap= Some(old_keymap);
+                        inner.old_keymap = Some(old_keymap);
                         keyboard_handle.change_keymap(new_keymap);
                         let known_kbds = &keyboard_handle.arc.known_kbds;
                         for kbd in &*known_kbds.lock().unwrap() {
@@ -186,12 +180,14 @@ where
                 .unwrap();
                 keyboard_handle.change_keymap(old_keymap);
                 let keymap_file = keyboard_handle.arc.keymap.lock().unwrap();
-                keymap_file.with_fd(false, |fd, size| {
-                    let known_kbds = &keyboard_handle.arc.known_kbds;
-                    for kbd in &*known_kbds.lock().unwrap() {
-                        kbd.keymap(KeymapFormat::XkbV1, fd.as_raw_fd(), size as u32);
-                    }
-                }).ok(); //TODO: log some kind of error here;
+                keymap_file
+                    .with_fd(false, |fd, size| {
+                        let known_kbds = &keyboard_handle.arc.known_kbds;
+                        for kbd in &*known_kbds.lock().unwrap() {
+                            kbd.keymap(KeymapFormat::XkbV1, fd.as_raw_fd(), size as u32);
+                        }
+                    })
+                    .ok(); //TODO: log some kind of error here;
             }
         }
     }
