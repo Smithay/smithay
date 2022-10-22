@@ -119,7 +119,7 @@ where
                 let internal = keyboard_handle.arc.internal.lock().unwrap();
                 let inner = data.handle.inner.lock().unwrap();
                 if let Some(focus) = internal.focus.as_ref().and_then(|f| f.0.wl_surface()) {
-                    for_each_focused_kbds(&data.seat, focus, |kbd| {
+                    for_each_focused_kbds(&data.seat, &focus, |kbd| {
                         // This should be wl_keyboard::KeyState,
                         // but the protocol does not state the parameter is an enum.
                         let key_state = if state == 1 {
