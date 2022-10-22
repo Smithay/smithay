@@ -32,6 +32,7 @@ impl KeymapFile {
         }
     }
 
+    #[cfg(feature = "wayland_frontend")]
     pub(crate) fn change_keymap(&mut self, keymap: CString, log: slog::Logger) {
         let sealed = SealedFile::new(&keymap);
 
