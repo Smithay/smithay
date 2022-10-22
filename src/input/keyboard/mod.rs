@@ -214,7 +214,7 @@ pub enum Error {
 pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) internal: Mutex<KbdInternal<D>>,
     #[allow(dead_code)]
-    pub(crate) keymap: KeymapFile,
+    pub(crate) keymap: Mutex<KeymapFile>,
     pub(crate) logger: ::slog::Logger,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_kbds: Mutex<Vec<wayland_server::protocol::wl_keyboard::WlKeyboard>>,
@@ -430,12 +430,22 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         Ok(Self {
             arc: Arc::new(KbdRc {
                 internal: Mutex::new(internal),
-                keymap: KeymapFile::new(keymap, log.clone()),
+                keymap: Mutex::new(KeymapFile::new(keymap, log.clone())),
                 logger: log,
                 #[cfg(feature = "wayland_frontend")]
                 known_kbds: Mutex::new(Vec::new()),
             }),
         })
+    }
+
+    pub(crate) fn change_keymap(&self, keymap: xkb::Keymap) {
+        let mut internal = self.arc.internal.lock().unwrap();
+        internal.keymap = keymap.clone();
+        let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
+        let keymap = CString::new(keymap).expect("Keymap should not contain interior nul bytes");
+        let logger = &self.arc.logger;
+        let keymap_file = &mut self.arc.keymap.lock().unwrap();
+        keymap_file.change_keymap(keymap, logger.clone());
     }
 
     /// Change the current grab on this keyboard to the provided grab

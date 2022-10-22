@@ -45,7 +45,8 @@ where
         trace!(self.arc.logger, "Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
-        let ret = self.arc.keymap.with_fd(kbd.version() >= 7, |fd, size| {
+        let keymap = self.arc.keymap.lock().unwrap();
+        let ret = keymap.with_fd(kbd.version() >= 7, |fd, size| {
             kbd.keymap(KeymapFormat::XkbV1, fd, size as u32);
         });
 

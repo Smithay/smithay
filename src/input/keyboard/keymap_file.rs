@@ -32,6 +32,17 @@ impl KeymapFile {
         }
     }
 
+    pub(crate) fn change_keymap(&mut self, keymap: CString, log: slog::Logger) {
+        let sealed = SealedFile::new(&keymap);
+
+        if let Err(err) = sealed.as_ref() {
+            error!(log, "Error when creating sealed keymap file: {}", err);
+        }
+
+        self.sealed = sealed.ok();
+        self.keymap = keymap;
+    }
+
     #[cfg(feature = "wayland_frontend")]
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
