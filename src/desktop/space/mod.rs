@@ -336,7 +336,9 @@ impl<E: SpaceElement + PartialEq> Space<E> {
 
             for (output, output_geometry) in &outputs {
                 // Check if the bounding box of the toplevel intersects with the output
-                if let Some(overlap) = output_geometry.intersection(bbox) {
+                if let Some(mut overlap) = output_geometry.intersection(bbox) {
+                    // output_enter expects the overlap to be relative to the element
+                    overlap.loc -= bbox.loc;
                     let old = e.outputs.insert(output.clone(), overlap);
                     if old.is_none() || matches!(old, Some(old_overlap) if old_overlap != overlap) {
                         e.element.output_enter(output, overlap);
