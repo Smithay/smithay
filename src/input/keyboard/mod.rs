@@ -438,6 +438,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         })
     }
 
+    #[cfg(feature = "wayland_frontend")]
     pub(crate) fn change_keymap(&self, keymap: xkb::Keymap) {
         let mut internal = self.arc.internal.lock().unwrap();
         internal.keymap = keymap.clone();
