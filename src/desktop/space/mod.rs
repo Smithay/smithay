@@ -473,7 +473,7 @@ impl<E: SpaceElement> InnerElement<E> {
         geo
     }
 
-    // the bouding box of the element in space coordinates
+    // the bounding box of the element in space coordinates
     fn bbox(&self) -> Rectangle<i32, Logical> {
         let mut bbox = self.element.bbox();
         bbox.loc += self.location - self.element.geometry().loc;
