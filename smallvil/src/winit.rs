@@ -114,21 +114,18 @@ pub fn winit_dispatch(
     let size = backend.window_size().physical_size;
     let damage = Rectangle::from_loc_and_size((0, 0), size);
 
-    backend.bind().ok().and_then(|_| {
-        smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement, _, _, _>(
-            output,
-            backend.renderer(),
-            0,
-            [&state.space],
-            &[],
-            damage_tracked_renderer,
-            [0.1, 0.1, 0.1, 1.0],
-            log.clone(),
-        )
-        .unwrap()
-    });
-
-    backend.submit(Some(&[damage])).unwrap();
+    backend.bind()?;
+    smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement, _, _, _>(
+        output,
+        backend.renderer(),
+        0,
+        [&state.space],
+        &[],
+        damage_tracked_renderer,
+        [0.1, 0.1, 0.1, 1.0],
+        log.clone(),
+    )?;
+    backend.submit(Some(&[damage]))?;
 
     state
         .space

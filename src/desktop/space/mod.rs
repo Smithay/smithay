@@ -6,7 +6,7 @@ use crate::{
         damage::{
             DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode, OutputNoMode,
         },
-        element::{AsRenderElements, RenderElement, Wrap},
+        element::{AsRenderElements, RenderElement, RenderElementStates, Wrap},
         Renderer, Texture,
     },
     output::Output,
@@ -647,7 +647,7 @@ pub fn render_output<
     damage_tracked_renderer: &mut DamageTrackedRenderer,
     clear_color: [f32; 4],
     log: L,
-) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
+) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
 where
     <R as Renderer>::TextureId: Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,

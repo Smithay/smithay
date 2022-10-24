@@ -297,13 +297,14 @@ pub fn run_winit(log: Logger) {
             });
 
             match render_res {
-                Ok(Some(damage)) => {
-                    if let Err(err) = backend.submit(Some(&*damage)) {
-                        warn!(log, "Failed to submit buffer: {}", err);
+                Ok((damage, _)) => {
+                    if let Some(damage) = damage {
+                        if let Err(err) = backend.submit(Some(&*damage)) {
+                            warn!(log, "Failed to submit buffer: {}", err);
+                        }
                     }
                     backend.window().set_cursor_visible(cursor_visible);
                 }
-                Ok(None) => backend.window().set_cursor_visible(cursor_visible),
                 Err(SwapBuffersError::ContextLost(err)) => {
                     error!(log, "Critical Rendering Error: {}", err);
                     state.running.store(false, Ordering::SeqCst);

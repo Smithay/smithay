@@ -18,12 +18,12 @@
 //! See the [`damage`](crate::backend::renderer::damage) module for more information on
 //! damage tracking.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{backend::ObjectId, protocol::wl_buffer, Resource};
 
-use crate::utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform};
+use crate::utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::{utils::CommitCounter, Renderer};
 
@@ -79,6 +79,13 @@ impl Id {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
+impl<R: Resource> From<&R> for Id {
+    fn from(resource: &R) -> Self {
+        Id::from_wayland_resource(resource)
+    }
+}
+
 /// The underlying storage for a element
 #[derive(Debug)]
 pub enum UnderlyingStorage<'a, R: Renderer> {
@@ -87,6 +94,69 @@ pub enum UnderlyingStorage<'a, R: Renderer> {
     Wayland(wl_buffer::WlBuffer),
     /// A texture
     External(&'a R::TextureId),
+}
+
+/// Defines the presentation state of an element after rendering
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderElementPresentationState {
+    /// The element was rendered
+    Rendered,
+    /// The element was directly scanned out
+    ScannedOut,
+    /// The element was skipped
+    Skipped,
+}
+
+/// Defines the element render state after rendering
+#[derive(Debug, Clone, Copy)]
+pub struct RenderElementState {
+    /// Holds the visible portion of the element on the output
+    ///
+    /// Note: If the presentation_state is [`RenderElementPresentationState::Skipped`] this will be zero.
+    pub visible_portion: Size<i32, Physical>,
+    /// Holds the presentation state of the element on the output
+    pub presentation_state: RenderElementPresentationState,
+}
+
+impl RenderElementState {
+    pub(crate) fn skipped() -> Self {
+        RenderElementState {
+            visible_portion: Size::default(),
+            presentation_state: RenderElementPresentationState::Skipped,
+        }
+    }
+
+    pub(crate) fn rendered(visible_portion: Size<i32, Physical>) -> Self {
+        RenderElementState {
+            visible_portion,
+            presentation_state: RenderElementPresentationState::Rendered,
+        }
+    }
+}
+
+/// Holds the states for a set of [`RenderElement`]s
+#[derive(Debug, Clone)]
+pub struct RenderElementStates {
+    /// Holds the render states of the elements
+    pub states: HashMap<Id, RenderElementState>,
+}
+
+impl RenderElementStates {
+    /// Return the [`RenderElementState`] for the specified [`Id`]
+    ///
+    /// Return `None` if the element is not included in the states
+    pub fn element_render_state(&self, id: impl Into<Id>) -> Option<RenderElementState> {
+        self.states.get(&id.into()).copied()
+    }
+
+    /// Returns whether the element with the specified id was presented
+    ///
+    /// Returns `false` if the element with the id was not found or skipped
+    pub fn element_was_presented(&self, id: impl Into<Id>) -> bool {
+        self.element_render_state(id)
+            .map(|state| state.presentation_state != RenderElementPresentationState::Skipped)
+            .unwrap_or(false)
+    }
 }
 
 /// A single render element
