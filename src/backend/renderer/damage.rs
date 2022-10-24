@@ -320,19 +320,20 @@ impl DamageTrackedRenderer {
         // match when enumerating the render elements later
         let mut z_index = 0;
         for element in elements.iter() {
-            let element_geometry = element.geometry(output_scale);
+            let element_loc = element.geometry(output_scale).loc;
 
             // First test if the element overlaps with the output
-            // if not we can skip ip
-            if !element_geometry.overlaps(output_geo) {
-                continue;
-            }
+            // if not we can skip it
+            let element_output_geometry = match element.geometry(output_scale).intersection(output_geo) {
+                Some(geo) => geo,
+                None => continue,
+            };
 
             // Then test if the element is completely hidden behind opaque regions
             let is_hidden = opaque_regions
                 .iter()
                 .flat_map(|(_, opaque_regions)| opaque_regions)
-                .fold([element_geometry].to_vec(), |geometry, opaque_region| {
+                .fold([element_output_geometry].to_vec(), |geometry, opaque_region| {
                     geometry
                         .into_iter()
                         .flat_map(|g| g.subtract_rect(*opaque_region))
@@ -345,22 +346,23 @@ impl DamageTrackedRenderer {
                 continue;
             }
 
-            let element_damage = element
+            let element_output_damage = element
                 .damage_since(
                     output_scale,
                     self.last_state.elements.get(element.id()).map(|s| s.last_commit),
                 )
                 .into_iter()
                 .map(|mut d| {
-                    d.loc += element_geometry.loc;
+                    d.loc += element_loc;
                     d
                 })
+                .filter_map(|geo| geo.intersection(output_geo))
                 .collect::<Vec<_>>();
 
             let element_output_damage = opaque_regions
                 .iter()
                 .flat_map(|(_, opaque_regions)| opaque_regions)
-                .fold(element_damage, |damage, opaque_region| {
+                .fold(element_output_damage, |damage, opaque_region| {
                     damage
                         .into_iter()
                         .flat_map(|damage| damage.subtract_rect(*opaque_region))
@@ -373,9 +375,10 @@ impl DamageTrackedRenderer {
                 .opaque_regions(output_scale)
                 .into_iter()
                 .map(|mut region| {
-                    region.loc += element_geometry.loc;
+                    region.loc += element_loc;
                     region
                 })
+                .filter_map(|geo| geo.intersection(output_geo))
                 .collect::<Vec<_>>();
             opaque_regions.push((z_index, element_opaque_regions));
             render_elements.push(element);
