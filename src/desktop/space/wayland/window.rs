@@ -167,7 +167,7 @@ impl SpaceElement for Window {
     }
     fn output_leave(&self, output: &Output) {
         if let Some(state) = self.user_data().get::<WindowOutputUserData>() {
-            state.borrow_mut().output_overlap.retain(|weak, _| weak == output);
+            state.borrow_mut().output_overlap.retain(|weak, _| weak != output);
         }
 
         let mut surface_list = output_surfaces(output);
