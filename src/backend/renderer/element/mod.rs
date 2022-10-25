@@ -23,7 +23,10 @@ use std::{collections::HashMap, sync::Arc};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{backend::ObjectId, protocol::wl_buffer, Resource};
 
-use crate::utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Size, Transform};
+use crate::{
+    output::{Output, WeakOutput},
+    utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Size, Transform},
+};
 
 use super::{utils::CommitCounter, Renderer};
 
@@ -99,11 +102,11 @@ pub enum UnderlyingStorage<'a, R: Renderer> {
 /// Defines the presentation state of an element after rendering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderElementPresentationState {
-    /// The element was rendered
-    Rendered,
-    /// The element was directly scanned out
-    ScannedOut,
-    /// The element was skipped
+    /// The element was selected for rendering
+    Rendering,
+    /// The element was selected for zero-copy scan-out
+    ZeroCopy,
+    /// The element was skipped as it is current not visible
     Skipped,
 }
 
@@ -129,8 +132,147 @@ impl RenderElementState {
     pub(crate) fn rendered(visible_portion: Size<i32, Physical>) -> Self {
         RenderElementState {
             visible_portion,
-            presentation_state: RenderElementPresentationState::Rendered,
+            presentation_state: RenderElementPresentationState::Rendering,
         }
+    }
+}
+
+/// Holds the primary scanout output for a surface
+#[derive(Debug, Default)]
+pub struct PrimaryScanoutOutput(Option<(WeakOutput, RenderElementState)>);
+
+impl PrimaryScanoutOutput {
+    /// Update the primary scan-out output from [`RenderElementStates`]
+    ///
+    /// If the current primary scan-out output is different than the
+    /// provided output and the element is present according to the states
+    /// the provided compare function will be run to select the preferred
+    /// output. Smithay provides a [`default`](`default_primary_scanout_output_compare`)
+    /// compare function for convenience.
+    ///
+    /// Returns the updated primary scan-out output if any
+    pub fn update_from_render_element_states<F>(
+        &mut self,
+        element_id: impl Into<Id>,
+        output: &Output,
+        states: &RenderElementStates,
+        compare: F,
+    ) -> Option<Output>
+    where
+        F: for<'a> Fn(&'a Output, &'a RenderElementState, &'a Output, &'a RenderElementState) -> &'a Output,
+    {
+        let element_id = element_id.into();
+        let element_was_presented = states.element_was_presented(element_id.clone());
+        let element_state = states.element_render_state(element_id);
+        let primary_scanout_output = &mut self.0;
+
+        let has_valid_output = primary_scanout_output
+            .as_ref()
+            .map(|(current, _)| current.upgrade().is_some())
+            .unwrap_or(false);
+        let same_output = primary_scanout_output
+            .as_ref()
+            .map(|(current, _)| current == output)
+            .unwrap_or(false);
+
+        // If the element was not presented and we have no valid output
+        // there is nothing we can do
+        if !element_was_presented && !has_valid_output {
+            return None;
+        }
+
+        // If our current output is the one we received for the update
+        // and the element was not presented remove it, no need to check further
+        if !element_was_presented && same_output {
+            *primary_scanout_output = None;
+            return None;
+        }
+
+        // If the element was presented but we have no current valid output
+        // just directly update and exit early
+        if element_was_presented && !has_valid_output {
+            *primary_scanout_output = Some((output.downgrade(), element_state.unwrap()));
+            return Some(output.clone());
+        }
+
+        // If the element was presented on the same output there
+        // is no need to check
+        if element_was_presented && has_valid_output && same_output {
+            primary_scanout_output.as_mut().unwrap().1 = element_state.unwrap();
+            return Some(output.clone());
+        }
+
+        // If the element was presented on a different output and we have a
+        // valid current output, run the provided check
+        if element_was_presented && has_valid_output && !same_output {
+            let (current_output, current_state) = primary_scanout_output
+                .as_ref()
+                .map(|(output, state)| (output.upgrade().unwrap(), state))
+                .unwrap();
+            let updated = compare(
+                &current_output,
+                current_state,
+                output,
+                element_state.as_ref().unwrap(),
+            )
+            .clone();
+            *primary_scanout_output = Some((updated.downgrade(), element_state.unwrap()));
+            return Some(updated);
+        }
+
+        // The element was not presented on that output and the current scan-out output
+        // is a different than we currently have, so we can just leave it as is
+        primary_scanout_output
+            .as_ref()
+            .and_then(|(output, _)| output.upgrade())
+    }
+
+    /// Gets the current primary scanout output if any
+    ///
+    /// Return `None` if there is no primary scanout output or
+    /// the stored output is longer alive
+    pub fn current_output(&self) -> Option<Output> {
+        self.0.as_ref().and_then(|(o, _)| o.upgrade())
+    }
+}
+
+/// Default function for primary scan-out selection
+///
+/// This will prefer the next output when the visible portion of
+/// the element on screen is at least twice the size of the
+/// current visible portion. Otherwise it will prefer the output
+/// with the higher refresh rate.
+pub fn default_primary_scanout_output_compare<'a>(
+    current_output: &'a Output,
+    current_state: &RenderElementState,
+    next_output: &'a Output,
+    next_state: &RenderElementState,
+) -> &'a Output {
+    const VISIBLE_PORTION_THRESHOLD: i32 = 2;
+
+    let current_mode = current_output.current_mode();
+    let next_mode = next_output.current_mode();
+
+    // We don't expect to be called with an output that has no mode,
+    // but to be safe we do not unwrap here
+    let next_mode_has_higher_refresh = next_mode
+        .map(|next_mode| {
+            current_mode
+                .map(|current_mode| next_mode.refresh > current_mode.refresh)
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+
+    let current_visible_portion_threshold = Size::from((
+        current_state.visible_portion.w * VISIBLE_PORTION_THRESHOLD,
+        current_state.visible_portion.h * VISIBLE_PORTION_THRESHOLD,
+    ));
+    let next_mode_visible_portion_greater = next_state.visible_portion >= current_visible_portion_threshold;
+
+    if next_mode_visible_portion_greater || next_mode_has_higher_refresh {
+        next_output
+    } else {
+        current_output
     }
 }
 
