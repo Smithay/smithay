@@ -34,7 +34,6 @@ impl KeymapFile {
     }
 
     /// Run a closure with the file descriptor to ensure safety
-
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
         F: FnOnce(RawFd, usize),
@@ -58,7 +57,6 @@ impl KeymapFile {
     }
 
     /// Send the keymap contained within to a WlKeyboard
-
     pub fn send(
         &self,
         keyboard: &wayland_server::protocol::wl_keyboard::WlKeyboard,
