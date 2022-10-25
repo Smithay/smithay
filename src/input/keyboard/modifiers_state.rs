@@ -28,7 +28,8 @@ pub struct ModifiersState {
 }
 
 impl ModifiersState {
-    pub(super) fn update_with(&mut self, state: &xkb::State) {
+    /// Update the modifiers state from an xkb state
+    pub fn update_with(&mut self, state: &xkb::State) {
         self.ctrl = state.mod_name_is_active(&xkb::MOD_NAME_CTRL, xkb::STATE_MODS_EFFECTIVE);
         self.alt = state.mod_name_is_active(&xkb::MOD_NAME_ALT, xkb::STATE_MODS_EFFECTIVE);
         self.shift = state.mod_name_is_active(&xkb::MOD_NAME_SHIFT, xkb::STATE_MODS_EFFECTIVE);
