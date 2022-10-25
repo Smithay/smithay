@@ -214,7 +214,7 @@ pub enum Error {
 
 pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) internal: Mutex<KbdInternal<D>>,
-    #[allow(dead_code)]
+    #[cfg(feature = "wayland_frontend")]
     pub(crate) keymap: KeymapFile,
     pub(crate) logger: ::slog::Logger,
     #[cfg(feature = "wayland_frontend")]
@@ -427,6 +427,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         Ok(Self {
             arc: Arc::new(KbdRc {
+                #[cfg(feature = "wayland_frontend")]
                 keymap: KeymapFile::new(&internal.keymap, log.clone()),
                 internal: Mutex::new(internal),
                 logger: log,
