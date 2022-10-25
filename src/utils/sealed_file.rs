@@ -21,7 +21,6 @@ pub(crate) struct SealedFile {
 }
 
 impl SealedFile {
-    #[allow(dead_code)]
     pub fn new(name: CString, contents: CString) -> Result<Self, std::io::Error> {
         let contents = contents.as_bytes_with_nul();
 
@@ -53,7 +52,6 @@ impl SealedFile {
     }
 
     // Only used in KeymapFile which is under the wayland_frontend feature
-    #[allow(dead_code)]
     pub fn size(&self) -> usize {
         self.size
     }
