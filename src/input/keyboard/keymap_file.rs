@@ -5,8 +5,6 @@ use xkbcommon::xkb::{Keymap, KEYMAP_FORMAT_TEXT_V1};
 use std::ffi::CString;
 #[cfg(feature = "wayland_frontend")]
 use std::os::unix::prelude::RawFd;
-#[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::wl_keyboard::WlKeyboard;
 
 /// Wraps an XKB keymap into a sealed file or stores as just a string for sending to WlKeyboard over an fd
 #[cfg(feature = "wayland_frontend")]
@@ -61,7 +59,10 @@ impl KeymapFile {
     }
 
     /// Send the keymap contained within to a WlKeyboard
-    pub fn send(&self, keyboard: &WlKeyboard) -> Result<(), std::io::Error> {
+    pub fn send(
+        &self,
+        keyboard: &wayland_server::protocol::wl_keyboard::WlKeyboard,
+    ) -> Result<(), std::io::Error> {
         use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
 
         self.with_fd(keyboard.version() >= 7, |fd, size| {
