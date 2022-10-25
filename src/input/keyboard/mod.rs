@@ -229,7 +229,6 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KbdRc")
             .field("internal", &self.internal)
-            .field("keymap", &self.keymap)
             .field("logger", &self.logger)
             .finish()
     }
