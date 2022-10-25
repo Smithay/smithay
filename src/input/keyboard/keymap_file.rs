@@ -3,18 +3,15 @@ use slog::error;
 use xkbcommon::xkb::{Keymap, KEYMAP_FORMAT_TEXT_V1};
 
 use std::ffi::CString;
-#[cfg(feature = "wayland_frontend")]
 use std::os::unix::prelude::RawFd;
 
 /// Wraps an XKB keymap into a sealed file or stores as just a string for sending to WlKeyboard over an fd
-#[cfg(feature = "wayland_frontend")]
 #[derive(Debug)]
 pub struct KeymapFile {
     sealed: Option<SealedFile>,
     keymap: String,
 }
 
-#[cfg(feature = "wayland_frontend")]
 impl KeymapFile {
     /// Turn the keymap into a string using KEYMAP_FORMAT_TEXT_V1, create a sealed file for it, and store the string
     pub fn new<L>(keymap: &Keymap, logger: L) -> Self
@@ -37,7 +34,7 @@ impl KeymapFile {
     }
 
     /// Run a closure with the file descriptor to ensure safety
-    #[cfg(feature = "wayland_frontend")]
+
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
         F: FnOnce(RawFd, usize),
@@ -61,7 +58,7 @@ impl KeymapFile {
     }
 
     /// Send the keymap contained within to a WlKeyboard
-    #[cfg(feature = "wayland_frontend")]
+
     pub fn send(
         &self,
         keyboard: &wayland_server::protocol::wl_keyboard::WlKeyboard,

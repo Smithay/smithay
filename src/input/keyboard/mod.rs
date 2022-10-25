@@ -15,6 +15,7 @@ pub use xkbcommon::xkb::{self, keysyms, Keysym};
 
 use super::{Seat, SeatHandler};
 
+#[cfg(feature = "wayland_frontend")]
 mod keymap_file;
 #[cfg(feature = "wayland_frontend")]
 pub use keymap_file::KeymapFile;
