@@ -14,6 +14,7 @@ pub struct KeymapFile {
     keymap: String,
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl KeymapFile {
     /// Turn the keymap into a string using KEYMAP_FORMAT_TEXT_V1, create a sealed file for it, and store the string
     pub fn new<L>(keymap: &Keymap, logger: L) -> Self
@@ -36,6 +37,7 @@ impl KeymapFile {
     }
 
     /// Run a closure with the file descriptor to ensure safety
+    #[cfg(feature = "wayland_frontend")]
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
         F: FnOnce(RawFd, usize),
@@ -59,6 +61,7 @@ impl KeymapFile {
     }
 
     /// Send the keymap contained within to a WlKeyboard
+    #[cfg(feature = "wayland_frontend")]
     pub fn send(
         &self,
         keyboard: &wayland_server::protocol::wl_keyboard::WlKeyboard,
