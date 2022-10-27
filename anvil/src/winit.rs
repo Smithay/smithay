@@ -297,13 +297,16 @@ pub fn run_winit(log: Logger) {
             });
 
             match render_res {
-                Ok((damage, _)) => {
+                Ok((damage, states)) => {
                     if let Some(damage) = damage {
                         if let Err(err) = backend.submit(Some(&*damage)) {
                             warn!(log, "Failed to submit buffer: {}", err);
                         }
                     }
                     backend.window().set_cursor_visible(cursor_visible);
+
+                    // Send frame events so that client start drawing their next frame
+                    state.send_frames(&output, &states);
                 }
                 Err(SwapBuffersError::ContextLost(err)) => {
                     error!(log, "Critical Rendering Error: {}", err);
@@ -312,9 +315,6 @@ pub fn run_winit(log: Logger) {
                 Err(err) => warn!(log, "Rendering error: {}", err),
             }
         }
-
-        // Send frame events so that client start drawing their next frame
-        state.send_frames(&output);
 
         let mut calloop_data = CalloopData { state, display };
         let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);

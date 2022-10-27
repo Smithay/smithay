@@ -127,10 +127,14 @@ pub fn winit_dispatch(
     )?;
     backend.submit(Some(&[damage]))?;
 
-    state
-        .space
-        .elements()
-        .for_each(|window| window.send_frame(state.start_time.elapsed().as_millis() as u32));
+    state.space.elements().for_each(|window| {
+        window.send_frame(
+            output,
+            state.start_time.elapsed(),
+            Some(Duration::ZERO),
+            |_, _| Some(output.clone()),
+        )
+    });
 
     state.space.refresh();
     display.flush_clients()?;

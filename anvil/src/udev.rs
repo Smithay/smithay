@@ -820,13 +820,15 @@ impl AnvilState<UdevData> {
                     .expect("failed to schedule frame timer");
             }
 
-            outputs.push(output.clone());
+            if let Ok((_, states)) = result {
+                outputs.push((output.clone(), states));
+            }
         }
 
         std::mem::drop(surfaces);
-        for output in outputs {
+        for (output, states) in outputs {
             // Send frame events so that client start drawing their next frame
-            self.send_frames(&output);
+            self.send_frames(&output, &states);
         }
     }
 }

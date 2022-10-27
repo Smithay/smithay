@@ -13,9 +13,10 @@ use crate::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
         Seat, SeatHandler,
     },
+    output::Output,
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
     wayland::{
-        compositor::with_states,
+        compositor::{with_states, SurfaceData},
         seat::WaylandFocus,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
@@ -26,6 +27,7 @@ use std::{
         atomic::{AtomicU8, Ordering},
         Arc, Mutex,
     },
+    time::Duration,
 };
 use wayland_protocols::xdg::shell::server::xdg_toplevel;
 use wayland_server::{backend::ObjectId, protocol::wl_surface, Resource};
@@ -218,14 +220,40 @@ impl Window {
         }
     }
 
-    /// Sends the frame callback to all the subsurfaces in this
-    /// window that requested it
-    pub fn send_frame(&self, time: u32) {
+    /// Sends the frame callback to all the subsurfaces in this window that requested it
+    ///
+    /// See [`send_frames_surface_tree`] for more information
+    pub fn send_frame<T, F>(
+        &self,
+        output: &Output,
+        time: T,
+        throttle: Option<Duration>,
+        primary_scan_out_output: F,
+    ) where
+        T: Into<Duration>,
+        F: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
+    {
+        let time = time.into();
         let surface = self.0.toplevel.wl_surface();
-        send_frames_surface_tree(surface, time);
+
+        send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
         for (popup, _) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
-            send_frames_surface_tree(surface, time);
+            send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+        }
+    }
+
+    /// Run a closure on all surfaces in this window (including it's popups, if [`PopupManager`] is used)
+    pub fn with_surfaces<F>(&self, processor: F)
+    where
+        F: FnMut(&wl_surface::WlSurface, &SurfaceData) + Copy,
+    {
+        let surface = self.0.toplevel.wl_surface();
+
+        with_surfaces_surface_tree(surface, processor);
+        for (popup, _) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            with_surfaces_surface_tree(surface, processor);
         }
     }
 

@@ -333,7 +333,7 @@ pub fn run_x11(log: Logger) {
             );
 
             match render_res {
-                Ok(_) => {
+                Ok((_, states)) => {
                     trace!(log, "Finished rendering");
                     if let Err(err) = backend_data.surface.submit() {
                         backend_data.surface.reset_buffers();
@@ -341,6 +341,9 @@ pub fn run_x11(log: Logger) {
                     } else {
                         state.backend_data.render = false;
                     };
+
+                    // Send frame events so that client start drawing their next frame
+                    state.send_frames(&output, &states);
                 }
                 Err(err) => {
                     backend_data.surface.reset_buffers();
@@ -353,9 +356,6 @@ pub fn run_x11(log: Logger) {
             state.backend_data.fps.tick();
             window.set_cursor_visible(cursor_visible);
         }
-
-        // Send frame events so that client start drawing their next frame
-        state.send_frames(&output);
 
         let mut calloop_data = CalloopData { state, display };
         let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
