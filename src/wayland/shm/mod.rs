@@ -219,6 +219,35 @@ where
     }
 }
 
+/// Call given closure with the contents of the given buffer for mutable access
+///
+/// If the buffer is managed by the provided `ShmGlobal`, its contents are
+/// extracted and the closure is extracted with them:
+///
+/// - The first argument is a data slice of the contents of the pool
+/// - The second argument is the specification of this buffer is this pool
+///
+/// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
+/// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
+/// EGL buffer for example).
+pub fn with_buffer_contents_mut<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<T, BufferAccessError>
+where
+    F: FnOnce(&mut [u8], BufferData) -> T,
+{
+    let data = buffer
+        .data::<ShmBufferUserData>()
+        .ok_or(BufferAccessError::NotManaged)?;
+
+    match data.pool.with_data_slice_mut(|slice| f(slice, data.data)) {
+        Ok(t) => Ok(t),
+        Err(()) => {
+            // SIGBUS error occurred
+            buffer.post_error(wl_shm::Error::InvalidFd, "Bad pool size.");
+            Err(BufferAccessError::BadMap)
+        }
+    }
+}
+
 /// Returns if the buffer has an alpha channel
 ///
 /// Note: This is a best-effort, but it will never return
