@@ -1,14 +1,19 @@
 use std::{
     os::unix::prelude::AsRawFd,
     sync::{atomic::AtomicBool, Arc, Mutex},
+    time::Duration,
 };
 
 use smithay::{
+    backend::renderer::element::{default_primary_scanout_output_compare, RenderElementStates},
     delegate_compositor, delegate_data_device, delegate_input_method_manager,
     delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_primary_selection,
     delegate_seat, delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
     delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
-    desktop::{PopupManager, Space, Window},
+    desktop::{
+        utils::{surface_primary_scanout_output, update_surface_primary_scanout_output},
+        PopupManager, Space, Window,
+    },
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     output::Output,
     reexports::{
@@ -388,15 +393,38 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         }
     }
 
-    pub fn send_frames(&self, output: &Output) {
+    pub fn send_frames(&self, output: &Output, render_element_states: &RenderElementStates) {
+        let time = self.start_time.elapsed();
+        let throttle = Some(Duration::from_secs(1));
+
         self.space.elements().for_each(|window| {
+            window.with_surfaces(|surface, states| {
+                update_surface_primary_scanout_output(
+                    surface,
+                    output,
+                    states,
+                    render_element_states,
+                    default_primary_scanout_output_compare,
+                )
+            });
+
             if self.space.outputs_for_element(window).contains(output) {
-                window.send_frame(self.start_time.elapsed().as_millis() as u32)
+                window.send_frame(output, time, throttle, surface_primary_scanout_output);
             }
         });
         let map = smithay::desktop::layer_map_for_output(output);
         for layer_surface in map.layers() {
-            layer_surface.send_frame(self.start_time.elapsed().as_millis() as u32)
+            layer_surface.with_surfaces(|surface, states| {
+                update_surface_primary_scanout_output(
+                    surface,
+                    output,
+                    states,
+                    render_element_states,
+                    default_primary_scanout_output_compare,
+                )
+            });
+
+            layer_surface.send_frame(output, time, throttle, surface_primary_scanout_output);
         }
     }
 }

@@ -34,7 +34,7 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::{DamageTrackedRenderer, DamageTrackedRendererError},
-            element::{texture::TextureBuffer, AsRenderElements},
+            element::{texture::TextureBuffer, AsRenderElements, RenderElementStates},
             gles2::{Gles2Renderbuffer, Gles2Renderer},
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
             Bind, Frame, Renderer,
@@ -789,8 +789,8 @@ impl AnvilState<UdevData> {
                 &mut *self.cursor_status.lock().unwrap(),
                 &self.log,
             );
-            let reschedule = match result {
-                Ok(has_rendered) => !has_rendered,
+            let reschedule = match &result {
+                Ok((has_rendered, _)) => !has_rendered,
                 Err(err) => {
                     warn!(self.log, "Error during rendering: {:?}", err);
                     match err {
@@ -820,13 +820,15 @@ impl AnvilState<UdevData> {
                     .expect("failed to schedule frame timer");
             }
 
-            outputs.push(output.clone());
+            if let Ok((_, states)) = result {
+                outputs.push((output.clone(), states));
+            }
         }
 
         std::mem::drop(surfaces);
-        for output in outputs {
+        for (output, states) in outputs {
             // Send frame events so that client start drawing their next frame
-            self.send_frames(&output);
+            self.send_frames(&output, &states);
         }
     }
 }
@@ -844,7 +846,7 @@ fn render_surface<'a>(
     dnd_icon: &Option<wl_surface::WlSurface>,
     cursor_status: &mut CursorImageStatus,
     logger: &slog::Logger,
-) -> Result<bool, SwapBuffersError> {
+) -> Result<(bool, RenderElementStates), SwapBuffersError> {
     surface.surface.frame_submitted()?;
 
     let output_geometry = space.output_geometry(output).unwrap();
@@ -935,18 +937,18 @@ fn render_surface<'a>(
         age.into(),
         logger,
     )
-    .map(|x| x.is_some());
+    .map(|(damage, states)| (damage.is_some(), states));
 
     match render_res.map_err(|err| match err {
         DamageTrackedRendererError::Rendering(err) => err.into(),
         _ => unreachable!(),
     }) {
-        Ok(true) => {
+        Ok((true, states)) => {
             surface
                 .surface
                 .queue_buffer()
                 .map_err(Into::<SwapBuffersError>::into)?;
-            Ok(true)
+            Ok((true, states))
         }
         x => x,
     }

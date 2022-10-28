@@ -8,7 +8,7 @@ use crate::{
     output::{Output, WeakOutput},
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale},
     wayland::{
-        compositor::{with_states, with_surface_tree_downward, TraversalAction},
+        compositor::{with_states, with_surface_tree_downward, SurfaceData, TraversalAction},
         shell::wlr_layer::{
             Anchor, ExclusiveZone, KeyboardInteractivity, Layer as WlrLayer, LayerSurface as WlrLayerSurface,
             LayerSurfaceCachedState, LayerSurfaceData,
@@ -23,6 +23,7 @@ use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
     sync::Arc,
+    time::Duration,
 };
 
 use crate::desktop::WindowSurfaceType;
@@ -562,14 +563,40 @@ impl LayerSurface {
         under_from_surface_tree(surface, point, (0, 0), surface_type)
     }
 
-    /// Sends the frame callback to all the subsurfaces in this
-    /// window that requested it
-    pub fn send_frame(&self, time: u32) {
-        let wl_surface = self.0.surface.wl_surface();
+    /// Sends the frame callback to all the subsurfaces in this layer that requested it
+    ///
+    /// See [`send_frames_surface_tree`] for more information
+    pub fn send_frame<T, F>(
+        &self,
+        output: &Output,
+        time: T,
+        throttle: Option<Duration>,
+        primary_scan_out_output: F,
+    ) where
+        T: Into<Duration>,
+        F: FnMut(&WlSurface, &SurfaceData) -> Option<Output> + Copy,
+    {
+        let time = time.into();
+        let surface = self.0.surface.wl_surface();
 
-        send_frames_surface_tree(wl_surface, time);
-        for (popup, _) in PopupManager::popups_for_surface(wl_surface) {
-            send_frames_surface_tree(popup.wl_surface(), time);
+        send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+        for (popup, _) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+        }
+    }
+
+    /// Run a closure on all surfaces in this layer (including it's popups, if [`PopupManager`] is used)
+    pub fn with_surfaces<F>(&self, processor: F)
+    where
+        F: FnMut(&WlSurface, &SurfaceData) + Copy,
+    {
+        let surface = self.0.surface.wl_surface();
+
+        with_surfaces_surface_tree(surface, processor);
+        for (popup, _) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            with_surfaces_surface_tree(surface, processor);
         }
     }
 
