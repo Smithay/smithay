@@ -157,9 +157,12 @@ impl MemMap {
     }
 
     fn get_slice(&self) -> &[u8] {
-        // if we are in the 'invalid state', self.size == 0 and we return &[]
-        // which is perfectly safe even if self.ptr is null
-        unsafe { ::std::slice::from_raw_parts(self.ptr, self.size) }
+        if self.ptr.is_null() {
+            &[]
+        } else {
+            // SAFETY: if we are in the 'invalid state', `self.ptr` is null and the previous branch is used
+            unsafe { ::std::slice::from_raw_parts(self.ptr, self.size) }
+        }
     }
 
     fn contains(&self, ptr: *mut u8) -> bool {
