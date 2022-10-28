@@ -203,7 +203,6 @@ pub fn update_surface_primary_scanout_output<F>(
 /// throttle threshold. If the threshold is `None` this will never send frame callbacks
 /// for a surface that is not visible. Specifying [`Duration::ZERO`] as the throttle threshold
 /// will always send frame callbacks for non visible surfaces.
-#[allow(clippy::too_many_arguments)]
 pub fn send_frames_surface_tree<T, F>(
     surface: &wl_surface::WlSurface,
     output: &Output,
