@@ -22,6 +22,9 @@ pub use self::geometry::{
 mod serial;
 pub use serial::*;
 
+mod clock;
+pub use clock::*;
+
 /// This resource is not managed by Smithay
 #[derive(Debug)]
 pub struct UnmanagedResource;
