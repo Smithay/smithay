@@ -1,7 +1,7 @@
 use smithay::{
     backend::renderer::{
         damage::{DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode},
-        element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
+        element::{surface::WaylandSurfaceRenderElement, AsRenderElements, RenderElementStates},
         ImportAll, Renderer,
     },
     desktop::{self, space::Space, Window},
@@ -38,7 +38,7 @@ pub fn render_output<'a, R>(
     damage_tracked_renderer: &mut DamageTrackedRenderer,
     age: usize,
     log: &slog::Logger,
-) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
+) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
 where
     R: Renderer + ImportAll,
     R::TextureId: Clone + 'static,

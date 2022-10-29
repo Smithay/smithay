@@ -517,6 +517,32 @@ impl EGLDisplay {
         &self.dmabuf_import_formats
     }
 
+    /// Returns when the display supports extensions required for smithays
+    /// damage tracking helpers.
+    pub fn supports_damage(&self) -> bool {
+        self.supports_damage_impl().supported()
+    }
+
+    pub(super) fn supports_damage_impl(&self) -> DamageSupport {
+        if self.extensions.iter().any(|ext| ext == "EGL_EXT_buffer_age") {
+            if self
+                .extensions
+                .iter()
+                .any(|ext| ext == "EGL_KHR_swap_buffers_with_damage")
+            {
+                return DamageSupport::KHR;
+            } else if self
+                .extensions
+                .iter()
+                .any(|ext| ext == "EGL_EXT_swap_buffers_with_damage")
+            {
+                return DamageSupport::EXT;
+            }
+        }
+
+        DamageSupport::No
+    }
+
     /// Exports an [`EGLImage`] as a [`Dmabuf`]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn create_dmabuf_from_image(
@@ -799,7 +825,17 @@ fn get_dmabuf_formats(
 
     for fourcc in formats {
         let mut num = 0i32;
-        wrap_egl_call(|| unsafe {
+        // Some drivers return EGL_BAD_PARAMETER here for formats
+        // they themselves returned for the query above.. *sigh*
+        //
+        // - NVIDIA proprietary since 520
+        //
+        // So lets ignore any errors of this call on purpose(!),
+        // which will let `num` stay at `0` and handle the format
+        // as unsupported by explicit modifiers.
+        // Which is probably what the error is suppose to indicate
+        // although the spec doesn't seem to demand it...
+        match wrap_egl_call(|| unsafe {
             ffi::egl::QueryDmaBufModifiersEXT(
                 *display,
                 fourcc as i32,
@@ -808,7 +844,15 @@ fn get_dmabuf_formats(
                 std::ptr::null_mut(),
                 &mut num as *mut _,
             )
-        })?;
+        }) {
+            Ok(_) => {}
+            Err(EGLError::BadParameter) => {
+                num = 0;
+            }
+            Err(x) => {
+                return Err(x);
+            }
+        };
 
         if num == 0 {
             texture_formats.insert(DrmFormat {
@@ -1109,4 +1153,25 @@ pub struct PixelFormat {
     pub multisampling: Option<u16>,
     /// is srgb enabled
     pub srgb: bool,
+}
+
+/// Denotes if damage tracking is supported.
+///
+/// Additionally notes which variant of the `EGL_*_swap_buffers_with_damage` extension was found.
+/// Prefers `KHR` over `EXT`, if both are available.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DamageSupport {
+    /// `EGL_KHR_swap_buffers_with_damage`
+    KHR,
+    /// `EGL_EXT_swap_buffers_with_damage`
+    EXT,
+    /// Some required extensions are missing
+    No,
+}
+
+impl DamageSupport {
+    /// Returns true, if any valid combination of required extensions was found.
+    pub fn supported(&self) -> bool {
+        self != &DamageSupport::No
+    }
 }

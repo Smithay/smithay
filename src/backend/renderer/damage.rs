@@ -159,7 +159,7 @@
 //! }
 //! ```
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use indexmap::IndexMap;
 
@@ -170,7 +170,7 @@ use crate::{
 };
 
 use super::{
-    element::{Id, RenderElement},
+    element::{Id, RenderElement, RenderElementState, RenderElementStates},
     utils::CommitCounter,
 };
 
@@ -299,7 +299,7 @@ impl DamageTrackedRenderer {
         elements: &[E],
         clear_color: [f32; 4],
         log: impl Into<Option<slog::Logger>>,
-    ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
+    ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
     where
         E: RenderElement<R>,
         R: Renderer,
@@ -314,53 +314,63 @@ impl DamageTrackedRenderer {
         let mut damage: Vec<Rectangle<i32, Physical>> = Vec::new();
         let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
         let mut opaque_regions: Vec<(usize, Vec<Rectangle<i32, Physical>>)> = Vec::new();
+        let mut element_render_states = RenderElementStates {
+            states: HashMap::with_capacity(elements.len()),
+        };
 
         // We use an explicit z-index because the following loop can skip
         // elements that are completely hidden and we want the z-index to
         // match when enumerating the render elements later
         let mut z_index = 0;
         for element in elements.iter() {
-            let element_geometry = element.geometry(output_scale);
+            let element_id = element.id();
+            let element_loc = element.geometry(output_scale).loc;
 
             // First test if the element overlaps with the output
-            // if not we can skip ip
-            if !element_geometry.overlaps(output_geo) {
-                continue;
-            }
+            // if not we can skip it
+            let element_output_geometry = match element.geometry(output_scale).intersection(output_geo) {
+                Some(geo) => geo,
+                None => continue,
+            };
 
             // Then test if the element is completely hidden behind opaque regions
-            let is_hidden = opaque_regions
+            let element_visible_size = opaque_regions
                 .iter()
                 .flat_map(|(_, opaque_regions)| opaque_regions)
-                .fold([element_geometry].to_vec(), |geometry, opaque_region| {
+                .fold([element_output_geometry].to_vec(), |geometry, opaque_region| {
                     geometry
                         .into_iter()
                         .flat_map(|g| g.subtract_rect(*opaque_region))
                         .collect::<Vec<_>>()
                 })
-                .is_empty();
+                .into_iter()
+                .fold(Size::default(), |acc, item| acc + item.size);
 
-            if is_hidden {
+            if element_visible_size.is_empty() {
                 // No need to draw a completely hidden element
+                element_render_states
+                    .states
+                    .insert(element_id.clone(), RenderElementState::skipped());
                 continue;
             }
 
-            let element_damage = element
+            let element_output_damage = element
                 .damage_since(
                     output_scale,
                     self.last_state.elements.get(element.id()).map(|s| s.last_commit),
                 )
                 .into_iter()
                 .map(|mut d| {
-                    d.loc += element_geometry.loc;
+                    d.loc += element_loc;
                     d
                 })
+                .filter_map(|geo| geo.intersection(output_geo))
                 .collect::<Vec<_>>();
 
             let element_output_damage = opaque_regions
                 .iter()
                 .flat_map(|(_, opaque_regions)| opaque_regions)
-                .fold(element_damage, |damage, opaque_region| {
+                .fold(element_output_damage, |damage, opaque_region| {
                     damage
                         .into_iter()
                         .flat_map(|damage| damage.subtract_rect(*opaque_region))
@@ -373,12 +383,17 @@ impl DamageTrackedRenderer {
                 .opaque_regions(output_scale)
                 .into_iter()
                 .map(|mut region| {
-                    region.loc += element_geometry.loc;
+                    region.loc += element_loc;
                     region
                 })
+                .filter_map(|geo| geo.intersection(output_geo))
                 .collect::<Vec<_>>();
             opaque_regions.push((z_index, element_opaque_regions));
             render_elements.push(element);
+            element_render_states.states.insert(
+                element_id.clone(),
+                RenderElementState::rendered(element_visible_size),
+            );
             z_index += 1;
         }
 
@@ -479,7 +494,7 @@ impl DamageTrackedRenderer {
 
         if damage.is_empty() {
             slog::trace!(log, "nothing damaged, exiting early");
-            return Ok(None);
+            return Ok((None, element_render_states));
         }
 
         slog::trace!(log, "damage to be rendered: {:#?}", &damage);
@@ -572,6 +587,6 @@ impl DamageTrackedRenderer {
         self.last_state.elements = new_elements_state;
         self.last_state.old_damage.push_front(new_damage.clone());
 
-        Ok(Some(new_damage))
+        Ok((Some(new_damage), element_render_states))
     }
 }

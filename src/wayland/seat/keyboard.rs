@@ -3,7 +3,7 @@ use std::fmt;
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::{
-        wl_keyboard::{self, KeyState as WlKeyState, KeymapFormat, WlKeyboard},
+        wl_keyboard::{self, KeyState as WlKeyState, WlKeyboard},
         wl_surface::WlSurface,
     },
     Dispatch, DisplayHandle, Resource,
@@ -45,10 +45,8 @@ where
         trace!(self.arc.logger, "Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
-        let keymap = self.arc.keymap.lock().unwrap();
-        let ret = keymap.with_fd(kbd.version() >= 7, |fd, size| {
-            kbd.keymap(KeymapFormat::XkbV1, fd, size as u32);
-        });
+        let keymap_file = self.arc.keymap.lock().unwrap();
+        let ret = keymap_file.send(&kbd);
 
         if let Err(e) = ret {
             warn!(self.arc.logger,
@@ -66,7 +64,7 @@ where
             if focused.same_client_as(&kbd.id()) {
                 let serialized = guard.mods_state.serialized;
                 let keys = serialize_pressed_keys(guard.pressed_keys.iter().cloned().collect());
-                kbd.enter((*serial).into(), focused.wl_surface().unwrap(), keys);
+                kbd.enter((*serial).into(), &focused.wl_surface().unwrap(), keys);
                 // Modifiers must be send after enter event.
                 kbd.modifiers(
                     (*serial).into(),

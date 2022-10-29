@@ -6,7 +6,6 @@ use slog::{debug, error, info, o, trace};
 use std::collections::HashSet;
 use std::{
     default::Default,
-    ffi::CString,
     fmt, io,
     sync::{Arc, Mutex},
 };
@@ -16,8 +15,10 @@ pub use xkbcommon::xkb::{self, keysyms, Keysym};
 
 use super::{Seat, SeatHandler};
 
+#[cfg(feature = "wayland_frontend")]
 mod keymap_file;
-pub(crate) use keymap_file::KeymapFile;
+#[cfg(feature = "wayland_frontend")]
+pub use keymap_file::KeymapFile;
 
 mod modifiers_state;
 pub use modifiers_state::ModifiersState;
@@ -213,7 +214,7 @@ pub enum Error {
 
 pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) internal: Mutex<KbdInternal<D>>,
-    #[allow(dead_code)]
+    #[cfg(feature = "wayland_frontend")]
     pub(crate) keymap: Mutex<KeymapFile>,
     pub(crate) logger: ::slog::Logger,
     #[cfg(feature = "wayland_frontend")]
@@ -228,7 +229,6 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KbdRc")
             .field("internal", &self.internal)
-            .field("keymap", &self.keymap)
             .field("logger", &self.logger)
             .finish()
     }
@@ -424,13 +424,11 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
 
-        let keymap = internal.keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-        let keymap = CString::new(keymap).expect("Keymap should not contain interior nul bytes");
-
         Ok(Self {
             arc: Arc::new(KbdRc {
+                #[cfg(feature = "wayland_frontend")]
+                keymap: Mutex::new(KeymapFile::new(&internal.keymap, log.clone())),
                 internal: Mutex::new(internal),
-                keymap: Mutex::new(KeymapFile::new(keymap, log.clone())),
                 logger: log,
                 #[cfg(feature = "wayland_frontend")]
                 known_kbds: Mutex::new(Vec::new()),
@@ -443,9 +441,8 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let mut internal = self.arc.internal.lock().unwrap();
         internal.keymap = keymap.clone();
         let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-        let keymap = CString::new(keymap).expect("Keymap should not contain interior nul bytes");
         let logger = &self.arc.logger;
-        let keymap_file = &mut self.arc.keymap.lock().unwrap();
+        let mut keymap_file = self.arc.keymap.lock().unwrap();
         keymap_file.change_keymap(keymap, logger.clone());
     }
 

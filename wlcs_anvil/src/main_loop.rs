@@ -169,10 +169,14 @@ pub fn run(channel: Channel<WlcsEvent>) {
         }
 
         // Send frame events so that client start drawing their next frame
-        state
-            .space
-            .elements()
-            .for_each(|window| window.send_frame(state.start_time.elapsed().as_millis() as u32));
+        state.space.elements().for_each(|window| {
+            window.send_frame(
+                &output,
+                state.start_time.elapsed(),
+                Some(Duration::ZERO),
+                |_, _| Some(output.clone()),
+            )
+        });
 
         let mut calloop_data = CalloopData { state, display };
         let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);

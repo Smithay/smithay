@@ -179,7 +179,7 @@ where
                 )
                 .unwrap();
                 keyboard_handle.change_keymap(old_keymap);
-                let keymap_file = keyboard_handle.arc.keymap.lock().unwrap();
+                let keymap_file = &keyboard_handle.arc.keymap.lock().unwrap();
                 keymap_file
                     .with_fd(false, |fd, size| {
                         let known_kbds = &keyboard_handle.arc.known_kbds;

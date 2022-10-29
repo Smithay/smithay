@@ -6,7 +6,7 @@ use crate::{
         damage::{
             DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode, OutputNoMode,
         },
-        element::{AsRenderElements, RenderElement, Wrap},
+        element::{AsRenderElements, RenderElement, RenderElementStates, Wrap},
         Renderer, Texture,
     },
     output::Output,
@@ -336,7 +336,9 @@ impl<E: SpaceElement + PartialEq> Space<E> {
 
             for (output, output_geometry) in &outputs {
                 // Check if the bounding box of the toplevel intersects with the output
-                if let Some(overlap) = output_geometry.intersection(bbox) {
+                if let Some(mut overlap) = output_geometry.intersection(bbox) {
+                    // output_enter expects the overlap to be relative to the element
+                    overlap.loc -= bbox.loc;
                     let old = e.outputs.insert(output.clone(), overlap);
                     if old.is_none() || matches!(old, Some(old_overlap) if old_overlap != overlap) {
                         e.element.output_enter(output, overlap);
@@ -473,7 +475,7 @@ impl<E: SpaceElement> InnerElement<E> {
         geo
     }
 
-    // the bouding box of the element in space coordinates
+    // the bounding box of the element in space coordinates
     fn bbox(&self) -> Rectangle<i32, Logical> {
         let mut bbox = self.element.bbox();
         bbox.loc += self.location - self.element.geometry().loc;
@@ -645,7 +647,7 @@ pub fn render_output<
     damage_tracked_renderer: &mut DamageTrackedRenderer,
     clear_color: [f32; 4],
     log: L,
-) -> Result<Option<Vec<Rectangle<i32, Physical>>>, DamageTrackedRendererError<R>>
+) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
 where
     <R as Renderer>::TextureId: Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
