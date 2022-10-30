@@ -9,7 +9,7 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboar
 };
 use wayland_server::{
     backend::{ClientId, ObjectId},
-    protocol::wl_keyboard::{KeyState, KeymapFormat},
+    protocol::wl_keyboard::KeyState,
     Client, DataInit, Dispatch, DisplayHandle,
 };
 use xkbcommon::xkb;
@@ -107,10 +107,6 @@ where
                         let mut inner = data.handle.inner.lock().unwrap();
                         inner.old_keymap = Some(old_keymap);
                         keyboard_handle.change_keymap(new_keymap);
-                        let known_kbds = &keyboard_handle.arc.known_kbds;
-                        for kbd in &*known_kbds.lock().unwrap() {
-                            kbd.keymap(KeymapFormat::XkbV1, fd.as_raw_fd(), size);
-                        }
                     }
                 }
             }
@@ -179,15 +175,6 @@ where
                 )
                 .unwrap();
                 keyboard_handle.change_keymap(old_keymap);
-                let keymap_file = &keyboard_handle.arc.keymap.lock().unwrap();
-                keymap_file
-                    .with_fd(false, |fd, size| {
-                        let known_kbds = &keyboard_handle.arc.known_kbds;
-                        for kbd in &*known_kbds.lock().unwrap() {
-                            kbd.keymap(KeymapFormat::XkbV1, fd.as_raw_fd(), size as u32);
-                        }
-                    })
-                    .ok(); //TODO: log some kind of error here;
             }
         }
     }

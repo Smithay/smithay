@@ -34,12 +34,16 @@ impl KeymapFile {
     }
 
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) fn change_keymap(&mut self, keymap: String, log: slog::Logger) {
-        let name = CString::new("smithay-keymap").unwrap();
+    pub(crate) fn change_keymap<L>(&mut self, keymap: String, logger: L)
+    where
+        L: Into<Option<slog::Logger>>,
+    {
+        let logger = crate::slog_or_fallback(logger);
+        let name = CString::new("smithay-keymap-file").unwrap();
         let sealed = SealedFile::new(name, CString::new(keymap.clone()).unwrap());
 
         if let Err(err) = sealed.as_ref() {
-            error!(log, "Error when creating sealed keymap file: {}", err);
+            error!(logger, "Error when creating sealed keymap file: {}", err);
         }
 
         self.sealed = sealed.ok();

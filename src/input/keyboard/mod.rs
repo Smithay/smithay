@@ -438,12 +438,25 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
     #[cfg(feature = "wayland_frontend")]
     pub(crate) fn change_keymap(&self, keymap: xkb::Keymap) {
-        let mut internal = self.arc.internal.lock().unwrap();
-        internal.keymap = keymap.clone();
         let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
         let logger = &self.arc.logger;
         let mut keymap_file = self.arc.keymap.lock().unwrap();
         keymap_file.change_keymap(keymap, logger.clone());
+
+        use std::os::unix::io::AsRawFd;
+        use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
+        let known_kbds = &self.arc.known_kbds;
+        for kbd in &*known_kbds.lock().unwrap() {
+            let res = keymap_file.with_fd(kbd.version() >= 7, |fd, size| {
+                kbd.keymap(KeymapFormat::XkbV1, fd.as_raw_fd(), size as u32)
+            });
+            if let Err(e) = res {
+                debug!(logger,
+                    "Failed to send keymap to client";
+                    "err" => format!("{:?}", e)
+                );
+            }
+        }
     }
 
     /// Change the current grab on this keyboard to the provided grab
