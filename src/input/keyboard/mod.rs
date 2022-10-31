@@ -2,7 +2,7 @@
 
 use crate::backend::input::KeyState;
 use crate::utils::{IsAlive, Serial};
-use slog::{debug, error, info, o, trace, warn};
+use slog::{debug, error, info, o, trace};
 use std::collections::HashSet;
 use std::{
     default::Default,
@@ -443,6 +443,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let mut keymap_file = self.arc.keymap.lock().unwrap();
         keymap_file.change_keymap(keymap, logger.clone());
 
+        use slog::warn;
         use std::os::unix::io::AsRawFd;
         use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
         let known_kbds = &self.arc.known_kbds;
