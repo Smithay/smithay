@@ -80,7 +80,11 @@
 //!         /* The client supplied invalid content specification for this buffer,
 //!            and was killed.
 //!          */
-//!     }
+//!     },
+//!     Err(BufferAccessError::NotReadable) => {
+//!         /* The client has not allowed reads to this buffer */
+//!     },
+//!     Err(BufferAccessError::NotWritable) => unreachable!("cannot be triggered by with_buffer_contents"),
 //! }
 //! # }
 //! ```
@@ -182,6 +186,14 @@ pub enum BufferAccessError {
     /// If this error occurs, the client has been killed as a result.
     #[error("invalid client buffer")]
     BadMap,
+
+    /// This buffer cannot be read by the compositor
+    #[error("Client has not indicated read permission for the buffer")]
+    NotReadable,
+
+    /// This buffer cannot be written to by the compositor
+    #[error("Client has not indicated write permission for the buffer")]
+    NotWritable,
 }
 
 impl From<UnmanagedResource> for BufferAccessError {
@@ -210,6 +222,35 @@ where
         .ok_or(BufferAccessError::NotManaged)?;
 
     match data.pool.with_data_slice(|slice| f(slice, data.data)) {
+        Ok(t) => Ok(t),
+        Err(()) => {
+            // SIGBUS error occurred
+            buffer.post_error(wl_shm::Error::InvalidFd, "Bad pool size.");
+            Err(BufferAccessError::BadMap)
+        }
+    }
+}
+
+/// Call given closure with the contents of the given buffer for mutable access
+///
+/// If the buffer is managed by the provided `ShmGlobal`, its contents are
+/// extracted and the closure is extracted with them:
+///
+/// - The first argument is a data slice of the contents of the pool
+/// - The second argument is the specification of this buffer is this pool
+///
+/// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
+/// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
+/// EGL buffer for example).
+pub fn with_buffer_contents_mut<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<T, BufferAccessError>
+where
+    F: FnOnce(&mut [u8], BufferData) -> T,
+{
+    let data = buffer
+        .data::<ShmBufferUserData>()
+        .ok_or(BufferAccessError::NotManaged)?;
+
+    match data.pool.with_data_slice_mut(|slice| f(slice, data.data)) {
         Ok(t) => Ok(t),
         Err(()) => {
             // SIGBUS error occurred

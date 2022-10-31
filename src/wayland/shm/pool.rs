@@ -22,8 +22,6 @@ static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
 
 #[derive(Debug)]
 pub struct Pool {
-    // TODO: We may need to change this to a Mutex in order to support protocols like wlr screencopy which may
-    // require we write to a memmap.
     map: RwLock<MemMap>,
     fd: OwnedFd,
     log: ::slog::Logger,
@@ -110,6 +108,42 @@ impl Pool {
             }
         })
     }
+
+    pub fn with_data_slice_mut<T, F: FnOnce(&mut [u8]) -> T>(&self, f: F) -> Result<T, ()> {
+        // Place the sigbus handler
+        SIGBUS_INIT.call_once(|| unsafe {
+            place_sigbus_handler();
+        });
+
+        let mut pool_guard = self.map.write().unwrap();
+
+        trace!(self.log, "Mutable buffer access on shm pool"; "fd" => self.fd.as_raw_fd() as i32);
+
+        // Prepare the access
+        SIGBUS_GUARD.with(|guard| {
+            let (p, _) = guard.get();
+            if !p.is_null() {
+                // Recursive call of this method is not supported
+                panic!("Recursive access to a SHM pool content is not supported.");
+            }
+            guard.set((&*pool_guard as *const MemMap, false))
+        });
+
+        let slice = pool_guard.get_slice_mut();
+        let t = f(slice);
+
+        // Cleanup Post-access
+        SIGBUS_GUARD.with(|guard| {
+            let (_, triggered) = guard.get();
+            guard.set((ptr::null_mut(), false));
+            if triggered {
+                debug!(self.log, "SIGBUS caught on access on shm pool"; "fd" => self.fd.as_raw_fd());
+                Err(())
+            } else {
+                Ok(t)
+            }
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -157,9 +191,21 @@ impl MemMap {
     }
 
     fn get_slice(&self) -> &[u8] {
-        // if we are in the 'invalid state', self.size == 0 and we return &[]
-        // which is perfectly safe even if self.ptr is null
-        unsafe { ::std::slice::from_raw_parts(self.ptr, self.size) }
+        if self.ptr.is_null() {
+            &[]
+        } else {
+            // SAFETY: if we are in the 'invalid state', `self.ptr` is null and the previous branch is used
+            unsafe { ::std::slice::from_raw_parts(self.ptr, self.size) }
+        }
+    }
+
+    fn get_slice_mut(&mut self) -> &mut [u8] {
+        if self.ptr.is_null() {
+            &mut []
+        } else {
+            // SAFETY: if we are in the 'invalid state', `self.ptr` is null and the previous branch is used
+            unsafe { ::std::slice::from_raw_parts_mut(self.ptr, self.size) }
+        }
     }
 
     fn contains(&self, ptr: *mut u8) -> bool {
@@ -183,7 +229,7 @@ unsafe fn map(fd: RawFd, size: usize) -> Result<*mut u8, ()> {
     let ret = mman::mmap(
         ptr::null_mut(),
         size,
-        mman::ProtFlags::PROT_READ,
+        mman::ProtFlags::PROT_READ | mman::ProtFlags::PROT_WRITE,
         mman::MapFlags::MAP_SHARED,
         fd,
         0,
