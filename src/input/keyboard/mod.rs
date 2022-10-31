@@ -2,7 +2,7 @@
 
 use crate::backend::input::KeyState;
 use crate::utils::{IsAlive, Serial};
-use slog::{debug, error, info, o, trace};
+use slog::{debug, error, info, o, trace, warn};
 use std::collections::HashSet;
 use std::{
     default::Default,
@@ -451,7 +451,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 kbd.keymap(KeymapFormat::XkbV1, fd.as_raw_fd(), size as u32)
             });
             if let Err(e) = res {
-                debug!(logger,
+                warn!(logger,
                     "Failed to send keymap to client";
                     "err" => format!("{:?}", e)
                 );
