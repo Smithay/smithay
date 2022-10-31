@@ -588,11 +588,16 @@ pub enum BufferType {
 /// or otherwise not supported (e.g. not initialized using one of smithays [`crate::wayland`]-handlers).
 #[cfg(feature = "wayland_frontend")]
 pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
+    use crate::wayland::shm::BufferAccessError;
+
     if crate::wayland::dmabuf::get_dmabuf(buffer).is_ok() {
         return Some(BufferType::Dma);
     }
 
-    if crate::wayland::shm::with_buffer_contents(buffer, |_, _| ()).is_ok() {
+    if !matches!(
+        crate::wayland::shm::with_buffer_contents(buffer, |_, _| ()),
+        Err(BufferAccessError::NotManaged)
+    ) {
         return Some(BufferType::Shm);
     }
 
@@ -652,7 +657,10 @@ pub fn buffer_has_alpha(buffer: &wl_buffer::WlBuffer) -> Option<bool> {
 /// *Note*: This will only return dimensions for buffer types known to smithay (see [`buffer_type`])
 #[cfg(feature = "wayland_frontend")]
 pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, BufferCoord>> {
-    use crate::{backend::allocator::Buffer, wayland::shm};
+    use crate::{
+        backend::allocator::Buffer,
+        wayland::shm::{self, BufferAccessError},
+    };
 
     if let Ok(buf) = crate::wayland::dmabuf::get_dmabuf(buffer) {
         return Some((buf.width() as i32, buf.height() as i32).into());
@@ -661,7 +669,7 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffe
     match shm::with_buffer_contents(buffer, |_, data| (data.width, data.height).into()) {
         Ok(data) => Some(data),
 
-        Err(_) => {
+        Err(BufferAccessError::NotManaged) => {
             // Not managed, check if this is an EGLBuffer
             #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
             if let Some(dim) = BUFFER_READER
@@ -676,5 +684,7 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffe
 
             None
         }
+
+        Err(_) => None,
     }
 }

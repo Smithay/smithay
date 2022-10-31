@@ -80,7 +80,11 @@
 //!         /* The client supplied invalid content specification for this buffer,
 //!            and was killed.
 //!          */
-//!     }
+//!     },
+//!     Err(BufferAccessError::NotReadable) => {
+//!         /* The client has not allowed reads to this buffer */
+//!     },
+//!     Err(BufferAccessError::NotWritable) => unreachable!("cannot be triggered by with_buffer_contents"),
 //! }
 //! # }
 //! ```
@@ -182,6 +186,14 @@ pub enum BufferAccessError {
     /// If this error occurs, the client has been killed as a result.
     #[error("invalid client buffer")]
     BadMap,
+
+    /// This buffer cannot be read by the compositor
+    #[error("Client has not indicated read permission for the buffer")]
+    NotReadable,
+
+    /// This buffer cannot be written to by the compositor
+    #[error("Client has not indicated write permission for the buffer")]
+    NotWritable,
 }
 
 impl From<UnmanagedResource> for BufferAccessError {
