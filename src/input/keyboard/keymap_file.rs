@@ -33,6 +33,24 @@ impl KeymapFile {
         }
     }
 
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) fn change_keymap<L>(&mut self, keymap: String, logger: L)
+    where
+        L: Into<Option<slog::Logger>>,
+    {
+        let logger = crate::slog_or_fallback(logger);
+        let name = CString::new("smithay-keymap-file").unwrap();
+        let sealed = SealedFile::new(name, CString::new(keymap.clone()).unwrap());
+
+        if let Err(err) = sealed.as_ref() {
+            error!(logger, "Error when creating sealed keymap file: {}", err);
+        }
+
+        self.sealed = sealed.ok();
+        self.keymap = keymap;
+    }
+
+    #[cfg(feature = "wayland_frontend")]
     /// Run a closure with the file descriptor to ensure safety
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where

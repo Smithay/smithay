@@ -45,7 +45,8 @@ where
         trace!(self.arc.logger, "Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
-        let ret = self.arc.keymap.send(&kbd);
+        let keymap_file = self.arc.keymap.lock().unwrap();
+        let ret = keymap_file.send(&kbd);
 
         if let Err(e) = ret {
             warn!(self.arc.logger,
@@ -122,7 +123,7 @@ where
     }
 }
 
-fn for_each_focused_kbds<D: SeatHandler + 'static>(
+pub(crate) fn for_each_focused_kbds<D: SeatHandler + 'static>(
     seat: &Seat<D>,
     surface: &WlSurface,
     mut f: impl FnMut(WlKeyboard),

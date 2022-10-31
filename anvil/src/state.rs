@@ -9,7 +9,7 @@ use smithay::{
     delegate_compositor, delegate_data_device, delegate_input_method_manager,
     delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_primary_selection,
     delegate_seat, delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{
         utils::{surface_primary_scanout_output, update_surface_primary_scanout_output},
         PopupManager, Space, Window,
@@ -54,6 +54,7 @@ use smithay::{
         tablet_manager::TabletSeatTrait,
         text_input::TextInputManagerState,
         viewporter::ViewporterState,
+        virtual_keyboard::VirtualKeyboardManagerState,
         xdg_activation::{
             XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
         },
@@ -206,6 +207,8 @@ impl<BackendData> KeyboardShortcutsInhibitHandler for AnvilState<BackendData> {
 
 delegate_keyboard_shortcuts_inhibit!(@<BackendData: 'static> AnvilState<BackendData>);
 
+delegate_virtual_keyboard_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+
 delegate_viewporter!(@<BackendData: 'static> AnvilState<BackendData>);
 
 impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
@@ -320,6 +323,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone());
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self>(&dh);
+        VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
 
         // init input
         let seat_name = backend_data.seat_name();

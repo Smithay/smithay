@@ -60,7 +60,7 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
     pub(crate) pressed_keys: HashSet<u32>,
     pub(crate) mods_state: ModifiersState,
-    keymap: xkb::Keymap,
+    pub(crate) keymap: xkb::Keymap,
     pub(crate) state: xkb::State,
     pub(crate) repeat_rate: i32,
     pub(crate) repeat_delay: i32,
@@ -215,7 +215,7 @@ pub enum Error {
 pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) internal: Mutex<KbdInternal<D>>,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) keymap: KeymapFile,
+    pub(crate) keymap: Mutex<KeymapFile>,
     pub(crate) logger: ::slog::Logger,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_kbds: Mutex<Vec<wayland_server::protocol::wl_keyboard::WlKeyboard>>,
@@ -427,13 +427,37 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         Ok(Self {
             arc: Arc::new(KbdRc {
                 #[cfg(feature = "wayland_frontend")]
-                keymap: KeymapFile::new(&internal.keymap, log.clone()),
+                keymap: Mutex::new(KeymapFile::new(&internal.keymap, log.clone())),
                 internal: Mutex::new(internal),
                 logger: log,
                 #[cfg(feature = "wayland_frontend")]
                 known_kbds: Mutex::new(Vec::new()),
             }),
         })
+    }
+
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) fn change_keymap(&self, keymap: xkb::Keymap) {
+        let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
+        let logger = &self.arc.logger;
+        let mut keymap_file = self.arc.keymap.lock().unwrap();
+        keymap_file.change_keymap(keymap, logger.clone());
+
+        use slog::warn;
+        use std::os::unix::io::AsRawFd;
+        use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
+        let known_kbds = &self.arc.known_kbds;
+        for kbd in &*known_kbds.lock().unwrap() {
+            let res = keymap_file.with_fd(kbd.version() >= 7, |fd, size| {
+                kbd.keymap(KeymapFormat::XkbV1, fd.as_raw_fd(), size as u32)
+            });
+            if let Err(e) = res {
+                warn!(logger,
+                    "Failed to send keymap to client";
+                    "err" => format!("{:?}", e)
+                );
+            }
+        }
     }
 
     /// Change the current grab on this keyboard to the provided grab
