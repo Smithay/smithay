@@ -598,9 +598,9 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .and_then(Output::from_resource)
                 .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
             let client = self.display_handle.get_client(wl_surface.id()).unwrap();
-            output.with_client_outputs(&client, |output| {
-                wl_output = Some(output.clone());
-            });
+            for output in output.client_outputs(&client) {
+                wl_output = Some(output);
+            }
 
             surface.with_pending_state(|state| {
                 state.states.set(xdg_toplevel::State::Fullscreen);

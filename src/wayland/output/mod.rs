@@ -65,7 +65,7 @@ use crate::output::{Inner, Mode, Output, OutputData, Scale, Subpixel};
 
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
 use wayland_server::{
-    backend::GlobalId,
+    backend::{ClientId, GlobalId},
     protocol::{
         wl_output::{Mode as WMode, Subpixel as WlSubpixel, Transform, WlOutput},
         wl_surface,
@@ -229,38 +229,25 @@ impl Output {
             .any(|o| o.id() == output.id())
     }
 
-    /// This function allows to run a [FnMut] on every
-    /// [WlOutput] matching the same [Client] as provided
-    pub fn with_client_outputs<F>(&self, client: &Client, f: F)
-    where
-        F: FnMut(&WlOutput),
-    {
-        self.with_client_outputs_internal(client.id(), f)
+    /// This function returns all managed [WlOutput] matching the provided [Client]
+    pub fn client_outputs(&self, client: &Client) -> Vec<WlOutput> {
+        self.client_outputs_internal(client.id())
     }
 
-    fn with_client_outputs_internal<F>(&self, client: wayland_server::backend::ClientId, mut f: F)
-    where
-        F: FnMut(&WlOutput),
-    {
-        let list: Vec<WlOutput> = {
-            let data = self.inner.0.lock().unwrap();
-            data.instances
-                .iter()
-                .filter(|output| {
-                    data.handle
-                        .as_ref()
-                        .and_then(|handle| handle.upgrade())
-                        .and_then(|handle| handle.get_client(output.id()).ok())
-                        .map(|output_client| output_client == client)
-                        .unwrap_or(false)
-                })
-                .cloned()
-                .collect()
-        };
-
-        for o in list {
-            f(&o);
-        }
+    fn client_outputs_internal(&self, client: ClientId) -> Vec<WlOutput> {
+        let data = self.inner.0.lock().unwrap();
+        data.instances
+            .iter()
+            .filter(|output| {
+                data.handle
+                    .as_ref()
+                    .and_then(|handle| handle.upgrade())
+                    .and_then(|handle| handle.get_client(output.id()).ok())
+                    .map(|output_client| output_client == client)
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect()
     }
 
     /// Sends `wl_surface.enter` for the provided surface
@@ -276,7 +263,9 @@ impl Output {
             .and_then(|handle| handle.upgrade())
             .and_then(|handle| handle.get_client(surface.id()).ok());
         if let Some(client) = client {
-            self.with_client_outputs_internal(client, |output| surface.enter(output))
+            for output in self.client_outputs_internal(client) {
+                surface.enter(&output);
+            }
         }
     }
 
@@ -293,7 +282,9 @@ impl Output {
             .and_then(|handle| handle.upgrade())
             .and_then(|handle| handle.get_client(surface.id()).ok());
         if let Some(client) = client {
-            self.with_client_outputs_internal(client, |output| surface.leave(output))
+            for output in self.client_outputs_internal(client) {
+                surface.leave(&output);
+            }
         }
     }
 }
