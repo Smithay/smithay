@@ -301,8 +301,8 @@ impl RenderElementStates {
     }
 }
 
-/// A single render element
-pub trait RenderElement<R: Renderer> {
+/// A single element
+pub trait Element {
     /// Get the unique id of this element
     fn id(&self) -> &Id;
     /// Get the current commit position of this element
@@ -335,10 +335,10 @@ pub trait RenderElement<R: Renderer> {
     fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         vec![]
     }
-    /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
-    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
-        None
-    }
+}
+
+/// A single render element
+pub trait RenderElement<R: Renderer>: Element {
     /// Draw this element
     fn draw(
         &self,
@@ -349,6 +349,11 @@ pub trait RenderElement<R: Renderer> {
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error>;
+
+    /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
+    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+        None
+    }
 }
 
 /// Types that can be converted into [`RenderElement`]s
@@ -366,10 +371,9 @@ where
     ) -> Vec<C>;
 }
 
-impl<R, E> RenderElement<R> for &E
+impl<E> Element for &E
 where
-    R: Renderer,
-    E: RenderElement<R>,
+    E: Element,
 {
     fn id(&self) -> &Id {
         (*self).id()
@@ -406,7 +410,13 @@ where
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         (*self).opaque_regions(scale)
     }
+}
 
+impl<R, E> RenderElement<R> for &E
+where
+    R: Renderer,
+    E: RenderElement<R> + Element,
+{
     fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
         (*self).underlying_storage(renderer)
     }
@@ -552,6 +562,9 @@ macro_rules! render_elements_internal {
             _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
         }
     };
+    (@call $name:ident; $($x:ident),*) => {
+        $crate::backend::renderer::element::Element::$name($($x),*)
+    };
     (@call $renderer:ty; $name:ident; $($x:ident),*) => {
         $crate::backend::renderer::element::RenderElement::<$renderer>::$name($($x),*)
     };
@@ -561,7 +574,7 @@ macro_rules! render_elements_internal {
     (@call $renderer:ty as $other:ty; $name:ident; $($x:ident),*) => {
         $crate::backend::renderer::element::RenderElement::<$other>::$name($($x),*)
     };
-    (@body $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+    (@body $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
         fn id(&self) -> &$crate::backend::renderer::element::Id {
             match self {
                 $(
@@ -569,7 +582,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; id; x)
+                    Self::$body(x) => $crate::render_elements_internal!(@call id; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -582,7 +595,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; location; x, scale)
+                    Self::$body(x) => $crate::render_elements_internal!(@call location; x, scale)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -595,7 +608,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; src; x)
+                    Self::$body(x) => $crate::render_elements_internal!(@call src; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -608,7 +621,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; transform; x)
+                    Self::$body(x) => $crate::render_elements_internal!(@call transform; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -621,21 +634,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; geometry; x, scale)
-                ),*,
-                Self::_GenericCatcher(_) => unreachable!(),
-            }
-        }
-
-        fn underlying_storage(&self, renderer: &$renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_, $renderer>>
-        {
-            match self {
-                $(
-                    #[allow(unused_doc_comments)]
-                    $(
-                        #[$meta]
-                    )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; underlying_storage; x, renderer)
+                    Self::$body(x) => $crate::render_elements_internal!(@call geometry; x, scale)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -648,7 +647,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; current_commit; x)
+                    Self::$body(x) => $crate::render_elements_internal!(@call current_commit; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -661,7 +660,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; damage_since; x, scale, commit)
+                    Self::$body(x) => $crate::render_elements_internal!(@call damage_since; x, scale, commit)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -674,7 +673,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; opaque_regions; x, scale)
+                    Self::$body(x) => $crate::render_elements_internal!(@call opaque_regions; x, scale)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -710,6 +709,20 @@ macro_rules! render_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
+
+        fn underlying_storage(&self, renderer: &$renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_, $renderer>>
+        {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; underlying_storage; x, renderer)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
     };
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         fn draw(
@@ -733,107 +746,180 @@ macro_rules! render_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
+
+        fn underlying_storage(&self, renderer: &$renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_, $renderer>>
+        {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; underlying_storage; x, renderer)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
     };
     // Generic renderer
     (@impl $name:ident<$renderer:ident> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
+        impl<$renderer> $crate::backend::renderer::element::Element for $name<$renderer>
+        where
+            $renderer: $crate::backend::renderer::Renderer,
+            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            $($($target: $bound $(+ $additional_bound)*),+)?
+        {
+            $crate::render_elements_internal!(@body $($tail)*);
+        }
         impl<$renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
-            $crate::render_elements_internal!(@body $renderer; $($tail)*);
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
     (@impl $name:ident<$lt:lifetime, $renderer:ident> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
+        impl<$lt, $renderer> $crate::backend::renderer::element::Element for $name<$lt, $renderer>
+        where
+            $renderer: $crate::backend::renderer::Renderer,
+            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            $($($target: $bound $(+ $additional_bound)*),+)?
+        {
+            $crate::render_elements_internal!(@body $($tail)*);
+        }
         impl<$lt, $renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $renderer>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
-            $crate::render_elements_internal!(@body $renderer; $($tail)*);
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
     (@impl $name:ident<$renderer:ident, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
+        impl<$renderer, $($custom),+> $crate::backend::renderer::element::Element for $name<$renderer, $($custom),+>
+        where
+            $renderer: $crate::backend::renderer::Renderer,
+            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            $(
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
+            )+
+            $($($target: $bound $(+ $additional_bound)*),+)?
+        {
+            $crate::render_elements_internal!(@body $($tail)*);
+        }
         impl<$renderer, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $(
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
             )+
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
-            $crate::render_elements_internal!(@body $renderer; $($tail)*);
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
     (@impl $name:ident<$lt:lifetime, $renderer:ident, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
+        impl<$lt, $renderer, $($custom),+> $crate::backend::renderer::element::Element for $name<$lt, $renderer, $($custom),+>
+        where
+            $renderer: $crate::backend::renderer::Renderer,
+            <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            $(
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
+            )+
+            $($($target: $bound $(+ $additional_bound)*),+)?
+        {
+            $crate::render_elements_internal!(@body $($tail)*);
+        }
         impl<$lt, $renderer, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $renderer, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $(
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
             )+
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
-            $crate::render_elements_internal!(@body $renderer; $($tail)*);
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
     (@impl $name:ident; $renderer:ident; $($tail:tt)*) => {
+        impl $crate::backend::renderer::element::Element for $name
+        {
+            $crate::render_elements_internal!(@body $($tail)*);
+        }
         impl<$renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
         {
-            $crate::render_elements_internal!(@body $renderer; $($tail)*);
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
 
     // Specific renderer
     (@impl $name:ident<=$renderer:ty>; $($tail:tt)*) => {
+        impl $crate::backend::renderer::element::Element for $name
+        {
+            $crate::render_elements_internal!(@body $($tail)*);
+        }
         impl $crate::backend::renderer::element::RenderElement<$renderer> for $name
         {
-            $crate::render_elements_internal!(@body $renderer; $($tail)*);
             $crate::render_elements_internal!(@draw $renderer; $($tail)*);
         }
     };
     (@impl $name:ident<=$renderer:ty, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
-        impl<$($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$($custom),+>
+        impl<$($custom),+> $crate::backend::renderer::element::Element for $name<$($custom),+>
         where
         $(
-            $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
+            $custom: $crate::backend::renderer::element::Element,
         )+
         $($($target: $bound $(+ $additional_bound)*),+)?
         {
-            $crate::render_elements_internal!(@body $renderer; $($tail)*);
+            $crate::render_elements_internal!(@body $($tail)*);
+        }
+        impl<$($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$($custom),+>
+        where
+        $(
+            $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
+        )+
+        $($($target: $bound $(+ $additional_bound)*),+)?
+        {
             $crate::render_elements_internal!(@draw $renderer; $($tail)*);
         }
     };
 
     (@impl $name:ident<=$renderer:ty, $lt:lifetime>; $($tail:tt)*) => {
+        impl<$lt> $crate::backend::renderer::element::Element for $name<$lt>
+        {
+            $crate::render_elements_internal!(@body $($tail)*);
+        }
         impl<$lt> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt>
         {
-            $crate::render_elements_internal!(@body $renderer; $($tail)*);
             $crate::render_elements_internal!(@draw $renderer; $($tail)*);
         }
     };
 
     (@impl $name:ident<=$renderer:ty, $lt:lifetime, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
-        impl<$lt, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $($custom),+>
+        impl<$lt, $($custom),+> $crate::backend::renderer::element::Element for $name<$lt, $($custom),+>
         where
         $(
-            $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
+            $custom: $crate::backend::renderer::element::Element,
         )+
         $($($target: $bound $(+ $additional_bound)*),+)?
         {
-            $crate::render_elements_internal!(@body $renderer; $($tail)*);
+            $crate::render_elements_internal!(@body $($tail)*);
+        }
+        impl<$lt, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $($custom),+>
+        where
+        $(
+            $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
+        )+
+        $($($target: $bound $(+ $additional_bound)*),+)?
+        {
             $crate::render_elements_internal!(@draw $renderer; $($tail)*);
         }
     };
@@ -865,7 +951,7 @@ macro_rules! render_elements_internal {
             impl<$renderer, $custom> From<$field> for $name<$renderer, $custom>
             where
                 $renderer: $crate::backend::renderer::Renderer,
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
                 $(
                     $($renderer: std::convert::AsMut<$other_renderer>,)?
                 )*
@@ -902,7 +988,7 @@ macro_rules! render_elements_internal {
             impl<$lt, $renderer, $custom> From<$field> for $name<$lt, $renderer, $custom>
             where
                 $renderer: $crate::backend::renderer::Renderer,
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
                 $(
                     $($renderer: std::convert::AsMut<$other_renderer>,)?
                 )*
@@ -944,7 +1030,7 @@ macro_rules! render_elements_internal {
 /// ```
 /// # use smithay::{
 /// #     backend::renderer::{
-/// #         element::{Id, RenderElement},
+/// #         element::{Element, Id, RenderElement},
 /// #         utils::CommitCounter,
 /// #         Renderer,
 /// #     },
@@ -954,7 +1040,7 @@ macro_rules! render_elements_internal {
 /// # struct MyRenderElement1;
 /// # struct MyRenderElement2;
 /// #
-/// # impl<R: Renderer> RenderElement<R> for MyRenderElement1 {
+/// # impl Element for MyRenderElement1 {
 /// #     fn id(&self) -> &Id {
 /// #         unimplemented!()
 /// #     }
@@ -970,7 +1056,9 @@ macro_rules! render_elements_internal {
 /// #     fn src(&self) -> Rectangle<f64, Buffer> {
 /// #         unimplemented!()
 /// #     }
+/// # }
 /// #
+/// # impl<R: Renderer> RenderElement<R> for MyRenderElement1 {
 /// #     fn draw(
 /// #         &self,
 /// #         _renderer: &mut R,
@@ -984,7 +1072,7 @@ macro_rules! render_elements_internal {
 /// #     }
 /// # }
 /// #
-/// # impl<R: Renderer> RenderElement<R> for MyRenderElement2 {
+/// # impl Element for MyRenderElement2 {
 /// #     fn id(&self) -> &Id {
 /// #         unimplemented!()
 /// #     }
@@ -1000,7 +1088,9 @@ macro_rules! render_elements_internal {
 /// #     fn src(&self) -> Rectangle<f64, Buffer> {
 /// #         unimplemented!()
 /// #     }
+/// # }
 /// #
+/// # impl<R: Renderer> RenderElement<R> for MyRenderElement2 {
 /// #     fn draw(
 /// #         &self,
 /// #         _renderer: &mut R,
@@ -1226,10 +1316,9 @@ impl<C> From<C> for Wrap<C> {
     }
 }
 
-impl<R, C> RenderElement<R> for Wrap<C>
+impl<C> Element for Wrap<C>
 where
-    R: Renderer,
-    C: RenderElement<R>,
+    C: Element,
 {
     fn id(&self) -> &Id {
         self.0.id()
@@ -1255,18 +1344,6 @@ where
         self.0.geometry(scale)
     }
 
-    fn draw(
-        &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
-        location: Point<i32, Physical>,
-        scale: Scale<f64>,
-        damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
-    ) -> Result<(), <R as Renderer>::Error> {
-        self.0.draw(renderer, frame, location, scale, damage, log)
-    }
-
     fn damage_since(
         &self,
         scale: Scale<f64>,
@@ -1277,6 +1354,24 @@ where
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         self.0.opaque_regions(scale)
+    }
+}
+
+impl<R, C> RenderElement<R> for Wrap<C>
+where
+    R: Renderer,
+    C: RenderElement<R>,
+{
+    fn draw(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        location: Point<i32, Physical>,
+        scale: Scale<f64>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) -> Result<(), <R as Renderer>::Error> {
+        self.0.draw(renderer, frame, location, scale, damage, log)
     }
 
     fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {

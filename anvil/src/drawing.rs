@@ -16,7 +16,7 @@ use smithay::{
 #[cfg(feature = "debug")]
 use smithay::{
     backend::renderer::{
-        element::{Id, RenderElement},
+        element::{Element, Id, RenderElement},
         utils::CommitCounter,
         Frame,
     },
@@ -124,10 +124,9 @@ impl<T: Texture> FpsElement<T> {
 }
 
 #[cfg(feature = "debug")]
-impl<R> RenderElement<R> for FpsElement<<R as Renderer>::TextureId>
+impl<T> Element for FpsElement<T>
 where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
+    T: Texture + 'static,
 {
     fn id(&self) -> &Id {
         &self.id
@@ -162,7 +161,14 @@ where
     fn current_commit(&self) -> CommitCounter {
         self.commit_counter
     }
+}
 
+#[cfg(feature = "debug")]
+impl<R> RenderElement<R> for FpsElement<<R as Renderer>::TextureId>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+{
     fn draw(
         &self,
         _renderer: &mut R,

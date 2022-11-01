@@ -201,7 +201,7 @@ use crate::{
     wayland::compositor::{self, TraversalAction},
 };
 
-use super::{CommitCounter, Id, RenderElement, UnderlyingStorage};
+use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
 
 /// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
 pub fn render_elements_from_surface_tree<E>(
@@ -290,11 +290,7 @@ impl WaylandSurfaceRenderElement {
     }
 }
 
-impl<R> RenderElement<R> for WaylandSurfaceRenderElement
-where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Texture + 'static,
-{
+impl Element for WaylandSurfaceRenderElement {
     fn id(&self) -> &Id {
         &self.id
     }
@@ -410,7 +406,13 @@ where
             .unwrap_or_default()
         })
     }
+}
 
+impl<R> RenderElement<R> for WaylandSurfaceRenderElement
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: Texture + 'static,
+{
     fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
