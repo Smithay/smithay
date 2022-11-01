@@ -580,6 +580,24 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         );
     }
 
+    /// Iterate over the keysyms of the currently pressed keys.
+    pub fn with_pressed_keysyms<F>(&self, mut f: F)
+    where
+        F: FnMut(KeysymHandle<'_>),
+    {
+        let guard = self.arc.internal.lock().unwrap();
+        {
+            for code in guard.pressed_keys.iter() {
+                let handle = KeysymHandle {
+                    keycode: code + 8,
+                    state: &guard.state,
+                    keymap: &guard.keymap,
+                };
+                f(handle);
+            }
+        }
+    }
+
     /// Check if keyboard has focus
     pub fn is_focused(&self) -> bool {
         self.arc.internal.lock().unwrap().focus.is_some()
@@ -705,6 +723,17 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
                 focus.modifiers(self.seat, data, mods, serial);
             }
         };
+    }
+
+    /// Iterate over the currently pressed keys.
+    pub fn with_pressed_keysyms<F>(&self, mut f: F)
+    where
+        F: FnMut(KeysymHandle<'_>),
+    {
+        for code in self.inner.pressed_keys.iter() {
+            let handle = self.keysym_handle(*code);
+            f(handle);
+        }
     }
 
     /// Set the current focus of this keyboard
