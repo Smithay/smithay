@@ -580,6 +580,32 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         );
     }
 
+    /// Iterate over the keysyms of the currently pressed keys.
+    pub fn with_pressed_keysyms<F, R>(&self, f: F)
+    where
+        F: FnOnce(Vec<KeysymHandle<'_>>) -> R,
+        R: 'static,
+    {
+        let guard = self.arc.internal.lock().unwrap();
+        {
+            let handles = guard
+                .pressed_keys
+                .iter()
+                .map(|code| KeysymHandle {
+                    keycode: code + 8,
+                    state: &guard.state,
+                    keymap: &guard.keymap,
+                })
+                .collect::<Vec<_>>();
+            f(handles);
+        }
+    }
+
+    /// Get the current modifiers state
+    pub fn modifier_state(&self) -> ModifiersState {
+        self.arc.internal.lock().unwrap().mods_state
+    }
+
     /// Check if keyboard has focus
     pub fn is_focused(&self) -> bool {
         self.arc.internal.lock().unwrap().focus.is_some()
@@ -680,6 +706,11 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
         }
     }
 
+    /// Get the current modifiers state
+    pub fn modifier_state(&self) -> ModifiersState {
+        self.inner.mods_state
+    }
+
     /// Send the input to the focused keyboards
     pub fn input(
         &mut self,
@@ -705,6 +736,21 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
                 focus.modifiers(self.seat, data, mods, serial);
             }
         };
+    }
+
+    /// Iterate over the currently pressed keys.
+    pub fn with_pressed_keysyms<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(Vec<KeysymHandle<'_>>) -> R,
+        R: 'static,
+    {
+        let handles = self
+            .inner
+            .pressed_keys
+            .iter()
+            .map(|code| self.keysym_handle(*code))
+            .collect();
+        f(handles)
     }
 
     /// Set the current focus of this keyboard
