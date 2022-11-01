@@ -81,7 +81,7 @@ use wayland_server::{
         wl_surface,
         wl_touch::WlTouch,
     },
-    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 /// Focused objects that *might* have an underlying wl_surface.
@@ -184,6 +184,19 @@ impl<D: SeatHandler + 'static> Seat<D> {
         seat.data::<SeatUserData<D>>()
             .map(|d| d.arc.clone())
             .map(|arc| Self { arc })
+    }
+
+    /// Retrieves [`WlSeat`](wl_seat::WlSeat) resources for a given client
+    pub fn client_seats(&self, client: &Client) -> Vec<WlSeat> {
+        self.arc
+            .inner
+            .lock()
+            .unwrap()
+            .known_seats
+            .iter()
+            .filter(|s| s.client_id().map_or(false, |id| id == client.id()))
+            .cloned()
+            .collect()
     }
 
     /// Get the id of WlSeat global
