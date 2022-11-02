@@ -584,29 +584,29 @@ pub trait ExportDma: Renderer {
 }
 
 /// Trait for renderers supporting blitting contents from one framebuffer to another.
-pub trait Blit<B1, B2>
+pub trait Blit<Target>
 where
-    Self: Renderer + Bind<B1> + Bind<B2>,
+    Self: Renderer + Bind<Target>,
 {
-    /// Copies the contents of `src` in B1 to `dst` in B2, applying `filter` if necessary.
+    /// Copies the contents of `src` in the current bound framebuffer to `dst` in Target,
+    /// applying `filter` if necessary.
     ///
     /// This operation is non destructive, the contents of the source framebuffer
     /// are kept intact as is any region not in `dst` for the target framebuffer.
     ///
-    /// This operation needs no bound or default rendering target.
-    /// The currently bound target might get unbound during this operation and not restored.
+    /// This operation needs a bound or default rendering target.
+    /// The currently bound target is guaranteed to still be active after this operation.
     ///
     /// This function *may* fail, if (but not limited to):
-    /// - The source framebuffer is not readable
+    /// - The source framebuffer is not readable / unset
     /// - The destination framebuffer is not writable
     /// - `src` is out of bounds for the source framebuffer
     /// - `dst` is out of bounds for the destination framebuffer
     /// - `src` and `dst` sizes are different and interpolation id not supported by this renderer.
     /// - source and target framebuffer are the same, and `src` and `dst` overlap
-    fn blit(
+    fn blit_to(
         &mut self,
-        from: B1,
-        to: B2,
+        to: Target,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,

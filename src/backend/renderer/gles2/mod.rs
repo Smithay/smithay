@@ -1639,14 +1639,13 @@ impl Offscreen<Gles2Renderbuffer> for Gles2Renderer {
     }
 }
 
-impl<B1, B2> Blit<B1, B2> for Gles2Renderer
+impl<Target> Blit<Target> for Gles2Renderer
 where
-    Self: Bind<B1> + Bind<B2>,
+    Self: Bind<Target>,
 {
-    fn blit(
+    fn blit_to(
         &mut self,
-        from: B1,
-        to: B2,
+        to: Target,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
@@ -1656,8 +1655,7 @@ where
             return Err(Gles2Error::GLVersionNotSupported(version::GLES_3_0));
         }
 
-        self.bind(from)?;
-        let src_target = self.target.take().unwrap();
+        let src_target = self.target.take().ok_or(Gles2Error::BlitError)?;
         self.bind(to)?;
         let dst_target = self.target.take().unwrap();
         self.unbind()?;
@@ -1732,6 +1730,8 @@ where
         };
 
         self.unbind()?;
+        self.target = Some(src_target);
+        self.make_current()?;
 
         if errno == ffi::INVALID_OPERATION {
             Err(Gles2Error::BlitError)

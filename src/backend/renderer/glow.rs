@@ -386,19 +386,18 @@ where
     }
 }
 
-impl<B1, B2> Blit<B1, B2> for GlowRenderer
+impl<Target> Blit<Target> for GlowRenderer
 where
-    Gles2Renderer: Blit<B1, B2>,
+    Gles2Renderer: Blit<Target>,
 {
-    fn blit(
+    fn blit_to(
         &mut self,
-        from: B1,
-        to: B2,
+        to: Target,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
     ) -> Result<(), Gles2Error> {
-        self.gl.blit(from, to, src, dst, filter)
+        self.gl.blit_to(to, src, dst, filter)
     }
 }
 
