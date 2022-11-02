@@ -1960,3 +1960,45 @@ where
             .map_err(Error::Render)
     }
 }
+
+impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target, B1, B2> Blit<B1, B2>
+    for MultiRenderer<'a, 'b, R, T, Target>
+where
+    <R::Device as ApiDevice>::Renderer: Blit<B1, B2>,
+    <T::Device as ApiDevice>::Renderer: Blit<B1, B2>,
+    // We need these because the Bind-impl does and Bind requires Bind
+    <T::Device as ApiDevice>::Renderer: Bind<Target>,
+    <R::Device as ApiDevice>::Renderer: Bind<Target>,
+    // We need these because the Unbind-impl does and Blit requires Bind, which requires Unbind
+    <R::Device as ApiDevice>::Renderer: Unbind,
+    <T::Device as ApiDevice>::Renderer: Unbind,
+    // We need this because the Renderer-impl does and Blit requires Renderer
+    R: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+{
+    fn blit(
+        &mut self,
+        from: B1,
+        to: B2,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), <Self as Renderer>::Error> {
+        if let Some(target) = self.target.as_mut() {
+            target
+                .renderer_mut()
+                .blit(from, to, src, dst, filter)
+                .map_err(Error::Target)
+        } else {
+            self.render
+                .renderer_mut()
+                .blit(from, to, src, dst, filter)
+                .map_err(Error::Render)
+        }
+    }
+}
