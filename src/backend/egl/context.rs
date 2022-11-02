@@ -221,27 +221,6 @@ impl EGLContext {
         })
     }
 
-    /// Makes the OpenGL context the current context in the current thread with a surface to
-    /// read/write to.
-    ///
-    /// # Safety
-    ///
-    /// This function is marked unsafe, because the context cannot be made current on another thread without
-    /// being unbound again (see [`EGLContext::unbind`]).
-    pub unsafe fn make_current_with_surface(&self, surface: &EGLSurface) -> Result<(), MakeCurrentError> {
-        let surface_ptr = surface.surface.load(Ordering::SeqCst);
-        wrap_egl_call(|| {
-            ffi::egl::MakeCurrent(
-                **self.display.get_display_handle(),
-                surface_ptr,
-                surface_ptr,
-                self.context,
-            )
-        })
-        .map(|_| ())
-        .map_err(Into::into)
-    }
-
     /// Makes the OpenGL context the current context in the current thread with no surface bound.
     ///
     /// # Safety
@@ -249,11 +228,43 @@ impl EGLContext {
     /// This function is marked unsafe, because the context cannot be made current on another thread without
     /// being unbound again (see [`EGLContext::unbind`]).
     pub unsafe fn make_current(&self) -> Result<(), MakeCurrentError> {
+        self.make_current_with_draw_and_read_surface(None, None)
+    }
+
+    /// Makes the OpenGL context the current context in the current thread with a surface to
+    /// read/draw to.
+    ///
+    /// # Safety
+    ///
+    /// This function is marked unsafe, because the context cannot be made current on another thread without
+    /// being unbound again (see [`EGLContext::unbind`]).
+    pub unsafe fn make_current_with_surface(&self, surface: &EGLSurface) -> Result<(), MakeCurrentError> {
+        self.make_current_with_draw_and_read_surface(Some(surface), Some(surface))
+    }
+
+    /// Makes the OpenGL context the current context in the current thread with surfaces to
+    /// read/draw to.
+    ///
+    /// # Safety
+    ///
+    /// This function is marked unsafe, because the context cannot be made current on another thread without
+    /// being unbound again (see [`EGLContext::unbind`]).
+    pub unsafe fn make_current_with_draw_and_read_surface(
+        &self,
+        draw_surface: Option<&EGLSurface>,
+        read_surface: Option<&EGLSurface>,
+    ) -> Result<(), MakeCurrentError> {
+        let draw_surface_ptr = draw_surface
+            .map(|s| s.surface.load(Ordering::SeqCst))
+            .unwrap_or(ffi::egl::NO_SURFACE as _);
+        let read_surface_ptr = read_surface
+            .map(|s| s.surface.load(Ordering::SeqCst))
+            .unwrap_or(ffi::egl::NO_SURFACE as _);
         wrap_egl_call(|| {
             ffi::egl::MakeCurrent(
                 **self.display.get_display_handle(),
-                ffi::egl::NO_SURFACE,
-                ffi::egl::NO_SURFACE,
+                draw_surface_ptr,
+                read_surface_ptr,
                 self.context,
             )
         })
