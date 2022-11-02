@@ -399,6 +399,16 @@ where
     ) -> Result<(), Gles2Error> {
         self.gl.blit_to(to, src, dst, filter)
     }
+
+    fn blit_from(
+        &mut self,
+        from: Target,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Gles2Error> {
+        self.gl.blit_from(from, src, dst, filter)
+    }
 }
 
 impl Unbind for GlowRenderer {

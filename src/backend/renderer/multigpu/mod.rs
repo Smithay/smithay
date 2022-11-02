@@ -1994,4 +1994,24 @@ where
                 .map_err(Error::Render)
         }
     }
+
+    fn blit_from(
+        &mut self,
+        from: BlitTarget,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), <Self as Renderer>::Error> {
+        if let Some(target) = self.target.as_mut() {
+            target
+                .renderer_mut()
+                .blit_from(from, src, dst, filter)
+                .map_err(Error::Target)
+        } else {
+            self.render
+                .renderer_mut()
+                .blit_from(from, src, dst, filter)
+                .map_err(Error::Render)
+        }
+    }
 }
