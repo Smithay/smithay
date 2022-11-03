@@ -195,7 +195,7 @@ use crate::{
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{Id, RenderElement};
+use super::{Element, Id, RenderElement};
 
 #[derive(Debug, Default)]
 struct MemoryRenderBufferInner {
@@ -543,11 +543,7 @@ impl MemoryRenderBufferRenderElement {
     }
 }
 
-impl<R> RenderElement<R> for MemoryRenderBufferRenderElement
-where
-    R: Renderer + ImportMem,
-    <R as Renderer>::TextureId: 'static,
-{
+impl Element for MemoryRenderBufferRenderElement {
     fn id(&self) -> &super::Id {
         &self.buffer.id
     }
@@ -572,6 +568,24 @@ where
         Rectangle::from_loc_and_size(self.location.to_i32_round(), self.physical_size(scale))
     }
 
+    fn damage_since(
+        &self,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
+    ) -> Vec<Rectangle<i32, Physical>> {
+        self.damage_since(scale, commit)
+    }
+
+    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        self.opaque_regions(scale)
+    }
+}
+
+impl<R> RenderElement<R> for MemoryRenderBufferRenderElement
+where
+    R: Renderer + ImportMem,
+    <R as Renderer>::TextureId: 'static,
+{
     fn draw(
         &self,
         renderer: &mut R,
@@ -600,17 +614,5 @@ where
 
         let dst = Rectangle::from_loc_and_size(location, physical_size);
         frame.render_texture_from_to(texture, src, dst, damage, transform, 1.0)
-    }
-
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
-        self.damage_since(scale, commit)
-    }
-
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        self.opaque_regions(scale)
     }
 }

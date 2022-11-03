@@ -5,7 +5,7 @@ use crate::{
     utils::{Buffer, Physical, Point, Rectangle, Scale},
 };
 
-use super::{CommitCounter, Id, RenderElement, Wrap};
+use super::{CommitCounter, Element, Id, RenderElement, Wrap};
 
 render_elements! {
     ImportMemTest<R> where R: ImportMem;
@@ -121,10 +121,7 @@ render_elements! {
 
 struct ImportMemRenderElement {}
 
-impl<R> RenderElement<R> for ImportMemRenderElement
-where
-    R: Renderer + ImportMem,
-{
+impl Element for ImportMemRenderElement {
     fn id(&self) -> &Id {
         todo!()
     }
@@ -137,6 +134,15 @@ where
         todo!()
     }
 
+    fn src(&self) -> Rectangle<f64, Buffer> {
+        todo!()
+    }
+}
+
+impl<R> RenderElement<R> for ImportMemRenderElement
+where
+    R: Renderer + ImportMem,
+{
     fn draw(
         &self,
         _renderer: &mut R,
@@ -148,16 +154,9 @@ where
     ) -> Result<(), <R as Renderer>::Error> {
         todo!()
     }
-
-    fn src(&self) -> Rectangle<f64, Buffer> {
-        todo!()
-    }
 }
 
-impl<R> RenderElement<R> for Empty
-where
-    R: Renderer,
-{
+impl Element for Empty {
     fn id(&self) -> &Id {
         todo!()
     }
@@ -177,7 +176,12 @@ where
     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
         todo!()
     }
+}
 
+impl<R> RenderElement<R> for Empty
+where
+    R: Renderer,
+{
     fn draw(
         &self,
         _renderer: &mut R,
@@ -197,7 +201,7 @@ struct TestRenderElement2<R> {
     _phantom: PhantomData<R>,
 }
 
-impl<R> RenderElement<R> for TestRenderElement2<R>
+impl<R> Element for TestRenderElement2<R>
 where
     R: Renderer,
 {
@@ -220,7 +224,12 @@ where
     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
         todo!()
     }
+}
 
+impl<R> RenderElement<R> for TestRenderElement2<R>
+where
+    R: Renderer,
+{
     fn draw(
         &self,
         _renderer: &mut R,
@@ -239,7 +248,7 @@ struct TestRenderElement<'a, R> {
     _phantom: PhantomData<R>,
 }
 
-impl<'a, R> RenderElement<R> for TestRenderElement<'a, R>
+impl<'a, R> Element for TestRenderElement<'a, R>
 where
     R: Renderer,
 {
@@ -262,7 +271,12 @@ where
     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
         todo!()
     }
+}
 
+impl<'a, R> RenderElement<R> for TestRenderElement<'a, R>
+where
+    R: Renderer,
+{
     fn draw(
         &self,
         _renderer: &mut R,

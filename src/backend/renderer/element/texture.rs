@@ -356,7 +356,7 @@ use crate::{
     utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{CommitCounter, Id, RenderElement, UnderlyingStorage};
+use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
 
 /// A single texture buffer
 #[derive(Debug, Clone)]
@@ -707,9 +707,8 @@ impl<T: Texture> TextureRenderElement<T> {
     }
 }
 
-impl<R, T> RenderElement<R> for TextureRenderElement<T>
+impl<T> Element for TextureRenderElement<T>
 where
-    R: Renderer<TextureId = T>,
     T: Texture,
 {
     fn id(&self) -> &Id {
@@ -732,37 +731,6 @@ where
         let size = self.logical_size();
         self.src()
             .to_buffer(self.scale as f64, self.transform, &size.to_f64())
-    }
-
-    fn draw(
-        &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
-        location: Point<i32, Physical>,
-        scale: Scale<f64>,
-        damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
-    ) -> Result<(), <R as Renderer>::Error> {
-        if renderer.id() != self.renderer_id {
-            warn!(log, "trying to render texture from different renderer");
-            return Ok(());
-        }
-
-        let texture_size = self.texture.size();
-
-        let src = self
-            .src
-            .map(|src| {
-                src.to_buffer(
-                    self.scale as f64,
-                    self.transform,
-                    &texture_size.to_logical(self.scale, self.transform).to_f64(),
-                )
-            })
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), texture_size).to_f64());
-
-        let dst = Rectangle::from_loc_and_size(location, self.physical_size(scale));
-        frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, 1.0)
     }
 
     fn damage_since(
@@ -810,6 +778,43 @@ where
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default()
+    }
+}
+
+impl<R, T> RenderElement<R> for TextureRenderElement<T>
+where
+    R: Renderer<TextureId = T>,
+    T: Texture,
+{
+    fn draw(
+        &self,
+        renderer: &mut R,
+        frame: &mut <R as Renderer>::Frame,
+        location: Point<i32, Physical>,
+        scale: Scale<f64>,
+        damage: &[Rectangle<i32, Physical>],
+        log: &slog::Logger,
+    ) -> Result<(), <R as Renderer>::Error> {
+        if renderer.id() != self.renderer_id {
+            warn!(log, "trying to render texture from different renderer");
+            return Ok(());
+        }
+
+        let texture_size = self.texture.size();
+
+        let src = self
+            .src
+            .map(|src| {
+                src.to_buffer(
+                    self.scale as f64,
+                    self.transform,
+                    &texture_size.to_logical(self.scale, self.transform).to_f64(),
+                )
+            })
+            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), texture_size).to_f64());
+
+        let dst = Rectangle::from_loc_and_size(location, self.physical_size(scale));
+        frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, 1.0)
     }
 
     fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
