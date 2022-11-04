@@ -194,7 +194,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
             .unwrap()
             .known_seats
             .iter()
-            .filter(|s| s.client_id().map_or(false, |id| id == client.id()))
+            .filter(|s| s.client().map_or(false, |c| &c == client))
             .cloned()
             .collect()
     }
