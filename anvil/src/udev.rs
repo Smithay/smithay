@@ -334,7 +334,7 @@ pub fn run_udev(log: Logger) {
     }
 }
 
-pub type RenderSurface = GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd>;
+pub type RenderSurface = GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd, Option<()>>;
 
 struct SurfaceData {
     dh: DisplayHandle,
@@ -946,7 +946,7 @@ fn render_surface<'a>(
         Ok((true, states)) => {
             surface
                 .surface
-                .queue_buffer()
+                .queue_buffer(None)
                 .map_err(Into::<SwapBuffersError>::into)?;
             Ok((true, states))
         }
@@ -986,7 +986,7 @@ fn initial_render(
     surface: &mut RenderSurface,
     renderer: &mut UdevRenderer<'_>,
 ) -> Result<(), SwapBuffersError> {
-    let (dmabuf, _age) = surface.next_buffer()?;
+    let (dmabuf, _) = surface.next_buffer()?;
     renderer.bind(dmabuf)?;
     // Does not matter if we render an empty frame
     renderer
@@ -997,7 +997,7 @@ fn initial_render(
         })
         .map_err(Into::<SwapBuffersError>::into)
         .and_then(|x| x.map_err(Into::<SwapBuffersError>::into))?;
-    surface.queue_buffer()?;
+    surface.queue_buffer(None)?;
     surface.reset_buffers();
     Ok(())
 }
