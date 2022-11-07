@@ -2,15 +2,21 @@
 
 use crate::{
     backend::renderer::{
-        element::{PrimaryScanoutOutput, RenderElementState, RenderElementStates},
+        element::{
+            PrimaryScanoutOutput, RenderElementPresentationState, RenderElementState, RenderElementStates,
+        },
         utils::RendererSurfaceState,
     },
     desktop::WindowSurfaceType,
-    output::Output,
-    utils::{Logical, Point, Rectangle},
-    wayland::compositor::{with_surface_tree_downward, SurfaceAttributes, SurfaceData, TraversalAction},
+    output::{Output, WeakOutput},
+    utils::{Logical, Point, Rectangle, Time},
+    wayland::{
+        compositor::{with_surface_tree_downward, SurfaceAttributes, SurfaceData, TraversalAction},
+        presentation::{PresentationFeedbackCachedState, PresentationFeedbackCallback},
+    },
 };
 use std::{cell::RefCell, sync::Mutex, time::Duration};
+use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use wayland_server::protocol::wl_surface;
 
 impl RendererSurfaceState {
@@ -252,6 +258,183 @@ pub fn send_frames_surface_tree<T, F>(
         },
         |_, _, &()| true,
     );
+}
+
+/// Holds the presentation feedback for a surface
+#[derive(Debug)]
+pub struct SurfacePresentationFeedback {
+    callbacks: Vec<PresentationFeedbackCallback>,
+    flags: wp_presentation_feedback::Kind,
+}
+
+impl SurfacePresentationFeedback {
+    /// Create a [`SurfacePresentationFeedback`] from the surface states.
+    ///
+    /// Returns `None` if the surface has no stored presentation feedback
+    pub fn from_states(states: &SurfaceData, flags: wp_presentation_feedback::Kind) -> Option<Self> {
+        let mut presentation_feedback_state =
+            states.cached_state.current::<PresentationFeedbackCachedState>();
+        if presentation_feedback_state.callbacks.is_empty() {
+            return None;
+        }
+
+        let callbacks = std::mem::take(&mut presentation_feedback_state.callbacks);
+        Some(SurfacePresentationFeedback { callbacks, flags })
+    }
+
+    /// Mark the presentation feedbacks for this surface as presented
+    ///
+    /// If the passed in clk_id does not match the clk_id of a stored
+    /// presentation feedback the feedback will be discarded.
+    pub fn presented(
+        &mut self,
+        output: &Output,
+        clk_id: u32,
+        time: impl Into<Duration>,
+        refresh: u32,
+        seq: u64,
+        flags: wp_presentation_feedback::Kind,
+    ) {
+        let time = time.into();
+
+        for callback in self.callbacks.drain(..) {
+            if callback.clk_id() == clk_id {
+                callback.presented(output, time, refresh, seq, flags | self.flags)
+            } else {
+                callback.discarded()
+            }
+        }
+    }
+
+    /// Mark the presentation feedbacks for this surface as discarded
+    pub fn discarded(&mut self) {
+        for callback in self.callbacks.drain(..) {
+            callback.discarded()
+        }
+    }
+}
+
+impl Drop for SurfacePresentationFeedback {
+    fn drop(&mut self) {
+        self.discarded()
+    }
+}
+
+/// Stores the [`SurfacePresentationFeedback`] for a specific output
+///
+/// This is intended to be used in combination with [`take_presentation_feedback_surface_tree`].
+#[derive(Debug)]
+pub struct OutputPresentationFeedback {
+    output: WeakOutput,
+    callbacks: Vec<SurfacePresentationFeedback>,
+}
+
+impl OutputPresentationFeedback {
+    /// Create a new [`OutputPresentationFeedback`] for a specific [`Output`]
+    pub fn new(output: &Output) -> Self {
+        OutputPresentationFeedback {
+            output: output.downgrade(),
+            callbacks: Vec::new(),
+        }
+    }
+
+    /// Returns the associated output
+    ///
+    /// Returns `None` if the output has been destroyed.
+    pub fn output(&self) -> Option<Output> {
+        self.output.upgrade()
+    }
+
+    /// Mark all stored [`SurfacePresentationFeedback`]s as presented
+    ///
+    /// The flags passed to this function will be combined with the stored
+    /// per surface flags.
+    pub fn presented<T, Kind>(
+        &mut self,
+        time: T,
+        refresh: u32,
+        seq: u64,
+        flags: wp_presentation_feedback::Kind,
+    ) where
+        T: Into<Time<Kind>>,
+        Kind: crate::utils::NonNegativeClockSource,
+    {
+        let time = time.into();
+        let clk_id = Kind::id() as u32;
+        if let Some(output) = self.output.upgrade() {
+            for mut callback in self.callbacks.drain(..) {
+                callback.presented(&output, clk_id, time, refresh, seq, flags);
+            }
+        } else {
+            self.discarded();
+        }
+    }
+
+    /// Mark all stored [`SurfacePresentationFeedback`]s as discarded
+    pub fn discarded(&mut self) {
+        for mut callback in self.callbacks.drain(..) {
+            callback.discarded();
+        }
+    }
+}
+
+/// Takes the [`PresentationFeedbackCallback`]s from the surface tree
+///
+/// This moves the [`PresentationFeedbackCallback`]s from the surfaces
+/// where the primary scan-out matches the output of the [`OutputPresentationFeedback`]
+/// to the [`OutputPresentationFeedback`]
+///
+/// The flags closure can be used to set special flags per surface like [`wp_presentation_feedback::Kind::ZeroCopy`]
+pub fn take_presentation_feedback_surface_tree<F1, F2>(
+    surface: &wl_surface::WlSurface,
+    output_feedback: &mut OutputPresentationFeedback,
+    mut primary_scan_out_output: F1,
+    mut presentation_feedback_flags: F2,
+) where
+    F1: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output>,
+    F2: FnMut(&wl_surface::WlSurface, &SurfaceData) -> wp_presentation_feedback::Kind,
+{
+    with_surface_tree_downward(
+        surface,
+        (),
+        |_, _, &()| TraversalAction::DoChildren(()),
+        |surface, states, &()| {
+            let on_primary_scanout_output = primary_scan_out_output(surface, states)
+                .map(|preferred_output| preferred_output == output_feedback.output)
+                .unwrap_or(false);
+
+            if !on_primary_scanout_output {
+                return;
+            }
+
+            let flags = presentation_feedback_flags(surface, states);
+            if let Some(feedback) = SurfacePresentationFeedback::from_states(states, flags) {
+                output_feedback.callbacks.push(feedback);
+            }
+        },
+        |_, _, &()| true,
+    );
+}
+
+/// Retrieves the per surface [`wp_presentation_feedback::Kind`] flags
+///
+/// This will return [`wp_presentation_feedback::Kind::ZeroCopy`] if the surface
+/// has been presented using zero-copy according to the [`RenderElementState`]
+/// in the provided [`RenderElementStates`]
+pub fn surface_presentation_feedback_flags_from_states(
+    surface: &wl_surface::WlSurface,
+    states: &RenderElementStates,
+) -> wp_presentation_feedback::Kind {
+    let zero_copy = states
+        .element_render_state(surface)
+        .map(|state| state.presentation_state == RenderElementPresentationState::ZeroCopy)
+        .unwrap_or(false);
+
+    if zero_copy {
+        wp_presentation_feedback::Kind::ZeroCopy
+    } else {
+        wp_presentation_feedback::Kind::empty()
+    }
 }
 
 #[derive(Debug, Default)]
