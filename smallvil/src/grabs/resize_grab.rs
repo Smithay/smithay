@@ -246,11 +246,11 @@ pub fn handle_commit(space: &mut Space<Window>, surface: &WlSurface) -> Option<(
                 edges.intersects(ResizeEdge::TOP_LEFT).then(|| {
                     let new_x = edges
                         .intersects(ResizeEdge::LEFT)
-                        .then(|| initial_rect.loc.x + (initial_rect.size.w - geometry.size.w));
+                        .then_some(initial_rect.loc.x + (initial_rect.size.w - geometry.size.w));
 
                     let new_y = edges
                         .intersects(ResizeEdge::TOP)
-                        .then(|| initial_rect.loc.y + (initial_rect.size.h - geometry.size.h));
+                        .then_some(initial_rect.loc.y + (initial_rect.size.h - geometry.size.h));
 
                     (new_x, new_y).into()
                 })
