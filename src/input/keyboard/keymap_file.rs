@@ -58,7 +58,7 @@ impl KeymapFile {
     {
         use std::{io::Write, os::unix::prelude::AsRawFd, path::PathBuf};
 
-        if let Some(file) = supports_sealed.then(|| self.sealed.as_ref()).flatten() {
+        if let Some(file) = supports_sealed.then_some(self.sealed.as_ref()).flatten() {
             cb(file.as_raw_fd(), file.size());
         } else {
             let dir = std::env::var_os("XDG_RUNTIME_DIR")
