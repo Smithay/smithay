@@ -2,7 +2,10 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
-        renderer::{damage::DamageTrackedRenderer, element::surface::WaylandSurfaceRenderElement},
+        renderer::{
+            damage::DamageTrackedRenderer, element::surface::WaylandSurfaceRenderElement,
+            gles2::Gles2Renderer,
+        },
         winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
     },
     output::{Mode, Output, PhysicalProperties, Subpixel},
@@ -73,7 +76,7 @@ pub fn init_winit(
 }
 
 pub fn winit_dispatch(
-    backend: &mut WinitGraphicsBackend,
+    backend: &mut WinitGraphicsBackend<Gles2Renderer>,
     winit: &mut WinitEventLoop,
     data: &mut CalloopData,
     output: &Output,

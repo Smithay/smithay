@@ -50,6 +50,8 @@ use std::cell::Cell;
 
 pub use self::input::*;
 
+use super::renderer::Renderer;
+
 /// Errors thrown by the `winit` backends
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -87,8 +89,8 @@ impl WindowSize {
 
 /// Window with an active EGL Context created by `winit`.
 #[derive(Debug)]
-pub struct WinitGraphicsBackend {
-    renderer: Gles2Renderer,
+pub struct WinitGraphicsBackend<R> {
+    renderer: R,
     // The display isn't used past this point but must be kept alive.
     _display: EGLDisplay,
     egl: Rc<EGLSurface>,
@@ -119,8 +121,10 @@ pub struct WinitEventLoop {
 /// Create a new [`WinitGraphicsBackend`], which implements the
 /// [`Renderer`](crate::backend::renderer::Renderer) trait and a corresponding
 /// [`WinitEventLoop`].
-pub fn init<L>(logger: L) -> Result<(WinitGraphicsBackend, WinitEventLoop), Error>
+pub fn init<R, L>(logger: L) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
+    R: From<Gles2Renderer> + Bind<Rc<EGLSurface>>,
+    crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
     L: Into<Option<::slog::Logger>>,
 {
     init_from_builder(
@@ -135,11 +139,13 @@ where
 /// Create a new [`WinitGraphicsBackend`], which implements the
 /// [`Renderer`](crate::backend::renderer::Renderer) trait, from a given [`WindowBuilder`]
 /// struct and a corresponding [`WinitEventLoop`].
-pub fn init_from_builder<L>(
+pub fn init_from_builder<R, L>(
     builder: WindowBuilder,
     logger: L,
-) -> Result<(WinitGraphicsBackend, WinitEventLoop), Error>
+) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
+    R: From<Gles2Renderer> + Bind<Rc<EGLSurface>>,
+    crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
     L: Into<Option<::slog::Logger>>,
 {
     init_from_builder_with_gl_attr(
@@ -158,12 +164,14 @@ where
 /// [`Renderer`](crate::backend::renderer::Renderer) trait, from a given [`WindowBuilder`]
 /// struct, as well as given [`GlAttributes`] for further customization of the rendering pipeline and a
 /// corresponding [`WinitEventLoop`].
-pub fn init_from_builder_with_gl_attr<L>(
+pub fn init_from_builder_with_gl_attr<R, L>(
     builder: WindowBuilder,
     attributes: GlAttributes,
     logger: L,
-) -> Result<(WinitGraphicsBackend, WinitEventLoop), Error>
+) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
+    R: From<Gles2Renderer> + Bind<Rc<EGLSurface>>,
+    crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
     L: Into<Option<::slog::Logger>>,
 {
     let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_winit"));
@@ -227,7 +235,7 @@ where
 
     let window = Rc::new(winit_window);
     let egl = Rc::new(surface);
-    let renderer = unsafe { Gles2Renderer::new(context, log.clone())? };
+    let renderer = unsafe { Gles2Renderer::new(context, log.clone())?.into() };
     let resize_notification = Rc::new(Cell::new(None));
     let damage_tracking = display.supports_damage();
 
@@ -276,7 +284,11 @@ pub enum WinitEvent {
     Refresh,
 }
 
-impl WinitGraphicsBackend {
+impl<R> WinitGraphicsBackend<R>
+where
+    R: Bind<Rc<EGLSurface>>,
+    crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
+{
     /// Window size of the underlying window
     pub fn window_size(&self) -> WindowSize {
         self.size.borrow().clone()
@@ -288,7 +300,7 @@ impl WinitGraphicsBackend {
     }
 
     /// Access the underlying renderer
-    pub fn renderer(&mut self) -> &mut Gles2Renderer {
+    pub fn renderer(&mut self) -> &mut R {
         &mut self.renderer
     }
 

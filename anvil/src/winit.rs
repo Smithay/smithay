@@ -41,7 +41,7 @@ use crate::{drawing::*, render::*};
 pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData {
-    backend: WinitGraphicsBackend,
+    backend: WinitGraphicsBackend<Gles2Renderer>,
     damage_tracked_renderer: DamageTrackedRenderer,
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
@@ -83,7 +83,7 @@ pub fn run_winit(log: Logger) {
     let mut display = Display::new().unwrap();
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let (mut backend, mut winit) = match winit::init(log.clone()) {
+    let (mut backend, mut winit) = match winit::init::<Gles2Renderer, _>(log.clone()) {
         Ok(ret) => ret,
         Err(err) => {
             slog::crit!(log, "Failed to initialize Winit backend: {}", err);
