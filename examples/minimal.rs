@@ -4,6 +4,7 @@ use smithay::{
     backend::{
         input::{InputEvent, KeyboardKeyEvent},
         renderer::{
+            gles2::Gles2Renderer,
             utils::{draw_surface_tree, on_commit_buffer_handler},
             Frame, Renderer,
         },
@@ -145,7 +146,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let listener = ListeningSocket::bind("wayland-5").unwrap();
     let mut clients = Vec::new();
 
-    let (mut backend, mut winit) = winit::init(None)?;
+    let (mut backend, mut winit) = winit::init::<Gles2Renderer, _>(None)?;
 
     let start_time = std::time::Instant::now();
 
