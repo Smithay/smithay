@@ -74,6 +74,7 @@ where
                             texture,
                             None,
                             None,
+                            None,
                         ))
                         .into(),
                     ]
