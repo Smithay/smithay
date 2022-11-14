@@ -7,10 +7,7 @@ use crate::backend::renderer::{ImportDmaWl, ImportMemWl};
     feature = "backend_egl",
     feature = "use_system_lib"
 ))]
-use crate::backend::{
-    egl::display::{EGLBufferReader, Error as EglError},
-    renderer::ImportEgl,
-};
+use crate::backend::{egl::display::EGLBufferReader, renderer::ImportEgl};
 use crate::{
     backend::{
         allocator::{dmabuf::Dmabuf, Format},
@@ -262,7 +259,7 @@ impl ImportEgl for GlowRenderer {
     }
 
     fn egl_reader(&self) -> Option<&EGLBufferReader> {
-        self.gl.egl_render()
+        self.gl.egl_reader()
     }
 
     fn import_egl_buffer(
