@@ -4,7 +4,7 @@ use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::PathBuf;
 use std::sync::{atomic::AtomicBool, Arc};
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use calloop::{EventSource, Interest, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm::control::{connector, crtc, Device as ControlDevice, Event, Mode, ResourceHandles};
@@ -352,7 +352,7 @@ pub struct EventMetadata {
 #[derive(Debug)]
 pub enum Time {
     /// Monotonic time stamp
-    Monotonic(Instant),
+    Monotonic(Duration),
     /// Realtime time stamp
     Realtime(SystemTime),
 }
@@ -380,14 +380,7 @@ where
                         trace!(self.logger, "Got a page-flip event for crtc ({:?})", event.crtc);
                         let metadata = EventMetadata {
                             time: if self.has_monotonic_timestamps {
-                                // There is no way to create an Instant, although the underlying type on unix systems
-                                // is just libc::timespec, which is literally what drm-rs is getting from the kernel and just converting
-                                // into a Duration. So we cheat and initialize a Zero-Instant (because although Instant::ZERO
-                                // exists, its private, so you cannot create abitrary Instants). What we really need is a unix-Ext
-                                // trait for both SystemTime and Instant to convert from a libc::timespec.
-                                //
-                                // But this works for now, although it is quite the hack.
-                                Time::Monotonic(unsafe { std::mem::zeroed::<Instant>() } + event.duration)
+                                Time::Monotonic(event.duration)
                             } else {
                                 Time::Realtime(SystemTime::UNIX_EPOCH + event.duration)
                             },

@@ -52,6 +52,7 @@ pub mod dmabuf;
 pub mod input_method;
 pub mod keyboard_shortcuts_inhibit;
 pub mod output;
+pub mod presentation;
 pub mod primary_selection;
 pub mod seat;
 pub mod shell;

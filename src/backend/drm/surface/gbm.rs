@@ -5,10 +5,10 @@ use std::sync::Arc;
 use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
 use gbm::BufferObject;
 
+use crate::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
+use crate::backend::allocator::gbm::GbmConvertError;
 use crate::backend::allocator::{
-    dmabuf::{AsDmabuf, Dmabuf},
     format::{get_bpp, get_depth},
-    gbm::GbmConvertError,
     Allocator, Format, Fourcc, Modifier, Slot, Swapchain,
 };
 use crate::backend::drm::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
@@ -18,10 +18,10 @@ use slog::{debug, error, o, trace, warn};
 
 /// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
 #[derive(Debug)]
-pub struct GbmBufferedSurface<A: Allocator<BufferObject<()>> + 'static, D: AsRawFd + 'static> {
+pub struct GbmBufferedSurface<A: Allocator<BufferObject<()>> + 'static, D: AsRawFd + 'static, U> {
     current_fb: Slot<BufferObject<()>>,
-    pending_fb: Option<Slot<BufferObject<()>>>,
-    queued_fb: Option<Slot<BufferObject<()>>>,
+    pending_fb: Option<(Slot<BufferObject<()>>, U)>,
+    queued_fb: Option<(Slot<BufferObject<()>>, U)>,
     next_fb: Option<Slot<BufferObject<()>>>,
     swapchain: Swapchain<A, BufferObject<()>>,
     drm: Arc<DrmSurface<D>>,
@@ -38,7 +38,7 @@ pub struct GbmBufferedSurface<A: Allocator<BufferObject<()>> + 'static, D: AsRaw
 // (Or maybe just select A/XRGB2101010, if available, we will see.)
 const SUPPORTED_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Xrgb8888];
 
-impl<A, D> GbmBufferedSurface<A, D>
+impl<A, D, U> GbmBufferedSurface<A, D, U>
 where
     A: Allocator<BufferObject<()>>,
     A::Error: std::error::Error + Send + Sync,
@@ -55,7 +55,7 @@ where
         mut allocator: A,
         renderer_formats: HashSet<Format>,
         log: L,
-    ) -> Result<GbmBufferedSurface<A, D>, Error<A::Error>>
+    ) -> Result<GbmBufferedSurface<A, D, U>, Error<A::Error>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -80,7 +80,7 @@ where
                         next_fb: None,
                         swapchain,
                         drm,
-                    })
+                    });
                 }
                 Err((alloc, err)) => {
                     warn!(log, "Preferred format {} not available: {:?}", format, err);
@@ -183,12 +183,11 @@ where
             Ok(fb) => fb,
             Err(err) => return Err((swapchain.allocator, err)),
         };
-        let dmabuf = match buffer.export() {
+        match buffer.export() {
             Ok(dmabuf) => dmabuf,
             Err(err) => return Err((swapchain.allocator, err.into())),
         };
         let handle = fb.fb;
-        buffer.userdata().insert_if_missing(|| dmabuf);
         buffer.userdata().insert_if_missing(|| fb);
 
         match drm.test_buffer(handle, &mode, true) {
@@ -218,21 +217,17 @@ where
                 .map_err(Error::GbmError)?
                 .ok_or(Error::NoFreeSlotsError)?;
 
-            let maybe_buffer = slot.userdata().get::<Dmabuf>().cloned();
+            let maybe_buffer = slot.userdata().get::<FbHandle<D>>();
             if maybe_buffer.is_none() {
-                let dmabuf = slot.export().map_err(Error::AsDmabufError)?;
                 let fb_handle = attach_framebuffer(&self.drm, &*slot)?;
-
-                let userdata = slot.userdata();
-                userdata.insert_if_missing(|| dmabuf);
-                userdata.insert_if_missing(|| fb_handle);
+                slot.userdata().insert_if_missing(|| fb_handle);
             }
 
             self.next_fb = Some(slot);
         }
 
         let slot = self.next_fb.as_ref().unwrap();
-        Ok((slot.userdata().get::<Dmabuf>().unwrap().clone(), slot.age()))
+        Ok((slot.export()?, slot.age()))
     }
 
     /// Queues the current buffer for rendering.
@@ -240,8 +235,10 @@ where
     /// *Note*: This function needs to be followed up with [`GbmBufferedSurface::frame_submitted`]
     /// when a vblank event is received, that denotes successful scanout of the buffer.
     /// Otherwise the underlying swapchain will eventually run out of buffers.
-    pub fn queue_buffer(&mut self) -> Result<(), Error<A::Error>> {
-        self.queued_fb = self.next_fb.take();
+    ///
+    /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`GbmBufferedSurface::frame_submitted`]
+    pub fn queue_buffer(&mut self, user_data: U) -> Result<(), Error<A::Error>> {
+        self.queued_fb = self.next_fb.take().map(|fb| (fb, user_data));
         if self.pending_fb.is_none() && self.queued_fb.is_some() {
             self.submit()?;
         }
@@ -253,20 +250,24 @@ where
     /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`](super::super::DrmDevice)
     /// was received after calling [`GbmBufferedSurface::queue_buffer`] on this surface.
     /// Otherwise the underlying swapchain will run out of buffers eventually.
-    pub fn frame_submitted(&mut self) -> Result<(), Error<A::Error>> {
-        if let Some(mut pending) = self.pending_fb.take() {
+    ///
+    /// Returns the user data that was stored with [`GbmBufferedSurface::queue_buffer`] if a buffer was pending, otherwise
+    /// `None` is returned.
+    pub fn frame_submitted(&mut self) -> Result<Option<U>, Error<A::Error>> {
+        if let Some((mut pending, user_data)) = self.pending_fb.take() {
             std::mem::swap(&mut pending, &mut self.current_fb);
             if self.queued_fb.is_some() {
                 self.submit()?;
             }
+            Ok(Some(user_data))
+        } else {
+            Ok(None)
         }
-
-        Ok(())
     }
 
     fn submit(&mut self) -> Result<(), Error<A::Error>> {
         // yes it does not look like it, but both of these lines should be safe in all cases.
-        let slot = self.queued_fb.take().unwrap();
+        let (slot, user_data) = self.queued_fb.take().unwrap();
         let fb = slot.userdata().get::<FbHandle<D>>().unwrap().fb;
 
         let flip = if self.drm.commit_pending() {
@@ -276,7 +277,7 @@ where
         };
         if flip.is_ok() {
             self.swapchain.submitted(&slot);
-            self.pending_fb = Some(slot);
+            self.pending_fb = Some((slot, user_data));
         }
         flip.map_err(Error::DrmError)
     }

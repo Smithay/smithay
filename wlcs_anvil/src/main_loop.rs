@@ -170,12 +170,9 @@ pub fn run(channel: Channel<WlcsEvent>) {
 
         // Send frame events so that client start drawing their next frame
         state.space.elements().for_each(|window| {
-            window.send_frame(
-                &output,
-                state.start_time.elapsed(),
-                Some(Duration::ZERO),
-                |_, _| Some(output.clone()),
-            )
+            window.send_frame(&output, state.clock.now(), Some(Duration::ZERO), |_, _| {
+                Some(output.clone())
+            })
         });
 
         let mut calloop_data = CalloopData { state, display };
@@ -229,7 +226,7 @@ fn handle_event(
             state.pointer_location = location;
             let serial = SCOUNTER.next_serial();
             let under = state.surface_under();
-            let time = state.start_time.elapsed().as_millis() as u32;
+            let time = Duration::from(state.clock.now()).as_millis() as u32;
             state.seat.get_pointer().unwrap().motion(
                 state,
                 under,
@@ -244,7 +241,7 @@ fn handle_event(
             state.pointer_location += delta;
             let serial = SCOUNTER.next_serial();
             let under = state.surface_under();
-            let time = state.start_time.elapsed().as_millis() as u32;
+            let time = Duration::from(state.clock.now()).as_millis() as u32;
             state.seat.get_pointer().unwrap().motion(
                 state,
                 under,
@@ -272,7 +269,7 @@ fn handle_event(
                     .unwrap()
                     .set_focus(state, under.map(Into::into), serial);
             }
-            let time = state.start_time.elapsed().as_millis() as u32;
+            let time = Duration::from(state.clock.now()).as_millis() as u32;
             pointer.button(
                 state,
                 &ButtonEvent {
@@ -285,7 +282,7 @@ fn handle_event(
         }
         WlcsEvent::PointerButtonUp { button_id, .. } => {
             let serial = SCOUNTER.next_serial();
-            let time = state.start_time.elapsed().as_millis() as u32;
+            let time = Duration::from(state.clock.now()).as_millis() as u32;
             state.seat.get_pointer().unwrap().button(
                 state,
                 &ButtonEvent {

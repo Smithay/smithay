@@ -10,6 +10,8 @@ use std::{
 use crate::backend::allocator::{Allocator, Buffer, Fourcc, Modifier};
 use crate::utils::user_data::UserDataMap;
 
+use super::dmabuf::{AsDmabuf, Dmabuf};
+
 pub const SLOT_CAP: usize = 4;
 
 /// Swapchain handling a fixed set of re-usable buffers e.g. for scan-out.
@@ -104,6 +106,20 @@ impl<B: Buffer> Deref for Slot<B> {
     type Target = B;
     fn deref(&self) -> &B {
         Option::as_ref(&self.0.buffer).unwrap()
+    }
+}
+
+impl<B: Buffer + AsDmabuf> AsDmabuf for Slot<B> {
+    type Error = <B as AsDmabuf>::Error;
+
+    fn export(&self) -> Result<super::dmabuf::Dmabuf, Self::Error> {
+        let maybe_dmabuf = self.userdata().get::<Dmabuf>();
+        if maybe_dmabuf.is_none() {
+            let dmabuf = (**self).export()?;
+            self.userdata().insert_if_missing(|| dmabuf);
+        }
+
+        Ok(self.userdata().get::<Dmabuf>().cloned().unwrap())
     }
 }
 

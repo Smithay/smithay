@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     collections::hash_map::{Entry, HashMap},
+    convert::TryInto,
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
     rc::Rc,
@@ -14,7 +15,7 @@ use slog::Logger;
 use crate::{
     drawing::*,
     render::*,
-    state::{AnvilState, Backend, CalloopData},
+    state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData},
 };
 #[cfg(feature = "debug")]
 use smithay::backend::renderer::ImportMem;
@@ -29,12 +30,12 @@ use smithay::{
 };
 use smithay::{
     backend::{
-        drm::{DrmDevice, DrmError, DrmEvent, DrmNode, GbmBufferedSurface, NodeType},
+        drm::{DrmDevice, DrmError, DrmEvent, DrmEventMetadata, DrmNode, GbmBufferedSurface, NodeType},
         egl::{EGLContext, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::{DamageTrackedRenderer, DamageTrackedRendererError},
-            element::{texture::TextureBuffer, AsRenderElements, RenderElementStates},
+            element::{texture::TextureBuffer, AsRenderElements},
             gles2::{Gles2Renderbuffer, Gles2Renderer},
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
             Bind, Frame, Renderer,
@@ -45,6 +46,7 @@ use smithay::{
     },
     desktop::{
         space::{Space, SurfaceTree},
+        utils::OutputPresentationFeedback,
         Window,
     },
     input::pointer::{CursorImageAttributes, CursorImageStatus},
@@ -66,11 +68,12 @@ use smithay::{
         gbm::Device as GbmDevice,
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
+        wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
         wayland_server::{backend::GlobalId, protocol::wl_surface, Display, DisplayHandle},
     },
     utils::{
         signaling::{Linkable, SignalToken, Signaler},
-        IsAlive, Logical, Point, Rectangle, Scale, Transform,
+        Clock, IsAlive, Logical, Monotonic, Point, Rectangle, Scale, Transform,
     },
     wayland::{
         compositor,
@@ -334,7 +337,8 @@ pub fn run_udev(log: Logger) {
     }
 }
 
-pub type RenderSurface = GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd>;
+pub type RenderSurface =
+    GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd, Option<OutputPresentationFeedback>>;
 
 struct SurfaceData {
     dh: DisplayHandle,
@@ -580,12 +584,17 @@ impl AnvilState<UdevData> {
 
         device.link(self.backend_data.signaler.clone());
         let event_dispatcher =
-            Dispatcher::new(device, move |event, _, data: &mut CalloopData<_>| match event {
-                DrmEvent::VBlank(crtc) => data.state.render(node, Some(crtc)),
-                DrmEvent::Error(error) => {
-                    error!(data.state.log, "{:?}", error);
-                }
-            });
+            Dispatcher::new(
+                device,
+                move |event, metadata, data: &mut CalloopData<_>| match event {
+                    DrmEvent::VBlank(crtc) => {
+                        data.state.frame_finish(node, crtc, metadata);
+                    }
+                    DrmEvent::Error(error) => {
+                        error!(data.state.log, "{:?}", error);
+                    }
+                },
+            );
         let registration_token = self.handle.register_dispatcher(event_dispatcher.clone()).unwrap();
 
         for backend in backends.borrow_mut().values() {
@@ -700,6 +709,147 @@ impl AnvilState<UdevData> {
         }
     }
 
+    fn frame_finish(&mut self, dev_id: DrmNode, crtc: crtc::Handle, metadata: &mut Option<DrmEventMetadata>) {
+        let device_backend = match self.backend_data.backends.get_mut(&dev_id) {
+            Some(backend) => backend,
+            None => {
+                error!(
+                    self.log,
+                    "Trying to finish frame on non-existent backend {}", dev_id
+                );
+                return;
+            }
+        };
+
+        let surfaces = device_backend.surfaces.borrow();
+        let surface = match surfaces.get(&crtc) {
+            Some(surface) => surface,
+            None => {
+                error!(self.log, "Trying to finish frame on non-existent crtc {:?}", crtc);
+                return;
+            }
+        };
+
+        let mut surface = surface.borrow_mut();
+
+        let output = if let Some(output) = self.space.outputs().find(|o| {
+            o.user_data().get::<UdevOutputId>()
+                == Some(&UdevOutputId {
+                    device_id: surface.device_id,
+                    crtc,
+                })
+        }) {
+            output.clone()
+        } else {
+            // somehow we got called with an invalid output
+            return;
+        };
+
+        let schedule_render = match surface
+            .surface
+            .frame_submitted()
+            .map_err(Into::<SwapBuffersError>::into)
+        {
+            Ok(user_data) => {
+                if let Some(mut feedback) = user_data.flatten() {
+                    let tp = metadata.as_ref().and_then(|metadata| match metadata.time {
+                        smithay::backend::drm::DrmEventTime::Monotonic(tp) => Some(tp),
+                        smithay::backend::drm::DrmEventTime::Realtime(_) => None,
+                    });
+                    let seq = metadata.as_ref().map(|metadata| metadata.sequence).unwrap_or(0);
+
+                    let (clock, flags) = if let Some(tp) = tp {
+                        (
+                            tp.into(),
+                            wp_presentation_feedback::Kind::Vsync
+                                | wp_presentation_feedback::Kind::HwClock
+                                | wp_presentation_feedback::Kind::HwCompletion,
+                        )
+                    } else {
+                        (self.clock.now(), wp_presentation_feedback::Kind::Vsync)
+                    };
+
+                    feedback.presented(
+                        clock,
+                        output
+                            .current_mode()
+                            .map(|mode| mode.refresh as u32)
+                            .unwrap_or_default(),
+                        seq as u64,
+                        flags,
+                    );
+                }
+
+                true
+            }
+            Err(err) => {
+                warn!(self.log, "Error during rendering: {:?}", err);
+                match err {
+                    SwapBuffersError::AlreadySwapped => true,
+                    SwapBuffersError::TemporaryFailure(err) => matches!(
+                        err.downcast_ref::<DrmError>(),
+                        Some(&DrmError::DeviceInactive)
+                            | Some(&DrmError::Access {
+                                source: drm::SystemError::PermissionDenied,
+                                ..
+                            })
+                    ),
+                    SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
+                }
+            }
+        };
+
+        if schedule_render {
+            let output_refresh = match output.current_mode() {
+                Some(mode) => mode.refresh,
+                None => return,
+            };
+            // What are we trying to solve by introducing a delay here:
+            //
+            // Basically it is all about latency of client provided buffers.
+            // A client driven by frame callbacks will wait for a frame callback
+            // to repaint and submit a new buffer. As we send frame callbacks
+            // as part of the repaint in the compositor the latency would always
+            // be approx. 2 frames. By introducing a delay before we repaint in
+            // the compositor we can reduce the latency to approx. 1 frame + the
+            // remaining duration from the repaint to the next VBlank.
+            //
+            // With the delay it is also possible to further reduce latency if
+            // the client is driven by presentation feedback. As the presentation
+            // feedback is directly sent after a VBlank the client can submit a
+            // new buffer during the repaint delay that can hit the very next
+            // VBlank, thus reducing the potential latency to below one frame.
+            //
+            // Choosing a good delay is a topic on its own so we just implement
+            // a simple strategy here. We just split the duration between two
+            // VBlanks into two steps, one for the client repaint and one for the
+            // compositor repaint. Theoretically the repaint in the compositor should
+            // be faster so we give the client a bit more time to repaint. On a typical
+            // modern system the repaint in the compositor should not take more than 2ms
+            // so this should be safe for refresh rates up to at least 120 Hz. For 120 Hz
+            // this results in approx. 3.33ms time for repainting in the compositor.
+            // A too big delay could result in missing the next VBlank in the compositor.
+            //
+            // A more complete solution could work on a sliding window analyzing past repaints
+            // and do some prediction for the next repaint.
+            let repaint_delay =
+                Duration::from_millis(((1_000_000f32 / output_refresh as f32) * 0.6f32) as u64);
+            trace!(
+                self.log,
+                "scheduling repaint timer with delay {:?} on {:?}",
+                repaint_delay,
+                crtc
+            );
+            let timer = Timer::from_duration(repaint_delay);
+            self.handle
+                .insert_source(timer, move |_, _, data| {
+                    data.state.render(dev_id, Some(crtc));
+                    TimeoutAction::Drop
+                })
+                .expect("failed to schedule frame timer");
+        }
+    }
+
     // If crtc is `Some()`, render it, else render all crtcs
     fn render(&mut self, dev_id: DrmNode, crtc: Option<crtc::Handle>) {
         let device_backend = match self.backend_data.backends.get_mut(&dev_id) {
@@ -725,13 +875,12 @@ impl AnvilState<UdevData> {
                 &mut surfaces_iter
             };
 
-        let mut outputs = Vec::new();
         for (&crtc, surface) in to_render_iter {
             // TODO get scale from the rendersurface when supporting HiDPI
             let frame = self
                 .backend_data
                 .pointer_image
-                .get_image(1 /*scale*/, self.start_time.elapsed().as_millis() as u32);
+                .get_image(1 /*scale*/, self.clock.now().try_into().unwrap());
             let primary_gpu = self.backend_data.primary_gpu;
             let mut renderer = self
                 .backend_data
@@ -779,7 +928,7 @@ impl AnvilState<UdevData> {
             let result = render_surface(
                 &mut *surface.borrow_mut(),
                 &mut renderer,
-                &mut self.space,
+                &self.space,
                 &output,
                 self.seat.input_method().unwrap(),
                 self.pointer_location,
@@ -787,10 +936,11 @@ impl AnvilState<UdevData> {
                 &mut self.backend_data.pointer_element,
                 &self.dnd_icon,
                 &mut *self.cursor_status.lock().unwrap(),
+                &self.clock,
                 &self.log,
             );
             let reschedule = match &result {
-                Ok((has_rendered, _)) => !has_rendered,
+                Ok(has_rendered) => !has_rendered,
                 Err(err) => {
                     warn!(self.log, "Error during rendering: {:?}", err);
                     match err {
@@ -809,9 +959,22 @@ impl AnvilState<UdevData> {
             };
 
             if reschedule {
-                let timer = Timer::from_duration(Duration::from_millis(
-                    1000 /*a seconds*/ / 60, /*refresh rate*/
-                ));
+                let output_refresh = match output.current_mode() {
+                    Some(mode) => mode.refresh,
+                    None => return,
+                };
+                // If reschedule is true we either hit a temporary failure or more likely rendering
+                // did not cause any damage on the output. In this case we just re-schedule a repaint
+                // after approx. one frame to re-test for damage.
+                let reschedule_duration =
+                    Duration::from_millis((1_000_000f32 / output_refresh as f32) as u64);
+                trace!(
+                    self.log,
+                    "reschedule repaint timer with delay {:?} on {:?}",
+                    reschedule_duration,
+                    crtc,
+                );
+                let timer = Timer::from_duration(reschedule_duration);
                 self.handle
                     .insert_source(timer, move |_, _, data| {
                         data.state.render(dev_id, Some(crtc));
@@ -819,16 +982,6 @@ impl AnvilState<UdevData> {
                     })
                     .expect("failed to schedule frame timer");
             }
-
-            if let Ok((_, states)) = result {
-                outputs.push((output.clone(), states));
-            }
-        }
-
-        std::mem::drop(surfaces);
-        for (output, states) in outputs {
-            // Send frame events so that client start drawing their next frame
-            self.send_frames(&output, &states);
         }
     }
 }
@@ -837,7 +990,7 @@ impl AnvilState<UdevData> {
 fn render_surface<'a>(
     surface: &'a mut SurfaceData,
     renderer: &mut UdevRenderer<'a>,
-    space: &mut Space<Window>,
+    space: &Space<Window>,
     output: &Output,
     input_method: &InputMethodHandle,
     pointer_location: Point<f64, Logical>,
@@ -845,10 +998,9 @@ fn render_surface<'a>(
     pointer_element: &mut PointerElement<MultiTexture>,
     dnd_icon: &Option<wl_surface::WlSurface>,
     cursor_status: &mut CursorImageStatus,
+    clock: &Clock<Monotonic>,
     logger: &slog::Logger,
-) -> Result<(bool, RenderElementStates), SwapBuffersError> {
-    surface.surface.frame_submitted()?;
-
+) -> Result<bool, SwapBuffersError> {
     let output_geometry = space.output_geometry(output).unwrap();
     let scale = Scale::from(output.current_scale().fractional_scale());
 
@@ -928,7 +1080,7 @@ fn render_surface<'a>(
     }
 
     // and draw to our buffer
-    let render_res = render_output(
+    let (rendered, states) = render_output(
         output,
         space,
         &*elements,
@@ -937,21 +1089,23 @@ fn render_surface<'a>(
         age.into(),
         logger,
     )
-    .map(|(damage, states)| (damage.is_some(), states));
-
-    match render_res.map_err(|err| match err {
-        DamageTrackedRendererError::Rendering(err) => err.into(),
+    .map(|(damage, states)| (damage.is_some(), states))
+    .map_err(|err| match err {
+        DamageTrackedRendererError::Rendering(err) => SwapBuffersError::from(err),
         _ => unreachable!(),
-    }) {
-        Ok((true, states)) => {
-            surface
-                .surface
-                .queue_buffer()
-                .map_err(Into::<SwapBuffersError>::into)?;
-            Ok((true, states))
-        }
-        x => x,
+    })?;
+
+    post_repaint(output, &states, space, clock.now());
+
+    if rendered {
+        let output_presentation_feedback = take_presentation_feedback(output, space, &states);
+        surface
+            .surface
+            .queue_buffer(Some(output_presentation_feedback))
+            .map_err(Into::<SwapBuffersError>::into)?;
     }
+
+    Ok(rendered)
 }
 
 fn schedule_initial_render(
@@ -986,7 +1140,7 @@ fn initial_render(
     surface: &mut RenderSurface,
     renderer: &mut UdevRenderer<'_>,
 ) -> Result<(), SwapBuffersError> {
-    let (dmabuf, _age) = surface.next_buffer()?;
+    let (dmabuf, _) = surface.next_buffer()?;
     renderer.bind(dmabuf)?;
     // Does not matter if we render an empty frame
     renderer
@@ -997,7 +1151,7 @@ fn initial_render(
         })
         .map_err(Into::<SwapBuffersError>::into)
         .and_then(|x| x.map_err(Into::<SwapBuffersError>::into))?;
-    surface.queue_buffer()?;
+    surface.queue_buffer(None)?;
     surface.reset_buffers();
     Ok(())
 }

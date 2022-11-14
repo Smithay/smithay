@@ -29,7 +29,9 @@ use std::{
     },
     time::Duration,
 };
-use wayland_protocols::xdg::shell::server::xdg_toplevel;
+use wayland_protocols::{
+    wp::presentation_time::server::wp_presentation_feedback, xdg::shell::server::xdg_toplevel,
+};
 use wayland_server::{backend::ObjectId, protocol::wl_surface, Resource};
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
@@ -240,6 +242,36 @@ impl Window {
         for (popup, _) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
             send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+        }
+    }
+
+    /// Takes the [`PresentationFeedbackCallback`]s from all subsurfaces in this window
+    ///
+    /// see [`take_presentation_feedback_surface_tree`] for more information
+    pub fn take_presentation_feedback<F1, F2>(
+        &self,
+        output_feedback: &mut OutputPresentationFeedback,
+        primary_scan_out_output: F1,
+        presentation_feedback_flags: F2,
+    ) where
+        F1: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
+        F2: FnMut(&wl_surface::WlSurface, &SurfaceData) -> wp_presentation_feedback::Kind + Copy,
+    {
+        let surface = self.toplevel().wl_surface();
+        take_presentation_feedback_surface_tree(
+            surface,
+            output_feedback,
+            primary_scan_out_output,
+            presentation_feedback_flags,
+        );
+        for (popup, _) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            take_presentation_feedback_surface_tree(
+                surface,
+                output_feedback,
+                primary_scan_out_output,
+                presentation_feedback_flags,
+            );
         }
     }
 

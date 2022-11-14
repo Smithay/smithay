@@ -6,7 +6,7 @@ use std::{
 use crate::{
     drawing::*,
     render::*,
-    state::{AnvilState, Backend, CalloopData},
+    state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData},
 };
 use slog::Logger;
 #[cfg(feature = "debug")]
@@ -31,6 +31,7 @@ use smithay::{
     reexports::{
         calloop::EventLoop,
         gbm,
+        wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
         wayland_server::{protocol::wl_surface, Display},
     },
     utils::{IsAlive, Point, Scale},
@@ -333,7 +334,7 @@ pub fn run_x11(log: Logger) {
             );
 
             match render_res {
-                Ok((_, states)) => {
+                Ok((damage, states)) => {
                     trace!(log, "Finished rendering");
                     if let Err(err) = backend_data.surface.submit() {
                         backend_data.surface.reset_buffers();
@@ -343,7 +344,22 @@ pub fn run_x11(log: Logger) {
                     };
 
                     // Send frame events so that client start drawing their next frame
-                    state.send_frames(&output, &states);
+                    let time = state.clock.now();
+                    post_repaint(&output, &states, &state.space, time);
+
+                    if damage.is_some() {
+                        let mut output_presentation_feedback =
+                            take_presentation_feedback(&output, &state.space, &states);
+                        output_presentation_feedback.presented(
+                            time,
+                            output
+                                .current_mode()
+                                .map(|mode| mode.refresh as u32)
+                                .unwrap_or_default(),
+                            0,
+                            wp_presentation_feedback::Kind::Vsync,
+                        )
+                    }
                 }
                 Err(err) => {
                     backend_data.surface.reset_buffers();

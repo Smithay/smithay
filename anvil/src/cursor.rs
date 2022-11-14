@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{io::Read, time::Duration};
 
 use xcursor::{
     parser::{parse_xcursor, Image},
@@ -41,9 +41,9 @@ impl Cursor {
         Cursor { icons, size }
     }
 
-    pub fn get_image(&self, scale: u32, millis: u32) -> Image {
+    pub fn get_image(&self, scale: u32, time: Duration) -> Image {
         let size = self.size * scale;
-        frame(millis, size, &self.icons)
+        frame(time.as_millis() as u32, size, &self.icons)
     }
 }
 
