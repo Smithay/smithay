@@ -306,12 +306,15 @@ where
 
     /// Bind the underlying window to the underlying renderer
     pub fn bind(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
+        // apparently the nvidia-driver doesn't like `wl_egl_window_resize`, if the surface is not current.
+        // So the order here is important.
+        self.renderer.bind(self.egl.clone())?;
+
         // Were we told to resize?
         if let Some(size) = self.resize_notification.take() {
             self.egl.resize(size.w, size.h, 0, 0);
         }
 
-        self.renderer.bind(self.egl.clone())?;
         Ok(())
     }
 
