@@ -95,7 +95,7 @@ use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-
 wayland_frontend = ["wayland-server", "wayland-protocols", "tempfile"]
 x11rb_event_source = ["x11rb"]
 xwayland = ["wayland_frontend"]
-test_all_features = ["default", "renderer_glow"]
+test_all_features = ["default", "use_system_lib", "renderer_glow"]
 
 [[example]]
 name = "minimal"
