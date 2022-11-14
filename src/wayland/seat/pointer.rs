@@ -115,11 +115,13 @@ where
                     ptr.axis_source(source);
                 }
                 // axis discrete
-                if details.discrete.0 != 0 {
-                    ptr.axis_discrete(WlAxis::HorizontalScroll, details.discrete.0);
-                }
-                if details.discrete.1 != 0 {
-                    ptr.axis_discrete(WlAxis::VerticalScroll, details.discrete.1);
+                if let Some((x, y)) = details.discrete {
+                    if x != 0 {
+                        ptr.axis_discrete(WlAxis::HorizontalScroll, x);
+                    }
+                    if y != 0 {
+                        ptr.axis_discrete(WlAxis::VerticalScroll, y);
+                    }
                 }
                 // stop
                 if details.stop.0 {
