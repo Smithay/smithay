@@ -520,6 +520,7 @@ pub struct ButtonEvent {
 }
 
 /// A frame of pointer axis events.
+/// Frames of axis events should be considers as one logical action.
 ///
 /// Can be used with the builder pattern, e.g.:
 ///
@@ -532,12 +533,18 @@ pub struct ButtonEvent {
 /// ```
 #[derive(Copy, Clone, Debug)]
 pub struct AxisFrame {
-    pub(crate) source: Option<AxisSource>,
-    #[allow(dead_code)]
-    pub(crate) time: u32,
-    pub(crate) axis: (f64, f64),
-    pub(crate) discrete: (i32, i32),
-    pub(crate) stop: (bool, bool),
+    /// Source of the axis event, if known
+    pub source: Option<AxisSource>,
+    /// Time of the axis event
+    pub time: u32,
+    /// Raw scroll value per axis of the event
+    pub axis: (f64, f64),
+    /// Discrete representation of scroll value per axis, if available
+    pub discrete: Option<(i32, i32)>,
+    /// If the axis is considered having stoped movement
+    ///
+    /// Only useful in conjunction of AxisSource::Finger events
+    pub stop: (bool, bool),
 }
 
 impl AxisFrame {
@@ -547,7 +554,7 @@ impl AxisFrame {
             source: None,
             time,
             axis: (0.0, 0.0),
-            discrete: (0, 0),
+            discrete: None,
             stop: (false, false),
         }
     }
@@ -570,12 +577,13 @@ impl AxisFrame {
     /// the nature of the axis event. E.g. a scroll wheel might issue separate steps,
     /// while a touchpad may never issue this event as it has no steps.
     pub fn discrete(mut self, axis: Axis, steps: i32) -> Self {
+        let mut discrete = self.discrete.get_or_insert_with(Default::default);
         match axis {
             Axis::Horizontal => {
-                self.discrete.0 = steps;
+                discrete.0 = steps;
             }
             Axis::Vertical => {
-                self.discrete.1 = steps;
+                discrete.1 = steps;
             }
         };
         self
@@ -586,10 +594,10 @@ impl AxisFrame {
     pub fn value(mut self, axis: Axis, value: f64) -> Self {
         match axis {
             Axis::Horizontal => {
-                self.axis.0 = value;
+                self.axis.0 += value;
             }
             Axis::Vertical => {
-                self.axis.1 = value;
+                self.axis.1 += value;
             }
         };
         self
