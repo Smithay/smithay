@@ -696,7 +696,7 @@ impl Gles2Renderer {
     pub(crate) fn make_current(&mut self) -> Result<(), MakeCurrentError> {
         unsafe {
             if let Some(&Gles2Target::Surface(ref surface)) = self.target.as_ref() {
-                self.egl.make_current_with_surface(&**surface)?;
+                self.egl.make_current_with_surface(surface)?;
             } else {
                 self.egl.make_current()?;
                 match self.target.as_ref() {

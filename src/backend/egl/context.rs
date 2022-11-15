@@ -313,7 +313,7 @@ impl EGLContext {
     /// *Note:* UserData is shared between shared context, if constructed with
     /// [`new_shared`](EGLContext::new_shared) or [`new_shared_with_config`](EGLContext::new_shared_with_config).
     pub fn user_data(&self) -> &UserDataMap {
-        &*self.user_data
+        &self.user_data
     }
 
     /// Get a raw handle to the underlying context.
@@ -423,17 +423,17 @@ impl PixelFormatRequirements {
             trace!(
                 logger,
                 "Setting GREEN_SIZE to {}",
-                color / 3 + if color % 3 != 0 { 1 } else { 0 }
+                color / 3 + u8::from(color % 3 != 0)
             );
             out.push(ffi::egl::GREEN_SIZE as c_int);
-            out.push((color / 3 + if color % 3 != 0 { 1 } else { 0 }) as c_int);
+            out.push((color / 3 + u8::from(color % 3 != 0)) as c_int);
             trace!(
                 logger,
                 "Setting BLUE_SIZE to {}",
-                color / 3 + if color % 3 == 2 { 1 } else { 0 }
+                color / 3 + u8::from(color % 3 == 2)
             );
             out.push(ffi::egl::BLUE_SIZE as c_int);
-            out.push((color / 3 + if color % 3 == 2 { 1 } else { 0 }) as c_int);
+            out.push((color / 3 + u8::from(color % 3 == 2)) as c_int);
         }
 
         if let Some(alpha) = self.alpha_bits {

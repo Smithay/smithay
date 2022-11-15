@@ -153,7 +153,7 @@ where
 {
     let data = toplevel.data::<XdgShellSurfaceUserData>().unwrap();
     compositor::with_states(&data.wl_surface, |states| {
-        f(&mut *states
+        f(&mut states
             .data_map
             .get::<XdgToplevelSurfaceData>()
             .unwrap()
@@ -194,7 +194,7 @@ where
     F: FnOnce(&mut SurfaceCachedState) -> T,
 {
     compositor::with_states(&data.wl_surface, |states| {
-        f(&mut *states.cached_state.pending::<SurfaceCachedState>())
+        f(&mut states.cached_state.pending::<SurfaceCachedState>())
     })
 }
 

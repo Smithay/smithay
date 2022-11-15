@@ -494,7 +494,7 @@ where
     let elements: Vec<WaylandSurfaceRenderElement> =
         render_elements_from_surface_tree(surface, location.to_i32_round(), scale);
 
-    draw_render_elements(renderer, frame, scale, &*elements, damage, log)?;
+    draw_render_elements(renderer, frame, scale, &elements, damage, log)?;
 
     Ok(())
 }
@@ -608,7 +608,7 @@ where
             frame,
             element.location(scale),
             scale,
-            &*element_damage,
+            &element_damage,
             log,
         )?;
     }

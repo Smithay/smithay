@@ -62,7 +62,7 @@ fn output_update(
             if *parent_unmapped {
                 // The parent is unmapped, just send a leave event
                 // if we were previously mapped and exit early
-                output_leave(output, &mut *surface_list, wl_surface, logger);
+                output_leave(output, &mut surface_list, wl_surface, logger);
                 return;
             }
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
@@ -72,15 +72,15 @@ fn output_update(
                 let surface_rectangle = Rectangle::from_loc_and_size(location, surface_view.dst);
                 if output_overlap.overlaps(surface_rectangle) {
                     // We found a matching output, check if we already sent enter
-                    output_enter(output, &mut *surface_list, wl_surface, logger);
+                    output_enter(output, &mut surface_list, wl_surface, logger);
                 } else {
                     // Surface does not match output, if we sent enter earlier
                     // we should now send leave
-                    output_leave(output, &mut *surface_list, wl_surface, logger);
+                    output_leave(output, &mut surface_list, wl_surface, logger);
                 }
             } else {
                 // Maybe the the surface got unmapped, send leave on output
-                output_leave(output, &mut *surface_list, wl_surface, logger);
+                output_leave(output, &mut surface_list, wl_surface, logger);
             }
         },
         |_, _, _| true,
@@ -178,7 +178,7 @@ impl SpaceElement for Window {
             |wl_surface, _, _| {
                 output_leave(
                     output,
-                    &mut *surface_list,
+                    &mut surface_list,
                     wl_surface,
                     &crate::slog_or_fallback(None),
                 );
@@ -193,7 +193,7 @@ impl SpaceElement for Window {
                 |wl_surface, _, _| {
                     output_leave(
                         output,
-                        &mut *surface_list,
+                        &mut surface_list,
                         wl_surface,
                         &crate::slog_or_fallback(None),
                     );

@@ -102,6 +102,7 @@ pub struct LogindSessionNotifier {
 
 impl LogindSession {
     /// Tries to create a new session via the logind dbus interface.
+    #[allow(clippy::result_large_err)]
     pub fn new<L>(logger: L) -> Result<(LogindSession, LogindSessionNotifier), Error>
     where
         L: Into<Option<::slog::Logger>>,
@@ -225,6 +226,7 @@ impl LogindSessionNotifier {
 }
 
 impl LogindSessionImpl {
+    #[allow(clippy::result_large_err)]
     fn blocking_call<'d, 'p, 'i, 'm, D, P, I, M>(
         conn: &DBusConnection,
         destination: D,
@@ -273,6 +275,7 @@ impl LogindSessionImpl {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     fn handle_message(&self, message: dbus::Message) -> Result<(), Error> {
         if &*message.interface().unwrap() == "org.freedesktop.login1.Manager"
             && &*message.member().unwrap() == "SessionRemoved"
@@ -317,7 +320,7 @@ impl LogindSessionImpl {
                 // keep the device.)
                 if pause_type == "pause" {
                     LogindSessionImpl::blocking_call(
-                        &*self.conn.borrow(),
+                        &self.conn.borrow(),
                         "org.freedesktop.login1",
                         self.session_path.clone(),
                         "org.freedesktop.login1.Session",
@@ -372,7 +375,7 @@ impl Session for LogindSession {
             let stat = stat(path).map_err(Error::FailedToStatDevice)?;
             // TODO handle paused
             let (fd, _paused) = LogindSessionImpl::blocking_call(
-                &*session.conn.borrow(),
+                &session.conn.borrow(),
                 "org.freedesktop.login1",
                 session.session_path.clone(),
                 "org.freedesktop.login1.Session",
@@ -394,7 +397,7 @@ impl Session for LogindSession {
         if let Some(session) = self.internal.upgrade() {
             let stat = fstat(fd).map_err(Error::FailedToStatDevice)?;
             LogindSessionImpl::blocking_call(
-                &*session.conn.borrow(),
+                &session.conn.borrow(),
                 "org.freedesktop.login1",
                 session.session_path.clone(),
                 "org.freedesktop.login1.Session",
@@ -425,7 +428,7 @@ impl Session for LogindSession {
     fn change_vt(&mut self, vt_num: i32) -> Result<(), Error> {
         if let Some(session) = self.internal.upgrade() {
             LogindSessionImpl::blocking_call(
-                &*session.conn.borrow_mut(),
+                &session.conn.borrow_mut(),
                 "org.freedesktop.login1",
                 "/org/freedesktop/login1/seat/self",
                 "org.freedesktop.login1.Seat",
@@ -444,7 +447,7 @@ impl Drop for LogindSessionNotifier {
         info!(self.internal.logger, "Closing logind session");
         // Release control again and drop everything closing the connection
         let _ = LogindSessionImpl::blocking_call(
-            &*self.internal.conn.borrow(),
+            &self.internal.conn.borrow(),
             "org.freedesktop.login1",
             self.internal.session_path.clone(),
             "org.freedesktop.login1.Session",
@@ -571,6 +574,7 @@ mod ffi {
         os::raw::{c_char, c_int, c_uint},
     };
 
+    #[allow(clippy::result_large_err)]
     pub fn get_login_state() -> Result<(String, String, Option<u32>), super::Error> {
         let session_name = unsafe {
             let mut session_name: *mut c_char = std::ptr::null_mut();

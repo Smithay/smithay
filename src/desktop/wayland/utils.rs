@@ -116,7 +116,7 @@ where
                     let contains_the_point = data
                         .map(|data| {
                             data.borrow()
-                                .contains_point(&*states.cached_state.current(), point - location.to_f64())
+                                .contains_point(&states.cached_state.current(), point - location.to_f64())
                         })
                         .unwrap_or(false);
                     if contains_the_point {

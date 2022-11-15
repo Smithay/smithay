@@ -62,6 +62,7 @@ pub enum AutoSession {
 
 /// Notifier using the best available interface
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum AutoSessionNotifier {
     /// Logind session notifier
     #[cfg(feature = "backend_session_logind")]

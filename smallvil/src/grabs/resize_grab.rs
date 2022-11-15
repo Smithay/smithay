@@ -209,7 +209,7 @@ impl ResizeSurfaceState {
             states.data_map.insert_if_missing(RefCell::<Self>::default);
             let state = states.data_map.get::<RefCell<Self>>().unwrap();
 
-            cb(&mut *state.borrow_mut())
+            cb(&mut state.borrow_mut())
         })
     }
 

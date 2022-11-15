@@ -179,7 +179,7 @@ where
                                                   // It has no further use.
         };
 
-        let fb = match attach_framebuffer(&drm, &*buffer) {
+        let fb = match attach_framebuffer(&drm, &buffer) {
             Ok(fb) => fb,
             Err(err) => return Err((swapchain.allocator, err)),
         };
@@ -219,7 +219,7 @@ where
 
             let maybe_buffer = slot.userdata().get::<FbHandle<D>>();
             if maybe_buffer.is_none() {
-                let fb_handle = attach_framebuffer(&self.drm, &*slot)?;
+                let fb_handle = attach_framebuffer(&self.drm, &slot)?;
                 slot.userdata().insert_if_missing(|| fb_handle);
             }
 
@@ -388,7 +388,7 @@ where
         x => Some(x),
     };
 
-    let logger = match &*(*drm).internal {
+    let logger = match &*drm.internal {
         DrmSurfaceInternal::Atomic(surf) => surf.logger.clone(),
         DrmSurfaceInternal::Legacy(surf) => surf.logger.clone(),
     };

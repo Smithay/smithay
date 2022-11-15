@@ -1106,7 +1106,7 @@ impl ToplevelSurface {
                 .unwrap()
                 .lock()
                 .unwrap();
-            if let Some(pending) = self.get_pending_state(&mut *attributes) {
+            if let Some(pending) = self.get_pending_state(&mut attributes) {
                 // Retrieve the last configured decoration mode and test
                 // if the mode has changed.
                 // We have to do this check before adding the pending state

@@ -320,7 +320,7 @@ impl LayerSurface {
                 .unwrap()
                 .lock()
                 .unwrap();
-            if let Some(pending) = self.get_pending_state(&mut *attributes) {
+            if let Some(pending) = self.get_pending_state(&mut attributes) {
                 let configure = LayerSurfaceConfigure {
                     serial: SERIAL_COUNTER.next_serial(),
                     state: pending,

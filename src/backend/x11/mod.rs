@@ -335,13 +335,13 @@ impl X11Handle {
         // As a result we try to use egl for a cleaner, better supported approach at first and only if that fails use dri3.
         let inner = self.inner.lock().unwrap();
 
-        egl_init(&*inner).or_else(|err| {
+        egl_init(&inner).or_else(|err| {
             slog::warn!(
                 &self.log,
                 "Failed to init X11 surface via egl, falling back to dri3: {}",
                 err
             );
-            dri3_init(&*inner)
+            dri3_init(&inner)
         })
     }
 

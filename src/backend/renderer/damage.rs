@@ -336,7 +336,7 @@ impl DamageTrackedRenderer {
                 },
             );
 
-            frame.clear(clear_color, &*clear_damage)?;
+            frame.clear(clear_color, &clear_damage)?;
 
             for (mut z_index, element) in render_elements.iter().rev().enumerate() {
                 // This is necessary because we reversed the render elements to draw
@@ -379,7 +379,7 @@ impl DamageTrackedRenderer {
                     frame,
                     element.location(output_scale),
                     output_scale,
-                    &*element_damage,
+                    &element_damage,
                     &log,
                 )?;
             }

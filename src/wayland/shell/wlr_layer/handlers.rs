@@ -334,7 +334,7 @@ where
 {
     let data = layer_surface.data::<WlrLayerSurfaceUserData>().unwrap();
     compositor::with_states(&data.wl_surface, |states| {
-        f(&mut *states.cached_state.pending::<LayerSurfaceCachedState>())
+        f(&mut states.cached_state.pending::<LayerSurfaceCachedState>())
     })
 }
 
