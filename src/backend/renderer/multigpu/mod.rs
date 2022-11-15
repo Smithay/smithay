@@ -383,7 +383,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                             );
 
                             if let Err(err) =
-                                self.early_import_buffer(source, target, buffer, states, &*buffer_damage)
+                                self.early_import_buffer(source, target, buffer, states, &buffer_damage)
                             {
                                 result = Err(err);
                             }
@@ -1236,7 +1236,7 @@ where
                 .to_i32_up()
             }));
             unsafe { &mut *self.frame }
-                .render_texture_from_to(&*texture, src, dst, damage, src_transform, alpha)
+                .render_texture_from_to(&texture, src, dst, damage, src_transform, alpha)
                 .map_err(Error::Render)
         } else {
             slog::warn!(
@@ -1331,7 +1331,7 @@ where
             .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
         self.render
             .renderer_mut()
-            .update_memory(&*mem_texture, data, region)
+            .update_memory(&mem_texture, data, region)
             .map_err(Error::Render)
     }
 }
@@ -1849,7 +1849,7 @@ where
             .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
         self.render
             .renderer_mut()
-            .copy_texture(&*tex, region)
+            .copy_texture(&tex, region)
             .map(|mapping| MultiTextureMapping(TextureMappingInternal::Or(mapping)))
             .map_err(Error::Render)
     }
@@ -1912,7 +1912,7 @@ where
             .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
         self.render
             .renderer_mut()
-            .export_texture(&*tex)
+            .export_texture(&tex)
             .map_err(Error::Render)
     }
 }

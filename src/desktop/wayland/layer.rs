@@ -82,7 +82,11 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
                     .unwrap_or_else(|| (0, 0).into()),
             ),
             surfaces: HashSet::new(),
-            logger: (*o.inner.0.lock().unwrap())
+            logger: o
+                .inner
+                .0
+                .lock()
+                .unwrap()
                 .log
                 .new(slog::o!("smithay_module" => "layer_map")),
         })

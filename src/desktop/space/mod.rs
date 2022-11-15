@@ -666,5 +666,5 @@ where
     render_elements.extend(custom_elements.iter().map(OutputRenderElements::Custom));
     render_elements.extend(space_render_elements.into_iter().map(OutputRenderElements::Space));
 
-    damage_tracked_renderer.render_output(renderer, age, &*render_elements, clear_color, log)
+    damage_tracked_renderer.render_output(renderer, age, &render_elements, clear_color, log)
 }

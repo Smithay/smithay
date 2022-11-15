@@ -404,7 +404,7 @@ impl EGLDisplay {
             return Err(Error::NoAvailablePixelFormat);
         }
 
-        let desired_swap_interval = if attributes.vsync { 1 } else { 0 };
+        let desired_swap_interval = i32::from(attributes.vsync);
         // try to select a config with the desired_swap_interval
         // (but don't fail, as the margin might be very small on some cards and most configs are fine)
         let config_id = config_ids
@@ -653,7 +653,7 @@ impl EGLDisplay {
 
         let mut out: Vec<c_int> = Vec::with_capacity(50);
 
-        out.extend(&[
+        out.extend([
             ffi::egl::WIDTH as i32,
             dmabuf.width() as i32,
             ffi::egl::HEIGHT as i32,
@@ -699,7 +699,7 @@ impl EGLDisplay {
             .zip(dmabuf.strides())
             .enumerate()
         {
-            out.extend(&[
+            out.extend([
                 names[i][0] as i32,
                 fd.as_raw_fd(),
                 names[i][1] as i32,
@@ -708,7 +708,7 @@ impl EGLDisplay {
                 stride as i32,
             ]);
             if dmabuf.has_modifier() {
-                out.extend(&[
+                out.extend([
                     names[i][3] as i32,
                     (Into::<u64>::into(dmabuf.format().modifier) & 0xFFFFFFFF) as i32,
                     names[i][4] as i32,

@@ -296,7 +296,7 @@ where
 
     /// Reference to the underlying window
     pub fn window(&self) -> &WinitWindow {
-        &*self.window
+        &self.window
     }
 
     /// Access the underlying renderer

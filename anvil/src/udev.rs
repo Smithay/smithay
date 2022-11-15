@@ -926,7 +926,7 @@ impl AnvilState<UdevData> {
             };
 
             let result = render_surface(
-                &mut *surface.borrow_mut(),
+                &mut surface.borrow_mut(),
                 &mut renderer,
                 &self.space,
                 &output,
@@ -935,7 +935,7 @@ impl AnvilState<UdevData> {
                 &pointer_image,
                 &mut self.backend_data.pointer_element,
                 &self.dnd_icon,
-                &mut *self.cursor_status.lock().unwrap(),
+                &mut self.cursor_status.lock().unwrap(),
                 &self.clock,
                 &self.log,
             );
@@ -1083,7 +1083,7 @@ fn render_surface<'a>(
     let (rendered, states) = render_output(
         output,
         space,
-        &*elements,
+        &elements,
         renderer,
         &mut surface.damage_tracked_renderer,
         age.into(),
