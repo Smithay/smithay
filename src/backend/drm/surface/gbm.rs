@@ -238,7 +238,10 @@ where
     ///
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`GbmBufferedSurface::frame_submitted`]
     pub fn queue_buffer(&mut self, user_data: U) -> Result<(), Error<A::Error>> {
-        self.queued_fb = self.next_fb.take().map(|fb| (fb, user_data));
+        self.queued_fb = self.next_fb.take().map(|fb| {
+            self.swapchain.submitted(&fb);
+            (fb, user_data)
+        });
         if self.pending_fb.is_none() && self.queued_fb.is_some() {
             self.submit()?;
         }
@@ -276,7 +279,6 @@ where
             self.drm.page_flip([(fb, self.drm.plane())].iter(), true)
         };
         if flip.is_ok() {
-            self.swapchain.submitted(&slot);
             self.pending_fb = Some((slot, user_data));
         }
         flip.map_err(Error::DrmError)
