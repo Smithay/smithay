@@ -71,7 +71,7 @@ where
                     serialized.depressed,
                     serialized.latched,
                     serialized.locked,
-                    serialized.layout_locked,
+                    serialized.layout_effective,
                 );
             }
         }
@@ -180,7 +180,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
                 modifiers.depressed,
                 modifiers.latched,
                 modifiers.locked,
-                modifiers.layout_locked,
+                modifiers.layout_effective,
             );
         })
     }
