@@ -170,7 +170,7 @@
 //!
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
-//!     let render_element = MemoryRenderBufferRenderElement::from_buffer(location, &buffer, None, None);
+//!     let render_element = MemoryRenderBufferRenderElement::from_buffer(location, &buffer, None, None, None);
 //!
 //!     // Render the element(s)
 //!     damage_tracked_renderer
@@ -427,6 +427,7 @@ impl<'a> Drop for RenderContext<'a> {
 pub struct MemoryRenderBufferRenderElement {
     location: Point<f64, Physical>,
     buffer: MemoryRenderBuffer,
+    alpha: f32,
     src: Option<Rectangle<f64, Logical>>,
     size: Option<Size<i32, Logical>>,
 }
@@ -437,12 +438,14 @@ impl MemoryRenderBufferRenderElement {
     pub fn from_buffer(
         location: impl Into<Point<f64, Physical>>,
         buffer: &MemoryRenderBuffer,
+        alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
     ) -> Self {
         MemoryRenderBufferRenderElement {
             location: location.into(),
             buffer: buffer.clone(),
+            alpha: alpha.unwrap_or(1.0),
             src,
             size,
         }
@@ -501,6 +504,10 @@ impl MemoryRenderBufferRenderElement {
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        if self.alpha < 1.0 {
+            return Vec::new();
+        }
+
         let src = self.src();
         let logical_size = self.logical_size();
         let physical_size = self.physical_size(scale);
@@ -614,6 +621,6 @@ where
             .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), texture.size()).to_f64());
 
         let dst = Rectangle::from_loc_and_size(location, physical_size);
-        frame.render_texture_from_to(texture, src, dst, damage, transform, 1.0)
+        frame.render_texture_from_to(texture, src, dst, damage, transform, self.alpha)
     }
 }

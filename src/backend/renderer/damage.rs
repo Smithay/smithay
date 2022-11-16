@@ -144,7 +144,7 @@
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
 //!     let render_element =
-//!         MemoryRenderBufferRenderElement::from_buffer(location, &memory_buffer, None, None);
+//!         MemoryRenderBufferRenderElement::from_buffer(location, &memory_buffer, None, None, None);
 //!
 //!     // Render the output
 //!     damage_tracked_renderer

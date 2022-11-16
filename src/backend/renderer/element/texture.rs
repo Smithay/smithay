@@ -159,7 +159,7 @@
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
 //!     let render_element =
-//!         TextureRenderElement::from_texture_buffer(location, &texture_buffer, None, None);
+//!         TextureRenderElement::from_texture_buffer(location, &texture_buffer, None, None, None);
 //!
 //!     // Render the element(s)
 //!     damage_tracked_renderer
@@ -333,6 +333,7 @@
 //!     let render_element = TextureRenderElement::from_texture_render_buffer(
 //!         location,
 //!         &texture_render_buffer,
+//!         None,
 //!         None,
 //!         None,
 //!     );
@@ -546,6 +547,7 @@ pub struct TextureRenderElement<T> {
     texture: T,
     scale: i32,
     transform: Transform,
+    alpha: f32,
     src: Option<Rectangle<f64, Logical>>,
     size: Option<Size<i32, Logical>>,
     opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
@@ -568,6 +570,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
     pub fn from_texture_render_buffer(
         location: impl Into<Point<f64, Physical>>,
         buffer: &TextureRenderBuffer<T>,
+        alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
     ) -> Self {
@@ -578,6 +581,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
             buffer.texture.clone(),
             buffer.scale,
             buffer.transform,
+            alpha,
             src,
             size,
             buffer.opaque_regions.clone(),
@@ -589,6 +593,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
     pub fn from_texture_buffer(
         location: impl Into<Point<f64, Physical>>,
         buffer: &TextureBuffer<T>,
+        alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
     ) -> Self {
@@ -599,6 +604,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
             buffer.texture.clone(),
             buffer.scale,
             buffer.transform,
+            alpha,
             src,
             size,
             buffer.opaque_regions.clone(),
@@ -617,6 +623,7 @@ impl<T: Texture> TextureRenderElement<T> {
         texture: T,
         scale: i32,
         transform: Transform,
+        alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
@@ -635,6 +642,7 @@ impl<T: Texture> TextureRenderElement<T> {
             texture,
             scale,
             transform,
+            alpha: alpha.unwrap_or(1.0),
             src,
             size,
             opaque_regions,
@@ -652,6 +660,7 @@ impl<T: Texture> TextureRenderElement<T> {
         texture: T,
         scale: i32,
         transform: Transform,
+        alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
@@ -663,6 +672,7 @@ impl<T: Texture> TextureRenderElement<T> {
             texture,
             scale,
             transform,
+            alpha,
             src,
             size,
             opaque_regions,
@@ -759,6 +769,10 @@ where
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        if self.alpha < 1.0 {
+            return Vec::new();
+        }
+
         let src = self.src();
         let physical_size = self.physical_size(scale);
         let logical_size = self.logical_size();
@@ -815,7 +829,7 @@ where
             .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), texture_size).to_f64());
 
         let dst = Rectangle::from_loc_and_size(location, self.physical_size(scale));
-        frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, 1.0)
+        frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, self.alpha)
     }
 
     fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
