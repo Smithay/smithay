@@ -135,7 +135,7 @@
 //!             // Update the changed parts of the buffer
 //!
 //!             // Return the updated parts
-//!             vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))]
+//!             Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))])
 //!         });
 //!
 //!         last_update = now;

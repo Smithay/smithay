@@ -294,10 +294,10 @@
 //!     // Your draw code here...
 //!
 //!     // Return the damage areas
-//!     vec![Rectangle::from_loc_and_size(
+//!     Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(
 //!         Point::default(),
 //!         Size::from((WIDTH, HEIGHT)),
-//!     )]
+//!     )])
 //! });
 //!
 //! // Optionally update the opaque regions
@@ -322,7 +322,7 @@
 //!             // Update the changed parts of the buffer
 //!
 //!             // Return the updated parts
-//!             vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))]
+//!             Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))])
 //!         });
 //!
 //!         last_update = now;
@@ -513,12 +513,13 @@ pub struct RenderContext<'a, T> {
 
 impl<'a, T> RenderContext<'a, T> {
     /// Draw to the buffer
-    pub fn draw<F>(&mut self, f: F)
+    pub fn draw<F, E>(&mut self, f: F) -> Result<(), E>
     where
-        F: FnOnce(&T) -> Vec<Rectangle<i32, Buffer>>,
+        F: FnOnce(&T) -> Result<Vec<Rectangle<i32, Buffer>>, E>,
     {
-        let draw_damage = f(&self.buffer.texture);
+        let draw_damage = f(&self.buffer.texture)?;
         self.damage.extend(draw_damage);
+        Ok(())
     }
 
     /// Update the opaque regions
