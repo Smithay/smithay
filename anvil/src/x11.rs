@@ -280,7 +280,11 @@ pub fn run_x11(log: Logger) {
             let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
             pointer_element.set_status(cursor_guard.clone());
-            elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
+            elements.extend(pointer_element.render_elements(
+                &mut backend_data.renderer,
+                cursor_pos_scaled,
+                scale,
+            ));
 
             // draw input method surface if any
             let input_method = state.seat.input_method().unwrap();
@@ -292,6 +296,7 @@ pub fn run_x11(log: Logger) {
             input_method.with_surface(|surface| {
                 elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
                     &smithay::desktop::space::SurfaceTree::from_surface(surface),
+                    &mut backend_data.renderer,
                     position.to_physical_precise_round(scale),
                     scale,
                 ));
@@ -302,6 +307,7 @@ pub fn run_x11(log: Logger) {
                 if surface.alive() {
                     elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
                         &smithay::desktop::space::SurfaceTree::from_surface(surface),
+                        &mut backend_data.renderer,
                         cursor_pos_scaled,
                         scale,
                     ));

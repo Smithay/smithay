@@ -1027,6 +1027,7 @@ fn render_surface<'a>(
     input_method.with_surface(|surface| {
         elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
             &SurfaceTree::from_surface(surface),
+            renderer,
             position.to_physical_precise_round(scale),
             scale,
         ));
@@ -1066,7 +1067,7 @@ fn render_surface<'a>(
             pointer_element.set_status(cursor_status.clone());
         }
 
-        elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
+        elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale));
 
         // draw the dnd icon if applicable
         {
@@ -1074,6 +1075,7 @@ fn render_surface<'a>(
                 if wl_surface.alive() {
                     elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
                         &SurfaceTree::from_surface(wl_surface),
+                        renderer,
                         cursor_pos_scaled,
                         scale,
                     ));
@@ -1153,14 +1155,11 @@ fn initial_render(
     let (dmabuf, _) = surface.next_buffer()?;
     renderer.bind(dmabuf)?;
     // Does not matter if we render an empty frame
-    renderer
-        .render((1, 1).into(), Transform::Normal, |_, frame| {
-            frame
-                .clear(CLEAR_COLOR, &[Rectangle::from_loc_and_size((0, 0), (1, 1))])
-                .map_err(Into::<SwapBuffersError>::into)
-        })
-        .map_err(Into::<SwapBuffersError>::into)
-        .and_then(|x| x.map_err(Into::<SwapBuffersError>::into))?;
+    let mut frame = renderer
+        .render((1, 1).into(), Transform::Normal)
+        .map_err(Into::<SwapBuffersError>::into)?;
+    frame.clear(CLEAR_COLOR, &[Rectangle::from_loc_and_size((0, 0), (1, 1))])?;
+    frame.finish().map_err(Into::<SwapBuffersError>::into)?;
     surface.queue_buffer(None)?;
     surface.reset_buffers();
     Ok(())

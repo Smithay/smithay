@@ -252,7 +252,7 @@ pub fn run_winit(log: Logger) {
 
                 let mut elements = Vec::<CustomRenderElements<Gles2Renderer>>::new();
 
-                elements.extend(pointer_element.render_elements(cursor_pos_scaled, scale));
+                elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale));
 
                 // draw input method surface if any
                 let rectangle = input_method.coordinates();
@@ -263,6 +263,7 @@ pub fn run_winit(log: Logger) {
                 input_method.with_surface(|surface| {
                     elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
                         &smithay::desktop::space::SurfaceTree::from_surface(surface),
+                        renderer,
                         position.to_physical_precise_round(scale),
                         scale,
                     ));
@@ -273,6 +274,7 @@ pub fn run_winit(log: Logger) {
                     if surface.alive() {
                         elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
                             &smithay::desktop::space::SurfaceTree::from_surface(surface),
+                            renderer,
                             cursor_pos_scaled,
                             scale,
                         ));

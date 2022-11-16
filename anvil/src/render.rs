@@ -20,7 +20,7 @@ smithay::backend::renderer::element::render_elements! {
     pub CustomRenderElements<R> where
         R: ImportAll;
     Pointer=PointerRenderElement<R>,
-    Surface=WaylandSurfaceRenderElement,
+    Surface=WaylandSurfaceRenderElement<R>,
     #[cfg(feature = "debug")]
     // Note: We would like to borrow this element instead, but that would introduce
     // a feature-dependent lifetime, which introduces a lot more feature bounds
@@ -53,7 +53,8 @@ where
         }
 
         let scale = output.current_scale().fractional_scale().into();
-        let window_render_elements = AsRenderElements::<R>::render_elements(&window, (0, 0).into(), scale);
+        let window_render_elements =
+            AsRenderElements::<R>::render_elements(&window, renderer, (0, 0).into(), scale);
 
         let render_elements = custom_elements
             .iter()

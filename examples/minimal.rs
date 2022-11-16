@@ -4,8 +4,9 @@ use smithay::{
     backend::{
         input::{InputEvent, KeyboardKeyEvent},
         renderer::{
+            element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
             gles2::Gles2Renderer,
-            utils::{draw_surface_tree, on_commit_buffer_handler},
+            utils::{draw_render_elements, on_commit_buffer_handler},
             Frame, Renderer,
         },
         winit::{self, WinitEvent},
@@ -191,21 +192,31 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         let size = backend.window_size().physical_size;
         let damage = Rectangle::from_loc_and_size((0, 0), size);
 
-        backend
-            .renderer()
-            .render(size, Transform::Flipped180, |renderer, frame| {
-                frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
+        let elements = state.xdg_shell_state.toplevel_surfaces(|surfaces| {
+            surfaces
+                .iter()
+                .flat_map(|surface| {
+                    render_elements_from_surface_tree(
+                        backend.renderer(),
+                        surface.wl_surface(),
+                        (0, 0),
+                        1.0,
+                        log.clone(),
+                    )
+                })
+                .collect::<Vec<WaylandSurfaceRenderElement<Gles2Renderer>>>()
+        });
 
-                state.xdg_shell_state.toplevel_surfaces(|surfaces| {
-                    for surface in surfaces {
-                        let surface = surface.wl_surface();
-                        draw_surface_tree(renderer, frame, surface, 1.0, (0.0, 0.0).into(), &[damage], &log)
-                            .unwrap();
+        let mut frame = backend.renderer().render(size, Transform::Flipped180).unwrap();
+        frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
+        draw_render_elements(&mut frame, 1.0, &elements, &[damage], &log).unwrap();
+        frame.finish().unwrap();
 
-                        send_frames_surface_tree(surface, start_time.elapsed().as_millis() as u32);
-                    }
-                });
-            })?;
+        state.xdg_shell_state.toplevel_surfaces(|surfaces| {
+            for surface in surfaces {
+                send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
+            }
+        });
 
         if let Some(stream) = listener.accept()? {
             println!("Got a client: {:?}", stream);
