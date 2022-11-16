@@ -235,10 +235,11 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
 {
-    type RenderElement = WaylandSurfaceRenderElement;
+    type RenderElement = WaylandSurfaceRenderElement<R>;
 
-    fn render_elements<C: From<WaylandSurfaceRenderElement>>(
+    fn render_elements<C: From<WaylandSurfaceRenderElement<R>>>(
         &self,
+        renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
     ) -> Vec<C> {
@@ -250,12 +251,20 @@ where
                 let offset = (self.geometry().loc + popup_offset - popup.geometry().loc)
                     .to_physical_precise_round(scale);
 
-                render_elements_from_surface_tree(popup.wl_surface(), location + offset, scale)
+                render_elements_from_surface_tree(
+                    renderer,
+                    popup.wl_surface(),
+                    location + offset,
+                    scale,
+                    None,
+                )
             });
 
         render_elements.extend(popup_render_elements);
 
-        render_elements.extend(render_elements_from_surface_tree(surface, location, scale));
+        render_elements.extend(render_elements_from_surface_tree(
+            renderer, surface, location, scale, None,
+        ));
 
         render_elements
     }

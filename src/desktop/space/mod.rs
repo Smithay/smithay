@@ -367,6 +367,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// Use [`Space::render_elements_for_output`], if you care about this.
     pub fn render_elements_for_region<'a, R: Renderer, S: Into<Scale<f64>>>(
         &'a self,
+        renderer: &mut R,
         region: &Rectangle<i32, Logical>,
         scale: S,
     ) -> Vec<<E as AsRenderElements<R>>::RenderElement>
@@ -388,6 +389,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
                 let location = e.render_location() - region.loc;
                 e.element
                     .render_elements::<<E as AsRenderElements<R>>::RenderElement>(
+                        renderer,
                         location.to_physical_precise_round(scale),
                         scale,
                     )
@@ -402,6 +404,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
     >(
         &'a self,
+        renderer: &mut R,
         output: &Output,
     ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputError>
     where
@@ -442,6 +445,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .flat_map(|e| {
                 let location = e.render_location() - output_geo.loc;
                 e.render_elements::<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>(
+                    renderer,
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
                 )
@@ -496,7 +500,7 @@ crate::backend::renderer::element::render_elements! {
     pub SpaceRenderElements<R, E> where
         R: ImportAll;
     /// A single wayland surface
-    Surface=WaylandSurfaceRenderElement,
+    Surface=WaylandSurfaceRenderElement<R>,
     /// A single texture
     Element=Wrap<E>,
 }
@@ -556,6 +560,7 @@ pub fn space_render_elements<
     E: SpaceElement + PartialEq + AsRenderElements<R> + 'a,
     S: IntoIterator<Item = &'a Space<E>>,
 >(
+    renderer: &mut R,
     spaces: S,
     output: &Output,
 ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
@@ -582,8 +587,9 @@ where
                 .into_iter()
                 .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.loc, surface)))
                 .flat_map(|(loc, surface)| {
-                    AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(
+                    AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
                         surface,
+                        renderer,
                         loc.to_physical_precise_round(output_scale),
                         Scale::from(output_scale),
                     )
@@ -599,7 +605,7 @@ where
         if let Some(output_geo) = space.output_geometry(output) {
             render_elements.extend(
                 space
-                    .render_elements_for_region(&output_geo, output_scale)
+                    .render_elements_for_region(renderer, &output_geo, output_scale)
                     .into_iter()
                     .map(|e| SpaceRenderElements::Element(Wrap::from(e))),
             );
@@ -612,8 +618,9 @@ where
             .into_iter()
             .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.loc, surface)))
             .flat_map(|(loc, surface)| {
-                AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(
+                AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
                     surface,
+                    renderer,
                     loc.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
                 )
@@ -658,7 +665,7 @@ where
         assert!(renderer_output == output);
     }
 
-    let space_render_elements = space_render_elements(spaces, output)?;
+    let space_render_elements = space_render_elements(renderer, spaces, output)?;
 
     let mut render_elements: Vec<OutputRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement, C>> =
         Vec::with_capacity(custom_elements.len() + space_render_elements.len());

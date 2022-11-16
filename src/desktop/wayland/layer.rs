@@ -1,12 +1,5 @@
 use crate::{
-    backend::{
-        input::KeyState,
-        renderer::{
-            element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
-            utils::draw_render_elements,
-            ImportAll, Renderer,
-        },
-    },
+    backend::input::KeyState,
     desktop::{utils::*, PopupManager},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
@@ -14,7 +7,7 @@ use crate::{
         Seat, SeatHandler,
     },
     output::{Output, WeakOutput},
-    utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
+    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle, Serial},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, SurfaceData, TraversalAction},
         seat::WaylandFocus,
@@ -654,40 +647,6 @@ impl LayerSurface {
     pub fn user_data(&self) -> &UserDataMap {
         &self.0.userdata
     }
-}
-
-/// Renders a given [`LayerSurface`] using a provided renderer and frame.
-///
-/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
-/// - `location` is the position the layer surface should be drawn at.
-/// - `damage` is the set of regions of the layer surface that should be drawn.
-///
-/// Note: This function will render nothing, if you are not using
-/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
-/// to let smithay handle buffer management.
-#[allow(clippy::too_many_arguments)]
-pub fn draw_layer_surface<R, P, S>(
-    renderer: &mut R,
-    frame: &mut <R as Renderer>::Frame,
-    layer: &LayerSurface,
-    scale: S,
-    location: P,
-    damage: &[Rectangle<i32, Physical>],
-    log: &slog::Logger,
-) -> Result<(), <R as Renderer>::Error>
-where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
-    S: Into<Scale<f64>>,
-    P: Into<Point<i32, Physical>>,
-{
-    let location = location.into();
-    let scale = scale.into();
-    let elements =
-        AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement>(layer, location, scale);
-
-    draw_render_elements(renderer, frame, scale, &elements, damage, log)?;
-    Ok(())
 }
 
 impl<D: SeatHandler + 'static> PointerTarget<D> for LayerSurface {

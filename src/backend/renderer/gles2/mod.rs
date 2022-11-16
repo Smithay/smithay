@@ -12,7 +12,7 @@ use std::{
     ptr,
     rc::Rc,
     sync::{
-        atomic::{AtomicPtr, Ordering},
+        atomic::{AtomicBool, AtomicPtr, Ordering},
         mpsc::{channel, Receiver, Sender},
     },
 };
@@ -299,28 +299,22 @@ impl Drop for RendererId {
 }
 
 /// Handle to the currently rendered frame during [`Gles2Renderer::render`](Renderer::render)
-pub struct Gles2Frame {
+pub struct Gles2Frame<'a> {
+    renderer: &'a mut Gles2Renderer,
     current_projection: Matrix3<f32>,
     transform: Transform,
-    gl: ffi::Gles2,
-    tex_programs: [Gles2TexProgram; shaders::FRAGMENT_COUNT],
-    solid_program: Gles2SolidProgram,
-    vbos: [ffi::types::GLuint; 2],
     size: Size<i32, Physical>,
-    min_filter: TextureFilter,
-    max_filter: TextureFilter,
-    supports_instancing: bool,
+    finished: AtomicBool,
 }
 
-impl fmt::Debug for Gles2Frame {
+impl<'a> fmt::Debug for Gles2Frame<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Gles2Frame")
+            .field("renderer", &self.renderer)
             .field("current_projection", &self.current_projection)
-            .field("tex_programs", &self.tex_programs)
-            .field("solid_program", &self.solid_program)
+            .field("transform", &self.transform)
             .field("size", &self.size)
-            .field("min_filter", &self.min_filter)
-            .field("max_filter", &self.max_filter)
+            .field("finished", &self.finished)
             .finish_non_exhaustive()
     }
 }
@@ -333,10 +327,14 @@ impl fmt::Debug for Gles2Renderer {
             .field("extensions", &self.extensions)
             .field("tex_programs", &self.tex_programs)
             .field("solid_program", &self.solid_program)
-            // ffi::Gles2 does not implement Debug
+            .field("dmabuf_cache", &self.dmabuf_cache)
             .field("egl", &self.egl)
+            .field("gl_version", &self.gl_version)
+            // ffi::Gles2 does not implement Debug
+            .field("vbos", &self.vbos)
             .field("min_filter", &self.min_filter)
             .field("max_filter", &self.max_filter)
+            .field("supports_instancing", &self.supports_instancing)
             .field("logger", &self.logger)
             .finish()
     }
@@ -1677,7 +1675,9 @@ impl Gles2Renderer {
     pub fn egl_context(&self) -> &EGLContext {
         &self.egl
     }
+}
 
+impl<'a> Gles2Frame<'a> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -1688,18 +1688,16 @@ impl Gles2Renderer {
     /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
     pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
     where
-        F: FnOnce(&mut Self, &ffi::Gles2) -> R,
+        F: FnOnce(&ffi::Gles2) -> R,
     {
-        self.make_current()?;
-        let gl = self.gl.clone();
-        Ok(func(self, &gl))
+        Ok(func(&self.renderer.gl))
     }
 }
 
 impl Renderer for Gles2Renderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
-    type Frame = Gles2Frame;
+    type Frame<'a> = Gles2Frame<'a>;
 
     fn id(&self) -> usize {
         self.egl.user_data().get::<RendererId>().unwrap().0
@@ -1714,15 +1712,11 @@ impl Renderer for Gles2Renderer {
         Ok(())
     }
 
-    fn render<F, R>(
+    fn render(
         &mut self,
         mut output_size: Size<i32, Physical>,
         transform: Transform,
-        rendering: F,
-    ) -> Result<R, Self::Error>
-    where
-        F: FnOnce(&mut Self, &mut Self::Frame) -> R,
-    {
+    ) -> Result<Gles2Frame<'_>, Self::Error> {
         self.make_current()?;
 
         unsafe {
@@ -1760,43 +1754,14 @@ impl Renderer for Gles2Renderer {
         // We account for OpenGLs coordinate system here
         let flip180 = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
 
-        let mut frame = Gles2Frame {
-            gl: self.gl.clone(),
-            tex_programs: self.tex_programs.clone(),
-            solid_program: self.solid_program.clone(),
+        Ok(Gles2Frame {
+            renderer: self,
             // output transformation passed in by the user
             current_projection: flip180 * transform.matrix() * renderer,
             transform,
-            vbos: self.vbos,
             size: output_size,
-            min_filter: self.min_filter,
-            max_filter: self.max_filter,
-            supports_instancing: self.supports_instancing,
-        };
-
-        let result = rendering(self, &mut frame);
-
-        unsafe {
-            self.gl.Flush();
-            // We need to wait for the previously submitted GL commands to complete
-            // or otherwise the buffer could be submitted to the drm surface while
-            // still writing to the buffer which results in flickering on the screen.
-            // The proper solution would be to create a fence just before calling
-            // glFlush that the backend can use to wait for the commands to be finished.
-            // In case of a drm atomic backend the fence could be supplied by using the
-            // IN_FENCE_FD property.
-            // See https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#explicit-fencing-properties for
-            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c
-            // especially here
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L147
-            // and here
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L235
-            self.gl.Finish();
-            self.gl.Disable(ffi::BLEND);
-        }
-
-        Ok(result)
+            finished: AtomicBool::new(false),
+        })
     }
 }
 
@@ -1847,11 +1812,15 @@ const fn triangle_verts() -> [ffi::types::GLfloat; 12 * MAX_RECTS_PER_DRAW] {
     verts
 }
 
-impl Frame for Gles2Frame {
-    type Error = Gles2Error;
+impl<'a> Frame for Gles2Frame<'a> {
     type TextureId = Gles2Texture;
+    type Error = Gles2Error;
 
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+    fn id(&self) -> usize {
+        self.renderer.id()
+    }
+
+    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Gles2Error> {
         if at.is_empty() {
             return Ok(());
         }
@@ -1871,24 +1840,28 @@ impl Frame for Gles2Frame {
             })
             .collect::<Vec<_>>();
 
+        let gl = &self.renderer.gl;
         unsafe {
-            self.gl.Disable(ffi::BLEND);
-            self.gl.UseProgram(self.solid_program.program);
-            self.gl.Uniform4f(
-                self.solid_program.uniform_color,
+            gl.Disable(ffi::BLEND);
+            gl.UseProgram(self.renderer.solid_program.program);
+            gl.Uniform4f(
+                self.renderer.solid_program.uniform_color,
                 color[0],
                 color[1],
                 color[2],
                 color[3],
             );
-            self.gl
-                .UniformMatrix3fv(self.solid_program.uniform_matrix, 1, ffi::FALSE, mat.as_ptr());
+            gl.UniformMatrix3fv(
+                self.renderer.solid_program.uniform_matrix,
+                1,
+                ffi::FALSE,
+                mat.as_ptr(),
+            );
 
-            self.gl
-                .EnableVertexAttribArray(self.solid_program.attrib_vert as u32);
-            self.gl.BindBuffer(ffi::ARRAY_BUFFER, self.vbos[0]);
-            self.gl.VertexAttribPointer(
-                self.solid_program.attrib_vert as u32,
+            gl.EnableVertexAttribArray(self.renderer.solid_program.attrib_vert as u32);
+            gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[0]);
+            gl.VertexAttribPointer(
+                self.renderer.solid_program.attrib_vert as u32,
                 2,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -1897,7 +1870,7 @@ impl Frame for Gles2Frame {
             );
 
             // Damage vertices.
-            let vertices = if self.supports_instancing {
+            let vertices = if self.renderer.supports_instancing {
                 damage
             } else {
                 // Add the 4 f32s per damage rectangle for each of the 6 vertices.
@@ -1910,18 +1883,17 @@ impl Frame for Gles2Frame {
                 vertices
             };
 
-            self.gl
-                .EnableVertexAttribArray(self.solid_program.attrib_position as u32);
-            self.gl.BindBuffer(ffi::ARRAY_BUFFER, self.vbos[1]);
-            self.gl.BufferData(
+            gl.EnableVertexAttribArray(self.renderer.solid_program.attrib_position as u32);
+            gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[1]);
+            gl.BufferData(
                 ffi::ARRAY_BUFFER,
                 (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
                 vertices.as_ptr() as *const _,
                 ffi::STREAM_DRAW,
             );
 
-            self.gl.VertexAttribPointer(
-                self.solid_program.attrib_position as u32,
+            gl.VertexAttribPointer(
+                self.renderer.solid_program.attrib_position as u32,
                 4,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -1930,23 +1902,21 @@ impl Frame for Gles2Frame {
             );
 
             let damage_len = at.len() as i32;
-            if self.supports_instancing {
-                self.gl
-                    .VertexAttribDivisor(self.solid_program.attrib_vert as u32, 0);
+            if self.renderer.supports_instancing {
+                gl.VertexAttribDivisor(self.renderer.solid_program.attrib_vert as u32, 0);
 
-                self.gl
-                    .VertexAttribDivisor(self.solid_program.attrib_position as u32, 1);
+                gl.VertexAttribDivisor(self.renderer.solid_program.attrib_position as u32, 1);
 
-                self.gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
+                gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
             } else {
                 // When we have more than 10 rectangles, draw them in batches of 10.
                 for i in 0..(damage_len - 1) / 10 {
-                    self.gl.DrawArrays(ffi::TRIANGLES, 0, 60);
+                    gl.DrawArrays(ffi::TRIANGLES, 0, 60);
 
                     // Set damage pointer to the next 10 rectangles.
                     let offset = (i + 1) as usize * 60 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
-                    self.gl.VertexAttribPointer(
-                        self.solid_program.attrib_position as u32,
+                    gl.VertexAttribPointer(
+                        self.renderer.solid_program.attrib_position as u32,
                         4,
                         ffi::FLOAT,
                         ffi::FALSE,
@@ -1957,16 +1927,14 @@ impl Frame for Gles2Frame {
 
                 // Draw the up to 10 remaining rectangles.
                 let count = ((damage_len - 1) % 10 + 1) * 6;
-                self.gl.DrawArrays(ffi::TRIANGLES, 0, count);
+                gl.DrawArrays(ffi::TRIANGLES, 0, count);
             }
 
-            self.gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
-            self.gl
-                .DisableVertexAttribArray(self.solid_program.attrib_vert as u32);
-            self.gl
-                .DisableVertexAttribArray(self.solid_program.attrib_position as u32);
-            self.gl.Enable(ffi::BLEND);
-            self.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+            gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
+            gl.DisableVertexAttribArray(self.renderer.solid_program.attrib_vert as u32);
+            gl.DisableVertexAttribArray(self.renderer.solid_program.attrib_position as u32);
+            gl.Enable(ffi::BLEND);
+            gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
         }
 
         Ok(())
@@ -1974,13 +1942,13 @@ impl Frame for Gles2Frame {
 
     fn render_texture_from_to(
         &mut self,
-        texture: &Self::TextureId,
+        texture: &Gles2Texture,
         src: Rectangle<f64, BufferCoord>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         transform: Transform,
         alpha: f32,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), Gles2Error> {
         let mut mat = Matrix3::<f32>::identity();
 
         // dest position and scale
@@ -2055,9 +2023,40 @@ impl Frame for Gles2Frame {
     fn transformation(&self) -> Transform {
         self.transform
     }
+
+    fn finish(mut self) -> Result<(), Self::Error> {
+        self.finish_internal()
+    }
 }
 
-impl Gles2Frame {
+impl<'a> Gles2Frame<'a> {
+    fn finish_internal(&mut self) -> Result<(), Gles2Error> {
+        if self.finished.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        unsafe {
+            self.renderer.gl.Flush();
+            // We need to wait for the previously submitted GL commands to complete
+            // or otherwise the buffer could be submitted to the drm surface while
+            // still writing to the buffer which results in flickering on the screen.
+            // The proper solution would be to create a fence just before calling
+            // glFlush that the backend can use to wait for the commands to be finished.
+            // In case of a drm atomic backend the fence could be supplied by using the
+            // IN_FENCE_FD property.
+            // See https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#explicit-fencing-properties for
+            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c
+            // especially here
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L147
+            // and here
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L235
+            self.renderer.gl.Finish();
+            self.renderer.gl.Disable(ffi::BLEND);
+        }
+        Ok(())
+    }
+
     /// Render a texture to the current target using given projection matrix and alpha.
     ///
     /// The instances are used to define the regions which should get drawn.
@@ -2093,49 +2092,50 @@ impl Gles2Frame {
         };
 
         // render
+        let gl = &self.renderer.gl;
         unsafe {
-            self.gl.ActiveTexture(ffi::TEXTURE0);
-            self.gl.BindTexture(target, tex.0.texture);
-            self.gl.TexParameteri(
+            gl.ActiveTexture(ffi::TEXTURE0);
+            gl.BindTexture(target, tex.0.texture);
+            gl.TexParameteri(
                 target,
                 ffi::TEXTURE_MIN_FILTER,
-                match self.min_filter {
+                match self.renderer.min_filter {
                     TextureFilter::Nearest => ffi::NEAREST as i32,
                     TextureFilter::Linear => ffi::LINEAR as i32,
                 },
             );
-            self.gl.TexParameteri(
+            gl.TexParameteri(
                 target,
                 ffi::TEXTURE_MAG_FILTER,
-                match self.max_filter {
+                match self.renderer.max_filter {
                     TextureFilter::Nearest => ffi::NEAREST as i32,
                     TextureFilter::Linear => ffi::LINEAR as i32,
                 },
             );
-            self.gl.UseProgram(self.tex_programs[tex.0.texture_kind].program);
+            gl.UseProgram(self.renderer.tex_programs[tex.0.texture_kind].program);
 
-            self.gl
-                .Uniform1i(self.tex_programs[tex.0.texture_kind].uniform_tex, 0);
-            self.gl.UniformMatrix3fv(
-                self.tex_programs[tex.0.texture_kind].uniform_matrix,
+            gl.Uniform1i(self.renderer.tex_programs[tex.0.texture_kind].uniform_tex, 0);
+            gl.UniformMatrix3fv(
+                self.renderer.tex_programs[tex.0.texture_kind].uniform_matrix,
                 1,
                 ffi::FALSE,
                 matrix.as_ptr(),
             );
-            self.gl.UniformMatrix3fv(
-                self.tex_programs[tex.0.texture_kind].uniform_tex_matrix,
+            gl.UniformMatrix3fv(
+                self.renderer.tex_programs[tex.0.texture_kind].uniform_tex_matrix,
                 1,
                 ffi::FALSE,
                 tex_matrix.as_ptr(),
             );
-            self.gl
-                .Uniform1f(self.tex_programs[tex.0.texture_kind].uniform_alpha, alpha);
+            gl.Uniform1f(
+                self.renderer.tex_programs[tex.0.texture_kind].uniform_alpha,
+                alpha,
+            );
 
-            self.gl
-                .EnableVertexAttribArray(self.tex_programs[tex.0.texture_kind].attrib_vert as u32);
-            self.gl.BindBuffer(ffi::ARRAY_BUFFER, self.vbos[0]);
-            self.gl.VertexAttribPointer(
-                self.solid_program.attrib_vert as u32,
+            gl.EnableVertexAttribArray(self.renderer.tex_programs[tex.0.texture_kind].attrib_vert as u32);
+            gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[0]);
+            gl.VertexAttribPointer(
+                self.renderer.solid_program.attrib_vert as u32,
                 2,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -2144,7 +2144,7 @@ impl Gles2Frame {
             );
 
             // Damage vertices.
-            let vertices = if self.supports_instancing {
+            let vertices = if self.renderer.supports_instancing {
                 Cow::Borrowed(damage)
             } else {
                 let mut vertices = Vec::with_capacity(damage.len() * 6);
@@ -2158,18 +2158,19 @@ impl Gles2Frame {
             };
 
             // vert_position
-            self.gl
-                .EnableVertexAttribArray(self.tex_programs[tex.0.texture_kind].attrib_vert_position as u32);
-            self.gl.BindBuffer(ffi::ARRAY_BUFFER, self.vbos[1]);
-            self.gl.BufferData(
+            gl.EnableVertexAttribArray(
+                self.renderer.tex_programs[tex.0.texture_kind].attrib_vert_position as u32,
+            );
+            gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[1]);
+            gl.BufferData(
                 ffi::ARRAY_BUFFER,
                 (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
                 vertices.as_ptr() as *const _,
                 ffi::STREAM_DRAW,
             );
 
-            self.gl.VertexAttribPointer(
-                self.tex_programs[tex.0.texture_kind].attrib_vert_position as u32,
+            gl.VertexAttribPointer(
+                self.renderer.tex_programs[tex.0.texture_kind].attrib_vert_position as u32,
                 4,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -2178,24 +2179,26 @@ impl Gles2Frame {
             );
 
             let damage_len = (damage.len() / 4) as i32;
-            if self.supports_instancing {
-                self.gl
-                    .VertexAttribDivisor(self.tex_programs[tex.0.texture_kind].attrib_vert as u32, 0);
-                self.gl.VertexAttribDivisor(
-                    self.tex_programs[tex.0.texture_kind].attrib_vert_position as u32,
+            if self.renderer.supports_instancing {
+                gl.VertexAttribDivisor(
+                    self.renderer.tex_programs[tex.0.texture_kind].attrib_vert as u32,
+                    0,
+                );
+                gl.VertexAttribDivisor(
+                    self.renderer.tex_programs[tex.0.texture_kind].attrib_vert_position as u32,
                     1,
                 );
 
-                self.gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
+                gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
             } else {
                 // When we have more than 10 rectangles, draw them in batches of 10.
                 for i in 0..(damage_len - 1) / 10 {
-                    self.gl.DrawArrays(ffi::TRIANGLES, 0, 6);
+                    gl.DrawArrays(ffi::TRIANGLES, 0, 6);
 
                     // Set damage pointer to the next 10 rectangles.
                     let offset = (i + 1) as usize * 6 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
-                    self.gl.VertexAttribPointer(
-                        self.solid_program.attrib_position as u32,
+                    gl.VertexAttribPointer(
+                        self.renderer.solid_program.attrib_position as u32,
                         4,
                         ffi::FLOAT,
                         ffi::FALSE,
@@ -2206,15 +2209,15 @@ impl Gles2Frame {
 
                 // Draw the up to 10 remaining rectangles.
                 let count = ((damage_len - 1) % 10 + 1) * 6;
-                self.gl.DrawArrays(ffi::TRIANGLES, 0, count);
+                gl.DrawArrays(ffi::TRIANGLES, 0, count);
             }
 
-            self.gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
-            self.gl.BindTexture(target, 0);
-            self.gl
-                .DisableVertexAttribArray(self.tex_programs[tex.0.texture_kind].attrib_vert as u32);
-            self.gl
-                .DisableVertexAttribArray(self.tex_programs[tex.0.texture_kind].attrib_vert_position as u32);
+            gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
+            gl.BindTexture(target, 0);
+            gl.DisableVertexAttribArray(self.renderer.tex_programs[tex.0.texture_kind].attrib_vert as u32);
+            gl.DisableVertexAttribArray(
+                self.renderer.tex_programs[tex.0.texture_kind].attrib_vert_position as u32,
+            );
         }
 
         Ok(())
@@ -2223,5 +2226,17 @@ impl Gles2Frame {
     /// Projection matrix for this frame
     pub fn projection(&self) -> &[f32; 9] {
         self.current_projection.as_ref()
+    }
+}
+
+impl<'a> Drop for Gles2Frame<'a> {
+    fn drop(&mut self) {
+        if let Err(err) = self.finish_internal() {
+            slog::warn!(
+                self.renderer.logger,
+                "Ignored error finishing MultiFrame on drop: {}",
+                err
+            );
+        }
     }
 }

@@ -217,7 +217,7 @@ impl<A: GraphicsApi> GpuManager<A> {
 
             Ok(MultiRenderer {
                 dma_source: Some(&mut self.dma_source),
-                render: RenderDevice::Device(render.remove(0)),
+                render: render.remove(0),
                 target: Some(target.remove(0)),
                 other_renderers: others,
                 proxy_framebuffer: std::marker::PhantomData,
@@ -226,7 +226,7 @@ impl<A: GraphicsApi> GpuManager<A> {
         } else {
             Ok(MultiRenderer {
                 dma_source: Some(&mut self.dma_source),
-                render: RenderDevice::Device(render.remove(0)),
+                render: render.remove(0),
                 target: None,
                 other_renderers: others,
                 proxy_framebuffer: std::marker::PhantomData,
@@ -304,7 +304,7 @@ impl<A: GraphicsApi> GpuManager<A> {
 
             Ok(MultiRenderer {
                 dma_source: Some(&mut render_api.dma_source),
-                render: RenderDevice::Device(render.remove(0)),
+                render: render.remove(0),
                 target: Some(target),
                 other_renderers: others,
                 proxy_framebuffer: std::marker::PhantomData,
@@ -313,7 +313,7 @@ impl<A: GraphicsApi> GpuManager<A> {
         } else {
             Ok(MultiRenderer {
                 dma_source: Some(&mut render_api.dma_source),
-                render: RenderDevice::Device(render.remove(0)),
+                render: render.remove(0),
                 target: None,
                 other_renderers: others,
                 proxy_framebuffer: std::marker::PhantomData,
@@ -595,7 +595,7 @@ pub trait ApiDevice {
 #[derive(Debug)]
 pub struct MultiRenderer<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> {
     dma_source: Option<&'a mut HashMap<WeakDmabuf, DrmNode>>,
-    render: RenderDevice<'a, R>,
+    render: &'a mut R::Device,
     target: Option<&'b mut T::Device>,
     other_renderers: Vec<&'a mut R::Device>,
     proxy_framebuffer: std::marker::PhantomData<Target>,
@@ -618,74 +618,90 @@ impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> AsMut<<R::Device as ApiDevi
     }
 }
 
-// Hack for implementing Renderer::render..
-#[derive(Debug)]
-enum RenderDevice<'a, A: GraphicsApi> {
-    Device(&'a mut A::Device),
-    // Hack to avoid lifetime problems in Renderer::render
-    Renderer(*mut <A::Device as ApiDevice>::Renderer, DrmNode),
-}
-
-impl<'a, A: GraphicsApi> RenderDevice<'a, A> {
-    /*
-    fn unwrap_device(&mut self) -> &mut A::Device {
-        match self {
-            RenderDevice::Device(dev) => *dev,
-            RenderDevice::Renderer(_, _) => panic!("unwrap called on RenderDevice::Renderer"),
-        }
-    }
-    */
-
-    fn node(&self) -> &DrmNode {
-        match self {
-            RenderDevice::Device(dev) => dev.node(),
-            RenderDevice::Renderer(_, node) => node,
-        }
-    }
-
-    fn renderer(&self) -> &<A::Device as ApiDevice>::Renderer {
-        match self {
-            RenderDevice::Device(dev) => dev.renderer(),
-            RenderDevice::Renderer(renderer, _) => unsafe { &**renderer },
-        }
-    }
-
-    fn renderer_mut(&mut self) -> &mut <A::Device as ApiDevice>::Renderer {
-        match self {
-            RenderDevice::Device(dev) => dev.renderer_mut(),
-            RenderDevice::Renderer(renderer, _) => unsafe { &mut **renderer },
-        }
-    }
-}
-
 /// [`Frame`](super::Frame) implementation of a [`MultiRenderer`].
-#[derive(Debug)]
-pub struct MultiFrame<R: GraphicsApi, T: GraphicsApi> {
+pub struct MultiFrame<'a, 'b, 'c, R: GraphicsApi + 'c, T: GraphicsApi, Target>
+where
+    R: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+{
     node: DrmNode,
-    // FIXME: With GAT this would not need to be a raw-pointer
-    frame: *mut <<R::Device as ApiDevice>::Renderer as Renderer>::Frame,
+    frame: Option<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'c>>,
+    render: *mut &'a mut R::Device,
+    target: &'c mut Option<&'b mut T::Device>,
+
+    dst_transform: Transform,
+    size: Size<i32, Physical>,
     damage: Vec<Rectangle<i32, Physical>>,
     // We need this for the associated Error type of the Frame implementation
-    _target: std::marker::PhantomData<T>,
+    _types: std::marker::PhantomData<(T, Target)>,
     log: ::slog::Logger,
+}
+
+impl<'a, 'b, 'c, R: GraphicsApi + 'c, T: GraphicsApi, Target> fmt::Debug
+    for MultiFrame<'a, 'b, 'c, R, T, Target>
+where
+    R: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    R::Device: fmt::Debug,
+    T::Device: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MultiFrame")
+            .field("node", &self.node)
+            .field("render", unsafe { &*self.render })
+            .field("target", &self.target)
+            .field("dst_transform", &self.dst_transform)
+            .field("size", &self.size)
+            .field("damage", &self.damage)
+            .field("log", &self.log)
+            .finish()
+    }
 }
 
 // These casts are ok, because the frame cannot outlive the MultiFrame,
 // see MultiRenderer::render for how this hack works and why it is necessary.
 
-impl<R: GraphicsApi, T: GraphicsApi> AsRef<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame>
-    for MultiFrame<R, T>
+impl<'a, 'b, 'c, R: GraphicsApi, T: GraphicsApi, Target>
+    AsRef<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'c>>
+    for MultiFrame<'a, 'b, 'c, R, T, Target>
+where
+    R: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn as_ref(&self) -> &<<R::Device as ApiDevice>::Renderer as Renderer>::Frame {
-        unsafe { &*self.frame }
+    fn as_ref(&self) -> &<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'c> {
+        self.frame.as_ref().unwrap()
     }
 }
 
-impl<R: GraphicsApi, T: GraphicsApi> AsMut<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame>
-    for MultiFrame<R, T>
+impl<'a, 'b, 'c, R: GraphicsApi, T: GraphicsApi, Target>
+    AsMut<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'c>>
+    for MultiFrame<'a, 'b, 'c, R, T, Target>
+where
+    R: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn as_mut(&mut self) -> &mut <<R::Device as ApiDevice>::Renderer as Renderer>::Frame {
-        unsafe { &mut *self.frame }
+    fn as_mut(&mut self) -> &mut <<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'c> {
+        self.frame.as_mut().unwrap()
     }
 }
 
@@ -791,7 +807,7 @@ where
 {
     type Error = Error<R, T>;
     type TextureId = MultiTexture;
-    type Frame = MultiFrame<R, T>;
+    type Frame<'c> = MultiFrame<'a, 'b, 'c, R, T, Target> where Self: 'c;
 
     fn id(&self) -> usize {
         self.render.renderer().id()
@@ -810,17 +826,13 @@ where
             .map_err(Error::Render)
     }
 
-    fn render<F, Res>(
-        &mut self,
+    fn render<'c>(
+        &'c mut self,
         size: Size<i32, Physical>,
         dst_transform: Transform,
-        rendering: F,
-    ) -> Result<Res, Self::Error>
-    where
-        F: FnOnce(&mut Self, &mut Self::Frame) -> Res,
-    {
-        let buffer_size = size.to_logical(1).to_buffer(1, dst_transform);
+    ) -> Result<MultiFrame<'a, 'b, 'c, R, T, Target>, Self::Error> {
         if self.target.is_some() {
+            let buffer_size = size.to_logical(1).to_buffer(1, dst_transform);
             let render_buffer = Offscreen::<Target>::create_buffer(self.render.renderer_mut(), buffer_size)
                 .map_err(Error::Render)?;
             self.render
@@ -831,188 +843,194 @@ where
 
         let node = *self.render.node();
 
-        // we need to move some stuff into the closure temporarily
-        let mut dma_source = self.dma_source.take();
-        let mut target = self.target.take();
-        let mut other_renderers = self.other_renderers.drain(..).collect::<Vec<_>>();
-        let dma_source_ref = &mut dma_source;
-        let target_ref = &mut target;
-        let other_renderers_ref = &mut other_renderers;
-
         let log = self.log.clone();
-        let res = self
+        let ptr = &mut self.render as *mut _;
+        let frame = self
             .render
             .renderer_mut()
-            .render(size, dst_transform, move |render, frame| {
-                let mut new_renderer = MultiRenderer {
-                    dma_source: dma_source_ref.take(),
-                    render: RenderDevice::Renderer(render, node),
-                    target: target_ref.take(),
-                    other_renderers: other_renderers_ref.drain(..).collect(),
-                    proxy_framebuffer: std::marker::PhantomData,
-                    log: log.clone(),
-                };
-                let mut frame = MultiFrame {
-                    node,
-                    frame, // we cheat here and use a raw-ptr, because otherwise your associated type would gain an uncostraint lifetime parameter
-                    damage: Vec::new(),
-                    _target: std::marker::PhantomData::<T>,
-                    log,
-                };
+            .render(size, dst_transform)
+            .map_err(Error::Render)?;
 
-                let res = rendering(&mut new_renderer, &mut frame);
+        Ok(MultiFrame {
+            node,
+            frame: Some(frame),
+            render: ptr, // this is fine, as long as we have the frame, this ptr is valid
+            target: &mut self.target,
+            dst_transform,
+            size,
+            damage: Vec::new(),
+            _types: std::marker::PhantomData::<(T, Target)>,
+            log,
+        })
+    }
+}
 
-                // don't return yet, but first reset the references, so we can restore self on error
-                *dma_source_ref = new_renderer.dma_source.take();
-                *target_ref = new_renderer.target.take();
-                *other_renderers_ref = new_renderer.other_renderers.drain(..).collect();
+impl<'a, 'b, 'c, R: GraphicsApi, T: GraphicsApi, Target> MultiFrame<'a, 'b, 'c, R, T, Target>
+where
+    R: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+{
+    fn finish_internal(&mut self) -> Result<(), Error<R, T>> {
+        if let Some(frame) = self.frame.take() {
+            frame.finish().map_err(Error::Render)?;
 
-                (res, frame.damage)
-            })
-            .map_err(Error::Render);
+            // now the frame is gone, lets use our unholy ptr till the end of this call:
+            let render = unsafe { &mut *self.render };
 
-        // restore self
-        self.dma_source = dma_source;
-        self.target = target;
-        self.other_renderers = other_renderers;
+            let mut damage = std::mem::take(&mut self.damage)
+                .into_iter()
+                .map(|rect| {
+                    rect.to_logical(1)
+                        .to_buffer(1, self.dst_transform, &self.size.to_logical(1))
+                })
+                .collect::<Vec<_>>();
 
-        // then possibly return the error
-        let (res, damage) = res?;
-        let mut damage = damage
-            .into_iter()
-            .map(|rect| {
-                rect.to_logical(1)
-                    .to_buffer(1, dst_transform, &size.to_logical(1))
-            })
-            .collect::<Vec<_>>();
-
-        if let Some(target) = self.target.as_mut() {
-            {
-                let mut can_import = CAN_IMPORT.lock().unwrap();
-                let dmabuf = self
-                    .render
-                    .renderer_mut()
-                    .export_framebuffer(buffer_size)
-                    .map_err(Error::Render)?;
-                let might_import = *can_import
-                    .get(&(*self.render.node(), *target.node(), dmabuf.format()))
-                    .unwrap_or(&true);
-                if might_import {
-                    // try gpu copy
-                    match target.renderer_mut().import_dmabuf(&dmabuf, Some(&damage)) {
-                        Ok(texture) => {
-                            // import successful
-                            let damage = damage
-                                .iter()
-                                .map(|rect| rect.to_logical(1, dst_transform, &buffer_size).to_physical(1))
-                                .collect::<Vec<_>>();
-                            target
-                                .renderer_mut()
-                                .render(size, dst_transform, |_renderer, frame| {
-                                    frame.render_texture_from_to(
+            let buffer_size = self.size.to_logical(1).to_buffer(1, self.dst_transform);
+            if let Some(target) = self.target.as_mut() {
+                {
+                    let mut can_import = CAN_IMPORT.lock().unwrap();
+                    let dmabuf = render
+                        .renderer_mut()
+                        .export_framebuffer(buffer_size)
+                        .map_err(Error::Render)?;
+                    let might_import = *can_import
+                        .get(&(*render.node(), *target.node(), dmabuf.format()))
+                        .unwrap_or(&true);
+                    if might_import {
+                        // try gpu copy
+                        match target.renderer_mut().import_dmabuf(&dmabuf, Some(&damage)) {
+                            Ok(texture) => {
+                                // import successful
+                                let damage = damage
+                                    .iter()
+                                    .map(|rect| {
+                                        rect.to_logical(1, self.dst_transform, &buffer_size)
+                                            .to_physical(1)
+                                    })
+                                    .collect::<Vec<_>>();
+                                let mut frame = target
+                                    .renderer_mut()
+                                    .render(self.size, self.dst_transform)
+                                    .map_err(Error::Target)?;
+                                frame
+                                    .render_texture_from_to(
                                         &texture,
                                         Rectangle::from_loc_and_size((0, 0), buffer_size).to_f64(),
-                                        Rectangle::from_loc_and_size((0, 0), size),
+                                        Rectangle::from_loc_and_size((0, 0), self.size),
                                         &damage,
-                                        dst_transform.invert(),
+                                        self.dst_transform.invert(),
                                         1.0,
                                     )
-                                })
-                                .and_then(std::convert::identity)
-                                .map_err(Error::Target)?;
+                                    .map_err(Error::Target)?;
+                                frame.finish().map_err(Error::Target)?;
 
-                            can_import.insert((*self.render.node(), *target.node(), dmabuf.format()), true);
-                            return Ok(res);
-                        }
-                        Err(err) => {
-                            let (source, target, format) =
-                                (*self.render.node(), *target.node(), dmabuf.format());
-                            slog::warn!(
-                                self.log,
-                                "Error importing dmabuf (format: {:?}) from {} to {}: {}",
-                                format,
-                                source,
-                                target,
-                                err
-                            );
-                            slog::info!(self.log, "Falling back to cpu-copy.");
-                            can_import.insert((source, target, format), false);
+                                can_import.insert((*render.node(), *target.node(), dmabuf.format()), true);
+                                return Ok(());
+                            }
+                            Err(err) => {
+                                let (source, target, format) =
+                                    (*render.node(), *target.node(), dmabuf.format());
+                                slog::warn!(
+                                    self.log,
+                                    "Error importing dmabuf (format: {:?}) from {} to {}: {}",
+                                    format,
+                                    source,
+                                    target,
+                                    err
+                                );
+                                slog::info!(self.log, "Falling back to cpu-copy.");
+                                can_import.insert((source, target, format), false);
+                            }
                         }
                     }
                 }
-            }
 
-            // cpu copy
-            if damage.len() > MAX_CPU_COPIES {
-                damage = Vec::from([Rectangle::from_loc_and_size((0, 0), buffer_size)]);
-            }
-            damage.dedup();
-            damage.retain(|rect| rect.overlaps(Rectangle::from_loc_and_size((0, 0), buffer_size)));
-            damage.retain(|rect| rect.size.h > 0 && rect.size.w > 0);
-            // merge overlapping rectangles
-            damage = damage.into_iter().fold(Vec::new(), |new_damage, mut rect| {
-                // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                    new_damage.into_iter().partition(|other| other.overlaps(rect));
-
-                for overlap in overlapping {
-                    rect = rect.merge(overlap);
+                // cpu copy
+                if damage.len() > MAX_CPU_COPIES {
+                    damage = Vec::from([Rectangle::from_loc_and_size((0, 0), buffer_size)]);
                 }
-                new_damage.push(rect);
-                new_damage
-            });
+                damage.dedup();
+                damage.retain(|rect| rect.overlaps(Rectangle::from_loc_and_size((0, 0), buffer_size)));
+                damage.retain(|rect| rect.size.h > 0 && rect.size.w > 0);
+                // merge overlapping rectangles
+                damage = damage.into_iter().fold(Vec::new(), |new_damage, mut rect| {
+                    // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
+                    let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
+                        new_damage.into_iter().partition(|other| other.overlaps(rect));
 
-            let mut mappings = Vec::new();
-            for rect in damage {
-                let mapping = (
-                    self.render
-                        .renderer_mut()
-                        .copy_framebuffer(rect)
-                        .map_err(Error::Render)?,
-                    rect,
-                );
-                mappings.push(mapping);
-            }
-            mappings.sort_by(|map1, map2| {
-                let size1 = map1.1.size;
-                let size2 = map2.1.size;
-                (size1.w * size1.h).cmp(&(size2.w * size2.h))
-            });
-
-            let render = &mut self.render;
-            target
-                .renderer_mut()
-                .render(size, dst_transform, move |target, frame| {
-                    for mapping in mappings {
-                        let slice = render
-                            .renderer_mut()
-                            .map_texture(&mapping.0)
-                            .map_err(Error::Render::<R, T>)?;
-                        let texture = target
-                            .import_memory(slice, mapping.1.size, false)
-                            .map_err(Error::Target)?;
-                        let dst = mapping
-                            .1
-                            .to_logical(1, Transform::Normal, &buffer_size)
-                            .to_physical(1);
-                        frame
-                            .render_texture_from_to(
-                                &texture,
-                                Rectangle::from_loc_and_size((0, 0), mapping.1.size).to_f64(),
-                                dst,
-                                &[Rectangle::from_loc_and_size((0, 0), dst.size)],
-                                Transform::Normal,
-                                1.0,
-                            )
-                            .map_err(Error::Target)?;
+                    for overlap in overlapping {
+                        rect = rect.merge(overlap);
                     }
-                    Ok(())
-                })
-                .map_err(Error::Target)
-                .and_then(std::convert::identity)?;
+                    new_damage.push(rect);
+                    new_damage
+                });
+
+                let mut textures = Vec::new();
+                for rect in damage {
+                    let texture = (
+                        {
+                            let mapping = render
+                                .renderer_mut()
+                                .copy_framebuffer(rect)
+                                .map_err(Error::Render)?;
+                            let slice = render
+                                .renderer_mut()
+                                .map_texture(&mapping)
+                                .map_err(Error::Render::<R, T>)?;
+                            target
+                                .renderer_mut()
+                                .import_memory(slice, rect.size, false)
+                                .map_err(Error::Target)?
+                        },
+                        rect,
+                    );
+                    textures.push(texture);
+                }
+
+                let mut frame = target
+                    .renderer_mut()
+                    .render(self.size, self.dst_transform)
+                    .map_err(Error::Target)?;
+                for (texture, rect) in textures {
+                    let dst = rect.to_logical(1, Transform::Normal, &buffer_size).to_physical(1);
+                    frame
+                        .render_texture_from_to(
+                            &texture,
+                            Rectangle::from_loc_and_size((0, 0), rect.size).to_f64(),
+                            dst,
+                            &[Rectangle::from_loc_and_size((0, 0), dst.size)],
+                            Transform::Normal,
+                            1.0,
+                        )
+                        .map_err(Error::Target)?;
+                }
+                frame.finish().map_err(Error::Target)?;
+            }
         }
 
-        Ok(res)
+        Ok(())
+    }
+}
+
+impl<'a, 'b, 'c, R: GraphicsApi, T: GraphicsApi, Target> Drop for MultiFrame<'a, 'b, 'c, R, T, Target>
+where
+    R: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+{
+    fn drop(&mut self) {
+        if let Err(err) = self.finish_internal() {
+            slog::warn!(self.log, "Ignored error finishing MultiFrame on drop: {}", err);
+        }
     }
 }
 
@@ -1076,29 +1094,18 @@ impl MultiTexture {
         <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId: 'static,
     {
         let tex = self.0.borrow();
-        // TODO: use Ref::filter_map when stabilized
-        if tex
-            .textures
-            .get(&TypeId::of::<A>())
-            .and_then(|textures| textures.get(render))
-            .and_then(|texture| texture.texture.as_ref())
-            .and_then(|texture| {
-                <dyn Any>::downcast_ref::<<<A::Device as ApiDevice>::Renderer as Renderer>::TextureId>(
-                    &**texture,
-                )
-            })
-            .is_some()
-        {
-            Some(Ref::map(tex, |tex| {
-                tex.textures.get(&TypeId::of::<A>())
-                        .and_then(|textures| textures.get(render))
-                        .and_then(|texture| texture.texture.as_ref())
-                        .and_then(|texture| <dyn Any>::downcast_ref::<<<A::Device as ApiDevice>::Renderer as Renderer>::TextureId>(&**texture))
-                        .unwrap()
-            }))
-        } else {
-            None
-        }
+        Ref::filter_map(tex, |tex| {
+            tex.textures
+                .get(&TypeId::of::<A>())
+                .and_then(|textures| textures.get(render))
+                .and_then(|texture| texture.texture.as_ref())
+                .and_then(|texture| {
+                    <dyn Any>::downcast_ref::<<<A::Device as ApiDevice>::Renderer as Renderer>::TextureId>(
+                        &**texture,
+                    )
+                })
+        })
+        .ok()
     }
 
     fn insert_texture<A: GraphicsApi + 'static>(
@@ -1194,33 +1201,41 @@ impl Texture for MultiTexture {
     }
 }
 
-impl<R: GraphicsApi, T: GraphicsApi> Frame for MultiFrame<R, T>
+impl<'a, 'b, 'c, R: GraphicsApi, T: GraphicsApi, Target> Frame for MultiFrame<'a, 'b, 'c, R, T, Target>
 where
     R: 'static,
     R::Error: 'static,
     T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    type Error = Error<R, T>;
     type TextureId = MultiTexture;
+    type Error = Error<R, T>;
 
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+    fn id(&self) -> usize {
+        self.frame.as_ref().unwrap().id()
+    }
+
+    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Error<R, T>> {
         self.damage.extend(at);
-        unsafe { &mut *self.frame }
+        self.frame
+            .as_mut()
+            .unwrap()
             .clear(color, at)
             .map_err(Error::Render)
     }
 
     fn render_texture_from_to(
         &mut self,
-        texture: &Self::TextureId,
+        texture: &MultiTexture,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), Error<R, T>> {
         if let Some(texture) = texture.get::<R>(&self.node) {
             self.damage.extend(damage.iter().map(|rect| {
                 let rect = rect.to_f64();
@@ -1235,7 +1250,9 @@ where
                 )
                 .to_i32_up()
             }));
-            unsafe { &mut *self.frame }
+            self.frame
+                .as_mut()
+                .unwrap()
                 .render_texture_from_to(&texture, src, dst, damage, src_transform, alpha)
                 .map_err(Error::Render)
         } else {
@@ -1251,7 +1268,11 @@ where
     }
 
     fn transformation(&self) -> Transform {
-        unsafe { &mut *self.frame }.transformation()
+        self.frame.as_ref().unwrap().transformation()
+    }
+
+    fn finish(mut self) -> Result<(), Self::Error> {
+        self.finish_internal()
     }
 }
 

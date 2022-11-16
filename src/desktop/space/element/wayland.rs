@@ -31,17 +31,20 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
 {
-    type RenderElement = WaylandSurfaceRenderElement;
+    type RenderElement = WaylandSurfaceRenderElement<R>;
 
-    fn render_elements<C: From<WaylandSurfaceRenderElement>>(
+    fn render_elements<C: From<WaylandSurfaceRenderElement<R>>>(
         &self,
+        renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
     ) -> Vec<C> {
         crate::backend::renderer::element::surface::render_elements_from_surface_tree(
+            renderer,
             &self.surface,
             location,
             scale,
+            None,
         )
     }
 }

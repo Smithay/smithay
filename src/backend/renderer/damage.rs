@@ -42,6 +42,7 @@
 //! #     type Error = std::convert::Infallible;
 //! #     type TextureId = FakeTexture;
 //! #
+//! #     fn id(&self) -> usize { unimplemented!() }
 //! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
@@ -59,6 +60,7 @@
 //! #     fn transformation(&self) -> Transform {
 //! #         unimplemented!()
 //! #     }
+//! #     fn finish(self) -> Result<(), Self::Error> { unimplemented!() }
 //! # }
 //! #
 //! # struct FakeRenderer;
@@ -66,7 +68,7 @@
 //! # impl Renderer for FakeRenderer {
 //! #     type Error = std::convert::Infallible;
 //! #     type TextureId = FakeTexture;
-//! #     type Frame = FakeFrame;
+//! #     type Frame<'a> = FakeFrame;
 //! #
 //! #     fn id(&self) -> usize {
 //! #         unimplemented!()
@@ -77,9 +79,7 @@
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
-//! #     fn render<F, R>(&mut self, _: Size<i32, Physical>, _: Transform, _: F) -> Result<R, Self::Error>
-//! #     where
-//! #         F: FnOnce(&mut Self, &mut Self::Frame) -> R,
+//! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
 //! #     {
 //! #         unimplemented!()
 //! #     }
@@ -144,7 +144,8 @@
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
 //!     let render_element =
-//!         MemoryRenderBufferRenderElement::from_buffer(location, &memory_buffer, None, None, None);
+//!         MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &memory_buffer, None, None, None, None)
+//!         .expect("Failed to upload memory to gpu");
 //!
 //!     // Render the output
 //!     damage_tracked_renderer
@@ -325,7 +326,9 @@ impl DamageTrackedRenderer {
             &mut opaque_regions,
         );
 
-        let render_res = renderer.render(output_size, output_transform, |renderer, frame| {
+        let render_res = (|| {
+            let mut frame = renderer.render(output_size, output_transform)?;
+
             let clear_damage = opaque_regions.iter().flat_map(|(_, regions)| regions).fold(
                 damage.clone(),
                 |damage, region| {
@@ -375,8 +378,7 @@ impl DamageTrackedRenderer {
                 }
 
                 element.draw(
-                    renderer,
-                    frame,
+                    &mut frame,
                     element.location(output_scale),
                     output_scale,
                     &element_damage,
@@ -385,7 +387,7 @@ impl DamageTrackedRenderer {
             }
 
             Result::<(), R::Error>::Ok(())
-        });
+        })();
 
         if let Err(err) = render_res {
             // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.

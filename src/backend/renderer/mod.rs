@@ -135,6 +135,10 @@ pub trait Frame {
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
 
+    /// Returns an id, that is unique to all renderers, that can use
+    /// `TextureId`s originating from any of these renderers.
+    fn id(&self) -> usize;
+
     /// Clear the complete current target with a single given color.
     ///
     /// The `at` parameter specifies a set of rectangles to clear in the current target. This allows partially
@@ -189,6 +193,18 @@ pub trait Frame {
 
     /// Output transformation that is applied to this frame
     fn transformation(&self) -> Transform;
+
+    /// Finish this [`Frame`] returning any error that may happen during any cleanup.
+    ///
+    /// Dropping the frame instead may result in any of the following and is implementation dependent:
+    /// - All actions done to the frame vanish and are never executed
+    /// - A partial renderer with undefined framebuffer contents occurs
+    /// - All actions are performed as normal without errors being returned.
+    ///
+    /// Leaking the frame instead will leak resources and can cause any of the previous effects.
+    /// Leaking might make the renderer return Errors and force it's recreation.
+    /// Leaking may not cause otherwise undefined behavior and program execution will always continue normally.
+    fn finish(self) -> Result<(), Self::Error>;
 }
 
 /// Abstraction of commonly used rendering operations for compositors.
@@ -198,7 +214,9 @@ pub trait Renderer {
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
-    type Frame: Frame<Error = Self::Error, TextureId = Self::TextureId>;
+    type Frame<'a>: Frame<Error = Self::Error, TextureId = Self::TextureId> + 'a
+    where
+        Self: 'a;
 
     /// Returns an id, that is unique to all renderers, that can use
     /// `TextureId`s originating from any of these renderers.
@@ -219,14 +237,11 @@ pub trait Renderer {
     /// - The given Transformation is not supported by the renderer (`Transform::Normal` is always supported).
     /// - This renderer implements `Bind`, no target was bound *and* has no default target.
     /// - (Renderers not implementing `Bind` always have a default target.)
-    fn render<F, R>(
+    fn render(
         &mut self,
         output_size: Size<i32, Physical>,
         dst_transform: Transform,
-        rendering: F,
-    ) -> Result<R, Self::Error>
-    where
-        F: FnOnce(&mut Self, &mut Self::Frame) -> R;
+    ) -> Result<Self::Frame<'_>, Self::Error>;
 }
 
 /// Trait for renderers that support creating offscreen framebuffers to render into.
