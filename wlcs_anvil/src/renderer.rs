@@ -25,23 +25,18 @@ impl DummyRenderer {
 impl Renderer for DummyRenderer {
     type Error = SwapBuffersError;
     type TextureId = DummyTexture;
-    type Frame = DummyFrame;
+    type Frame<'a> = DummyFrame;
 
     fn id(&self) -> usize {
         0
     }
 
-    fn render<F, R>(
+    fn render(
         &mut self,
         _size: Size<i32, Physical>,
         _dst_transform: Transform,
-        rendering: F,
-    ) -> Result<R, Self::Error>
-    where
-        F: FnOnce(&mut Self, &mut Self::Frame) -> R,
-    {
-        let mut frame = DummyFrame {};
-        Ok(rendering(self, &mut frame))
+    ) -> Result<DummyFrame, Self::Error> {
+        Ok(DummyFrame {})
     }
 
     fn upscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
@@ -153,6 +148,10 @@ impl Frame for DummyFrame {
     type Error = SwapBuffersError;
     type TextureId = DummyTexture;
 
+    fn id(&self) -> usize {
+        0
+    }
+
     fn clear(&mut self, _color: [f32; 4], _damage: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -171,6 +170,10 @@ impl Frame for DummyFrame {
 
     fn transformation(&self) -> Transform {
         Transform::Normal
+    }
+
+    fn finish(self) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 
