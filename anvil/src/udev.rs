@@ -834,13 +834,23 @@ impl AnvilState<UdevData> {
             // and do some prediction for the next repaint.
             let repaint_delay =
                 Duration::from_millis(((1_000_000f32 / output_refresh as f32) * 0.6f32) as u64);
-            trace!(
-                self.log,
-                "scheduling repaint timer with delay {:?} on {:?}",
-                repaint_delay,
-                crtc
-            );
-            let timer = Timer::from_duration(repaint_delay);
+
+            let timer = if self.backend_data.primary_gpu != surface.render_node {
+                // However, if we need to do a copy, that might not be enough.
+                // (And without actual comparision to previous frames we cannot really know.)
+                // So lets ignore that in those cases to avoid thrashing performance.
+                trace!(self.log, "scheduling repaint timer immediately on {:?}", crtc);
+                Timer::immediate()
+            } else {
+                trace!(
+                    self.log,
+                    "scheduling repaint timer with delay {:?} on {:?}",
+                    repaint_delay,
+                    crtc
+                );
+                Timer::from_duration(repaint_delay)
+            };
+
             self.handle
                 .insert_source(timer, move |_, _, data| {
                     data.state.render(dev_id, Some(crtc));
