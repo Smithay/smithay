@@ -1,11 +1,10 @@
 use std::{
     cell::Cell,
-    os::unix::{io::RawFd, prelude::AsRawFd},
+    os::unix::io::{AsRawFd, OwnedFd, RawFd},
     ptr,
     sync::{Once, RwLock},
 };
 
-use io_lifetimes::OwnedFd;
 use nix::{
     libc,
     sys::{

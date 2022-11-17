@@ -94,7 +94,7 @@ mod dispatch;
 use std::{
     collections::HashMap,
     convert::TryFrom,
-    os::unix::prelude::AsRawFd,
+    os::unix::io::AsRawFd,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,

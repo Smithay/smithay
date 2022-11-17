@@ -1,6 +1,8 @@
-use std::{os::unix::prelude::AsRawFd, sync::Arc};
+use std::{
+    os::unix::io::{AsRawFd, OwnedFd},
+    sync::Arc,
+};
 
-use io_lifetimes::OwnedFd;
 use slog::debug;
 use wayland_server::{
     backend::{protocol::Message, ClientId, Handle, ObjectData, ObjectId},

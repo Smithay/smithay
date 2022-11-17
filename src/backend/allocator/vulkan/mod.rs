@@ -23,7 +23,7 @@ pub mod format;
 use std::{
     ffi::CStr,
     fmt,
-    os::unix::io::FromRawFd,
+    os::unix::io::{FromRawFd, OwnedFd},
     sync::{mpsc, Arc, Weak},
 };
 
@@ -33,7 +33,6 @@ use ash::{
 };
 use bitflags::bitflags;
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
-use io_lifetimes::OwnedFd;
 
 use crate::{
     backend::{

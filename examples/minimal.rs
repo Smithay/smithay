@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{os::unix::io::OwnedFd, sync::Arc};
 
 use smithay::{
     backend::{
@@ -12,10 +12,7 @@ use smithay::{
     },
     delegate_compositor, delegate_data_device, delegate_seat, delegate_shm, delegate_xdg_shell,
     input::{keyboard::FilterResult, Seat, SeatHandler, SeatState},
-    reexports::{
-        io_lifetimes::OwnedFd,
-        wayland_server::{protocol::wl_seat, Display},
-    },
+    reexports::wayland_server::{protocol::wl_seat, Display},
     utils::{Rectangle, Serial, Transform},
     wayland::{
         buffer::BufferHandler,

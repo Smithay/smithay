@@ -1,9 +1,9 @@
 use std::{
     cell::RefCell,
+    os::unix::io::OwnedFd,
     sync::{Arc, Mutex},
 };
 
-use io_lifetimes::OwnedFd;
 use wayland_server::{
     backend::{protocol::Message, ClientId, Handle, ObjectData, ObjectId},
     protocol::{

@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    os::unix::prelude::AsRawFd,
+    os::unix::io::AsRawFd,
     sync::{Arc, Mutex},
 };
 

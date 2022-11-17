@@ -8,10 +8,9 @@ use std::sync::Arc;
 use std::sync::{Mutex, Weak};
 use std::{
     collections::HashSet,
-    os::unix::prelude::{AsRawFd, FromRawFd},
+    os::unix::io::{AsRawFd, FromRawFd, OwnedFd},
 };
 
-use io_lifetimes::OwnedFd;
 use libc::c_void;
 use nix::libc::c_int;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]

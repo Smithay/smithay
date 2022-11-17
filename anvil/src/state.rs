@@ -1,5 +1,5 @@
 use std::{
-    os::unix::prelude::AsRawFd,
+    os::unix::io::{AsRawFd, OwnedFd},
     sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
@@ -22,7 +22,6 @@ use smithay::{
     output::Output,
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
-        io_lifetimes::OwnedFd,
         wayland_protocols::xdg::decoration::{
             self as xdg_decoration, zv1::server::zxdg_toplevel_decoration_v1::Mode as DecorationMode,
         },

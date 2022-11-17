@@ -64,9 +64,8 @@
 //! // You're now ready to go!
 //! ```
 
-use std::cell::RefCell;
+use std::{cell::RefCell, os::unix::io::OwnedFd};
 
-use io_lifetimes::OwnedFd;
 use wayland_server::{
     backend::GlobalId,
     protocol::{

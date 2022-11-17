@@ -11,7 +11,6 @@ pub use drm;
 pub use gbm;
 #[cfg(feature = "backend_libinput")]
 pub use input;
-pub use io_lifetimes;
 pub use nix;
 #[cfg(feature = "backend_udev")]
 pub use udev;
