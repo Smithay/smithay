@@ -59,9 +59,8 @@
 //! // You're now ready to go!
 //! ```
 
-use std::cell::RefCell;
+use std::{cell::RefCell, os::unix::io::OwnedFd};
 
-use io_lifetimes::OwnedFd;
 use wayland_protocols::wp::primary_selection::zv1::server::{
     zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager,
     zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1 as PrimarySource,

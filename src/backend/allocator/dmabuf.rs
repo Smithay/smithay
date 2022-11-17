@@ -12,8 +12,8 @@
 
 use super::{Buffer, Format, Fourcc, Modifier};
 use crate::utils::{Buffer as BufferCoords, Size};
-use io_lifetimes::{AsFd, BorrowedFd, OwnedFd};
 use std::hash::{Hash, Hasher};
+use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd};
 use std::sync::{Arc, Weak};
 
 /// Maximum amount of planes this implementation supports

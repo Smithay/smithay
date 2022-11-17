@@ -1,6 +1,8 @@
-use std::{os::unix::prelude::AsRawFd, sync::Arc};
+use std::{
+    os::unix::io::{AsRawFd, OwnedFd},
+    sync::Arc,
+};
 
-use io_lifetimes::OwnedFd;
 use slog::debug;
 use wayland_protocols::wp::primary_selection::zv1::server::{
     zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1 as PrimaryDevice,

@@ -3,7 +3,7 @@ use slog::error;
 use xkbcommon::xkb::{Keymap, KEYMAP_FORMAT_TEXT_V1};
 
 use std::ffi::CString;
-use std::os::unix::prelude::RawFd;
+use std::os::unix::io::RawFd;
 
 /// Wraps an XKB keymap into a sealed file or stores as just a string for sending to WlKeyboard over an fd
 #[derive(Debug)]
@@ -56,7 +56,7 @@ impl KeymapFile {
     where
         F: FnOnce(RawFd, usize),
     {
-        use std::{io::Write, os::unix::prelude::AsRawFd, path::PathBuf};
+        use std::{io::Write, os::unix::io::AsRawFd, path::PathBuf};
 
         if let Some(file) = supports_sealed.then_some(self.sealed.as_ref()).flatten() {
             cb(file.as_raw_fd(), file.size());

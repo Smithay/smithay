@@ -1,4 +1,4 @@
-use std::{ffi::OsString, os::unix::prelude::AsRawFd, sync::Arc};
+use std::{ffi::OsString, os::unix::io::AsRawFd, sync::Arc};
 
 use slog::Logger;
 use smithay::{

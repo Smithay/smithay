@@ -8,7 +8,7 @@ use libc::dev_t;
 use std::{
     fmt::{self, Display, Formatter},
     fs, io,
-    os::unix::prelude::{AsRawFd, RawFd},
+    os::unix::io::{AsRawFd, RawFd},
     path::{Path, PathBuf},
 };
 

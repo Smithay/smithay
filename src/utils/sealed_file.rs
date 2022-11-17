@@ -11,7 +11,7 @@ use std::{
     ffi::CString,
     fs::File,
     io::{Seek, Write},
-    os::unix::prelude::{AsRawFd, FromRawFd, RawFd},
+    os::unix::io::{AsRawFd, FromRawFd, RawFd},
 };
 
 #[derive(Debug)]

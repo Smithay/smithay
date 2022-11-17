@@ -5,7 +5,7 @@ use super::{
     BufferData, ShmHandler, ShmPoolUserData, ShmState,
 };
 
-use std::{os::unix::prelude::AsRawFd, sync::Arc};
+use std::{os::unix::io::AsRawFd, sync::Arc};
 use wayland_server::{
     protocol::{
         wl_buffer,

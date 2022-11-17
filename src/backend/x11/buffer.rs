@@ -27,7 +27,7 @@
 //! ensure you read the `presentproto.txt` file (link in the non-public comments of the
 //! x11 mod.rs).
 
-use std::{os::unix::prelude::AsRawFd, sync::atomic::Ordering};
+use std::{os::unix::io::AsRawFd, sync::atomic::Ordering};
 
 use super::{PresentError, Window, X11Error};
 use drm_fourcc::DrmFourcc;
