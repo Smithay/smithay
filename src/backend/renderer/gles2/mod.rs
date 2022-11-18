@@ -1303,7 +1303,11 @@ impl ExportDma for Gles2Renderer {
             egl_images[0]
         } else {
             unsafe {
-                let attributes = [ffi_egl::IMAGE_PRESERVED, ffi_egl::TRUE, ffi_egl::NONE];
+                let attributes: [ffi_egl::types::EGLAttrib; 3] = [
+                    ffi_egl::IMAGE_PRESERVED as ffi_egl::types::EGLAttrib,
+                    ffi_egl::TRUE as ffi_egl::types::EGLAttrib,
+                    ffi_egl::NONE as ffi_egl::types::EGLAttrib,
+                ];
                 let img = ffi_egl::CreateImage(
                     **self.egl.display().get_display_handle(),
                     self.egl.get_context_handle(),
