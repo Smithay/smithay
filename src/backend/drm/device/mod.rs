@@ -13,7 +13,7 @@ pub(super) mod atomic;
 mod fd;
 pub use self::fd::DrmDeviceFd;
 pub(super) mod legacy;
-use crate::utils::{DevPath, Physical, Size};
+use crate::utils::{Buffer, DevPath, Size};
 
 use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurface, DrmSurfaceInternal};
 use super::{error::Error, planes, Planes};
@@ -29,7 +29,7 @@ pub struct DrmDevice {
     pub(crate) internal: Arc<DrmDeviceInternal>,
     has_universal_planes: bool,
     has_monotonic_timestamps: bool,
-    cursor_size: Size<u32, Physical>,
+    cursor_size: Size<u32, Buffer>,
     resources: ResourceHandles,
     pub(super) logger: ::slog::Logger,
     token: Option<Token>,
@@ -182,7 +182,7 @@ impl DrmDevice {
     /// Note: In case of universal planes this is the
     /// maximum size of a buffer that can be used on
     /// the cursor plane.
-    pub fn cursor_size(&self) -> Size<u32, Physical> {
+    pub fn cursor_size(&self) -> Size<u32, Buffer> {
         self.cursor_size
     }
 
