@@ -1209,7 +1209,7 @@ fn render_surface<'a, 'b>(
     }
 
     // and draw to our buffer
-    let (rendered, states) = render_output(
+    let (damage, states) = render_output(
         output,
         space,
         &elements,
@@ -1219,7 +1219,6 @@ fn render_surface<'a, 'b>(
         show_window_preview,
         logger,
     )
-    .map(|(damage, states)| (damage.is_some(), states))
     .map_err(|err| match err {
         DamageTrackedRendererError::Rendering(err) => SwapBuffersError::from(err),
         _ => unreachable!(),
@@ -1227,15 +1226,16 @@ fn render_surface<'a, 'b>(
 
     post_repaint(output, &states, space, clock.now());
 
-    if rendered {
+    if let Some(damage) = damage {
         let output_presentation_feedback = take_presentation_feedback(output, space, &states);
         surface
             .surface
-            .queue_buffer(Some(output_presentation_feedback))
+            .queue_buffer(Some(damage), Some(output_presentation_feedback))
             .map_err(Into::<SwapBuffersError>::into)?;
+        Ok(true)
+    } else {
+        Ok(false)
     }
-
-    Ok(rendered)
 }
 
 fn schedule_initial_render(
@@ -1278,7 +1278,7 @@ fn initial_render(
         .map_err(Into::<SwapBuffersError>::into)?;
     frame.clear(CLEAR_COLOR, &[Rectangle::from_loc_and_size((0, 0), (1, 1))])?;
     frame.finish().map_err(Into::<SwapBuffersError>::into)?;
-    surface.queue_buffer(None)?;
+    surface.queue_buffer(None, None)?;
     surface.reset_buffers();
     Ok(())
 }

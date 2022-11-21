@@ -81,7 +81,7 @@ pub use error::Error as DrmError;
 pub use node::{CreateDrmNodeError, DrmNode, NodeType};
 #[cfg(feature = "backend_gbm")]
 pub use surface::gbm::{Error as GbmBufferedSurfaceError, GbmBufferedSurface};
-pub use surface::DrmSurface;
+pub use surface::{DrmSurface, PlaneConfig, PlaneDamageClips, PlaneState};
 
 use drm::control::{crtc, plane, Device as ControlDevice, PlaneType};
 
