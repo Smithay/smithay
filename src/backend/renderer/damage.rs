@@ -598,7 +598,7 @@ impl DamageTrackedRenderer {
                         state
                             .last_instances
                             .iter()
-                            .map(|i| i.last_geometry)
+                            .filter_map(|i| i.last_geometry.intersection(output_geo))
                             .collect::<Vec<_>>(),
                         |damage, opaque_region| {
                             damage
@@ -620,9 +620,18 @@ impl DamageTrackedRenderer {
                 .map(|s| !s.instance_matches(element_geometry, z_index))
                 .unwrap_or(true)
             {
-                let mut element_damage = vec![element_geometry];
+                let mut element_damage = if let Some(damage) = element_geometry.intersection(output_geo) {
+                    vec![damage]
+                } else {
+                    vec![]
+                };
                 if let Some(state) = element_last_state {
-                    element_damage.extend(state.last_instances.iter().map(|i| i.last_geometry));
+                    element_damage.extend(
+                        state
+                            .last_instances
+                            .iter()
+                            .filter_map(|i| i.last_geometry.intersection(output_geo)),
+                    );
                 }
                 damage.extend(
                     opaque_regions
