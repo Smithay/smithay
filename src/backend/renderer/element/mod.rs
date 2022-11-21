@@ -93,13 +93,11 @@ impl<R: Resource> From<&R> for Id {
 }
 
 /// The underlying storage for a element
-#[derive(Debug)]
-pub enum UnderlyingStorage<'a, R: Renderer> {
+#[derive(Debug, Clone)]
+pub enum UnderlyingStorage {
     /// A wayland buffer
     #[cfg(feature = "wayland_frontend")]
     Wayland(Buffer),
-    /// A texture
-    External(&'a R::TextureId),
 }
 
 /// Defines the presentation state of an element after rendering
@@ -350,7 +348,7 @@ pub trait RenderElement<R: Renderer>: Element {
     ) -> Result<(), R::Error>;
 
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         let _ = renderer;
         None
     }
@@ -418,7 +416,7 @@ where
     R: Renderer,
     E: RenderElement<R> + Element,
 {
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         (*self).underlying_storage(renderer)
     }
 
@@ -709,7 +707,7 @@ macro_rules! render_elements_internal {
             }
         }
 
-        fn underlying_storage(&self, renderer: &$renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_, $renderer>>
+        fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage>
         {
             match self {
                 $(
@@ -745,7 +743,7 @@ macro_rules! render_elements_internal {
             }
         }
 
-        fn underlying_storage(&self, renderer: &$renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_, $renderer>>
+        fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage>
         {
             match self {
                 $(
@@ -1369,7 +1367,7 @@ where
         self.0.draw(frame, src, dst, damage, log)
     }
 
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.0.underlying_storage(renderer)
     }
 }

@@ -357,7 +357,7 @@ use crate::{
     utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
+use super::{CommitCounter, Element, Id, RenderElement};
 
 /// A single texture buffer
 #[derive(Debug, Clone)]
@@ -815,9 +815,5 @@ where
         }
 
         frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, self.alpha)
-    }
-
-    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
-        Some(UnderlyingStorage::External(&self.texture))
     }
 }

@@ -463,11 +463,11 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
 {
-    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
             data.and_then(|d| d.borrow().buffer().cloned())
-                .map(|b| UnderlyingStorage::Wayland(b))
+                .map(UnderlyingStorage::Wayland)
         })
     }
 
