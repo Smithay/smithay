@@ -2239,7 +2239,7 @@ impl<'a> Drop for Gles2Frame<'a> {
         if let Err(err) = self.finish_internal() {
             slog::warn!(
                 self.renderer.logger,
-                "Ignored error finishing MultiFrame on drop: {}",
+                "Ignored error finishing Gles2Frame on drop: {}",
                 err
             );
         }

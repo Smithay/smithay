@@ -247,7 +247,7 @@ impl<'a> GlowFrame<'a> {
 impl<'a> Drop for GlowFrame<'a> {
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
-            slog::warn!(self.log, "Ignored error finishing MultiFrame on drop: {}", err);
+            slog::warn!(self.log, "Ignored error finishing GlowFrame on drop: {}", err);
         }
     }
 }
