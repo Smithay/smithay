@@ -1700,16 +1700,13 @@ impl Gles2Renderer {
 
         match (src_target, dst_target) {
             (&Gles2Target::Surface(ref src), &Gles2Target::Surface(ref dst)) => unsafe {
-                self.egl
-                    .make_current_with_draw_and_read_surface(Some(&**dst), Some(&**src))?;
+                self.egl.make_current_with_draw_and_read_surface(dst, src)?;
             },
             (&Gles2Target::Surface(ref src), _) => unsafe {
-                self.egl
-                    .make_current_with_draw_and_read_surface(None, Some(&**src))?;
+                self.egl.make_current_with_surface(src)?;
             },
             (_, &Gles2Target::Surface(ref dst)) => unsafe {
-                self.egl
-                    .make_current_with_draw_and_read_surface(Some(&**dst), None)?;
+                self.egl.make_current_with_surface(dst)?;
             },
             (_, _) => unsafe {
                 self.egl.make_current()?;
