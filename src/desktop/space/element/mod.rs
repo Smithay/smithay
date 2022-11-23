@@ -167,21 +167,22 @@ where
 
     fn render_elements<C: From<Self::RenderElement>>(
         &self,
+        renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
     ) -> Vec<C> {
         match &self {
             #[cfg(feature = "wayland_frontend")]
             SpaceElements::Layer { surface, .. } => AsRenderElements::<R>::render_elements::<
-                WaylandSurfaceRenderElement,
-            >(surface, location, scale)
+                WaylandSurfaceRenderElement<R>,
+            >(surface, renderer, location, scale)
             .into_iter()
             .map(SpaceRenderElements::Surface)
             .map(C::from)
             .collect(),
             SpaceElements::Element(element) => element
                 .element
-                .render_elements::<Wrap<<E as AsRenderElements<R>>::RenderElement>>(location, scale)
+                .render_elements::<Wrap<<E as AsRenderElements<R>>::RenderElement>>(renderer, location, scale)
                 .into_iter()
                 .map(SpaceRenderElements::Element)
                 .map(C::from)

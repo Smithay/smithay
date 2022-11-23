@@ -64,6 +64,7 @@
 //! #     type Error = std::convert::Infallible;
 //! #     type TextureId = FakeTexture;
 //! #
+//! #     fn id(&self) -> usize { unimplemented!() }
 //! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
@@ -81,6 +82,7 @@
 //! #     fn transformation(&self) -> Transform {
 //! #         unimplemented!()
 //! #     }
+//! #     fn finish(self) -> Result<(), Self::Error> { unimplemented!() }
 //! # }
 //! #
 //! # struct FakeRenderer;
@@ -88,7 +90,7 @@
 //! # impl Renderer for FakeRenderer {
 //! #     type Error = std::convert::Infallible;
 //! #     type TextureId = FakeTexture;
-//! #     type Frame = FakeFrame;
+//! #     type Frame<'a> = FakeFrame;
 //! #
 //! #     fn id(&self) -> usize {
 //! #         unimplemented!()
@@ -99,9 +101,7 @@
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
-//! #     fn render<F, R>(&mut self, _: Size<i32, Physical>, _: Transform, _: F) -> Result<R, Self::Error>
-//! #     where
-//! #         F: FnOnce(&mut Self, &mut Self::Frame) -> R,
+//! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
 //! #     {
 //! #         unimplemented!()
 //! #     }
@@ -195,6 +195,7 @@
 //! #     type Error = std::convert::Infallible;
 //! #     type TextureId = FakeTexture;
 //! #
+//! #     fn id(&self) -> usize { unimplemented!() }
 //! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
@@ -212,6 +213,7 @@
 //! #     fn transformation(&self) -> Transform {
 //! #         unimplemented!()
 //! #     }
+//! #     fn finish(self) -> Result<(), Self::Error> { unimplemented!() }
 //! # }
 //! #
 //! # struct FakeRenderer;
@@ -219,7 +221,7 @@
 //! # impl Renderer for FakeRenderer {
 //! #     type Error = std::convert::Infallible;
 //! #     type TextureId = FakeTexture;
-//! #     type Frame = FakeFrame;
+//! #     type Frame<'a> = FakeFrame;
 //! #
 //! #     fn id(&self) -> usize {
 //! #         unimplemented!()
@@ -230,9 +232,7 @@
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
-//! #     fn render<F, R>(&mut self, _: Size<i32, Physical>, _: Transform, _: F) -> Result<R, Self::Error>
-//! #     where
-//! #         F: FnOnce(&mut Self, &mut Self::Frame) -> R,
+//! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
 //! #     {
 //! #         unimplemented!()
 //! #     }
@@ -801,16 +801,15 @@ where
     R: Renderer<TextureId = T>,
     T: Texture,
 {
-    fn draw(
+    fn draw<'a>(
         &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
+        frame: &mut <R as Renderer>::Frame<'a>,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        if renderer.id() != self.renderer_id {
+        if frame.id() != self.renderer_id {
             warn!(log, "trying to render texture from different renderer");
             return Ok(());
         }

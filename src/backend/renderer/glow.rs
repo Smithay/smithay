@@ -27,53 +27,28 @@ use glow::Context;
 use std::{
     borrow::{Borrow, BorrowMut},
     collections::HashSet,
-    fmt,
-    ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
 };
 
+use super::Frame;
+
 #[derive(Debug)]
 /// A renderer utilizing OpenGL ES 2 and [`glow`] on top for easier custom rendering.
 pub struct GlowRenderer {
-    gl: Gles2Hack,
+    gl: Gles2Renderer,
     glow: Arc<Context>,
     logger: slog::Logger,
 }
 
-#[allow(clippy::large_enum_variant)]
-enum Gles2Hack {
-    Owned(Gles2Renderer),
-    Borrowed(*mut Gles2Renderer),
-}
-
-impl fmt::Debug for Gles2Hack {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            Gles2Hack::Owned(renderer) => renderer.fmt(f),
-            Gles2Hack::Borrowed(renderer) => unsafe { &**renderer }.fmt(f),
-        }
-    }
-}
-
-impl Deref for Gles2Hack {
-    type Target = Gles2Renderer;
-
-    fn deref(&self) -> &Gles2Renderer {
-        match self {
-            Gles2Hack::Owned(renderer) => renderer,
-            Gles2Hack::Borrowed(renderer) => unsafe { &**renderer },
-        }
-    }
-}
-
-impl DerefMut for Gles2Hack {
-    fn deref_mut(&mut self) -> &mut Gles2Renderer {
-        match self {
-            Gles2Hack::Owned(renderer) => renderer,
-            Gles2Hack::Borrowed(renderer) => unsafe { &mut **renderer },
-        }
-    }
+#[derive(Debug)]
+/// [`Frame`](super::Frame) implementation of a [`GlowRenderer`].
+///
+/// Leaking the frame will cause the same problems as leaking a [`Gles2Frame`].
+pub struct GlowFrame<'a> {
+    frame: Option<Gles2Frame<'a>>,
+    glow: Arc<Context>,
+    log: slog::Logger,
 }
 
 impl GlowRenderer {
@@ -105,7 +80,7 @@ impl GlowRenderer {
         let gl = Gles2Renderer::new(context, log.clone())?;
 
         Ok(GlowRenderer {
-            gl: Gles2Hack::Owned(gl),
+            gl,
             glow: Arc::new(glow),
             logger: log,
         })
@@ -121,7 +96,9 @@ impl GlowRenderer {
     pub fn egl_context(&self) -> &EGLContext {
         self.gl.egl_context()
     }
+}
 
+impl<'frame> GlowFrame<'frame> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -132,11 +109,9 @@ impl GlowRenderer {
     /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
     pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
     where
-        F: FnOnce(&mut Self, &Arc<Context>) -> R,
+        F: FnOnce(&Arc<Context>) -> R,
     {
-        self.gl.make_current()?;
-        let glow = self.glow.clone();
-        Ok(func(self, &glow))
+        Ok(func(&self.glow))
     }
 }
 
@@ -152,7 +127,7 @@ impl From<Gles2Renderer> for GlowRenderer {
         };
 
         GlowRenderer {
-            gl: Gles2Hack::Owned(renderer),
+            gl: renderer,
             glow: Arc::new(glow),
             logger: log,
         }
@@ -174,7 +149,7 @@ impl BorrowMut<Gles2Renderer> for GlowRenderer {
 impl Renderer for GlowRenderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
-    type Frame = Gles2Frame;
+    type Frame<'frame> = GlowFrame<'frame>;
 
     fn id(&self) -> usize {
         self.gl.id()
@@ -187,25 +162,93 @@ impl Renderer for GlowRenderer {
         self.gl.upscale_filter(filter)
     }
 
-    fn render<F, R>(
+    fn render(
         &mut self,
         output_size: Size<i32, Physical>,
         transform: Transform,
-        rendering: F,
-    ) -> Result<R, Self::Error>
-    where
-        F: FnOnce(&mut Self, &mut Self::Frame) -> R,
-    {
-        self.gl.render(output_size, transform, |gl, frame| {
-            rendering(
-                &mut GlowRenderer {
-                    gl: Gles2Hack::Borrowed(gl as *mut _),
-                    glow: self.glow.clone(),
-                    logger: self.logger.clone(),
-                },
-                frame,
-            )
+    ) -> Result<GlowFrame<'_>, Self::Error> {
+        let glow = self.glow.clone();
+        let frame = self.gl.render(output_size, transform)?;
+        Ok(GlowFrame {
+            frame: Some(frame),
+            glow,
+            log: self.logger.clone(),
         })
+    }
+}
+
+impl<'frame> Frame for GlowFrame<'frame> {
+    type TextureId = Gles2Texture;
+    type Error = Gles2Error;
+
+    fn id(&self) -> usize {
+        self.frame.as_ref().unwrap().id()
+    }
+
+    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().clear(color, at)
+    }
+
+    fn render_texture_from_to(
+        &mut self,
+        texture: &Self::TextureId,
+        src: Rectangle<f64, BufferCoord>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        src_transform: Transform,
+        alpha: f32,
+    ) -> Result<(), Self::Error> {
+        self.frame
+            .as_mut()
+            .unwrap()
+            .render_texture_from_to(texture, src, dst, damage, src_transform, alpha)
+    }
+
+    fn transformation(&self) -> Transform {
+        self.frame.as_ref().unwrap().transformation()
+    }
+
+    fn render_texture_at(
+        &mut self,
+        texture: &Self::TextureId,
+        pos: crate::utils::Point<i32, Physical>,
+        texture_scale: i32,
+        output_scale: impl Into<crate::utils::Scale<f64>>,
+        src_transform: Transform,
+        damage: &[Rectangle<i32, Physical>],
+        alpha: f32,
+    ) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().render_texture_at(
+            texture,
+            pos,
+            texture_scale,
+            output_scale,
+            src_transform,
+            damage,
+            alpha,
+        )
+    }
+
+    fn finish(mut self) -> Result<(), Self::Error> {
+        self.finish_internal()
+    }
+}
+
+impl<'frame> GlowFrame<'frame> {
+    fn finish_internal(&mut self) -> Result<(), Gles2Error> {
+        if let Some(frame) = self.frame.take() {
+            frame.finish()
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl<'frame> Drop for GlowFrame<'frame> {
+    fn drop(&mut self) {
+        if let Err(err) = self.finish_internal() {
+            slog::warn!(self.log, "Ignored error finishing GlowFrame on drop: {}", err);
+        }
     }
 }
 
@@ -328,7 +371,7 @@ impl Bind<Rc<EGLSurface>> for GlowRenderer {
         self.gl.bind(surface)
     }
     fn supported_formats(&self) -> Option<HashSet<Format>> {
-        Bind::<Rc<EGLSurface>>::supported_formats(&*self.gl)
+        Bind::<Rc<EGLSurface>>::supported_formats(&self.gl)
     }
 }
 
@@ -337,7 +380,7 @@ impl Bind<Dmabuf> for GlowRenderer {
         self.gl.bind(dmabuf)
     }
     fn supported_formats(&self) -> Option<HashSet<Format>> {
-        Bind::<Dmabuf>::supported_formats(&*self.gl)
+        Bind::<Dmabuf>::supported_formats(&self.gl)
     }
 }
 
@@ -346,7 +389,7 @@ impl Bind<Gles2Texture> for GlowRenderer {
         self.gl.bind(texture)
     }
     fn supported_formats(&self) -> Option<HashSet<Format>> {
-        Bind::<Gles2Texture>::supported_formats(&*self.gl)
+        Bind::<Gles2Texture>::supported_formats(&self.gl)
     }
 }
 
@@ -361,7 +404,7 @@ impl Bind<Gles2Renderbuffer> for GlowRenderer {
         self.gl.bind(renderbuffer)
     }
     fn supported_formats(&self) -> Option<HashSet<Format>> {
-        Bind::<Gles2Renderbuffer>::supported_formats(&*self.gl)
+        Bind::<Gles2Renderbuffer>::supported_formats(&self.gl)
     }
 }
 

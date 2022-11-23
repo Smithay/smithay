@@ -51,7 +51,7 @@ impl<T: Texture> PointerElement<T> {
 render_elements! {
     pub PointerRenderElement<R> where
         R: ImportAll;
-    Surface=WaylandSurfaceRenderElement,
+    Surface=WaylandSurfaceRenderElement<R>,
     Texture=TextureRenderElement<<R as Renderer>::TextureId>,
 }
 
@@ -60,7 +60,12 @@ where
     R: Renderer<TextureId = T> + ImportAll,
 {
     type RenderElement = PointerRenderElement<R>;
-    fn render_elements<E>(&self, location: Point<i32, Physical>, scale: Scale<f64>) -> Vec<E>
+    fn render_elements<E>(
+        &self,
+        renderer: &mut R,
+        location: Point<i32, Physical>,
+        scale: Scale<f64>,
+    ) -> Vec<E>
     where
         E: From<PointerRenderElement<R>>,
     {
@@ -85,7 +90,7 @@ where
             CursorImageStatus::Surface(surface) => {
                 let elements: Vec<PointerRenderElement<R>> =
                     smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
-                        surface, location, scale,
+                        renderer, surface, location, scale, None,
                     );
                 elements.into_iter().map(E::from).collect()
             }
@@ -172,8 +177,7 @@ where
 {
     fn draw(
         &self,
-        _renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
+        frame: &mut <R as Renderer>::Frame<'_>,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],

@@ -46,6 +46,7 @@
 //! #     type Error = std::convert::Infallible;
 //! #     type TextureId = FakeTexture;
 //! #
+//! #     fn id(&self) -> usize { unimplemented!() }
 //! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
@@ -63,6 +64,7 @@
 //! #     fn transformation(&self) -> Transform {
 //! #         unimplemented!()
 //! #     }
+//! #     fn finish(self) -> Result<(), Self::Error> { unimplemented!() }
 //! # }
 //! #
 //! # struct FakeRenderer;
@@ -70,7 +72,7 @@
 //! # impl Renderer for FakeRenderer {
 //! #     type Error = std::convert::Infallible;
 //! #     type TextureId = FakeTexture;
-//! #     type Frame = FakeFrame;
+//! #     type Frame<'a> = FakeFrame;
 //! #
 //! #     fn id(&self) -> usize {
 //! #         unimplemented!()
@@ -81,9 +83,7 @@
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
-//! #     fn render<F, R>(&mut self, _: Size<i32, Physical>, _: Transform, _: F) -> Result<R, Self::Error>
-//! #     where
-//! #         F: FnOnce(&mut Self, &mut Self::Frame) -> R,
+//! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
 //! #     {
 //! #         unimplemented!()
 //! #     }
@@ -170,7 +170,8 @@
 //!
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
-//!     let render_element = MemoryRenderBufferRenderElement::from_buffer(location, &buffer, None, None, None);
+//!     let render_element = MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &buffer, None, None, None, None)
+//!         .expect("Failed to upload from memory to gpu");
 //!
 //!     // Render the element(s)
 //!     damage_tracked_renderer
@@ -182,10 +183,11 @@
 use std::{
     any::TypeId,
     collections::{hash_map::Entry, HashMap},
+    marker::PhantomData,
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use slog::trace;
+use slog::{trace, warn};
 
 use crate::{
     backend::renderer::{
@@ -272,7 +274,7 @@ impl MemoryRenderBufferInner {
         &mut self,
         renderer: &mut R,
         log: &slog::Logger,
-    ) -> Result<&<R as Renderer>::TextureId, <R as Renderer>::Error>
+    ) -> Result<(), <R as Renderer>::Error>
     where
         R: Renderer + ImportMem,
         <R as Renderer>::TextureId: 'static,
@@ -301,13 +303,18 @@ impl MemoryRenderBufferInner {
         };
 
         self.renderer_seen.insert(texture_id, current_commit);
+        Ok(())
+    }
 
-        Ok(self
-            .textures
+    fn get_texture<R>(&mut self, renderer_id: usize) -> Option<&<R as Renderer>::TextureId>
+    where
+        R: Renderer,
+        <R as Renderer>::TextureId: 'static,
+    {
+        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer_id);
+        self.textures
             .get(&texture_id)
-            .unwrap()
-            .downcast_ref::<<R as Renderer>::TextureId>()
-            .unwrap())
+            .and_then(|boxed| boxed.downcast_ref::<<R as Renderer>::TextureId>())
     }
 }
 
@@ -424,31 +431,41 @@ impl<'a> Drop for RenderContext<'a> {
 
 /// A render element for [`MemoryRenderBuffer`]
 #[derive(Debug)]
-pub struct MemoryRenderBufferRenderElement {
+pub struct MemoryRenderBufferRenderElement<R: Renderer> {
     location: Point<f64, Physical>,
     buffer: MemoryRenderBuffer,
     alpha: f32,
     src: Option<Rectangle<f64, Logical>>,
     size: Option<Size<i32, Logical>>,
+    renderer_type: PhantomData<R>,
 }
 
-impl MemoryRenderBufferRenderElement {
+impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
     /// Create a new [`MemoryRenderBufferRenderElement`] for
     /// a [`MemoryRenderBuffer`]
     pub fn from_buffer(
+        renderer: &mut R,
         location: impl Into<Point<f64, Physical>>,
         buffer: &MemoryRenderBuffer,
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
-    ) -> Self {
-        MemoryRenderBufferRenderElement {
+        log: impl Into<Option<slog::Logger>>,
+    ) -> Result<Self, <R as Renderer>::Error>
+    where
+        R: ImportMem,
+        <R as Renderer>::TextureId: 'static,
+    {
+        let logger = crate::slog_or_fallback(log);
+        buffer.inner.lock().unwrap().import_texture(renderer, &logger)?;
+        Ok(MemoryRenderBufferRenderElement {
             location: location.into(),
             buffer: buffer.clone(),
             alpha: alpha.unwrap_or(1.0),
             src,
             size,
-        }
+            renderer_type: PhantomData,
+        })
     }
 
     fn logical_size(&self) -> Size<i32, Logical> {
@@ -551,7 +568,7 @@ impl MemoryRenderBufferRenderElement {
     }
 }
 
-impl Element for MemoryRenderBufferRenderElement {
+impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
     fn id(&self) -> &super::Id {
         &self.buffer.id
     }
@@ -589,15 +606,14 @@ impl Element for MemoryRenderBufferRenderElement {
     }
 }
 
-impl<R> RenderElement<R> for MemoryRenderBufferRenderElement
+impl<R> RenderElement<R> for MemoryRenderBufferRenderElement<R>
 where
     R: Renderer + ImportMem,
     <R as Renderer>::TextureId: 'static,
 {
-    fn draw(
+    fn draw<'a>(
         &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
+        frame: &mut <R as Renderer>::Frame<'a>,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
@@ -607,7 +623,10 @@ where
         let mut guard = self.buffer.inner.lock().unwrap();
         let texture_scale = guard.scale;
         let transform = guard.transform;
-        let texture = guard.import_texture(renderer, log)?;
+        let Some(texture) = guard.get_texture::<R>(frame.id()) else {
+            warn!(log, "trying to render texture from different renderer");
+            return Ok(());
+        };
 
         let src = self
             .src

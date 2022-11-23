@@ -1,12 +1,5 @@
 use crate::{
-    backend::renderer::{
-        buffer_dimensions, buffer_has_alpha,
-        element::{
-            surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-            RenderElement,
-        },
-        ImportAll, Renderer,
-    },
+    backend::renderer::{buffer_dimensions, buffer_has_alpha, element::RenderElement, ImportAll, Renderer},
     utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
@@ -230,12 +223,12 @@ impl RendererSurfaceState {
     }
 
     /// Gets a reference to the texture for the specified renderer
-    pub fn texture<R>(&self, renderer: &R) -> Option<&R::TextureId>
+    pub fn texture<R>(&self, id: usize) -> Option<&R::TextureId>
     where
         R: Renderer,
         <R as Renderer>::TextureId: 'static,
     {
-        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
+        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), id);
         self.textures.get(&texture_id).and_then(|e| e.downcast_ref())
     }
 
@@ -377,12 +370,54 @@ where
     })
 }
 
+/// Imports buffers of a surface using a given [`Renderer`]
+///
+/// This (or `import_surface_tree`) need to be called before`draw_surface_tree`, if used later.
+///
+/// Note: This will do nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
+pub fn import_surface<R>(
+    renderer: &mut R,
+    states: &SurfaceData,
+    log: &slog::Logger,
+) -> Result<(), <R as Renderer>::Error>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+{
+    if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
+        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
+        let mut data_ref = data.borrow_mut();
+        let data = &mut *data_ref;
+
+        let last_commit = data.renderer_seen.get(&texture_id);
+        let buffer_damage = data.damage_since(last_commit.copied());
+        if let Entry::Vacant(e) = data.textures.entry(texture_id) {
+            if let Some(buffer) = data.buffer.as_ref() {
+                match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
+                    Some(Ok(m)) => {
+                        e.insert(Box::new(m));
+                        data.renderer_seen.insert(texture_id, data.current_commit());
+                    }
+                    Some(Err(err)) => {
+                        slog::warn!(log, "Error loading buffer: {}", err);
+                        return Err(err);
+                    }
+                    None => {
+                        slog::error!(log, "Unknown buffer format for: {:?}", buffer);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Imports buffers of a surface and its subsurfaces using a given [`Renderer`].
 ///
-/// This can be called early as an optimization, if `draw_surface_tree` is used later.
-/// `draw_surface_tree` will also import buffers as necessary, but calling `import_surface_tree`
-/// already may allow buffer imports to happen before compositing takes place, depending
-/// on your event loop.
+/// This (or `import_surface`) need to be called before`draw_surface_tree`, if used later.
 ///
 /// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
@@ -396,54 +431,24 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
 {
-    import_surface_tree_and(renderer, surface, 1.0, log, (0.0, 0.0).into(), |_, _, _| {})
-}
+    let scale = 1.0;
+    let location: Point<f64, Physical> = (0.0, 0.0).into();
 
-fn import_surface_tree_and<F, R, S>(
-    renderer: &mut R,
-    surface: &WlSurface,
-    scale: S,
-    log: &slog::Logger,
-    location: Point<f64, Physical>,
-    processor: F,
-) -> Result<(), <R as Renderer>::Error>
-where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
-    S: Into<Scale<f64>>,
-    F: FnMut(&WlSurface, &SurfaceData, &Point<f64, Physical>),
-{
     let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
     let mut result = Ok(());
-    let scale = scale.into();
     with_surface_tree_downward(
         surface,
         location,
         |_surface, states, location| {
             let mut location = *location;
+            // Import a new buffer if necessary
+            if let Err(err) = import_surface(renderer, states, log) {
+                result = Err(err);
+            }
+
             if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
                 let mut data_ref = data.borrow_mut();
                 let data = &mut *data_ref;
-                // Import a new buffer if necessary
-                let last_commit = data.renderer_seen.get(&texture_id);
-                let buffer_damage = data.damage_since(last_commit.copied());
-                if let Entry::Vacant(e) = data.textures.entry(texture_id) {
-                    if let Some(buffer) = data.buffer.as_ref() {
-                        match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
-                            Some(Ok(m)) => {
-                                e.insert(Box::new(m));
-                                data.renderer_seen.insert(texture_id, data.current_commit());
-                            }
-                            Some(Err(err)) => {
-                                slog::warn!(log, "Error loading buffer: {}", err);
-                                result = Err(err);
-                            }
-                            None => {
-                                slog::error!(log, "Unknown buffer format for: {:?}", buffer);
-                            }
-                        }
-                    }
-                }
                 // Now, should we be drawn ?
                 if data.textures.contains_key(&texture_id) {
                     // if yes, also process the children
@@ -459,44 +464,10 @@ where
                 TraversalAction::SkipChildren
             }
         },
-        processor,
+        |_, _, _| {},
         |_, _, _| true,
     );
     result
-}
-
-/// Draws a surface and its subsurfaces using a given [`Renderer`] and [`Frame`](crate::backend::renderer::Frame).
-///
-/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
-/// - `location` is the position the surface should be drawn at.
-/// - `damage` is the set of regions that should be drawn relative to the same origin as the location.
-///
-/// Note: This element will render nothing, if you are not using
-/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
-/// to let smithay handle buffer management.
-#[allow(clippy::too_many_arguments)]
-pub fn draw_surface_tree<R, S>(
-    renderer: &mut R,
-    frame: &mut <R as Renderer>::Frame,
-    surface: &WlSurface,
-    scale: S,
-    location: Point<f64, Physical>,
-    damage: &[Rectangle<i32, Physical>],
-    log: &slog::Logger,
-) -> Result<(), <R as Renderer>::Error>
-where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
-    S: Into<Scale<f64>>,
-{
-    let scale = scale.into();
-
-    let elements: Vec<WaylandSurfaceRenderElement> =
-        render_elements_from_surface_tree(surface, location.to_i32_round(), scale);
-
-    draw_render_elements(renderer, frame, scale, &elements, damage, log)?;
-
-    Ok(())
 }
 
 /// Draws the render elements using a given [`Renderer`] and [`Frame`](crate::backend::renderer::Frame)
@@ -508,16 +479,15 @@ where
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn draw_render_elements<R, S, E>(
-    renderer: &mut R,
-    frame: &mut <R as Renderer>::Frame,
+pub fn draw_render_elements<'a, R, S, E>(
+    frame: &mut <R as Renderer>::Frame<'a>,
     scale: S,
     elements: &[E],
     damage: &[Rectangle<i32, Physical>],
     log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, <R as Renderer>::Error>
 where
-    R: Renderer + ImportAll,
+    R: Renderer,
     <R as Renderer>::TextureId: 'static,
     S: Into<Scale<f64>>,
     E: RenderElement<R>,
@@ -603,14 +573,7 @@ where
             continue;
         }
 
-        element.draw(
-            renderer,
-            frame,
-            element.location(scale),
-            scale,
-            &element_damage,
-            log,
-        )?;
+        element.draw(frame, element.location(scale), scale, &element_damage, log)?;
     }
 
     Ok(Some(render_damage))

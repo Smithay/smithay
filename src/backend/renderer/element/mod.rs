@@ -340,10 +340,9 @@ pub trait Element {
 /// A single render element
 pub trait RenderElement<R: Renderer>: Element {
     /// Draw this element
-    fn draw(
+    fn draw<'a>(
         &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
+        frame: &mut <R as Renderer>::Frame<'a>,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
@@ -351,7 +350,8 @@ pub trait RenderElement<R: Renderer>: Element {
     ) -> Result<(), R::Error>;
 
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
-    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+        let _ = renderer;
         None
     }
 }
@@ -366,6 +366,7 @@ where
     /// Returns render elements for a given position and scale
     fn render_elements<C: From<Self::RenderElement>>(
         &self,
+        renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
     ) -> Vec<C>;
@@ -421,16 +422,15 @@ where
         (*self).underlying_storage(renderer)
     }
 
-    fn draw(
+    fn draw<'a>(
         &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
+        frame: &mut <R as Renderer>::Frame<'a>,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        (*self).draw(renderer, frame, location, scale, damage, log)
+        (*self).draw(frame, location, scale, damage, log)
     }
 }
 
@@ -680,10 +680,9 @@ macro_rules! render_elements_internal {
         }
     };
     (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        fn draw(
+        fn draw<'frame>(
             &self,
-            renderer: &mut $renderer,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
+            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'frame>,
             location: $crate::utils::Point<i32, $crate::utils::Physical>,
             scale: $crate::utils::Scale<f64>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
@@ -704,7 +703,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, location, scale, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, location, scale, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -725,10 +724,9 @@ macro_rules! render_elements_internal {
         }
     };
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        fn draw(
+        fn draw<'frame>(
             &self,
-            renderer: &mut $renderer,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame,
+            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'frame>,
             location: $crate::utils::Point<i32, $crate::utils::Physical>,
             scale: $crate::utils::Scale<f64>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
@@ -741,7 +739,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, renderer, frame, location, scale, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, location, scale, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1061,8 +1059,7 @@ macro_rules! render_elements_internal {
 /// # impl<R: Renderer> RenderElement<R> for MyRenderElement1 {
 /// #     fn draw(
 /// #         &self,
-/// #         _renderer: &mut R,
-/// #         _frame: &mut <R as Renderer>::Frame,
+/// #         _frame: &mut <R as Renderer>::Frame<'_>,
 /// #         _location: Point<i32, Physical>,
 /// #         _scale: Scale<f64>,
 /// #         _damage: &[Rectangle<i32, Physical>],
@@ -1091,10 +1088,9 @@ macro_rules! render_elements_internal {
 /// # }
 /// #
 /// # impl<R: Renderer> RenderElement<R> for MyRenderElement2 {
-/// #     fn draw(
+/// #     fn draw<'a>(
 /// #         &self,
-/// #         _renderer: &mut R,
-/// #         _frame: &mut <R as Renderer>::Frame,
+/// #         _frame: &mut <R as Renderer>::Frame<'a>,
 /// #         _location: Point<i32, Physical>,
 /// #         _scale: Scale<f64>,
 /// #         _damage: &[Rectangle<i32, Physical>],
@@ -1126,7 +1122,7 @@ macro_rules! render_elements_internal {
 ///
 /// render_elements! {
 ///     MyRenderElements<R> where R: ImportMem;
-///     Memory=MemoryRenderBufferRenderElement,
+///     Memory=MemoryRenderBufferRenderElement<R>,
 /// }
 /// ```
 ///
@@ -1141,7 +1137,7 @@ macro_rules! render_elements_internal {
 ///
 /// render_elements! {
 ///     MyRenderElements<'a, R> where R: ImportMem;
-///     Memory=&'a MemoryRenderBufferRenderElement,
+///     Memory=&'a MemoryRenderBufferRenderElement<R>,
 /// }
 /// ```
 ///
@@ -1155,7 +1151,7 @@ macro_rules! render_elements_internal {
 ///
 /// render_elements! {
 ///     MyRenderElements<'a, R, A, B> where R: ImportMem;
-///     Memory=&'a MemoryRenderBufferRenderElement,
+///     Memory=&'a MemoryRenderBufferRenderElement<R>,
 ///     Owned=A,
 ///     Borrowed=&'a B,
 /// }
@@ -1188,6 +1184,7 @@ macro_rules! render_elements_internal {
 /// #     type Error = std::convert::Infallible;
 /// #     type TextureId = MyRendererTextureId;
 /// #
+/// #     fn id(&self) -> usize { unimplemented!() }
 /// #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
 /// #         unimplemented!()
 /// #     }
@@ -1205,6 +1202,7 @@ macro_rules! render_elements_internal {
 /// #     fn transformation(&self) -> Transform {
 /// #         unimplemented!()
 /// #     }
+/// #     fn finish(self) -> Result<(), Self::Error> { unimplemented!() }
 /// # }
 /// #
 /// # struct MyRenderer;
@@ -1212,7 +1210,7 @@ macro_rules! render_elements_internal {
 /// # impl Renderer for MyRenderer {
 /// #     type Error = std::convert::Infallible;
 /// #     type TextureId = MyRendererTextureId;
-/// #     type Frame = MyRendererFrame;
+/// #     type Frame<'a> = MyRendererFrame;
 /// #
 /// #     fn id(&self) -> usize {
 /// #         unimplemented!()
@@ -1223,9 +1221,7 @@ macro_rules! render_elements_internal {
 /// #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
 /// #         unimplemented!()
 /// #     }
-/// #     fn render<F, R>(&mut self, _: Size<i32, Physical>, _: Transform, _: F) -> Result<R, Self::Error>
-/// #     where
-/// #         F: FnOnce(&mut Self, &mut Self::Frame) -> R,
+/// #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
 /// #     {
 /// #         unimplemented!()
 /// #     }
@@ -1362,16 +1358,15 @@ where
     R: Renderer,
     C: RenderElement<R>,
 {
-    fn draw(
+    fn draw<'a>(
         &self,
-        renderer: &mut R,
-        frame: &mut <R as Renderer>::Frame,
+        frame: &mut <R as Renderer>::Frame<'a>,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        self.0.draw(renderer, frame, location, scale, damage, log)
+        self.0.draw(frame, location, scale, damage, log)
     }
 
     fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
