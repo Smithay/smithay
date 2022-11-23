@@ -298,7 +298,12 @@ impl Drop for RendererId {
     }
 }
 
-/// Handle to the currently rendered frame during [`Gles2Renderer::render`](Renderer::render)
+/// Handle to the currently rendered frame during [`Gles2Renderer::render`](Renderer::render).
+///
+/// Leaking this frame will prevent it from synchronizing the rendered framebuffer,
+/// which might cause glitches. Additionally parts of the GL state might not be reset correctly,
+/// causing unexpected results for later render commands.
+/// The internal GL context and framebuffer will remain valid, no re-creation will be necessary.
 pub struct Gles2Frame<'a> {
     renderer: &'a mut Gles2Renderer,
     current_projection: Matrix3<f32>,

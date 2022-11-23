@@ -43,6 +43,8 @@ pub struct GlowRenderer {
 
 #[derive(Debug)]
 /// [`Frame`](super::Frame) implementation of a [`GlowRenderer`].
+///
+/// Leaking the frame will cause the same problems as leaking a [`Gles2Frame`].
 pub struct GlowFrame<'a> {
     frame: Option<Gles2Frame<'a>>,
     glow: Arc<Context>,

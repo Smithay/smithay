@@ -620,6 +620,11 @@ impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target> AsMut<<R::Device as ApiDevi
 
 /// [`Frame`](super::Frame) implementation of a [`MultiRenderer`].
 pub struct MultiFrame<'a, 'b, 'c, R: GraphicsApi + 'c, T: GraphicsApi, Target>
+/// Leaking the frame will potentially keep it from doing necessary copies
+/// of the internal framebuffer for some multi-gpu configurations. The result would
+/// be no updated framebuffer contents.
+/// Additionally all problems related to the Frame-implementation of the underlying
+/// [`GraphicsApi`] will be present.
 where
     R: 'static,
     R::Error: 'static,
