@@ -1,11 +1,12 @@
+use std::collections::HashMap;
 use std::io;
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd};
 use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{atomic::AtomicBool, Arc, Mutex, Weak};
 use std::time::{Duration, SystemTime};
 
 use calloop::{EventSource, Interest, Poll, PostAction, Readiness, Token, TokenFactory};
-use drm::control::{connector, crtc, Device as ControlDevice, Event, Mode, ResourceHandles};
+use drm::control::{connector, crtc, plane, Device as ControlDevice, Event, Mode, ResourceHandles};
 use drm::{ClientCapability, Device as BasicDevice, DriverCapability};
 use nix::libc::dev_t;
 
@@ -22,6 +23,89 @@ use legacy::LegacyDrmDevice;
 
 use slog::{info, o, trace};
 
+#[derive(Debug)]
+struct PlaneClaimInner {
+    plane: drm::control::plane::Handle,
+    crtc: drm::control::crtc::Handle,
+    storage: PlaneClaimStorage,
+}
+
+impl Drop for PlaneClaimInner {
+    fn drop(&mut self) {
+        self.storage.remove(self.plane);
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PlaneClaimWeak(Weak<PlaneClaimInner>);
+
+impl PlaneClaimWeak {
+    fn upgrade(&self) -> Option<PlaneClaim> {
+        self.0.upgrade().map(|claim| PlaneClaim { claim })
+    }
+}
+
+/// A claim of a plane
+#[derive(Debug, Clone)]
+pub struct PlaneClaim {
+    claim: Arc<PlaneClaimInner>,
+}
+
+impl PlaneClaim {
+    /// The plane the claim was taken for
+    pub fn plane(&self) -> drm::control::plane::Handle {
+        self.claim.plane
+    }
+
+    /// The crtc the claim was taken for
+    pub fn crtc(&self) -> drm::control::crtc::Handle {
+        self.claim.crtc
+    }
+}
+
+impl PlaneClaim {
+    fn downgrade(&self) -> PlaneClaimWeak {
+        PlaneClaimWeak(Arc::downgrade(&self.claim))
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PlaneClaimStorage {
+    claimed_planes: Arc<Mutex<HashMap<drm::control::plane::Handle, PlaneClaimWeak>>>,
+}
+
+impl PlaneClaimStorage {
+    pub fn claim(
+        &self,
+        plane: drm::control::plane::Handle,
+        crtc: drm::control::crtc::Handle,
+    ) -> Option<PlaneClaim> {
+        let mut guard = self.claimed_planes.lock().unwrap();
+        if let Some(claim) = guard.get(&plane).and_then(|claim| claim.upgrade()) {
+            if claim.crtc() == crtc {
+                Some(claim)
+            } else {
+                None
+            }
+        } else {
+            let claim = PlaneClaim {
+                claim: Arc::new(PlaneClaimInner {
+                    plane,
+                    crtc,
+                    storage: self.clone(),
+                }),
+            };
+            guard.insert(plane, claim.downgrade());
+            Some(claim)
+        }
+    }
+
+    fn remove(&self, plane: drm::control::plane::Handle) {
+        let mut guard = self.claimed_planes.lock().unwrap();
+        guard.remove(&plane);
+    }
+}
+
 /// An open drm device
 #[derive(Debug)]
 pub struct DrmDevice {
@@ -33,6 +117,7 @@ pub struct DrmDevice {
     resources: ResourceHandles,
     pub(super) logger: ::slog::Logger,
     token: Option<Token>,
+    plane_claim_storage: PlaneClaimStorage,
 }
 
 impl AsFd for DrmDevice {
@@ -139,6 +224,7 @@ impl DrmDevice {
             resources,
             logger: log,
             token: None,
+            plane_claim_storage: Default::default(),
         })
     }
 
@@ -184,6 +270,13 @@ impl DrmDevice {
     /// Returns a set of available planes for a given crtc
     pub fn planes(&self, crtc: &crtc::Handle) -> Result<Planes, Error> {
         planes(self, crtc, self.has_universal_planes)
+    }
+
+    /// Claim a plane so that it won't be used by a different crtc
+    ///  
+    /// Returns `None` if the plane could not be claimed
+    pub fn claim_plane(&self, plane: plane::Handle, crtc: crtc::Handle) -> Option<PlaneClaim> {
+        self.plane_claim_storage.claim(plane, crtc)
     }
 
     /// Returns the size of the hardware cursor
@@ -272,6 +365,7 @@ impl DrmDevice {
             primary: plane,
             internal: Arc::new(internal),
             has_universal_planes: self.has_universal_planes,
+            plane_claim_storage: self.plane_claim_storage.clone(),
         })
     }
 

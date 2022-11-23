@@ -76,7 +76,9 @@ pub mod node;
 pub(self) mod surface;
 
 use crate::utils::DevPath;
-pub use device::{DrmDevice, DrmDeviceFd, DrmEvent, EventMetadata as DrmEventMetadata, Time as DrmEventTime};
+pub use device::{
+    DrmDevice, DrmDeviceFd, DrmEvent, EventMetadata as DrmEventMetadata, PlaneClaim, Time as DrmEventTime,
+};
 pub use error::Error as DrmError;
 pub use node::{CreateDrmNodeError, DrmNode, NodeType};
 #[cfg(feature = "backend_gbm")]
