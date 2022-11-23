@@ -4,7 +4,7 @@ use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
         renderer::{
-            Frame, ImportDma, ImportDmaWl, ImportEgl, ImportMem, ImportMemWl, Renderer, Texture,
+            DebugFlags, Frame, ImportDma, ImportDmaWl, ImportEgl, ImportMem, ImportMemWl, Renderer, Texture,
             TextureFilter,
         },
         SwapBuffersError,
@@ -45,6 +45,12 @@ impl Renderer for DummyRenderer {
 
     fn downscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
         Ok(())
+    }
+
+    fn set_debug_flags(&mut self, _flags: DebugFlags) {}
+
+    fn debug_flags(&self) -> DebugFlags {
+        DebugFlags::empty()
     }
 }
 

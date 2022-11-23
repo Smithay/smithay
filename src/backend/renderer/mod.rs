@@ -207,6 +207,13 @@ pub trait Frame {
     fn finish(self) -> Result<(), Self::Error>;
 }
 
+bitflags::bitflags! {
+    /// Debug flags that can be enabled at runtime
+    pub struct DebugFlags: u32 {
+        /// Tint all rendered textures
+        const TINT = 0b00000001;
+    }
+}
 /// Abstraction of commonly used rendering operations for compositors.
 pub trait Renderer {
     /// Error type returned by the rendering operations of this renderer.
@@ -226,6 +233,11 @@ pub trait Renderer {
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error>;
     /// Set the filter method to be used when rendering a texture into a larger area than its size
     fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error>;
+
+    /// Set the enabled [`DebugFlags`]
+    fn set_debug_flags(&mut self, flags: DebugFlags);
+    /// Returns the current enabled [`DebugFlags`]
+    fn debug_flags(&self) -> DebugFlags;
 
     /// Initialize a rendering context on the current rendering target with given dimensions and transformation.
     ///

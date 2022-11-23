@@ -1160,7 +1160,7 @@ macro_rules! render_elements_internal {
 ///
 /// ```
 /// # use smithay::{
-/// #     backend::renderer::{Frame, Renderer, Texture, TextureFilter},
+/// #     backend::renderer::{DebugFlags, Frame, Renderer, Texture, TextureFilter},
 /// #     utils::{Buffer, Physical, Rectangle, Size, Transform},
 /// # };
 /// #
@@ -1217,6 +1217,12 @@ macro_rules! render_elements_internal {
 /// #         unimplemented!()
 /// #     }
 /// #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+/// #         unimplemented!()
+/// #     }
+/// #     fn set_debug_flags(&mut self, flags: DebugFlags) {
+/// #         unimplemented!()
+/// #     }
+/// #     fn debug_flags(&self) -> DebugFlags {
 /// #         unimplemented!()
 /// #     }
 /// #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>

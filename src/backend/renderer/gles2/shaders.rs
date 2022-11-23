@@ -36,9 +36,17 @@ precision mediump float;
 uniform sampler2D tex;
 uniform float alpha;
 varying vec2 v_tex_coords;
+uniform float tint;
 
 void main() {
-    gl_FragColor = texture2D(tex, v_tex_coords) * alpha;
+    vec4 color;
+
+    color = texture2D(tex, v_tex_coords) * alpha;
+
+    if (tint == 1.0)
+        color = vec4(0.0, 0.3, 0.0, 0.2) + color * 0.8;
+
+    gl_FragColor = color;
 }
 "#;
 
@@ -49,9 +57,17 @@ precision mediump float;
 uniform sampler2D tex;
 uniform float alpha;
 varying vec2 v_tex_coords;
+uniform float tint;
 
 void main() {
-    gl_FragColor = vec4(texture2D(tex, v_tex_coords).rgb, 1.0) * alpha;
+    vec4 color;
+
+    color = vec4(texture2D(tex, v_tex_coords).rgb, 1.0) * alpha;
+
+    if (tint == 1.0)
+        color = vec4(0.0, 0.3, 0.0, 0.2) + color * 0.8;
+
+    gl_FragColor = color;
 }
 "#;
 
@@ -63,9 +79,17 @@ precision mediump float;
 uniform samplerExternalOES tex;
 uniform float alpha;
 varying vec2 v_tex_coords;
+uniform float tint;
 
 void main() {
-    gl_FragColor = texture2D(tex, v_tex_coords) * alpha;
+    vec4 color;
+
+    color = texture2D(tex, v_tex_coords) * alpha;
+
+    if (tint == 1.0)
+        color = vec4(0.0, 0.3, 0.0, 0.2) + color * 0.8;
+
+    gl_FragColor = color;
 }
 "#;
 

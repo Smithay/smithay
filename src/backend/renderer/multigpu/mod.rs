@@ -909,6 +909,13 @@ where
             .map_err(Error::Render)
     }
 
+    fn set_debug_flags(&mut self, flags: DebugFlags) {
+        self.render.renderer_mut().set_debug_flags(flags)
+    }
+    fn debug_flags(&self) -> DebugFlags {
+        self.render.renderer().debug_flags()
+    }
+
     fn render<'frame>(
         &'frame mut self,
         size: Size<i32, Physical>,

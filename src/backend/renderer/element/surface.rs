@@ -23,7 +23,7 @@
 //! # use smithay::{
 //! #     backend::allocator::dmabuf::Dmabuf,
 //! #     backend::renderer::{
-//! #         Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
+//! #         DebugFlags, Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
 //! #         TextureFilter,
 //! #     },
 //! #     utils::{Buffer, Physical},
@@ -84,6 +84,12 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
+//! #         unimplemented!()
+//! #     }
+//! #     fn debug_flags(&self) -> DebugFlags {
 //! #         unimplemented!()
 //! #     }
 //! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
