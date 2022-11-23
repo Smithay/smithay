@@ -846,6 +846,11 @@ fn get_dmabuf_formats(
         }) {
             Ok(_) => {}
             Err(EGLError::BadParameter) => {
+                slog::debug!(
+                    log,
+                    "eglQueryDmaBufModifiersEXT returned BadParameter for {:?}",
+                    fourcc
+                );
                 num = 0;
             }
             Err(x) => {
