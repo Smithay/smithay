@@ -166,7 +166,11 @@ impl<Kind> From<libc::timespec> for Time<Kind> {
     }
 }
 
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
 const NANOS_PER_SEC: i64 = 1_000_000_000;
+
+#[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
+const NANOS_PER_SEC: std::os::raw::c_long = 1_000_000_000;
 
 fn saturating_sub_timespec(lhs: libc::timespec, rhs: libc::timespec) -> Option<Duration> {
     if let Some(mut secs) = lhs.tv_sec.checked_sub(rhs.tv_sec) {
