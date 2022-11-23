@@ -1677,6 +1677,7 @@ where
 
         let result = self.blit(&src_target, &dst_target, src, dst, filter);
 
+        self.unbind()?;
         self.target = Some(dst_target);
         self.make_current()?;
 
