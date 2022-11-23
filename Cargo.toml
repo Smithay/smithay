@@ -25,7 +25,7 @@ members = [
 [dependencies]
 appendlist = "1.4"
 # Intentionally pick a commit from "0.37-stable" branch since additions for 0.37.1 are used
-ash = { git = "https://github.com/ash-rs/ash", rev = "62960ad680207e8496ae19ebd11f7c7ae8422e27", optional = true }
+ash = { version = "0.37.1", optional = true }
 bitflags = "1"
 calloop = "0.10.1"
 cgmath = "0.18.0"
