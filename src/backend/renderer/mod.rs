@@ -214,9 +214,9 @@ pub trait Renderer {
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
-    type Frame<'a>: Frame<Error = Self::Error, TextureId = Self::TextureId> + 'a
+    type Frame<'frame>: Frame<Error = Self::Error, TextureId = Self::TextureId> + 'frame
     where
-        Self: 'a;
+        Self: 'frame;
 
     /// Returns an id, that is unique to all renderers, that can use
     /// `TextureId`s originating from any of these renderers.

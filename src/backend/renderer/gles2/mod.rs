@@ -304,15 +304,15 @@ impl Drop for RendererId {
 /// which might cause glitches. Additionally parts of the GL state might not be reset correctly,
 /// causing unexpected results for later render commands.
 /// The internal GL context and framebuffer will remain valid, no re-creation will be necessary.
-pub struct Gles2Frame<'a> {
-    renderer: &'a mut Gles2Renderer,
+pub struct Gles2Frame<'frame> {
+    renderer: &'frame mut Gles2Renderer,
     current_projection: Matrix3<f32>,
     transform: Transform,
     size: Size<i32, Physical>,
     finished: AtomicBool,
 }
 
-impl<'a> fmt::Debug for Gles2Frame<'a> {
+impl<'frame> fmt::Debug for Gles2Frame<'frame> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Gles2Frame")
             .field("renderer", &self.renderer)
@@ -1682,7 +1682,7 @@ impl Gles2Renderer {
     }
 }
 
-impl<'a> Gles2Frame<'a> {
+impl<'frame> Gles2Frame<'frame> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -1702,7 +1702,7 @@ impl<'a> Gles2Frame<'a> {
 impl Renderer for Gles2Renderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
-    type Frame<'a> = Gles2Frame<'a>;
+    type Frame<'frame> = Gles2Frame<'frame>;
 
     fn id(&self) -> usize {
         self.egl.user_data().get::<RendererId>().unwrap().0
@@ -1817,7 +1817,7 @@ const fn triangle_verts() -> [ffi::types::GLfloat; 12 * MAX_RECTS_PER_DRAW] {
     verts
 }
 
-impl<'a> Frame for Gles2Frame<'a> {
+impl<'frame> Frame for Gles2Frame<'frame> {
     type TextureId = Gles2Texture;
     type Error = Gles2Error;
 
@@ -2034,7 +2034,7 @@ impl<'a> Frame for Gles2Frame<'a> {
     }
 }
 
-impl<'a> Gles2Frame<'a> {
+impl<'frame> Gles2Frame<'frame> {
     fn finish_internal(&mut self) -> Result<(), Gles2Error> {
         if self.finished.swap(true, Ordering::SeqCst) {
             return Ok(());
@@ -2234,7 +2234,7 @@ impl<'a> Gles2Frame<'a> {
     }
 }
 
-impl<'a> Drop for Gles2Frame<'a> {
+impl<'frame> Drop for Gles2Frame<'frame> {
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
             slog::warn!(

@@ -98,7 +98,7 @@ impl GlowRenderer {
     }
 }
 
-impl<'a> GlowFrame<'a> {
+impl<'frame> GlowFrame<'frame> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -149,7 +149,7 @@ impl BorrowMut<Gles2Renderer> for GlowRenderer {
 impl Renderer for GlowRenderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
-    type Frame<'a> = GlowFrame<'a>;
+    type Frame<'frame> = GlowFrame<'frame>;
 
     fn id(&self) -> usize {
         self.gl.id()
@@ -177,7 +177,7 @@ impl Renderer for GlowRenderer {
     }
 }
 
-impl<'a> Frame for GlowFrame<'a> {
+impl<'frame> Frame for GlowFrame<'frame> {
     type TextureId = Gles2Texture;
     type Error = Gles2Error;
 
@@ -234,7 +234,7 @@ impl<'a> Frame for GlowFrame<'a> {
     }
 }
 
-impl<'a> GlowFrame<'a> {
+impl<'frame> GlowFrame<'frame> {
     fn finish_internal(&mut self) -> Result<(), Gles2Error> {
         if let Some(frame) = self.frame.take() {
             frame.finish()
@@ -244,7 +244,7 @@ impl<'a> GlowFrame<'a> {
     }
 }
 
-impl<'a> Drop for GlowFrame<'a> {
+impl<'frame> Drop for GlowFrame<'frame> {
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
             slog::warn!(self.log, "Ignored error finishing GlowFrame on drop: {}", err);
