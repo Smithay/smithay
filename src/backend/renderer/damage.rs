@@ -687,7 +687,7 @@ impl DamageTrackedRenderer {
 
         // Optimize the damage for rendering
         damage.dedup();
-        damage.retain(|rect| rect.overlaps(output_geo));
+        damage.retain(|rect| rect.overlaps_or_touches(output_geo));
         damage.retain(|rect| !rect.is_empty());
         // filter damage outside of the output gep and merge overlapping rectangles
         *damage = damage
@@ -695,8 +695,9 @@ impl DamageTrackedRenderer {
             .filter_map(|rect| rect.intersection(output_geo))
             .fold(Vec::new(), |new_damage, mut rect| {
                 // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                    new_damage.into_iter().partition(|other| other.overlaps(rect));
+                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
+                    .into_iter()
+                    .partition(|other| other.overlaps_or_touches(rect));
 
                 for overlap in overlapping {
                     rect = rect.merge(overlap);

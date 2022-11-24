@@ -1141,8 +1141,25 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     }
 
     /// Checks whether a given [`Rectangle`] overlaps with this one
+    ///
+    /// Note: This operation is exclusive, touching only rectangles will return `false`.
+    /// For inclusive overlap test see [`overlaps_or_touches`](Rectangle::overlaps_or_touches)
     #[inline]
     pub fn overlaps(self, other: impl Into<Rectangle<N, Kind>>) -> bool {
+        let other = other.into();
+
+        self.loc.x < other.loc.x.saturating_add(other.size.w)
+            && other.loc.x < self.loc.x.saturating_add(self.size.w)
+            && self.loc.y < other.loc.y.saturating_add(other.size.h)
+            && other.loc.y < self.loc.y.saturating_add(self.size.h)
+    }
+
+    /// Checks whether a given [`Rectangle`] overlaps with this one or touches it
+    ///
+    /// Note: This operation is inclusive, touching only rectangles will return `true`.
+    /// For exclusive overlap test see [`overlaps`](Rectangle::overlaps)
+    #[inline]
+    pub fn overlaps_or_touches(self, other: impl Into<Rectangle<N, Kind>>) -> bool {
         let other = other.into();
 
         self.loc.x <= other.loc.x.saturating_add(other.size.w)
@@ -1157,7 +1174,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     #[inline]
     pub fn intersection(self, other: impl Into<Rectangle<N, Kind>>) -> Option<Self> {
         let other = other.into();
-        if !self.overlaps(other) {
+        if !self.overlaps_or_touches(other) {
             return None;
         }
         Some(Rectangle::from_extemities(
@@ -1199,7 +1216,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     /// otherwise up to 4 rectangles will be returned.
     pub fn subtract_rect(self, other: Self) -> Vec<Self> {
         // If there is no overlap there is nothing to subtract
-        if !self.overlaps(other) {
+        if !self.overlaps_or_touches(other) {
             return vec![self];
         }
 
@@ -1806,5 +1823,47 @@ mod tests {
                 Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (20, 100)),
             ]
         )
+    }
+
+    #[test]
+    fn rectangle_overlaps_or_touches_top() {
+        let top = Rectangle::<i32, Logical>::from_loc_and_size((0, -24), (800, 24));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(main.overlaps_or_touches(top));
+    }
+
+    #[test]
+    fn rectangle_overlaps_or_touches_left() {
+        let left = Rectangle::<i32, Logical>::from_loc_and_size((-4, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(main.overlaps_or_touches(left));
+    }
+
+    #[test]
+    fn rectangle_overlaps_or_touches_right() {
+        let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(main.overlaps_or_touches(right));
+    }
+
+    #[test]
+    fn rectangle_no_overlap_top() {
+        let top = Rectangle::<i32, Logical>::from_loc_and_size((0, -24), (800, 24));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(!main.overlaps(top));
+    }
+
+    #[test]
+    fn rectangle_no_overlap_left() {
+        let left = Rectangle::<i32, Logical>::from_loc_and_size((-4, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(!main.overlaps(left));
+    }
+
+    #[test]
+    fn rectangle_no_overlap_right() {
+        let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(!main.overlaps(right));
     }
 }

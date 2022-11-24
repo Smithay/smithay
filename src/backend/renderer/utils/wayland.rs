@@ -178,7 +178,7 @@ impl RendererSurfaceState {
                                     RectangleKind::Add => {
                                         let added_regions = new_regions
                                             .iter()
-                                            .filter(|region| region.overlaps(rect))
+                                            .filter(|region| region.overlaps_or_touches(rect))
                                             .fold(vec![rect], |new_regions, existing_region| {
                                                 new_regions
                                                     .into_iter()
@@ -584,8 +584,9 @@ where
         .into_iter()
         .fold(Vec::new(), |new_damage, mut rect| {
             // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                new_damage.into_iter().partition(|other| other.overlaps(rect));
+            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
+                .into_iter()
+                .partition(|other| other.overlaps_or_touches(rect));
 
             for overlap in overlapping {
                 rect = rect.merge(overlap);
