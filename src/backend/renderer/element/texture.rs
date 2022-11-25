@@ -828,7 +828,7 @@ where
             .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), texture_size).to_f64());
 
         let dst = Rectangle::from_loc_and_size(location, self.physical_size(scale));
-        frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, self.alpha)
+        frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, self.alpha, true)
     }
 
     fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {

@@ -640,6 +640,6 @@ where
             .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), texture.size()).to_f64());
 
         let dst = Rectangle::from_loc_and_size(location, physical_size);
-        frame.render_texture_from_to(texture, src, dst, damage, transform, self.alpha)
+        frame.render_texture_from_to(texture, src, dst, damage, transform, self.alpha, true)
     }
 }

@@ -161,6 +161,7 @@ pub trait Frame {
         src_transform: Transform,
         damage: &[Rectangle<i32, Physical>],
         alpha: f32,
+        blend: bool,
     ) -> Result<(), Self::Error> {
         self.render_texture_from_to(
             texture,
@@ -175,12 +176,14 @@ pub trait Frame {
             damage,
             src_transform,
             alpha,
+            blend,
         )
     }
 
     /// Render part of a texture as given by src to the current target into the rectangle described by dst
     /// as a flat 2d-plane after applying the inverse of the given transformation.
     /// (Meaning `src_transform` should match the orientation of surface being rendered).
+    #[allow(clippy::too_many_arguments)]
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,
@@ -189,6 +192,7 @@ pub trait Frame {
         damage: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
+        blend: bool,
     ) -> Result<(), Self::Error>;
 
     /// Output transformation that is applied to this frame

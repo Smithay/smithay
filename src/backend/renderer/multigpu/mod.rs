@@ -940,6 +940,7 @@ where
                                         &damage,
                                         self.dst_transform.invert(),
                                         1.0,
+                                        false,
                                     )
                                     .map_err(Error::Target)?;
                                 frame.finish().map_err(Error::Target)?;
@@ -1021,6 +1022,7 @@ where
                             &[Rectangle::from_loc_and_size((0, 0), dst.size)],
                             Transform::Normal,
                             1.0,
+                            false,
                         )
                         .map_err(Error::Target)?;
                 }
@@ -1252,6 +1254,7 @@ where
         damage: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
+        blend: bool,
     ) -> Result<(), Error<R, T>> {
         if let Some(texture) = texture.get::<R>(&self.node) {
             self.damage.extend(damage.iter().map(|rect| {
@@ -1270,7 +1273,7 @@ where
             self.frame
                 .as_mut()
                 .unwrap()
-                .render_texture_from_to(&texture, src, dst, damage, src_transform, alpha)
+                .render_texture_from_to(&texture, src, dst, damage, src_transform, alpha, blend)
                 .map_err(Error::Render)
         } else {
             slog::warn!(

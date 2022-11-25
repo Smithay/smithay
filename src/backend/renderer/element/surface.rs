@@ -495,6 +495,7 @@ where
                             damage,
                             data.buffer_transform,
                             1.0f32,
+                            true,
                         )?;
                     }
                 } else {

@@ -1957,6 +1957,7 @@ impl<'frame> Frame for Gles2Frame<'frame> {
         damage: &[Rectangle<i32, Physical>],
         transform: Transform,
         alpha: f32,
+        blend: bool,
     ) -> Result<(), Gles2Error> {
         let mut mat = Matrix3::<f32>::identity();
 
@@ -2026,7 +2027,7 @@ impl<'frame> Frame for Gles2Frame<'frame> {
             })
             .collect::<Vec<_>>();
 
-        self.render_texture(texture, tex_mat, mat, Some(&instances), alpha)
+        self.render_texture(texture, tex_mat, mat, Some(&instances), alpha, blend)
     }
 
     fn transformation(&self) -> Transform {
@@ -2085,6 +2086,7 @@ impl<'frame> Gles2Frame<'frame> {
         mut matrix: Matrix3<f32>,
         instances: Option<&[ffi::types::GLfloat]>,
         alpha: f32,
+        blend: bool,
     ) -> Result<(), Gles2Error> {
         let damage = instances.unwrap_or(&[0.0, 0.0, 1.0, 1.0]);
         if damage.is_empty() {
@@ -2103,6 +2105,10 @@ impl<'frame> Gles2Frame<'frame> {
         // render
         let gl = &self.renderer.gl;
         unsafe {
+            if !blend {
+                gl.Disable(ffi::BLEND);
+            }
+
             gl.ActiveTexture(ffi::TEXTURE0);
             gl.BindTexture(target, tex.0.texture);
             gl.TexParameteri(
@@ -2227,6 +2233,11 @@ impl<'frame> Gles2Frame<'frame> {
             gl.DisableVertexAttribArray(
                 self.renderer.tex_programs[tex.0.texture_kind].attrib_vert_position as u32,
             );
+
+            if !blend {
+                gl.Enable(ffi::BLEND);
+                gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+            }
         }
 
         Ok(())

@@ -164,6 +164,7 @@ impl Frame for DummyFrame {
         _damage: &[Rectangle<i32, Physical>],
         _src_transform: Transform,
         _alpha: f32,
+        _blend: bool,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
