@@ -573,7 +573,7 @@ where
             continue;
         }
 
-        element.draw(frame, element.location(scale), scale, &element_damage, log)?;
+        element.draw(frame, element.src(), element_geometry, &element_damage, log)?;
     }
 
     Ok(Some(render_damage))

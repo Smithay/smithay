@@ -474,36 +474,18 @@ where
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
-        location: Point<i32, Physical>,
-        scale: Scale<f64>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        let dst_size = self.size(scale);
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
             if let Some(data) = data {
                 let data = data.borrow();
 
                 if let Some(texture) = data.texture::<R>(frame.id()) {
-                    if let Some(surface_view) = data.view() {
-                        let src = surface_view.src.to_buffer(
-                            data.buffer_scale as f64,
-                            data.buffer_transform,
-                            &data.buffer_size().unwrap().to_f64(),
-                        );
-
-                        let dst = Rectangle::from_loc_and_size(location, dst_size);
-
-                        frame.render_texture_from_to(
-                            texture,
-                            src,
-                            dst,
-                            damage,
-                            data.buffer_transform,
-                            1.0f32,
-                        )?;
-                    }
+                    frame.render_texture_from_to(texture, src, dst, damage, data.buffer_transform, 1.0f32)?;
                 } else {
                     warn!(log, "trying to render texture from different renderer");
                 }

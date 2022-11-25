@@ -192,7 +192,7 @@ use slog::{trace, warn};
 use crate::{
     backend::renderer::{
         utils::{CommitCounter, DamageTracker},
-        Frame, ImportMem, Renderer, Texture,
+        Frame, ImportMem, Renderer,
     },
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
@@ -614,32 +614,18 @@ where
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
-        location: Point<i32, Physical>,
-        scale: Scale<f64>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        let physical_size = self.physical_size(scale);
         let mut guard = self.buffer.inner.lock().unwrap();
-        let texture_scale = guard.scale;
         let transform = guard.transform;
         let Some(texture) = guard.get_texture::<R>(frame.id()) else {
             warn!(log, "trying to render texture from different renderer");
             return Ok(());
         };
 
-        let src = self
-            .src
-            .map(|src| {
-                src.to_buffer(
-                    texture_scale as f64,
-                    transform,
-                    &texture.size().to_logical(texture_scale, transform).to_f64(),
-                )
-            })
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), texture.size()).to_f64());
-
-        let dst = Rectangle::from_loc_and_size(location, physical_size);
         frame.render_texture_from_to(texture, src, dst, damage, transform, self.alpha)
     }
 }

@@ -165,7 +165,7 @@ use std::collections::{HashMap, VecDeque};
 use indexmap::IndexMap;
 
 use crate::{
-    backend::renderer::Frame,
+    backend::renderer::{element::RenderElementPresentationState, Frame},
     output::Output,
     utils::{Physical, Rectangle, Scale, Size, Transform},
 };
@@ -178,10 +178,29 @@ use super::{
 use super::{Renderer, Texture};
 
 #[derive(Debug, Clone, Copy)]
-struct ElementState {
-    last_commit: CommitCounter,
+struct ElementInstanceState {
     last_geometry: Rectangle<i32, Physical>,
     last_z_index: usize,
+}
+
+impl ElementInstanceState {
+    fn matches(&self, geometry: Rectangle<i32, Physical>, z_index: usize) -> bool {
+        self.last_geometry == geometry && self.last_z_index == z_index
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ElementState {
+    last_commit: CommitCounter,
+    last_instances: Vec<ElementInstanceState>,
+}
+
+impl ElementState {
+    fn instance_matches(&self, geometry: Rectangle<i32, Physical>, z_index: usize) -> bool {
+        self.last_instances
+            .iter()
+            .any(|instance| instance.matches(geometry, z_index))
+    }
 }
 
 #[derive(Debug, Default)]
@@ -377,13 +396,7 @@ impl DamageTrackedRenderer {
                     continue;
                 }
 
-                element.draw(
-                    &mut frame,
-                    element.location(output_scale),
-                    output_scale,
-                    &element_damage,
-                    &log,
-                )?;
+                element.draw(&mut frame, element.src(), element_geometry, &element_damage, &log)?;
             }
 
             Result::<(), R::Error>::Ok(())
@@ -478,11 +491,15 @@ impl DamageTrackedRenderer {
                 .into_iter()
                 .fold(0usize, |acc, item| acc + (item.size.w * item.size.h) as usize);
 
+            // No need to draw a completely hidden element
             if element_visible_area == 0 {
-                // No need to draw a completely hidden element
-                element_render_states
-                    .states
-                    .insert(element_id.clone(), RenderElementState::skipped());
+                // We allow multiple instance of a single element, so do not
+                // override the state if we already have one
+                if !element_render_states.states.contains_key(element_id) {
+                    element_render_states
+                        .states
+                        .insert(element_id.clone(), RenderElementState::skipped());
+                }
                 continue;
             }
 
@@ -522,10 +539,19 @@ impl DamageTrackedRenderer {
                 .collect::<Vec<_>>();
             opaque_regions.push((z_index, element_opaque_regions));
             render_elements.push(element);
-            element_render_states.states.insert(
-                element_id.clone(),
-                RenderElementState::rendered(element_visible_area),
-            );
+
+            if let Some(state) = element_render_states.states.get_mut(element_id) {
+                if matches!(state.presentation_state, RenderElementPresentationState::Skipped) {
+                    *state = RenderElementState::rendered(element_visible_area);
+                } else {
+                    state.visible_area += element_visible_area;
+                }
+            } else {
+                element_render_states.states.insert(
+                    element_id.clone(),
+                    RenderElementState::rendered(element_visible_area),
+                );
+            }
             z_index += 1;
         }
 
@@ -538,14 +564,21 @@ impl DamageTrackedRenderer {
             .flat_map(|(_, state)| {
                 opaque_regions
                     .iter()
-                    .filter(|(z_index, _)| *z_index < state.last_z_index)
+                    .filter(|(z_index, _)| state.last_instances.iter().any(|i| *z_index < i.last_z_index))
                     .flat_map(|(_, opaque_regions)| opaque_regions)
-                    .fold(vec![state.last_geometry], |damage, opaque_region| {
-                        damage
-                            .into_iter()
-                            .flat_map(|damage| damage.subtract_rect(*opaque_region))
-                            .collect::<Vec<_>>()
-                    })
+                    .fold(
+                        state
+                            .last_instances
+                            .iter()
+                            .map(|i| i.last_geometry)
+                            .collect::<Vec<_>>(),
+                        |damage, opaque_region| {
+                            damage
+                                .into_iter()
+                                .flat_map(|damage| damage.subtract_rect(*opaque_region))
+                                .collect::<Vec<_>>()
+                        },
+                    )
             })
             .collect::<Vec<_>>();
         damage.extend(elements_gone);
@@ -556,12 +589,12 @@ impl DamageTrackedRenderer {
             let element_last_state = self.last_state.elements.get(element.id());
 
             if element_last_state
-                .map(|s| s.last_geometry != element_geometry || s.last_z_index != z_index)
-                .unwrap_or(false)
+                .map(|s| !s.instance_matches(element_geometry, z_index))
+                .unwrap_or(true)
             {
                 let mut element_damage = vec![element_geometry];
-                if let Some(old_geo) = element_last_state.map(|s| s.last_geometry) {
-                    element_damage.push(old_geo);
+                if let Some(state) = element_last_state {
+                    element_damage.extend(state.last_instances.iter().map(|i| i.last_geometry));
                 }
                 damage.extend(
                     opaque_regions
@@ -636,21 +669,35 @@ impl DamageTrackedRenderer {
 
         slog::trace!(log, "damage to be rendered: {:#?}", &damage);
 
-        let new_elements_state = render_elements
-            .iter()
-            .enumerate()
-            .map(|(z_index, elem)| {
-                let id = elem.id().clone();
-                let current_commit = elem.current_commit();
+        let new_elements_state = render_elements.iter().enumerate().fold(
+            IndexMap::<Id, ElementState>::with_capacity(render_elements.len()),
+            |mut map, (z_index, elem)| {
+                let id = elem.id();
                 let elem_geometry = elem.geometry(output_scale);
-                let state = ElementState {
-                    last_commit: current_commit,
-                    last_geometry: elem_geometry,
-                    last_z_index: z_index,
-                };
-                (id, state)
-            })
-            .collect();
+
+                if let Some(state) = map.get_mut(id) {
+                    state.last_instances.push(ElementInstanceState {
+                        last_geometry: elem_geometry,
+                        last_z_index: z_index,
+                    });
+                } else {
+                    let current_commit = elem.current_commit();
+                    map.insert(
+                        id.clone(),
+                        ElementState {
+                            last_commit: current_commit,
+                            last_instances: vec![ElementInstanceState {
+                                last_geometry: elem_geometry,
+                                last_z_index: z_index,
+                            }],
+                        },
+                    );
+                }
+
+                map
+            },
+        );
+
         self.last_state.size = Some(output_geo.size);
         self.last_state.elements = new_elements_state;
         self.last_state.old_damage.push_front(new_damage.clone());
