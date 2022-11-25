@@ -27,8 +27,8 @@ for your compositor project and would like it to be integrated in Smithay, pleas
 Smithay aims to be a modular hierarchical library:
 
 - Functionalities should be split into independent modules as much as possible
-- There can be dependencies in functionnalities
-- Even if most people would directly use a high-level functionnality, the lower level abstrations it is built on should
+- There can be dependencies in functionalities
+- Even if most people would directly use a high-level functionality, the lower level abstractions it is built on should
   still be exposed independently if possible
 
 The goal is for Smithay to be a "use what you want" library, and features that are not used should have no impact on the
