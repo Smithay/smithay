@@ -800,8 +800,6 @@ where
     }
 }
 
-static MAX_CPU_COPIES: usize = 3; // TODO, benchmark this
-
 impl<'render, 'target, R: GraphicsApi, T: GraphicsApi, Target> Renderer
     for MultiRenderer<'render, 'target, R, T, Target>
 where
@@ -967,9 +965,6 @@ where
                 }
 
                 // cpu copy
-                if damage.len() > MAX_CPU_COPIES {
-                    damage = Vec::from([Rectangle::from_loc_and_size((0, 0), buffer_size)]);
-                }
                 damage.dedup();
                 damage.retain(|rect| rect.overlaps(Rectangle::from_loc_and_size((0, 0), buffer_size)));
                 damage.retain(|rect| rect.size.h > 0 && rect.size.w > 0);
