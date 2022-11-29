@@ -135,15 +135,15 @@ impl<Backend> KeyboardTarget<AnvilState<Backend>> for FocusTarget {
 
 impl WaylandFocus for FocusTarget {
     fn wl_surface(&self) -> Option<WlSurface> {
-        Some(match self {
-            FocusTarget::Window(w) => w.toplevel().wl_surface().clone(),
-            FocusTarget::LayerSurface(l) => l.wl_surface().clone(),
-            FocusTarget::Popup(p) => p.wl_surface().clone(),
-        })
+        match self {
+            FocusTarget::Window(w) => w.toplevel().wl_surface(),
+            FocusTarget::LayerSurface(l) => Some(l.wl_surface().clone()),
+            FocusTarget::Popup(p) => Some(p.wl_surface().clone()),
+        }
     }
     fn same_client_as(&self, object_id: &ObjectId) -> bool {
         match self {
-            FocusTarget::Window(w) => w.toplevel().wl_surface().id().same_client_as(object_id),
+            FocusTarget::Window(w) => w.same_client_as(object_id),
             FocusTarget::LayerSurface(l) => l.wl_surface().id().same_client_as(object_id),
             FocusTarget::Popup(p) => p.wl_surface().id().same_client_as(object_id),
         }

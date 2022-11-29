@@ -224,7 +224,7 @@ pub fn run_x11(log: Logger) {
         .expect("Failed to insert X11 Backend into event loop");
 
     #[cfg(feature = "xwayland")]
-    if let Err(e) = state.xwayland.start() {
+    if let Err(e) = state.xwayland.start(state.handle.clone()) {
         error!(log, "Failed to start XWayland: {}", e);
     }
     info!(log, "Initialization completed, starting the main loop.");

@@ -40,6 +40,7 @@ use smithay::{
             },
         },
     },
+    xwayland::X11WM,
 };
 
 use crate::{
@@ -178,10 +179,14 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
             new_window_height = (self.initial_window_size.h as f64 + dy) as i32;
         }
 
-        let (min_size, max_size) = with_states(self.window.toplevel().wl_surface(), |states| {
-            let data = states.cached_state.current::<SurfaceCachedState>();
-            (data.min_size, data.max_size)
-        });
+        let (min_size, max_size) = if let Some(surface) = self.window.toplevel().wl_surface() {
+            with_states(&surface, |states| {
+                let data = states.cached_state.current::<SurfaceCachedState>();
+                (data.min_size, data.max_size)
+            })
+        } else {
+            ((0, 0).into(), (0, 0).into())
+        };
 
         let min_width = min_size.w.max(1);
         let min_height = min_size.h.max(1);
@@ -255,7 +260,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                     data.space.map_element(self.window.clone(), location, true);
                 }
 
-                with_states(self.window.toplevel().wl_surface(), |states| {
+                with_states(&self.window.toplevel().wl_surface().unwrap(), |states| {
                     let mut data = states
                         .data_map
                         .get::<RefCell<SurfaceData>>()
@@ -268,7 +273,11 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                     }
                 });
             } else {
-                with_states(self.window.toplevel().wl_surface(), |states| {
+                let Some(surface) = self.window.toplevel().wl_surface() else {
+                    // X11 Window got unmapped, abort
+                    return
+                };
+                with_states(&surface, |states| {
                     let mut data = states
                         .data_map
                         .get::<RefCell<SurfaceData>>()
@@ -310,7 +319,13 @@ fn fullscreen_output_geometry(
         .or_else(|| {
             let w = space
                 .elements()
-                .find(|window| window.toplevel().wl_surface() == wl_surface)
+                .find(|window| {
+                    window
+                        .toplevel()
+                        .wl_surface()
+                        .map(|s| s == *wl_surface)
+                        .unwrap_or(false)
+                })
                 .cloned();
             w.and_then(|w| space.outputs_for_element(&w).get(0).cloned())
         })
@@ -343,13 +358,11 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
         &mut self.compositor_state
     }
     fn commit(&mut self, surface: &WlSurface) {
+        #[cfg(feature = "xwayland")]
+        X11WM::commit_hook(surface);
+
         on_commit_buffer_handler(surface);
         self.backend_data.early_import(surface);
-
-        #[cfg(feature = "xwayland")]
-        if let Some(x11) = self.x11_state.as_mut() {
-            super::xwayland::commit_hook(surface, &self.display_handle, x11, &mut self.space);
-        }
 
         if !is_sync_subsurface(surface) {
             let mut root = surface.clone();
@@ -611,7 +624,13 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             let window = self
                 .space
                 .elements()
-                .find(|window| window.toplevel().wl_surface() == wl_surface)
+                .find(|window| {
+                    window
+                        .toplevel()
+                        .wl_surface()
+                        .map(|s| s == *wl_surface)
+                        .unwrap_or(false)
+                })
                 .unwrap();
             window.configure();
             output.user_data().insert_if_missing(FullscreenSurface::default);
@@ -677,7 +696,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         if let Some(root) = find_popup_root_surface(&kind).ok().and_then(|root| {
             self.space
                 .elements()
-                .find(|w| w.toplevel().wl_surface() == &root)
+                .find(|w| w.toplevel().wl_surface().map(|s| s == root).unwrap_or(false))
                 .cloned()
                 .map(FocusTarget::Window)
                 .or_else(|| {
@@ -744,7 +763,13 @@ impl<BackendData> AnvilState<BackendData> {
     pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
         self.space
             .elements()
-            .find(|window| window.toplevel().wl_surface() == surface)
+            .find(|window| {
+                window
+                    .toplevel()
+                    .wl_surface()
+                    .map(|s| s == *surface)
+                    .unwrap_or(false)
+            })
             .cloned()
     }
 }
@@ -800,7 +825,13 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<Window>, popups: 
 
     if let Some(window) = space
         .elements()
-        .find(|window| window.toplevel().wl_surface() == surface)
+        .find(|window| {
+            window
+                .toplevel()
+                .wl_surface()
+                .map(|s| s == *surface)
+                .unwrap_or(false)
+        })
         .cloned()
     {
         // send the initial configure if relevant

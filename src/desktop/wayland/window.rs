@@ -41,28 +41,11 @@ pub enum Kind {
     X11(X11Surface),
 }
 
-#[cfg(feature = "xwayland")]
-impl X11Surface {
-    /// Checks if the surface is still alive.
-    pub fn alive(&self) -> bool {
-        self.wl_surface().map(|x| x.as_ref().is_alive()).unwrap_or(false)
-    }
-
-    /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
-    pub fn get_surface(&self) -> Option<&wl_surface::WlSurface> {
-        if self.alive() {
-            self.wl_surface()
-        } else {
-            None
-        }
-    }
-}
-
 impl Kind {
     /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
-    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
+    pub fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
         match *self {
-            Kind::Xdg(ref t) => t.wl_surface(),
+            Kind::Xdg(ref t) => Some(t.wl_surface().clone()),
             #[cfg(feature = "xwayland")]
             Kind::X11(ref t) => t.wl_surface(),
         }
@@ -151,12 +134,12 @@ impl Window {
 
     /// Returns the geometry of this window.
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        let surface = self.0.toplevel.wl_surface();
-        // It's the set geometry with the full bounding box as the fallback.
-        with_states(surface, |states| {
-            states.cached_state.current::<SurfaceCachedState>().geometry
-        })
-        .unwrap_or_else(|| self.bbox())
+        self.0.toplevel.wl_surface().and_then(|surface| 
+            // It's the set geometry with the full bounding box as the fallback.
+            with_states(&surface, |states| {
+                states.cached_state.current::<SurfaceCachedState>().geometry
+            })
+        ).unwrap_or_else(|| self.bbox())
     }
 
     /// Returns a bounding box over this window and its children.
@@ -170,11 +153,12 @@ impl Window {
     /// will not include the popups.
     pub fn bbox_with_popups(&self) -> Rectangle<i32, Logical> {
         let mut bounding_box = self.bbox();
-        let surface = self.0.toplevel.wl_surface();
-        for (popup, location) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
-            let offset = self.geometry().loc + location - popup.geometry().loc;
-            bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset));
+        if let Some(surface) = self.0.toplevel.wl_surface() {
+            for (popup, location) in PopupManager::popups_for_surface(&surface) {
+                let surface = popup.wl_surface();
+                let offset = self.geometry().loc + location - popup.geometry().loc;
+                bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset));
+            }
         }
 
         bounding_box
@@ -218,12 +202,12 @@ impl Window {
         F: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
     {
         let time = time.into();
-        let surface = self.0.toplevel.wl_surface();
-
-        send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
-        for (popup, _) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
-            send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+        if let Some(surface) = self.0.toplevel.wl_surface() {
+            send_frames_surface_tree(&surface, output, time, throttle, primary_scan_out_output);
+            for (popup, _) in PopupManager::popups_for_surface(&surface) {
+                let surface = popup.wl_surface();
+                send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+            }
         }
     }
 
@@ -239,21 +223,22 @@ impl Window {
         F1: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
         F2: FnMut(&wl_surface::WlSurface, &SurfaceData) -> wp_presentation_feedback::Kind + Copy,
     {
-        let surface = self.toplevel().wl_surface();
-        take_presentation_feedback_surface_tree(
-            surface,
-            output_feedback,
-            primary_scan_out_output,
-            presentation_feedback_flags,
-        );
-        for (popup, _) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
+        if let Some(surface) = self.toplevel().wl_surface() {
             take_presentation_feedback_surface_tree(
-                surface,
+                &surface,
                 output_feedback,
                 primary_scan_out_output,
                 presentation_feedback_flags,
             );
+            for (popup, _) in PopupManager::popups_for_surface(&surface) {
+                let surface = popup.wl_surface();
+                take_presentation_feedback_surface_tree(
+                    surface,
+                    output_feedback,
+                    primary_scan_out_output,
+                    presentation_feedback_flags,
+                );
+            }
         }
     }
 
@@ -262,12 +247,12 @@ impl Window {
     where
         F: FnMut(&wl_surface::WlSurface, &SurfaceData) + Copy,
     {
-        let surface = self.0.toplevel.wl_surface();
-
-        with_surfaces_surface_tree(surface, processor);
-        for (popup, _) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
-            with_surfaces_surface_tree(surface, processor);
+        if let Some(surface) = self.0.toplevel.wl_surface() {
+            with_surfaces_surface_tree(&surface, processor);
+            for (popup, _) in PopupManager::popups_for_surface(&surface) {
+                let surface = popup.wl_surface();
+                with_surfaces_surface_tree(surface, processor);
+            }
         }
     }
 
@@ -276,7 +261,9 @@ impl Window {
     /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
     /// to correctly update the bounding box of this window.
     pub fn on_commit(&self) {
-        *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0));
+        if let Some(surface) = self.0.toplevel.wl_surface() {
+            *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(&surface, (0, 0));
+        }
     }
 
     /// Finds the topmost surface under this point matching the input regions of the surface and returns
@@ -291,9 +278,9 @@ impl Window {
         surface_type: WindowSurfaceType,
     ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
         let point = point.into();
-        let surface = self.0.toplevel.wl_surface();
+        let surface = self.0.toplevel.wl_surface()?;
         if surface_type.contains(WindowSurfaceType::POPUP) {
-            for (popup, location) in PopupManager::popups_for_surface(surface) {
+            for (popup, location) in PopupManager::popups_for_surface(&surface) {
                 let offset = self.geometry().loc + location - popup.geometry().loc;
                 if let Some(result) = under_from_surface_tree(popup.wl_surface(), point, offset, surface_type)
                 {
@@ -302,7 +289,7 @@ impl Window {
             }
         }
 
-        under_from_surface_tree(surface, point, (0, 0), surface_type)
+        under_from_surface_tree(&surface, point, (0, 0), surface_type)
     }
 
     /// Returns the underlying toplevel
@@ -360,10 +347,14 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        KeyboardTarget::<D>::enter(self.0.toplevel.wl_surface(), seat, data, keys, serial)
+        if let Some(surface) = self.0.toplevel.wl_surface() {
+            KeyboardTarget::<D>::enter(&surface, seat, data, keys, serial)
+        }
     }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
-        KeyboardTarget::<D>::leave(self.0.toplevel.wl_surface(), seat, data, serial)
+        if let Some(surface) = self.0.toplevel.wl_surface() {
+            KeyboardTarget::<D>::leave(&surface, seat, data, serial)
+        }
     }
     fn key(
         &self,
@@ -374,19 +365,25 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
         serial: Serial,
         time: u32,
     ) {
-        KeyboardTarget::<D>::key(self.0.toplevel.wl_surface(), seat, data, key, state, serial, time)
+        if let Some(surface) = self.0.toplevel.wl_surface() {
+            KeyboardTarget::<D>::key(&surface, seat, data, key, state, serial, time)
+        }
     }
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
-        KeyboardTarget::<D>::modifiers(self.0.toplevel.wl_surface(), seat, data, modifiers, serial)
+        if let Some(surface) = self.0.toplevel.wl_surface() {
+            KeyboardTarget::<D>::modifiers(&surface, seat, data, modifiers, serial)
+        }
     }
 }
 
 impl WaylandFocus for Window {
     fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
-        Some(self.toplevel().wl_surface().clone())
+        self.toplevel().wl_surface()
     }
 
     fn same_client_as(&self, object_id: &ObjectId) -> bool {
-        self.toplevel().wl_surface().id().same_client_as(object_id)
+        self.toplevel().wl_surface()
+            .map(|s| s.id().same_client_as(object_id))
+            .unwrap_or(false)
     }
 }

@@ -118,8 +118,8 @@ impl<Backend> AnvilState<Backend> {
             .space
             .element_under(self.pointer_location)
             .and_then(|(window, _)| {
-                self.seat
-                    .keyboard_shortcuts_inhibitor_for_surface(window.toplevel().wl_surface())
+                let surface = window.toplevel().wl_surface()?;
+                self.seat.keyboard_shortcuts_inhibitor_for_surface(&surface)
             })
             .map(|inhibitor| inhibitor.is_active())
             .unwrap_or(false);

@@ -160,7 +160,7 @@ pub fn run_winit(log: Logger) {
     state.space.map_output(&output, (0, 0));
 
     #[cfg(feature = "xwayland")]
-    if let Err(e) = state.xwayland.start() {
+    if let Err(e) = state.xwayland.start(state.handle.clone()) {
         error!(log, "Failed to start XWayland: {}", e);
     }
 

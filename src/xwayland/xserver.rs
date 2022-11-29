@@ -40,7 +40,6 @@
  */
 use std::{
     env,
-    fmt::Write,
     io::{self, Read},
     os::unix::{
         io::{AsRawFd, RawFd},
@@ -64,6 +63,7 @@ use wayland_server::{
 use slog::{error, info, o};
 
 use super::x11_sockets::{prepare_x11_sockets, X11Lock};
+use crate::utils::user_data::UserDataMap;
 
 /// The XWayland handle
 #[derive(Debug)]
@@ -173,8 +173,9 @@ struct Inner {
     log: ::slog::Logger,
 }
 
-struct XWaylandClientData {
+pub(super) struct XWaylandClientData {
     inner: Arc<Mutex<Inner>>,
+    pub data_map: UserDataMap,
 }
 
 impl ClientData for XWaylandClientData {
@@ -233,7 +234,13 @@ fn launch<D>(
         .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
     let client_fd = wl_me.as_raw_fd();
-    let client = dh.insert_client(wl_me, Arc::new(XWaylandClientData { inner: inner.clone() }))?;
+    let client = dh.insert_client(
+        wl_me,
+        Arc::new(XWaylandClientData {
+            inner: inner.clone(),
+            data_map: UserDataMap::new(),
+        }),
+    )?;
     guard.instance = Some(XWaylandInstance {
         display_lock: lock,
         wayland_client: client,

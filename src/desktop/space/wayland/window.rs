@@ -171,23 +171,9 @@ impl SpaceElement for Window {
         }
 
         let mut surface_list = output_surfaces(output);
-        with_surface_tree_downward(
-            self.toplevel().wl_surface(),
-            (),
-            |_, _, _| TraversalAction::DoChildren(()),
-            |wl_surface, _, _| {
-                output_leave(
-                    output,
-                    &mut surface_list,
-                    wl_surface,
-                    &crate::slog_or_fallback(None),
-                );
-            },
-            |_, _, _| true,
-        );
-        for (popup, _) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
+        if let Some(surface) = self.toplevel().wl_surface() {
             with_surface_tree_downward(
-                popup.wl_surface(),
+                &surface,
                 (),
                 |_, _, _| TraversalAction::DoChildren(()),
                 |wl_surface, _, _| {
@@ -200,6 +186,22 @@ impl SpaceElement for Window {
                 },
                 |_, _, _| true,
             );
+            for (popup, _) in PopupManager::popups_for_surface(&surface) {
+                with_surface_tree_downward(
+                    popup.wl_surface(),
+                    (),
+                    |_, _, _| TraversalAction::DoChildren(()),
+                    |wl_surface, _, _| {
+                        output_leave(
+                            output,
+                            &mut surface_list,
+                            wl_surface,
+                            &crate::slog_or_fallback(None),
+                        );
+                    },
+                    |_, _, _| true,
+                );
+            }
         }
     }
 
@@ -207,23 +209,20 @@ impl SpaceElement for Window {
         self.user_data().insert_if_missing(WindowOutputUserData::default);
         let state = self.user_data().get::<WindowOutputUserData>().unwrap().borrow();
 
-        for (weak, overlap) in state.output_overlap.iter() {
-            if let Some(output) = weak.upgrade() {
-                output_update(
-                    &output,
-                    *overlap,
-                    self.toplevel().wl_surface(),
-                    &crate::slog_or_fallback(None),
-                );
-                for (popup, location) in PopupManager::popups_for_surface(self.toplevel().wl_surface()) {
-                    let mut overlap = *overlap;
-                    overlap.loc -= location;
-                    output_update(
-                        &output,
-                        overlap,
-                        popup.wl_surface(),
-                        &crate::slog_or_fallback(None),
-                    );
+        if let Some(surface) = self.toplevel().wl_surface() {
+            for (weak, overlap) in state.output_overlap.iter() {
+                if let Some(output) = weak.upgrade() {
+                    output_update(&output, *overlap, &surface, &crate::slog_or_fallback(None));
+                    for (popup, location) in PopupManager::popups_for_surface(&surface) {
+                        let mut overlap = *overlap;
+                        overlap.loc -= location;
+                        output_update(
+                            &output,
+                            overlap,
+                            popup.wl_surface(),
+                            &crate::slog_or_fallback(None),
+                        );
+                    }
                 }
             }
         }
@@ -243,11 +242,13 @@ where
         location: Point<i32, Physical>,
         scale: Scale<f64>,
     ) -> Vec<C> {
-        let surface = self.toplevel().wl_surface();
+        let Some(surface) = self.toplevel().wl_surface() else {
+            return Vec::new();
+        };
 
         let mut render_elements: Vec<C> = Vec::new();
         let popup_render_elements =
-            PopupManager::popups_for_surface(surface).flat_map(|(popup, popup_offset)| {
+            PopupManager::popups_for_surface(&surface).flat_map(|(popup, popup_offset)| {
                 let offset = (self.geometry().loc + popup_offset - popup.geometry().loc)
                     .to_physical_precise_round(scale);
 
@@ -263,7 +264,7 @@ where
         render_elements.extend(popup_render_elements);
 
         render_elements.extend(render_elements_from_surface_tree(
-            renderer, surface, location, scale, None,
+            renderer, &surface, location, scale, None,
         ));
 
         render_elements
