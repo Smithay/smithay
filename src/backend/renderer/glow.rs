@@ -96,6 +96,22 @@ impl GlowRenderer {
     pub fn egl_context(&self) -> &EGLContext {
         self.gl.egl_context()
     }
+
+    /// Run custom code in the GL context owned by this renderer.
+    ///
+    /// The OpenGL state of the renderer is considered an implementation detail
+    /// and no guarantee is made about what can or cannot be changed,
+    /// as such you should reset everything you change back to its previous value
+    /// or check the source code of the version of Smithay you are using to ensure
+    /// your changes don't interfere with the renderer's behavior.
+    /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
+    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
+    where
+        F: FnOnce(&Arc<Context>) -> R,
+    {
+        self.gl.make_current()?;
+        Ok(func(&self.glow))
+    }
 }
 
 impl<'frame> GlowFrame<'frame> {
