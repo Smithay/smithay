@@ -34,6 +34,7 @@ pub mod memory;
 #[cfg(feature = "wayland_frontend")]
 pub mod surface;
 pub mod texture;
+pub mod utils;
 
 crate::utils::ids::id_gen!(next_external_id, EXTERNAL_ID, EXTERNAL_IDS);
 
