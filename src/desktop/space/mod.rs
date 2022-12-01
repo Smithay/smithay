@@ -24,6 +24,7 @@ use wayland_server::protocol::wl_surface::WlSurface;
 
 mod element;
 mod output;
+mod utils;
 
 #[cfg(feature = "wayland_frontend")]
 mod wayland {
@@ -33,6 +34,7 @@ mod wayland {
 
 pub use self::element::*;
 use self::output::*;
+pub use self::utils::*;
 
 crate::utils::ids::id_gen!(next_space_id, SPACE_ID, SPACE_IDS);
 
@@ -157,9 +159,20 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         }
     }
 
-    /// Iterate window in z-order back to front
+    /// Iterate elements in z-order back to front
     pub fn elements(&self) -> impl DoubleEndedIterator<Item = &E> {
         self.elements.iter().map(|e| &e.element)
+    }
+
+    /// Iterate elements on a specific output in z-order back to front
+    pub fn elements_for_output<'output>(
+        &'output self,
+        output: &'output Output,
+    ) -> impl DoubleEndedIterator<Item = &'output E> {
+        self.elements
+            .iter()
+            .filter(|e| e.outputs.contains_key(output))
+            .map(|e| &e.element)
     }
 
     /// Finds the topmost element under this point if any and returns it
