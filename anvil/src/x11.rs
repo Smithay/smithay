@@ -325,7 +325,6 @@ pub fn run_x11(log: Logger) {
             #[cfg(feature = "debug")]
             elements.push(CustomRenderElements::Fps(fps_element.clone()));
 
-            #[cfg(feature = "debug")]
             let render_res = render_output(
                 &output,
                 &state.space,
@@ -333,17 +332,7 @@ pub fn run_x11(log: Logger) {
                 &mut backend_data.renderer,
                 &mut backend_data.damage_tracked_renderer,
                 age.into(),
-                &log,
-            );
-
-            #[cfg(not(feature = "debug"))]
-            let render_res = render_output(
-                &output,
-                &state.space,
-                &elements,
-                &mut backend_data.renderer,
-                &mut backend_data.damage_tracked_renderer,
-                age.into(),
+                state.show_window_preview,
                 &log,
             );
 

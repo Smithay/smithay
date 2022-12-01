@@ -947,6 +947,7 @@ impl AnvilState<UdevData> {
                 &self.dnd_icon,
                 &mut self.cursor_status.lock().unwrap(),
                 &self.clock,
+                self.show_window_preview,
                 &self.log,
             );
             let reschedule = match &result {
@@ -1009,6 +1010,7 @@ fn render_surface<'a>(
     dnd_icon: &Option<wl_surface::WlSurface>,
     cursor_status: &mut CursorImageStatus,
     clock: &Clock<Monotonic>,
+    show_window_preview: bool,
     logger: &slog::Logger,
 ) -> Result<bool, SwapBuffersError> {
     let output_geometry = space.output_geometry(output).unwrap();
@@ -1099,6 +1101,7 @@ fn render_surface<'a>(
         renderer,
         &mut surface.damage_tracked_renderer,
         age.into(),
+        show_window_preview,
         logger,
     )
     .map(|(damage, states)| (damage.is_some(), states))

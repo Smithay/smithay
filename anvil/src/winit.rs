@@ -220,6 +220,7 @@ pub fn run_winit(log: Logger) {
             *full_redraw = full_redraw.saturating_sub(1);
             let space = &mut state.space;
             let damage_tracked_renderer = &mut state.backend_data.damage_tracked_renderer;
+            let show_window_preview = state.show_window_preview;
 
             let input_method = state.seat.input_method().unwrap();
             let dnd_icon = state.dnd_icon.as_ref();
@@ -291,6 +292,7 @@ pub fn run_winit(log: Logger) {
                     renderer,
                     damage_tracked_renderer,
                     age,
+                    show_window_preview,
                     &log,
                 )
                 .map_err(|err| match err {

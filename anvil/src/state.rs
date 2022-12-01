@@ -130,6 +130,8 @@ pub struct AnvilState<BackendData: 'static> {
 
     #[cfg(feature = "debug")]
     pub renderdoc: Option<renderdoc::RenderDoc<renderdoc::V141>>,
+
+    pub show_window_preview: bool,
 }
 
 delegate_compositor!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
@@ -409,6 +411,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             x11_state: None,
             #[cfg(feature = "debug")]
             renderdoc: renderdoc::RenderDoc::new().ok(),
+            show_window_preview: false,
         }
     }
 }
