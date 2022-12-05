@@ -466,7 +466,7 @@ impl DamageTrackedRenderer {
             };
 
             // Then test if the element is completely hidden behind opaque regions
-            let element_visible_size = opaque_regions
+            let element_visible_area = opaque_regions
                 .iter()
                 .flat_map(|(_, opaque_regions)| opaque_regions)
                 .fold([element_output_geometry].to_vec(), |geometry, opaque_region| {
@@ -476,9 +476,9 @@ impl DamageTrackedRenderer {
                         .collect::<Vec<_>>()
                 })
                 .into_iter()
-                .fold(Size::default(), |acc, item| acc + item.size);
+                .fold(0usize, |acc, item| acc + (item.size.w * item.size.h) as usize);
 
-            if element_visible_size.is_empty() {
+            if element_visible_area == 0 {
                 // No need to draw a completely hidden element
                 element_render_states
                     .states
@@ -524,7 +524,7 @@ impl DamageTrackedRenderer {
             render_elements.push(element);
             element_render_states.states.insert(
                 element_id.clone(),
-                RenderElementState::rendered(element_visible_size),
+                RenderElementState::rendered(element_visible_area),
             );
             z_index += 1;
         }

@@ -25,7 +25,7 @@ use wayland_server::{backend::ObjectId, protocol::wl_buffer, Resource};
 
 use crate::{
     output::{Output, WeakOutput},
-    utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform},
 };
 
 use super::{utils::CommitCounter, Renderer};
@@ -113,10 +113,10 @@ pub enum RenderElementPresentationState {
 /// Defines the element render state after rendering
 #[derive(Debug, Clone, Copy)]
 pub struct RenderElementState {
-    /// Holds the visible portion of the element on the output
-    ///
+    /// Holds the physical visible area of the element on the output in pixels.
+    ///  
     /// Note: If the presentation_state is [`RenderElementPresentationState::Skipped`] this will be zero.
-    pub visible_portion: Size<i32, Physical>,
+    pub visible_area: usize,
     /// Holds the presentation state of the element on the output
     pub presentation_state: RenderElementPresentationState,
 }
@@ -124,14 +124,14 @@ pub struct RenderElementState {
 impl RenderElementState {
     pub(crate) fn skipped() -> Self {
         RenderElementState {
-            visible_portion: Size::default(),
+            visible_area: Default::default(),
             presentation_state: RenderElementPresentationState::Skipped,
         }
     }
 
-    pub(crate) fn rendered(visible_portion: Size<i32, Physical>) -> Self {
+    pub(crate) fn rendered(visible_area: usize) -> Self {
         RenderElementState {
-            visible_portion,
+            visible_area,
             presentation_state: RenderElementPresentationState::Rendering,
         }
     }
@@ -248,7 +248,7 @@ pub fn default_primary_scanout_output_compare<'a>(
     next_output: &'a Output,
     next_state: &RenderElementState,
 ) -> &'a Output {
-    const VISIBLE_PORTION_THRESHOLD: i32 = 2;
+    const VISIBLE_AREA_THRESHOLD: usize = 2;
 
     let current_mode = current_output.current_mode();
     let next_mode = next_output.current_mode();
@@ -263,13 +263,10 @@ pub fn default_primary_scanout_output_compare<'a>(
         })
         .unwrap_or(false);
 
-    let current_visible_portion_threshold = Size::from((
-        current_state.visible_portion.w * VISIBLE_PORTION_THRESHOLD,
-        current_state.visible_portion.h * VISIBLE_PORTION_THRESHOLD,
-    ));
-    let next_mode_visible_portion_greater = next_state.visible_portion >= current_visible_portion_threshold;
+    let current_visible_area_threshold = current_state.visible_area * VISIBLE_AREA_THRESHOLD;
+    let next_mode_visible_area_greater = next_state.visible_area >= current_visible_area_threshold;
 
-    if next_mode_visible_portion_greater || next_mode_has_higher_refresh {
+    if next_mode_visible_area_greater || next_mode_has_higher_refresh {
         next_output
     } else {
         current_output
