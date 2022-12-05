@@ -126,13 +126,6 @@ where
         data.alive_tracker.destroy_notify();
         data.decoration.lock().unwrap().take();
 
-        // remove this surface from the known ones (as well as any leftover dead surface)
-        data.shell_data
-            .lock()
-            .unwrap()
-            .known_toplevels
-            .retain(|other| other.shell_surface.id() != object_id);
-
         let mut shell_data = data.shell_data.lock().unwrap();
         if let Some(index) = shell_data
             .known_toplevels
