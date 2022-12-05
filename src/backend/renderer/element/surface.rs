@@ -441,7 +441,14 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
                 data.opaque_regions()
                     .map(|r| {
                         r.iter()
-                            .map(|r| r.to_physical_precise_up(scale))
+                            .map(|r| {
+                                let loc = r.loc.to_physical_precise_round(scale);
+                                let size = ((r.size.to_f64().to_physical(scale).to_point() + self.location)
+                                    .to_i32_round()
+                                    - self.location.to_i32_round())
+                                .to_size();
+                                Rectangle::from_loc_and_size(loc, size)
+                            })
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default()
