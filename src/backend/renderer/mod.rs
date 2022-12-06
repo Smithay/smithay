@@ -583,6 +583,60 @@ pub trait ExportDma: Renderer {
     ) -> Result<Dmabuf, <Self as Renderer>::Error>;
 }
 
+/// Trait for renderers supporting blitting contents from one framebuffer to another.
+pub trait Blit<Target>
+where
+    Self: Renderer + Bind<Target>,
+{
+    /// Copies the contents of `src` in the current bound framebuffer to `dst` in Target,
+    /// applying `filter` if necessary.
+    ///
+    /// This operation is non destructive, the contents of the source framebuffer
+    /// are kept intact as is any region not in `dst` for the target framebuffer.
+    ///
+    /// This operation needs a bound or default rendering target.
+    /// The currently bound target is guaranteed to still be active after this operation.
+    ///
+    /// This function *may* fail, if (but not limited to):
+    /// - The source framebuffer is not readable / unset
+    /// - The destination framebuffer is not writable
+    /// - `src` is out of bounds for the source framebuffer
+    /// - `dst` is out of bounds for the destination framebuffer
+    /// - `src` and `dst` sizes are different and interpolation id not supported by this renderer.
+    /// - source and target framebuffer are the same, and `src` and `dst` overlap
+    fn blit_to(
+        &mut self,
+        to: Target,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), <Self as Renderer>::Error>;
+
+    /// Copies the contents of `src` in Target to `dst` of the current bound framebuffer,
+    /// applying `filter` if necessary.
+    ///
+    /// This operation is non destructive, the contents of the source framebuffer
+    /// are kept intact as is any region not in `dst` for the target framebuffer.
+    ///
+    /// This operation needs a bound or default rendering target.
+    /// The currently bound target is guaranteed to still be active after this operation.
+    ///
+    /// This function *may* fail, if (but not limited to):
+    /// - The source framebuffer is not readable
+    /// - The destination framebuffer is not writable / unset
+    /// - `src` is out of bounds for the source framebuffer
+    /// - `dst` is out of bounds for the destination framebuffer
+    /// - `src` and `dst` sizes are different and interpolation id not supported by this renderer.
+    /// - source and target framebuffer are the same, and `src` and `dst` overlap
+    fn blit_from(
+        &mut self,
+        from: Target,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), <Self as Renderer>::Error>;
+}
+
 #[cfg(feature = "wayland_frontend")]
 #[non_exhaustive]
 /// Buffer type of a given wl_buffer, if managed by smithay

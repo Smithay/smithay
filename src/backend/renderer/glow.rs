@@ -11,10 +11,10 @@ use crate::backend::{egl::display::EGLBufferReader, renderer::ImportEgl};
 use crate::{
     backend::{
         allocator::{dmabuf::Dmabuf, Format},
-        egl::{EGLContext, EGLSurface},
+        egl::EGLContext,
         renderer::{
-            gles2::*, Bind, ExportDma, ExportMem, ImportDma, ImportMem, Offscreen, Renderer, TextureFilter,
-            Unbind,
+            gles2::*, Bind, Blit, ExportDma, ExportMem, ImportDma, ImportMem, Offscreen, Renderer,
+            TextureFilter, Unbind,
         },
     },
     utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
@@ -27,7 +27,6 @@ use glow::Context;
 use std::{
     borrow::{Borrow, BorrowMut},
     collections::HashSet,
-    rc::Rc,
     sync::Arc,
 };
 
@@ -382,51 +381,49 @@ impl ExportDma for GlowRenderer {
     }
 }
 
-impl Bind<Rc<EGLSurface>> for GlowRenderer {
-    fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), Gles2Error> {
-        self.gl.bind(surface)
+impl<T> Bind<T> for GlowRenderer
+where
+    Gles2Renderer: Bind<T>,
+{
+    fn bind(&mut self, target: T) -> Result<(), Gles2Error> {
+        self.gl.bind(target)
     }
     fn supported_formats(&self) -> Option<HashSet<Format>> {
-        Bind::<Rc<EGLSurface>>::supported_formats(&self.gl)
+        self.gl.supported_formats()
     }
 }
 
-impl Bind<Dmabuf> for GlowRenderer {
-    fn bind(&mut self, dmabuf: Dmabuf) -> Result<(), Gles2Error> {
-        self.gl.bind(dmabuf)
-    }
-    fn supported_formats(&self) -> Option<HashSet<Format>> {
-        Bind::<Dmabuf>::supported_formats(&self.gl)
-    }
-}
-
-impl Bind<Gles2Texture> for GlowRenderer {
-    fn bind(&mut self, texture: Gles2Texture) -> Result<(), Gles2Error> {
-        self.gl.bind(texture)
-    }
-    fn supported_formats(&self) -> Option<HashSet<Format>> {
-        Bind::<Gles2Texture>::supported_formats(&self.gl)
-    }
-}
-
-impl Offscreen<Gles2Texture> for GlowRenderer {
-    fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Gles2Texture, Gles2Error> {
+impl<T> Offscreen<T> for GlowRenderer
+where
+    Gles2Renderer: Offscreen<T>,
+{
+    fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<T, Gles2Error> {
         self.gl.create_buffer(size)
     }
 }
 
-impl Bind<Gles2Renderbuffer> for GlowRenderer {
-    fn bind(&mut self, renderbuffer: Gles2Renderbuffer) -> Result<(), Gles2Error> {
-        self.gl.bind(renderbuffer)
+impl<Target> Blit<Target> for GlowRenderer
+where
+    Gles2Renderer: Blit<Target>,
+{
+    fn blit_to(
+        &mut self,
+        to: Target,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Gles2Error> {
+        self.gl.blit_to(to, src, dst, filter)
     }
-    fn supported_formats(&self) -> Option<HashSet<Format>> {
-        Bind::<Gles2Renderbuffer>::supported_formats(&self.gl)
-    }
-}
 
-impl Offscreen<Gles2Renderbuffer> for GlowRenderer {
-    fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Gles2Renderbuffer, Gles2Error> {
-        self.gl.create_buffer(size)
+    fn blit_from(
+        &mut self,
+        from: Target,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Gles2Error> {
+        self.gl.blit_from(from, src, dst, filter)
     }
 }
 

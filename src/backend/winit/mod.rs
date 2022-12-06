@@ -318,6 +318,14 @@ where
         Ok(())
     }
 
+    /// Retrieve the underlying `EGLSurface` for advanced operations
+    ///
+    /// **Note:** Don't carelessly use this to manually bind the renderer to the surface,
+    /// `WinitGraphicsBackend::bind` transparently handles window resizes for you.
+    pub fn egl_surface(&self) -> Rc<EGLSurface> {
+        self.egl.clone()
+    }
+
     /// Retrieve the buffer age of the current backbuffer of the window.
     ///
     /// This will only return a meaningful value, if this `WinitGraphicsBackend`

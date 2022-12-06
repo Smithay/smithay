@@ -1960,3 +1960,58 @@ where
             .map_err(Error::Render)
     }
 }
+
+impl<'a, 'b, R: GraphicsApi, T: GraphicsApi, Target, BlitTarget> Blit<BlitTarget>
+    for MultiRenderer<'a, 'b, R, T, Target>
+where
+    <R::Device as ApiDevice>::Renderer: Blit<BlitTarget>,
+    <T::Device as ApiDevice>::Renderer: Blit<BlitTarget>,
+    // We need this because the Renderer-impl does and Blit requires Renderer
+    R: 'static,
+    R::Error: 'static,
+    T::Error: 'static,
+    <R::Device as ApiDevice>::Renderer: Offscreen<Target> + ExportDma + ExportMem + ImportDma + ImportMem,
+    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
+    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
+{
+    fn blit_to(
+        &mut self,
+        to: BlitTarget,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), <Self as Renderer>::Error> {
+        if let Some(target) = self.target.as_mut() {
+            target
+                .renderer_mut()
+                .blit_to(to, src, dst, filter)
+                .map_err(Error::Target)
+        } else {
+            self.render
+                .renderer_mut()
+                .blit_to(to, src, dst, filter)
+                .map_err(Error::Render)
+        }
+    }
+
+    fn blit_from(
+        &mut self,
+        from: BlitTarget,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), <Self as Renderer>::Error> {
+        if let Some(target) = self.target.as_mut() {
+            target
+                .renderer_mut()
+                .blit_from(from, src, dst, filter)
+                .map_err(Error::Target)
+        } else {
+            self.render
+                .renderer_mut()
+                .blit_from(from, src, dst, filter)
+                .map_err(Error::Render)
+        }
+    }
+}

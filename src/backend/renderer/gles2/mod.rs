@@ -24,8 +24,8 @@ mod shaders;
 mod version;
 
 use super::{
-    Bind, ExportDma, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer, Texture, TextureFilter,
-    TextureMapping, Unbind,
+    Bind, Blit, ExportDma, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer, Texture,
+    TextureFilter, TextureMapping, Unbind,
 };
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
@@ -398,6 +398,9 @@ pub enum Gles2Error {
     /// The provided buffer's size did not match the requested one.
     #[error("Error reading buffer, size is too small for the given dimensions")]
     UnexpectedSize,
+    /// The blitting operation was unsuccessful
+    #[error("Error blitting between framebuffers")]
+    BlitError,
 }
 
 impl From<Gles2Error> for SwapBuffersError {
@@ -418,6 +421,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::BufferAccessError(_)
             | x @ Gles2Error::MappingError
             | x @ Gles2Error::UnexpectedSize
+            | x @ Gles2Error::BlitError
             | x @ Gles2Error::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
@@ -435,6 +439,7 @@ impl From<Gles2Error> for SwapBuffersError {
             x @ Gles2Error::FramebufferBindingError
             | x @ Gles2Error::MappingError
             | x @ Gles2Error::UnexpectedSize
+            | x @ Gles2Error::BlitError
             | x @ Gles2Error::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
@@ -1630,6 +1635,140 @@ impl Offscreen<Gles2Renderbuffer> for Gles2Renderer {
                 rbo,
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
             })))
+        }
+    }
+}
+
+impl<Target> Blit<Target> for Gles2Renderer
+where
+    Self: Bind<Target>,
+{
+    fn blit_to(
+        &mut self,
+        to: Target,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Gles2Error> {
+        let src_target = self.target.take().ok_or(Gles2Error::BlitError)?;
+        self.bind(to)?;
+        let dst_target = self.target.take().unwrap();
+        self.unbind()?;
+
+        let result = self.blit(&src_target, &dst_target, src, dst, filter);
+
+        self.target = Some(src_target);
+        self.make_current()?;
+
+        result
+    }
+
+    fn blit_from(
+        &mut self,
+        from: Target,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Gles2Error> {
+        let dst_target = self.target.take().ok_or(Gles2Error::BlitError)?;
+        self.bind(from)?;
+        let src_target = self.target.take().unwrap();
+        self.unbind()?;
+
+        let result = self.blit(&src_target, &dst_target, src, dst, filter);
+
+        self.unbind()?;
+        self.target = Some(dst_target);
+        self.make_current()?;
+
+        result
+    }
+}
+
+impl Gles2Renderer {
+    fn blit(
+        &mut self,
+        src_target: &Gles2Target,
+        dst_target: &Gles2Target,
+        src: Rectangle<i32, Physical>,
+        dst: Rectangle<i32, Physical>,
+        filter: TextureFilter,
+    ) -> Result<(), Gles2Error> {
+        // glBlitFramebuffer is sadly only available for GLES 3.0 and higher
+        if self.gl_version < version::GLES_3_0 {
+            return Err(Gles2Error::GLVersionNotSupported(version::GLES_3_0));
+        }
+
+        match (src_target, dst_target) {
+            (&Gles2Target::Surface(ref src), &Gles2Target::Surface(ref dst)) => unsafe {
+                self.egl.make_current_with_draw_and_read_surface(dst, src)?;
+            },
+            (&Gles2Target::Surface(ref src), _) => unsafe {
+                self.egl.make_current_with_surface(src)?;
+            },
+            (_, &Gles2Target::Surface(ref dst)) => unsafe {
+                self.egl.make_current_with_surface(dst)?;
+            },
+            (_, _) => unsafe {
+                self.egl.make_current()?;
+            },
+        }
+
+        match src_target {
+            Gles2Target::Image { ref buf, .. } => unsafe {
+                self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.fbo)
+            },
+            Gles2Target::Texture { ref fbo, .. } => unsafe {
+                self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
+            },
+            Gles2Target::Renderbuffer { ref fbo, .. } => unsafe {
+                self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
+            },
+            _ => {} // Note: The only target missing is `Surface` and handled above
+        }
+        match dst_target {
+            Gles2Target::Image { ref buf, .. } => unsafe {
+                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.fbo)
+            },
+            Gles2Target::Texture { ref fbo, .. } => unsafe {
+                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
+            },
+            Gles2Target::Renderbuffer { ref fbo, .. } => unsafe {
+                self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
+            },
+            _ => {} // Note: The only target missing is `Surface` and handled above
+        }
+
+        let status = unsafe { self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER) };
+        if status != ffi::FRAMEBUFFER_COMPLETE {
+            let _ = self.unbind();
+            return Err(Gles2Error::FramebufferBindingError);
+        }
+
+        let errno = unsafe {
+            while self.gl.GetError() != ffi::NO_ERROR {} // clear flag before
+            self.gl.BlitFramebuffer(
+                src.loc.x,
+                src.loc.y,
+                src.loc.x + src.size.w,
+                src.loc.y + src.size.h,
+                dst.loc.x,
+                dst.loc.y,
+                dst.loc.x + dst.size.w,
+                dst.loc.y + dst.size.h,
+                ffi::COLOR_BUFFER_BIT,
+                match filter {
+                    TextureFilter::Linear => ffi::LINEAR,
+                    TextureFilter::Nearest => ffi::NEAREST,
+                },
+            );
+            self.gl.GetError()
+        };
+
+        if errno == ffi::INVALID_OPERATION {
+            Err(Gles2Error::BlitError)
+        } else {
+            Ok(())
         }
     }
 }
