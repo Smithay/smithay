@@ -22,13 +22,14 @@ use x11rb::{
     protocol::{
         composite::{ConnectionExt as _, Redirect},
         xproto::{
-            Atom, ChangeWindowAttributesAux, ClientMessageData, ClientMessageEvent, ConfigWindow,
-            ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, Screen, Window as X11Window,
-            WindowClass,
+            Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageData, ClientMessageEvent, ConfigWindow,
+            ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, Screen,
+            Window as X11Window, WindowClass,
         },
         Event,
     },
     rust_connection::{ConnectionError, DefaultStream, RustConnection},
+    wrapper::ConnectionExt,
     COPY_DEPTH_FROM_PARENT,
 };
 
@@ -36,19 +37,22 @@ use super::xserver::XWaylandClientData;
 
 x11rb::atom_manager! {
     Atoms: AtomsCookie {
+        // wm selections & wayland-stuff
         WM_S0,
         WL_SURFACE_ID,
 
+        // private
         _LATE_SURFACE_ID,
         _SMITHAY_CLOSE_CONNECTION,
 
-        ANY,
-        STRING,
+        // data formats
         UTF8_STRING,
 
-        WM_NAME,
+        // client -> server
         _NET_WM_NAME,
-        WM_CLASS,
+
+        // server -> client
+        WM_STATE,
     }
 }
 
@@ -102,8 +106,24 @@ impl X11Surface {
         if let Some(conn) = self.conn.upgrade() {
             if let Some(frame) = self.state.lock().unwrap().mapped_onto {
                 if mapped {
+                    let property = [1u32 /*NormalState*/, 0 /*WINDOW_NONE*/];
+                    conn.change_property32(
+                        PropMode::REPLACE,
+                        self.window,
+                        self.atoms.WM_STATE,
+                        self.atoms.WM_STATE,
+                        &property,
+                    )?;
                     conn.map_window(frame)?;
                 } else {
+                    let property = [0u32 /*WithdrawnState*/, 0 /*WINDOW_NONE*/];
+                    conn.change_property32(
+                        PropMode::REPLACE,
+                        self.window,
+                        self.atoms.WM_STATE,
+                        self.atoms.WM_STATE,
+                        &property,
+                    )?;
                     conn.unmap_window(frame)?;
                 }
                 conn.flush()?;
