@@ -27,7 +27,7 @@ use std::{
 use wayland_protocols::{
     wp::presentation_time::server::wp_presentation_feedback, xdg::shell::server::xdg_toplevel,
 };
-use wayland_server::{backend::ObjectId, protocol::wl_surface, Resource};
+use wayland_server::protocol::wl_surface;
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
@@ -310,50 +310,71 @@ impl Window {
 
 impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
     fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        if let Some((surface, loc)) = self.surface_under(event.location, WindowSurfaceType::ALL) {
-            let mut new_event = event.clone();
-            new_event.location -= loc.to_f64();
-            if let Some(old_surface) = self.0.focused_surface.lock().unwrap().replace(surface.clone()) {
-                if old_surface != surface {
-                    PointerTarget::<D>::leave(&old_surface, seat, data, event.serial, event.time);
-                    PointerTarget::<D>::enter(&surface, seat, data, &new_event);
+        match self.toplevel() {
+            Kind::Xdg(_) => if let Some((surface, loc)) = self.surface_under(event.location, WindowSurfaceType::ALL) {
+                let mut new_event = event.clone();
+                new_event.location -= loc.to_f64();
+                if let Some(old_surface) = self.0.focused_surface.lock().unwrap().replace(surface.clone()) {
+                    if old_surface != surface {
+                        PointerTarget::<D>::leave(&old_surface, seat, data, event.serial, event.time);
+                        PointerTarget::<D>::enter(&surface, seat, data, &new_event);
+                    } else {
+                        PointerTarget::<D>::motion(&surface, seat, data, &new_event)
+                    }
                 } else {
-                    PointerTarget::<D>::motion(&surface, seat, data, &new_event)
+                    PointerTarget::<D>::enter(&surface, seat, data, &new_event)
                 }
-            } else {
-                PointerTarget::<D>::enter(&surface, seat, data, &new_event)
-            }
+            },
+            Kind::X11(surf) => PointerTarget::<D>::enter(surf, seat, data, event),
         }
     }
     fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerTarget::<D>::enter(self, seat, data, event)
+        match self.toplevel() {
+            Kind::Xdg(_) => PointerTarget::<D>::enter(self, seat, data, event),
+            Kind::X11(surf) => PointerTarget::<D>::motion(surf, seat, data, event),
+        }
     }
     fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::button(surface, seat, data, event)
+        match self.toplevel() {
+            Kind::Xdg(_) => if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+                PointerTarget::<D>::button(surface, seat, data, event)
+            },
+            Kind::X11(surf) => PointerTarget::<D>::button(surf, seat, data, event),
         }
     }
     fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::axis(surface, seat, data, frame)
+        match self.toplevel() {
+            Kind::Xdg(_) => if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+                PointerTarget::<D>::axis(surface, seat, data, frame)
+            },
+            Kind::X11(surf) => PointerTarget::<D>::axis(surf, seat, data, frame),
         }
     }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().take() {
-            PointerTarget::<D>::leave(&surface, seat, data, serial, time)
+        match self.toplevel() {
+            Kind::Xdg(_) => if let Some(surface) = self.0.focused_surface.lock().unwrap().take() {
+                PointerTarget::<D>::leave(&surface, seat, data, serial, time)
+            },
+            Kind::X11(surf) => PointerTarget::<D>::leave(surf, seat, data, serial, time),
         }
     }
 }
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        if let Some(surface) = self.0.toplevel.wl_surface() {
-            KeyboardTarget::<D>::enter(&surface, seat, data, keys, serial)
+        match self.toplevel() {
+            Kind::Xdg(_) => if let Some(surface) = self.0.toplevel.wl_surface() {
+                KeyboardTarget::<D>::enter(&surface, seat, data, keys, serial)
+            },
+            Kind::X11(surf) => KeyboardTarget::<D>::enter(surf, seat, data, keys, serial),
         }
     }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
-        if let Some(surface) = self.0.toplevel.wl_surface() {
-            KeyboardTarget::<D>::leave(&surface, seat, data, serial)
+        match self.toplevel() {
+            Kind::Xdg(_) => if let Some(surface) = self.0.toplevel.wl_surface() {
+                KeyboardTarget::<D>::leave(&surface, seat, data, serial)
+            },
+            Kind::X11(surf) => KeyboardTarget::<D>::leave(surf, seat, data, serial),
         }
     }
     fn key(
@@ -365,13 +386,19 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
         serial: Serial,
         time: u32,
     ) {
-        if let Some(surface) = self.0.toplevel.wl_surface() {
-            KeyboardTarget::<D>::key(&surface, seat, data, key, state, serial, time)
+        match self.toplevel() {
+            Kind::Xdg(_) => if let Some(surface) = self.0.toplevel.wl_surface() {
+                KeyboardTarget::<D>::key(&surface, seat, data, key, state, serial, time)
+            },
+            Kind::X11(surf) => KeyboardTarget::key(surf, seat, data, key, state, serial, time),
         }
     }
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
-        if let Some(surface) = self.0.toplevel.wl_surface() {
-            KeyboardTarget::<D>::modifiers(&surface, seat, data, modifiers, serial)
+        match self.toplevel() {
+            Kind::Xdg(_) => if let Some(surface) = self.0.toplevel.wl_surface() {
+                KeyboardTarget::<D>::modifiers(&surface, seat, data, modifiers, serial)
+            },
+            Kind::X11(surf) => KeyboardTarget::modifiers(surf, seat, data, modifiers, serial),
         }
     }
 }
@@ -379,11 +406,5 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
 impl WaylandFocus for Window {
     fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
         self.toplevel().wl_surface()
-    }
-
-    fn same_client_as(&self, object_id: &ObjectId) -> bool {
-        self.toplevel().wl_surface()
-            .map(|s| s.id().same_client_as(object_id))
-            .unwrap_or(false)
     }
 }

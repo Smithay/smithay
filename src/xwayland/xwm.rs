@@ -1,8 +1,17 @@
 #![allow(missing_docs)]
 
 use crate::{
-    utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
-    wayland::compositor::{get_role, give_role},
+    backend::input::KeyState,
+    input::{
+        keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
+        Seat, SeatHandler,
+    },
+    utils::{x11rb::X11Source, IsAlive, Logical, Point, Rectangle, Serial, Size},
+    wayland::{
+        compositor::{get_role, give_role},
+        seat::WaylandFocus,
+    },
 };
 use calloop::channel::SyncSender;
 use encoding::{DecoderTrap, Encoding};
@@ -706,5 +715,87 @@ impl X11WM {
         }
 
         surface.state.lock().unwrap().wl_surface = Some(wl_surface);
+    }
+}
+
+impl IsAlive for X11Surface {
+    fn alive(&self) -> bool {
+        self.state.lock().unwrap().alive
+    }
+}
+
+impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
+    fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
+        // check WM_TAKE_FOCUS
+        // _NET_WINDOW_STATE_FOCUSED
+        // conn.set_input_focus
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            KeyboardTarget::enter(surface, seat, data, keys, serial);
+        }
+    }
+
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
+        // _NET_WINDOW_STATE_UNFOCUSED
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            KeyboardTarget::leave(surface, seat, data, serial);
+        }
+    }
+
+    fn key(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        key: KeysymHandle<'_>,
+        state: KeyState,
+        serial: Serial,
+        time: u32,
+    ) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            KeyboardTarget::key(surface, seat, data, key, state, serial, time)
+        }
+    }
+
+    fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            KeyboardTarget::modifiers(surface, seat, data, modifiers, serial);
+        }
+    }
+}
+
+impl<D: SeatHandler + 'static> PointerTarget<D> for X11Surface {
+    fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            PointerTarget::enter(surface, seat, data, event);
+        }
+    }
+
+    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            PointerTarget::motion(surface, seat, data, event);
+        }
+    }
+
+    fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            PointerTarget::button(surface, seat, data, event);
+        }
+    }
+
+    fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            PointerTarget::axis(surface, seat, data, frame);
+        }
+    }
+
+    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            PointerTarget::leave(surface, seat, data, serial, time);
+        }
+    }
+}
+
+impl WaylandFocus for X11Surface {
+    fn wl_surface(&self) -> Option<WlSurface> {
+        self.state.lock().unwrap().wl_surface.clone()
     }
 }
