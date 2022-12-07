@@ -201,10 +201,10 @@ impl X11Surface {
 
     fn update_properties(&self, atom: Option<Atom>) -> Result<(), ConnectionError> {
         match atom {
-            Some(atom) if atom == self.atoms._NET_WM_NAME || atom == self.atoms.WM_NAME => {
+            Some(atom) if atom == self.atoms._NET_WM_NAME || atom == AtomEnum::WM_NAME.into() => {
                 self.update_title()
             }
-            Some(atom) if atom == self.atoms.WM_CLASS => self.update_class(),
+            Some(atom) if atom == AtomEnum::WM_CLASS.into() => self.update_class(),
             Some(_) => Ok(()), // unknown
             None => {
                 self.update_title()?;
@@ -240,7 +240,7 @@ impl X11Surface {
     fn update_title(&self) -> Result<(), ConnectionError> {
         let title = self
             .read_window_property_string(self.atoms._NET_WM_NAME)?
-            .or(self.read_window_property_string(self.atoms.WM_NAME)?)
+            .or(self.read_window_property_string(AtomEnum::WM_NAME)?)
             .unwrap_or_default();
 
         let mut state = self.state.lock().unwrap();
@@ -250,12 +250,12 @@ impl X11Surface {
 
     fn read_window_property_string(&self, atom: impl Into<Atom>) -> Result<Option<String>, ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let Some(reply) = conn.get_property(false, self.window, atom, self.atoms.ANY, 0, 2048)?.reply_unchecked()? else { return Ok(None) };
+        let Some(reply) = conn.get_property(false, self.window, atom, AtomEnum::ANY, 0, 2048)?.reply_unchecked()? else { return Ok(None) };
         let Some(bytes) = reply.value8() else { return Ok(None) };
         let bytes = bytes.collect::<Vec<u8>>();
 
         match reply.type_ {
-            x if x == self.atoms.STRING => Ok(encoding::all::ISO_8859_1
+            x if x == AtomEnum::STRING.into() => Ok(encoding::all::ISO_8859_1
                 .decode(&bytes, DecoderTrap::Replace)
                 .ok()),
             x if x == self.atoms.UTF8_STRING => Ok(String::from_utf8(bytes).ok()),
@@ -561,6 +561,7 @@ impl X11WM {
                             None
                         },
                     });
+                    // TODO: If the window is not configured as part of this callback, we need to send a synthetic configure event
                 }
             }
             Event::ConfigureNotify(n) => {
