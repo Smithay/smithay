@@ -62,6 +62,7 @@ winit = { version = "0.27.1", default-features = false, features = ["wayland", "
 x11rb = { version = "0.10.0", optional = true }
 xkbcommon = { version = "0.5.0", features = ["wayland"]}
 scan_fmt = { version = "0.2.3", default-features = false }
+encoding = { version = "0.2.33", optional = true }
 
 [patch.crates-io]
 "winit" = { git = "https://github.com/rust-windowing/winit.git", rev = "0728105b2" }
@@ -94,7 +95,7 @@ renderer_multi = ["backend_drm"]
 use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys"]
 wayland_frontend = ["wayland-server", "wayland-protocols", "tempfile"]
 x11rb_event_source = ["x11rb"]
-xwayland = ["wayland_frontend", "x11rb/composite"]
+xwayland = ["encoding", "wayland_frontend", "x11rb/composite"]
 test_all_features = ["default", "use_system_lib", "renderer_glow"]
 
 [[example]]

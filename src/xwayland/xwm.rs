@@ -5,6 +5,7 @@ use crate::{
     wayland::compositor::{get_role, give_role},
 };
 use calloop::channel::SyncSender;
+use encoding::{DecoderTrap, Encoding};
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
@@ -17,6 +18,7 @@ use wayland_server::{protocol::wl_surface::WlSurface, Client, DisplayHandle, Res
 use x11rb::{
     connection::Connection as _,
     errors::ReplyOrIdError,
+    properties::WmClass,
     protocol::{
         composite::{ConnectionExt as _, Redirect},
         xproto::{
@@ -36,8 +38,17 @@ x11rb::atom_manager! {
     Atoms: AtomsCookie {
         WM_S0,
         WL_SURFACE_ID,
+
         _LATE_SURFACE_ID,
         _SMITHAY_CLOSE_CONNECTION,
+
+        ANY,
+        STRING,
+        UTF8_STRING,
+
+        WM_NAME,
+        _NET_WM_NAME,
+        WM_CLASS,
     }
 }
 
@@ -46,6 +57,7 @@ pub struct X11Surface {
     window: X11Window,
     override_redirect: bool,
     conn: Weak<RustConnection>,
+    atoms: Atoms,
     state: Arc<Mutex<SharedSurfaceState>>,
 }
 
@@ -57,6 +69,10 @@ struct SharedSurfaceState {
 
     location: Point<i32, Logical>,
     size: Size<i32, Logical>,
+
+    title: String,
+    class: String,
+    instance: String,
 }
 
 impl PartialEq for X11Surface {
@@ -150,6 +166,82 @@ impl X11Surface {
         let state = self.state.lock().unwrap();
         Rectangle::from_loc_and_size(state.location, state.size)
     }
+
+    pub fn title(&self) -> String {
+        self.state.lock().unwrap().title.clone()
+    }
+
+    pub fn class(&self) -> String {
+        self.state.lock().unwrap().class.clone()
+    }
+
+    pub fn instance(&self) -> String {
+        self.state.lock().unwrap().class.clone()
+    }
+
+    fn update_properties(&self, atom: Option<Atom>) -> Result<(), ConnectionError> {
+        match atom {
+            Some(atom) if atom == self.atoms._NET_WM_NAME || atom == self.atoms.WM_NAME => {
+                self.update_title()
+            }
+            Some(atom) if atom == self.atoms.WM_CLASS => self.update_class(),
+            Some(_) => Ok(()), // unknown
+            None => {
+                self.update_title()?;
+                self.update_class()?;
+                Ok(())
+            }
+        }
+    }
+
+    fn update_class(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let (class, instance) = match WmClass::get(&*conn, self.window)?.reply_unchecked()? {
+            Some(wm_class) => (
+                encoding::all::ISO_8859_1
+                    .decode(wm_class.class(), DecoderTrap::Replace)
+                    .ok()
+                    .unwrap_or_default(),
+                encoding::all::ISO_8859_1
+                    .decode(wm_class.instance(), DecoderTrap::Replace)
+                    .ok()
+                    .unwrap_or_default(),
+            ),
+            None => (Default::default(), Default::default()), // Getting the property failed
+        };
+
+        let mut state = self.state.lock().unwrap();
+        state.class = class;
+        state.instance = instance;
+
+        Ok(())
+    }
+
+    fn update_title(&self) -> Result<(), ConnectionError> {
+        let title = self
+            .read_window_property_string(self.atoms._NET_WM_NAME)?
+            .or(self.read_window_property_string(self.atoms.WM_NAME)?)
+            .unwrap_or_default();
+
+        let mut state = self.state.lock().unwrap();
+        state.title = title;
+        Ok(())
+    }
+
+    fn read_window_property_string(&self, atom: impl Into<Atom>) -> Result<Option<String>, ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let Some(reply) = conn.get_property(false, self.window, atom, self.atoms.ANY, 0, 2048)?.reply_unchecked()? else { return Ok(None) };
+        let Some(bytes) = reply.value8() else { return Ok(None) };
+        let bytes = bytes.collect::<Vec<u8>>();
+
+        match reply.type_ {
+            x if x == self.atoms.STRING => Ok(encoding::all::ISO_8859_1
+                .decode(&bytes, DecoderTrap::Replace)
+                .ok()),
+            x if x == self.atoms.UTF8_STRING => Ok(String::from_utf8(bytes).ok()),
+            _ => Ok(None),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -242,8 +334,11 @@ impl X11WM {
         // Actually become the WM by redirecting some operations
         conn.change_window_attributes(
             screen.root,
-            &ChangeWindowAttributesAux::default()
-                .event_mask(EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY),
+            &ChangeWindowAttributesAux::default().event_mask(
+                EventMask::SUBSTRUCTURE_REDIRECT
+                    | EventMask::SUBSTRUCTURE_NOTIFY
+                    | EventMask::PROPERTY_CHANGE,
+            ),
         )?;
 
         // Tell XWayland that we are the WM by acquiring the WM_S0 selection. No X11 clients are accepted before this.
@@ -346,14 +441,19 @@ impl X11WM {
                     window: n.window,
                     override_redirect: n.override_redirect,
                     conn: Arc::downgrade(&self.conn),
+                    atoms: self.atoms,
                     state: Arc::new(Mutex::new(SharedSurfaceState {
                         alive: true,
                         wl_surface: None,
                         mapped_onto: None,
                         location: (geo.x as i32, geo.y as i32).into(),
                         size: (geo.width as i32, geo.height as i32).into(),
+                        title: String::from(""),
+                        class: String::from(""),
+                        instance: String::from(""),
                     })),
                 };
+                surface.update_properties(None)?;
                 self.windows.push(surface.clone());
 
                 if n.override_redirect {
@@ -498,6 +598,11 @@ impl X11WM {
                     let surface = self.windows.remove(pos);
                     surface.state.lock().unwrap().alive = false;
                     callback(XwmEvent::DestroyedWindowNotify { window: surface });
+                }
+            }
+            Event::PropertyNotify(n) => {
+                if let Some(surface) = self.windows.iter().find(|x| x.window == n.window) {
+                    surface.update_properties(Some(n.atom))?;
                 }
             }
             Event::ClientMessage(msg) => {
