@@ -127,6 +127,9 @@ pub struct AnvilState<BackendData: 'static> {
     pub xwayland: XWayland,
     #[cfg(feature = "xwayland")]
     pub x11_state: Option<X11State>,
+
+    #[cfg(feature = "debug")]
+    pub renderdoc: Option<renderdoc::RenderDoc<renderdoc::V141>>,
 }
 
 delegate_compositor!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
@@ -404,6 +407,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             xwayland,
             #[cfg(feature = "xwayland")]
             x11_state: None,
+            #[cfg(feature = "debug")]
+            renderdoc: renderdoc::RenderDoc::new().ok(),
         }
     }
 }

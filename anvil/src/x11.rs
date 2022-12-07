@@ -248,6 +248,14 @@ pub fn run_x11(log: Logger) {
                 continue;
             }
 
+            #[cfg(feature = "debug")]
+            if let Some(renderdoc) = state.renderdoc.as_mut() {
+                renderdoc.start_frame_capture(
+                    backend_data.renderer.egl_context().get_context_handle(),
+                    std::ptr::null(),
+                );
+            }
+
             let mut cursor_guard = cursor_status.lock().unwrap();
             let mut elements: Vec<CustomRenderElements<Gles2Renderer>> = Vec::new();
 
@@ -349,6 +357,21 @@ pub fn run_x11(log: Logger) {
                         state.backend_data.render = false;
                     };
 
+                    #[cfg(feature = "debug")]
+                    if damage.is_some() {
+                        if let Some(renderdoc) = state.renderdoc.as_mut() {
+                            renderdoc.end_frame_capture(
+                                state.backend_data.renderer.egl_context().get_context_handle(),
+                                std::ptr::null(),
+                            );
+                        }
+                    } else if let Some(renderdoc) = state.renderdoc.as_mut() {
+                        renderdoc.discard_frame_capture(
+                            state.backend_data.renderer.egl_context().get_context_handle(),
+                            std::ptr::null(),
+                        );
+                    }
+
                     // Send frame events so that client start drawing their next frame
                     let time = state.clock.now();
                     post_repaint(&output, &states, &state.space, time);
@@ -368,6 +391,14 @@ pub fn run_x11(log: Logger) {
                     }
                 }
                 Err(err) => {
+                    #[cfg(feature = "debug")]
+                    if let Some(renderdoc) = state.renderdoc.as_mut() {
+                        renderdoc.discard_frame_capture(
+                            backend_data.renderer.egl_context().get_context_handle(),
+                            std::ptr::null(),
+                        );
+                    }
+
                     backend_data.surface.reset_buffers();
                     error!(log, "Rendering error: {}", err);
                     // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
