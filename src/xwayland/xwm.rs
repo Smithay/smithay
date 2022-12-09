@@ -166,8 +166,9 @@ impl X11Surface {
         Ok(())
     }
 
-    pub fn is_client_mapped(&self) -> bool {
-        self.override_redirect || self.state.lock().unwrap().mapped_onto.is_some()
+    pub fn is_mapped(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        state.wl_surface.is_some() || state.mapped_onto.is_some()
     }
 
     pub fn is_visible(&self) -> bool {
