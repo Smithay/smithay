@@ -176,7 +176,7 @@ impl X11Surface {
     }
 
     pub fn alive(&self) -> bool {
-        self.state.lock().unwrap().alive
+        self.state.lock().unwrap().alive && self.conn.upgrade().is_some()
     }
 
     pub fn configure(&self, rect: impl Into<Option<Rectangle<i32, Logical>>>) -> Result<(), X11SurfaceError> {
