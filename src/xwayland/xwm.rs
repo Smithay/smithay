@@ -401,6 +401,23 @@ impl X11Surface {
             _ => Ok(None),
         }
     }
+
+    pub fn close(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let state = self.state.lock().unwrap();
+        if state.protocols.contains(&WMProtocol::DeleteWindow) {
+            let event = ClientMessageEvent::new(
+                32,
+                self.window,
+                self.atoms.WM_PROTOCOLS,
+                [self.atoms.WM_DELETE_WINDOW, 0, 0, 0, 0],
+            );
+            conn.send_event(false, self.window, EventMask::NO_EVENT, event)?;
+        } else {
+            conn.destroy_window(self.window)?;
+        }
+        conn.flush()
+    }
 }
 
 #[derive(Debug, Clone)]
