@@ -154,29 +154,33 @@ impl X11Surface {
         self.state.lock().unwrap().alive
     }
 
-    pub fn configure(&mut self, rect: Rectangle<i32, Logical>) -> Result<(), X11SurfaceError> {
-        if self.override_redirect {
+    pub fn configure(&self, rect: impl Into<Option<Rectangle<i32, Logical>>>) -> Result<(), X11SurfaceError> {
+        let rect = rect.into();
+        if self.override_redirect && rect.is_some() {
             return Err(X11SurfaceError::UnsupportedForOverrideRedirect);
         }
 
         if let Some(conn) = self.conn.upgrade() {
+            let mut state = self.state.lock().unwrap();
+            let rect = rect.unwrap_or_else(|| Rectangle::from_loc_and_size(state.location, state.size));
             let aux = ConfigureWindowAux::default()
                 .x(rect.loc.x)
                 .y(rect.loc.y)
                 .width(rect.size.w as u32)
-                .height(rect.size.h as u32);
+                .height(rect.size.h as u32)
+                .border_width(0);
             if let Some(frame) = self.state.lock().unwrap().mapped_onto {
                 let win_aux = ConfigureWindowAux::default()
                     .width(rect.size.w as u32)
-                    .height(rect.size.h as u32);
+                    .height(rect.size.h as u32)
+                    .border_width(0);
                 conn.configure_window(frame, &aux)?;
                 conn.configure_window(self.window, &win_aux)?;
             } else {
                 conn.configure_window(self.window, &aux)?;
             }
             conn.flush()?;
-            // TODO: This should technically happen later on a ConfigureNotify
-            let mut state = self.state.lock().unwrap();
+
             state.location = rect.loc;
             state.size = rect.size;
         }

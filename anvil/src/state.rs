@@ -452,7 +452,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                                 }
                             },
                             XwmEvent::ConfigureRequest {
-                                mut window,
+                                window,
                                 x,
                                 y,
                                 width,
