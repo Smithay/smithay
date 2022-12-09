@@ -27,7 +27,7 @@ use wayland_server::{protocol::wl_surface::WlSurface, Client, DisplayHandle, Res
 use x11rb::{
     connection::Connection as _,
     errors::ReplyOrIdError,
-    properties::WmClass,
+    properties::{WmClass, WmHints, WmSizeHints},
     protocol::{
         composite::{ConnectionExt as _, Redirect},
         xproto::{
@@ -59,6 +59,10 @@ x11rb::atom_manager! {
 
         // client -> server
         _NET_WM_NAME,
+        WM_HINTS,
+        WM_PROTOCOLS,
+        WM_TAKE_FOCUS,
+        WM_DELETE_WINDOW,
 
         // server -> client
         WM_STATE,
@@ -86,6 +90,19 @@ struct SharedSurfaceState {
     title: String,
     class: String,
     instance: String,
+    protocols: Protocols,
+    hints: Option<WmHints>,
+    normal_hints: Option<WmSizeHints>,
+    transient_for: Option<X11Window>,
+}
+
+type Protocols = Vec<WMProtocol>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum WMProtocol {
+    TakeFocus,
+    DeleteWindow,
+}
 
 /// https://x.org/releases/X11R7.6/doc/xorg-docs/specs/ICCCM/icccm.html#input_focus
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -220,16 +237,74 @@ impl X11Surface {
         self.state.lock().unwrap().class.clone()
     }
 
+    pub fn is_popup(&self) -> Option<X11Window> {
+        self.state.lock().unwrap().transient_for
+    }
+
+    pub fn size_hints(&self) -> Option<WmSizeHints> {
+        self.state.lock().unwrap().normal_hints
+    }
+
+    pub fn min_size(&self) -> Option<Size<i32, Logical>> {
+        let state = self.state.lock().unwrap();
+        state
+            .normal_hints
+            .as_ref()
+            .and_then(|hints| hints.min_size)
+            .map(Size::from)
+    }
+
+    pub fn max_size(&self) -> Option<Size<i32, Logical>> {
+        let state = self.state.lock().unwrap();
+        state
+            .normal_hints
+            .as_ref()
+            .and_then(|hints| hints.max_size)
+            .map(Size::from)
+    }
+
+    pub fn base_size(&self) -> Option<Size<i32, Logical>> {
+        let state = self.state.lock().unwrap();
+        let res = state
+            .normal_hints
+            .as_ref()
+            .and_then(|hints| hints.base_size)
+            .map(Size::from);
+        std::mem::drop(state);
+        res.or_else(|| self.min_size())
+    }
+
+    fn input_mode(&self) -> InputMode {
+        let state = self.state.lock().unwrap();
+        match (
+            state.hints.as_ref().and_then(|hints| hints.input).unwrap_or(true),
+            state.protocols.contains(&WMProtocol::TakeFocus),
+        ) {
+            (false, false) => InputMode::None,
+            (true, false) => InputMode::Passive, // the default
+            (true, true) => InputMode::LocallyActive,
+            (false, true) => InputMode::GloballyActive,
+        }
+    }
+
     fn update_properties(&self, atom: Option<Atom>) -> Result<(), ConnectionError> {
         match atom {
             Some(atom) if atom == self.atoms._NET_WM_NAME || atom == AtomEnum::WM_NAME.into() => {
                 self.update_title()
             }
             Some(atom) if atom == AtomEnum::WM_CLASS.into() => self.update_class(),
+            Some(atom) if atom == self.atoms.WM_PROTOCOLS => self.update_protocols(),
+            Some(atom) if atom == self.atoms.WM_HINTS => self.update_hints(),
+            Some(atom) if atom == AtomEnum::WM_NORMAL_HINTS.into() => self.update_normal_hints(),
+            Some(atom) if atom == AtomEnum::WM_TRANSIENT_FOR.into() => self.update_transient_for(),
             Some(_) => Ok(()), // unknown
             None => {
                 self.update_title()?;
                 self.update_class()?;
+                self.update_protocols()?;
+                self.update_hints()?;
+                self.update_normal_hints()?;
+                self.update_transient_for()?;
                 Ok(())
             }
         }
@@ -255,6 +330,49 @@ impl X11Surface {
         state.class = class;
         state.instance = instance;
 
+        Ok(())
+    }
+
+    fn update_hints(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let mut state = self.state.lock().unwrap();
+        state.hints = WmHints::get(&*conn, self.window)?.reply_unchecked()?;
+        Ok(())
+    }
+
+    fn update_normal_hints(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let mut state = self.state.lock().unwrap();
+        state.normal_hints = WmSizeHints::get_normal_hints(&*conn, self.window)?.reply_unchecked()?;
+        Ok(())
+    }
+
+    fn update_protocols(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let Some(reply) = conn.get_property(false, self.window, self.atoms.WM_PROTOCOLS, AtomEnum::ATOM, 0, 2048)?.reply_unchecked()? else { return Ok(()) };
+        let Some(protocols) = reply.value32() else { return Ok(()) };
+
+        let mut state = self.state.lock().unwrap();
+        state.protocols = protocols
+            .filter_map(|atom| match atom {
+                x if x == self.atoms.WM_TAKE_FOCUS => Some(WMProtocol::TakeFocus),
+                x if x == self.atoms.WM_DELETE_WINDOW => Some(WMProtocol::DeleteWindow),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        Ok(())
+    }
+
+    fn update_transient_for(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let Some(reply) = conn.get_property(false, self.window, AtomEnum::WM_TRANSIENT_FOR, AtomEnum::WINDOW, 0, 2048)?.reply_unchecked()? else { return Ok(()) };
+        let window = reply
+            .value32()
+            .and_then(|mut iter| iter.next())
+            .filter(|w| *w != 0);
+
+        let mut state = self.state.lock().unwrap();
+        state.transient_for = window;
         Ok(())
     }
 
@@ -492,6 +610,10 @@ impl X11WM {
                         title: String::from(""),
                         class: String::from(""),
                         instance: String::from(""),
+                        protocols: Vec::new(),
+                        hints: None,
+                        normal_hints: None,
+                        transient_for: None,
                     })),
                 };
                 surface.update_properties(None)?;
