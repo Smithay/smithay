@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use crate::{
-    backend::input::KeyState,
+    backend::{input::KeyState, renderer::element::Id},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
         pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
@@ -33,7 +33,7 @@ use x11rb::{
         xproto::{
             Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageData, ClientMessageEvent, ConfigWindow,
             ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, InputFocus, PropMode, Screen,
-            Window as X11Window, WindowClass,
+            StackMode, Window as X11Window, WindowClass,
         },
         Event,
     },
@@ -470,6 +470,10 @@ pub struct X11WM {
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
 
     windows: Vec<X11Surface>,
+    // oldest mapped -> newest
+    client_list: Vec<X11Window>,
+    // bottom -> top
+    client_list_stacking: Vec<X11Window>,
     log: slog::Logger,
 }
 
@@ -566,6 +570,8 @@ impl X11WM {
             unpaired_surfaces: Default::default(),
             sequences_to_ignore: Default::default(),
             windows: Vec::new(),
+            client_list: Vec::new(),
+            client_list_stacking: Vec::new(),
             log,
         };
         Ok((wm, source))
@@ -645,6 +651,8 @@ impl X11WM {
             }
             Event::MapRequest(r) => {
                 if let Some(surface) = self.windows.iter().find(|x| x.window == r.window) {
+                    self.client_list.push(surface.window);
+
                     // we reparent windows, because a lot of stuff expects, that we do
                     let geo = self.conn.get_geometry(r.window)?.reply()?;
                     let win = r.window;
@@ -694,6 +702,13 @@ impl X11WM {
                             window: surface.clone(),
                         })
                     }
+                    self.client_list_stacking.push(surface.window);
+                } else if let Some(surface) = self
+                    .windows
+                    .iter()
+                    .find(|x| x.state.lock().unwrap().mapped_onto.unwrap() == n.window)
+                {
+                    self.client_list_stacking.push(surface.window);
                 }
             }
             Event::ConfigureRequest(r) => {
@@ -757,6 +772,8 @@ impl X11WM {
             }
             Event::UnmapNotify(n) => {
                 if let Some(surface) = self.windows.iter().find(|x| x.window == n.window) {
+                    self.client_list.retain(|w| *w != surface.window);
+                    self.client_list_stacking.retain(|w| *w != surface.window);
                     {
                         let mut state = surface.state.lock().unwrap();
                         self.conn.reparent_window(
@@ -844,6 +861,72 @@ impl X11WM {
         Ok(())
     }
 
+    pub fn update_stacking_order_downwards<'a, W: X11Relatable + 'a>(
+        &mut self,
+        order: impl Iterator<Item = &'a W>,
+    ) -> Result<(), ConnectionError> {
+        let mut last_pos = None;
+        for relatable in order {
+            let pos = self
+                .client_list_stacking
+                .iter()
+                .map(|w| self.windows.iter().find(|s| s.window == *w).unwrap())
+                .position(|w| relatable.is_window(w));
+            if let (Some(pos), Some(last_pos)) = (pos, last_pos) {
+                if last_pos < pos {
+                    // move pos before last_pos
+                    let sibling = self.client_list_stacking[last_pos];
+                    let elem = self.client_list_stacking.remove(pos);
+                    self.conn.configure_window(
+                        elem,
+                        &ConfigureWindowAux::new()
+                            .sibling(sibling)
+                            .stack_mode(StackMode::BELOW),
+                    )?;
+                    self.client_list_stacking.insert(last_pos, elem);
+                    continue;
+                }
+            }
+            if pos.is_some() {
+                last_pos = pos;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn update_stacking_order_upwards<'a, W: X11Relatable + 'a>(
+        &mut self,
+        order: impl Iterator<Item = &'a W>,
+    ) -> Result<(), ConnectionError> {
+        let mut last_pos = None;
+        for relatable in order {
+            let pos = self
+                .client_list_stacking
+                .iter()
+                .map(|w| self.windows.iter().find(|s| s.window == *w).unwrap())
+                .position(|w| relatable.is_window(w));
+            if let (Some(pos), Some(last_pos)) = (pos, last_pos) {
+                if last_pos > pos {
+                    // move pos after last_pos
+                    let sibling = self.client_list_stacking[last_pos];
+                    let elem = self.client_list_stacking.remove(pos);
+                    self.conn.configure_window(
+                        elem,
+                        &ConfigureWindowAux::new()
+                            .sibling(sibling)
+                            .stack_mode(StackMode::ABOVE),
+                    )?;
+                    self.client_list_stacking.insert(last_pos, elem);
+                    continue;
+                }
+            }
+            if pos.is_some() {
+                last_pos = pos;
+            }
+        }
+        Ok(())
+    }
+
     pub fn commit_hook(surface: &WlSurface) {
         if let Some(client) = surface.client() {
             if let Some(x11) = client
@@ -871,6 +954,45 @@ impl X11WM {
         }
 
         surface.state.lock().unwrap().wl_surface = Some(wl_surface);
+    }
+}
+
+pub trait X11Relatable {
+    fn is_window(&self, window: &X11Surface) -> bool;
+}
+
+impl X11Relatable for X11Surface {
+    fn is_window(&self, window: &X11Surface) -> bool {
+        self == window
+    }
+}
+
+impl X11Relatable for X11Window {
+    fn is_window(&self, window: &X11Surface) -> bool {
+        self == &window.window
+    }
+}
+
+impl X11Relatable for WlSurface {
+    fn is_window(&self, window: &X11Surface) -> bool {
+        let state = window.state.lock().unwrap();
+        state
+            .wl_surface
+            .as_ref()
+            .map(|surface| surface == self)
+            .unwrap_or(false)
+    }
+}
+
+impl X11Relatable for Id {
+    fn is_window(&self, window: &X11Surface) -> bool {
+        let state = window.state.lock().unwrap();
+        state
+            .wl_surface
+            .as_ref()
+            .map(Id::from_wayland_resource)
+            .map(|id| &id == self)
+            .unwrap_or(false)
     }
 }
 
