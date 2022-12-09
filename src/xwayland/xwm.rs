@@ -704,7 +704,11 @@ impl X11WM {
                             None
                         },
                     });
-                    // TODO: If the window is not configured as part of this callback, we need to send a synthetic configure event
+                    // Synthetic event
+                    surface.configure(None).map_err(|err| match err {
+                        X11SurfaceError::Connection(err) => err,
+                        X11SurfaceError::UnsupportedForOverrideRedirect => unreachable!(),
+                    })?;
                 }
             }
             Event::ConfigureNotify(n) => {
