@@ -32,7 +32,7 @@ use x11rb::{
         composite::{ConnectionExt as _, Redirect},
         xproto::{
             Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageData, ClientMessageEvent, ConfigWindow,
-            ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, Screen,
+            ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, InputFocus, PropMode, Screen,
             Window as X11Window, WindowClass,
         },
         Event,
@@ -86,6 +86,14 @@ struct SharedSurfaceState {
     title: String,
     class: String,
     instance: String,
+
+/// https://x.org/releases/X11R7.6/doc/xorg-docs/specs/ICCCM/icccm.html#input_focus
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum InputMode {
+    None,
+    Passive,
+    LocallyActive,
+    GloballyActive,
 }
 
 impl PartialEq for X11Surface {
@@ -730,15 +738,39 @@ impl IsAlive for X11Surface {
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        // check WM_TAKE_FOCUS
         // _NET_WINDOW_STATE_FOCUSED
-        // conn.set_input_focus
+        match self.input_mode() {
+            InputMode::None => return,
+            InputMode::Passive => {
+                if let Some(conn) = self.conn.upgrade() {
+                    conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME);
+                }
+            }
+            InputMode::LocallyActive => {
+                if let Some(conn) = self.conn.upgrade() {
+                    let event = ClientMessageEvent::new(
+                        32,
+                        self.window,
+                        self.atoms.WM_PROTOCOLS,
+                        [self.atoms.WM_TAKE_FOCUS, x11rb::CURRENT_TIME, 0, 0, 0],
+                    );
+                    conn.send_event(false, self.window, EventMask::NO_EVENT, &event);
+                }
+            }
+            _ => {}
+        };
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             KeyboardTarget::enter(surface, seat, data, keys, serial);
         }
     }
 
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
+        if self.input_mode() == InputMode::None {
+            return;
+        } else if let Some(conn) = self.conn.upgrade() {
+            conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME);
+        }
+
         // _NET_WINDOW_STATE_UNFOCUSED
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             KeyboardTarget::leave(surface, seat, data, serial);
@@ -754,12 +786,20 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
         serial: Serial,
         time: u32,
     ) {
+        if self.input_mode() == InputMode::None {
+            return;
+        }
+
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             KeyboardTarget::key(surface, seat, data, key, state, serial, time)
         }
     }
 
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
+        if self.input_mode() == InputMode::None {
+            return;
+        }
+
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             KeyboardTarget::modifiers(surface, seat, data, modifiers, serial);
         }
