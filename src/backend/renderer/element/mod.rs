@@ -25,7 +25,7 @@ use wayland_server::{backend::ObjectId, protocol::wl_buffer, Resource};
 
 use crate::{
     output::{Output, WeakOutput},
-    utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform},
 };
 
 use super::{utils::CommitCounter, Renderer};
@@ -34,6 +34,7 @@ pub mod memory;
 #[cfg(feature = "wayland_frontend")]
 pub mod surface;
 pub mod texture;
+pub mod utils;
 
 crate::utils::ids::id_gen!(next_external_id, EXTERNAL_ID, EXTERNAL_IDS);
 
@@ -113,10 +114,10 @@ pub enum RenderElementPresentationState {
 /// Defines the element render state after rendering
 #[derive(Debug, Clone, Copy)]
 pub struct RenderElementState {
-    /// Holds the visible portion of the element on the output
-    ///
+    /// Holds the physical visible area of the element on the output in pixels.
+    ///  
     /// Note: If the presentation_state is [`RenderElementPresentationState::Skipped`] this will be zero.
-    pub visible_portion: Size<i32, Physical>,
+    pub visible_area: usize,
     /// Holds the presentation state of the element on the output
     pub presentation_state: RenderElementPresentationState,
 }
@@ -124,14 +125,14 @@ pub struct RenderElementState {
 impl RenderElementState {
     pub(crate) fn skipped() -> Self {
         RenderElementState {
-            visible_portion: Size::default(),
+            visible_area: Default::default(),
             presentation_state: RenderElementPresentationState::Skipped,
         }
     }
 
-    pub(crate) fn rendered(visible_portion: Size<i32, Physical>) -> Self {
+    pub(crate) fn rendered(visible_area: usize) -> Self {
         RenderElementState {
-            visible_portion,
+            visible_area,
             presentation_state: RenderElementPresentationState::Rendering,
         }
     }
@@ -248,7 +249,7 @@ pub fn default_primary_scanout_output_compare<'a>(
     next_output: &'a Output,
     next_state: &RenderElementState,
 ) -> &'a Output {
-    const VISIBLE_PORTION_THRESHOLD: i32 = 2;
+    const VISIBLE_AREA_THRESHOLD: usize = 2;
 
     let current_mode = current_output.current_mode();
     let next_mode = next_output.current_mode();
@@ -263,13 +264,10 @@ pub fn default_primary_scanout_output_compare<'a>(
         })
         .unwrap_or(false);
 
-    let current_visible_portion_threshold = Size::from((
-        current_state.visible_portion.w * VISIBLE_PORTION_THRESHOLD,
-        current_state.visible_portion.h * VISIBLE_PORTION_THRESHOLD,
-    ));
-    let next_mode_visible_portion_greater = next_state.visible_portion >= current_visible_portion_threshold;
+    let current_visible_area_threshold = current_state.visible_area * VISIBLE_AREA_THRESHOLD;
+    let next_mode_visible_area_greater = next_state.visible_area >= current_visible_area_threshold;
 
-    if next_mode_visible_portion_greater || next_mode_has_higher_refresh {
+    if next_mode_visible_area_greater || next_mode_has_higher_refresh {
         next_output
     } else {
         current_output
@@ -343,8 +341,8 @@ pub trait RenderElement<R: Renderer>: Element {
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
-        location: Point<i32, Physical>,
-        scale: Scale<f64>,
+        src: Rectangle<f64, BufferCoords>,
+        dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error>;
@@ -425,12 +423,12 @@ where
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
-        location: Point<i32, Physical>,
-        scale: Scale<f64>,
+        src: Rectangle<f64, BufferCoords>,
+        dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        (*self).draw(frame, location, scale, damage, log)
+        (*self).draw(frame, src, dst, damage, log)
     }
 }
 
@@ -683,8 +681,8 @@ macro_rules! render_elements_internal {
         fn draw<'frame>(
             &self,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'frame>,
-            location: $crate::utils::Point<i32, $crate::utils::Physical>,
-            scale: $crate::utils::Scale<f64>,
+            src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
+            dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             log: &slog::Logger,
         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
@@ -703,7 +701,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, location, scale, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -727,8 +725,8 @@ macro_rules! render_elements_internal {
         fn draw<'frame>(
             &self,
             frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'frame>,
-            location: $crate::utils::Point<i32, $crate::utils::Physical>,
-            scale: $crate::utils::Scale<f64>,
+            src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
+            dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
             log: &slog::Logger,
         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
@@ -739,7 +737,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, location, scale, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, log)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1060,8 +1058,8 @@ macro_rules! render_elements_internal {
 /// #     fn draw(
 /// #         &self,
 /// #         _frame: &mut <R as Renderer>::Frame<'_>,
-/// #         _location: Point<i32, Physical>,
-/// #         _scale: Scale<f64>,
+/// #         _src: Rectangle<f64, Buffer>,
+/// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
 /// #         _log: &slog::Logger,
 /// #     ) -> Result<(), <R as Renderer>::Error> {
@@ -1091,8 +1089,8 @@ macro_rules! render_elements_internal {
 /// #     fn draw<'a>(
 /// #         &self,
 /// #         _frame: &mut <R as Renderer>::Frame<'a>,
-/// #         _location: Point<i32, Physical>,
-/// #         _scale: Scale<f64>,
+/// #         _src: Rectangle<f64, Buffer>,
+/// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
 /// #         _log: &slog::Logger,
 /// #     ) -> Result<(), <R as Renderer>::Error> {
@@ -1361,12 +1359,12 @@ where
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
-        location: Point<i32, Physical>,
-        scale: Scale<f64>,
+        src: Rectangle<f64, BufferCoords>,
+        dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        self.0.draw(frame, location, scale, damage, log)
+        self.0.draw(frame, src, dst, damage, log)
     }
 
     fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {

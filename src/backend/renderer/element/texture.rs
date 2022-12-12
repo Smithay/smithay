@@ -804,8 +804,8 @@ where
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
-        location: Point<i32, Physical>,
-        scale: Scale<f64>,
+        src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
@@ -814,20 +814,6 @@ where
             return Ok(());
         }
 
-        let texture_size = self.texture.size();
-
-        let src = self
-            .src
-            .map(|src| {
-                src.to_buffer(
-                    self.scale as f64,
-                    self.transform,
-                    &texture_size.to_logical(self.scale, self.transform).to_f64(),
-                )
-            })
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), texture_size).to_f64());
-
-        let dst = Rectangle::from_loc_and_size(location, self.physical_size(scale));
         frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, self.alpha)
     }
 

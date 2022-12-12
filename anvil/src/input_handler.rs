@@ -71,6 +71,10 @@ impl<Backend> AnvilState<Backend> {
                 }
             }
 
+            KeyAction::TogglePreview => {
+                self.show_window_preview = !self.show_window_preview;
+            }
+
             _ => unreachable!(
                 "Common key action handler encountered backend specific action {:?}",
                 action
@@ -381,7 +385,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                 }
 
                 action => match action {
-                    KeyAction::None | KeyAction::Quit | KeyAction::Run(_) => {
+                    KeyAction::None | KeyAction::Quit | KeyAction::Run(_) | KeyAction::TogglePreview => {
                         self.process_common_key_action(action)
                     }
 
@@ -537,7 +541,7 @@ impl AnvilState<UdevData> {
                 }
 
                 action => match action {
-                    KeyAction::None | KeyAction::Quit | KeyAction::Run(_) => {
+                    KeyAction::None | KeyAction::Quit | KeyAction::Run(_) | KeyAction::TogglePreview => {
                         self.process_common_key_action(action)
                     }
 
@@ -802,6 +806,7 @@ enum KeyAction {
     Screen(usize),
     ScaleUp,
     ScaleDown,
+    TogglePreview,
     /// Do nothing more
     None,
 }
@@ -827,6 +832,8 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Optio
         Some(KeyAction::ScaleDown)
     } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_P {
         Some(KeyAction::ScaleUp)
+    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_W {
+        Some(KeyAction::TogglePreview)
     } else {
         None
     }

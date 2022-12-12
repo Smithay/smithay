@@ -963,11 +963,11 @@ impl<N: Coordinate, Kind> PartialOrd<Size<N, Kind>> for Size<N, Kind> {
     }
 }
 
-impl<N: Coordinate + Div<Output = N>, Kind> Div<Size<N, Kind>> for Size<N, Kind> {
+impl<N: Coordinate + Div<Output = N>, KindLhs, KindRhs> Div<Size<N, KindRhs>> for Size<N, KindLhs> {
     type Output = Scale<N>;
 
     #[inline]
-    fn div(self, rhs: Size<N, Kind>) -> Self::Output {
+    fn div(self, rhs: Size<N, KindRhs>) -> Self::Output {
         Scale {
             x: self.w / rhs.w,
             y: self.h / rhs.h,

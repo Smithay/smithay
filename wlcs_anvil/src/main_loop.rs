@@ -166,6 +166,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 &mut renderer,
                 &mut damage_tracked_renderer,
                 0,
+                false,
                 &logger,
             );
         }

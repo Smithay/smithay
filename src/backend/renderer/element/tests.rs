@@ -146,8 +146,8 @@ where
     fn draw<'a>(
         &self,
         _frame: &mut <R as Renderer>::Frame<'a>,
-        _location: Point<i32, Physical>,
-        _scale: Scale<f64>,
+        _src: Rectangle<f64, Buffer>,
+        _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
@@ -184,8 +184,8 @@ where
     fn draw<'a>(
         &self,
         _frame: &mut <R as Renderer>::Frame<'a>,
-        _location: Point<i32, Physical>,
-        _scale: Scale<f64>,
+        _src: Rectangle<f64, Buffer>,
+        _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
@@ -231,8 +231,8 @@ where
     fn draw<'a>(
         &self,
         _frame: &mut <R as Renderer>::Frame<'a>,
-        _location: Point<i32, Physical>,
-        _scale: Scale<f64>,
+        _src: Rectangle<f64, Buffer>,
+        _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
@@ -277,8 +277,8 @@ where
     fn draw<'b>(
         &self,
         _frame: &mut <R as Renderer>::Frame<'b>,
-        _location: Point<i32, Physical>,
-        _scale: Scale<f64>,
+        _src: Rectangle<f64, Buffer>,
+        _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
         _log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {

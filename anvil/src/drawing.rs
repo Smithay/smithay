@@ -178,15 +178,17 @@ where
     fn draw(
         &self,
         frame: &mut <R as Renderer>::Frame<'_>,
-        location: Point<i32, Physical>,
-        scale: Scale<f64>,
+        _src: Rectangle<f64, Buffer>,
+        dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         _log: &slog::Logger,
     ) -> Result<(), R::Error> {
+        // FIXME: respect the src for cropping
+        let scale = dst.size.to_f64() / self.src().size;
         let value_str = std::cmp::min(self.value, 999).to_string();
         let mut offset: Point<f64, Physical> = Point::from((0.0, 0.0));
         for digit in value_str.chars().map(|d| d.to_digit(10).unwrap()) {
-            let digit_location = location.to_f64() + offset;
+            let digit_location = dst.loc.to_f64() + offset;
             let digit_size = Size::<i32, Logical>::from((22, 35)).to_f64().to_physical(scale);
             let dst = Rectangle::from_loc_and_size(
                 digit_location.to_i32_round(),
@@ -202,7 +204,7 @@ where
                     x
                 })
                 .collect::<Vec<_>>();
-            let src: Rectangle<i32, Buffer> = match digit {
+            let texture_src: Rectangle<i32, Buffer> = match digit {
                 9 => Rectangle::from_loc_and_size((0, 0), (22, 35)),
                 6 => Rectangle::from_loc_and_size((22, 0), (22, 35)),
                 3 => Rectangle::from_loc_and_size((44, 0), (22, 35)),
@@ -215,9 +217,10 @@ where
                 5 => Rectangle::from_loc_and_size((44, 70), (22, 35)),
                 _ => unreachable!(),
             };
+
             frame.render_texture_from_to(
                 &self.texture,
-                src.to_f64(),
+                texture_src.to_f64(),
                 dst,
                 &damage,
                 Transform::Normal,
