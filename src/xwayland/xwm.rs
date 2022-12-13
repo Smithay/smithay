@@ -1324,11 +1324,34 @@ impl X11WM {
         Ok(())
     }
 
+    pub fn raise_window<'a, W: X11Relatable + 'a>(&mut self, window: &'a W) -> Result<(), ConnectionError> {
+        if let Some(elem) = self.windows.iter().find(|s| window.is_window(s)) {
+            self.conn.grab_server()?;
+            self.conn.configure_window(
+                elem.window,
+                &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+            )?;
+            self.client_list_stacking.retain(|e| *e != elem.window);
+            self.client_list_stacking.push(elem.window);
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                self.screen.root,
+                self.atoms._NET_CLIENT_LIST_STACKING,
+                AtomEnum::WINDOW,
+                &self.client_list_stacking,
+            )?;
+            self.conn.ungrab_server()?;
+            self.conn.flush()?;
+        }
+        Ok(())
+    }
+
     pub fn update_stacking_order_downwards<'a, W: X11Relatable + 'a>(
         &mut self,
         order: impl Iterator<Item = &'a W>,
     ) -> Result<(), ConnectionError> {
         let mut last_pos = None;
+        self.conn.grab_server()?;
         for relatable in order {
             let pos = self
                 .client_list_stacking
@@ -1354,6 +1377,15 @@ impl X11WM {
                 last_pos = pos;
             }
         }
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            self.screen.root,
+            self.atoms._NET_CLIENT_LIST_STACKING,
+            AtomEnum::WINDOW,
+            &self.client_list_stacking,
+        )?;
+        self.conn.ungrab_server()?;
+        self.conn.flush()?;
         Ok(())
     }
 
@@ -1362,6 +1394,7 @@ impl X11WM {
         order: impl Iterator<Item = &'a W>,
     ) -> Result<(), ConnectionError> {
         let mut last_pos = None;
+        self.conn.grab_server()?;
         for relatable in order {
             let pos = self
                 .client_list_stacking
@@ -1387,6 +1420,15 @@ impl X11WM {
                 last_pos = pos;
             }
         }
+        self.conn.change_property32(
+            PropMode::REPLACE,
+            self.screen.root,
+            self.atoms._NET_CLIENT_LIST_STACKING,
+            AtomEnum::WINDOW,
+            &self.client_list_stacking,
+        )?;
+        self.conn.ungrab_server()?;
+        self.conn.flush()?;
         Ok(())
     }
 
