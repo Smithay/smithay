@@ -17,7 +17,7 @@ use calloop::channel::SyncSender;
 use encoding::{DecoderTrap, Encoding};
 use std::{
     cmp::Reverse,
-    collections::{BinaryHeap, HashMap},
+    collections::{BinaryHeap, HashMap, HashSet},
     convert::TryFrom,
     os::unix::net::UnixStream,
     sync::{Arc, Mutex, Weak},
@@ -46,8 +46,7 @@ use super::xserver::XWaylandClientData;
 
 x11rb::atom_manager! {
     Atoms: AtomsCookie {
-        // wm selections & wayland-stuff
-        WM_S0,
+        // wayland-stuff
         WL_SURFACE_ID,
 
         // private
@@ -58,14 +57,44 @@ x11rb::atom_manager! {
         UTF8_STRING,
 
         // client -> server
-        _NET_WM_NAME,
         WM_HINTS,
         WM_PROTOCOLS,
         WM_TAKE_FOCUS,
         WM_DELETE_WINDOW,
+        WM_CHANGE_STATE,
+        _NET_WM_NAME,
+        _NET_WM_MOVERESIZE,
+        _NET_WM_PID,
+        _NET_WM_WINDOW_TYPE,
+        _NET_WM_WINDOW_TYPE_DROPDOWN_MENU,
+        _NET_WM_WINDOW_TYPE_DIALOG,
+        _NET_WM_WINDOW_TYPE_MENU,
+        _NET_WM_WINDOW_TYPE_NOTIFICATION,
+        _NET_WM_WINDOW_TYPE_NORMAL,
+        _NET_WM_WINDOW_TYPE_POPUP_MENU,
+        _NET_WM_WINDOW_TYPE_SPLASH,
+        _NET_WM_WINDOW_TYPE_TOOLBAR,
+        _NET_WM_WINDOW_TYPE_TOOLTIP,
+        _NET_WM_WINDOW_TYPE_UTILITY,
+        _NET_WM_STATE_MODAL,
+        _MOTIF_WM_HINTS,
 
         // server -> client
+        WM_S0,
         WM_STATE,
+        _NET_WM_CM_S0,
+        _NET_SUPPORTED,
+        _NET_ACTIVE_WINDOW,
+        _NET_CLIENT_LIST,
+        _NET_CLIENT_LIST_STACKING,
+        _NET_WM_PING,
+        _NET_WM_STATE,
+        _NET_WM_STATE_MAXIMIZED_VERT,
+        _NET_WM_STATE_MAXIMIZED_HORZ,
+        _NET_WM_STATE_HIDDEN,
+        _NET_WM_STATE_FULLSCREEN,
+        _NET_WM_STATE_FOCUSED,
+        _NET_SUPPORTING_WM_CHECK,
     }
 }
 
@@ -76,6 +105,7 @@ pub struct X11Surface {
     conn: Weak<RustConnection>,
     atoms: Atoms,
     state: Arc<Mutex<SharedSurfaceState>>,
+    log: slog::Logger,
 }
 
 #[derive(Debug)]
@@ -94,6 +124,7 @@ struct SharedSurfaceState {
     hints: Option<WmHints>,
     normal_hints: Option<WmSizeHints>,
     transient_for: Option<X11Window>,
+    net_state: Vec<Atom>,
 }
 
 type Protocols = Vec<WMProtocol>;
@@ -127,6 +158,20 @@ pub enum X11SurfaceError {
     UnsupportedForOverrideRedirect,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WmWindowType {
+    DropdownMenu,
+    Dialog,
+    Menu,
+    Notification,
+    Normal,
+    PopupMenu,
+    Splash,
+    Toolbar,
+    Tooltip,
+    Utility,
+}
+
 impl X11Surface {
     pub fn set_mapped(&self, mapped: bool) -> Result<(), X11SurfaceError> {
         if self.override_redirect {
@@ -150,7 +195,7 @@ impl X11Surface {
                     )?;
                     conn.map_window(frame)?;
                 } else {
-                    let property = [0u32 /*WithdrawnState*/, 0 /*WINDOW_NONE*/];
+                    let property = [3u32 /*IconicState*/, 0 /*WINDOW_NONE*/];
                     conn.change_property32(
                         PropMode::REPLACE,
                         self.window,
@@ -238,7 +283,12 @@ impl X11Surface {
         self.state.lock().unwrap().class.clone()
     }
 
-    pub fn is_popup(&self) -> Option<X11Window> {
+    pub fn is_popup(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        state.net_state.contains(&self.atoms._NET_WM_STATE_MODAL)
+    }
+
+    pub fn is_transient_for(&self) -> Option<X11Window> {
         self.state.lock().unwrap().transient_for
     }
 
@@ -275,6 +325,138 @@ impl X11Surface {
         res.or_else(|| self.min_size())
     }
 
+    pub fn is_maximized(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        state.net_state.contains(&self.atoms._NET_WM_STATE_MAXIMIZED_HORZ)
+            && state.net_state.contains(&self.atoms._NET_WM_STATE_MAXIMIZED_VERT)
+    }
+
+    pub fn is_fullscreen(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_FULLSCREEN)
+    }
+
+    pub fn is_minimized(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_HIDDEN)
+    }
+
+    pub fn is_activated(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .contains(&self.atoms._NET_WM_STATE_FOCUSED)
+    }
+
+    pub fn set_maximized(&self, maximized: bool) -> Result<(), ConnectionError> {
+        if maximized {
+            self.change_net_state(
+                &[
+                    self.atoms._NET_WM_STATE_MAXIMIZED_HORZ,
+                    self.atoms._NET_WM_STATE_MAXIMIZED_VERT,
+                ],
+                &[],
+            )?;
+        } else {
+            self.change_net_state(
+                &[],
+                &[
+                    self.atoms._NET_WM_STATE_MAXIMIZED_HORZ,
+                    self.atoms._NET_WM_STATE_MAXIMIZED_VERT,
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn set_fullscreen(&self, fullscreen: bool) -> Result<(), ConnectionError> {
+        if fullscreen {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_FULLSCREEN], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_FULLSCREEN])?;
+        }
+        Ok(())
+    }
+
+    pub fn set_minimized(&self, minimized: bool) -> Result<(), ConnectionError> {
+        if minimized {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_HIDDEN], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_HIDDEN])?;
+        }
+        Ok(())
+    }
+
+    pub fn set_activated(&self, activated: bool) -> Result<(), ConnectionError> {
+        if activated {
+            self.change_net_state(&[self.atoms._NET_WM_STATE_FOCUSED], &[])?;
+        } else {
+            self.change_net_state(&[], &[self.atoms._NET_WM_STATE_FOCUSED])?;
+        }
+        Ok(())
+    }
+
+    pub fn window_type(&self) -> Option<WmWindowType> {
+        self.state
+            .lock()
+            .unwrap()
+            .net_state
+            .iter()
+            .find_map(|atom| match atom {
+                x if *x == self.atoms._NET_WM_WINDOW_TYPE_DROPDOWN_MENU => Some(WmWindowType::DropdownMenu),
+                x if *x == self.atoms._NET_WM_WINDOW_TYPE_DIALOG => Some(WmWindowType::Dialog),
+                x if *x == self.atoms._NET_WM_WINDOW_TYPE_MENU => Some(WmWindowType::Menu),
+                x if *x == self.atoms._NET_WM_WINDOW_TYPE_NOTIFICATION => Some(WmWindowType::Notification),
+                x if *x == self.atoms._NET_WM_WINDOW_TYPE_NORMAL => Some(WmWindowType::Normal),
+                x if *x == self.atoms._NET_WM_WINDOW_TYPE_POPUP_MENU => Some(WmWindowType::PopupMenu),
+                x if *x == self.atoms._NET_WM_WINDOW_TYPE_SPLASH => Some(WmWindowType::Splash),
+                x if *x == self.atoms._NET_WM_WINDOW_TYPE_TOOLBAR => Some(WmWindowType::Toolbar),
+                x if *x == self.atoms._NET_WM_WINDOW_TYPE_TOOLTIP => Some(WmWindowType::Tooltip),
+                x if *x == self.atoms._NET_WM_WINDOW_TYPE_UTILITY => Some(WmWindowType::Utility),
+                _ => None,
+            })
+    }
+
+    fn change_net_state(&self, added: &[Atom], removed: &[Atom]) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        conn.grab_server()?;
+
+        let props = conn
+            .get_property(
+                false,
+                self.window,
+                self.atoms._NET_WM_STATE,
+                AtomEnum::ATOM,
+                0,
+                1024,
+            )?
+            .reply_unchecked()?;
+        let mut new_props = props
+            .and_then(|props| Some(props.value32()?.collect::<HashSet<_>>()))
+            .unwrap_or_default();
+        new_props.retain(|p| !removed.contains(p));
+        new_props.extend(added);
+        let new_props = Vec::from_iter(new_props.into_iter());
+
+        conn.change_property32(
+            PropMode::REPLACE,
+            self.window,
+            self.atoms._NET_WM_STATE,
+            AtomEnum::ATOM,
+            &new_props,
+        )?;
+        self.update_net_state()?;
+        conn.ungrab_server()?;
+        Ok(())
+    }
+
     fn input_mode(&self) -> InputMode {
         let state = self.state.lock().unwrap();
         match (
@@ -306,6 +488,7 @@ impl X11Surface {
                 self.update_hints()?;
                 self.update_normal_hints()?;
                 self.update_transient_for()?;
+                self.update_net_state()?;
                 Ok(())
             }
         }
@@ -388,6 +571,26 @@ impl X11Surface {
         Ok(())
     }
 
+    fn update_net_state(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let atoms = conn
+            .get_property(
+                false,
+                self.window,
+                self.atoms._NET_WM_STATE,
+                AtomEnum::ATOM,
+                0,
+                1024,
+            )?
+            .reply_unchecked()?;
+
+        let mut state = self.state.lock().unwrap();
+        state.net_state = atoms
+            .and_then(|atoms| Some(atoms.value32()?.collect::<Vec<_>>()))
+            .unwrap_or_default();
+        Ok(())
+    }
+
     fn read_window_property_string(&self, atom: impl Into<Atom>) -> Result<Option<String>, ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
         let Some(reply) = conn.get_property(false, self.window, atom, AtomEnum::ANY, 0, 2048)?.reply_unchecked()? else { return Ok(None) };
@@ -455,6 +658,29 @@ pub enum XwmEvent {
         width: u32,
         height: u32,
     },
+    MaximizeRequest {
+        window: X11Surface,
+    },
+    UnmaximizeRequet {
+        window: X11Surface,
+    },
+    FullscreenRequest {
+        window: X11Surface,
+    },
+    UnfullscreenRequest {
+        window: X11Surface,
+    },
+    MinimizeRequest {
+        window: X11Surface,
+    },
+    ResizeRequest {
+        window: X11Surface,
+        button: u32,
+        resize_edge: ResizeEdge,
+    },
+    MoveRequest {
+        window: X11Surface,
+    },
 }
 
 /// The runtime state of the XWayland window manager.
@@ -494,6 +720,18 @@ impl X11Injector {
     }
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub enum ResizeEdge {
+    Top,
+    Bottom,
+    Left,
+    TopLeft,
+    BottomLeft,
+    Right,
+    TopRight,
+    BottomRight,
+}
+
 impl X11WM {
     pub fn start_wm<L>(
         dh: DisplayHandle,
@@ -518,7 +756,8 @@ impl X11WM {
             &ChangeWindowAttributesAux::default().event_mask(
                 EventMask::SUBSTRUCTURE_REDIRECT
                     | EventMask::SUBSTRUCTURE_NOTIFY
-                    | EventMask::PROPERTY_CHANGE,
+                    | EventMask::PROPERTY_CHANGE
+                    | EventMask::FOCUS_CHANGE,
             ),
         )?;
 
@@ -539,7 +778,71 @@ impl X11WM {
             &Default::default(),
         )?;
         conn.set_selection_owner(win, atoms.WM_S0, x11rb::CURRENT_TIME)?;
+        conn.set_selection_owner(win, atoms._NET_WM_CM_S0, x11rb::CURRENT_TIME)?;
         conn.composite_redirect_subwindows(screen.root, Redirect::MANUAL)?;
+
+        // Set some EWMH properties
+        conn.change_property32(
+            PropMode::REPLACE,
+            screen.root,
+            atoms._NET_SUPPORTED,
+            AtomEnum::ATOM,
+            &[
+                atoms._NET_WM_STATE,
+                atoms._NET_WM_STATE_MAXIMIZED_HORZ,
+                atoms._NET_WM_STATE_MAXIMIZED_VERT,
+                atoms._NET_WM_STATE_HIDDEN,
+                atoms._NET_WM_STATE_FULLSCREEN,
+                atoms._NET_WM_STATE_MODAL,
+                atoms._NET_WM_STATE_FOCUSED,
+                atoms._NET_ACTIVE_WINDOW,
+                atoms._NET_WM_MOVERESIZE,
+                atoms._NET_CLIENT_LIST,
+                atoms._NET_CLIENT_LIST_STACKING,
+            ],
+        )?;
+        conn.change_property32(
+            PropMode::REPLACE,
+            screen.root,
+            atoms._NET_CLIENT_LIST,
+            AtomEnum::WINDOW,
+            &[],
+        )?;
+        conn.change_property32(
+            PropMode::REPLACE,
+            screen.root,
+            atoms._NET_CLIENT_LIST_STACKING,
+            AtomEnum::WINDOW,
+            &[],
+        )?;
+        conn.change_property32(
+            PropMode::REPLACE,
+            screen.root,
+            atoms._NET_ACTIVE_WINDOW,
+            AtomEnum::WINDOW,
+            &[0],
+        )?;
+        conn.change_property32(
+            PropMode::REPLACE,
+            screen.root,
+            atoms._NET_SUPPORTING_WM_CHECK,
+            AtomEnum::WINDOW,
+            &[win],
+        )?;
+        conn.change_property32(
+            PropMode::REPLACE,
+            win,
+            atoms._NET_SUPPORTING_WM_CHECK,
+            AtomEnum::WINDOW,
+            &[win],
+        )?;
+        conn.change_property8(
+            PropMode::REPLACE,
+            win,
+            atoms._NET_WM_NAME,
+            atoms.UTF8_STRING,
+            "Smithay X WM".as_bytes(),
+        )?;
 
         conn.flush()?;
 
@@ -638,7 +941,9 @@ impl X11WM {
                         hints: None,
                         normal_hints: None,
                         transient_for: None,
+                        net_state: Vec::new(),
                     })),
+                    log: self.log.new(slog::o!("X11 Window" => n.window)),
                 };
                 surface.update_properties(None)?;
                 self.windows.push(surface.clone());
@@ -676,6 +981,13 @@ impl X11WM {
                     )?;
                     let cookie2 = self.conn.reparent_window(win, frame_win, 0, 0)?;
                     self.conn.map_window(win)?;
+                    self.conn.change_property32(
+                        PropMode::APPEND,
+                        self.screen.root,
+                        self.atoms._NET_CLIENT_LIST,
+                        AtomEnum::WINDOW,
+                        &[win],
+                    )?;
                     self.conn.ungrab_server()?;
 
                     // Ignore all events caused by reparent_window(). All those events have the sequence number
@@ -691,7 +1003,6 @@ impl X11WM {
                     callback(XwmEvent::MapWindowRequest {
                         window: surface.clone(),
                     });
-                    self.conn.flush()?;
                 }
             }
             Event::MapNotify(n) => {
@@ -703,12 +1014,26 @@ impl X11WM {
                         })
                     }
                     self.client_list_stacking.push(surface.window);
+                    self.conn.change_property32(
+                        PropMode::APPEND,
+                        self.screen.root,
+                        self.atoms._NET_CLIENT_LIST_STACKING,
+                        AtomEnum::WINDOW,
+                        &[surface.window],
+                    )?;
                 } else if let Some(surface) = self
                     .windows
                     .iter()
                     .find(|x| x.state.lock().unwrap().mapped_onto.unwrap() == n.window)
                 {
                     self.client_list_stacking.push(surface.window);
+                    self.conn.change_property32(
+                        PropMode::APPEND,
+                        self.screen.root,
+                        self.atoms._NET_CLIENT_LIST_STACKING,
+                        AtomEnum::WINDOW,
+                        &[surface.window],
+                    )?;
                 }
             }
             Event::ConfigureRequest(r) => {
@@ -774,6 +1099,21 @@ impl X11WM {
                 if let Some(surface) = self.windows.iter().find(|x| x.window == n.window) {
                     self.client_list.retain(|w| *w != surface.window);
                     self.client_list_stacking.retain(|w| *w != surface.window);
+                    self.conn.grab_server()?;
+                    self.conn.change_property32(
+                        PropMode::REPLACE,
+                        self.screen.root,
+                        self.atoms._NET_CLIENT_LIST,
+                        AtomEnum::WINDOW,
+                        &self.client_list,
+                    )?;
+                    self.conn.change_property32(
+                        PropMode::REPLACE,
+                        self.screen.root,
+                        self.atoms._NET_CLIENT_LIST_STACKING,
+                        AtomEnum::WINDOW,
+                        &self.client_list_stacking,
+                    )?;
                     {
                         let mut state = surface.state.lock().unwrap();
                         self.conn.reparent_window(
@@ -786,6 +1126,7 @@ impl X11WM {
                             self.conn.destroy_window(frame)?;
                         }
                     }
+                    self.conn.ungrab_server()?;
                     callback(XwmEvent::UnmappedWindowNotify {
                         window: surface.clone(),
                     });
@@ -793,7 +1134,6 @@ impl X11WM {
                         let mut state = surface.state.lock().unwrap();
                         state.wl_surface = None;
                     }
-                    self.conn.flush()?;
                 }
             }
             Event::DestroyNotify(n) => {
@@ -808,50 +1148,173 @@ impl X11WM {
                     surface.update_properties(Some(n.atom))?;
                 }
             }
+            Event::FocusIn(n) => {
+                self.conn.change_property32(
+                    PropMode::REPLACE,
+                    self.screen.root,
+                    self.atoms._NET_ACTIVE_WINDOW,
+                    AtomEnum::WINDOW,
+                    &[n.event],
+                )?;
+            }
+            Event::FocusOut(n) => {
+                self.conn.change_property32(
+                    PropMode::REPLACE,
+                    self.screen.root,
+                    self.atoms._NET_ACTIVE_WINDOW,
+                    AtomEnum::WINDOW,
+                    &[n.event],
+                )?;
+            }
             Event::ClientMessage(msg) => {
-                if msg.type_ == self.atoms.WL_SURFACE_ID {
-                    let id = msg.data.as_data32()[0];
-                    slog::info!(
-                        self.log,
-                        "X11 surface {:?} corresponds to WlSurface {:?}",
-                        msg.window,
-                        id,
-                    );
-                    if let Some(surface) = self
-                        .windows
-                        .iter_mut()
-                        .find(|x| x.state.lock().unwrap().mapped_onto == Some(msg.window))
-                    {
-                        // We get a WL_SURFACE_ID message when Xwayland creates a WlSurface for a
-                        // window. Both the creation of the surface and this client message happen at
-                        // roughly the same time and are sent over different sockets (X11 socket and
-                        // wayland socket). Thus, we could receive these two in any order. Hence, it
-                        // can happen that we get None below when X11 was faster than Wayland.
+                match msg.type_ {
+                    x if x == self.atoms.WL_SURFACE_ID => {
+                        let id = msg.data.as_data32()[0];
+                        slog::info!(
+                            self.log,
+                            "X11 surface {:?} corresponds to WlSurface {:?}",
+                            msg.window,
+                            id,
+                        );
+                        if let Some(surface) = self
+                            .windows
+                            .iter_mut()
+                            .find(|x| x.state.lock().unwrap().mapped_onto == Some(msg.window))
+                        {
+                            // We get a WL_SURFACE_ID message when Xwayland creates a WlSurface for a
+                            // window. Both the creation of the surface and this client message happen at
+                            // roughly the same time and are sent over different sockets (X11 socket and
+                            // wayland socket). Thus, we could receive these two in any order. Hence, it
+                            // can happen that we get None below when X11 was faster than Wayland.
 
-                        let wl_surface = self.wl_client.object_from_protocol_id::<WlSurface>(&self.dh, id);
-                        match wl_surface {
-                            Err(_) => {
-                                self.unpaired_surfaces.insert(id, msg.window);
+                            let wl_surface =
+                                self.wl_client.object_from_protocol_id::<WlSurface>(&self.dh, id);
+                            match wl_surface {
+                                Err(_) => {
+                                    self.unpaired_surfaces.insert(id, msg.window);
+                                }
+                                Ok(wl_surface) => {
+                                    Self::new_surface(surface, wl_surface, self.log.clone());
+                                }
                             }
-                            Ok(wl_surface) => {
+                        }
+                    }
+                    x if x == self.atoms._LATE_SURFACE_ID => {
+                        let id = msg.data.as_data32()[0];
+                        if let Some(window) = dbg!(&mut self.unpaired_surfaces).remove(&id) {
+                            if let Some(surface) = self
+                                .windows
+                                .iter_mut()
+                                .find(|x| x.state.lock().unwrap().mapped_onto == Some(window))
+                            {
+                                let wl_surface = self
+                                    .wl_client
+                                    .object_from_protocol_id::<WlSurface>(&self.dh, id)
+                                    .unwrap();
                                 Self::new_surface(surface, wl_surface, self.log.clone());
                             }
                         }
                     }
-                } else if msg.type_ == self.atoms._LATE_SURFACE_ID {
-                    let id = msg.data.as_data32()[0];
-                    if let Some(window) = dbg!(&mut self.unpaired_surfaces).remove(&id) {
-                        if let Some(surface) = self
-                            .windows
-                            .iter_mut()
-                            .find(|x| x.state.lock().unwrap().mapped_onto == Some(window))
-                        {
-                            let wl_surface = self
-                                .wl_client
-                                .object_from_protocol_id::<WlSurface>(&self.dh, id)
-                                .unwrap();
-                            Self::new_surface(surface, wl_surface, self.log.clone());
+                    x if x == self.atoms.WM_CHANGE_STATE => {
+                        if let Some(surface) = self.windows.iter().find(|x| x.window == msg.window) {
+                            callback(XwmEvent::MinimizeRequest {
+                                window: surface.clone(),
+                            });
                         }
+                    }
+                    x if x == self.atoms._NET_WM_STATE => {
+                        if let Some(surface) = self.windows.iter().find(|x| x.window == msg.window) {
+                            let data = msg.data.as_data32();
+                            match &data[1..=2] {
+                                &[x, y]
+                                    if (x == self.atoms._NET_WM_STATE_MAXIMIZED_HORZ
+                                        && y == self.atoms._NET_WM_STATE_MAXIMIZED_VERT)
+                                        || (x == self.atoms._NET_WM_STATE_MAXIMIZED_VERT
+                                            && y == self.atoms._NET_WM_STATE_MAXIMIZED_HORZ) =>
+                                {
+                                    match data[0] {
+                                        0 => callback(XwmEvent::UnmaximizeRequet {
+                                            window: surface.clone(),
+                                        }),
+                                        1 => callback(XwmEvent::MaximizeRequest {
+                                            window: surface.clone(),
+                                        }),
+                                        2 => {
+                                            if surface.is_maximized() {
+                                                callback(XwmEvent::UnmaximizeRequet {
+                                                    window: surface.clone(),
+                                                })
+                                            } else {
+                                                callback(XwmEvent::MaximizeRequest {
+                                                    window: surface.clone(),
+                                                })
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                actions if actions.contains(&self.atoms._NET_WM_STATE_FULLSCREEN) => {
+                                    match data[0] {
+                                        0 => callback(XwmEvent::UnfullscreenRequest {
+                                            window: surface.clone(),
+                                        }),
+                                        1 => callback(XwmEvent::FullscreenRequest {
+                                            window: surface.clone(),
+                                        }),
+                                        2 => {
+                                            if surface.is_fullscreen() {
+                                                callback(XwmEvent::UnfullscreenRequest {
+                                                    window: surface.clone(),
+                                                })
+                                            } else {
+                                                callback(XwmEvent::FullscreenRequest {
+                                                    window: surface.clone(),
+                                                })
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    x if x == self.atoms._NET_WM_MOVERESIZE => {
+                        if let Some(surface) = self.windows.iter().find(|x| x.window == msg.window) {
+                            let data = msg.data.as_data32();
+                            match data[2] {
+                                x @ 0..=7 => {
+                                    let resize_edge = match x {
+                                        0 => ResizeEdge::TopLeft,
+                                        1 => ResizeEdge::Top,
+                                        2 => ResizeEdge::TopRight,
+                                        3 => ResizeEdge::Right,
+                                        4 => ResizeEdge::BottomRight,
+                                        5 => ResizeEdge::Bottom,
+                                        6 => ResizeEdge::BottomLeft,
+                                        7 => ResizeEdge::Left,
+                                        _ => unreachable!(),
+                                    };
+                                    callback(XwmEvent::ResizeRequest {
+                                        window: surface.clone(),
+                                        button: data[3],
+                                        resize_edge,
+                                    });
+                                }
+                                8 => callback(XwmEvent::MoveRequest {
+                                    window: surface.clone(),
+                                }),
+                                _ => {} // ignore keyboard moves/resizes for now
+                            }
+                        }
+                    }
+                    x => {
+                        slog::debug!(
+                            self.log,
+                            "Unhandled client msg of type {:?}",
+                            String::from_utf8(self.conn.get_atom_name(x)?.reply_unchecked()?.unwrap().name)
+                                .ok()
+                        )
                     }
                 }
             }
