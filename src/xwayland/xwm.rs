@@ -1467,12 +1467,20 @@ impl IsAlive for X11Surface {
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        // _NET_WINDOW_STATE_FOCUSED
         match self.input_mode() {
             InputMode::None => return,
             InputMode::Passive => {
                 if let Some(conn) = self.conn.upgrade() {
-                    conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME);
+                    if let Err(err) = conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME)
+                    {
+                        slog::warn!(
+                            self.log,
+                            "Unable to set focus for X11Surface ({:?}): {}",
+                            self.window,
+                            err
+                        );
+                    }
+                    let _ = conn.flush();
                 }
             }
             InputMode::LocallyActive => {
@@ -1483,7 +1491,15 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
                         self.atoms.WM_PROTOCOLS,
                         [self.atoms.WM_TAKE_FOCUS, x11rb::CURRENT_TIME, 0, 0, 0],
                     );
-                    conn.send_event(false, self.window, EventMask::NO_EVENT, &event);
+                    if let Err(err) = conn.send_event(false, self.window, EventMask::NO_EVENT, event) {
+                        slog::warn!(
+                            self.log,
+                            "Unable to send take focus event for X11Surface ({:?}): {}",
+                            self.window,
+                            err
+                        );
+                    }
+                    let _ = conn.flush();
                 }
             }
             _ => {}
@@ -1497,10 +1513,17 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
         if self.input_mode() == InputMode::None {
             return;
         } else if let Some(conn) = self.conn.upgrade() {
-            conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME);
+            if let Err(err) = conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME) {
+                slog::warn!(
+                    self.log,
+                    "Unable to unfocus X11Surface ({:?}): {}",
+                    self.window,
+                    err
+                );
+            }
+            let _ = conn.flush();
         }
 
-        // _NET_WINDOW_STATE_UNFOCUSED
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             KeyboardTarget::leave(surface, seat, data, serial);
         }
