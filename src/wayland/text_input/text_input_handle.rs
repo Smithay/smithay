@@ -162,6 +162,12 @@ where
     }
 
     fn destroyed(_state: &mut D, _client: ClientId, ti: ObjectId, data: &TextInputUserData) {
+        // Ensure IME is deactivated when text input dies.
+        data.input_method_handle.with_instance(|input_method| {
+            input_method.deactivate();
+            input_method.done();
+        });
+
         data.handle
             .inner
             .lock()
