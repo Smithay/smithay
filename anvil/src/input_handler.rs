@@ -216,6 +216,9 @@ impl<Backend> AnvilState<Backend> {
                         WindowSurfaceType::ALL,
                     ) {
                         input_method.set_point(&point);
+                        if let smithay::desktop::Kind::X11(surf) = window.toplevel() {
+                            self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
+                        }
                         keyboard.set_focus(self, Some(window.into()), serial);
                         return;
                     }
@@ -249,6 +252,9 @@ impl<Backend> AnvilState<Backend> {
                 self.space.raise_element(&window, true);
                 input_method.set_point(&point);
                 keyboard.set_focus(self, Some(window.clone().into()), serial);
+                if let smithay::desktop::Kind::X11(surf) = window.toplevel() {
+                    self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
+                }
                 return;
             }
 

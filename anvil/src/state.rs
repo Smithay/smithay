@@ -419,74 +419,25 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             let (xwayland, channel) = XWayland::new(log.clone(), &dh);
             let log2 = log.clone();
             let ret = handle.insert_source(channel, move |event, _, data| match event {
-                XWaylandEvent::Ready { connection, client, client_fd: _, display: _ } => {
-                    let (wm, source) = X11WM::start_wm(dh.clone(), connection, client, log2.clone()).expect("Failed to attach X11 Window Manager");
-                    let log3 = log2.clone();
-                    data.state.handle.insert_source(source, move |event, _, data| {
-                        use smithay::{
-                            desktop::{Kind},
-                            xwayland::{XwmEvent},
-                            utils::Rectangle,
-                        };
-
-                        let wm = data.state.xwm.as_mut().unwrap();
-                        let  space = &mut data.state.space;
-                        wm.handle_event(event, |request| match request {
-                            XwmEvent::MapWindowRequest { window } => {
-                                if let Err(err) = window.set_mapped(true) {
-                                    slog::warn!(log3, "Failed to map X11Surface: {}", err);
-                                }
-                                let location = window.geometry().loc;
-                                let window = Window::new(Kind::X11(window));
-                                space.map_element(window, location, true);
-                            },
-                            XwmEvent::MapORWindowNotify { window } => {
-                                let location = window.geometry().loc;
-                                let window = Window::new(Kind::X11(window));
-                                space.map_element(window, location, true);
-                            }
-                            XwmEvent::DestroyedWindowNotify { window } => {
-                                let maybe_window = space.elements().find(|x| matches!(x.toplevel(), Kind::X11(surface) if *surface == window)).cloned();
-                                if let Some(window) = maybe_window {
-                                    space.unmap_elem(&window);
-                                }
-                            },
-                            XwmEvent::ConfigureRequest {
-                                window,
-                                x,
-                                y,
-                                width,
-                                height,
-                            } => {
-                                // just grant the wish
-                                let geo = window.geometry();
-                                if let Err(err) = window.configure(Rectangle::from_loc_and_size(
-                                    (x.unwrap_or(geo.loc.x), y.unwrap_or(geo.loc.y)),
-                                    (width.unwrap_or(geo.size.w as u32) as i32, height.unwrap_or(geo.size.h as u32) as i32),
-                                )) {
-                                    slog::warn!(log3, "Failed to configure X11Surface: {}", err);
-                                }
-                            },
-                            XwmEvent::ConfigureNotify {
-                                window,
-                                x,
-                                y,
-                                ..
-                            } => {
-                                let maybe_window = space.elements().find(|x| matches!(x.toplevel(), Kind::X11(surface) if *surface == window)).cloned();
-                                if let Some(window) = maybe_window {
-                                    // TODO: This raises the window...
-                                    space.map_element(window, (x, y), false);
-                                }
-                            },
-                            _ => {},
-                        }).expect("Failed to handle X11 event");
-                    }).expect("Failed to insert XWM Source into the event loop");
+                XWaylandEvent::Ready {
+                    connection,
+                    client,
+                    client_fd: _,
+                    display: _,
+                } => {
+                    let wm = X11WM::start_wm(
+                        data.state.handle.clone(),
+                        dh.clone(),
+                        connection,
+                        client,
+                        log2.clone(),
+                    )
+                    .expect("Failed to attach X11 Window Manager");
                     data.state.xwm = Some(wm);
-                },
+                }
                 XWaylandEvent::Exited => {
                     let _ = data.state.xwm.take();
-                },
+                }
             });
             if let Err(e) = ret {
                 error!(
