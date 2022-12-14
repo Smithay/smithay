@@ -145,6 +145,7 @@ pub struct X11WM {
     conn: Arc<RustConnection>,
     dh: DisplayHandle,
     screen: Screen,
+    wm_window: X11Window,
     atoms: Atoms,
 
     wl_client: Client,
@@ -207,6 +208,7 @@ impl X11WM {
         L: Into<Option<::slog::Logger>>,
     {
         // Create an X11 connection. XWayland only uses screen 0.
+        let log = crate::slog_or_fallback(log);
         let screen = 0;
         let stream = DefaultStream::from_unix_stream(connection)?;
         let conn = RustConnection::connect_to_stream(stream, screen)?;
@@ -307,10 +309,9 @@ impl X11WM {
             atoms.UTF8_STRING,
             "Smithay X WM".as_bytes(),
         )?;
-
+        slog::debug!(log, "WM Window Id: {}", win);
         conn.flush()?;
 
-        let log = crate::slog_or_fallback(log);
         let conn = Arc::new(conn);
         let source = X11Source::new(
             Arc::clone(&conn),
@@ -335,6 +336,7 @@ impl X11WM {
             conn,
             screen,
             atoms,
+            wm_window: win,
             wl_client: client,
             unpaired_surfaces: Default::default(),
             sequences_to_ignore: Default::default(),
@@ -528,6 +530,10 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
 
     match event {
         Event::CreateNotify(n) => {
+            if n.window == xwm.wm_window {
+                return Ok(());
+            }
+
             if xwm
                 .windows
                 .iter()
