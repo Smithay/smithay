@@ -424,8 +424,8 @@ impl X11Surface {
 
     fn update_class(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let (class, instance) = match WmClass::get(&*conn, self.window)?.reply_unchecked()? {
-            Some(wm_class) => (
+        let (class, instance) = match WmClass::get(&*conn, self.window)?.reply_unchecked() {
+            Ok(Some(wm_class)) => (
                 encoding::all::ISO_8859_1
                     .decode(wm_class.class(), DecoderTrap::Replace)
                     .ok()
@@ -435,7 +435,8 @@ impl X11Surface {
                     .ok()
                     .unwrap_or_default(),
             ),
-            None => (Default::default(), Default::default()), // Getting the property failed
+            Ok(None) | Err(ConnectionError::ParseError(_)) => (Default::default(), Default::default()), // Getting the property failed
+            Err(err) => return Err(err),
         };
 
         let mut state = self.state.lock().unwrap();
@@ -448,24 +449,46 @@ impl X11Surface {
     fn update_hints(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
         let mut state = self.state.lock().unwrap();
-        state.hints = WmHints::get(&*conn, self.window)?.reply_unchecked()?;
+        state.hints = match WmHints::get(&*conn, self.window)?.reply_unchecked() {
+            Ok(hints) => hints,
+            Err(ConnectionError::ParseError(_)) => None,
+            Err(err) => return Err(err),
+        };
         Ok(())
     }
 
     fn update_normal_hints(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
         let mut state = self.state.lock().unwrap();
-        state.normal_hints = WmSizeHints::get_normal_hints(&*conn, self.window)?.reply_unchecked()?;
+        state.normal_hints = match WmSizeHints::get_normal_hints(&*conn, self.window)?.reply_unchecked() {
+            Ok(hints) => hints,
+            Err(ConnectionError::ParseError(_)) => None,
+            Err(err) => return Err(err),
+        };
         Ok(())
     }
 
     fn update_protocols(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let Some(reply) = conn.get_property(false, self.window, self.atoms.WM_PROTOCOLS, AtomEnum::ATOM, 0, 2048)?.reply_unchecked()? else { return Ok(()) };
-        let Some(protocols) = reply.value32() else { return Ok(()) };
+        let Some(protocols) = (match conn
+            .get_property(
+                false,
+                self.window,
+                self.atoms.WM_PROTOCOLS,
+                AtomEnum::ATOM,
+                0,
+                2048,
+            )?
+            .reply_unchecked()
+        {
+            Ok(Some(reply)) => reply.value32().map(|vals| vals.collect::<Vec<_>>()),
+            Ok(None) | Err(ConnectionError::ParseError(_)) => return Ok(()),
+            Err(err) => return Err(err),
+        }) else { return Ok(()) };
 
         let mut state = self.state.lock().unwrap();
         state.protocols = protocols
+            .into_iter()
             .filter_map(|atom| match atom {
                 x if x == self.atoms.WM_TAKE_FOCUS => Some(WMProtocol::TakeFocus),
                 x if x == self.atoms.WM_DELETE_WINDOW => Some(WMProtocol::DeleteWindow),
@@ -477,7 +500,21 @@ impl X11Surface {
 
     fn update_transient_for(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let Some(reply) = conn.get_property(false, self.window, AtomEnum::WM_TRANSIENT_FOR, AtomEnum::WINDOW, 0, 2048)?.reply_unchecked()? else { return Ok(()) };
+        let reply = match conn
+            .get_property(
+                false,
+                self.window,
+                AtomEnum::WM_TRANSIENT_FOR,
+                AtomEnum::WINDOW,
+                0,
+                2048,
+            )?
+            .reply_unchecked()
+        {
+            Ok(Some(reply)) => reply,
+            Ok(None) | Err(ConnectionError::ParseError(_)) => return Ok(()),
+            Err(err) => return Err(err),
+        };
         let window = reply
             .value32()
             .and_then(|mut iter| iter.next())
@@ -501,7 +538,7 @@ impl X11Surface {
 
     fn update_net_state(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let atoms = conn
+        let atoms = match conn
             .get_property(
                 false,
                 self.window,
@@ -510,7 +547,12 @@ impl X11Surface {
                 0,
                 1024,
             )?
-            .reply_unchecked()?;
+            .reply_unchecked()
+        {
+            Ok(atoms) => atoms,
+            Err(ConnectionError::ParseError(_)) => return Ok(()),
+            Err(err) => return Err(err),
+        };
 
         let mut state = self.state.lock().unwrap();
         state.net_state = atoms
@@ -521,7 +563,14 @@ impl X11Surface {
 
     fn read_window_property_string(&self, atom: impl Into<Atom>) -> Result<Option<String>, ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let Some(reply) = conn.get_property(false, self.window, atom, AtomEnum::ANY, 0, 2048)?.reply_unchecked()? else { return Ok(None) };
+        let reply = match conn
+            .get_property(false, self.window, atom, AtomEnum::ANY, 0, 2048)?
+            .reply_unchecked()
+        {
+            Ok(Some(reply)) => reply,
+            Ok(None) | Err(ConnectionError::ParseError(_)) => return Ok(None),
+            Err(err) => return Err(err),
+        };
         let Some(bytes) = reply.value8() else { return Ok(None) };
         let bytes = bytes.collect::<Vec<u8>>();
 
