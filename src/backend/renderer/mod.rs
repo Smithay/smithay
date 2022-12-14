@@ -757,3 +757,26 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffe
         Err(_) => None,
     }
 }
+
+/// Returns if the underlying buffer is y-inverted
+///
+/// *Note*: This will only return y-inverted for buffer types known to smithay (see [`buffer_type`])
+#[cfg(feature = "wayland_frontend")]
+pub fn buffer_y_inverted(buffer: &wl_buffer::WlBuffer) -> Option<bool> {
+    if let Ok(dmabuf) = crate::wayland::dmabuf::get_dmabuf(buffer) {
+        return Some(dmabuf.y_inverted());
+    }
+
+    #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
+    if let Some(Ok(egl_buffer)) = BUFFER_READER
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|x| x.upgrade())
+        .map(|x| x.egl_buffer_contents(buffer))
+    {
+        return Some(egl_buffer.y_inverted);
+    }
+
+    None
+}
