@@ -952,17 +952,6 @@ impl<N: Coordinate, Kind> SubAssign for Size<N, Kind> {
     }
 }
 
-impl<N: Coordinate, Kind> PartialOrd<Size<N, Kind>> for Size<N, Kind> {
-    #[inline]
-    fn partial_cmp(&self, other: &Size<N, Kind>) -> Option<std::cmp::Ordering> {
-        match self.w.partial_cmp(&other.w) {
-            Some(core::cmp::Ordering::Equal) => {}
-            ord => return ord,
-        }
-        self.h.partial_cmp(&other.h)
-    }
-}
-
 impl<N: Coordinate + Div<Output = N>, KindLhs, KindRhs> Div<Size<N, KindRhs>> for Size<N, KindLhs> {
     type Output = Scale<N>;
 
