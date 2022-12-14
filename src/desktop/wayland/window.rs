@@ -175,7 +175,9 @@ impl Window {
                 }
             }),
             #[cfg(feature = "xwayland")]
-            Kind::X11(ref _t) => false,
+            Kind::X11(ref t) => {
+                t.set_activated(active).is_ok()
+            },
         }
     }
 

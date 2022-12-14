@@ -139,6 +139,10 @@ impl X11Surface {
         Ok(())
     }
 
+    pub fn is_override_redirect(&self) -> bool {
+        self.override_redirect
+    }
+
     pub fn is_mapped(&self) -> bool {
         let state = self.state.lock().unwrap();
         state.wl_surface.is_some() || state.mapped_onto.is_some()
@@ -168,7 +172,7 @@ impl X11Surface {
                 .width(rect.size.w as u32)
                 .height(rect.size.h as u32)
                 .border_width(0);
-            if let Some(frame) = self.state.lock().unwrap().mapped_onto {
+            if let Some(frame) = state.mapped_onto {
                 let win_aux = ConfigureWindowAux::default()
                     .width(rect.size.w as u32)
                     .height(rect.size.h as u32)
@@ -382,6 +386,7 @@ impl X11Surface {
         )?;
         self.update_net_state()?;
         conn.ungrab_server()?;
+        conn.flush()?;
         Ok(())
     }
 

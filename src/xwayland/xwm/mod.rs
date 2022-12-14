@@ -641,7 +641,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             } else if let Some(surface) = xwm
                 .windows
                 .iter()
-                .find(|x| x.state.lock().unwrap().mapped_onto.unwrap() == n.window)
+                .find(|x| x.state.lock().unwrap().mapped_onto == Some(n.window))
             {
                 xwm.client_list_stacking.push(surface.window);
                 conn.change_property32(
@@ -786,6 +786,14 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             )?;
         }
         Event::ClientMessage(msg) => {
+            if let Some(reply) = conn.get_atom_name(msg.type_)?.reply_unchecked()? {
+                slog::debug!(
+                    xwm.log,
+                    "X11: Got ClientMessage event ({:?}): {:?}",
+                    std::str::from_utf8(&reply.name).unwrap(),
+                    msg,
+                );
+            }
             match msg.type_ {
                 x if x == xwm.atoms.WL_SURFACE_ID => {
                     let id = msg.data.as_data32()[0];
@@ -839,8 +847,24 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     }
                 }
                 x if x == xwm.atoms._NET_WM_STATE => {
+                    let data = msg.data.as_data32();
+                    slog::debug!(
+                        xwm.log,
+                        "X11: Got _NET_WM_STATE change request to ({:?}): {:?} / {:?}",
+                        match &data[0] {
+                            0 => "REMOVE",
+                            1 => "SET",
+                            2 => "TOGGLE",
+                            _ => "Unknown",
+                        },
+                        conn.get_atom_name(data[1])?
+                            .reply_unchecked()?
+                            .map(|reply| String::from_utf8(reply.name)),
+                        conn.get_atom_name(data[2])?
+                            .reply_unchecked()?
+                            .map(|reply| String::from_utf8(reply.name)),
+                    );
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window == msg.window).cloned() {
-                        let data = msg.data.as_data32();
                         match &data[1..=2] {
                             &[x, y]
                                 if (x == xwm.atoms._NET_WM_STATE_MAXIMIZED_HORZ
