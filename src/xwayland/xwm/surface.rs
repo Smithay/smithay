@@ -5,8 +5,7 @@ use crate::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
         Seat, SeatHandler,
     },
-    utils::{IsAlive, Logical, Point, Rectangle, Serial, Size},
-    wayland::seat::WaylandFocus,
+    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle, Serial, Size},
 };
 use encoding::{DecoderTrap, Encoding};
 use std::{
@@ -32,14 +31,15 @@ pub struct X11Surface {
     pub(super) override_redirect: bool,
     pub(super) conn: Weak<RustConnection>,
     pub(super) atoms: super::Atoms,
-    pub(super) state: Arc<Mutex<SharedSurfaceState>>,
+    pub(crate) state: Arc<Mutex<SharedSurfaceState>>,
+    pub(super) user_data: Arc<UserDataMap>,
     pub(super) log: slog::Logger,
 }
 
 #[derive(Debug)]
-pub(super) struct SharedSurfaceState {
+pub(crate) struct SharedSurfaceState {
     pub(super) alive: bool,
-    pub(super) wl_surface: Option<WlSurface>,
+    pub(crate) wl_surface: Option<WlSurface>,
     pub(super) mapped_onto: Option<X11Window>,
 
     pub(super) location: Point<i32, Logical>,
@@ -588,6 +588,10 @@ impl X11Surface {
         }
     }
 
+    pub fn user_data(&self) -> &UserDataMap {
+        &self.user_data
+    }
+
     pub fn close(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
         let state = self.state.lock().unwrap();
@@ -772,11 +776,5 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for X11Surface {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             PointerTarget::leave(surface, seat, data, serial, time);
         }
-    }
-}
-
-impl WaylandFocus for X11Surface {
-    fn wl_surface(&self) -> Option<WlSurface> {
-        self.state.lock().unwrap().wl_surface.clone()
     }
 }

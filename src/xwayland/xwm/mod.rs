@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 
 use crate::{
-    utils::x11rb::X11Source,
+    utils::{user_data::UserDataMap, x11rb::X11Source},
     wayland::compositor::{get_role, give_role},
 };
 use calloop::{channel::SyncSender, LoopHandle};
@@ -564,6 +564,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     transient_for: None,
                     net_state: Vec::new(),
                 })),
+                user_data: Arc::new(UserDataMap::new()),
                 log: xwm.log.new(slog::o!("X11 Window" => n.window)),
             };
             surface.update_properties(None)?;

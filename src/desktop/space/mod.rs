@@ -27,10 +27,7 @@ mod output;
 mod utils;
 
 #[cfg(feature = "wayland_frontend")]
-mod wayland {
-    mod layer;
-    mod window;
-}
+mod wayland;
 
 pub use self::element::*;
 use self::output::*;
