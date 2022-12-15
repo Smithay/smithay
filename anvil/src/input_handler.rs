@@ -17,7 +17,7 @@ use smithay::{
     },
     output::Scale,
     reexports::wayland_server::{protocol::wl_pointer, DisplayHandle},
-    utils::{Logical, Point, Serial, SERIAL_COUNTER as SCOUNTER},
+    utils::{Logical, Point, Serial, Transform, SERIAL_COUNTER as SCOUNTER},
     wayland::{
         compositor::with_states,
         input_method::InputMethodSeat,
@@ -384,6 +384,27 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                     self.backend_data.reset_buffers(&output);
                 }
 
+                KeyAction::RotateOutput => {
+                    let output = self
+                        .space
+                        .outputs()
+                        .find(|o| o.name() == output_name)
+                        .unwrap()
+                        .clone();
+
+                    let current_transform = output.current_transform();
+                    let new_transform = match current_transform {
+                        Transform::Normal => Transform::_90,
+                        Transform::_90 => Transform::_180,
+                        Transform::_180 => Transform::_270,
+                        Transform::_270 => Transform::Normal,
+                        _ => Transform::Normal,
+                    };
+                    output.change_current_state(None, Some(new_transform), None, None);
+                    crate::shell::fixup_positions(&mut self.space);
+                    self.backend_data.reset_buffers(&output);
+                }
+
                 action => match action {
                     KeyAction::None | KeyAction::Quit | KeyAction::Run(_) | KeyAction::TogglePreview => {
                         self.process_common_key_action(action)
@@ -536,6 +557,28 @@ impl AnvilState<UdevData> {
                                 },
                             );
                         }
+                        self.backend_data.reset_buffers(&output);
+                    }
+                }
+                KeyAction::RotateOutput => {
+                    let pos = self.pointer_location.to_i32_round();
+                    let output = self
+                        .space
+                        .outputs()
+                        .find(|o| self.space.output_geometry(o).unwrap().contains(pos))
+                        .cloned();
+
+                    if let Some(output) = output {
+                        let current_transform = output.current_transform();
+                        let new_transform = match current_transform {
+                            Transform::Normal => Transform::_90,
+                            Transform::_90 => Transform::_180,
+                            Transform::_180 => Transform::_270,
+                            Transform::_270 => Transform::Normal,
+                            _ => Transform::Normal,
+                        };
+                        output.change_current_state(None, Some(new_transform), None, None);
+                        crate::shell::fixup_positions(&mut self.space);
                         self.backend_data.reset_buffers(&output);
                     }
                 }
@@ -807,6 +850,7 @@ enum KeyAction {
     ScaleUp,
     ScaleDown,
     TogglePreview,
+    RotateOutput,
     /// Do nothing more
     None,
 }
@@ -834,6 +878,8 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Optio
         Some(KeyAction::ScaleUp)
     } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_W {
         Some(KeyAction::TogglePreview)
+    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_R {
+        Some(KeyAction::RotateOutput)
     } else {
         None
     }
