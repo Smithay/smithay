@@ -5,7 +5,7 @@ use crate::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
         Seat, SeatHandler,
     },
-    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle, Serial, Size},
+    utils::{user_data::UserDataMap, IsAlive, Logical, Rectangle, Serial, Size},
 };
 use encoding::{DecoderTrap, Encoding};
 use std::{
@@ -27,13 +27,13 @@ use x11rb::{
 
 #[derive(Debug, Clone)]
 pub struct X11Surface {
-    pub(super) window: X11Window,
-    pub(super) override_redirect: bool,
-    pub(super) conn: Weak<RustConnection>,
-    pub(super) atoms: super::Atoms,
+    window: X11Window,
+    override_redirect: bool,
+    conn: Weak<RustConnection>,
+    atoms: super::Atoms,
     pub(crate) state: Arc<Mutex<SharedSurfaceState>>,
-    pub(super) user_data: Arc<UserDataMap>,
-    pub(super) log: slog::Logger,
+    user_data: Arc<UserDataMap>,
+    log: slog::Logger,
 }
 
 #[derive(Debug)]
@@ -41,18 +41,16 @@ pub(crate) struct SharedSurfaceState {
     pub(super) alive: bool,
     pub(crate) wl_surface: Option<WlSurface>,
     pub(super) mapped_onto: Option<X11Window>,
+    pub(super) geometry: Rectangle<i32, Logical>,
 
-    pub(super) location: Point<i32, Logical>,
-    pub(super) size: Size<i32, Logical>,
-
-    pub(super) title: String,
-    pub(super) class: String,
-    pub(super) instance: String,
-    pub(super) protocols: Protocols,
-    pub(super) hints: Option<WmHints>,
-    pub(super) normal_hints: Option<WmSizeHints>,
-    pub(super) transient_for: Option<X11Window>,
-    pub(super) net_state: Vec<Atom>,
+    title: String,
+    class: String,
+    instance: String,
+    protocols: Protocols,
+    hints: Option<WmHints>,
+    normal_hints: Option<WmSizeHints>,
+    transient_for: Option<X11Window>,
+    net_state: Vec<Atom>,
 }
 
 pub(super) type Protocols = Vec<WMProtocol>;
@@ -101,6 +99,42 @@ pub enum WmWindowType {
 }
 
 impl X11Surface {
+    pub fn new(
+        window: u32,
+        override_redirect: bool,
+        conn: Weak<RustConnection>,
+        atoms: super::Atoms,
+        geometry: Rectangle<i32, Logical>,
+        log: impl Into<Option<::slog::Logger>>,
+    ) -> X11Surface {
+        X11Surface {
+            window,
+            override_redirect,
+            conn,
+            atoms,
+            state: Arc::new(Mutex::new(SharedSurfaceState {
+                alive: true,
+                wl_surface: None,
+                mapped_onto: None,
+                geometry,
+                title: String::from(""),
+                class: String::from(""),
+                instance: String::from(""),
+                protocols: Vec::new(),
+                hints: None,
+                normal_hints: None,
+                transient_for: None,
+                net_state: Vec::new(),
+            })),
+            user_data: Arc::new(UserDataMap::new()),
+            log: crate::slog_or_fallback(log).new(slog::o!("X11 Window" => window)),
+        }
+    }
+
+    pub fn window_id(&self) -> u32 {
+        self.window
+    }
+
     pub fn set_mapped(&self, mapped: bool) -> Result<(), X11SurfaceError> {
         if self.override_redirect {
             if mapped {
@@ -165,7 +199,7 @@ impl X11Surface {
 
         if let Some(conn) = self.conn.upgrade() {
             let mut state = self.state.lock().unwrap();
-            let rect = rect.unwrap_or_else(|| Rectangle::from_loc_and_size(state.location, state.size));
+            let rect = rect.unwrap_or(state.geometry);
             let aux = ConfigureWindowAux::default()
                 .x(rect.loc.x)
                 .y(rect.loc.y)
@@ -184,14 +218,9 @@ impl X11Surface {
             }
             conn.flush()?;
 
-            state.location = rect.loc;
-            state.size = rect.size;
+            state.geometry = rect;
         }
         Ok(())
-    }
-
-    pub fn window_id(&self) -> X11Window {
-        self.window
     }
 
     pub fn wl_surface(&self) -> Option<WlSurface> {
@@ -199,8 +228,7 @@ impl X11Surface {
     }
 
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        let state = self.state.lock().unwrap();
-        Rectangle::from_loc_and_size(state.location, state.size)
+        self.state.lock().unwrap().geometry
     }
 
     pub fn title(&self) -> String {
