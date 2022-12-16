@@ -589,13 +589,15 @@ impl EventSource for LibinputInputBackend {
     }
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
-        self.token = Some(factory.token());
-        poll.register(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap())
+        let token = factory.token();
+        self.token = Some(token);
+        poll.register(self, Interest::READ, Mode::Level, token)
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
-        self.token = Some(factory.token());
-        poll.reregister(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap())
+        let token = factory.token();
+        self.token = Some(token);
+        poll.reregister(self, Interest::READ, Mode::Level, token)
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {

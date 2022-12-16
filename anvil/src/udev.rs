@@ -6,7 +6,7 @@ use std::{
     os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     path::PathBuf,
     rc::Rc,
-    sync::{Arc, atomic::Ordering, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
 };
 
@@ -336,8 +336,11 @@ pub fn run_udev(log: Logger) {
     }
 }
 
-pub type RenderSurface =
-    GbmBufferedSurface<Rc<RefCell<GbmDevice<Arc<SessionFd>>>>, Arc<SessionFd>, Option<OutputPresentationFeedback>>;
+pub type RenderSurface = GbmBufferedSurface<
+    Rc<RefCell<GbmDevice<Arc<SessionFd>>>>,
+    Arc<SessionFd>,
+    Option<OutputPresentationFeedback>,
+>;
 
 struct SurfaceData {
     dh: DisplayHandle,
@@ -528,12 +531,13 @@ impl AnvilState<UdevData> {
         // Try to open the device
         let open_flags = OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK;
         let device_fd = self.backend_data.session.open(&path, open_flags).ok();
-        let devices = device_fd
-            .map(SessionFd)
-            .map(|fd| {
-                let fd = Arc::new(fd);
-                (DrmDevice::new(fd.clone(), true, self.log.clone()), GbmDevice::new(fd))
-            });
+        let devices = device_fd.map(SessionFd).map(|fd| {
+            let fd = Arc::new(fd);
+            (
+                DrmDevice::new(fd.clone(), true, self.log.clone()),
+                GbmDevice::new(fd),
+            )
+        });
 
         // Report device open failures.
         let (mut device, gbm) = match devices {
