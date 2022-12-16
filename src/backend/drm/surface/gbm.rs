@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::AsFd;
 use std::sync::Arc;
 
 use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
@@ -18,7 +18,7 @@ use slog::{debug, error, o, trace, warn};
 
 /// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
 #[derive(Debug)]
-pub struct GbmBufferedSurface<A: Allocator<BufferObject<()>> + 'static, D: AsRawFd + 'static, U> {
+pub struct GbmBufferedSurface<A: Allocator<BufferObject<()>> + 'static, D: AsFd + 'static, U> {
     current_fb: Slot<BufferObject<()>>,
     pending_fb: Option<(Slot<BufferObject<()>>, U)>,
     queued_fb: Option<(Slot<BufferObject<()>>, U)>,
@@ -42,7 +42,7 @@ impl<A, D, U> GbmBufferedSurface<A, D, U>
 where
     A: Allocator<BufferObject<()>>,
     A::Error: std::error::Error + Send + Sync,
-    D: AsRawFd + 'static,
+    D: AsFd + 'static,
 {
     /// Create a new `GbmBufferedSurface` from a given compatible combination
     /// of a surface, an allocator and renderer formats.
@@ -369,12 +369,12 @@ where
 }
 
 #[derive(Debug)]
-struct FbHandle<D: AsRawFd + 'static> {
+struct FbHandle<D: AsFd + 'static> {
     drm: Arc<DrmSurface<D>>,
     fb: framebuffer::Handle,
 }
 
-impl<A: AsRawFd + 'static> Drop for FbHandle<A> {
+impl<A: AsFd + 'static> Drop for FbHandle<A> {
     fn drop(&mut self) {
         let _ = self.drm.destroy_framebuffer(self.fb);
     }
@@ -383,7 +383,7 @@ impl<A: AsRawFd + 'static> Drop for FbHandle<A> {
 fn attach_framebuffer<E, D>(drm: &Arc<DrmSurface<D>>, bo: &BufferObject<()>) -> Result<FbHandle<D>, Error<E>>
 where
     E: std::error::Error + Send + Sync,
-    D: AsRawFd + 'static,
+    D: AsFd + 'static,
 {
     let modifier = match bo.modifier().unwrap() {
         Modifier::Invalid => None,

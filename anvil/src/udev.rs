@@ -3,10 +3,10 @@ use std::{
     cell::RefCell,
     collections::hash_map::{Entry, HashMap},
     convert::TryInto,
-    os::unix::io::{AsRawFd, RawFd},
+    os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     path::PathBuf,
     rc::Rc,
-    sync::{atomic::Ordering, Mutex},
+    sync::{Arc, atomic::Ordering, Mutex},
     time::Duration,
 };
 
@@ -84,11 +84,10 @@ use smithay::{
 type UdevRenderer<'a> =
     MultiRenderer<'a, 'a, EglGlesBackend<Gles2Renderer>, EglGlesBackend<Gles2Renderer>, Gles2Renderbuffer>;
 
-#[derive(Copy, Clone)]
-pub struct SessionFd(RawFd);
-impl AsRawFd for SessionFd {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0
+pub struct SessionFd(OwnedFd);
+impl AsFd for SessionFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.0.as_fd()
     }
 }
 
@@ -338,7 +337,7 @@ pub fn run_udev(log: Logger) {
 }
 
 pub type RenderSurface =
-    GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd, Option<OutputPresentationFeedback>>;
+    GbmBufferedSurface<Rc<RefCell<GbmDevice<Arc<SessionFd>>>>, Arc<SessionFd>, Option<OutputPresentationFeedback>>;
 
 struct SurfaceData {
     dh: DisplayHandle,
@@ -364,16 +363,16 @@ impl Drop for SurfaceData {
 struct BackendData {
     _restart_token: SignalToken,
     surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>>>>,
-    gbm: Rc<RefCell<GbmDevice<SessionFd>>>,
+    gbm: Rc<RefCell<GbmDevice<Arc<SessionFd>>>>,
     registration_token: RegistrationToken,
-    event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, CalloopData<UdevData>>,
+    event_dispatcher: Dispatcher<'static, DrmDevice<Arc<SessionFd>>, CalloopData<UdevData>>,
 }
 
 #[allow(clippy::too_many_arguments)]
 fn scan_connectors(
     device_id: DrmNode,
-    device: &DrmDevice<SessionFd>,
-    gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
+    device: &DrmDevice<Arc<SessionFd>>,
+    gbm: &Rc<RefCell<GbmDevice<Arc<SessionFd>>>>,
     display: &mut Display<AnvilState<UdevData>>,
     space: &mut Space<Window>,
     #[cfg(feature = "debug")] fps_texture: &MultiTexture,
@@ -531,7 +530,10 @@ impl AnvilState<UdevData> {
         let device_fd = self.backend_data.session.open(&path, open_flags).ok();
         let devices = device_fd
             .map(SessionFd)
-            .map(|fd| (DrmDevice::new(fd, true, self.log.clone()), GbmDevice::new(fd)));
+            .map(|fd| {
+                let fd = Arc::new(fd);
+                (DrmDevice::new(fd.clone(), true, self.log.clone()), GbmDevice::new(fd))
+            });
 
         // Report device open failures.
         let (mut device, gbm) = match devices {

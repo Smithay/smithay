@@ -7,7 +7,7 @@ use libseat::{Seat, SeatEvent};
 use std::{
     cell::RefCell,
     collections::HashMap,
-    os::unix::io::RawFd,
+    os::unix::io::{FromRawFd, IntoRawFd, OwnedFd, RawFd},
     path::Path,
     rc::{Rc, Weak},
     sync::{
@@ -125,7 +125,7 @@ impl LibSeatSession {
 impl Session for LibSeatSession {
     type Error = Error;
 
-    fn open(&mut self, path: &Path, _flags: OFlag) -> Result<RawFd, Self::Error> {
+    fn open(&mut self, path: &Path, _flags: OFlag) -> Result<OwnedFd, Self::Error> {
         if let Some(session) = self.internal.upgrade() {
             debug!(session.logger, "Opening device: {:?}", path);
 
@@ -143,7 +143,7 @@ impl Session for LibSeatSession {
         }
     }
 
-    fn close(&mut self, fd: RawFd) -> Result<(), Self::Error> {
+    fn close(&mut self, fd: OwnedFd) -> Result<(), Self::Error> {
         if let Some(session) = self.internal.upgrade() {
             debug!(session.logger, "Closing device: {:?}", fd);
 
@@ -159,7 +159,7 @@ impl Session for LibSeatSession {
                 Ok(())
             };
 
-            close(fd).unwrap();
+            close(fd.into_raw_fd()).unwrap();
 
             out
         } else {

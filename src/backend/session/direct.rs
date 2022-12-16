@@ -59,7 +59,7 @@ use nix::{
 };
 use std::{
     fmt,
-    os::unix::io::RawFd,
+    os::unix::io::{FromRawFd, IntoRawFd, OwnedFd, RawFd},
     path::{Path, PathBuf},
     str::FromStr,
     sync::{
@@ -348,16 +348,16 @@ impl DirectSession {
 impl Session for DirectSession {
     type Error = NixError;
 
-    fn open(&mut self, path: &Path, flags: OFlag) -> nix::Result<RawFd> {
+    fn open(&mut self, path: &Path, flags: OFlag) -> nix::Result<OwnedFd> {
         debug!(self.logger, "Opening device: {:?}", path);
         let fd = open(path, flags, Mode::empty())?;
         trace!(self.logger, "Fd num: {:?}", fd);
-        Ok(fd)
+        Ok(unsafe { OwnedFd::from_raw_fd(fd) })
     }
 
-    fn close(&mut self, fd: RawFd) -> nix::Result<()> {
+    fn close(&mut self, fd: OwnedFd) -> nix::Result<()> {
         debug!(self.logger, "Closing device: {:?}", fd);
-        close(fd)
+        close(fd.into_raw_fd())
     }
 
     fn is_active(&self) -> bool {

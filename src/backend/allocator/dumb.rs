@@ -1,7 +1,7 @@
 //! Module for [DumbBuffer](https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#dumb-buffer-objects) buffers
 
 use std::fmt;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::AsFd;
 use std::sync::Arc;
 
 use drm::buffer::Buffer as DrmBuffer;
@@ -12,13 +12,13 @@ use crate::backend::drm::device::{DrmDevice, DrmDeviceInternal, FdWrapper};
 use crate::utils::{Buffer as BufferCoords, Size};
 
 /// Wrapper around raw DumbBuffer handles.
-pub struct DumbBuffer<A: AsRawFd + 'static> {
+pub struct DumbBuffer<A: AsFd + 'static> {
     fd: Arc<FdWrapper<A>>,
     handle: Handle,
     format: Format,
 }
 
-impl<A: AsRawFd + 'static> fmt::Debug for DumbBuffer<A> {
+impl<A: AsFd + 'static> fmt::Debug for DumbBuffer<A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DumbBuffer")
             .field("handle", &self.handle)
@@ -27,7 +27,7 @@ impl<A: AsRawFd + 'static> fmt::Debug for DumbBuffer<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {
+impl<A: AsFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {
     type Error = drm::SystemError;
 
     fn create_buffer(
@@ -65,7 +65,7 @@ impl<A: AsRawFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Buffer for DumbBuffer<A> {
+impl<A: AsFd + 'static> Buffer for DumbBuffer<A> {
     fn size(&self) -> Size<i32, BufferCoords> {
         let (w, h) = self.handle.size();
         (w as i32, h as i32).into()
@@ -76,7 +76,7 @@ impl<A: AsRawFd + 'static> Buffer for DumbBuffer<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> DumbBuffer<A> {
+impl<A: AsFd + 'static> DumbBuffer<A> {
     /// Raw handle to the underlying buffer.
     ///
     /// Note: This handle will become invalid, once the `DumbBuffer` wrapper is dropped
@@ -86,7 +86,7 @@ impl<A: AsRawFd + 'static> DumbBuffer<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Drop for DumbBuffer<A> {
+impl<A: AsFd + 'static> Drop for DumbBuffer<A> {
     fn drop(&mut self) {
         let _ = self.fd.destroy_dumb_buffer(self.handle);
     }

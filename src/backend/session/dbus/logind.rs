@@ -39,7 +39,7 @@ use crate::{
     utils::signaling::Signaler,
 };
 use dbus::{
-    arg::{messageitem::MessageItem, OwnedFd},
+    arg::messageitem::MessageItem,
     strings::{BusName, Interface, Member, Path as DbusPath},
     Message,
 };
@@ -50,7 +50,7 @@ use nix::{
 use std::{
     cell::RefCell,
     fmt, io,
-    os::unix::io::RawFd,
+    os::unix::io::{AsRawFd, FromRawFd, OwnedFd},
     path::Path,
     rc::{Rc, Weak},
     sync::atomic::{AtomicBool, Ordering},
@@ -329,7 +329,7 @@ impl LogindSessionImpl {
                     )?;
                 }
             } else if &*message.member().unwrap() == "ResumeDevice" {
-                let (major, minor, fd) = message.get3::<u32, u32, OwnedFd>();
+                let (major, minor, fd) = message.get3::<u32, u32, dbus::arg::OwnedFd>();
                 let major = major.ok_or(Error::UnexpectedMethodReturn)?;
                 let minor = minor.ok_or(Error::UnexpectedMethodReturn)?;
                 let fd = fd.ok_or(Error::UnexpectedMethodReturn)?.into_fd();
@@ -370,7 +370,7 @@ impl LogindSessionImpl {
 impl Session for LogindSession {
     type Error = Error;
 
-    fn open(&mut self, path: &Path, _flags: OFlag) -> Result<RawFd, Error> {
+    fn open(&mut self, path: &Path, _flags: OFlag) -> Result<OwnedFd, Error> {
         if let Some(session) = self.internal.upgrade() {
             let stat = stat(path).map_err(Error::FailedToStatDevice)?;
             // TODO handle paused
@@ -385,17 +385,17 @@ impl Session for LogindSession {
                     (minor(stat.st_rdev) as u32).into(),
                 ]),
             )?
-            .get2::<OwnedFd, bool>();
+            .get2::<dbus::arg::OwnedFd, bool>();
             let fd = fd.ok_or(Error::UnexpectedMethodReturn)?.into_fd();
-            Ok(fd)
+            Ok(unsafe { OwnedFd::from_raw_fd(fd) })
         } else {
             Err(Error::SessionLost)
         }
     }
 
-    fn close(&mut self, fd: RawFd) -> Result<(), Error> {
+    fn close(&mut self, fd: OwnedFd) -> Result<(), Error> {
         if let Some(session) = self.internal.upgrade() {
-            let stat = fstat(fd).map_err(Error::FailedToStatDevice)?;
+            let stat = fstat(fd.as_raw_fd()).map_err(Error::FailedToStatDevice)?;
             LogindSessionImpl::blocking_call(
                 &session.conn.borrow(),
                 "org.freedesktop.login1",

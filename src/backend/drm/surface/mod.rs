@@ -2,7 +2,7 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::convert::TryFrom;
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::{AsFd, BorrowedFd};
 use std::sync::Arc;
 
 use drm::control::{connector, crtc, framebuffer, plane, property, Device as ControlDevice, Mode};
@@ -23,7 +23,7 @@ use slog::trace;
 
 /// An open crtc + plane combination that can be used for scan-out
 #[derive(Debug)]
-pub struct DrmSurface<A: AsRawFd + 'static> {
+pub struct DrmSurface<A: AsFd + 'static> {
     // This field is only read when 'backend_session' is enabled
     #[allow(dead_code)]
     pub(super) dev_id: dev_t,
@@ -37,23 +37,23 @@ pub struct DrmSurface<A: AsRawFd + 'static> {
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum DrmSurfaceInternal<A: AsRawFd + 'static> {
+pub enum DrmSurfaceInternal<A: AsFd + 'static> {
     Atomic(AtomicDrmSurface<A>),
     Legacy(LegacyDrmSurface<A>),
 }
 
-impl<A: AsRawFd + 'static> AsRawFd for DrmSurface<A> {
-    fn as_raw_fd(&self) -> RawFd {
+impl<A: AsFd + 'static> AsFd for DrmSurface<A> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.fd.as_raw_fd(),
-            DrmSurfaceInternal::Legacy(surf) => surf.fd.as_raw_fd(),
+            DrmSurfaceInternal::Atomic(surf) => surf.fd.as_fd(),
+            DrmSurfaceInternal::Legacy(surf) => surf.fd.as_fd(),
         }
     }
 }
-impl<A: AsRawFd + 'static> BasicDevice for DrmSurface<A> {}
-impl<A: AsRawFd + 'static> ControlDevice for DrmSurface<A> {}
+impl<A: AsFd + 'static> BasicDevice for DrmSurface<A> {}
+impl<A: AsFd + 'static> ControlDevice for DrmSurface<A> {}
 
-impl<A: AsRawFd + 'static> DrmSurface<A> {
+impl<A: AsFd + 'static> DrmSurface<A> {
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
     pub fn crtc(&self) -> crtc::Handle {
         self.crtc

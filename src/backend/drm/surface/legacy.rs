@@ -1,7 +1,7 @@
 use drm::control::{connector, crtc, encoder, framebuffer, Device as ControlDevice, Mode, PageFlipFlags};
 
 use std::collections::HashSet;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::AsFd;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, RwLock,
@@ -22,7 +22,7 @@ pub struct State {
 }
 
 impl State {
-    fn current_state<A: AsRawFd + ControlDevice>(fd: &A, crtc: crtc::Handle) -> Result<Self, Error> {
+    fn current_state<A: AsFd + ControlDevice>(fd: &A, crtc: crtc::Handle) -> Result<Self, Error> {
         // Try to enumarate the current state to set the initial state variable correctly.
         // We need an accurate state to handle `commit_pending`.
         let crtc_info = fd.get_crtc(crtc).map_err(|source| Error::Access {
@@ -71,7 +71,7 @@ impl State {
 }
 
 #[derive(Debug)]
-pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
+pub struct LegacyDrmSurface<A: AsFd + 'static> {
     pub(super) fd: Arc<DrmDeviceInternal<A>>,
     pub(super) active: Arc<AtomicBool>,
     crtc: crtc::Handle,
@@ -80,7 +80,7 @@ pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
     pub(crate) logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
+impl<A: AsFd + 'static> LegacyDrmSurface<A> {
     pub fn new(
         fd: Arc<DrmDeviceInternal<A>>,
         active: Arc<AtomicBool>,
@@ -402,10 +402,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
         }
     }
 
-    pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(
-        &self,
-        fd: Option<&B>,
-    ) -> Result<(), Error> {
+    pub(crate) fn reset_state<B: AsFd + ControlDevice + 'static>(&self, fd: Option<&B>) -> Result<(), Error> {
         *self.state.write().unwrap() = if let Some(fd) = fd {
             State::current_state(fd, self.crtc)?
         } else {
@@ -415,7 +412,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Drop for LegacyDrmSurface<A> {
+impl<A: AsFd + 'static> Drop for LegacyDrmSurface<A> {
     fn drop(&mut self) {
         // ignore failure at this point
 

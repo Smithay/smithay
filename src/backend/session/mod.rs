@@ -41,7 +41,7 @@
 use nix::fcntl::OFlag;
 use std::{
     cell::RefCell,
-    os::unix::io::RawFd,
+    os::unix::io::{OwnedFd, RawFd},
     path::Path,
     rc::Rc,
     sync::{Arc, Mutex},
@@ -57,9 +57,9 @@ pub trait Session {
     /// Opens a device at the given `path` with the given flags.
     ///
     /// Returns a raw file descriptor
-    fn open(&mut self, path: &Path, flags: OFlag) -> Result<RawFd, Self::Error>;
+    fn open(&mut self, path: &Path, flags: OFlag) -> Result<OwnedFd, Self::Error>;
     /// Close a previously opened file descriptor
-    fn close(&mut self, fd: RawFd) -> Result<(), Self::Error>;
+    fn close(&mut self, fd: OwnedFd) -> Result<(), Self::Error>;
 
     /// Change the currently active virtual terminal
     fn change_vt(&mut self, vt: i32) -> Result<(), Self::Error>;
@@ -108,10 +108,10 @@ pub enum Signal {
 impl Session for () {
     type Error = ();
 
-    fn open(&mut self, _path: &Path, _flags: OFlag) -> Result<RawFd, Self::Error> {
+    fn open(&mut self, _path: &Path, _flags: OFlag) -> Result<OwnedFd, Self::Error> {
         Err(())
     }
-    fn close(&mut self, _fd: RawFd) -> Result<(), Self::Error> {
+    fn close(&mut self, _fd: OwnedFd) -> Result<(), Self::Error> {
         Err(())
     }
 
@@ -130,11 +130,11 @@ impl Session for () {
 impl<S: Session> Session for Rc<RefCell<S>> {
     type Error = S::Error;
 
-    fn open(&mut self, path: &Path, flags: OFlag) -> Result<RawFd, Self::Error> {
+    fn open(&mut self, path: &Path, flags: OFlag) -> Result<OwnedFd, Self::Error> {
         self.borrow_mut().open(path, flags)
     }
 
-    fn close(&mut self, fd: RawFd) -> Result<(), Self::Error> {
+    fn close(&mut self, fd: OwnedFd) -> Result<(), Self::Error> {
         self.borrow_mut().close(fd)
     }
 
@@ -154,11 +154,11 @@ impl<S: Session> Session for Rc<RefCell<S>> {
 impl<S: Session> Session for Arc<Mutex<S>> {
     type Error = S::Error;
 
-    fn open(&mut self, path: &Path, flags: OFlag) -> Result<RawFd, Self::Error> {
+    fn open(&mut self, path: &Path, flags: OFlag) -> Result<OwnedFd, Self::Error> {
         self.lock().unwrap().open(path, flags)
     }
 
-    fn close(&mut self, fd: RawFd) -> Result<(), Self::Error> {
+    fn close(&mut self, fd: OwnedFd) -> Result<(), Self::Error> {
         self.lock().unwrap().close(fd)
     }
 

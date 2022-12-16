@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::AsFd;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -13,14 +13,14 @@ use crate::backend::drm::error::Error;
 use slog::{error, info, o};
 
 #[derive(Debug)]
-pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
+pub struct LegacyDrmDevice<A: AsFd + 'static> {
     pub(crate) fd: Arc<FdWrapper<A>>,
     pub(crate) active: Arc<AtomicBool>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
+impl<A: AsFd + 'static> LegacyDrmDevice<A> {
     pub fn new(
         fd: Arc<FdWrapper<A>>,
         active: Arc<AtomicBool>,
@@ -110,7 +110,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Drop for LegacyDrmDevice<A> {
+impl<A: AsFd + 'static> Drop for LegacyDrmDevice<A> {
     fn drop(&mut self) {
         info!(self.logger, "Dropping device: {:?}", self.fd.dev_path());
         if self.active.load(Ordering::SeqCst) {

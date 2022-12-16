@@ -41,7 +41,7 @@ use super::{
 };
 use crate::utils::signaling::Signaler;
 use nix::fcntl::OFlag;
-use std::{cell::RefCell, os::unix::io::RawFd, path::Path, rc::Rc};
+use std::{cell::RefCell, os::unix::io::OwnedFd, path::Path, rc::Rc};
 
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 
@@ -136,7 +136,7 @@ impl AutoSession {
 impl Session for AutoSession {
     type Error = Error;
 
-    fn open(&mut self, path: &Path, flags: OFlag) -> Result<RawFd, Error> {
+    fn open(&mut self, path: &Path, flags: OFlag) -> Result<OwnedFd, Error> {
         match *self {
             #[cfg(feature = "backend_session_logind")]
             AutoSession::Logind(ref mut logind) => logind.open(path, flags).map_err(|e| e.into()),
@@ -145,7 +145,7 @@ impl Session for AutoSession {
             AutoSession::LibSeat(ref mut logind) => logind.open(path, flags).map_err(|e| e.into()),
         }
     }
-    fn close(&mut self, fd: RawFd) -> Result<(), Error> {
+    fn close(&mut self, fd: OwnedFd) -> Result<(), Error> {
         match *self {
             #[cfg(feature = "backend_session_logind")]
             AutoSession::Logind(ref mut logind) => logind.close(fd).map_err(|e| e.into()),

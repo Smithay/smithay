@@ -1,4 +1,4 @@
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Weak,
@@ -20,7 +20,7 @@ use crate::{
 
 use slog::{crit, error, info, o, warn};
 
-struct DrmDeviceObserver<A: AsRawFd + 'static> {
+struct DrmDeviceObserver<A: AsFd + 'static> {
     dev_id: dev_t,
     dev: Weak<DrmDeviceInternal<A>>,
     privileged: bool,
@@ -28,7 +28,7 @@ struct DrmDeviceObserver<A: AsRawFd + 'static> {
     logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> Linkable<SessionSignal> for DrmDevice<A> {
+impl<A: AsFd + 'static> Linkable<SessionSignal> for DrmDevice<A> {
     fn link(&mut self, signaler: Signaler<SessionSignal>) {
         let mut observer = DrmDeviceObserver {
             dev: Arc::downgrade(&self.internal),
@@ -49,7 +49,7 @@ impl<A: AsRawFd + 'static> Linkable<SessionSignal> for DrmDevice<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> DrmDeviceObserver<A> {
+impl<A: AsFd + 'static> DrmDeviceObserver<A> {
     fn signal(&mut self, signal: SessionSignal) {
         match signal {
             SessionSignal::PauseSession => self.pause(None),
@@ -85,7 +85,7 @@ impl<A: AsRawFd + 'static> DrmDeviceObserver<A> {
             } else if let Some(fd) = fd {
                 info!(self.logger, "Replacing fd");
                 if let Some(device) = self.dev.upgrade() {
-                    ::nix::unistd::dup2(device.as_raw_fd(), fd)
+                    ::nix::unistd::dup2(device.as_fd().as_raw_fd(), fd)
                         .expect("Failed to replace file descriptor of drm device");
                 }
             }
@@ -102,23 +102,23 @@ impl<A: AsRawFd + 'static> DrmDeviceObserver<A> {
     }
 }
 
-struct DrmSurfaceObserver<A: AsRawFd + 'static> {
+struct DrmSurfaceObserver<A: AsFd + 'static> {
     dev_id: dev_t,
     crtc: crtc::Handle,
     surf: Weak<DrmSurfaceInternal<A>>,
     logger: ::slog::Logger,
 }
 
-struct FdHack(RawFd);
-impl AsRawFd for FdHack {
-    fn as_raw_fd(&self) -> RawFd {
+struct FdHack<'a>(BorrowedFd<'a>);
+impl<'a> AsFd for FdHack<'a> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         self.0
     }
 }
-impl BasicDevice for FdHack {}
-impl ControlDevice for FdHack {}
+impl<'a> BasicDevice for FdHack<'a> {}
+impl<'a> ControlDevice for FdHack<'a> {}
 
-impl<A: AsRawFd + 'static> Linkable<SessionSignal> for DrmSurface<A> {
+impl<A: AsFd + 'static> Linkable<SessionSignal> for DrmSurface<A> {
     fn link(&mut self, signaler: Signaler<SessionSignal>) {
         let logger = match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.logger.clone(),
@@ -136,7 +136,7 @@ impl<A: AsRawFd + 'static> Linkable<SessionSignal> for DrmSurface<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> DrmSurfaceObserver<A> {
+impl<A: AsFd + 'static> DrmSurfaceObserver<A> {
     fn signal(&mut self, signal: SessionSignal) {
         match signal {
             SessionSignal::ActivateSession => self.activate(None),
@@ -155,7 +155,7 @@ impl<A: AsRawFd + 'static> DrmSurfaceObserver<A> {
                 if major as u64 != stat::major(self.dev_id) || minor as u64 != stat::minor(self.dev_id) {
                     return;
                 }
-                fd.map(FdHack)
+                fd.map(|fd| FdHack(unsafe { BorrowedFd::borrow_raw(fd) }))
             } else {
                 None
             };

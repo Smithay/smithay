@@ -42,7 +42,7 @@ use std::{
     collections::HashMap,
     ffi::OsString,
     fmt, io,
-    os::unix::io::{AsRawFd, RawFd},
+    os::unix::io::{AsFd, BorrowedFd},
     path::{Path, PathBuf},
 };
 use udev::{Enumerator, EventType, MonitorBuilder, MonitorSocket};
@@ -75,9 +75,9 @@ impl fmt::Debug for UdevBackend {
     }
 }
 
-impl AsRawFd for UdevBackend {
-    fn as_raw_fd(&self) -> RawFd {
-        self.monitor.as_raw_fd()
+impl AsFd for UdevBackend {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.monitor.as_fd()
     }
 }
 
@@ -142,8 +142,7 @@ impl EventSource for UdevBackend {
         if Some(token) != self.token {
             return Ok(PostAction::Continue);
         }
-        let monitor = self.monitor.clone();
-        for event in monitor {
+        for event in self.monitor.iter() {
             debug!(
                 self.logger,
                 "Udev event: type={}, devnum={:?} devnode={:?}",
@@ -193,17 +192,17 @@ impl EventSource for UdevBackend {
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
-        poll.register(self.as_raw_fd(), Interest::READ, Mode::Level, self.token.unwrap())
+        poll.register(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap())
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
-        poll.reregister(self.as_raw_fd(), Interest::READ, Mode::Level, self.token.unwrap())
+        poll.reregister(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap())
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.token = None;
-        poll.unregister(self.as_raw_fd())
+        poll.unregister(self.as_fd())
     }
 }
 

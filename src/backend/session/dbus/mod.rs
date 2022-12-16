@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, os::unix::io::BorrowedFd};
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
@@ -41,6 +41,14 @@ impl DBusConnection {
 
     pub fn channel(&self) -> &Channel {
         self.cx.channel()
+    }
+
+    fn watch_fd(&self) -> Option<BorrowedFd<'_>> {
+        if self.current_watch.fd != -1 {
+            Some(unsafe { BorrowedFd::borrow_raw(self.current_watch.fd) })
+        } else {
+            None
+        }
     }
 }
 
@@ -97,18 +105,24 @@ impl EventSource for DBusConnection {
         if new_watch.fd != self.current_watch.fd {
             // remove the previous fd
             if self.current_watch.read || self.current_watch.write {
-                poll.unregister(self.current_watch.fd)?;
+                poll.unregister(self.watch_fd().unwrap())?;
             }
             // insert the new one
             if let Some(interest) = new_interest {
-                poll.register(new_watch.fd, interest, Mode::Level, self.token.unwrap())?;
+                let new_fd = unsafe { BorrowedFd::borrow_raw(new_watch.fd) };
+                poll.register(new_fd, interest, Mode::Level, self.token.unwrap())?;
             }
         } else {
             // update the registration
             if let Some(interest) = new_interest {
-                poll.reregister(self.current_watch.fd, interest, Mode::Level, self.token.unwrap())?;
+                poll.reregister(
+                    self.watch_fd().unwrap(),
+                    interest,
+                    Mode::Level,
+                    self.token.unwrap(),
+                )?;
             } else {
-                poll.unregister(self.current_watch.fd)?;
+                poll.unregister(self.watch_fd().unwrap())?;
             }
         }
         self.current_watch = new_watch;
@@ -117,7 +131,7 @@ impl EventSource for DBusConnection {
 
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         if self.current_watch.read || self.current_watch.write {
-            poll.unregister(self.current_watch.fd)?;
+            poll.unregister(self.watch_fd().unwrap())?;
         }
         self.token = None;
         self.current_watch = Watch {

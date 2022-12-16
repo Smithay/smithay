@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::AsFd;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -29,7 +29,7 @@ pub type Mapping = (
     HashMap<plane::Handle, HashMap<String, property::Handle>>,
 );
 #[derive(Debug)]
-pub struct AtomicDrmDevice<A: AsRawFd + 'static> {
+pub struct AtomicDrmDevice<A: AsFd + 'static> {
     pub(crate) fd: Arc<FdWrapper<A>>,
     pub(crate) active: Arc<AtomicBool>,
     old_state: OldState,
@@ -37,7 +37,7 @@ pub struct AtomicDrmDevice<A: AsRawFd + 'static> {
     logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
+impl<A: AsFd + 'static> AtomicDrmDevice<A> {
     pub fn new(
         fd: Arc<FdWrapper<A>>,
         active: Arc<AtomicBool>,
@@ -187,7 +187,7 @@ impl<A: AsRawFd + 'static> AtomicDrmDevice<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Drop for AtomicDrmDevice<A> {
+impl<A: AsFd + 'static> Drop for AtomicDrmDevice<A> {
     fn drop(&mut self) {
         if self.active.load(Ordering::SeqCst) {
             // Here we restore the card/tty's to it's previous state.

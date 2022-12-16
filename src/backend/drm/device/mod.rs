@@ -1,7 +1,7 @@
 #[cfg(feature = "backend_session")]
 use std::cell::RefCell;
 use std::io;
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd};
 use std::path::PathBuf;
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, SystemTime};
@@ -25,7 +25,7 @@ use slog::{error, info, o, trace, warn};
 
 /// An open drm device
 #[derive(Debug)]
-pub struct DrmDevice<A: AsRawFd + 'static> {
+pub struct DrmDevice<A: AsFd + 'static> {
     pub(super) dev_id: dev_t,
     pub(crate) internal: Arc<DrmDeviceInternal<A>>,
     #[cfg(feature = "backend_session")]
@@ -38,33 +38,33 @@ pub struct DrmDevice<A: AsRawFd + 'static> {
     token: Option<Token>,
 }
 
-impl<A: AsRawFd + 'static> AsRawFd for DrmDevice<A> {
-    fn as_raw_fd(&self) -> RawFd {
+impl<A: AsFd + 'static> AsFd for DrmDevice<A> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         match &*self.internal {
-            DrmDeviceInternal::Atomic(dev) => dev.fd.as_raw_fd(),
-            DrmDeviceInternal::Legacy(dev) => dev.fd.as_raw_fd(),
+            DrmDeviceInternal::Atomic(dev) => dev.fd.as_fd(),
+            DrmDeviceInternal::Legacy(dev) => dev.fd.as_fd(),
         }
     }
 }
-impl<A: AsRawFd + 'static> BasicDevice for DrmDevice<A> {}
-impl<A: AsRawFd + 'static> ControlDevice for DrmDevice<A> {}
+impl<A: AsFd + 'static> BasicDevice for DrmDevice<A> {}
+impl<A: AsFd + 'static> ControlDevice for DrmDevice<A> {}
 
 #[derive(Debug)]
-pub struct FdWrapper<A: AsRawFd + 'static> {
+pub struct FdWrapper<A: AsFd + 'static> {
     fd: A,
     pub(super) privileged: bool,
     logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> AsRawFd for FdWrapper<A> {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
+impl<A: AsFd + 'static> AsFd for FdWrapper<A> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.fd.as_fd()
     }
 }
-impl<A: AsRawFd + 'static> BasicDevice for FdWrapper<A> {}
-impl<A: AsRawFd + 'static> ControlDevice for FdWrapper<A> {}
+impl<A: AsFd + 'static> BasicDevice for FdWrapper<A> {}
+impl<A: AsFd + 'static> ControlDevice for FdWrapper<A> {}
 
-impl<A: AsRawFd + 'static> Drop for FdWrapper<A> {
+impl<A: AsFd + 'static> Drop for FdWrapper<A> {
     fn drop(&mut self) {
         info!(self.logger, "Dropping device: {:?}", self.dev_path());
         if self.privileged {
@@ -77,22 +77,22 @@ impl<A: AsRawFd + 'static> Drop for FdWrapper<A> {
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum DrmDeviceInternal<A: AsRawFd + 'static> {
+pub enum DrmDeviceInternal<A: AsFd + 'static> {
     Atomic(AtomicDrmDevice<A>),
     Legacy(LegacyDrmDevice<A>),
 }
-impl<A: AsRawFd + 'static> AsRawFd for DrmDeviceInternal<A> {
-    fn as_raw_fd(&self) -> RawFd {
+impl<A: AsFd + 'static> AsFd for DrmDeviceInternal<A> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         match self {
-            DrmDeviceInternal::Atomic(dev) => dev.fd.as_raw_fd(),
-            DrmDeviceInternal::Legacy(dev) => dev.fd.as_raw_fd(),
+            DrmDeviceInternal::Atomic(dev) => dev.fd.as_fd(),
+            DrmDeviceInternal::Legacy(dev) => dev.fd.as_fd(),
         }
     }
 }
-impl<A: AsRawFd + 'static> BasicDevice for DrmDeviceInternal<A> {}
-impl<A: AsRawFd + 'static> ControlDevice for DrmDeviceInternal<A> {}
+impl<A: AsFd + 'static> BasicDevice for DrmDeviceInternal<A> {}
+impl<A: AsFd + 'static> ControlDevice for DrmDeviceInternal<A> {}
 
-impl<A: AsRawFd + 'static> DrmDevice<A> {
+impl<A: AsFd + 'static> DrmDevice<A> {
     /// Create a new [`DrmDevice`] from an open drm node
     ///
     /// # Arguments
@@ -112,13 +112,15 @@ impl<A: AsRawFd + 'static> DrmDevice<A> {
 
     pub fn new<L>(fd: A, disable_connectors: bool, logger: L) -> Result<Self, Error>
     where
-        A: AsRawFd + 'static,
+        A: AsFd + 'static,
         L: Into<Option<::slog::Logger>>,
     {
         let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm"));
         info!(log, "DrmDevice initializing");
 
-        let dev_id = fstat(fd.as_raw_fd()).map_err(Error::UnableToGetDeviceId)?.st_rdev;
+        let dev_id = fstat(fd.as_fd().as_raw_fd())
+            .map_err(Error::UnableToGetDeviceId)?
+            .st_rdev;
         let active = Arc::new(AtomicBool::new(true));
         let dev = Arc::new({
             let mut dev = FdWrapper {
@@ -322,11 +324,11 @@ pub trait DevPath {
     fn dev_path(&self) -> Option<PathBuf>;
 }
 
-impl<A: AsRawFd> DevPath for A {
+impl<A: AsFd> DevPath for A {
     fn dev_path(&self) -> Option<PathBuf> {
         use std::fs;
 
-        fs::read_link(format!("/proc/self/fd/{:?}", self.as_raw_fd())).ok()
+        fs::read_link(format!("/proc/self/fd/{:?}", self.as_fd().as_raw_fd())).ok()
     }
 }
 
@@ -359,7 +361,7 @@ pub enum Time {
 
 impl<A> EventSource for DrmDevice<A>
 where
-    A: AsRawFd + 'static,
+    A: AsFd + 'static,
 {
     type Event = DrmEvent;
     type Metadata = Option<EventMetadata>;
@@ -413,7 +415,7 @@ where
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
         poll.register(
-            self.as_raw_fd(),
+            self.as_fd(),
             Interest::READ,
             calloop::Mode::Level,
             self.token.unwrap(),
@@ -423,7 +425,7 @@ where
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
         poll.reregister(
-            self.as_raw_fd(),
+            self.as_fd(),
             Interest::READ,
             calloop::Mode::Level,
             self.token.unwrap(),
@@ -432,6 +434,6 @@ where
 
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.token = None;
-        poll.unregister(self.as_raw_fd())
+        poll.unregister(self.as_fd())
     }
 }

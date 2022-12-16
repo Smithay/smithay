@@ -5,7 +5,7 @@ use drm::control::{
 };
 
 use std::collections::HashSet;
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::AsFd;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, RwLock,
@@ -31,7 +31,7 @@ pub struct State {
 }
 
 impl State {
-    fn current_state<A: AsRawFd + ControlDevice>(
+    fn current_state<A: AsFd + ControlDevice>(
         fd: &A,
         crtc: crtc::Handle,
         prop_mapping: &mut Mapping,
@@ -114,7 +114,7 @@ pub struct PlaneInfo {
 }
 
 #[derive(Debug)]
-pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
+pub struct AtomicDrmSurface<A: AsFd + 'static> {
     pub(in crate::backend::drm) fd: Arc<DrmDeviceInternal<A>>,
     pub(super) active: Arc<AtomicBool>,
     crtc: crtc::Handle,
@@ -126,7 +126,7 @@ pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
     pub(crate) logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
+impl<A: AsFd + 'static> AtomicDrmSurface<A> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         fd: Arc<DrmDeviceInternal<A>>,
@@ -950,10 +950,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         result
     }
 
-    pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(
-        &self,
-        fd: Option<&B>,
-    ) -> Result<(), Error> {
+    pub(crate) fn reset_state<B: AsFd + ControlDevice + 'static>(&self, fd: Option<&B>) -> Result<(), Error> {
         *self.state.write().unwrap() = if let Some(fd) = fd {
             State::current_state(fd, self.crtc, &mut self.prop_mapping.write().unwrap())?
         } else {
@@ -963,20 +960,20 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
     }
 }
 
-struct TestBuffer<A: AsRawFd + 'static> {
+struct TestBuffer<A: AsFd + 'static> {
     fd: Arc<DrmDeviceInternal<A>>,
     db: DumbBuffer,
     fb: framebuffer::Handle,
 }
 
-impl<A: AsRawFd + 'static> Drop for TestBuffer<A> {
+impl<A: AsFd + 'static> Drop for TestBuffer<A> {
     fn drop(&mut self) {
         let _ = self.fd.destroy_framebuffer(self.fb);
         let _ = self.fd.destroy_dumb_buffer(self.db);
     }
 }
 
-impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
+impl<A: AsFd + 'static> Drop for AtomicDrmSurface<A> {
     fn drop(&mut self) {
         if !self.active.load(Ordering::SeqCst) {
             // the device is gone or we are on another tty

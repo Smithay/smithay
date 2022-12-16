@@ -13,7 +13,7 @@ use input::event;
 use std::path::Path;
 use std::{
     io,
-    os::unix::io::{AsRawFd, RawFd},
+    os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     path::PathBuf,
 };
 
@@ -461,21 +461,21 @@ impl<S: Session> From<S> for LibinputSessionInterface<S> {
 
 #[cfg(feature = "backend_session")]
 impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
-    fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<RawFd, i32> {
+    fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<OwnedFd, i32> {
         use nix::fcntl::OFlag;
         self.0
             .open(path, OFlag::from_bits_truncate(flags))
             .map_err(|err| err.as_errno().unwrap_or(1 /*Use EPERM by default*/))
     }
 
-    fn close_restricted(&mut self, fd: RawFd) {
+    fn close_restricted(&mut self, fd: OwnedFd) {
         let _ = self.0.close(fd);
     }
 }
 
-impl AsRawFd for LibinputInputBackend {
-    fn as_raw_fd(&self) -> RawFd {
-        self.context.as_raw_fd()
+impl AsFd for LibinputInputBackend {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.context.as_fd()
     }
 }
 
@@ -590,16 +590,16 @@ impl EventSource for LibinputInputBackend {
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
-        poll.register(self.as_raw_fd(), Interest::READ, Mode::Level, self.token.unwrap())
+        poll.register(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap())
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
-        poll.reregister(self.as_raw_fd(), Interest::READ, Mode::Level, self.token.unwrap())
+        poll.reregister(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap())
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.token = None;
-        poll.unregister(self.as_raw_fd())
+        poll.unregister(self.as_fd())
     }
 }

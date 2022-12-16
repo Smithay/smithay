@@ -10,9 +10,9 @@ use super::{
 };
 use crate::utils::{Buffer as BufferCoords, Size};
 pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::io::{AsFd, AsRawFd};
 
-impl<A: AsRawFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
+impl<A: AsFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
     type Error = std::io::Error;
 
     fn create_buffer(
@@ -81,14 +81,8 @@ impl<T> AsDmabuf for GbmBuffer<T> {
         for idx in 0..planes {
             let fd = self.fd_for_plane(idx)?;
 
-            // gbm_bo_get_fd_for_plane returns -1 if an error occurs
-            if fd == -1 {
-                return Err(GbmConvertError::InvalidFD);
-            }
-
             builder.add_plane(
-                // SAFETY: `gbm_bo_get_fd_for_plane` returns a new fd owned by the caller.
-                unsafe { OwnedFd::from_raw_fd(fd) },
+                fd,
                 idx as u32,
                 self.offset(idx)?,
                 self.stride_for_plane(idx)?,
@@ -148,7 +142,7 @@ impl<T> AsDmabuf for GbmBuffer<T> {
 
 impl Dmabuf {
     /// Import a Dmabuf using libgbm, creating a gbm Buffer Object to the same underlying data.
-    pub fn import_to<A: AsRawFd + 'static, T>(
+    pub fn import_to<A: AsFd + 'static, T>(
         &self,
         gbm: &GbmDevice<A>,
         usage: GbmBufferFlags,

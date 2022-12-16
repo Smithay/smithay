@@ -1,5 +1,5 @@
 use std::{
-    os::unix::io::{AsRawFd, OwnedFd},
+    os::unix::io::OwnedFd,
     sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
@@ -309,11 +309,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         };
         handle
             .insert_source(
-                Generic::new(
-                    display.backend().poll_fd().as_raw_fd(),
-                    Interest::READ,
-                    Mode::Level,
-                ),
+                Generic::new(display.backend().poll_fd(), Interest::READ, Mode::Level),
                 |_, _, data| {
                     data.display.dispatch_clients(&mut data.state).unwrap();
                     Ok(PostAction::Continue)
