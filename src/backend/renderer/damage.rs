@@ -328,7 +328,10 @@ impl DamageTrackedRenderer {
         let log = crate::slog_or_fallback(log);
 
         let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
-        let output_geo = Rectangle::from_loc_and_size((0, 0), output_size);
+        // We have to apply to output transform to the output size so that the intersection
+        // tests in damage_output_internal produces the correct results and do not crop
+        // damage with the wrong size
+        let output_geo = Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(output_size));
 
         // This will hold all the damage we need for this rendering step
         let mut damage: Vec<Rectangle<i32, Physical>> = Vec::new();
@@ -452,8 +455,11 @@ impl DamageTrackedRenderer {
     {
         let log = crate::slog_or_fallback(log);
 
-        let (output_size, output_scale, _output_transform) = self.mode.clone().try_into()?;
-        let output_geo = Rectangle::from_loc_and_size((0, 0), output_size);
+        let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
+        // We have to apply to output transform to the output size so that the intersection
+        // tests in damage_output_internal produces the correct results and do not crop
+        // damage with the wrong size
+        let output_geo = Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(output_size));
 
         // This will hold all the damage we need for this rendering step
         let mut damage: Vec<Rectangle<i32, Physical>> = Vec::new();
