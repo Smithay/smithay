@@ -25,6 +25,7 @@ use x11rb::{
     wrapper::ConnectionExt,
 };
 
+/// X11 window managed by an [`X11WM`](super::X11WM)
 #[derive(Debug, Clone)]
 pub struct X11Surface {
     window: X11Window,
@@ -72,19 +73,26 @@ enum InputMode {
 
 impl PartialEq for X11Surface {
     fn eq(&self, other: &Self) -> bool {
-        self.window == other.window
+        let self_alive = self.state.lock().unwrap().alive;
+        let other_alive = other.state.lock().unwrap().alive;
+        self.window == other.window && self_alive && other_alive
     }
 }
 
+/// Errors that can happen for operations on an [`X11Surface`]
 #[derive(Debug, thiserror::Error)]
 pub enum X11SurfaceError {
+    /// Error on the underlying X11 Connection
     #[error(transparent)]
     Connection(#[from] ConnectionError),
+    /// Operation was unsupported for an override_redirect window
     #[error("Operation was unsupported for an override_redirect window")]
     UnsupportedForOverrideRedirect,
 }
 
+/// Window types of [`X11Surface`]s
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(missing_docs)]
 pub enum WmWindowType {
     DropdownMenu,
     Dialog,
@@ -99,6 +107,16 @@ pub enum WmWindowType {
 }
 
 impl X11Surface {
+    /// Create a new [`X11Surface`] usually handled by an [`X11WM`]
+    ///
+    /// ## Arguments
+    ///
+    /// - `window` X11 window id
+    /// - `override_redirect` set if the X11 window has the override redirect flag set
+    /// - `conn` Weak reference on the X11 connection
+    /// - `atoms` Atoms struct as defined by the [xwm module](super).
+    /// - `geometry` Initial geometry of the window
+    /// - `log` slog logger to be used by this window
     pub fn new(
         window: u32,
         override_redirect: bool,
@@ -131,10 +149,14 @@ impl X11Surface {
         }
     }
 
+    /// X11 protocol id of the underlying window
     pub fn window_id(&self) -> u32 {
         self.window
     }
 
+    /// Set the X11 windows as mapped/unmapped affecting its visibility.
+    ///
+    /// It is an error to call this function on override redirect windows
     pub fn set_mapped(&self, mapped: bool) -> Result<(), X11SurfaceError> {
         if self.override_redirect {
             if mapped {
@@ -173,24 +195,26 @@ impl X11Surface {
         Ok(())
     }
 
+    /// Returns if this window has the override redirect flag set or not
     pub fn is_override_redirect(&self) -> bool {
         self.override_redirect
     }
 
+    /// Returns if the window is currently mapped or not
     pub fn is_mapped(&self) -> bool {
         let state = self.state.lock().unwrap();
         state.wl_surface.is_some() || state.mapped_onto.is_some()
     }
 
-    pub fn is_visible(&self) -> bool {
-        let state = self.state.lock().unwrap();
-        (self.override_redirect || state.mapped_onto.is_some()) && state.wl_surface.is_some()
-    }
-
+    /// Returns if the window is still alive
     pub fn alive(&self) -> bool {
         self.state.lock().unwrap().alive && self.conn.upgrade().is_some()
     }
 
+    /// Send a configure to this window.
+    ///
+    /// If `rect` is provided the new state will be send to the window.
+    /// If `rect` is `None` a synthetic configure event with the existing state will be send.
     pub fn configure(&self, rect: impl Into<Option<Rectangle<i32, Logical>>>) -> Result<(), X11SurfaceError> {
         let rect = rect.into();
         if self.override_redirect && rect.is_some() {
@@ -223,39 +247,55 @@ impl X11Surface {
         Ok(())
     }
 
+    /// Returns the `wl_surface` corresponding to the underlying X11 window.
+    ///
+    /// An X11 window only has a matching wl_surface if is considered visible
+    /// by Xwayland, which will only happen once it is mapped.
     pub fn wl_surface(&self) -> Option<WlSurface> {
         self.state.lock().unwrap().wl_surface.clone()
     }
 
+    /// Returns the current geometry of the underlying X11 window
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
         self.state.lock().unwrap().geometry
     }
 
+    /// Returns the current title of the underlying X11 window
     pub fn title(&self) -> String {
         self.state.lock().unwrap().title.clone()
     }
 
+    /// Returns the current window class of the underlying X11 window
     pub fn class(&self) -> String {
         self.state.lock().unwrap().class.clone()
     }
 
+    /// Returns the current window instance of the underlying X11 window
     pub fn instance(&self) -> String {
         self.state.lock().unwrap().class.clone()
     }
 
+    /// Returns if the window is considered to be a popup.
+    ///
+    /// Corresponds to the internal `_NET_WM_STATE_MODAL` state of the underlying X11 window.
     pub fn is_popup(&self) -> bool {
         let state = self.state.lock().unwrap();
         state.net_state.contains(&self.atoms._NET_WM_STATE_MODAL)
     }
 
+    /// Returns if the underlying window is transient to another window.
+    ///
+    /// This might be used as a hint to manage windows in a group.
     pub fn is_transient_for(&self) -> Option<X11Window> {
         self.state.lock().unwrap().transient_for
     }
 
+    /// Returns the size hints for the underlying X11 window
     pub fn size_hints(&self) -> Option<WmSizeHints> {
         self.state.lock().unwrap().normal_hints
     }
 
+    /// Returns the suggested minimum size of the underlying X11 window
     pub fn min_size(&self) -> Option<Size<i32, Logical>> {
         let state = self.state.lock().unwrap();
         state
@@ -265,6 +305,7 @@ impl X11Surface {
             .map(Size::from)
     }
 
+    /// Returns the suggested minimum size of the underlying X11 window
     pub fn max_size(&self) -> Option<Size<i32, Logical>> {
         let state = self.state.lock().unwrap();
         state
@@ -274,6 +315,7 @@ impl X11Surface {
             .map(Size::from)
     }
 
+    /// Returns the suggested base size of the underlying X11 window
     pub fn base_size(&self) -> Option<Size<i32, Logical>> {
         let state = self.state.lock().unwrap();
         let res = state
@@ -285,12 +327,14 @@ impl X11Surface {
         res.or_else(|| self.min_size())
     }
 
+    /// Returns if the window is in the maximized state
     pub fn is_maximized(&self) -> bool {
         let state = self.state.lock().unwrap();
         state.net_state.contains(&self.atoms._NET_WM_STATE_MAXIMIZED_HORZ)
             && state.net_state.contains(&self.atoms._NET_WM_STATE_MAXIMIZED_VERT)
     }
 
+    /// Returns if the window is in the fullscreen state
     pub fn is_fullscreen(&self) -> bool {
         self.state
             .lock()
@@ -299,6 +343,7 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_FULLSCREEN)
     }
 
+    /// Returns if the window is in the minimized state
     pub fn is_minimized(&self) -> bool {
         self.state
             .lock()
@@ -307,6 +352,7 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_HIDDEN)
     }
 
+    /// Returns if the window is in the activated state
     pub fn is_activated(&self) -> bool {
         self.state
             .lock()
@@ -315,6 +361,9 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_FOCUSED)
     }
 
+    /// Sets the window as maximized or not.
+    ///
+    /// Allows the client to reflect this state in their UI.
     pub fn set_maximized(&self, maximized: bool) -> Result<(), ConnectionError> {
         if maximized {
             self.change_net_state(
@@ -336,6 +385,9 @@ impl X11Surface {
         Ok(())
     }
 
+    /// Sets the window as fullscreen or not.
+    ///
+    /// Allows the client to reflect this state in their UI.
     pub fn set_fullscreen(&self, fullscreen: bool) -> Result<(), ConnectionError> {
         if fullscreen {
             self.change_net_state(&[self.atoms._NET_WM_STATE_FULLSCREEN], &[])?;
@@ -345,6 +397,9 @@ impl X11Surface {
         Ok(())
     }
 
+    /// Sets the window as minimized or not.
+    ///
+    /// Allows the client to e.g. stop rendering while minimized.
     pub fn set_minimized(&self, minimized: bool) -> Result<(), ConnectionError> {
         if minimized {
             self.change_net_state(&[self.atoms._NET_WM_STATE_HIDDEN], &[])?;
@@ -354,6 +409,9 @@ impl X11Surface {
         Ok(())
     }
 
+    /// Sets the window as activated or not.
+    ///
+    /// Allows the client to reflect this state in their UI.
     pub fn set_activated(&self, activated: bool) -> Result<(), ConnectionError> {
         if activated {
             self.change_net_state(&[self.atoms._NET_WM_STATE_FOCUSED], &[])?;
@@ -363,6 +421,10 @@ impl X11Surface {
         Ok(())
     }
 
+    /// Returns the reported window type of the underlying X11 window if set.
+    ///
+    /// Windows without a window type set should be considered to be of type `Normal` for
+    /// backwards compatibility.
     pub fn window_type(&self) -> Option<WmWindowType> {
         self.state
             .lock()
@@ -616,10 +678,14 @@ impl X11Surface {
         }
     }
 
+    /// Retrieve user_data associated with this X11 window
     pub fn user_data(&self) -> &UserDataMap {
         &self.user_data
     }
 
+    /// Send a close request to this window.
+    ///
+    /// Will outright destroy windows that don't support the `NET_DELETE_WINDOW` protocol.
     pub fn close(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
         let state = self.state.lock().unwrap();
@@ -637,7 +703,11 @@ impl X11Surface {
         conn.flush()
     }
 }
+
+/// Trait for objects, that represent an x11 window in some shape or form
+/// and can be tested for equality.
 pub trait X11Relatable {
+    /// Returns if this object is considered to represent the same underlying x11 window as provided
     fn is_window(&self, window: &X11Surface) -> bool;
 }
 

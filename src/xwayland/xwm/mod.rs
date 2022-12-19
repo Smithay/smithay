@@ -1,4 +1,45 @@
-#![allow(missing_docs)]
+//!
+//! Xwayland Window Manager module
+//!
+//! Provides an [`X11WM`] type, which will register itself as a window manager for a previously spawned Xwayland instances,
+//! allowing backwards-compatibility by seemlessly integrating X11 windows into a wayland compositor.
+//!
+//! To use this functionality you must first spawn an [`XWayland`](super::XWayland) instance to attach a [`X11WM`] to.
+//!
+//! ```norun
+//! # let dh = unreachable!();
+//! # let handle = unreachable!();
+//! let (xwayland, channel) = XWayland::new(None, &dh);
+//! let ret = handle.insert_source(channel, move |event, _, data| match event {
+//!     XWaylandEvent::Ready {
+//!         connection,
+//!         client,
+//!         client_fd: _,
+//!         display: _,
+//!     } => {
+//!         let wm = X11WM::start_wm(
+//!             data.state.handle.clone(),
+//!             dh.clone(),
+//!             connection,
+//!             client,
+//!             log2.clone(),
+//!         )
+//!         .expect("Failed to attach X11 Window Manager");
+//!         
+//!         // store the WM somehwere
+//!     }
+//!     XWaylandEvent::Exited => {
+//!         // cleanup your state and drop the WM again
+//!     }
+//! });
+//! if let Err(e) = ret {
+//!     error!(
+//!         log,
+//!         "Failed to insert the XWaylandSource into the event loop: {}", e
+//!     );
+//! }
+//! ```
+//!
 
 use crate::{
     utils::{x11rb::X11Source, Rectangle},
@@ -35,75 +76,108 @@ mod surface;
 pub use self::surface::*;
 use super::xserver::XWaylandClientData;
 
-x11rb::atom_manager! {
-    pub Atoms: AtomsCookie {
-        // wayland-stuff
-        WL_SURFACE_ID,
+#[allow(missing_docs)]
+mod atoms {
+    x11rb::atom_manager! {
+        /// Atoms used by the XWM and X11Surface types
+        pub Atoms:
+        AtomsCookie {
+            // wayland-stuff
+            WL_SURFACE_ID,
 
-        // private
-        _LATE_SURFACE_ID,
-        _SMITHAY_CLOSE_CONNECTION,
+            // private
+            _LATE_SURFACE_ID,
+            _SMITHAY_CLOSE_CONNECTION,
 
-        // data formats
-        UTF8_STRING,
+            // data formats
+            UTF8_STRING,
 
-        // client -> server
-        WM_HINTS,
-        WM_PROTOCOLS,
-        WM_TAKE_FOCUS,
-        WM_DELETE_WINDOW,
-        WM_CHANGE_STATE,
-        _NET_WM_NAME,
-        _NET_WM_MOVERESIZE,
-        _NET_WM_PID,
-        _NET_WM_WINDOW_TYPE,
-        _NET_WM_WINDOW_TYPE_DROPDOWN_MENU,
-        _NET_WM_WINDOW_TYPE_DIALOG,
-        _NET_WM_WINDOW_TYPE_MENU,
-        _NET_WM_WINDOW_TYPE_NOTIFICATION,
-        _NET_WM_WINDOW_TYPE_NORMAL,
-        _NET_WM_WINDOW_TYPE_POPUP_MENU,
-        _NET_WM_WINDOW_TYPE_SPLASH,
-        _NET_WM_WINDOW_TYPE_TOOLBAR,
-        _NET_WM_WINDOW_TYPE_TOOLTIP,
-        _NET_WM_WINDOW_TYPE_UTILITY,
-        _NET_WM_STATE_MODAL,
-        _MOTIF_WM_HINTS,
+            // client -> server
+            WM_HINTS,
+            WM_PROTOCOLS,
+            WM_TAKE_FOCUS,
+            WM_DELETE_WINDOW,
+            WM_CHANGE_STATE,
+            _NET_WM_NAME,
+            _NET_WM_MOVERESIZE,
+            _NET_WM_PID,
+            _NET_WM_WINDOW_TYPE,
+            _NET_WM_WINDOW_TYPE_DROPDOWN_MENU,
+            _NET_WM_WINDOW_TYPE_DIALOG,
+            _NET_WM_WINDOW_TYPE_MENU,
+            _NET_WM_WINDOW_TYPE_NOTIFICATION,
+            _NET_WM_WINDOW_TYPE_NORMAL,
+            _NET_WM_WINDOW_TYPE_POPUP_MENU,
+            _NET_WM_WINDOW_TYPE_SPLASH,
+            _NET_WM_WINDOW_TYPE_TOOLBAR,
+            _NET_WM_WINDOW_TYPE_TOOLTIP,
+            _NET_WM_WINDOW_TYPE_UTILITY,
+            _NET_WM_STATE_MODAL,
+            _MOTIF_WM_HINTS,
 
-        // server -> client
-        WM_S0,
-        WM_STATE,
-        _NET_WM_CM_S0,
-        _NET_SUPPORTED,
-        _NET_ACTIVE_WINDOW,
-        _NET_CLIENT_LIST,
-        _NET_CLIENT_LIST_STACKING,
-        _NET_WM_PING,
-        _NET_WM_STATE,
-        _NET_WM_STATE_MAXIMIZED_VERT,
-        _NET_WM_STATE_MAXIMIZED_HORZ,
-        _NET_WM_STATE_HIDDEN,
-        _NET_WM_STATE_FULLSCREEN,
-        _NET_WM_STATE_FOCUSED,
-        _NET_SUPPORTING_WM_CHECK,
+            // server -> client
+            WM_S0,
+            WM_STATE,
+            _NET_WM_CM_S0,
+            _NET_SUPPORTED,
+            _NET_ACTIVE_WINDOW,
+            _NET_CLIENT_LIST,
+            _NET_CLIENT_LIST_STACKING,
+            _NET_WM_PING,
+            _NET_WM_STATE,
+            _NET_WM_STATE_MAXIMIZED_VERT,
+            _NET_WM_STATE_MAXIMIZED_HORZ,
+            _NET_WM_STATE_HIDDEN,
+            _NET_WM_STATE_FULLSCREEN,
+            _NET_WM_STATE_FOCUSED,
+            _NET_SUPPORTING_WM_CHECK,
+        }
     }
 }
+pub use self::atoms::Atoms;
 
 crate::utils::ids::id_gen!(next_xwm_id, XWM_ID, XWM_IDS);
 
+/// Id of an X11 WM
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct XwmId(usize);
 
+/// Handler trait for X11WM interactions
 pub trait XwmHandler {
+    /// [`X11WM`] getter for a given ID.
     fn xwm_state(&mut self, xwm: XwmId) -> &mut X11WM;
 
+    /// A new X11 window was created.
+    ///
+    /// New windows are not mapped yet, but various information is already accessible.
+    /// In general new windows will either stay in this state, if they serve secondary purposes
+    /// or request to be mapped shortly afterwards.
     fn new_window(&mut self, xwm: XwmId, window: X11Surface);
+    /// A new X11 window with the override redirect flag.
+    ///
+    /// New override_redirect windows are not mapped yet, but can become any time.
+    /// Window manager are not supposed to manage these windows and thus cannot intercept
+    /// most operations (including mapping).
+    ///
+    /// It is best to replicate their state in smithay as faithfully as possible (e.g. positioning)
+    /// and don't touch their state in any way.
     fn new_override_redirect_window(&mut self, xwm: XwmId, window: X11Surface);
+    /// Window requests to be mapped.
+    ///
+    /// To grant the wish you have to call `X11Surface::set_mapped(true)` for the window to become visible.
     fn map_window_request(&mut self, xwm: XwmId, window: X11Surface);
+    /// Override redirect window was mapped.
+    ///
+    /// This is a notification. The XWM cannot prohibit override redirect windows to become mapped.
     fn mapped_override_redirect_window(&mut self, xwm: XwmId, window: X11Surface);
+    /// Window was unmapped.
     fn unmapped_window(&mut self, xwm: XwmId, window: X11Surface);
+    /// Window was destroyed
     fn destroyed_window(&mut self, xwm: XwmId, window: X11Surface);
 
+    /// Window asks to be positioned or sized differently.
+    ///
+    /// Requests can be granted by calling [`X11Surface::configure`] with updated values.
     fn configure_request(
         &mut self,
         xwm: XwmId,
@@ -113,32 +187,50 @@ pub trait XwmHandler {
         w: Option<u32>,
         h: Option<u32>,
     );
+    /// Window was reconfigured.
+    ///
+    /// This call will be done as a notification for both normal and override-redirect windows.
+    /// Override-redirect windows can modify their size and position at any time and the compositor
+    /// should properly reflect the new position and size to avoid bugs.
     fn configure_notify(&mut self, xwm: XwmId, window: X11Surface, x: i32, y: i32, w: u32, h: u32);
 
+    /// Window requests to be maximized.
     fn maximize_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
+    /// Window requests to be unmaximized.
     fn unmaximize_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
+    /// Window requests to be fullscreened.
     fn fullscreen_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
+    /// Window requests to be unfullscreened.
     fn unfullscreen_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
+    /// Window requests to be minimized.
     fn minimize_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
+    /// Window requests to be unminimized.
     fn unminimize_request(&mut self, xwm: XwmId, window: X11Surface) {
         let _ = (xwm, window);
     }
 
+    /// Window requests to be resized.
+    ///
+    /// The window will be holding a grab on the mouse button provided and requests
+    /// to be resized on the edges passed.
     fn resize_request(&mut self, xwm: XwmId, window: X11Surface, button: u32, resize_edge: ResizeEdge);
+    /// Window requests to be moved.
+    ///
+    /// The window will be holding a grab on the mouse button provided.
     fn move_request(&mut self, xwm: XwmId, window: X11Surface, button: u32);
 }
 
-/// The runtime state of the XWayland window manager.
+/// The runtime state of an reparenting XWayland window manager.
 #[derive(Debug)]
 pub struct X11WM {
     id: XwmId,
@@ -183,7 +275,11 @@ impl X11Injector {
     }
 }
 
+/// Edge values for resizing
+///
+// These values are used to indicate which edge of a surface is being dragged in a resize operation.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[allow(missing_docs)]
 pub enum ResizeEdge {
     Top,
     Bottom,
@@ -196,6 +292,14 @@ pub enum ResizeEdge {
 }
 
 impl X11WM {
+    /// Start a new window manager for a given Xwayland connection
+    ///
+    /// ## Arguments
+    /// - `handle` is an eventloop handle used to queue up and handle incoming X11 events
+    /// - `dh` is the corresponding display handle to the wayland connection of the Xwayland instance
+    /// - `connection` is the corresponding x11 client connection of the Xwayland instance
+    /// - `client` is the wayland client instance of the Xwayland instance
+    /// - `log` slog logger to be used by the WM
     pub fn start_wm<D, L>(
         handle: LoopHandle<'_, D>,
         dh: DisplayHandle,
@@ -354,10 +458,15 @@ impl X11WM {
         Ok(wm)
     }
 
+    /// Id of this X11 WM
     pub fn id(&self) -> XwmId {
         self.id
     }
 
+    /// Raises a window in the internal X11 state
+    ///
+    /// Needs to be called to match raising of windows inside the compositor to keep the stacking order
+    /// in sync with the compositor to avoid errornous behavior.
     pub fn raise_window<'a, W: X11Relatable + 'a>(&mut self, window: &'a W) -> Result<(), ConnectionError> {
         if let Some(elem) = self.windows.iter().find(|s| window.is_window(s)) {
             self.conn.grab_server()?;
@@ -380,6 +489,29 @@ impl X11WM {
         Ok(())
     }
 
+    /// Updates the stacking order by matching provided windows downwards.
+    ///
+    /// This function reorders provided x11 windows in such a way,
+    /// that windows inside the internal X11 stack follow the provided `order`
+    /// without moving other windows around as much as possible.
+    ///
+    /// Window IDs unknown to this XWM will be ignored.
+    /// The first window in `order` found will not be moved.
+    ///
+    /// If a window is encountered in `order`, that is stacked before the first window,
+    /// it will be moved behind the first window and so on.
+    /// E.g. Windows `C -> A -> B -> E` given in order with an internal stack of `D -> A -> B -> C`,
+    /// will be reorder as `D -> C -> A -> B`.
+    ///
+    /// Windows in the internal stack, that are not present in `order`
+    /// will be skipped over in the process.
+    ///
+    /// So if windows `A -> C` are given in order and the internal stack is `A -> B -> C`,
+    /// no reordering will occur.
+    ///  
+    /// See [`X11Surface::update_stacking_order_upwards`] for a variant of this algorithm,
+    /// which works from the buttom up or [`X11Surface::raise_window`] for an easier but
+    /// much more limited way to reorder.
     pub fn update_stacking_order_downwards<'a, W: X11Relatable + 'a>(
         &mut self,
         order: impl Iterator<Item = &'a W>,
@@ -423,6 +555,29 @@ impl X11WM {
         Ok(())
     }
 
+    /// Updates the stacking order by matching provided windows upwards.
+    ///
+    /// This function reorders provided x11 windows in such a way,
+    /// that windows inside the internal X11 stack follow the provided `order`
+    /// in reverse without moving other windows around as much as possible.
+    ///
+    /// Window IDs unknown to this XWM will be ignored.
+    /// The first window in `order` found will not be moved.
+    ///
+    /// If a window is encountered in `order`, that is stacked after the first window,
+    /// it will be moved before the first window and so on.
+    /// E.g. Windows C -> A -> B given in order with an internal stack of `D -> A -> B -> C`,
+    /// will be reordered as `D -> B -> A -> C`.
+    ///
+    /// Windows in the internal stack, that are not present in `order`
+    /// will be skipped over in the process.
+    ///
+    /// So if windows `A -> C` are given in order and the internal stack is `C -> B -> A`,
+    /// no reordering will occur.
+    ///  
+    /// See [`X11Surface::update_stacking_order_downwards`] for a variant of this algorithm,
+    /// which works from the top down or [`X11Surface::raise_window`] for an easier but
+    /// much more limited way to reorder.
     pub fn update_stacking_order_upwards<'a, W: X11Relatable + 'a>(
         &mut self,
         order: impl Iterator<Item = &'a W>,
@@ -466,6 +621,8 @@ impl X11WM {
         Ok(())
     }
 
+    /// This function has to be called on [`CompositorState::commit`] to correctly
+    /// update the internal state of Xwayland WMs.
     pub fn commit_hook(surface: &WlSurface) {
         if let Some(client) = surface.client() {
             if let Some(x11) = client
