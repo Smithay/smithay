@@ -214,9 +214,12 @@ fn handle_event(
             // find the surface
             let client = state.backend_data.clients.get(&client_id);
             let toplevel = state.space.elements().find(|w| {
-                let surface = w.toplevel().wl_surface();
-                display.handle().get_client(surface.id()).ok().as_ref() == client
-                    && surface.id().protocol_id() == surface_id
+                if let Some(surface) = w.wl_surface() {
+                    display.handle().get_client(surface.id()).ok().as_ref() == client
+                        && surface.id().protocol_id() == surface_id
+                } else {
+                    false
+                }
             });
             if let Some(toplevel) = toplevel.cloned() {
                 // set its location
