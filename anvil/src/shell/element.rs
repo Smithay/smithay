@@ -5,13 +5,7 @@ use smithay::{
         element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
         ImportAll, Renderer,
     },
-    desktop::{
-        utils::{
-            send_frames_surface_tree, take_presentation_feedback_surface_tree, under_from_surface_tree,
-            with_surfaces_surface_tree, OutputPresentationFeedback,
-        },
-        Window, WindowSurfaceType,
-    },
+    desktop::{utils::OutputPresentationFeedback, Window, WindowSurfaceType},
     output::Output,
     reexports::{
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
@@ -20,6 +14,13 @@ use smithay::{
     space_elements,
     utils::{Logical, Point},
     wayland::{compositor::SurfaceData as WlSurfaceData, seat::WaylandFocus},
+};
+#[cfg(feature = "xwayland")]
+use smithay::{
+    desktop::utils::{
+        send_frames_surface_tree, take_presentation_feedback_surface_tree, under_from_surface_tree,
+        with_surfaces_surface_tree,
+    },
     xwayland::X11Surface,
 };
 

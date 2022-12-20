@@ -7,10 +7,11 @@ use smithay::{
         PointerInnerHandle,
     },
     reexports::wayland_protocols::xdg::shell::server::xdg_toplevel,
-    utils::{IsAlive, Logical, Point, Rectangle, Serial, Size},
+    utils::{IsAlive, Logical, Point, Serial, Size},
     wayland::{compositor::with_states, shell::xdg::SurfaceCachedState},
-    xwayland::xwm::ResizeEdge as X11ResizeEdge,
 };
+#[cfg(feature = "xwayland")]
+use smithay::{utils::Rectangle, xwayland::xwm::ResizeEdge as X11ResizeEdge};
 
 use super::{SurfaceData, WindowElement};
 use crate::{focus::FocusTarget, state::AnvilState};
@@ -96,6 +97,7 @@ impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
     }
 }
 
+#[cfg(feature = "xwayland")]
 impl From<X11ResizeEdge> for ResizeEdge {
     fn from(edge: X11ResizeEdge) -> Self {
         match edge {
@@ -290,6 +292,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                         }
                     });
                 }
+                #[cfg(feature = "xwayland")]
                 WindowElement::X11(x11) => {
                     let mut location = data.space.element_location(&self.window).unwrap();
                     if self.edges.intersects(ResizeEdge::TOP_LEFT) {

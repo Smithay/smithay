@@ -1,10 +1,6 @@
 use std::{convert::TryInto, process::Command, sync::atomic::Ordering};
 
-use crate::{
-    focus::FocusTarget,
-    shell::{FullscreenSurface, WindowElement},
-    AnvilState,
-};
+use crate::{focus::FocusTarget, shell::FullscreenSurface, AnvilState};
 
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
@@ -52,6 +48,9 @@ use smithay::{
         tablet_manager::{TabletDescriptor, TabletSeatTrait},
     },
 };
+
+#[cfg(feature = "xwayland")]
+use crate::shell::WindowElement;
 
 impl<Backend> AnvilState<Backend> {
     fn process_common_key_action(&mut self, action: KeyAction) {
@@ -220,6 +219,7 @@ impl<Backend> AnvilState<Backend> {
                         WindowSurfaceType::ALL,
                     ) {
                         input_method.set_point(&point);
+                        #[cfg(feature = "xwayland")]
                         if let WindowElement::X11(surf) = &window {
                             self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
                         }
@@ -256,6 +256,7 @@ impl<Backend> AnvilState<Backend> {
                 self.space.raise_element(&window, true);
                 input_method.set_point(&point);
                 keyboard.set_focus(self, Some(window.clone().into()), serial);
+                #[cfg(feature = "xwayland")]
                 if let WindowElement::X11(surf) = &window {
                     self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
                 }
