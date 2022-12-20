@@ -317,14 +317,14 @@ impl DrmDevice {
         }
 
         let plane = planes(self, &crtc, self.has_universal_planes)?.primary;
-        let info = self.get_plane(plane).map_err(|source| Error::Access {
+        let info = self.get_plane(plane.handle).map_err(|source| Error::Access {
             errmsg: "Failed to get plane info",
             dev: self.dev_path(),
             source,
         })?;
         let filter = info.possible_crtcs();
         if !self.resources.filter_crtcs(filter).contains(&crtc) {
-            return Err(Error::PlaneNotCompatible(crtc, plane));
+            return Err(Error::PlaneNotCompatible(crtc, plane.handle));
         }
 
         let active = match &*self.internal {
@@ -342,7 +342,7 @@ impl DrmDevice {
                 self.internal.clone(),
                 active,
                 crtc,
-                plane,
+                plane.handle,
                 mapping,
                 mode,
                 connectors,
@@ -362,7 +362,7 @@ impl DrmDevice {
         Ok(DrmSurface {
             dev_id: self.dev_id,
             crtc,
-            primary: plane,
+            primary: plane.handle,
             internal: Arc::new(internal),
             has_universal_planes: self.has_universal_planes,
             plane_claim_storage: self.plane_claim_storage.clone(),
