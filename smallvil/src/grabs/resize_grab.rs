@@ -1,6 +1,6 @@
 use crate::Smallvil;
 use smithay::{
-    desktop::{Kind, Space, Window},
+    desktop::{Space, Window},
     input::pointer::{
         AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
         PointerInnerHandle,
@@ -116,14 +116,13 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
             new_window_height.max(min_height).min(max_height),
         ));
 
-        if let Kind::Xdg(xdg) = self.window.toplevel() {
-            xdg.with_pending_state(|state| {
-                state.states.set(xdg_toplevel::State::Resizing);
-                state.size = Some(self.last_window_size);
-            });
+        let xdg = self.window.toplevel();
+        xdg.with_pending_state(|state| {
+            state.states.set(xdg_toplevel::State::Resizing);
+            state.size = Some(self.last_window_size);
+        });
 
-            xdg.send_configure();
-        }
+        xdg.send_configure();
     }
 
     fn button(
@@ -142,21 +141,20 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
             // No more buttons are pressed, release the grab.
             handle.unset_grab(data, event.serial, event.time);
 
-            if let Kind::Xdg(xdg) = self.window.toplevel() {
-                xdg.with_pending_state(|state| {
-                    state.states.unset(xdg_toplevel::State::Resizing);
-                    state.size = Some(self.last_window_size);
-                });
+            let xdg = self.window.toplevel();
+            xdg.with_pending_state(|state| {
+                state.states.unset(xdg_toplevel::State::Resizing);
+                state.size = Some(self.last_window_size);
+            });
 
-                xdg.send_configure();
+            xdg.send_configure();
 
-                ResizeSurfaceState::with(xdg.wl_surface(), |state| {
-                    *state = ResizeSurfaceState::WaitingForLastCommit {
-                        edges: self.edges,
-                        initial_rect: self.initial_rect,
-                    };
-                });
-            }
+            ResizeSurfaceState::with(xdg.wl_surface(), |state| {
+                *state = ResizeSurfaceState::WaitingForLastCommit {
+                    edges: self.edges,
+                    initial_rect: self.initial_rect,
+                };
+            });
         }
     }
 

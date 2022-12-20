@@ -1,6 +1,6 @@
 use smithay::{
     delegate_xdg_shell,
-    desktop::{Kind, Space, Window},
+    desktop::{Space, Window},
     input::{
         pointer::{Focus, GrabStartData as PointerGrabStartData},
         Seat,
@@ -33,7 +33,7 @@ impl XdgShellHandler for Smallvil {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let window = Window::new(Kind::Xdg(surface));
+        let window = Window::new(surface);
         self.space.map_element(window, (0, 0), false);
     }
 
@@ -145,20 +145,18 @@ pub fn handle_commit(space: &Space<Window>, surface: &WlSurface) -> Option<()> {
         .find(|w| w.toplevel().wl_surface() == surface)
         .cloned()?;
 
-    if let Kind::Xdg(_) = window.toplevel() {
-        let initial_configure_sent = with_states(surface, |states| {
-            states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .initial_configure_sent
-        });
+    let initial_configure_sent = with_states(surface, |states| {
+        states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .initial_configure_sent
+    });
 
-        if !initial_configure_sent {
-            window.configure();
-        }
+    if !initial_configure_sent {
+        window.toplevel().send_configure();
     }
 
     Some(())
