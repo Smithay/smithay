@@ -15,6 +15,7 @@ use slog::Logger;
 use crate::{
     drawing::*,
     render::*,
+    shell::WindowElement,
     state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData},
 };
 #[cfg(feature = "debug")]
@@ -50,7 +51,6 @@ use smithay::{
     desktop::{
         space::{Space, SurfaceTree},
         utils::OutputPresentationFeedback,
-        Window,
     },
     input::pointer::{CursorImageAttributes, CursorImageStatus},
     output::{Mode, Output, PhysicalProperties, Subpixel},
@@ -393,7 +393,7 @@ fn scan_connectors(
     device: &DrmDevice,
     gbm: &GbmDevice<DrmDeviceFd>,
     display: &mut Display<AnvilState<UdevData>>,
-    space: &mut Space<Window>,
+    space: &mut Space<WindowElement>,
     #[cfg(feature = "debug")] fps_texture: &MultiTexture,
     logger: &::slog::Logger,
 ) -> HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>> {
@@ -1008,7 +1008,7 @@ impl AnvilState<UdevData> {
 fn render_surface<'a>(
     surface: &'a mut SurfaceData,
     renderer: &mut UdevRenderer<'a>,
-    space: &Space<Window>,
+    space: &Space<WindowElement>,
     output: &Output,
     input_method: &InputMethodHandle,
     pointer_location: Point<f64, Logical>,

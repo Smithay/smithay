@@ -14,7 +14,6 @@ use smithay::{
     desktop::{
         self,
         space::{constrain_space_element, ConstrainBehavior, ConstrainReference, Space},
-        Window,
     },
     output::Output,
     utils::{Physical, Point, Rectangle, Size},
@@ -24,7 +23,7 @@ use smithay::{
 use crate::drawing::FpsElement;
 use crate::{
     drawing::{PointerRenderElement, CLEAR_COLOR},
-    shell::FullscreenSurface,
+    shell::{FullscreenSurface, WindowElement},
 };
 
 smithay::backend::renderer::element::render_elements! {
@@ -50,7 +49,7 @@ smithay::backend::renderer::element::render_elements! {
 #[allow(clippy::too_many_arguments)]
 pub fn render_output<'a, R>(
     output: &Output,
-    space: &'a Space<Window>,
+    space: &'a Space<WindowElement>,
     custom_elements: &'a [CustomRenderElements<R>],
     renderer: &mut R,
     damage_tracked_renderer: &mut DamageTrackedRenderer,

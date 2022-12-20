@@ -1,6 +1,10 @@
 use std::{convert::TryInto, process::Command, sync::atomic::Ordering};
 
-use crate::{focus::FocusTarget, shell::FullscreenSurface, AnvilState};
+use crate::{
+    focus::FocusTarget,
+    shell::{FullscreenSurface, WindowElement},
+    AnvilState,
+};
 
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
@@ -118,7 +122,7 @@ impl<Backend> AnvilState<Backend> {
             .space
             .element_under(self.pointer_location)
             .and_then(|(window, _)| {
-                let surface = window.toplevel().wl_surface()?;
+                let surface = window.wl_surface()?;
                 self.seat.keyboard_shortcuts_inhibitor_for_surface(&surface)
             })
             .map(|inhibitor| inhibitor.is_active())
@@ -216,7 +220,7 @@ impl<Backend> AnvilState<Backend> {
                         WindowSurfaceType::ALL,
                     ) {
                         input_method.set_point(&point);
-                        if let smithay::desktop::Kind::X11(surf) = window.toplevel() {
+                        if let WindowElement::X11(surf) = &window {
                             self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
                         }
                         keyboard.set_focus(self, Some(window.into()), serial);
@@ -252,7 +256,7 @@ impl<Backend> AnvilState<Backend> {
                 self.space.raise_element(&window, true);
                 input_method.set_point(&point);
                 keyboard.set_focus(self, Some(window.clone().into()), serial);
-                if let smithay::desktop::Kind::X11(surf) = window.toplevel() {
+                if let WindowElement::X11(surf) = &window {
                     self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
                 }
                 return;

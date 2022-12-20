@@ -140,11 +140,6 @@ impl Window {
         })
     }
 
-    /// Commit any changes to this window
-    pub fn configure(&self) {
-        self.0.toplevel.send_configure()
-    }
-
     /// Sends the frame callback to all the subsurfaces in this window that requested it
     ///
     /// See [`send_frames_surface_tree`] for more information

@@ -16,7 +16,7 @@ use smithay::{
             surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
             update_surface_primary_scanout_output, OutputPresentationFeedback,
         },
-        PopupManager, Space, Window,
+        PopupManager, Space,
     },
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     output::Output,
@@ -66,7 +66,7 @@ use smithay::{
     },
 };
 
-use crate::focus::FocusTarget;
+use crate::{focus::FocusTarget, shell::WindowElement};
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::{XWayland, XWaylandEvent, X11WM};
 
@@ -93,7 +93,7 @@ pub struct AnvilState<BackendData: 'static> {
     pub handle: LoopHandle<'static, CalloopData<BackendData>>,
 
     // desktop
-    pub space: Space<Window>,
+    pub space: Space<WindowElement>,
     pub popups: PopupManager,
 
     // smithay state
@@ -237,13 +237,7 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
             let w = self
                 .space
                 .elements()
-                .find(|window| {
-                    window
-                        .toplevel()
-                        .wl_surface()
-                        .map(|s| s == surface)
-                        .unwrap_or(false)
-                })
+                .find(|window| window.wl_surface().map(|s| s == surface).unwrap_or(false))
                 .cloned();
             if let Some(window) = w {
                 self.space.raise_element(&window, true);
@@ -492,7 +486,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 pub fn post_repaint(
     output: &Output,
     render_element_states: &RenderElementStates,
-    space: &Space<Window>,
+    space: &Space<WindowElement>,
     time: impl Into<Duration>,
 ) {
     let time = time.into();
@@ -543,7 +537,7 @@ pub fn post_repaint(
 
 pub fn take_presentation_feedback(
     output: &Output,
-    space: &Space<Window>,
+    space: &Space<WindowElement>,
     render_element_states: &RenderElementStates,
 ) -> OutputPresentationFeedback {
     let mut output_presentation_feedback = OutputPresentationFeedback::new(output);

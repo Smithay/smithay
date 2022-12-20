@@ -1,10 +1,20 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, time::Duration};
 
 use smithay::{
-    backend::renderer::utils::on_commit_buffer_handler,
+    backend::renderer::{
+        element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
+        utils::on_commit_buffer_handler,
+        ImportAll, Renderer,
+    },
     desktop::{
-        find_popup_root_surface, layer_map_for_output, Kind as SurfaceKind, LayerSurface, PopupKeyboardGrab,
-        PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Space, Window, WindowSurfaceType,
+        find_popup_root_surface, layer_map_for_output,
+        space::SpaceElement,
+        utils::{
+            send_frames_surface_tree, take_presentation_feedback_surface_tree, under_from_surface_tree,
+            with_surfaces_surface_tree, OutputPresentationFeedback,
+        },
+        LayerSurface, PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy,
+        Space, Window, WindowSurfaceType,
     },
     input::{
         pointer::{
@@ -15,18 +25,21 @@ use smithay::{
     },
     output::Output,
     reexports::{
-        wayland_protocols::xdg::shell::server::xdg_toplevel,
+        wayland_protocols::{
+            wp::presentation_time::server::wp_presentation_feedback, xdg::shell::server::xdg_toplevel,
+        },
         wayland_server::{
             protocol::{wl_buffer::WlBuffer, wl_output, wl_seat, wl_surface::WlSurface},
             Resource,
         },
     },
+    space_elements,
     utils::{IsAlive, Logical, Point, Rectangle, Serial, Size, SERIAL_COUNTER},
     wayland::{
         buffer::BufferHandler,
         compositor::{
             get_parent, is_sync_subsurface, with_states, with_surface_tree_upward, CompositorHandler,
-            CompositorState, TraversalAction,
+            CompositorState, SurfaceData as WlSurfaceData, TraversalAction,
         },
         seat::WaylandFocus,
         shell::{
@@ -52,9 +65,149 @@ use crate::{
     CalloopData,
 };
 
+#[cfg(not(feature = "xwayland"))]
+space_elements! {
+    #[derive(Debug, Clone, PartialEq)]
+    pub WindowElement;
+    Wayland=Window,
+}
+
+#[cfg(feature = "xwayland")]
+space_elements! {
+    #[derive(Debug, Clone, PartialEq)]
+    pub WindowElement;
+    Wayland=Window,
+    X11=X11Surface,
+}
+
+impl WindowElement {
+    pub fn surface_under(
+        &self,
+        location: Point<f64, Logical>,
+        window_type: WindowSurfaceType,
+    ) -> Option<(WlSurface, Point<i32, Logical>)> {
+        match self {
+            WindowElement::Wayland(w) => w.surface_under(location, window_type),
+            #[cfg(feature = "xwayland")]
+            WindowElement::X11(w) => w
+                .wl_surface()
+                .and_then(|s| under_from_surface_tree(&s, location, (0, 0), window_type)),
+            _ => None,
+        }
+    }
+
+    pub fn with_surfaces<F>(&self, processor: F)
+    where
+        F: FnMut(&WlSurface, &WlSurfaceData) + Copy,
+    {
+        match self {
+            WindowElement::Wayland(w) => w.with_surfaces(processor),
+            #[cfg(feature = "xwayland")]
+            WindowElement::X11(w) => {
+                if let Some(surface) = w.wl_surface() {
+                    with_surfaces_surface_tree(&surface, processor);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn send_frame<T, F>(
+        &self,
+        output: &Output,
+        time: T,
+        throttle: Option<Duration>,
+        primary_scan_out_output: F,
+    ) where
+        T: Into<Duration>,
+        F: FnMut(&WlSurface, &WlSurfaceData) -> Option<Output> + Copy,
+    {
+        match self {
+            WindowElement::Wayland(w) => w.send_frame(output, time, throttle, primary_scan_out_output),
+            #[cfg(feature = "xwayland")]
+            WindowElement::X11(w) => {
+                if let Some(surface) = w.wl_surface() {
+                    send_frames_surface_tree(&surface, output, time, throttle, primary_scan_out_output);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn take_presentation_feedback<F1, F2>(
+        &self,
+        output_feedback: &mut OutputPresentationFeedback,
+        primary_scan_out_output: F1,
+        presentation_feedback_flags: F2,
+    ) where
+        F1: FnMut(&WlSurface, &WlSurfaceData) -> Option<Output> + Copy,
+        F2: FnMut(&WlSurface, &WlSurfaceData) -> wp_presentation_feedback::Kind + Copy,
+    {
+        match self {
+            WindowElement::Wayland(w) => w.take_presentation_feedback(
+                output_feedback,
+                primary_scan_out_output,
+                presentation_feedback_flags,
+            ),
+            #[cfg(feature = "xwayland")]
+            WindowElement::X11(w) => {
+                if let Some(surface) = w.wl_surface() {
+                    take_presentation_feedback_surface_tree(
+                        &surface,
+                        output_feedback,
+                        primary_scan_out_output,
+                        presentation_feedback_flags,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[cfg(feature = "xwayland")]
+    pub fn is_x11(&self) -> bool {
+        matches!(self, WindowElement::X11(_))
+    }
+
+    pub fn is_wayland(&self) -> bool {
+        matches!(self, WindowElement::Wayland(_))
+    }
+
+    pub fn wl_surface(&self) -> Option<WlSurface> {
+        match self {
+            WindowElement::Wayland(w) => w.wl_surface(),
+            #[cfg(feature = "xwayland")]
+            WindowElement::X11(w) => w.wl_surface(),
+            _ => None,
+        }
+    }
+}
+
+impl<R> AsRenderElements<R> for WindowElement
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+{
+    type RenderElement = WaylandSurfaceRenderElement<R>;
+
+    fn render_elements<C: From<Self::RenderElement>>(
+        &self,
+        renderer: &mut R,
+        location: Point<i32, smithay::utils::Physical>,
+        scale: smithay::utils::Scale<f64>,
+    ) -> Vec<C> {
+        match self {
+            WindowElement::Wayland(w) => w.render_elements(renderer, location, scale),
+            #[cfg(feature = "xwayland")]
+            WindowElement::X11(w) => w.render_elements(renderer, location, scale),
+            _ => unreachable!(),
+        }
+    }
+}
+
 struct MoveSurfaceGrab<B: 'static> {
     start_data: PointerGrabStartData<AnvilState<B>>,
-    window: Window,
+    window: WindowElement,
     initial_window_location: Point<i32, Logical>,
 }
 
@@ -150,7 +303,7 @@ impl From<X11ResizeEdge> for ResizeEdge {
 
 struct ResizeSurfaceGrab<B: 'static> {
     start_data: PointerGrabStartData<AnvilState<B>>,
-    window: Window,
+    window: WindowElement,
     edges: ResizeEdge,
     initial_window_location: Point<i32, Logical>,
     initial_window_size: Size<i32, Logical>,
@@ -169,7 +322,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
         handle.motion(data, None, event);
 
         // It is impossible to get `min_size` and `max_size` of dead toplevel, so we return early.
-        if !self.window.toplevel().alive() {
+        if !self.window.alive() {
             handle.unset_grab(data, event.serial, event.time);
             return;
         }
@@ -198,7 +351,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
             new_window_height = (self.initial_window_size.h as f64 + dy) as i32;
         }
 
-        let (min_size, max_size) = if let Some(surface) = self.window.toplevel().wl_surface() {
+        let (min_size, max_size) = if let Some(surface) = self.window.wl_surface() {
             with_states(&surface, |states| {
                 let data = states.cached_state.current::<SurfaceCachedState>();
                 (data.min_size, data.max_size)
@@ -225,8 +378,9 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
 
         self.last_window_size = (new_window_width, new_window_height).into();
 
-        match &self.window.toplevel() {
-            SurfaceKind::Xdg(xdg) => {
+        match &self.window {
+            WindowElement::Wayland(w) => {
+                let xdg = w.toplevel();
                 xdg.with_pending_state(|state| {
                     state.states.set(xdg_toplevel::State::Resizing);
                     state.size = Some(self.last_window_size);
@@ -234,11 +388,12 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                 xdg.send_configure();
             }
             #[cfg(feature = "xwayland")]
-            SurfaceKind::X11(x11) => {
+            WindowElement::X11(x11) => {
                 let location = data.space.element_location(&self.window).unwrap();
                 x11.configure(Rectangle::from_loc_and_size(location, self.last_window_size))
                     .unwrap();
             }
+            _ => {}
         }
     }
 
@@ -254,12 +409,13 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
             handle.unset_grab(data, event.serial, event.time);
 
             // If toplevel is dead, we can't resize it, so we return early.
-            if !self.window.toplevel().alive() {
+            if !self.window.alive() {
                 return;
             }
 
-            match self.window.toplevel() {
-                SurfaceKind::Xdg(xdg) => {
+            match &self.window {
+                WindowElement::Wayland(w) => {
+                    let xdg = w.toplevel();
                     xdg.with_pending_state(|state| {
                         state.states.unset(xdg_toplevel::State::Resizing);
                         state.size = Some(self.last_window_size);
@@ -281,7 +437,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                         data.space.map_element(self.window.clone(), location, true);
                     }
 
-                    with_states(&self.window.toplevel().wl_surface().unwrap(), |states| {
+                    with_states(&self.window.wl_surface().unwrap(), |states| {
                         let mut data = states
                             .data_map
                             .get::<RefCell<SurfaceData>>()
@@ -294,7 +450,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                         }
                     });
                 }
-                SurfaceKind::X11(x11) => {
+                WindowElement::X11(x11) => {
                     let mut location = data.space.element_location(&self.window).unwrap();
                     if self.edges.intersects(ResizeEdge::TOP_LEFT) {
                         let geometry = self.window.geometry();
@@ -313,7 +469,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                     x11.configure(Rectangle::from_loc_and_size(location, self.last_window_size))
                         .unwrap();
 
-                    let Some(surface) = self.window.toplevel().wl_surface() else {
+                    let Some(surface) = self.window.wl_surface() else {
                         // X11 Window got unmapped, abort
                         return
                     };
@@ -330,6 +486,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                         }
                     });
                 }
+                _ => {}
             }
         }
     }
@@ -351,7 +508,7 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
 fn fullscreen_output_geometry(
     wl_surface: &WlSurface,
     wl_output: Option<&wl_output::WlOutput>,
-    space: &mut Space<Window>,
+    space: &mut Space<WindowElement>,
 ) -> Option<Rectangle<i32, Logical>> {
     // First test if a specific output has been requested
     // if the requested output is not found ignore the request
@@ -360,13 +517,7 @@ fn fullscreen_output_geometry(
         .or_else(|| {
             let w = space
                 .elements()
-                .find(|window| {
-                    window
-                        .toplevel()
-                        .wl_surface()
-                        .map(|s| s == *wl_surface)
-                        .unwrap_or(false)
-                })
+                .find(|window| window.wl_surface().map(|s| s == *wl_surface).unwrap_or(false))
                 .cloned();
             w.and_then(|w| space.outputs_for_element(&w).get(0).cloned())
         })
@@ -374,18 +525,18 @@ fn fullscreen_output_geometry(
 }
 
 #[derive(Default)]
-pub struct FullscreenSurface(RefCell<Option<Window>>);
+pub struct FullscreenSurface(RefCell<Option<WindowElement>>);
 
 impl FullscreenSurface {
-    pub fn set(&self, window: Window) {
+    pub fn set(&self, window: WindowElement) {
         *self.0.borrow_mut() = Some(window);
     }
 
-    pub fn get(&self) -> Option<Window> {
+    pub fn get(&self) -> Option<WindowElement> {
         self.0.borrow().clone()
     }
 
-    pub fn clear(&self) -> Option<Window> {
+    pub fn clear(&self) -> Option<WindowElement> {
         self.0.borrow_mut().take()
     }
 }
@@ -410,7 +561,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            if let Some(window) = self.window_for_surface(&root) {
+            if let Some(WindowElement::Wayland(window)) = self.window_for_surface(&root) {
                 window.on_commit();
             }
         }
@@ -429,7 +580,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         // Do not send a configure here, the initial configure
         // of a xdg_surface has to be sent during the commit if
         // the surface is not already configured
-        let window = Window::new(SurfaceKind::Xdg(surface));
+        let window = WindowElement::Wayland(Window::new(surface));
         place_new_window(&mut self.space, &window, true);
     }
 
@@ -655,25 +806,18 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             for output in output.client_outputs(&client) {
                 wl_output = Some(output);
             }
+            let window = self
+                .space
+                .elements()
+                .find(|window| window.wl_surface().map(|s| s == *wl_surface).unwrap_or(false))
+                .unwrap();
 
             surface.with_pending_state(|state| {
                 state.states.set(xdg_toplevel::State::Fullscreen);
                 state.size = Some(geometry.size);
                 state.fullscreen_output = wl_output;
             });
-
-            let window = self
-                .space
-                .elements()
-                .find(|window| {
-                    window
-                        .toplevel()
-                        .wl_surface()
-                        .map(|s| s == *wl_surface)
-                        .unwrap_or(false)
-                })
-                .unwrap();
-            window.configure();
+            surface.send_configure();
             output.user_data().insert_if_missing(FullscreenSurface::default);
             output
                 .user_data()
@@ -719,7 +863,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             state.states.set(xdg_toplevel::State::Maximized);
             state.size = Some(geometry.size);
         });
-        window.configure();
+        surface.send_configure();
         self.space.map_element(window, geometry.loc, true);
     }
 
@@ -737,7 +881,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         if let Some(root) = find_popup_root_surface(&kind).ok().and_then(|root| {
             self.space
                 .elements()
-                .find(|w| w.toplevel().wl_surface().map(|s| s == root).unwrap_or(false))
+                .find(|w| w.wl_surface().map(|s| s == root).unwrap_or(false))
                 .cloned()
                 .map(FocusTarget::Window)
                 .or_else(|| {
@@ -826,15 +970,15 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
     fn new_override_redirect_window(&mut self, _xwm: XwmId, _window: X11Surface) {}
     fn map_window_request(&mut self, _xwm: XwmId, window: X11Surface) {
         window.set_mapped(true).unwrap();
-        let window = Window::new(SurfaceKind::X11(window));
+        let window = WindowElement::X11(window);
         place_new_window(&mut self.state.space, &window, true);
         let bbox = self.state.space.element_bbox(&window).unwrap();
-        let SurfaceKind::X11(xsurface) = window.toplevel() else { unreachable!() };
+        let WindowElement::X11(xsurface) = window else { unreachable!() };
         xsurface.configure(Some(bbox)).unwrap();
     }
     fn mapped_override_redirect_window(&mut self, _xwm: XwmId, window: X11Surface) {
         let location = window.geometry().loc;
-        let window = Window::new(SurfaceKind::X11(window));
+        let window = WindowElement::X11(window);
         self.state.space.map_element(window, location, true);
     }
     fn unmapped_window(&mut self, _xwm: XwmId, window: X11Surface) {
@@ -842,7 +986,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e.toplevel(), SurfaceKind::X11(w) if w == &window))
+            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
             .cloned();
         if let Some(elem) = maybe {
             self.state.space.unmap_elem(&elem)
@@ -869,7 +1013,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e.toplevel(), SurfaceKind::X11(w) if w == &window))
+            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
             .cloned()
         else { return };
         self.state.space.map_element(elem, (x, y), false);
@@ -880,7 +1024,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e.toplevel(), SurfaceKind::X11(w) if w == &window))
+            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
             .cloned()
         else { return };
 
@@ -896,8 +1040,8 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
 
         window.set_maximized(true).unwrap();
         window.configure(geometry).unwrap();
-        elem.user_data().insert_if_missing(OldGeometry::default);
-        elem.user_data().get::<OldGeometry>().unwrap().save(old_geo);
+        window.user_data().insert_if_missing(OldGeometry::default);
+        window.user_data().get::<OldGeometry>().unwrap().save(old_geo);
         self.state.space.map_element(elem, geometry.loc, false);
     }
     fn unmaximize_request(&mut self, _xwm: XwmId, window: X11Surface) {
@@ -905,12 +1049,12 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e.toplevel(), SurfaceKind::X11(w) if w == &window))
+            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
             .cloned()
         else { return };
 
         window.set_maximized(false).unwrap();
-        if let Some(old_geo) = elem
+        if let Some(old_geo) = window
             .user_data()
             .get::<OldGeometry>()
             .and_then(|data| data.restore())
@@ -924,7 +1068,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e.toplevel(), SurfaceKind::X11(w) if w == &window))
+            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
         {
             let outputs_for_window = self.state.space.outputs_for_element(elem);
             let output = outputs_for_window
@@ -951,7 +1095,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e.toplevel(), SurfaceKind::X11(w) if w == &window))
+            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
         {
             window.set_fullscreen(false).unwrap();
             if let Some(output) = self.state.space.outputs().find(|o| {
@@ -978,7 +1122,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e.toplevel(), SurfaceKind::X11(w) if w == &window)) else { return };
+            .find(|e| matches!(e, WindowElement::X11(w) if w == &window)) else { return };
 
         let geometry = element.geometry();
         let loc = self.state.space.element_location(element).unwrap();
@@ -1018,7 +1162,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e.toplevel(), SurfaceKind::X11(w) if w == &window)) else { return };
+            .find(|e| matches!(e, WindowElement::X11(w) if w == &window)) else { return };
 
         let mut initial_window_location = self.state.space.element_location(element).unwrap();
 
@@ -1027,7 +1171,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             window.set_maximized(false).unwrap();
             let pos = pointer.current_location();
             initial_window_location = (pos.x as i32, pos.y as i32).into();
-            if let Some(old_geo) = element
+            if let Some(old_geo) = window
                 .user_data()
                 .get::<OldGeometry>()
                 .and_then(|data| data.restore())
@@ -1052,16 +1196,10 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
 }
 
 impl<BackendData> AnvilState<BackendData> {
-    pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
+    pub fn window_for_surface(&self, surface: &WlSurface) -> Option<WindowElement> {
         self.space
             .elements()
-            .find(|window| {
-                window
-                    .toplevel()
-                    .wl_surface()
-                    .map(|s| s == *surface)
-                    .unwrap_or(false)
-            })
+            .find(|window| window.wl_surface().map(|s| s == *surface).unwrap_or(false))
             .cloned()
     }
 }
@@ -1102,7 +1240,7 @@ pub struct SurfaceData {
     pub resize_state: ResizeState,
 }
 
-fn ensure_initial_configure(surface: &WlSurface, space: &Space<Window>, popups: &mut PopupManager) {
+fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, popups: &mut PopupManager) {
     with_surface_tree_upward(
         surface,
         (),
@@ -1117,18 +1255,12 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<Window>, popups: 
 
     if let Some(window) = space
         .elements()
-        .find(|window| {
-            window
-                .toplevel()
-                .wl_surface()
-                .map(|s| s == *surface)
-                .unwrap_or(false)
-        })
+        .find(|window| window.wl_surface().map(|s| s == *surface).unwrap_or(false))
         .cloned()
     {
         // send the initial configure if relevant
         #[cfg_attr(not(feature = "xwayland"), allow(irrefutable_let_patterns))]
-        if let SurfaceKind::Xdg(ref toplevel) = window.toplevel() {
+        if let WindowElement::Wayland(ref toplevel) = window {
             let initial_configure_sent = with_states(surface, |states| {
                 states
                     .data_map
@@ -1139,7 +1271,7 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<Window>, popups: 
                     .initial_configure_sent
             });
             if !initial_configure_sent {
-                toplevel.send_configure();
+                toplevel.toplevel().send_configure();
             }
         }
 
@@ -1211,7 +1343,7 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<Window>, popups: 
     };
 }
 
-fn place_new_window(space: &mut Space<Window>, window: &Window, activate: bool) {
+fn place_new_window(space: &mut Space<WindowElement>, window: &WindowElement, activate: bool) {
     // place the window at a random location on the primary output
     // or if there is not output in a [0;800]x[0;800] square
     use rand::distributions::{Distribution, Uniform};
@@ -1237,7 +1369,7 @@ fn place_new_window(space: &mut Space<Window>, window: &Window, activate: bool) 
     space.map_element(window.clone(), (x, y), activate);
 }
 
-pub fn fixup_positions(space: &mut Space<Window>) {
+pub fn fixup_positions(space: &mut Space<WindowElement>) {
     // fixup outputs
     let mut offset = Point::<i32, Logical>::from((0, 0));
     for output in space.outputs().cloned().collect::<Vec<_>>().into_iter() {
