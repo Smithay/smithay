@@ -36,6 +36,7 @@ use calloop::{
 pub struct X11Source {
     connection: Arc<RustConnection>,
     channel: Option<Channel<Event>>,
+    #[cfg(feature = "xwayland")]
     pub(crate) sender: SyncSender<Event>,
     event_thread: Option<JoinHandle<()>>,
     close_window: Window,
@@ -67,6 +68,7 @@ impl X11Source {
         Self {
             connection,
             channel: Some(channel),
+            #[cfg(feature = "xwayland")]
             sender,
             event_thread,
             close_window,

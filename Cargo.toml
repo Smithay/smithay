@@ -95,7 +95,7 @@ renderer_multi = ["backend_drm"]
 use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys"]
 wayland_frontend = ["wayland-server", "wayland-protocols", "tempfile"]
 x11rb_event_source = ["x11rb"]
-xwayland = ["encoding", "wayland_frontend", "x11rb/composite"]
+xwayland = ["encoding", "wayland_frontend", "x11rb/composite", "x11rb_event_source"]
 test_all_features = ["default", "use_system_lib", "renderer_glow"]
 
 [[example]]
