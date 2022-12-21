@@ -12,7 +12,8 @@ use crate::utils::{Buffer as BufferCoords, Size};
 pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
 use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
 
-impl<A: AsRawFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
+impl<A: AsRawFd + 'static> Allocator for GbmDevice<A> {
+    type Buffer = GbmBuffer<()>;
     type Error = std::io::Error;
 
     fn create_buffer(
@@ -21,7 +22,7 @@ impl<A: AsRawFd + 'static, T> Allocator<GbmBuffer<T>> for GbmDevice<A> {
         height: u32,
         fourcc: Fourcc,
         modifiers: &[Modifier],
-    ) -> Result<GbmBuffer<T>, Self::Error> {
+    ) -> Result<GbmBuffer<()>, Self::Error> {
         match self.create_buffer_object_with_modifiers(width, height, fourcc, modifiers.iter().copied()) {
             Ok(bo) => Ok(bo),
             Err(err) => {
