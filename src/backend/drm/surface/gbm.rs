@@ -212,9 +212,16 @@ where
         };
 
         match drm.test_state([plane_state], true) {
-            Ok(_) => {
+            Ok(true) => {
                 debug!(logger, "Choosen format: {:?}", format);
                 Ok((buffer, swapchain))
+            }
+            Ok(false) => {
+                warn!(
+                    logger,
+                    "Mode-setting failed with automatically selected buffer format {:?}", format
+                );
+                Err((swapchain.allocator, Error::NoSupportedPlaneFormat))
             }
             Err(err) => {
                 warn!(
