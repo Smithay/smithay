@@ -30,13 +30,14 @@ use smithay::{
 };
 use smithay::{
     backend::{
+        allocator::Fourcc,
         drm::{DrmDevice, DrmError, DrmEvent, DrmEventMetadata, DrmNode, GbmBufferedSurface, NodeType},
         egl::{EGLContext, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::{DamageTrackedRenderer, DamageTrackedRendererError},
             element::{texture::TextureBuffer, AsRenderElements},
-            gles2::{Gles2Renderbuffer, Gles2Renderer},
+            gles2::Gles2Renderer,
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
             Bind, Frame, Renderer,
         },
@@ -81,8 +82,9 @@ use smithay::{
     },
 };
 
-type UdevRenderer<'a> =
-    MultiRenderer<'a, 'a, EglGlesBackend<Gles2Renderer>, EglGlesBackend<Gles2Renderer>, Gles2Renderbuffer>;
+type GbmAllocator = Rc<RefCell<GbmDevice<SessionFd>>>;
+type UdevRenderer<'a, 'b> =
+    MultiRenderer<'a, 'a, 'b, EglGlesBackend<Gles2Renderer>, EglGlesBackend<Gles2Renderer>, GbmAllocator>;
 
 #[derive(Copy, Clone)]
 pub struct SessionFd(RawFd);
@@ -104,7 +106,7 @@ pub struct UdevData {
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     primary_gpu: DrmNode,
-    gpus: GpuManager<EglGlesBackend<Gles2Renderer>>,
+    gpus: GpuManager<EglGlesBackend<Gles2Renderer>, GbmAllocator>,
     backends: HashMap<DrmNode, BackendData>,
     pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<MultiTexture>)>,
     pointer_element: PointerElement<MultiTexture>,
@@ -122,9 +124,10 @@ impl DmabufHandler for AnvilState<UdevData> {
     }
 
     fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
+        let primary_gpu = self.backend_data.primary_gpu;
         self.backend_data
             .gpus
-            .renderer::<Gles2Renderbuffer>(&self.backend_data.primary_gpu, &self.backend_data.primary_gpu)
+            .single_renderer(&primary_gpu)
             .and_then(|mut renderer| renderer.import_dmabuf(&dmabuf, None))
             .map(|_| ())
             .map_err(|_| ImportError::Failed)
@@ -198,9 +201,7 @@ pub fn run_udev(log: Logger) {
     let mut gpus = GpuManager::new(EglGlesBackend::default(), log.clone()).unwrap();
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     #[cfg(any(feature = "egl", feature = "debug"))]
-    let mut renderer = gpus
-        .renderer::<Gles2Renderbuffer>(&primary_gpu, &primary_gpu)
-        .unwrap();
+    let mut renderer = gpus.single_renderer(&primary_gpu).unwrap();
 
     #[cfg(feature = "debug")]
     let fps_image =
@@ -337,8 +338,7 @@ pub fn run_udev(log: Logger) {
     }
 }
 
-pub type RenderSurface =
-    GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd, Option<OutputPresentationFeedback>>;
+pub type RenderSurface = GbmBufferedSurface<GbmAllocator, SessionFd, Option<OutputPresentationFeedback>>;
 
 struct SurfaceData {
     dh: DisplayHandle,
@@ -364,7 +364,7 @@ impl Drop for SurfaceData {
 struct BackendData {
     _restart_token: SignalToken,
     surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>>>>,
-    gbm: Rc<RefCell<GbmDevice<SessionFd>>>,
+    gbm: GbmAllocator,
     registration_token: RegistrationToken,
     event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, CalloopData<UdevData>>,
 }
@@ -373,7 +373,7 @@ struct BackendData {
 fn scan_connectors(
     device_id: DrmNode,
     device: &DrmDevice<SessionFd>,
-    gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
+    gbm: &GbmAllocator,
     display: &mut Display<AnvilState<UdevData>>,
     space: &mut Space<Window>,
     #[cfg(feature = "debug")] fps_texture: &MultiTexture,
@@ -862,13 +862,32 @@ impl AnvilState<UdevData> {
 
     // If crtc is `Some()`, render it, else render all crtcs
     fn render(&mut self, dev_id: DrmNode, crtc: Option<crtc::Handle>) {
-        let device_backend = match self.backend_data.backends.get_mut(&dev_id) {
-            Some(backend) => backend,
-            None => {
-                error!(self.log, "Trying to render on non-existent backend {}", dev_id);
-                return;
+        let primary_gpu = self.backend_data.primary_gpu;
+        let mut backends = self
+            .backend_data
+            .backends
+            .iter_mut()
+            .filter(|(id, _)| **id == dev_id || **id == primary_gpu)
+            .collect::<Vec<_>>();
+        if backends.is_empty() || backends.iter().all(|(id, _)| **id != dev_id) {
+            error!(self.log, "Trying to render on non-existent backend {}", dev_id);
+            return;
+        }
+        let (device_backend, primary_backend) = match &mut *backends {
+            [(id, backend)] if **id == dev_id => (backend, None),
+            [(id1, backend1), (id2, backend2)] | [(id2, backend2), (id1, backend1)]
+                if **id1 == dev_id && **id2 == primary_gpu =>
+            {
+                (backend1, Some(backend2))
             }
+            _ => unreachable!(),
         };
+        let render_allocator = if let Some(primary_backend) = primary_backend {
+            &mut primary_backend.gbm
+        } else {
+            &mut device_backend.gbm
+        };
+
         // setup two iterators on the stack, one over all surfaces for this backend, and
         // one containing only the one given as argument.
         // They make a trait-object to dynamically choose between the two
@@ -891,11 +910,15 @@ impl AnvilState<UdevData> {
                 .backend_data
                 .pointer_image
                 .get_image(1 /*scale*/, self.clock.now().try_into().unwrap());
-            let primary_gpu = self.backend_data.primary_gpu;
             let mut renderer = self
                 .backend_data
                 .gpus
-                .renderer::<Gles2Renderbuffer>(&primary_gpu, &surface.borrow().render_node)
+                .renderer(
+                    &primary_gpu,
+                    &surface.borrow().render_node,
+                    render_allocator,
+                    Fourcc::Argb8888,
+                )
                 .unwrap();
             let pointer_images = &mut self.backend_data.pointer_images;
             let pointer_image = pointer_images
@@ -998,9 +1021,9 @@ impl AnvilState<UdevData> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn render_surface<'a>(
+fn render_surface<'a, 'b>(
     surface: &'a mut SurfaceData,
-    renderer: &mut UdevRenderer<'a>,
+    renderer: &mut UdevRenderer<'a, 'b>,
     space: &Space<Window>,
     output: &Output,
     input_method: &InputMethodHandle,
@@ -1027,7 +1050,7 @@ fn render_surface<'a>(
         rectangle.loc.y + rectangle.size.h,
     ));
     input_method.with_surface(|surface| {
-        elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
+        elements.extend(AsRenderElements::<UdevRenderer<'a, 'b>>::render_elements(
             &SurfaceTree::from_surface(surface),
             renderer,
             position.to_physical_precise_round(scale),
@@ -1075,7 +1098,7 @@ fn render_surface<'a>(
         {
             if let Some(wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.alive() {
-                    elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
+                    elements.extend(AsRenderElements::<UdevRenderer<'a, 'b>>::render_elements(
                         &SurfaceTree::from_surface(wl_surface),
                         renderer,
                         cursor_pos_scaled,
@@ -1124,14 +1147,14 @@ fn render_surface<'a>(
 }
 
 fn schedule_initial_render(
-    gpus: &mut GpuManager<EglGlesBackend<Gles2Renderer>>,
+    gpus: &mut GpuManager<EglGlesBackend<Gles2Renderer>, GbmAllocator>,
     surface: Rc<RefCell<SurfaceData>>,
     evt_handle: &LoopHandle<'static, CalloopData<UdevData>>,
     logger: ::slog::Logger,
 ) {
     let node = surface.borrow().render_node;
     let result = {
-        let mut renderer = gpus.renderer::<Gles2Renderbuffer>(&node, &node).unwrap();
+        let mut renderer = gpus.single_renderer(&node).unwrap();
         let mut surface = surface.borrow_mut();
         initial_render(&mut surface.surface, &mut renderer)
     };
@@ -1153,7 +1176,7 @@ fn schedule_initial_render(
 
 fn initial_render(
     surface: &mut RenderSurface,
-    renderer: &mut UdevRenderer<'_>,
+    renderer: &mut UdevRenderer<'_, '_>,
 ) -> Result<(), SwapBuffersError> {
     let (dmabuf, _) = surface.next_buffer()?;
     renderer.bind(dmabuf)?;

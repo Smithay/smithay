@@ -5,6 +5,7 @@
 use wayland_server::protocol::wl_buffer;
 
 use crate::backend::{
+    allocator::{dmabuf::AsDmabuf, Allocator},
     drm::{CreateDrmNodeError, DrmNode},
     egl::{EGLContext, EGLDevice, EGLDisplay, Error as EGLError},
     renderer::{
@@ -21,7 +22,7 @@ use crate::{
         egl::display::EGLBufferReader,
         renderer::{
             multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
-            ExportDma, ExportMem, ImportDma, ImportEgl, ImportMem, Offscreen,
+            Bind, ExportMem, ImportDma, ImportEgl, ImportMem,
         },
     },
     utils::{Buffer as BufferCoords, Rectangle},
@@ -114,13 +115,15 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglG
 }
 
 // TODO: Replace with specialization impl in multigpu/mod once possible
-impl<T: GraphicsApi, R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> std::convert::From<Gles2Error>
-    for MultiError<EglGlesBackend<R>, T>
+impl<T: GraphicsApi, R: From<Gles2Renderer> + Renderer<Error = Gles2Error>, Alloc>
+    std::convert::From<Gles2Error> for MultiError<EglGlesBackend<R>, T, Alloc>
 where
+    Alloc: Allocator,
+    <Alloc as Allocator>::Buffer: AsDmabuf,
     T::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn from(err: Gles2Error) -> MultiError<EglGlesBackend<R>, T> {
+    fn from(err: Gles2Error) -> MultiError<EglGlesBackend<R>, T, Alloc> {
         MultiError::Render(err)
     }
 }
@@ -149,16 +152,20 @@ impl<R: Renderer> ApiDevice for EglGlesDevice<R> {
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, Target, R> ImportEgl for MultiRenderer<'a, 'b, EglGlesBackend<R>, EglGlesBackend<R>, Target>
+impl<'a, 'b, 'c, R, Alloc> ImportEgl
+    for MultiRenderer<'a, 'b, 'c, EglGlesBackend<R>, EglGlesBackend<R>, Alloc>
 where
+    Alloc: Allocator,
+    <Alloc as Allocator>::Buffer: AsDmabuf,
+    <Alloc as Allocator>::Error: 'static,
+    <<Alloc as Allocator>::Buffer as AsDmabuf>::Error: 'static,
     R: From<Gles2Renderer>
         + BorrowMut<Gles2Renderer>
         + Renderer<Error = Gles2Error>
-        + Offscreen<Target>
+        + Bind<Dmabuf>
         + ImportDma
         + ImportMem
         + ImportEgl
-        + ExportDma
         + ExportMem
         + 'static,
 {
@@ -179,8 +186,8 @@ where
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         if let Some(ref mut renderer) = self.target.as_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(renderer.renderer_mut(), buffer) {
-                let node = *renderer.node();
+            if let Ok(dmabuf) = Self::try_import_egl(renderer.device.renderer_mut(), buffer) {
+                let node = *renderer.device.node();
                 let texture = MultiTexture::from_surface(surface, dmabuf.size());
                 let texture_ref = texture.0.clone();
                 let res = self.import_dmabuf_internal(Some(node), &dmabuf, texture, Some(damage));
@@ -211,23 +218,23 @@ where
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, Target, R> MultiRenderer<'a, 'b, EglGlesBackend<R>, EglGlesBackend<R>, Target>
+impl<'a, 'b, 'c, R, Alloc> MultiRenderer<'a, 'b, 'c, EglGlesBackend<R>, EglGlesBackend<R>, Alloc>
 where
+    Alloc: Allocator,
+    <Alloc as Allocator>::Buffer: AsDmabuf,
     R: From<Gles2Renderer>
         + BorrowMut<Gles2Renderer>
         + Renderer<Error = Gles2Error>
-        + Offscreen<Target>
         + ImportDma
         + ImportMem
         + ImportEgl
-        + ExportDma
         + ExportMem
         + 'static,
 {
     fn try_import_egl(
         renderer: &mut R,
         buffer: &wl_buffer::WlBuffer,
-    ) -> Result<Dmabuf, MultigpuError<EglGlesBackend<R>, EglGlesBackend<R>>> {
+    ) -> Result<Dmabuf, MultigpuError<EglGlesBackend<R>, EglGlesBackend<R>, Alloc>> {
         if !renderer
             .borrow_mut()
             .extensions
