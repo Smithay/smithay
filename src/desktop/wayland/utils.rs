@@ -184,7 +184,8 @@ pub fn update_surface_primary_scanout_output<F>(
     surface_data: &SurfaceData,
     states: &RenderElementStates,
     compare: F,
-) where
+) -> Option<Output>
+where
     F: for<'a> Fn(&'a Output, &'a RenderElementState, &'a Output, &'a RenderElementState) -> &'a Output,
 {
     surface_data
@@ -197,7 +198,7 @@ pub fn update_surface_primary_scanout_output<F>(
     surface_primary_scanout_output
         .lock()
         .unwrap()
-        .update_from_render_element_states(surface, output, states, compare);
+        .update_from_render_element_states(surface, output, states, compare)
 }
 
 /// Sends frame callbacks for a surface and its subsurfaces with the given `time`.

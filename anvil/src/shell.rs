@@ -741,7 +741,7 @@ impl<BackendData> WlrLayerShellHandler for AnvilState<BackendData> {
 }
 
 impl<BackendData> AnvilState<BackendData> {
-    fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
+    pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
         self.space
             .elements()
             .find(|window| window.toplevel().wl_surface() == surface)
