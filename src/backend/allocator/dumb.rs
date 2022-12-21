@@ -27,7 +27,8 @@ impl<A: AsRawFd + 'static> fmt::Debug for DumbBuffer<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Allocator<DumbBuffer<A>> for DrmDevice<A> {
+impl<A: AsRawFd + 'static> Allocator for DrmDevice<A> {
+    type Buffer = DumbBuffer<A>;
     type Error = drm::SystemError;
 
     fn create_buffer(

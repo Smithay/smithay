@@ -41,7 +41,7 @@ pub const SLOT_CAP: usize = 4;
 /// If you have associated resources for each buffer that can be reused (e.g. framebuffer `Handle`s for a `DrmDevice`),
 /// you can store then in the `Slot`s userdata field. If a buffer is re-used, its userdata is preserved for the next time
 /// it is returned by `acquire()`.
-pub struct Swapchain<A: Allocator<B>, B: Buffer> {
+pub struct Swapchain<A: Allocator> {
     /// Allocator used by the swapchain
     pub allocator: A,
 
@@ -50,10 +50,10 @@ pub struct Swapchain<A: Allocator<B>, B: Buffer> {
     fourcc: Fourcc,
     modifiers: Vec<Modifier>,
 
-    slots: [Arc<InternalSlot<B>>; SLOT_CAP],
+    slots: [Arc<InternalSlot<A::Buffer>>; SLOT_CAP],
 }
 
-impl<A: Allocator<B>, B: Buffer> fmt::Debug for Swapchain<A, B> {
+impl<A: Allocator> fmt::Debug for Swapchain<A> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Swapchain")
             .field("width", &self.width)
@@ -129,10 +129,9 @@ impl<B: Buffer> Drop for Slot<B> {
     }
 }
 
-impl<A, B> Swapchain<A, B>
+impl<A> Swapchain<A>
 where
-    A: Allocator<B>,
-    B: Buffer,
+    A: Allocator,
 {
     /// Create a new swapchain with the desired allocator, dimensions and pixel format for the created buffers.
     pub fn new(
@@ -141,7 +140,7 @@ where
         height: u32,
         fourcc: Fourcc,
         modifiers: Vec<Modifier>,
-    ) -> Swapchain<A, B> {
+    ) -> Swapchain<A> {
         Swapchain {
             allocator,
             width,
@@ -156,7 +155,7 @@ where
     ///
     /// The swapchain has an internal maximum of four re-usable buffers.
     /// This function returns the first free one.
-    pub fn acquire(&mut self) -> Result<Option<Slot<B>>, A::Error> {
+    pub fn acquire(&mut self) -> Result<Option<Slot<A::Buffer>>, A::Error> {
         if let Some(free_slot) = self
             .slots
             .iter_mut()
@@ -189,7 +188,7 @@ where
     /// Buffers can always just be safely discarded by dropping them, but not
     /// calling this function before may affect performance characteristics
     /// (e.g. by not tracking the buffer age).
-    pub fn submitted(&mut self, slot: &Slot<B>) {
+    pub fn submitted(&mut self, slot: &Slot<A::Buffer>) {
         // don't mess up the state, if the user submitted and old buffer, after e.g. a resize
         if !self.slots.iter().any(|other| Arc::ptr_eq(&slot.0, other)) {
             return;

@@ -348,7 +348,7 @@ impl X11Handle {
     /// Creates a surface that allocates and presents buffers to the window.
     ///
     /// This will fail if the window has already been used to create a surface.
-    pub fn create_surface<A: Allocator<BufferObject<()>, Error = std::io::Error> + 'static>(
+    pub fn create_surface<A: Allocator<Buffer = BufferObject<()>, Error = std::io::Error> + 'static>(
         &self,
         window: &Window,
         allocator: A,
@@ -378,7 +378,8 @@ impl X11Handle {
         let format = window.0.format;
         let size = window.size();
         let swapchain = Swapchain::new(
-            Box::new(allocator) as Box<dyn Allocator<BufferObject<()>, Error = std::io::Error> + 'static>,
+            Box::new(allocator)
+                as Box<dyn Allocator<Buffer = BufferObject<()>, Error = std::io::Error> + 'static>,
             size.w as u32,
             size.h as u32,
             format,

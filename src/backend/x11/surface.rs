@@ -43,7 +43,7 @@ pub struct X11Surface {
     pub(crate) window: Weak<WindowInner>,
     pub(crate) resize: Receiver<Size<u16, Logical>>,
     pub(crate) swapchain:
-        Swapchain<Box<dyn Allocator<BufferObject<()>, Error = std::io::Error> + 'static>, BufferObject<()>>,
+        Swapchain<Box<dyn Allocator<Buffer = BufferObject<()>, Error = std::io::Error> + 'static>>,
     pub(crate) format: DrmFourcc,
     pub(crate) width: u16,
     pub(crate) height: u16,

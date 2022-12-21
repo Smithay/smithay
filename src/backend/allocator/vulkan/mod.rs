@@ -335,7 +335,8 @@ impl VulkanAllocator {
     }
 }
 
-impl Allocator<VulkanImage> for VulkanAllocator {
+impl Allocator for VulkanAllocator {
+    type Buffer = VulkanImage;
     type Error = Error;
 
     fn create_buffer(
