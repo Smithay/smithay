@@ -933,6 +933,9 @@ where
                                     .render(self.size, self.dst_transform)
                                     .map_err(Error::Target)?;
                                 frame
+                                    .clear([0.0, 0.0, 0.0, 0.0], &damage)
+                                    .map_err(Error::Target)?;
+                                frame
                                     .render_texture_from_to(
                                         &texture,
                                         Rectangle::from_loc_and_size((0, 0), buffer_size).to_f64(),
@@ -966,65 +969,66 @@ where
                 }
 
                 // cpu copy
-                if damage.len() > MAX_CPU_COPIES {
-                    damage = Vec::from([Rectangle::from_loc_and_size((0, 0), buffer_size)]);
-                }
                 damage.dedup();
                 damage.retain(|rect| rect.overlaps(Rectangle::from_loc_and_size((0, 0), buffer_size)));
                 damage.retain(|rect| rect.size.h > 0 && rect.size.w > 0);
-                // merge overlapping rectangles
-                damage = damage.into_iter().fold(Vec::new(), |new_damage, mut rect| {
-                    // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                    let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                        new_damage.into_iter().partition(|other| other.overlaps(rect));
 
-                    for overlap in overlapping {
-                        rect = rect.merge(overlap);
-                    }
-                    new_damage.push(rect);
-                    new_damage
-                });
+                let mut copy_rects = // merge overlapping rectangles
+                    damage.iter().cloned().fold(Vec::new(), |new_damage, mut rect| {
+                        // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
+                        let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
+                            .into_iter()
+                            .partition(|other: &Rectangle<i32, BufferCoords>| other.overlaps(rect));
 
-                let mut textures = Vec::new();
-                for rect in damage {
-                    let texture = (
-                        {
-                            let mapping = render
-                                .renderer_mut()
-                                .copy_framebuffer(rect)
-                                .map_err(Error::Render)?;
-                            let slice = render
-                                .renderer_mut()
-                                .map_texture(&mapping)
-                                .map_err(Error::Render::<R, T>)?;
-                            target
-                                .renderer_mut()
-                                .import_memory(slice, rect.size, false)
-                                .map_err(Error::Target)?
-                        },
+                        for overlap in overlapping {
+                            rect = rect.merge(overlap);
+                        }
+                        new_damage.push(rect);
+                        new_damage
+                    });
+                if copy_rects.len() > MAX_CPU_COPIES {
+                    copy_rects = Vec::from([Rectangle::from_loc_and_size((0, 0), buffer_size)]);
+                }
+
+                let mut mappings = Vec::new();
+                for rect in copy_rects {
+                    let mapping = (
+                        render
+                            .renderer_mut()
+                            .copy_framebuffer(rect)
+                            .map_err(Error::Render)?,
                         rect,
                     );
-                    textures.push(texture);
+                    mappings.push(mapping);
                 }
 
-                let mut frame = target
-                    .renderer_mut()
-                    .render(self.size, self.dst_transform)
-                    .map_err(Error::Target)?;
-                for (texture, rect) in textures {
-                    let dst = rect.to_logical(1, Transform::Normal, &buffer_size).to_physical(1);
-                    frame
-                        .render_texture_from_to(
-                            &texture,
-                            Rectangle::from_loc_and_size((0, 0), rect.size).to_f64(),
-                            dst,
-                            &[Rectangle::from_loc_and_size((0, 0), dst.size)],
-                            Transform::Normal,
-                            1.0,
-                        )
+                for (mapping, rect) in mappings {
+                    let slice = render
+                        .renderer_mut()
+                        .map_texture(&mapping)
+                        .map_err(Error::Render::<R, T>)?;
+                    let texture = target
+                        .renderer_mut()
+                        .import_memory(slice, rect.size, false)
                         .map_err(Error::Target)?;
+                    let mut frame = target
+                        .renderer_mut()
+                        .render(self.size, self.dst_transform)
+                        .map_err(Error::Target)?;
+                    for damage_rect in damage.iter().filter_map(|dmg_rect| dmg_rect.intersection(rect)) {
+                        let dst = damage_rect
+                            .to_logical(1, Transform::Normal, &buffer_size)
+                            .to_physical(1);
+                        let src = Rectangle::from_loc_and_size(damage_rect.loc - rect.loc, damage_rect.size)
+                            .to_f64();
+                        let damage = &[Rectangle::from_loc_and_size((0, 0), dst.size)];
+                        frame.clear([0.0, 0.0, 0.0, 0.0], &[dst]).map_err(Error::Target)?;
+                        frame
+                            .render_texture_from_to(&texture, src, dst, damage, Transform::Normal, 1.0)
+                            .map_err(Error::Target)?;
+                    }
+                    frame.finish().map_err(Error::Target)?;
                 }
-                frame.finish().map_err(Error::Target)?;
             }
         }
 
