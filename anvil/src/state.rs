@@ -376,7 +376,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let compositor_state = CompositorState::new::<Self, _>(&dh, log.clone());
         let data_device_state = DataDeviceState::new::<Self, _>(&dh, log.clone());
         let layer_shell_state = WlrLayerShellState::new::<Self, _>(&dh, log.clone());
-        let output_manager_state = OutputManagerState::new();
+        let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let primary_selection_state = PrimarySelectionState::new::<Self, _>(&dh, log.clone());
         let mut seat_state = SeatState::new();
         let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
