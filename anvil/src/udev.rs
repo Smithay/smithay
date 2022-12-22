@@ -1,7 +1,10 @@
 use std::{
     borrow::Cow,
     cell::RefCell,
-    collections::hash_map::{Entry, HashMap},
+    collections::{
+        hash_map::{Entry, HashMap},
+        HashSet,
+    },
     convert::TryInto,
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
@@ -30,7 +33,7 @@ use smithay::{
 };
 use smithay::{
     backend::{
-        allocator::Fourcc,
+        allocator::{Format, Fourcc},
         drm::{DrmDevice, DrmError, DrmEvent, DrmEventMetadata, DrmNode, GbmBufferedSurface, NodeType},
         egl::{EGLContext, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
@@ -38,7 +41,7 @@ use smithay::{
             damage::{DamageTrackedRenderer, DamageTrackedRendererError},
             element::{texture::TextureBuffer, AsRenderElements},
             gles2::Gles2Renderer,
-            multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
+            multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer, MultiTexture},
             Bind, Frame, Renderer,
         },
         session::{auto::AutoSession, Session, Signal as SessionSignal},
@@ -84,7 +87,7 @@ use smithay::{
 
 type GbmAllocator = Rc<RefCell<GbmDevice<SessionFd>>>;
 type UdevRenderer<'a, 'b> =
-    MultiRenderer<'a, 'a, 'b, EglGlesBackend<Gles2Renderer>, EglGlesBackend<Gles2Renderer>, GbmAllocator>;
+    MultiRenderer<'a, 'a, 'b, GbmGlesBackend<Gles2Renderer>, GbmGlesBackend<Gles2Renderer>, GbmAllocator>;
 
 #[derive(Copy, Clone)]
 pub struct SessionFd(RawFd);
@@ -106,7 +109,7 @@ pub struct UdevData {
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     primary_gpu: DrmNode,
-    gpus: GpuManager<EglGlesBackend<Gles2Renderer>, GbmAllocator>,
+    gpus: GpuManager<GbmGlesBackend<Gles2Renderer>, GbmAllocator>,
     backends: HashMap<DrmNode, BackendData>,
     pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<MultiTexture>)>,
     pointer_element: PointerElement<MultiTexture>,
@@ -198,7 +201,8 @@ pub fn run_udev(log: Logger) {
     info!(log, "Using {} as primary gpu.", primary_gpu);
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let mut gpus = GpuManager::new(EglGlesBackend::default(), log.clone()).unwrap();
+    let mut gpus = GpuManager::new(GbmGlesBackend::default(), log.clone()).unwrap();
+    /*
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     #[cfg(any(feature = "egl", feature = "debug"))]
     let mut renderer = gpus.single_renderer(&primary_gpu).unwrap();
@@ -240,11 +244,12 @@ pub fn run_udev(log: Logger) {
             None
         }
     };
+    */
 
     let data = UdevData {
         dh: display.handle(),
         #[cfg(feature = "egl")]
-        dmabuf_state,
+        dmabuf_state: None,
         session,
         primary_gpu,
         gpus,
@@ -298,8 +303,15 @@ pub fn run_udev(log: Logger) {
         .handle()
         .insert_source(notifier, |(), &mut (), _data| {})
         .unwrap();
+    state.device_added(
+        &mut display,
+        primary_gpu.dev_id(),
+        primary_gpu.dev_path().unwrap(),
+    );
     for (dev, path) in udev_backend.device_list() {
-        state.device_added(&mut display, dev, path.into())
+        if dev != primary_gpu.dev_id() {
+            state.device_added(&mut display, dev, path.into())
+        }
     }
 
     event_loop
@@ -372,6 +384,8 @@ struct BackendData {
 #[allow(clippy::too_many_arguments)]
 fn scan_connectors(
     device_id: DrmNode,
+    render_node: DrmNode,
+    formats: HashSet<Format>,
     device: &DrmDevice<SessionFd>,
     gbm: &GbmAllocator,
     display: &mut Display<AnvilState<UdevData>>,
@@ -393,19 +407,6 @@ fn scan_connectors(
         .collect();
 
     let mut backends = HashMap::new();
-
-    let (render_node, formats) = {
-        let display = unsafe { EGLDisplay::new(&*gbm.borrow(), logger.clone()).unwrap() };
-        let node = match EGLDevice::device_for_display(&display)
-            .ok()
-            .and_then(|x| x.try_get_render_node().ok().flatten())
-        {
-            Some(node) => node,
-            None => return HashMap::new(),
-        };
-        let context = EGLContext::new(&display, logger.clone()).unwrap();
-        (node, context.dmabuf_render_formats().clone())
-    };
 
     // very naive way of finding good crtc/encoder/connector combinations. This problem is np-complete
     for connector_info in connector_infos {
@@ -562,8 +563,23 @@ impl AnvilState<UdevData> {
                 return;
             }
         };
+        let (render_node, formats) = {
+            let display = unsafe { EGLDisplay::new(&*gbm.borrow(), None).unwrap() };
+            let node = match EGLDevice::device_for_display(&display)
+                .ok()
+                .and_then(|x| x.try_get_render_node().ok().flatten())
+            {
+                Some(node) => node,
+                None => return,
+            };
+            let context = EGLContext::new(&display, None).unwrap();
+            (node, context.dmabuf_render_formats().clone())
+        };
+        self.backend_data.gpus.api().add_node(render_node, gbm.clone());
         let backends = Rc::new(RefCell::new(scan_connectors(
             node,
+            render_node,
+            formats,
             &device,
             &gbm,
             display,
@@ -649,10 +665,25 @@ impl AnvilState<UdevData> {
                 self.space.unmap_output(&output);
             }
 
+            let (render_node, formats) = {
+                let display = unsafe { EGLDisplay::new(&*backend_data.gbm.borrow(), None).unwrap() };
+                let node = match EGLDevice::device_for_display(&display)
+                    .ok()
+                    .and_then(|x| x.try_get_render_node().ok().flatten())
+                {
+                    Some(node) => node,
+                    None => return,
+                };
+                let context = EGLContext::new(&display, None).unwrap();
+                (node, context.dmabuf_render_formats().clone())
+            };
+
             let source = backend_data.event_dispatcher.as_source_mut();
             let mut backends = backend_data.surfaces.borrow_mut();
             *backends = scan_connectors(
                 node,
+                render_node,
+                formats,
                 &source,
                 &backend_data.gbm,
                 display,
@@ -679,6 +710,7 @@ impl AnvilState<UdevData> {
             Some(node) => node,
             None => return, // we already logged a warning on device_added
         };
+        self.backend_data.gpus.api().remove_node(&node);
         // drop the backends on this side
         if let Some(backend_data) = self.backend_data.backends.remove(&node) {
             // drop surfaces
@@ -1147,7 +1179,7 @@ fn render_surface<'a, 'b>(
 }
 
 fn schedule_initial_render(
-    gpus: &mut GpuManager<EglGlesBackend<Gles2Renderer>, GbmAllocator>,
+    gpus: &mut GpuManager<GbmGlesBackend<Gles2Renderer>, GbmAllocator>,
     surface: Rc<RefCell<SurfaceData>>,
     evt_handle: &LoopHandle<'static, CalloopData<UdevData>>,
     logger: ::slog::Logger,

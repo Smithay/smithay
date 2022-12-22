@@ -61,6 +61,8 @@ use crate::{
 use wayland_server::protocol::{wl_buffer, wl_surface::WlSurface};
 #[cfg(all(feature = "backend_egl", feature = "renderer_gl"))]
 pub mod egl;
+#[cfg(all(feature = "backend_gbm", feature = "backend_egl", feature = "renderer_gl"))]
+pub mod gbm;
 
 /// Tracks available gpus from a given [`GraphicsApi`]
 #[derive(Debug)]
@@ -188,9 +190,11 @@ where
         let log = crate::slog_or_fallback(log);
         let mut devices = Vec::new();
         api.enumerate(&mut devices, &log).map_err(Error::RenderApiError)?;
+        /*
         if devices.is_empty() {
             return Err(Error::NoDevices);
         }
+        */
 
         Ok(GpuManager {
             api,
@@ -389,6 +393,10 @@ where
                 log: target_api.log.clone(),
             })
         }
+    }
+
+    pub fn api(&mut self) -> &mut A {
+        &mut self.api
     }
 
     /// Function for optimizing buffer imports across multiple gpus.
