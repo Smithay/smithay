@@ -9,7 +9,7 @@ use super::{
 use crate::backend::drm::{DrmNode, NodeType};
 
 /// safe EGLDevice wrapper
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EGLDevice {
     pub(super) inner: EGLDeviceEXT,
     device_extensions: Vec<String>,

@@ -47,6 +47,7 @@ lazy_static::lazy_static! {
 pub struct EGLDisplayHandle {
     /// ffi EGLDisplay ptr
     pub handle: ffi::egl::types::EGLDisplay,
+    _native: Box<dyn std::any::Any + 'static>,
 }
 // EGLDisplay has an internal Mutex
 unsafe impl Send for EGLDisplayHandle {}
@@ -145,12 +146,7 @@ unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
 
 impl EGLDisplay {
     /// Create a new [`EGLDisplay`] from a given [`EGLNativeDisplay`]
-    ///
-    /// # Safety
-    ///
-    /// - `native`: The native display handle has to be kept alive for the lifetime of the
-    ///   created [`EGLDisplay`]
-    pub unsafe fn new<N, L>(native: &N, logger: L) -> Result<EGLDisplay, Error>
+    pub fn new<N, L>(native: N, logger: L) -> Result<EGLDisplay, Error>
     where
         N: EGLNativeDisplay + 'static,
         L: Into<Option<::slog::Logger>>,
@@ -160,10 +156,10 @@ impl EGLDisplay {
         let dp_extensions = ffi::make_sure_egl_is_loaded()?;
         debug!(log, "Supported EGL client extensions: {:?}", dp_extensions);
         // we create an EGLDisplay
-        let display = select_platform_display(native, &dp_extensions, &log)?;
+        let display = unsafe { select_platform_display(&native, &dp_extensions, &log)? };
 
         // We can then query the egl api version
-        let egl_version = {
+        let egl_version = unsafe {
             let mut major: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
             let mut minor: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
@@ -191,12 +187,17 @@ impl EGLDisplay {
         if egl_version <= (1, 2) {
             return Err(Error::OpenGlesNotSupported(None));
         }
-        wrap_egl_call(|| ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API))
+        wrap_egl_call(|| unsafe { ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) })
             .map_err(|source| Error::OpenGlesNotSupported(Some(source)))?;
 
+        let surface_type = native.surface_type();
+
         Ok(EGLDisplay {
-            display: Arc::new(EGLDisplayHandle { handle: display }),
-            surface_type: native.surface_type(),
+            display: Arc::new(EGLDisplayHandle {
+                handle: display,
+                _native: Box::new(native) as Box<dyn std::any::Any + 'static>,
+            }),
+            surface_type,
             egl_version,
             extensions,
             dmabuf_import_formats,
@@ -282,7 +283,10 @@ impl EGLDisplay {
         };
 
         Ok(EGLDisplay {
-            display: Arc::new(EGLDisplayHandle { handle: display }),
+            display: Arc::new(EGLDisplayHandle {
+                handle: display,
+                _native: Box::new(()),
+            }),
             surface_type,
             egl_version,
             extensions,

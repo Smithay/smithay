@@ -3,7 +3,7 @@ use std::{
     cell::RefCell,
     collections::hash_map::{Entry, HashMap},
     convert::TryInto,
-    os::unix::io::{AsRawFd, RawFd},
+    os::unix::io::FromRawFd,
     path::PathBuf,
     rc::Rc,
     sync::{atomic::Ordering, Mutex},
@@ -30,7 +30,10 @@ use smithay::{
 };
 use smithay::{
     backend::{
-        drm::{DrmDevice, DrmError, DrmEvent, DrmEventMetadata, DrmNode, GbmBufferedSurface, NodeType},
+        drm::{
+            DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata, DrmNode, GbmBufferedSurface,
+            NodeType,
+        },
         egl::{EGLContext, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
@@ -73,7 +76,7 @@ use smithay::{
     },
     utils::{
         signaling::{Linkable, SignalToken, Signaler},
-        Clock, IsAlive, Logical, Monotonic, Point, Rectangle, Scale, Transform,
+        Clock, DeviceFd, IsAlive, Logical, Monotonic, Point, Rectangle, Scale, Transform,
     },
     wayland::{
         compositor,
@@ -83,14 +86,6 @@ use smithay::{
 
 type UdevRenderer<'a> =
     MultiRenderer<'a, 'a, EglGlesBackend<Gles2Renderer>, EglGlesBackend<Gles2Renderer>, Gles2Renderbuffer>;
-
-#[derive(Copy, Clone)]
-pub struct SessionFd(RawFd);
-impl AsRawFd for SessionFd {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0
-    }
-}
 
 #[derive(Debug, PartialEq)]
 struct UdevOutputId {
@@ -337,8 +332,7 @@ pub fn run_udev(log: Logger) {
     }
 }
 
-pub type RenderSurface =
-    GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd, Option<OutputPresentationFeedback>>;
+pub type RenderSurface = GbmBufferedSurface<GbmDevice<DrmDeviceFd>, Option<OutputPresentationFeedback>>;
 
 struct SurfaceData {
     dh: DisplayHandle,
@@ -364,16 +358,16 @@ impl Drop for SurfaceData {
 struct BackendData {
     _restart_token: SignalToken,
     surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>>>>,
-    gbm: Rc<RefCell<GbmDevice<SessionFd>>>,
+    gbm: GbmDevice<DrmDeviceFd>,
     registration_token: RegistrationToken,
-    event_dispatcher: Dispatcher<'static, DrmDevice<SessionFd>, CalloopData<UdevData>>,
+    event_dispatcher: Dispatcher<'static, DrmDevice, CalloopData<UdevData>>,
 }
 
 #[allow(clippy::too_many_arguments)]
 fn scan_connectors(
     device_id: DrmNode,
-    device: &DrmDevice<SessionFd>,
-    gbm: &Rc<RefCell<GbmDevice<SessionFd>>>,
+    device: &DrmDevice,
+    gbm: &GbmDevice<DrmDeviceFd>,
     display: &mut Display<AnvilState<UdevData>>,
     space: &mut Space<Window>,
     #[cfg(feature = "debug")] fps_texture: &MultiTexture,
@@ -395,7 +389,7 @@ fn scan_connectors(
     let mut backends = HashMap::new();
 
     let (render_node, formats) = {
-        let display = unsafe { EGLDisplay::new(&*gbm.borrow(), logger.clone()).unwrap() };
+        let display = EGLDisplay::new(gbm.clone(), logger.clone()).unwrap();
         let node = match EGLDevice::device_for_display(&display)
             .ok()
             .and_then(|x| x.try_get_render_node().ok().flatten())
@@ -530,8 +524,13 @@ impl AnvilState<UdevData> {
         let open_flags = OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK;
         let device_fd = self.backend_data.session.open(&path, open_flags).ok();
         let devices = device_fd
-            .map(SessionFd)
-            .map(|fd| (DrmDevice::new(fd, true, self.log.clone()), GbmDevice::new(fd)));
+            .map(|fd| DrmDeviceFd::new(unsafe { DeviceFd::from_raw_fd(fd) }, self.log.clone()))
+            .map(|fd| {
+                (
+                    DrmDevice::new(fd.clone(), true, self.log.clone()),
+                    GbmDevice::new(fd),
+                )
+            });
 
         // Report device open failures.
         let (mut device, gbm) = match devices {
@@ -554,7 +553,6 @@ impl AnvilState<UdevData> {
             None => return,
         };
 
-        let gbm = Rc::new(RefCell::new(gbm));
         let node = match DrmNode::from_dev_id(device_id) {
             Ok(node) => node,
             Err(err) => {

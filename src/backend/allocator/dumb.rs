@@ -1,24 +1,23 @@
 //! Module for [DumbBuffer](https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#dumb-buffer-objects) buffers
 
 use std::fmt;
-use std::os::unix::io::AsRawFd;
-use std::sync::Arc;
 
 use drm::buffer::Buffer as DrmBuffer;
 use drm::control::{dumbbuffer::DumbBuffer as Handle, Device as ControlDevice};
 
 use super::{format::get_bpp, Allocator, Buffer, Format, Fourcc, Modifier};
-use crate::backend::drm::device::{DrmDevice, DrmDeviceInternal, FdWrapper};
+use crate::backend::drm::device::{DrmDevice, DrmDeviceInternal};
+use crate::backend::drm::DrmDeviceFd;
 use crate::utils::{Buffer as BufferCoords, Size};
 
 /// Wrapper around raw DumbBuffer handles.
-pub struct DumbBuffer<A: AsRawFd + 'static> {
-    fd: Arc<FdWrapper<A>>,
+pub struct DumbBuffer {
+    fd: DrmDeviceFd,
     handle: Handle,
     format: Format,
 }
 
-impl<A: AsRawFd + 'static> fmt::Debug for DumbBuffer<A> {
+impl fmt::Debug for DumbBuffer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DumbBuffer")
             .field("handle", &self.handle)
@@ -27,8 +26,8 @@ impl<A: AsRawFd + 'static> fmt::Debug for DumbBuffer<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Allocator for DrmDevice<A> {
-    type Buffer = DumbBuffer<A>;
+impl Allocator for DrmDevice {
+    type Buffer = DumbBuffer;
     type Error = drm::SystemError;
 
     fn create_buffer(
@@ -37,7 +36,7 @@ impl<A: AsRawFd + 'static> Allocator for DrmDevice<A> {
         height: u32,
         fourcc: Fourcc,
         modifiers: &[Modifier],
-    ) -> Result<DumbBuffer<A>, Self::Error> {
+    ) -> Result<DumbBuffer, Self::Error> {
         // dumb buffers are always linear
         if modifiers
             .iter()
@@ -66,7 +65,7 @@ impl<A: AsRawFd + 'static> Allocator for DrmDevice<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Buffer for DumbBuffer<A> {
+impl Buffer for DumbBuffer {
     fn size(&self) -> Size<i32, BufferCoords> {
         let (w, h) = self.handle.size();
         (w as i32, h as i32).into()
@@ -77,7 +76,7 @@ impl<A: AsRawFd + 'static> Buffer for DumbBuffer<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> DumbBuffer<A> {
+impl DumbBuffer {
     /// Raw handle to the underlying buffer.
     ///
     /// Note: This handle will become invalid, once the `DumbBuffer` wrapper is dropped
@@ -87,7 +86,7 @@ impl<A: AsRawFd + 'static> DumbBuffer<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Drop for DumbBuffer<A> {
+impl Drop for DumbBuffer {
     fn drop(&mut self) {
         let _ = self.fd.destroy_dumb_buffer(self.handle);
     }

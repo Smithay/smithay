@@ -1,4 +1,4 @@
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Weak,
@@ -20,15 +20,15 @@ use crate::{
 
 use slog::{crit, error, info, o, warn};
 
-struct DrmDeviceObserver<A: AsRawFd + 'static> {
+struct DrmDeviceObserver {
     dev_id: dev_t,
-    dev: Weak<DrmDeviceInternal<A>>,
+    dev: Weak<DrmDeviceInternal>,
     privileged: bool,
     active: Arc<AtomicBool>,
     logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> Linkable<SessionSignal> for DrmDevice<A> {
+impl Linkable<SessionSignal> for DrmDevice {
     fn link(&mut self, signaler: Signaler<SessionSignal>) {
         let mut observer = DrmDeviceObserver {
             dev: Arc::downgrade(&self.internal),
@@ -38,8 +38,8 @@ impl<A: AsRawFd + 'static> Linkable<SessionSignal> for DrmDevice<A> {
                 DrmDeviceInternal::Legacy(dev) => dev.active.clone(),
             },
             privileged: match &*self.internal {
-                DrmDeviceInternal::Atomic(dev) => dev.fd.privileged,
-                DrmDeviceInternal::Legacy(dev) => dev.fd.privileged,
+                DrmDeviceInternal::Atomic(dev) => dev.fd.is_privileged(),
+                DrmDeviceInternal::Legacy(dev) => dev.fd.is_privileged(),
             },
             logger: self.logger.new(o!("drm_module" => "observer")),
         };
@@ -49,7 +49,7 @@ impl<A: AsRawFd + 'static> Linkable<SessionSignal> for DrmDevice<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> DrmDeviceObserver<A> {
+impl DrmDeviceObserver {
     fn signal(&mut self, signal: SessionSignal) {
         match signal {
             SessionSignal::PauseSession => self.pause(None),
@@ -102,23 +102,29 @@ impl<A: AsRawFd + 'static> DrmDeviceObserver<A> {
     }
 }
 
-struct DrmSurfaceObserver<A: AsRawFd + 'static> {
+struct DrmSurfaceObserver {
     dev_id: dev_t,
     crtc: crtc::Handle,
-    surf: Weak<DrmSurfaceInternal<A>>,
+    surf: Weak<DrmSurfaceInternal>,
     logger: ::slog::Logger,
 }
 
-struct FdHack(RawFd);
+struct FdHack(OwnedFd);
+impl AsFd for FdHack {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.0.as_fd()
+    }
+}
+// TODO: Remove once not required by drm-rs
 impl AsRawFd for FdHack {
     fn as_raw_fd(&self) -> RawFd {
-        self.0
+        self.0.as_raw_fd()
     }
 }
 impl BasicDevice for FdHack {}
 impl ControlDevice for FdHack {}
 
-impl<A: AsRawFd + 'static> Linkable<SessionSignal> for DrmSurface<A> {
+impl Linkable<SessionSignal> for DrmSurface {
     fn link(&mut self, signaler: Signaler<SessionSignal>) {
         let logger = match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.logger.clone(),
@@ -136,7 +142,7 @@ impl<A: AsRawFd + 'static> Linkable<SessionSignal> for DrmSurface<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> DrmSurfaceObserver<A> {
+impl DrmSurfaceObserver {
     fn signal(&mut self, signal: SessionSignal) {
         match signal {
             SessionSignal::ActivateSession => self.activate(None),
@@ -155,7 +161,7 @@ impl<A: AsRawFd + 'static> DrmSurfaceObserver<A> {
                 if major as u64 != stat::major(self.dev_id) || minor as u64 != stat::minor(self.dev_id) {
                     return;
                 }
-                fd.map(FdHack)
+                fd.map(|fd| FdHack(unsafe { OwnedFd::from_raw_fd(fd) }))
             } else {
                 None
             };

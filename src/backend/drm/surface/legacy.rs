@@ -1,16 +1,14 @@
 use drm::control::{connector, crtc, encoder, framebuffer, Device as ControlDevice, Mode, PageFlipFlags};
 
 use std::collections::HashSet;
-use std::os::unix::io::AsRawFd;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, RwLock,
 };
 
-use crate::backend::drm::{
-    device::legacy::set_connector_state,
-    device::{DevPath, DrmDeviceInternal},
-    error::Error,
+use crate::{
+    backend::drm::{device::legacy::set_connector_state, device::DrmDeviceInternal, error::Error},
+    utils::DevPath,
 };
 
 use slog::{debug, info, o, trace};
@@ -22,7 +20,7 @@ pub struct State {
 }
 
 impl State {
-    fn current_state<A: AsRawFd + ControlDevice>(fd: &A, crtc: crtc::Handle) -> Result<Self, Error> {
+    fn current_state<A: DevPath + ControlDevice>(fd: &A, crtc: crtc::Handle) -> Result<Self, Error> {
         // Try to enumarate the current state to set the initial state variable correctly.
         // We need an accurate state to handle `commit_pending`.
         let crtc_info = fd.get_crtc(crtc).map_err(|source| Error::Access {
@@ -71,8 +69,8 @@ impl State {
 }
 
 #[derive(Debug)]
-pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
-    pub(super) fd: Arc<DrmDeviceInternal<A>>,
+pub struct LegacyDrmSurface {
+    pub(super) fd: Arc<DrmDeviceInternal>,
     pub(super) active: Arc<AtomicBool>,
     crtc: crtc::Handle,
     state: RwLock<State>,
@@ -80,9 +78,9 @@ pub struct LegacyDrmSurface<A: AsRawFd + 'static> {
     pub(crate) logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
+impl LegacyDrmSurface {
     pub fn new(
-        fd: Arc<DrmDeviceInternal<A>>,
+        fd: Arc<DrmDeviceInternal>,
         active: Arc<AtomicBool>,
         crtc: crtc::Handle,
         mode: Mode,
@@ -402,7 +400,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
         }
     }
 
-    pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(
+    pub(crate) fn reset_state<B: DevPath + ControlDevice + 'static>(
         &self,
         fd: Option<&B>,
     ) -> Result<(), Error> {
@@ -415,7 +413,7 @@ impl<A: AsRawFd + 'static> LegacyDrmSurface<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Drop for LegacyDrmSurface<A> {
+impl Drop for LegacyDrmSurface {
     fn drop(&mut self) {
         // ignore failure at this point
 
@@ -439,12 +437,11 @@ impl<A: AsRawFd + 'static> Drop for LegacyDrmSurface<A> {
 #[cfg(test)]
 mod test {
     use super::LegacyDrmSurface;
-    use std::fs::File;
 
     fn is_send<S: Send>() {}
 
     #[test]
     fn surface_is_send() {
-        is_send::<LegacyDrmSurface<File>>();
+        is_send::<LegacyDrmSurface>();
     }
 }

@@ -16,6 +16,7 @@
 //! # use smithay::backend::x11::{X11Backend, X11Surface, WindowBuilder};
 //! use smithay::backend::egl::{EGLDisplay, EGLContext};
 //! use smithay::reexports::gbm;
+//! use smithay::utils::DeviceFd;
 //! use std::collections::HashSet;
 //!
 //! # struct CompositorState;
@@ -39,14 +40,12 @@
 //!     // Get the DRM node used by the X server for direct rendering.
 //!     let (_drm_node, fd) = x_handle.drm_node()?;
 //!     // Create the gbm device for allocating buffers
-//!     let device = gbm::Device::new(fd)?;
+//!     let device = gbm::Device::new(DeviceFd::from(fd))?;
 //!     // Initialize EGL to retrieve the support modifier list
-//!     let egl = unsafe { EGLDisplay::new(&device, logger.clone()).expect("Failed to create EGLDisplay") };
+//!     let egl = unsafe { EGLDisplay::new(device.clone(), logger.clone()).expect("Failed to create EGLDisplay") };
 //!     let context = EGLContext::new(&egl, logger).expect("Failed to create EGLContext");
 //!     let modifiers = context.dmabuf_render_formats().iter().map(|format| format.modifier).collect::<HashSet<_>>();
 //!
-//!     // Wrap up the device for sharing among the created X11 surfaces.
-//!     let device = Arc::new(Mutex::new(device));
 //!     // Finally create the X11 surface, you will use this to obtain buffers that will be presented to the
 //!     // window.
 //!     let surface = x_handle.create_surface(&window, device, modifiers.into_iter());
@@ -102,7 +101,7 @@ use slog::{error, info, o, Logger};
 use std::{
     collections::HashMap,
     io,
-    os::unix::io::RawFd,
+    os::unix::io::{FromRawFd, OwnedFd},
     sync::{
         atomic::{AtomicU32, Ordering},
         mpsc, Arc, Mutex, Weak,
@@ -314,7 +313,7 @@ impl X11Handle {
     /// Returns the DRM node the X server uses for direct rendering.
     ///
     /// The DRM node may be used to create a [`gbm::Device`] to allocate buffers.
-    pub fn drm_node(&self) -> Result<(DrmNode, RawFd), X11Error> {
+    pub fn drm_node(&self) -> Result<(DrmNode, OwnedFd), X11Error> {
         // Kernel documentation explains why we should prefer the node to be a render node:
         // https://kernel.readthedocs.io/en/latest/gpu/drm-uapi.html
         //
@@ -927,8 +926,8 @@ impl X11Inner {
     }
 }
 
-fn egl_init(_: &X11Inner) -> Result<(DrmNode, RawFd), EGLInitError> {
-    let display = unsafe { EGLDisplay::new(&X11DefaultDisplay, None)? };
+fn egl_init(_: &X11Inner) -> Result<(DrmNode, OwnedFd), EGLInitError> {
+    let display = EGLDisplay::new(X11DefaultDisplay, None)?;
     let device = EGLDevice::device_for_display(&display)?;
     let path = path_to_type(device.drm_device_path()?, NodeType::Render)?;
     let node = DrmNode::from_path(&path)
@@ -940,10 +939,10 @@ fn egl_init(_: &X11Inner) -> Result<(DrmNode, RawFd), EGLInitError> {
     let fd = fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
         .map_err(Into::<io::Error>::into)
         .map_err(EGLInitError::IO)?;
-    Ok((node, fd))
+    Ok((node, unsafe { OwnedFd::from_raw_fd(fd) }))
 }
 
-fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, RawFd), X11Error> {
+fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, OwnedFd), X11Error> {
     let connection = &x11.connection;
 
     // Determine which drm-device the Display is using.
@@ -976,7 +975,7 @@ fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, RawFd), X11Error> {
                     .dev_path()
                     .map(|path| fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty()))
                 {
-                    Some(Ok(fd)) => return Ok((node, fd)),
+                    Some(Ok(fd)) => return Ok((node, unsafe { OwnedFd::from_raw_fd(fd) })),
                     Some(Err(err)) => {
                         slog::warn!(&x11.log, "Could not create render node from existing DRM node ({:?}): {}, falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()), err);
                     }
@@ -1008,5 +1007,5 @@ fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, RawFd), X11Error> {
     )
     .map_err(AllocateBuffersError::from)?;
 
-    Ok((dri_node, fd))
+    Ok((dri_node, unsafe { OwnedFd::from_raw_fd(fd) }))
 }
