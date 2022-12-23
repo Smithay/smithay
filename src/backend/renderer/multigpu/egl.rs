@@ -161,6 +161,7 @@ where
         + ExportDma
         + ExportMem
         + 'static,
+    Target: Clone,
 {
     fn bind_wl_display(&mut self, display: &wayland_server::DisplayHandle) -> Result<(), EGLError> {
         self.render.renderer_mut().bind_wl_display(display)
@@ -179,8 +180,8 @@ where
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         if let Some(ref mut renderer) = self.target.as_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(renderer.renderer_mut(), buffer) {
-                let node = *renderer.node();
+            if let Ok(dmabuf) = Self::try_import_egl(renderer.device.renderer_mut(), buffer) {
+                let node = *renderer.device.node();
                 let texture = MultiTexture::from_surface(surface, dmabuf.size());
                 let texture_ref = texture.0.clone();
                 let res = self.import_dmabuf_internal(Some(node), &dmabuf, texture, Some(damage));

@@ -18,12 +18,12 @@ use slog::{debug, error, o, trace, warn};
 
 /// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
 #[derive(Debug)]
-pub struct GbmBufferedSurface<A: Allocator<BufferObject<()>> + 'static, D: AsRawFd + 'static, U> {
+pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static, D: AsRawFd + 'static, U> {
     current_fb: Slot<BufferObject<()>>,
     pending_fb: Option<(Slot<BufferObject<()>>, U)>,
     queued_fb: Option<(Slot<BufferObject<()>>, U)>,
     next_fb: Option<Slot<BufferObject<()>>>,
-    swapchain: Swapchain<A, BufferObject<()>>,
+    swapchain: Swapchain<A>,
     drm: Arc<DrmSurface<D>>,
 }
 
@@ -40,7 +40,7 @@ const SUPPORTED_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Xrgb8888];
 
 impl<A, D, U> GbmBufferedSurface<A, D, U>
 where
-    A: Allocator<BufferObject<()>>,
+    A: Allocator<Buffer = BufferObject<()>>,
     A::Error: std::error::Error + Send + Sync,
     D: AsRawFd + 'static,
 {
@@ -99,7 +99,7 @@ where
         mut renderer_formats: HashSet<Format>,
         code: Fourcc,
         logger: slog::Logger,
-    ) -> Result<(Slot<BufferObject<()>>, Swapchain<A, BufferObject<()>>), (A, Error<A::Error>)> {
+    ) -> Result<(Slot<BufferObject<()>>, Swapchain<A>), (A, Error<A::Error>)> {
         // select a format
         let mut plane_formats = match drm.supported_formats(drm.plane()) {
             Ok(formats) => formats.iter().cloned().collect::<HashSet<_>>(),
@@ -158,7 +158,7 @@ where
         let modifiers = formats.iter().map(|x| x.modifier).collect::<Vec<_>>();
         let mode = drm.pending_mode();
 
-        let mut swapchain: Swapchain<A, BufferObject<()>> = Swapchain::new(
+        let mut swapchain: Swapchain<A> = Swapchain::new(
             allocator,
             mode.size().0 as u32,
             mode.size().1 as u32,
