@@ -840,7 +840,7 @@ where
         dst_transform: Transform,
     ) -> Result<MultiFrame<'render, 'target, 'frame, R, T, Target>, Self::Error> {
         if self.target.is_some() {
-            let buffer_size = size.to_logical(1).to_buffer(1, dst_transform);
+            let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
             let render_buffer = Offscreen::<Target>::create_buffer(self.render.renderer_mut(), buffer_size)
                 .map_err(Error::Render)?;
             self.render
@@ -897,15 +897,13 @@ where
             //      (which takes ownership of the frame) or dropping the frame.
             let render = unsafe { &mut *self.render };
 
+            let damage_area = self.dst_transform.transform_size(self.size.to_logical(1));
             let mut damage = std::mem::take(&mut self.damage)
                 .into_iter()
-                .map(|rect| {
-                    rect.to_logical(1)
-                        .to_buffer(1, self.dst_transform, &self.size.to_logical(1))
-                })
+                .map(|rect| rect.to_logical(1).to_buffer(1, self.dst_transform, &damage_area))
                 .collect::<Vec<_>>();
 
-            let buffer_size = self.size.to_logical(1).to_buffer(1, self.dst_transform);
+            let buffer_size = self.size.to_logical(1).to_buffer(1, Transform::Normal);
             if let Some(target) = self.target.as_mut() {
                 {
                     let mut can_import = CAN_IMPORT.lock().unwrap();
@@ -924,13 +922,12 @@ where
                                 let damage = damage
                                     .iter()
                                     .map(|rect| {
-                                        rect.to_logical(1, self.dst_transform, &buffer_size)
-                                            .to_physical(1)
+                                        rect.to_logical(1, Transform::Normal, &buffer_size).to_physical(1)
                                     })
                                     .collect::<Vec<_>>();
                                 let mut frame = target
                                     .renderer_mut()
-                                    .render(self.size, self.dst_transform)
+                                    .render(self.size, Transform::Normal)
                                     .map_err(Error::Target)?;
                                 frame
                                     .render_texture_from_to(
@@ -938,7 +935,7 @@ where
                                         Rectangle::from_loc_and_size((0, 0), buffer_size).to_f64(),
                                         Rectangle::from_loc_and_size((0, 0), self.size),
                                         &damage,
-                                        self.dst_transform.invert(),
+                                        Transform::Normal,
                                         1.0,
                                     )
                                     .map_err(Error::Target)?;
@@ -1009,7 +1006,7 @@ where
 
                 let mut frame = target
                     .renderer_mut()
-                    .render(self.size, self.dst_transform)
+                    .render(self.size, Transform::Normal)
                     .map_err(Error::Target)?;
                 for (texture, rect) in textures {
                     let dst = rect.to_logical(1, Transform::Normal, &buffer_size).to_physical(1);
@@ -1254,18 +1251,9 @@ where
         alpha: f32,
     ) -> Result<(), Error<R, T>> {
         if let Some(texture) = texture.get::<R>(&self.node) {
-            self.damage.extend(damage.iter().map(|rect| {
-                let rect = rect.to_f64();
-                let dst = dst.to_f64();
-                let (x, y, w, h) = (rect.loc.x, rect.loc.y, rect.size.w, rect.size.h);
-                Rectangle::from_loc_and_size(
-                    (
-                        ((x - src.loc.x) / src.size.w * dst.size.w) + dst.loc.x,
-                        ((y - src.loc.y) / src.size.h * dst.size.h) + dst.loc.y,
-                    ),
-                    (w / src.size.w * dst.size.w, h / src.size.h * dst.size.h),
-                )
-                .to_i32_up()
+            self.damage.extend(damage.iter().copied().map(|mut rect| {
+                rect.loc += dst.loc;
+                rect
             }));
             self.frame
                 .as_mut()
