@@ -34,7 +34,7 @@ use crate::{
     },
     utils::{Logical, Physical, Rectangle, Size},
 };
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::{cell::RefCell, rc::Rc, sync::Arc, time::Instant};
 use wayland_egl as wegl;
 use winit::{
     dpi::LogicalSize,
@@ -94,7 +94,7 @@ pub struct WinitGraphicsBackend<R> {
     // The display isn't used past this point but must be kept alive.
     _display: EGLDisplay,
     egl: Rc<EGLSurface>,
-    window: Rc<WinitWindow>,
+    window: Arc<WinitWindow>,
     size: Rc<RefCell<WindowSize>>,
     damage_tracking: bool,
     resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
@@ -106,7 +106,7 @@ pub struct WinitGraphicsBackend<R> {
 /// periodically to receive any events.
 #[derive(Debug)]
 pub struct WinitEventLoop {
-    window: Rc<WinitWindow>,
+    window: Arc<WinitWindow>,
     events_loop: EventLoop<()>,
     time: Instant,
     key_counter: u32,
@@ -178,13 +178,13 @@ where
     info!(log, "Initializing a winit backend");
 
     let events_loop = EventLoop::new();
-    let winit_window = builder.build(&events_loop).map_err(Error::InitFailed)?;
+    let winit_window = Arc::new(builder.build(&events_loop).map_err(Error::InitFailed)?);
 
     debug!(log, "Window created");
 
     let reqs = Default::default();
     let (display, context, surface, is_x11) = {
-        let display = unsafe { EGLDisplay::new(&winit_window, log.clone())? };
+        let display = EGLDisplay::new(winit_window.clone(), log.clone())?;
         let context = EGLContext::new_with_config(&display, attributes, reqs, log.clone())?;
 
         let (surface, is_x11) = if let Some(wl_surface) = winit_window.wayland_surface() {
@@ -233,7 +233,6 @@ where
         scale_factor: winit_window.scale_factor(),
     }));
 
-    let window = Rc::new(winit_window);
     let egl = Rc::new(surface);
     let renderer = unsafe { Gles2Renderer::new(context, log.clone())?.into() };
     let resize_notification = Rc::new(Cell::new(None));
@@ -241,7 +240,7 @@ where
 
     Ok((
         WinitGraphicsBackend {
-            window: window.clone(),
+            window: winit_window.clone(),
             _display: display,
             egl,
             renderer,
@@ -252,7 +251,7 @@ where
         WinitEventLoop {
             resize_notification,
             events_loop,
-            window,
+            window: winit_window,
             time: Instant::now(),
             key_counter: 0,
             initialized: false,

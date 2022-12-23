@@ -87,13 +87,12 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglG
             .filter(|(_, node)| !list.iter().any(|renderer| &renderer.node == node))
             .map(|(device, node)| {
                 slog::info!(log, "Trying to initialize {:?} from {}", device, node);
-                let display = unsafe { EGLDisplay::new(&device, None).map_err(Error::Egl)? };
+                let display = EGLDisplay::new(device, None).map_err(Error::Egl)?;
                 let context = EGLContext::new(&display, None).map_err(Error::Egl)?;
                 let renderer = unsafe { Gles2Renderer::new(context, None).map_err(Error::Gl)? }.into();
 
                 Ok(EglGlesDevice {
                     node,
-                    _device: device,
                     _display: display,
                     renderer,
                 })
@@ -131,7 +130,6 @@ pub struct EglGlesDevice<R> {
     node: DrmNode,
     renderer: R,
     _display: EGLDisplay,
-    _device: EGLDevice,
 }
 
 impl<R: Renderer> ApiDevice for EglGlesDevice<R> {

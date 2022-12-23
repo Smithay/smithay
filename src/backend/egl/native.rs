@@ -147,7 +147,7 @@ impl<A: AsRawFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
 }
 
 #[cfg(feature = "backend_winit")]
-impl EGLNativeDisplay for WinitWindow {
+impl EGLNativeDisplay for Arc<WinitWindow> {
     fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
         if let Some(display) = self.wayland_display() {
             vec![

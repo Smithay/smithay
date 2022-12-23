@@ -1,5 +1,5 @@
 use std::{
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{atomic::Ordering, Mutex},
     time::Duration,
 };
 
@@ -34,7 +34,7 @@ use smithay::{
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
         wayland_server::{protocol::wl_surface, Display},
     },
-    utils::{IsAlive, Point, Scale},
+    utils::{DeviceFd, IsAlive, Point, Scale},
     wayland::{compositor, input_method::InputMethodSeat},
 };
 
@@ -95,9 +95,9 @@ pub fn run_x11(log: Logger) {
         .expect("Could not get DRM node used by X server");
 
     // Create the gbm device for buffer allocation.
-    let device = gbm::Device::new(fd).expect("Failed to create gbm device");
+    let device = gbm::Device::new(DeviceFd::from(fd)).expect("Failed to create gbm device");
     // Initialize EGL using the GBM device.
-    let egl = unsafe { EGLDisplay::new(&device, log.clone()).expect("Failed to create EGLDisplay") };
+    let egl = EGLDisplay::new(device.clone(), log.clone()).expect("Failed to create EGLDisplay");
     // Create the OpenGL context
     let context = EGLContext::new(&egl, log.clone()).expect("Failed to create EGLContext");
 
@@ -105,8 +105,6 @@ pub fn run_x11(log: Logger) {
         .title("Anvil")
         .build(&handle)
         .expect("Failed to create first window");
-
-    let device = Arc::new(Mutex::new(device));
 
     // Create the surface for the window.
     let surface = handle

@@ -332,8 +332,7 @@ pub fn run_udev(log: Logger) {
     }
 }
 
-pub type RenderSurface =
-    GbmBufferedSurface<Rc<RefCell<GbmDevice<SessionFd>>>, SessionFd, Option<OutputPresentationFeedback>>;
+pub type RenderSurface = GbmBufferedSurface<GbmDevice<DrmDeviceFd>, Option<OutputPresentationFeedback>>;
 
 struct SurfaceData {
     dh: DisplayHandle,
@@ -359,7 +358,7 @@ impl Drop for SurfaceData {
 struct BackendData {
     _restart_token: SignalToken,
     surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>>>>,
-    gbm: Rc<RefCell<GbmDevice<DrmDeviceFd>>>,
+    gbm: GbmDevice<DrmDeviceFd>,
     registration_token: RegistrationToken,
     event_dispatcher: Dispatcher<'static, DrmDevice, CalloopData<UdevData>>,
 }
@@ -368,7 +367,7 @@ struct BackendData {
 fn scan_connectors(
     device_id: DrmNode,
     device: &DrmDevice,
-    gbm: &Rc<RefCell<GbmDevice<DrmDeviceFd>>>,
+    gbm: &GbmDevice<DrmDeviceFd>,
     display: &mut Display<AnvilState<UdevData>>,
     space: &mut Space<Window>,
     #[cfg(feature = "debug")] fps_texture: &MultiTexture,
@@ -390,7 +389,7 @@ fn scan_connectors(
     let mut backends = HashMap::new();
 
     let (render_node, formats) = {
-        let display = unsafe { EGLDisplay::new(&*gbm.borrow(), logger.clone()).unwrap() };
+        let display = EGLDisplay::new(gbm.clone(), logger.clone()).unwrap();
         let node = match EGLDevice::device_for_display(&display)
             .ok()
             .and_then(|x| x.try_get_render_node().ok().flatten())
@@ -554,7 +553,6 @@ impl AnvilState<UdevData> {
             None => return,
         };
 
-        let gbm = Rc::new(RefCell::new(gbm));
         let node = match DrmNode::from_dev_id(device_id) {
             Ok(node) => node,
             Err(err) => {
