@@ -5,20 +5,22 @@ use drm::control::{
 };
 
 use std::collections::HashSet;
-use std::os::unix::io::AsRawFd;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex, RwLock,
 };
 
-use crate::backend::{
-    allocator::format::{get_bpp, get_depth},
-    drm::{
-        device::atomic::{map_props, Mapping},
-        device::{DevPath, DrmDeviceInternal},
-        error::Error,
-        plane_type,
+use crate::{
+    backend::{
+        allocator::format::{get_bpp, get_depth},
+        drm::{
+            device::atomic::{map_props, Mapping},
+            device::DrmDeviceInternal,
+            error::Error,
+            plane_type,
+        },
     },
+    utils::DevPath,
 };
 
 use slog::{debug, info, o, trace, warn};
@@ -31,7 +33,7 @@ pub struct State {
 }
 
 impl State {
-    fn current_state<A: AsRawFd + ControlDevice>(
+    fn current_state<A: DevPath + ControlDevice>(
         fd: &A,
         crtc: crtc::Handle,
         prop_mapping: &mut Mapping,
@@ -114,8 +116,8 @@ pub struct PlaneInfo {
 }
 
 #[derive(Debug)]
-pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
-    pub(in crate::backend::drm) fd: Arc<DrmDeviceInternal<A>>,
+pub struct AtomicDrmSurface {
+    pub(in crate::backend::drm) fd: Arc<DrmDeviceInternal>,
     pub(super) active: Arc<AtomicBool>,
     crtc: crtc::Handle,
     plane: plane::Handle,
@@ -126,10 +128,10 @@ pub struct AtomicDrmSurface<A: AsRawFd + 'static> {
     pub(crate) logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
+impl AtomicDrmSurface {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        fd: Arc<DrmDeviceInternal<A>>,
+        fd: Arc<DrmDeviceInternal>,
         active: Arc<AtomicBool>,
         crtc: crtc::Handle,
         plane: plane::Handle,
@@ -177,7 +179,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
 
     // we need a framebuffer to do test commits, which we use to verify our pending state.
     // here we create a dumbbuffer for that purpose.
-    fn create_test_buffer(&self, size: (u16, u16), plane: plane::Handle) -> Result<TestBuffer<A>, Error> {
+    fn create_test_buffer(&self, size: (u16, u16), plane: plane::Handle) -> Result<TestBuffer, Error> {
         let (w, h) = size;
         let needs_alpha = plane_type(&*self.fd, plane)? != PlaneType::Primary;
         let format = if needs_alpha {
@@ -950,7 +952,7 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
         result
     }
 
-    pub(crate) fn reset_state<B: AsRawFd + ControlDevice + 'static>(
+    pub(crate) fn reset_state<B: DevPath + ControlDevice + 'static>(
         &self,
         fd: Option<&B>,
     ) -> Result<(), Error> {
@@ -963,20 +965,20 @@ impl<A: AsRawFd + 'static> AtomicDrmSurface<A> {
     }
 }
 
-struct TestBuffer<A: AsRawFd + 'static> {
-    fd: Arc<DrmDeviceInternal<A>>,
+struct TestBuffer {
+    fd: Arc<DrmDeviceInternal>,
     db: DumbBuffer,
     fb: framebuffer::Handle,
 }
 
-impl<A: AsRawFd + 'static> Drop for TestBuffer<A> {
+impl Drop for TestBuffer {
     fn drop(&mut self) {
         let _ = self.fd.destroy_framebuffer(self.fb);
         let _ = self.fd.destroy_dumb_buffer(self.db);
     }
 }
 
-impl<A: AsRawFd + 'static> Drop for AtomicDrmSurface<A> {
+impl Drop for AtomicDrmSurface {
     fn drop(&mut self) {
         if !self.active.load(Ordering::SeqCst) {
             // the device is gone or we are on another tty
@@ -1092,12 +1094,11 @@ pub(crate) fn plane_prop_handle(
 #[cfg(test)]
 mod test {
     use super::AtomicDrmSurface;
-    use std::fs::File;
 
     fn is_send<S: Send>() {}
 
     #[test]
     fn surface_is_send() {
-        is_send::<AtomicDrmSurface<File>>();
+        is_send::<AtomicDrmSurface>();
     }
 }

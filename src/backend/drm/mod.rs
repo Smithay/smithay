@@ -77,7 +77,8 @@ pub mod node;
 pub(self) mod session;
 pub(self) mod surface;
 
-pub use device::{DevPath, DrmDevice, DrmEvent, EventMetadata as DrmEventMetadata, Time as DrmEventTime};
+use crate::utils::DevPath;
+pub use device::{DrmDevice, DrmDeviceFd, DrmEvent, EventMetadata as DrmEventMetadata, Time as DrmEventTime};
 pub use error::Error as DrmError;
 pub use node::{CreateDrmNodeError, DrmNode, NodeType};
 #[cfg(feature = "backend_gbm")]
@@ -98,7 +99,7 @@ pub struct Planes {
 }
 
 fn planes(
-    dev: &impl ControlDevice,
+    dev: &(impl DevPath + ControlDevice),
     crtc: &crtc::Handle,
     has_universal_planes: bool,
 ) -> Result<Planes, DrmError> {
@@ -147,7 +148,7 @@ fn planes(
     })
 }
 
-fn plane_type(dev: &impl ControlDevice, plane: plane::Handle) -> Result<PlaneType, DrmError> {
+fn plane_type(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Result<PlaneType, DrmError> {
     let props = dev.get_properties(plane).map_err(|source| DrmError::Access {
         errmsg: "Failed to get properties of plane",
         dev: dev.dev_path(),

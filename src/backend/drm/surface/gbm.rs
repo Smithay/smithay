@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 
 use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
@@ -11,20 +10,21 @@ use crate::backend::allocator::{
     format::{get_bpp, get_depth},
     Allocator, Format, Fourcc, Modifier, Slot, Swapchain,
 };
-use crate::backend::drm::{device::DevPath, surface::DrmSurfaceInternal, DrmError, DrmSurface};
+use crate::backend::drm::{surface::DrmSurfaceInternal, DrmError, DrmSurface};
 use crate::backend::SwapBuffersError;
+use crate::utils::DevPath;
 
 use slog::{debug, error, o, trace, warn};
 
 /// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
 #[derive(Debug)]
-pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static, D: AsRawFd + 'static, U> {
+pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static, U> {
     current_fb: Slot<BufferObject<()>>,
     pending_fb: Option<(Slot<BufferObject<()>>, U)>,
     queued_fb: Option<(Slot<BufferObject<()>>, U)>,
     next_fb: Option<Slot<BufferObject<()>>>,
     swapchain: Swapchain<A>,
-    drm: Arc<DrmSurface<D>>,
+    drm: Arc<DrmSurface>,
 }
 
 // we cannot simply pick the first supported format of the intersection of *all* formats, because:
@@ -38,11 +38,10 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static,
 // (Or maybe just select A/XRGB2101010, if available, we will see.)
 const SUPPORTED_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Xrgb8888];
 
-impl<A, D, U> GbmBufferedSurface<A, D, U>
+impl<A, U> GbmBufferedSurface<A, U>
 where
     A: Allocator<Buffer = BufferObject<()>>,
     A::Error: std::error::Error + Send + Sync,
-    D: AsRawFd + 'static,
 {
     /// Create a new `GbmBufferedSurface` from a given compatible combination
     /// of a surface, an allocator and renderer formats.
@@ -51,11 +50,11 @@ where
     /// which can render into a Dmabuf, and a gbm allocator that can produce
     /// buffers of a supported format for rendering.
     pub fn new<L>(
-        drm: DrmSurface<D>,
+        drm: DrmSurface,
         mut allocator: A,
         renderer_formats: HashSet<Format>,
         log: L,
-    ) -> Result<GbmBufferedSurface<A, D, U>, Error<A::Error>>
+    ) -> Result<GbmBufferedSurface<A, U>, Error<A::Error>>
     where
         L: Into<Option<::slog::Logger>>,
     {
@@ -94,7 +93,7 @@ where
 
     #[allow(clippy::type_complexity)]
     fn new_internal(
-        drm: Arc<DrmSurface<D>>,
+        drm: Arc<DrmSurface>,
         allocator: A,
         mut renderer_formats: HashSet<Format>,
         code: Fourcc,
@@ -217,7 +216,7 @@ where
                 .map_err(Error::GbmError)?
                 .ok_or(Error::NoFreeSlotsError)?;
 
-            let maybe_buffer = slot.userdata().get::<FbHandle<D>>();
+            let maybe_buffer = slot.userdata().get::<FbHandle>();
             if maybe_buffer.is_none() {
                 let fb_handle = attach_framebuffer(&self.drm, &slot)?;
                 slot.userdata().insert_if_missing(|| fb_handle);
@@ -271,7 +270,7 @@ where
     fn submit(&mut self) -> Result<(), Error<A::Error>> {
         // yes it does not look like it, but both of these lines should be safe in all cases.
         let (slot, user_data) = self.queued_fb.take().unwrap();
-        let fb = slot.userdata().get::<FbHandle<D>>().unwrap().fb;
+        let fb = slot.userdata().get::<FbHandle>().unwrap().fb;
 
         let flip = if self.drm.commit_pending() {
             self.drm.commit([(fb, self.drm.plane())].iter(), true)
@@ -369,21 +368,20 @@ where
 }
 
 #[derive(Debug)]
-struct FbHandle<D: AsRawFd + 'static> {
-    drm: Arc<DrmSurface<D>>,
+struct FbHandle {
+    drm: Arc<DrmSurface>,
     fb: framebuffer::Handle,
 }
 
-impl<A: AsRawFd + 'static> Drop for FbHandle<A> {
+impl Drop for FbHandle {
     fn drop(&mut self) {
         let _ = self.drm.destroy_framebuffer(self.fb);
     }
 }
 
-fn attach_framebuffer<E, D>(drm: &Arc<DrmSurface<D>>, bo: &BufferObject<()>) -> Result<FbHandle<D>, Error<E>>
+fn attach_framebuffer<E>(drm: &Arc<DrmSurface>, bo: &BufferObject<()>) -> Result<FbHandle, Error<E>>
 where
     E: std::error::Error + Send + Sync,
-    D: AsRawFd + 'static,
 {
     let modifier = match bo.modifier().unwrap() {
         Modifier::Invalid => None,

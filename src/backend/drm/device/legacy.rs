@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::os::unix::io::AsRawFd;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -7,22 +6,23 @@ use std::sync::{
 
 use drm::control::{connector, crtc, Device as ControlDevice};
 
-use super::{DevPath, FdWrapper};
+use super::DrmDeviceFd;
 use crate::backend::drm::error::Error;
+use crate::utils::DevPath;
 
 use slog::{error, info, o};
 
 #[derive(Debug)]
-pub struct LegacyDrmDevice<A: AsRawFd + 'static> {
-    pub(crate) fd: Arc<FdWrapper<A>>,
+pub struct LegacyDrmDevice {
+    pub(crate) fd: DrmDeviceFd,
     pub(crate) active: Arc<AtomicBool>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
     logger: ::slog::Logger,
 }
 
-impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
+impl LegacyDrmDevice {
     pub fn new(
-        fd: Arc<FdWrapper<A>>,
+        fd: DrmDeviceFd,
         active: Arc<AtomicBool>,
         disable_connectors: bool,
         logger: slog::Logger,
@@ -89,7 +89,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
             dev: self.fd.dev_path(),
             source,
         })?;
-        set_connector_state(&*self.fd, res_handles.connectors().iter().copied(), false)?;
+        set_connector_state(&self.fd, res_handles.connectors().iter().copied(), false)?;
 
         for crtc in res_handles.crtcs() {
             #[allow(deprecated)]
@@ -110,7 +110,7 @@ impl<A: AsRawFd + 'static> LegacyDrmDevice<A> {
     }
 }
 
-impl<A: AsRawFd + 'static> Drop for LegacyDrmDevice<A> {
+impl Drop for LegacyDrmDevice {
     fn drop(&mut self) {
         info!(self.logger, "Dropping device: {:?}", self.fd.dev_path());
         if self.active.load(Ordering::SeqCst) {
@@ -140,7 +140,7 @@ pub fn set_connector_state<D>(
     enabled: bool,
 ) -> Result<(), Error>
 where
-    D: ControlDevice,
+    D: DevPath + ControlDevice,
 {
     // for every connector...
     for conn in connectors {
