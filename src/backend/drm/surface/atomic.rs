@@ -17,7 +17,7 @@ use crate::{
             device::atomic::{map_props, Mapping},
             device::DrmDeviceInternal,
             error::Error,
-            plane_type,
+            plane_type, DrmDeviceFd,
         },
     },
     utils::DevPath,
@@ -962,6 +962,10 @@ impl AtomicDrmSurface {
             State::current_state(&*self.fd, self.crtc, &mut self.prop_mapping.write().unwrap())?
         };
         Ok(())
+    }
+
+    pub(crate) fn device_fd(&self) -> &DrmDeviceFd {
+        self.fd.device_fd()
     }
 }
 

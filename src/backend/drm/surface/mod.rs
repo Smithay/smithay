@@ -12,7 +12,7 @@ pub(super) mod atomic;
 #[cfg(feature = "backend_gbm")]
 pub(super) mod gbm;
 pub(super) mod legacy;
-use super::{error::Error, plane_type, planes, PlaneType, Planes};
+use super::{error::Error, plane_type, planes, DrmDeviceFd, PlaneType, Planes};
 use crate::{
     backend::allocator::{Format, Fourcc, Modifier},
     utils::DevPath,
@@ -53,6 +53,14 @@ impl BasicDevice for DrmSurface {}
 impl ControlDevice for DrmSurface {}
 
 impl DrmSurface {
+    /// Returns the underlying [`DrmDeviceFd`]
+    pub fn device_fd(&self) -> &DrmDeviceFd {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.device_fd(),
+            DrmSurfaceInternal::Legacy(surf) => surf.device_fd(),
+        }
+    }
+
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
     pub fn crtc(&self) -> crtc::Handle {
         self.crtc

@@ -54,6 +54,15 @@ pub enum DrmDeviceInternal {
     Legacy(LegacyDrmDevice),
 }
 
+impl DrmDeviceInternal {
+    pub(crate) fn device_fd(&self) -> &DrmDeviceFd {
+        match self {
+            DrmDeviceInternal::Atomic(dev) => &dev.fd,
+            DrmDeviceInternal::Legacy(dev) => &dev.fd,
+        }
+    }
+}
+
 impl AsFd for DrmDeviceInternal {
     fn as_fd(&self) -> BorrowedFd<'_> {
         match self {
@@ -272,11 +281,8 @@ impl DrmDevice {
     }
 
     /// Returns the underlying file descriptor
-    pub fn device_fd(&self) -> DrmDeviceFd {
-        match &*self.internal {
-            DrmDeviceInternal::Atomic(internal) => internal.fd.clone(),
-            DrmDeviceInternal::Legacy(internal) => internal.fd.clone(),
-        }
+    pub fn device_fd(&self) -> &DrmDeviceFd {
+        self.internal.device_fd()
     }
 
     /// Pauses the device.
