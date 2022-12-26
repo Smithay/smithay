@@ -892,7 +892,7 @@ where
             if target
                 .offscreen_buffer
                 .as_ref()
-                .filter(|(size, _)| *size != buffer_size)
+                .filter(|(size, _)| *size == buffer_size)
                 .is_none()
             {
                 let render_buffer =
