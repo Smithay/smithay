@@ -78,13 +78,21 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
     fn configure_request(
         &mut self,
         _xwm: XwmId,
-        _window: X11Surface,
+        window: X11Surface,
         _x: Option<i32>,
         _y: Option<i32>,
-        _w: Option<u32>,
-        _h: Option<u32>,
+        w: Option<u32>,
+        h: Option<u32>,
     ) {
         // Nope
+        let mut geo = window.geometry();
+        if let Some(w) = w {
+            geo.size.w = w as i32;
+        }
+        if let Some(h) = h {
+            geo.size.h = h as i32;
+        }
+        let _ = window.configure(geo);
     }
 
     fn configure_notify(&mut self, _xwm: XwmId, window: X11Surface, x: i32, y: i32, _w: u32, _h: u32) {
