@@ -66,38 +66,6 @@ fn gl_generate() {
     }
 }
 
-#[cfg(feature = "backend_session_logind")]
-fn find_logind() {
-    // We should allow only dynamic linkage due to libsystemd and libelogind LICENSE.
-
-    #[cfg(feature = "backend_session_elogind")]
-    {
-        if pkg_config::Config::new()
-            .statik(false)
-            .probe("libelogind")
-            .is_err()
-        {
-            println!("cargo:warning=Could not find `libelogind.so`.");
-            println!("cargo:warning=If your system is systemd-based, you should only enable the `backend_session_logind` feature, not `backend_session_elogind`.");
-            std::process::exit(1);
-        }
-    }
-
-    #[cfg(not(feature = "backend_session_elogind"))]
-    {
-        if pkg_config::Config::new()
-            .statik(false)
-            .probe("libsystemd")
-            .is_err()
-        {
-            println!("cargo:warning=Could not find `libsystemd.so`.");
-            println!("cargo:warning=If your system uses elogind, please enable the `backend_session_elogind` feature.");
-            println!("cargo:warning=Otherwise, you may need to disable the `backend_session_logind` feature as your system does not support it.");
-            std::process::exit(1);
-        }
-    }
-}
-
 #[cfg(all(feature = "backend_gbm", not(feature = "backend_gbm_has_fd_for_plane")))]
 fn test_gbm_bo_fd_for_plane() {
     let gbm = match pkg_config::probe_library("gbm") {
@@ -123,9 +91,6 @@ fn test_gbm_bo_fd_for_plane() {
 fn main() {
     #[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
     gl_generate();
-
-    #[cfg(feature = "backend_session_logind")]
-    find_logind();
 
     #[cfg(all(feature = "backend_gbm", not(feature = "backend_gbm_has_fd_for_plane")))]
     test_gbm_bo_fd_for_plane();

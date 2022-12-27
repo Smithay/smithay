@@ -1,8 +1,7 @@
-#[cfg(feature = "backend_session")]
-use std::cell::RefCell;
 use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::{Duration, SystemTime};
 
@@ -29,8 +28,6 @@ use slog::{info, o, trace};
 pub struct DrmDevice {
     pub(super) dev_id: dev_t,
     pub(crate) internal: Arc<DrmDeviceInternal>,
-    #[cfg(feature = "backend_session")]
-    pub(super) links: RefCell<Vec<crate::utils::signaling::SignalToken>>,
     has_universal_planes: bool,
     has_monotonic_timestamps: bool,
     cursor_size: Size<u32, Physical>,
@@ -137,8 +134,6 @@ impl DrmDevice {
         Ok(DrmDevice {
             dev_id,
             internal,
-            #[cfg(feature = "backend_session")]
-            links: RefCell::new(Vec::new()),
             has_universal_planes,
             has_monotonic_timestamps,
             cursor_size,
@@ -225,6 +220,10 @@ impl DrmDevice {
             return Err(Error::SurfaceWithoutConnectors(crtc));
         }
 
+        if !self.is_active() {
+            return Err(Error::DeviceInactive);
+        }
+
         let plane = planes(self, &crtc, self.has_universal_planes)?.primary;
         let info = self.get_plane(plane).map_err(|source| Error::Access {
             errmsg: "Failed to get plane info",
@@ -274,8 +273,6 @@ impl DrmDevice {
             primary: plane,
             internal: Arc::new(internal),
             has_universal_planes: self.has_universal_planes,
-            #[cfg(feature = "backend_session")]
-            links: RefCell::new(Vec::new()),
         })
     }
 
@@ -289,6 +286,45 @@ impl DrmDevice {
         match &*self.internal {
             DrmDeviceInternal::Atomic(internal) => internal.fd.clone(),
             DrmDeviceInternal::Legacy(internal) => internal.fd.clone(),
+        }
+    }
+
+    /// Pauses the device.
+    ///
+    /// This will cause the `DrmDevice` to avoid making calls to the file descriptor e.g. on drop.
+    /// Note that calls directly utilizing the underlying file descriptor, like the traits of the `drm-rs` crate,
+    /// will ignore this state. Use [`DrmDevice::is_active`] to guard these calls.
+    pub fn pause(&self) {
+        self.set_active(false);
+        if self.device_fd().is_privileged() {
+            if let Err(err) = self.release_master_lock() {
+                slog::error!(self.logger, "Failed to drop drm master state Error: {}", err);
+            }
+        }
+    }
+
+    /// Actives a previously paused device.
+    pub fn activate(&self) {
+        if self.device_fd().is_privileged() {
+            if let Err(err) = self.acquire_master_lock() {
+                slog::crit!(self.logger, "Failed to acquire drm master again. Error: {}", err);
+            }
+        }
+        self.set_active(true);
+    }
+
+    /// Returns if the device is currently paused or not.
+    pub fn is_active(&self) -> bool {
+        match &*self.internal {
+            DrmDeviceInternal::Atomic(internal) => internal.active.load(Ordering::SeqCst),
+            DrmDeviceInternal::Legacy(internal) => internal.active.load(Ordering::SeqCst),
+        }
+    }
+
+    fn set_active(&self, active: bool) {
+        match &*self.internal {
+            DrmDeviceInternal::Atomic(internal) => internal.active.store(active, Ordering::SeqCst),
+            DrmDeviceInternal::Legacy(internal) => internal.active.store(active, Ordering::SeqCst),
         }
     }
 }

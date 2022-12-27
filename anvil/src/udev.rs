@@ -43,7 +43,7 @@ use smithay::{
             multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
             Bind, Frame, Renderer,
         },
-        session::{auto::AutoSession, Session, Signal as SessionSignal},
+        session::{libseat::LibSeatSession, Event as SessionEvent, Session},
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
         SwapBuffersError,
     },
@@ -74,10 +74,7 @@ use smithay::{
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
         wayland_server::{backend::GlobalId, protocol::wl_surface, Display, DisplayHandle},
     },
-    utils::{
-        signaling::{Linkable, SignalToken, Signaler},
-        Clock, DeviceFd, IsAlive, Logical, Monotonic, Point, Rectangle, Scale, Transform,
-    },
+    utils::{Clock, DeviceFd, IsAlive, Logical, Monotonic, Point, Rectangle, Scale, Transform},
     wayland::{
         compositor,
         input_method::{InputMethodHandle, InputMethodSeat},
@@ -94,7 +91,7 @@ struct UdevOutputId {
 }
 
 pub struct UdevData {
-    pub session: AutoSession,
+    pub session: LibSeatSession,
     dh: DisplayHandle,
     #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
@@ -105,7 +102,6 @@ pub struct UdevData {
     pointer_element: PointerElement<MultiTexture>,
     #[cfg(feature = "debug")]
     fps_texture: MultiTexture,
-    signaler: Signaler<SessionSignal>,
     pointer_image: crate::cursor::Cursor,
     logger: slog::Logger,
 }
@@ -161,14 +157,13 @@ pub fn run_udev(log: Logger) {
     /*
      * Initialize session
      */
-    let (session, notifier) = match AutoSession::new(log.clone()) {
-        Some(ret) => ret,
-        None => {
-            crit!(log, "Could not initialize a session");
+    let (session, notifier) = match LibSeatSession::new(log.clone()) {
+        Ok(ret) => ret,
+        Err(err) => {
+            crit!(log, "Could not initialize a session: {}", err);
             return;
         }
     };
-    let session_signal = notifier.signaler();
 
     /*
      * Initialize the compositor
@@ -243,7 +238,6 @@ pub fn run_udev(log: Logger) {
         primary_gpu,
         gpus,
         backends: HashMap::new(),
-        signaler: session_signal.clone(),
         pointer_image: crate::cursor::Cursor::load(&log),
         pointer_images: Vec::new(),
         pointer_element: PointerElement::default(),
@@ -271,12 +265,11 @@ pub fn run_udev(log: Logger) {
     /*
      * Initialize libinput backend
      */
-    let mut libinput_context = Libinput::new_with_udev::<LibinputSessionInterface<AutoSession>>(
+    let mut libinput_context = Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(
         state.backend_data.session.clone().into(),
     );
     libinput_context.udev_assign_seat(&state.seat_name).unwrap();
-    let mut libinput_backend = LibinputInputBackend::new(libinput_context, log.clone());
-    libinput_backend.link(session_signal);
+    let libinput_backend = LibinputInputBackend::new(libinput_context.clone(), log.clone());
 
     /*
      * Bind all our objects that get driven by the event loop
@@ -288,9 +281,38 @@ pub fn run_udev(log: Logger) {
             data.state.process_input_event(&dh, event)
         })
         .unwrap();
+    let handle = event_loop.handle();
     event_loop
         .handle()
-        .insert_source(notifier, |(), &mut (), _data| {})
+        .insert_source(notifier, move |event, &mut (), data| match event {
+            SessionEvent::PauseSession => {
+                libinput_context.suspend();
+                for backend in data.state.backend_data.backends.values() {
+                    backend.event_dispatcher.as_source_ref().pause();
+                }
+            }
+            SessionEvent::ActivateSession => {
+                if let Err(err) = libinput_context.resume() {
+                    slog::error!(log, "Failed to resume libinput context: {:?}", err);
+                }
+                for (node, backend) in data
+                    .state
+                    .backend_data
+                    .backends
+                    .iter()
+                    .map(|(handle, backend)| (*handle, backend))
+                {
+                    backend.event_dispatcher.as_source_ref().activate();
+                    let surfaces = backend.surfaces.borrow();
+                    for surface in surfaces.values() {
+                        if let Err(err) = surface.borrow().surface.surface().reset_state() {
+                            slog::warn!(log, "Failed to reset drm surface state: {}", err);
+                        }
+                    }
+                    handle.insert_idle(move |data| data.state.render(node, None));
+                }
+            }
+        })
         .unwrap();
     for (dev, path) in udev_backend.device_list() {
         state.device_added(&mut display, dev, path.into())
@@ -356,7 +378,6 @@ impl Drop for SurfaceData {
 }
 
 struct BackendData {
-    _restart_token: SignalToken,
     surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>>>>,
     gbm: GbmDevice<DrmDeviceFd>,
     registration_token: RegistrationToken,
@@ -371,7 +392,6 @@ fn scan_connectors(
     display: &mut Display<AnvilState<UdevData>>,
     space: &mut Space<Window>,
     #[cfg(feature = "debug")] fps_texture: &MultiTexture,
-    signaler: &Signaler<SessionSignal>,
     logger: &::slog::Logger,
 ) -> HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>> {
     // Get a set of all modesetting resource handles (excluding planes):
@@ -429,14 +449,13 @@ fn scan_connectors(
             );
 
             let mode = connector_info.modes()[0];
-            let mut surface = match device.create_surface(crtc, mode, &[connector_info.handle()]) {
+            let surface = match device.create_surface(crtc, mode, &[connector_info.handle()]) {
                 Ok(surface) => surface,
                 Err(err) => {
                     warn!(logger, "Failed to create drm surface: {}", err);
                     continue;
                 }
             };
-            surface.link(signaler.clone());
 
             let gbm_surface =
                 match GbmBufferedSurface::new(surface, gbm.clone(), formats.clone(), logger.clone()) {
@@ -533,7 +552,7 @@ impl AnvilState<UdevData> {
             });
 
         // Report device open failures.
-        let (mut device, gbm) = match devices {
+        let (device, gbm) = match devices {
             Some((Ok(drm), Ok(gbm))) => (drm, gbm),
             Some((Err(err), _)) => {
                 warn!(
@@ -568,19 +587,9 @@ impl AnvilState<UdevData> {
             &mut self.space,
             #[cfg(feature = "debug")]
             &self.backend_data.fps_texture,
-            &self.backend_data.signaler,
             &self.log,
         )));
 
-        let handle = self.handle.clone();
-        let restart_token = self.backend_data.signaler.register(move |signal| match signal {
-            SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
-                handle.insert_idle(move |data| data.state.render(node, None));
-            }
-            _ => {}
-        });
-
-        device.link(self.backend_data.signaler.clone());
         let event_dispatcher =
             Dispatcher::new(
                 device,
@@ -609,7 +618,6 @@ impl AnvilState<UdevData> {
         self.backend_data.backends.insert(
             node,
             BackendData {
-                _restart_token: restart_token,
                 registration_token,
                 event_dispatcher,
                 surfaces: backends,
@@ -628,7 +636,6 @@ impl AnvilState<UdevData> {
         if let Some(ref mut backend_data) = self.backend_data.backends.get_mut(&node) {
             let logger = self.log.clone();
             let loop_handle = self.handle.clone();
-            let signaler = self.backend_data.signaler.clone();
 
             // scan_connectors will recreate the outputs (and sadly also reset the scales)
             for output in self
@@ -657,7 +664,6 @@ impl AnvilState<UdevData> {
                 &mut self.space,
                 #[cfg(feature = "debug")]
                 &self.backend_data.fps_texture,
-                &signaler,
                 &logger,
             );
 

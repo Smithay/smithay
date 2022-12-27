@@ -1,5 +1,3 @@
-#[cfg(feature = "backend_session")]
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -35,8 +33,6 @@ pub struct DrmSurface {
     pub(super) primary: plane::Handle,
     pub(super) internal: Arc<DrmSurfaceInternal>,
     pub(super) has_universal_planes: bool,
-    #[cfg(feature = "backend_session")]
-    pub(super) links: RefCell<Vec<crate::utils::signaling::SignalToken>>,
 }
 
 #[derive(Debug)]
@@ -457,9 +453,12 @@ impl DrmSurface {
 
     /// Re-evaluates the current state of the crtc.
     ///
-    /// Usually you do not need to call this, but if the state of
-    /// the crtc is modified elsewhere and you need to reset the
-    /// initial state of this surface, you may call this function.
+    /// It is recommended to call this function after this used [`Session`]
+    /// gets re-activated / VT switched to.
+    ///
+    /// Usually you do not need to call this in other circumstances, but if
+    /// the state of the crtc is modified elsewhere, you may call this function
+    /// to reset it's internal state.
     pub fn reset_state(&self) -> Result<(), Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.reset_state::<Self>(None),

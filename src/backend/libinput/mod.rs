@@ -2,10 +2,7 @@
 
 use crate::backend::input::{self as backend, Axis, InputBackend, InputEvent};
 #[cfg(feature = "backend_session")]
-use crate::{
-    backend::session::{AsErrno, Session, Signal as SessionSignal},
-    utils::signaling::{Linkable, SignalToken, Signaler},
-};
+use crate::backend::session::{AsErrno, Session};
 use input as libinput;
 use input::event;
 
@@ -23,12 +20,6 @@ use slog::{info, o, trace};
 
 mod tablet;
 
-// No idea if this is the same across unix platforms
-// Lets make this linux exclusive for now, once someone tries to build it for
-// any BSD-like system, they can verify if this is right and make a PR to change this.
-#[cfg(all(any(target_os = "linux", target_os = "android"), feature = "backend_session"))]
-const INPUT_MAJOR: u32 = 13;
-
 /// Libinput based [`InputBackend`].
 ///
 /// Tracks input of all devices given manually or via a udev seat to a provided libinput
@@ -36,8 +27,6 @@ const INPUT_MAJOR: u32 = 13;
 #[derive(Debug)]
 pub struct LibinputInputBackend {
     context: libinput::Libinput,
-    #[cfg(feature = "backend_session")]
-    links: Vec<SignalToken>,
     logger: ::slog::Logger,
     token: Option<Token>,
 }
@@ -53,34 +42,14 @@ impl LibinputInputBackend {
         info!(log, "Initializing a libinput backend");
         LibinputInputBackend {
             context,
-            #[cfg(feature = "backend_session")]
-            links: Vec::new(),
             logger: log,
             token: None,
         }
     }
-}
 
-#[cfg(feature = "backend_session")]
-impl Linkable<SessionSignal> for LibinputInputBackend {
-    fn link(&mut self, signaler: Signaler<SessionSignal>) {
-        let mut input = self.context.clone();
-        let log = self.logger.clone();
-        let token = signaler.register(move |s| match s {
-            SessionSignal::PauseSession
-            | SessionSignal::PauseDevice {
-                major: INPUT_MAJOR, ..
-            } => {
-                input.suspend();
-            }
-            SessionSignal::ActivateSession | SessionSignal::ActivateDevice { .. } => {
-                if input.resume().is_err() {
-                    slog::error!(log, "Failed to resume libinput context");
-                }
-            }
-            _ => {}
-        });
-        self.links.push(token);
+    /// Returns a reference to the underlying libinput context
+    pub fn context(&self) -> &libinput::Libinput {
+        &self.context
     }
 }
 

@@ -56,7 +56,6 @@ impl DrmDeviceFd {
         dev
     }
 
-    #[cfg(feature = "backend_session")]
     pub(in crate::backend::drm) fn is_privileged(&self) -> bool {
         self.privileged
     }
