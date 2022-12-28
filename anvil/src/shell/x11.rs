@@ -18,13 +18,8 @@ use super::{
     SurfaceData, WindowElement,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct OldGeometry(RefCell<Option<Rectangle<i32, Logical>>>);
-impl Default for OldGeometry {
-    fn default() -> Self {
-        OldGeometry(RefCell::new(None))
-    }
-}
 impl OldGeometry {
     pub fn save(&self, geo: Rectangle<i32, Logical>) {
         *self.0.borrow_mut() = Some(geo);

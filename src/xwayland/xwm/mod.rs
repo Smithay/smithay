@@ -49,7 +49,6 @@ use calloop::{channel::SyncSender, LoopHandle};
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
-    convert::TryFrom,
     os::unix::net::UnixStream,
     sync::Arc,
 };
@@ -806,22 +805,22 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     id,
                     surface.clone(),
                     if r.value_mask & u16::from(ConfigWindow::X) != 0 {
-                        Some(i32::try_from(r.x).unwrap())
+                        Some(i32::from(r.x))
                     } else {
                         None
                     },
                     if r.value_mask & u16::from(ConfigWindow::Y) != 0 {
-                        Some(i32::try_from(r.y).unwrap())
+                        Some(i32::from(r.y))
                     } else {
                         None
                     },
                     if r.value_mask & u16::from(ConfigWindow::WIDTH) != 0 {
-                        Some(u32::try_from(r.width).unwrap())
+                        Some(u32::from(r.width))
                     } else {
                         None
                     },
                     if r.value_mask & u16::from(ConfigWindow::HEIGHT) != 0 {
-                        Some(u32::try_from(r.height).unwrap())
+                        Some(u32::from(r.height))
                     } else {
                         None
                     },
@@ -1019,8 +1018,16 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                                         && y == xwm.atoms._NET_WM_STATE_MAXIMIZED_HORZ) =>
                             {
                                 match data[0] {
-                                    0 => state.unmaximize_request(id, surface),
-                                    1 => state.maximize_request(id, surface),
+                                    0 => {
+                                        if surface.is_maximized() {
+                                            state.unmaximize_request(id, surface)
+                                        }
+                                    }
+                                    1 => {
+                                        if !surface.is_maximized() {
+                                            state.maximize_request(id, surface)
+                                        }
+                                    }
                                     2 => {
                                         if surface.is_maximized() {
                                             state.unmaximize_request(id, surface)
