@@ -73,8 +73,6 @@ pub(crate) mod device;
 pub(self) mod error;
 pub mod node;
 
-#[cfg(feature = "backend_session")]
-pub(self) mod session;
 pub(self) mod surface;
 
 use crate::utils::DevPath;

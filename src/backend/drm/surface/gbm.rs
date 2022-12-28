@@ -365,6 +365,11 @@ where
         self.swapchain.resize(w as _, h as _);
         Ok(())
     }
+
+    /// Returns a reference to the underlying drm surface
+    pub fn surface(&self) -> &DrmSurface {
+        &self.drm
+    }
 }
 
 #[derive(Debug)]

@@ -80,7 +80,7 @@ jobs:
           command: cache
           args: clean-unref
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
       - name: Downgrade log
         uses: actions-rs/cargo@v1
         with:
@@ -155,7 +155,7 @@ jobs:
           key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
           restore-keys: ${{ runner.os }}-cargo-registry-
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
       - name: Downgrade to minimal dependencies
         uses: actions-rs/cargo@v1
         with:
@@ -183,7 +183,6 @@ jobs:
         - backend_libinput
         - backend_udev
         - backend_session
-        - backend_session_logind
         - backend_session_libseat
         - backend_vulkan
         - backend_x11
@@ -227,7 +226,7 @@ jobs:
           profile: minimal
       
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev libseat-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
 
       - name: Downgrade log
         uses: actions-rs/cargo@v1
@@ -311,7 +310,6 @@ jobs:
         - egl
         - winit
         - udev
-        - logind
         - x11
         - default
         - test_all_features
@@ -347,7 +345,7 @@ jobs:
           profile: minimal
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
       
       - name: Downgrade log
         uses: actions-rs/cargo@v1
@@ -503,7 +501,7 @@ jobs:
           override: true
 
       - name: System dependencies
-        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libsystemd-dev libdbus-1-dev
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
       
       - name: Downgrade log
         uses: actions-rs/cargo@v1
@@ -516,7 +514,7 @@ jobs:
         with:
           command: doc
           # TODO: Update nix when drm-rs is updated
-          args: --no-deps --features "test_all_features" -p smithay -p calloop:0.10.4 -p dbus -p drm -p gbm -p input -p nix:0.24.3 -p udev -p slog -p wayland-server:0.30.0-beta.15 -p wayland-backend -p wayland-protocols:0.30.0-beta.15 -p winit -p x11rb
+          args: --no-deps --features "test_all_features" -p smithay -p calloop:0.10.5 -p drm -p gbm -p input -p nix:0.24.3 -p udev -p slog -p wayland-server:0.30.0-beta.15 -p wayland-backend -p wayland-protocols:0.30.0-beta.15 -p winit -p x11rb
           env: RUSTDOCFLAGS=--cfg="docsrs"
 
       - name: Setup index
