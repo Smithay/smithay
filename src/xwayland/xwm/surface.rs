@@ -52,6 +52,7 @@ pub(crate) struct SharedSurfaceState {
     normal_hints: Option<WmSizeHints>,
     transient_for: Option<X11Window>,
     net_state: Vec<Atom>,
+    window_type: Vec<Atom>,
 }
 
 pub(super) type Protocols = Vec<WMProtocol>;
@@ -143,6 +144,7 @@ impl X11Surface {
                 normal_hints: None,
                 transient_for: None,
                 net_state: Vec::new(),
+                window_type: Vec::new(),
             })),
             user_data: Arc::new(UserDataMap::new()),
             log: crate::slog_or_fallback(log).new(slog::o!("X11 Window" => window)),
@@ -429,7 +431,7 @@ impl X11Surface {
         self.state
             .lock()
             .unwrap()
-            .net_state
+            .window_type
             .iter()
             .find_map(|atom| match atom {
                 x if *x == self.atoms._NET_WM_WINDOW_TYPE_DROPDOWN_MENU => Some(WmWindowType::DropdownMenu),
@@ -503,6 +505,7 @@ impl X11Surface {
             Some(atom) if atom == self.atoms.WM_HINTS => self.update_hints(),
             Some(atom) if atom == AtomEnum::WM_NORMAL_HINTS.into() => self.update_normal_hints(),
             Some(atom) if atom == AtomEnum::WM_TRANSIENT_FOR.into() => self.update_transient_for(),
+            Some(atom) if atom == self.atoms._NET_WM_WINDOW_TYPE => self.update_net_window_type(),
             Some(_) => Ok(()), // unknown
             None => {
                 self.update_title()?;
@@ -512,6 +515,8 @@ impl X11Surface {
                 self.update_normal_hints()?;
                 self.update_transient_for()?;
                 self.update_net_state()?;
+                // NET_WM_STATE is managed by the WM, we don't need to update it unless explicitly asked to
+                self.update_net_window_type()?;
                 Ok(())
             }
         }
@@ -638,6 +643,31 @@ impl X11Surface {
                 false,
                 self.window,
                 self.atoms._NET_WM_STATE,
+                AtomEnum::ATOM,
+                0,
+                1024,
+            )?
+            .reply_unchecked()
+        {
+            Ok(atoms) => atoms,
+            Err(ConnectionError::ParseError(_)) => return Ok(()),
+            Err(err) => return Err(err),
+        };
+
+        let mut state = self.state.lock().unwrap();
+        state.net_state = atoms
+            .and_then(|atoms| Some(atoms.value32()?.collect::<Vec<_>>()))
+            .unwrap_or_default();
+        Ok(())
+    }
+
+    fn update_net_window_type(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let atoms = match conn
+            .get_property(
+                false,
+                self.window,
+                self.atoms._NET_WM_WINDOW_TYPE,
                 AtomEnum::ATOM,
                 0,
                 1024,
