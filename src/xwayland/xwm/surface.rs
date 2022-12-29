@@ -451,6 +451,10 @@ impl X11Surface {
     fn change_net_state(&self, added: &[Atom], removed: &[Atom]) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
         conn.grab_server()?;
+        let _guard = scopeguard::guard((), |_| {
+            let _ = conn.ungrab_server();
+            let _ = conn.flush();
+        });
 
         let props = conn
             .get_property(
@@ -476,8 +480,6 @@ impl X11Surface {
             AtomEnum::ATOM,
             &new_props,
         )?;
-        conn.ungrab_server()?;
-        conn.flush()?;
         {
             let mut state = self.state.lock().unwrap();
             state.net_state = new_props;

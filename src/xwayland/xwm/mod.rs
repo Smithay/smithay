@@ -468,6 +468,10 @@ impl X11WM {
     /// in sync with the compositor to avoid errornous behavior.
     pub fn raise_window<'a, W: X11Relatable + 'a>(&mut self, window: &'a W) -> Result<(), ConnectionError> {
         if let Some(elem) = self.windows.iter().find(|s| window.is_window(s)) {
+            let _guard = scopeguard::guard((), |_| {
+                let _ = self.conn.ungrab_server();
+                let _ = self.conn.flush();
+            });
             self.conn.grab_server()?;
             self.conn.configure_window(
                 elem.window_id(),
@@ -482,8 +486,6 @@ impl X11WM {
                 AtomEnum::WINDOW,
                 &self.client_list_stacking,
             )?;
-            self.conn.ungrab_server()?;
-            self.conn.flush()?;
         }
         Ok(())
     }
@@ -515,6 +517,11 @@ impl X11WM {
         &mut self,
         order: impl Iterator<Item = &'a W>,
     ) -> Result<(), ConnectionError> {
+        let _guard = scopeguard::guard((), |_| {
+            let _ = self.conn.ungrab_server();
+            let _ = self.conn.flush();
+        });
+
         let mut last_pos = None;
         self.conn.grab_server()?;
         for relatable in order {
@@ -549,8 +556,6 @@ impl X11WM {
             AtomEnum::WINDOW,
             &self.client_list_stacking,
         )?;
-        self.conn.ungrab_server()?;
-        self.conn.flush()?;
         Ok(())
     }
 
@@ -582,6 +587,10 @@ impl X11WM {
         order: impl Iterator<Item = &'a W>,
     ) -> Result<(), ConnectionError> {
         let mut last_pos = None;
+        let _guard = scopeguard::guard((), |_| {
+            let _ = self.conn.ungrab_server();
+            let _ = self.conn.flush();
+        });
         self.conn.grab_server()?;
         for relatable in order {
             let pos = self
@@ -615,8 +624,6 @@ impl X11WM {
             AtomEnum::WINDOW,
             &self.client_list_stacking,
         )?;
-        self.conn.ungrab_server()?;
-        self.conn.flush()?;
         Ok(())
     }
 
@@ -732,39 +739,44 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 let win_aux = CreateWindowAux::new()
                     .event_mask(EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT);
 
-                conn.grab_server()?;
-                let cookie1 = conn.create_window(
-                    COPY_DEPTH_FROM_PARENT,
-                    frame_win,
-                    xwm.screen.root,
-                    geo.x,
-                    geo.y,
-                    geo.width,
-                    geo.height,
-                    0,
-                    WindowClass::INPUT_OUTPUT,
-                    x11rb::COPY_FROM_PARENT,
-                    &win_aux,
-                )?;
-                let cookie2 = conn.reparent_window(win, frame_win, 0, 0)?;
-                conn.map_window(win)?;
-                conn.change_property32(
-                    PropMode::APPEND,
-                    xwm.screen.root,
-                    xwm.atoms._NET_CLIENT_LIST,
-                    AtomEnum::WINDOW,
-                    &[win],
-                )?;
-                conn.ungrab_server()?;
+                {
+                    let _guard = scopeguard::guard((), |_| {
+                        let _ = conn.ungrab_server();
+                    });
 
-                // Ignore all events caused by reparent_window(). All those events have the sequence number
-                // of the reparent_window() request, thus remember its sequence number. The
-                // grab_server()/ungrab_server() is done so that the server does not handle other clients
-                // in-between, which could cause other events to get the same sequence number.
-                xwm.sequences_to_ignore
-                    .push(Reverse(cookie1.sequence_number() as u16));
-                xwm.sequences_to_ignore
-                    .push(Reverse(cookie2.sequence_number() as u16));
+                    conn.grab_server()?;
+                    let cookie1 = conn.create_window(
+                        COPY_DEPTH_FROM_PARENT,
+                        frame_win,
+                        xwm.screen.root,
+                        geo.x,
+                        geo.y,
+                        geo.width,
+                        geo.height,
+                        0,
+                        WindowClass::INPUT_OUTPUT,
+                        x11rb::COPY_FROM_PARENT,
+                        &win_aux,
+                    )?;
+                    let cookie2 = conn.reparent_window(win, frame_win, 0, 0)?;
+                    conn.map_window(win)?;
+                    conn.change_property32(
+                        PropMode::APPEND,
+                        xwm.screen.root,
+                        xwm.atoms._NET_CLIENT_LIST,
+                        AtomEnum::WINDOW,
+                        &[win],
+                    )?;
+
+                    // Ignore all events caused by reparent_window(). All those events have the sequence number
+                    // of the reparent_window() request, thus remember its sequence number. The
+                    // grab_server()/ungrab_server() is done so that the server does not handle other clients
+                    // in-between, which could cause other events to get the same sequence number.
+                    xwm.sequences_to_ignore
+                        .push(Reverse(cookie1.sequence_number() as u16));
+                    xwm.sequences_to_ignore
+                        .push(Reverse(cookie2.sequence_number() as u16));
+                }
 
                 surface.state.lock().unwrap().mapped_onto = Some(frame_win);
                 state.map_window_request(id, surface);
@@ -866,34 +878,38 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
                 xwm.client_list.retain(|w| *w != surface.window_id());
                 xwm.client_list_stacking.retain(|w| *w != surface.window_id());
-                conn.grab_server()?;
-                conn.change_property32(
-                    PropMode::REPLACE,
-                    xwm.screen.root,
-                    xwm.atoms._NET_CLIENT_LIST,
-                    AtomEnum::WINDOW,
-                    &xwm.client_list,
-                )?;
-                conn.change_property32(
-                    PropMode::REPLACE,
-                    xwm.screen.root,
-                    xwm.atoms._NET_CLIENT_LIST_STACKING,
-                    AtomEnum::WINDOW,
-                    &xwm.client_list_stacking,
-                )?;
                 {
-                    let mut state = surface.state.lock().unwrap();
-                    conn.reparent_window(
-                        n.window,
+                    let _guard = scopeguard::guard((), |_| {
+                        let _ = conn.ungrab_server();
+                    });
+                    conn.grab_server()?;
+                    conn.change_property32(
+                        PropMode::REPLACE,
                         xwm.screen.root,
-                        state.geometry.loc.x as i16,
-                        state.geometry.loc.y as i16,
+                        xwm.atoms._NET_CLIENT_LIST,
+                        AtomEnum::WINDOW,
+                        &xwm.client_list,
                     )?;
-                    if let Some(frame) = state.mapped_onto.take() {
-                        conn.destroy_window(frame)?;
+                    conn.change_property32(
+                        PropMode::REPLACE,
+                        xwm.screen.root,
+                        xwm.atoms._NET_CLIENT_LIST_STACKING,
+                        AtomEnum::WINDOW,
+                        &xwm.client_list_stacking,
+                    )?;
+                    {
+                        let mut state = surface.state.lock().unwrap();
+                        conn.reparent_window(
+                            n.window,
+                            xwm.screen.root,
+                            state.geometry.loc.x as i16,
+                            state.geometry.loc.y as i16,
+                        )?;
+                        if let Some(frame) = state.mapped_onto.take() {
+                            conn.destroy_window(frame)?;
+                        }
                     }
                 }
-                conn.ungrab_server()?;
                 state.unmapped_window(id, surface.clone());
                 {
                     let mut state = surface.state.lock().unwrap();
