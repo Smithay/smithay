@@ -723,6 +723,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
         Event::MapRequest(r) => {
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
                 xwm.client_list.push(surface.window_id());
+                surface.update_properties(Some(xwm.atoms._NET_WM_STATE))?;
 
                 // we reparent windows, because a lot of stuff expects, that we do
                 let geo = conn.get_geometry(r.window)?.reply()?;

@@ -476,9 +476,12 @@ impl X11Surface {
             AtomEnum::ATOM,
             &new_props,
         )?;
-        self.update_net_state()?;
         conn.ungrab_server()?;
         conn.flush()?;
+        {
+            let mut state = self.state.lock().unwrap();
+            state.net_state = new_props;
+        }
         Ok(())
     }
 
@@ -505,6 +508,7 @@ impl X11Surface {
             Some(atom) if atom == self.atoms.WM_HINTS => self.update_hints(),
             Some(atom) if atom == AtomEnum::WM_NORMAL_HINTS.into() => self.update_normal_hints(),
             Some(atom) if atom == AtomEnum::WM_TRANSIENT_FOR.into() => self.update_transient_for(),
+            Some(atom) if atom == self.atoms._NET_WM_STATE => self.update_net_state(),
             Some(atom) if atom == self.atoms._NET_WM_WINDOW_TYPE => self.update_net_window_type(),
             Some(_) => Ok(()), // unknown
             None => {
@@ -514,7 +518,6 @@ impl X11Surface {
                 self.update_hints()?;
                 self.update_normal_hints()?;
                 self.update_transient_for()?;
-                self.update_net_state()?;
                 // NET_WM_STATE is managed by the WM, we don't need to update it unless explicitly asked to
                 self.update_net_window_type()?;
                 Ok(())
