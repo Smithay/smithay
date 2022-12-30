@@ -1480,7 +1480,7 @@ where
             .renderer_mut()
             .import_shm_buffer(buffer, surface, damage)
             .expect("import_shm_buffer without checking buffer type?");
-        let dimensions = shm::with_buffer_contents(buffer, |_, data| (data.width, data.height).into())
+        let dimensions = shm::with_buffer_contents(buffer, |_, _, data| (data.width, data.height).into())
             .map_err(|_| Error::ImportFailed)?;
         let mut texture = MultiTexture::from_surface(surface, dimensions);
         texture.insert_texture::<R>(*self.render.node(), shm_texture);
