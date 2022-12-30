@@ -9,7 +9,7 @@
 #[macro_use]
 extern crate slog;
 
-#[cfg(feature = "udev")]
+#[cfg(any(feature = "udev", feature = "xwayland"))]
 pub mod cursor;
 pub mod drawing;
 pub mod focus;

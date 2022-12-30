@@ -31,7 +31,7 @@ use smithay::{
             Display, DisplayHandle, Resource,
         },
     },
-    utils::{Clock, Logical, Monotonic, Point},
+    utils::{Clock, Logical, Monotonic, Point, Size},
     wayland::{
         compositor::{get_parent, with_states, CompositorState},
         data_device::{
@@ -66,6 +66,8 @@ use smithay::{
     },
 };
 
+#[cfg(feature = "xwayland")]
+use crate::cursor::Cursor;
 use crate::{focus::FocusTarget, shell::WindowElement};
 #[cfg(feature = "xwayland")]
 use smithay::xwayland::{XWayland, XWaylandEvent, X11WM};
@@ -419,7 +421,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     client_fd: _,
                     display: _,
                 } => {
-                    let wm = X11WM::start_wm(
+                    let mut wm = X11WM::start_wm(
                         data.state.handle.clone(),
                         dh.clone(),
                         connection,
@@ -427,6 +429,14 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                         log2.clone(),
                     )
                     .expect("Failed to attach X11 Window Manager");
+                    let cursor = Cursor::load(&log2);
+                    let image = cursor.get_image(1, Duration::ZERO);
+                    wm.set_cursor(
+                        &image.pixels_rgba,
+                        Size::from((image.width as u16, image.height as u16)),
+                        Point::from((image.xhot as u16, image.yhot as u16)),
+                    )
+                    .expect("Failed to set xwayland default cursor");
                     data.state.xwm = Some(wm);
                 }
                 XWaylandEvent::Exited => {

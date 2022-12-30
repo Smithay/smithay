@@ -42,7 +42,7 @@
 //!
 
 use crate::{
-    utils::{x11rb::X11Source, Rectangle},
+    utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
     wayland::compositor::{get_role, give_role},
 };
 use calloop::{channel::SyncSender, LoopHandle};
@@ -59,15 +59,16 @@ use x11rb::{
     errors::ReplyOrIdError,
     protocol::{
         composite::{ConnectionExt as _, Redirect},
+        render::{ConnectionExt, CreatePictureAux, PictureWrapper},
         xproto::{
             Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageData, ClientMessageEvent, ConfigWindow,
-            ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, Screen, StackMode,
-            Window as X11Window, WindowClass,
+            ConfigureWindowAux, ConnectionExt as _, CreateGCAux, CreateWindowAux, EventMask, GcontextWrapper,
+            ImageFormat, PixmapWrapper, PropMode, Screen, StackMode, Window as X11Window, WindowClass,
         },
         Event,
     },
     rust_connection::{ConnectionError, DefaultStream, RustConnection},
-    wrapper::ConnectionExt,
+    wrapper::ConnectionExt as _,
     COPY_DEPTH_FROM_PARENT,
 };
 
@@ -253,6 +254,8 @@ pub struct X11WM {
 
 impl Drop for X11WM {
     fn drop(&mut self) {
+        // TODO: Not really needed for Xwayland, but maybe cleanup set root properties?
+        let _ = self.conn.destroy_window(self.wm_window);
         XWM_IDS.lock().unwrap().remove(&self.id.0);
     }
 }
@@ -656,6 +659,55 @@ impl X11WM {
         }
 
         surface.state.lock().unwrap().wl_surface = Some(wl_surface);
+    }
+
+    /// Set the default cursor used by X clients
+    pub fn set_cursor(
+        &mut self,
+        pixels: &[u8],
+        size: Size<u16, Logical>,
+        hotspot: Point<u16, Logical>,
+    ) -> Result<(), ReplyOrIdError> {
+        let pixmap = PixmapWrapper::create_pixmap(&*self.conn, 32, self.screen.root, size.w, size.h)?;
+        let Some(render_format) = self
+            .conn
+            .render_query_pict_formats()?
+            .reply_unchecked()?
+            .unwrap_or_default()
+            .formats
+            .into_iter()
+            .filter(|f| f.depth == 32)
+            .map(|f| f.id)
+            .next()
+        else {
+            return Err(ReplyOrIdError::ConnectionError(ConnectionError::UnknownError)); // TODO proper error type
+        };
+        let picture = PictureWrapper::create_picture(
+            &*self.conn,
+            pixmap.pixmap(),
+            render_format,
+            &CreatePictureAux::new(),
+        )?;
+        let gc = GcontextWrapper::create_gc(&*self.conn, picture.picture(), &CreateGCAux::new())?;
+        self.conn.put_image(
+            ImageFormat::Z_PIXMAP,
+            picture.picture(),
+            gc.gcontext(),
+            size.w,
+            size.h,
+            0,
+            0,
+            0,
+            32,
+            pixels,
+        )?;
+        let cursor = self.conn.generate_id()?;
+        self.conn
+            .render_create_cursor(cursor, picture.picture(), hotspot.x, hotspot.y)?;
+        self.conn
+            .change_window_attributes(self.screen.root, &ChangeWindowAttributesAux::new().cursor(cursor))?;
+        let _ = self.conn.free_cursor(cursor);
+        Ok(())
     }
 }
 
