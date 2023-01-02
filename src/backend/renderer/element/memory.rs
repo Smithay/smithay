@@ -199,7 +199,7 @@ use crate::{
 
 use super::{Element, Id, RenderElement};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct MemoryRenderBufferInner {
     mem: Vec<u8>,
     size: Size<i32, Buffer>,
@@ -209,6 +209,21 @@ struct MemoryRenderBufferInner {
     damage_tracker: DamageTracker<i32, Buffer>,
     textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
+}
+
+impl Default for MemoryRenderBufferInner {
+    fn default() -> Self {
+        MemoryRenderBufferInner {
+            mem: Vec::default(),
+            size: Size::default(),
+            scale: 1,
+            transform: Transform::Normal,
+            opaque_regions: None,
+            damage_tracker: DamageTracker::default(),
+            textures: HashMap::default(),
+            renderer_seen: HashMap::default(),
+        }
+    }
 }
 
 impl MemoryRenderBufferInner {

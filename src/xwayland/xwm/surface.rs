@@ -40,8 +40,6 @@ pub struct X11Surface {
 const MWM_HINTS_FLAGS_FIELD: usize = 0;
 const MWM_HINTS_DECORATIONS_FIELD: usize = 2;
 const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
-const MWM_DECOR_ALL: u32 = 1 << 0;
-const MWM_DECOR_BORDER: u32 = 1 << 1;
 
 #[derive(Debug)]
 pub(crate) struct SharedSurfaceState {
@@ -375,14 +373,7 @@ impl X11Surface {
     pub fn is_decorated(&self) -> bool {
         let state = self.state.lock().unwrap();
         if (state.motif_hints[MWM_HINTS_FLAGS_FIELD] & MWM_HINTS_DECORATIONS) != 0 {
-            let decorations = state.motif_hints[MWM_HINTS_DECORATIONS_FIELD];
-            if (decorations & MWM_DECOR_ALL) != 0 {
-                return true; // All decorated
-            }
-            // we also consider a window not decorated, if it has no border
-            if (decorations & MWM_DECOR_BORDER) != 0 {
-                return true;
-            }
+            return state.motif_hints[MWM_HINTS_DECORATIONS_FIELD] == 0;
         }
         false
     }

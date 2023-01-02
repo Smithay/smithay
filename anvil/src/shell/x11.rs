@@ -251,7 +251,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     pub fn move_request_x11(&mut self, window: &X11Surface) {
         let seat = &self.seat; // luckily anvil only supports one seat anyway...
         let pointer = seat.get_pointer().unwrap();
-        let start_data = pointer.grab_start_data().unwrap();
+        let Some(start_data) = pointer.grab_start_data() else { return };
 
         let Some(element) = self
             .space
