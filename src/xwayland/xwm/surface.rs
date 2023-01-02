@@ -167,11 +167,7 @@ impl X11Surface {
     /// It is an error to call this function on override redirect windows
     pub fn set_mapped(&self, mapped: bool) -> Result<(), X11SurfaceError> {
         if self.override_redirect {
-            if mapped {
-                return Ok(());
-            } else {
-                return Err(X11SurfaceError::UnsupportedForOverrideRedirect);
-            }
+            return Err(X11SurfaceError::UnsupportedForOverrideRedirect);
         }
 
         if let Some(conn) = self.conn.upgrade() {
