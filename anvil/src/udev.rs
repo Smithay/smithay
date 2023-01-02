@@ -375,7 +375,7 @@ struct SurfaceData {
 impl Drop for SurfaceData {
     fn drop(&mut self) {
         if let Some(global) = self.global.take() {
-            self.dh.remove_global::<AnvilState<UdevBackend>>(global);
+            self.dh.remove_global::<AnvilState<UdevData>>(global);
         }
     }
 }

@@ -14,15 +14,18 @@ use smithay::{
 use smithay::{utils::Rectangle, xwayland::xwm::ResizeEdge as X11ResizeEdge};
 
 use super::{SurfaceData, WindowElement};
-use crate::{focus::FocusTarget, state::AnvilState};
+use crate::{
+    focus::FocusTarget,
+    state::{AnvilState, Backend},
+};
 
-pub struct MoveSurfaceGrab<B: 'static> {
+pub struct MoveSurfaceGrab<B: Backend + 'static> {
     pub start_data: PointerGrabStartData<AnvilState<B>>,
     pub window: WindowElement,
     pub initial_window_location: Point<i32, Logical>,
 }
 
-impl<BackendData> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<BackendData> {
+impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for MoveSurfaceGrab<BackendData> {
     fn motion(
         &mut self,
         data: &mut AnvilState<BackendData>,
@@ -143,7 +146,7 @@ impl Default for ResizeState {
     }
 }
 
-pub struct ResizeSurfaceGrab<B: 'static> {
+pub struct ResizeSurfaceGrab<B: Backend + 'static> {
     pub start_data: PointerGrabStartData<AnvilState<B>>,
     pub window: WindowElement,
     pub edges: ResizeEdge,
@@ -152,7 +155,7 @@ pub struct ResizeSurfaceGrab<B: 'static> {
     pub last_window_size: Size<i32, Logical>,
 }
 
-impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<BackendData> {
+impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<BackendData> {
     fn motion(
         &mut self,
         data: &mut AnvilState<BackendData>,
@@ -235,7 +238,6 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                 x11.configure(Rectangle::from_loc_and_size(location, self.last_window_size))
                     .unwrap();
             }
-            _ => {}
         }
     }
 
@@ -329,7 +331,6 @@ impl<BackendData> PointerGrab<AnvilState<BackendData>> for ResizeSurfaceGrab<Bac
                         }
                     });
                 }
-                _ => {}
             }
         }
     }

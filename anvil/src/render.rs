@@ -9,7 +9,7 @@ use smithay::{
             },
             AsRenderElements, RenderElementStates,
         },
-        ImportAll, Renderer,
+        ImportAll, ImportMem, Renderer,
     },
     desktop::{
         self,
@@ -23,14 +23,15 @@ use smithay::{
 use crate::drawing::FpsElement;
 use crate::{
     drawing::{PointerRenderElement, CLEAR_COLOR},
-    shell::{FullscreenSurface, WindowElement},
+    shell::{FullscreenSurface, WindowElement, WindowRenderElement},
 };
 
 smithay::backend::renderer::element::render_elements! {
     pub CustomRenderElements<R> where
-        R: ImportAll;
+        R: ImportAll + ImportMem;
     Pointer=PointerRenderElement<R>,
     Surface=WaylandSurfaceRenderElement<R>,
+    Window=WindowRenderElement<R>,
     #[cfg(feature = "debug")]
     // Note: We would like to borrow this element instead, but that would introduce
     // a feature-dependent lifetime, which introduces a lot more feature bounds
@@ -41,9 +42,9 @@ smithay::backend::renderer::element::render_elements! {
 
 smithay::backend::renderer::element::render_elements! {
     pub OutputRenderElements<'a, R> where
-        R: ImportAll;
+        R: ImportAll + ImportMem;
     Custom=&'a CustomRenderElements<R>,
-    Preview=CropRenderElement<RelocateRenderElement<RescaleRenderElement<WaylandSurfaceRenderElement<R>>>>,
+    Preview=CropRenderElement<RelocateRenderElement<RescaleRenderElement<WindowRenderElement<R>>>>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -58,7 +59,7 @@ pub fn render_output<'a, R>(
     log: &slog::Logger,
 ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
 where
-    R: Renderer + ImportAll,
+    R: Renderer + ImportAll + ImportMem,
     R::TextureId: Clone + 'static,
 {
     let output_scale = output.current_scale().fractional_scale().into();

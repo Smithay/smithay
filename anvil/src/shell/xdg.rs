@@ -81,64 +81,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
     fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {
         let seat: Seat<AnvilState<BackendData>> = Seat::from_resource(&seat).unwrap();
-        // TODO: touch move.
-        let pointer = seat.get_pointer().unwrap();
-
-        // Check that this surface has a click grab.
-        if !pointer.has_grab(serial) {
-            return;
-        }
-
-        let start_data = pointer.grab_start_data().unwrap();
-
-        let window = self.window_for_surface(surface.wl_surface()).unwrap();
-
-        // If the focus was for a different surface, ignore the request.
-        if start_data.focus.is_none()
-            || !start_data
-                .focus
-                .as_ref()
-                .unwrap()
-                .0
-                .same_client_as(&surface.wl_surface().id())
-        {
-            return;
-        }
-
-        let mut initial_window_location = self.space.element_location(&window).unwrap();
-
-        // If surface is maximized then unmaximize it
-        let current_state = surface.current_state();
-        if current_state.states.contains(xdg_toplevel::State::Maximized) {
-            surface.with_pending_state(|state| {
-                state.states.unset(xdg_toplevel::State::Maximized);
-                state.size = None;
-            });
-
-            surface.send_configure();
-
-            // NOTE: In real compositor mouse location should be mapped to a new window size
-            // For example, you could:
-            // 1) transform mouse pointer position from compositor space to window space (location relative)
-            // 2) divide the x coordinate by width of the window to get the percentage
-            //   - 0.0 would be on the far left of the window
-            //   - 0.5 would be in middle of the window
-            //   - 1.0 would be on the far right of the window
-            // 3) multiply the percentage by new window width
-            // 4) by doing that, drag will look a lot more natural
-            //
-            // but for anvil needs setting location to pointer location is fine
-            let pos = pointer.current_location();
-            initial_window_location = (pos.x as i32, pos.y as i32).into();
-        }
-
-        let grab = MoveSurfaceGrab {
-            start_data,
-            window,
-            initial_window_location,
-        };
-
-        pointer.set_grab(self, grab, serial, Focus::Clear);
+        self.move_request_xdg(&surface, &seat, serial)
     }
 
     fn resize_request(
@@ -384,5 +327,68 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 }
             }
         }
+    }
+}
+
+impl<BackendData: Backend> AnvilState<BackendData> {
+    pub fn move_request_xdg(&mut self, surface: &ToplevelSurface, seat: &Seat<Self>, serial: Serial) {
+        // TODO: touch move.
+        let pointer = seat.get_pointer().unwrap();
+
+        // Check that this surface has a click grab.
+        if !pointer.has_grab(serial) {
+            return;
+        }
+
+        let start_data = pointer.grab_start_data().unwrap();
+
+        let window = self.window_for_surface(surface.wl_surface()).unwrap();
+
+        // If the focus was for a different surface, ignore the request.
+        if start_data.focus.is_none()
+            || !start_data
+                .focus
+                .as_ref()
+                .unwrap()
+                .0
+                .same_client_as(&surface.wl_surface().id())
+        {
+            return;
+        }
+
+        let mut initial_window_location = self.space.element_location(&window).unwrap();
+
+        // If surface is maximized then unmaximize it
+        let current_state = surface.current_state();
+        if current_state.states.contains(xdg_toplevel::State::Maximized) {
+            surface.with_pending_state(|state| {
+                state.states.unset(xdg_toplevel::State::Maximized);
+                state.size = None;
+            });
+
+            surface.send_configure();
+
+            // NOTE: In real compositor mouse location should be mapped to a new window size
+            // For example, you could:
+            // 1) transform mouse pointer position from compositor space to window space (location relative)
+            // 2) divide the x coordinate by width of the window to get the percentage
+            //   - 0.0 would be on the far left of the window
+            //   - 0.5 would be in middle of the window
+            //   - 1.0 would be on the far right of the window
+            // 3) multiply the percentage by new window width
+            // 4) by doing that, drag will look a lot more natural
+            //
+            // but for anvil needs setting location to pointer location is fine
+            let pos = pointer.current_location();
+            initial_window_location = (pos.x as i32, pos.y as i32).into();
+        }
+
+        let grab = MoveSurfaceGrab {
+            start_data,
+            window,
+            initial_window_location,
+        };
+
+        pointer.set_grab(self, grab, serial, Focus::Clear);
     }
 }

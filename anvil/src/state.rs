@@ -31,7 +31,7 @@ use smithay::{
             Display, DisplayHandle, Resource,
         },
     },
-    utils::{Clock, Logical, Monotonic, Point, Size},
+    utils::{Clock, Logical, Monotonic, Point},
     wayland::{
         compositor::{get_parent, with_states, CompositorState},
         data_device::{
@@ -70,9 +70,12 @@ use smithay::{
 use crate::cursor::Cursor;
 use crate::{focus::FocusTarget, shell::WindowElement};
 #[cfg(feature = "xwayland")]
-use smithay::xwayland::{XWayland, XWaylandEvent, X11WM};
+use smithay::{
+    utils::Size,
+    xwayland::{XWayland, XWaylandEvent, X11WM},
+};
 
-pub struct CalloopData<BackendData: 'static> {
+pub struct CalloopData<BackendData: Backend + 'static> {
     pub state: AnvilState<BackendData>,
     pub display: Display<AnvilState<BackendData>>,
 }
@@ -87,7 +90,7 @@ impl ClientData for ClientState {
 }
 
 #[derive(Debug)]
-pub struct AnvilState<BackendData: 'static> {
+pub struct AnvilState<BackendData: Backend + 'static> {
     pub backend_data: BackendData,
     pub socket_name: Option<String>,
     pub display_handle: DisplayHandle,
@@ -138,7 +141,7 @@ pub struct AnvilState<BackendData: 'static> {
 
 delegate_compositor!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
@@ -146,7 +149,7 @@ impl<BackendData> DataDeviceHandler for AnvilState<BackendData> {
         unreachable!("Anvil doesn't do server-side selections");
     }
 }
-impl<BackendData> ClientDndGrabHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> ClientDndGrabHandler for AnvilState<BackendData> {
     fn started(&mut self, _source: Option<WlDataSource>, icon: Option<WlSurface>, _seat: Seat<Self>) {
         self.dnd_icon = icon;
     }
@@ -154,30 +157,30 @@ impl<BackendData> ClientDndGrabHandler for AnvilState<BackendData> {
         self.dnd_icon = None;
     }
 }
-impl<BackendData> ServerDndGrabHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> ServerDndGrabHandler for AnvilState<BackendData> {
     fn send(&mut self, _mime_type: String, _fd: OwnedFd) {
         unreachable!("Anvil doesn't do server-side grabs");
     }
 }
-delegate_data_device!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_data_device!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_output!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_output!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> PrimarySelectionHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> PrimarySelectionHandler for AnvilState<BackendData> {
     fn primary_selection_state(&self) -> &PrimarySelectionState {
         &self.primary_selection_state
     }
 }
-delegate_primary_selection!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_primary_selection!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> ShmHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> ShmHandler for AnvilState<BackendData> {
     fn shm_state(&self) -> &ShmState {
         &self.shm_state
     }
 }
-delegate_shm!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_shm!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> SeatHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
     type KeyboardFocus = FocusTarget;
     type PointerFocus = FocusTarget;
 
@@ -198,15 +201,15 @@ impl<BackendData> SeatHandler for AnvilState<BackendData> {
         *self.cursor_status.lock().unwrap() = image;
     }
 }
-delegate_seat!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_seat!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_tablet_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_tablet_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_text_input_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_text_input_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_input_method_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_input_method_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> KeyboardShortcutsInhibitHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> KeyboardShortcutsInhibitHandler for AnvilState<BackendData> {
     fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState {
         &mut self.keyboard_shortcuts_inhibit_state
     }
@@ -217,13 +220,13 @@ impl<BackendData> KeyboardShortcutsInhibitHandler for AnvilState<BackendData> {
     }
 }
 
-delegate_keyboard_shortcuts_inhibit!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_keyboard_shortcuts_inhibit!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_virtual_keyboard_manager!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_virtual_keyboard_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_viewporter!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_viewporter!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
     fn activation_state(&mut self) -> &mut XdgActivationState {
         &mut self.xdg_activation_state
     }
@@ -259,9 +262,9 @@ impl<BackendData> XdgActivationHandler for AnvilState<BackendData> {
         // The request is cancelled
     }
 }
-delegate_xdg_activation!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_xdg_activation!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> XdgDecorationHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
         toplevel.with_pending_state(|state| {
@@ -269,16 +272,50 @@ impl<BackendData> XdgDecorationHandler for AnvilState<BackendData> {
         });
         toplevel.send_configure();
     }
-    fn request_mode(&mut self, _toplevel: ToplevelSurface, _mode: DecorationMode) {}
-    fn unset_mode(&mut self, _toplevel: ToplevelSurface) {}
+    fn request_mode(&mut self, toplevel: ToplevelSurface, mode: DecorationMode) {
+        use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
+        if let Some(w) = self
+            .space
+            .elements()
+            .find(|window| matches!(window, WindowElement::Wayland(w) if w.toplevel() == &toplevel))
+        {
+            toplevel.with_pending_state(|state| {
+                state.decoration_mode = Some(match mode {
+                    DecorationMode::ServerSide => {
+                        w.set_ssd(true);
+                        Mode::ServerSide
+                    }
+                    _ => {
+                        w.set_ssd(false);
+                        Mode::ClientSide
+                    }
+                });
+            });
+            toplevel.send_configure();
+        }
+    }
+    fn unset_mode(&mut self, toplevel: ToplevelSurface) {
+        use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
+        if let Some(w) = self
+            .space
+            .elements()
+            .find(|window| matches!(window, WindowElement::Wayland(w) if w.toplevel() == &toplevel))
+        {
+            w.set_ssd(false);
+            toplevel.with_pending_state(|state| {
+                state.decoration_mode = Some(Mode::ClientSide);
+            });
+            toplevel.send_configure();
+        }
+    }
 }
 delegate_xdg_decoration!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_xdg_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
-delegate_layer_shell!(@<BackendData: 'static> AnvilState<BackendData>);
-delegate_presentation!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_layer_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+delegate_presentation!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData> FractionScaleHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> FractionScaleHandler for AnvilState<BackendData> {
     fn new_fractional_scale(
         &mut self,
         surface: smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
@@ -324,7 +361,7 @@ impl<BackendData> FractionScaleHandler for AnvilState<BackendData> {
         });
     }
 }
-delegate_fractional_scale!(@<BackendData: 'static> AnvilState<BackendData>);
+delegate_fractional_scale!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
