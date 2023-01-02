@@ -37,6 +37,12 @@ pub struct X11Surface {
     log: slog::Logger,
 }
 
+const MWM_HINTS_FLAGS_FIELD: usize = 0;
+const MWM_HINTS_DECORATIONS_FIELD: usize = 2;
+const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
+const MWM_DECOR_ALL: u32 = 1 << 0;
+const MWM_DECOR_BORDER: u32 = 1 << 1;
+
 #[derive(Debug)]
 pub(crate) struct SharedSurfaceState {
     pub(super) alive: bool,
@@ -52,6 +58,7 @@ pub(crate) struct SharedSurfaceState {
     normal_hints: Option<WmSizeHints>,
     transient_for: Option<X11Window>,
     net_state: Vec<Atom>,
+    motif_hints: Vec<u32>,
     window_type: Vec<Atom>,
 }
 
@@ -144,6 +151,7 @@ impl X11Surface {
                 normal_hints: None,
                 transient_for: None,
                 net_state: Vec::new(),
+                motif_hints: vec![0; 5],
                 window_type: Vec::new(),
             })),
             user_data: Arc::new(UserDataMap::new()),
@@ -363,6 +371,22 @@ impl X11Surface {
             .contains(&self.atoms._NET_WM_STATE_FOCUSED)
     }
 
+    /// Returns true if the window is client-side decorated
+    pub fn is_decorated(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        if (state.motif_hints[MWM_HINTS_FLAGS_FIELD] & MWM_HINTS_DECORATIONS) != 0 {
+            let decorations = state.motif_hints[MWM_HINTS_DECORATIONS_FIELD];
+            if (decorations & MWM_DECOR_ALL) != 0 {
+                return true; // All decorated
+            }
+            // we also consider a window not decorated, if it has no border
+            if (decorations & MWM_DECOR_BORDER) != 0 {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Sets the window as maximized or not.
     ///
     /// Allows the client to reflect this state in their UI.
@@ -512,6 +536,7 @@ impl X11Surface {
             Some(atom) if atom == AtomEnum::WM_TRANSIENT_FOR.into() => self.update_transient_for(),
             Some(atom) if atom == self.atoms._NET_WM_STATE => self.update_net_state(),
             Some(atom) if atom == self.atoms._NET_WM_WINDOW_TYPE => self.update_net_window_type(),
+            Some(atom) if atom == self.atoms._MOTIF_WM_HINTS => self.update_motif_hints(),
             Some(_) => Ok(()), // unknown
             None => {
                 self.update_title()?;
@@ -522,6 +547,7 @@ impl X11Surface {
                 self.update_transient_for()?;
                 // NET_WM_STATE is managed by the WM, we don't need to update it unless explicitly asked to
                 self.update_net_window_type()?;
+                self.update_motif_hints()?;
                 Ok(())
             }
         }
@@ -570,6 +596,23 @@ impl X11Surface {
             Err(ConnectionError::ParseError(_)) => None,
             Err(err) => return Err(err),
         };
+        Ok(())
+    }
+
+    fn update_motif_hints(&self) -> Result<(), ConnectionError> {
+        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+        let Some(hints) = (match conn.get_property(false, self.window, self.atoms._MOTIF_WM_HINTS, AtomEnum::ANY, 0, 2048)?.reply_unchecked() {
+            Ok(Some(reply)) => reply.value32().map(|vals| vals.collect::<Vec<_>>()),
+            Ok(None) | Err(ConnectionError::ParseError(_)) => return Ok(()),
+            Err(err) => return Err(err),
+        }) else { return Ok(()) };
+
+        if hints.len() < 5 {
+            return Ok(());
+        }
+
+        let mut state = self.state.lock().unwrap();
+        state.motif_hints = hints;
         Ok(())
     }
 
