@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::convert::TryFrom;
-use std::os::unix::io::{AsRawFd, RawFd};
-use std::path::PathBuf;
+use std::os::unix::io::{AsFd, BorrowedFd};
 use std::sync::Arc;
 
 use drm::control::{connector, crtc, framebuffer, plane, property, Device as ControlDevice, Mode};
@@ -42,26 +41,16 @@ pub enum DrmSurfaceInternal {
     Legacy(LegacyDrmSurface),
 }
 
-// TODO: Drop once drm-rs doesn't require this anymore
-impl AsRawFd for DrmSurface {
-    fn as_raw_fd(&self) -> RawFd {
+impl AsFd for DrmSurface {
+    fn as_fd(&self) -> BorrowedFd<'_> {
         match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.fd.as_raw_fd(),
-            DrmSurfaceInternal::Legacy(surf) => surf.fd.as_raw_fd(),
+            DrmSurfaceInternal::Atomic(surf) => surf.fd.as_fd(),
+            DrmSurfaceInternal::Legacy(surf) => surf.fd.as_fd(),
         }
     }
 }
 impl BasicDevice for DrmSurface {}
 impl ControlDevice for DrmSurface {}
-
-impl DevPath for DrmSurface {
-    fn dev_path(&self) -> Option<PathBuf> {
-        match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => surf.fd.dev_path(),
-            DrmSurfaceInternal::Legacy(surf) => surf.fd.dev_path(),
-        }
-    }
-}
 
 impl DrmSurface {
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface

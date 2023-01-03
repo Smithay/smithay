@@ -9,7 +9,7 @@ use crate::utils::{Physical, Rectangle};
 use std::os::raw::c_int;
 use std::os::raw::c_void;
 #[cfg(feature = "backend_gbm")]
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::AsFd;
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 #[cfg(feature = "backend_winit")]
@@ -135,7 +135,7 @@ pub trait EGLNativeDisplay: Send {
 }
 
 #[cfg(feature = "backend_gbm")]
-impl<A: AsRawFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
+impl<A: AsFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
     fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
         vec![
             // see: https://www.khronos.org/registry/EGL/extensions/KHR/EGL_KHR_platform_gbm.txt

@@ -5,7 +5,7 @@ use super::{
     BufferData, ShmHandler, ShmPoolUserData, ShmState,
 };
 
-use std::{os::unix::io::AsRawFd, sync::Arc};
+use std::{num::NonZeroUsize, os::unix::io::AsRawFd, sync::Arc};
 use wayland_server::{
     protocol::{
         wl_buffer,
@@ -65,7 +65,11 @@ where
             return;
         }
 
-        let mmap_pool = match Pool::new(fd, size as usize, state.shm_state().log.clone()) {
+        let mmap_pool = match Pool::new(
+            fd,
+            NonZeroUsize::try_from(size as usize).unwrap(),
+            state.shm_state().log.clone(),
+        ) {
             Ok(p) => p,
             Err(fd) => {
                 shm.post_error(
@@ -180,7 +184,11 @@ where
             }
 
             Request::Resize { size } => {
-                if let Err(err) = arc_pool.resize(size) {
+                if size <= 0 {
+                    pool.post_error(wl_shm::Error::InvalidFd, "invalid wl_shm_pool size");
+                }
+
+                if let Err(err) = arc_pool.resize(NonZeroUsize::try_from(size as usize).unwrap()) {
                     match err {
                         ResizeError::InvalidSize => {
                             pool.post_error(wl_shm::Error::InvalidFd, "cannot shrink wl_shm_pool");

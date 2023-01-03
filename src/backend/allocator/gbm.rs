@@ -10,9 +10,9 @@ use super::{
 };
 use crate::utils::{Buffer as BufferCoords, Size};
 pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::io::{AsFd, AsRawFd};
 
-impl<A: AsRawFd + 'static> Allocator for GbmDevice<A> {
+impl<A: AsFd + 'static> Allocator for GbmDevice<A> {
     type Buffer = GbmBuffer<()>;
     type Error = std::io::Error;
 
@@ -68,7 +68,16 @@ pub enum GbmConvertError {
     UnsupportedBuffer,
     /// The conversion returned an invalid file descriptor
     #[error("Buffer returned invalid file descriptor")]
-    InvalidFD,
+    InvalidFD(#[from] gbm::InvalidFdError),
+}
+
+impl From<gbm::FdError> for GbmConvertError {
+    fn from(err: gbm::FdError) -> Self {
+        match err {
+            gbm::FdError::DeviceDestroyed(err) => err.into(),
+            gbm::FdError::InvalidFd(err) => err.into(),
+        }
+    }
 }
 
 impl<T> AsDmabuf for GbmBuffer<T> {
@@ -82,14 +91,9 @@ impl<T> AsDmabuf for GbmBuffer<T> {
         for idx in 0..planes {
             let fd = self.fd_for_plane(idx)?;
 
-            // gbm_bo_get_fd_for_plane returns -1 if an error occurs
-            if fd == -1 {
-                return Err(GbmConvertError::InvalidFD);
-            }
-
             builder.add_plane(
                 // SAFETY: `gbm_bo_get_fd_for_plane` returns a new fd owned by the caller.
-                unsafe { OwnedFd::from_raw_fd(fd) },
+                fd,
                 idx as u32,
                 self.offset(idx)?,
                 self.stride_for_plane(idx)?,
@@ -127,16 +131,11 @@ impl<T> AsDmabuf for GbmBuffer<T> {
         // a new file descriptor which has to be closed
         let fd = self.fd()?;
 
-        // gbm_bo_get_fd returns -1 if an error occurs
-        if fd == -1 {
-            return Err(GbmConvertError::InvalidFD);
-        }
-
         let mut builder = Dmabuf::builder_from_buffer(self, DmabufFlags::empty());
         for idx in 0..planes {
             builder.add_plane(
                 // SAFETY: `gbm_bo_get_fd` returns a new fd owned by the caller.
-                unsafe { OwnedFd::from_raw_fd(fd) },
+                fd,
                 idx as u32,
                 self.offset(idx)?,
                 self.stride_for_plane(idx)?,
@@ -149,7 +148,7 @@ impl<T> AsDmabuf for GbmBuffer<T> {
 
 impl Dmabuf {
     /// Import a Dmabuf using libgbm, creating a gbm Buffer Object to the same underlying data.
-    pub fn import_to<A: AsRawFd + 'static, T>(
+    pub fn import_to<A: AsFd + 'static, T>(
         &self,
         gbm: &GbmDevice<A>,
         usage: GbmBufferFlags,
