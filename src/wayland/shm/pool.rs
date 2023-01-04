@@ -1,5 +1,6 @@
 use std::{
     cell::Cell,
+    num::NonZeroUsize,
     os::unix::io::{AsRawFd, OwnedFd, RawFd},
     ptr,
     sync::{Once, RwLock},
@@ -37,14 +38,14 @@ pub enum ResizeError {
 }
 
 impl Pool {
-    pub fn new(fd: OwnedFd, size: usize, log: ::slog::Logger) -> Result<Pool, OwnedFd> {
+    pub fn new(fd: OwnedFd, size: NonZeroUsize, log: ::slog::Logger) -> Result<Pool, OwnedFd> {
         let memmap = match MemMap::new(fd.as_raw_fd(), size) {
             Ok(memmap) => memmap,
             Err(_) => {
                 return Err(fd);
             }
         };
-        trace!(log, "Creating new shm pool"; "fd" => fd.as_raw_fd() as i32, "size" => size);
+        trace!(log, "Creating new shm pool"; "fd" => fd.as_raw_fd() as i32, "size" => usize::from(size));
         Ok(Pool {
             map: RwLock::new(memmap),
             fd,
@@ -52,18 +53,18 @@ impl Pool {
         })
     }
 
-    pub fn resize(&self, newsize: i32) -> Result<(), ResizeError> {
+    pub fn resize(&self, newsize: NonZeroUsize) -> Result<(), ResizeError> {
         let mut guard = self.map.write().unwrap();
         let oldsize = guard.size();
 
-        if newsize <= 0 || oldsize > (newsize as usize) {
+        if oldsize > usize::from(newsize) {
             return Err(ResizeError::InvalidSize);
         }
 
-        trace!(self.log, "Resizing shm pool"; "fd" => self.fd.as_raw_fd() as i32, "oldsize" => oldsize, "newsize" => newsize);
+        trace!(self.log, "Resizing shm pool"; "fd" => self.fd.as_raw_fd() as i32, "oldsize" => oldsize, "newsize" => usize::from(newsize));
 
-        guard.remap(newsize as usize).map_err(|()| {
-            debug!(self.log, "SHM pool resize failed"; "fd" => self.fd.as_raw_fd() as i32, "oldsize" => oldsize, "newsize" => newsize);
+        guard.remap(newsize).map_err(|()| {
+            debug!(self.log, "SHM pool resize failed"; "fd" => self.fd.as_raw_fd() as i32, "oldsize" => oldsize, "newsize" => usize::from(newsize));
             ResizeError::MremapFailed
         })
     }
@@ -153,15 +154,15 @@ struct MemMap {
 }
 
 impl MemMap {
-    fn new(fd: RawFd, size: usize) -> Result<MemMap, ()> {
+    fn new(fd: RawFd, size: NonZeroUsize) -> Result<MemMap, ()> {
         Ok(MemMap {
             ptr: unsafe { map(fd, size) }?,
             fd,
-            size,
+            size: size.into(),
         })
     }
 
-    fn remap(&mut self, newsize: usize) -> Result<(), ()> {
+    fn remap(&mut self, newsize: NonZeroUsize) -> Result<(), ()> {
         if self.ptr.is_null() {
             return Err(());
         }
@@ -172,7 +173,7 @@ impl MemMap {
             Ok(ptr) => {
                 // update the parameters
                 self.ptr = ptr;
-                self.size = newsize;
+                self.size = usize::from(newsize);
                 Ok(())
             }
             Err(()) => {
@@ -224,9 +225,9 @@ impl Drop for MemMap {
     }
 }
 
-unsafe fn map(fd: RawFd, size: usize) -> Result<*mut u8, ()> {
+unsafe fn map(fd: RawFd, size: NonZeroUsize) -> Result<*mut u8, ()> {
     let ret = mman::mmap(
-        ptr::null_mut(),
+        None,
         size,
         mman::ProtFlags::PROT_READ | mman::ProtFlags::PROT_WRITE,
         mman::MapFlags::MAP_SHARED,
@@ -242,8 +243,10 @@ unsafe fn unmap(ptr: *mut u8, size: usize) -> Result<(), ()> {
 }
 
 unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
+    let size = NonZeroUsize::try_from(size).map_err(|_| ())?;
+    let addr = NonZeroUsize::try_from(ptr as usize).map_err(|_| ())?;
     let ret = mman::mmap(
-        ptr as *mut _,
+        Some(addr),
         size,
         mman::ProtFlags::PROT_READ,
         mman::MapFlags::MAP_ANONYMOUS | mman::MapFlags::MAP_PRIVATE | mman::MapFlags::MAP_FIXED,
