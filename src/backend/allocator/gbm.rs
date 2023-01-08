@@ -124,15 +124,13 @@ impl<T> AsDmabuf for GbmBuffer<T> {
             // check all planes have the same handle. We can't use
             // drmPrimeHandleToFD because that messes up handle ref'counting in
             // the user-space driver.
-            return Err(GbmConvertError::UnsupportedBuffer); //TODO
+            return Err(GbmConvertError::UnsupportedBuffer);
         }
-
-        // Make sure to only call fd once as each call will create
-        // a new file descriptor which has to be closed
-        let fd = self.fd()?;
 
         let mut builder = Dmabuf::builder_from_buffer(self, DmabufFlags::empty());
         for idx in 0..planes {
+            let fd = self.fd()?;
+
             builder.add_plane(
                 // SAFETY: `gbm_bo_get_fd` returns a new fd owned by the caller.
                 fd,
