@@ -91,11 +91,19 @@ impl<D: SeatHandler> Clone for PointerHandle<D> {
     }
 }
 
-impl<D: SeatHandler> ::std::cmp::PartialEq for PointerHandle<D> {
+impl<D: SeatHandler> std::hash::Hash for PointerHandle<D> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.inner).hash(state)
+    }
+}
+
+impl<D: SeatHandler> std::cmp::PartialEq for PointerHandle<D> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
+
+impl<D: SeatHandler> std::cmp::Eq for PointerHandle<D> {}
 
 /// Trait representing object that can receive pointer interactions
 pub trait PointerTarget<D>: IsAlive + PartialEq + Clone + fmt::Debug + Send
