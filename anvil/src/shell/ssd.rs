@@ -231,7 +231,7 @@ impl WindowElement {
                 ptr_entered_window: false,
                 header_bar: HeaderBar {
                     pointer_loc: None,
-                    width: 128,
+                    width: 0,
                     close_button_hover: false,
                     maximize_button_hover: false,
                     buffer: MemoryRenderBuffer::default(),

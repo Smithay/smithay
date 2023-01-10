@@ -80,7 +80,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
         w: Option<u32>,
         h: Option<u32>,
     ) {
-        // Nope
+        // we just set the new size, but don't let windows move themselves around freely
         let mut geo = window.geometry();
         if let Some(w) = w {
             geo.size.w = w as i32;

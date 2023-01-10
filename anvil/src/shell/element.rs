@@ -370,13 +370,15 @@ impl SpaceElement for WindowElement {
         if self.decoration_state().is_ssd {
             point.y < HEADER_BAR_HEIGHT as f64
                 || match self {
-                    WindowElement::Wayland(w) => {
-                        SpaceElement::is_in_input_region(w, &(*point - Point::from((0.0, 32.0))))
-                    }
+                    WindowElement::Wayland(w) => SpaceElement::is_in_input_region(
+                        w,
+                        &(*point - Point::from((0.0, HEADER_BAR_HEIGHT as f64))),
+                    ),
                     #[cfg(feature = "xwayland")]
-                    WindowElement::X11(w) => {
-                        SpaceElement::is_in_input_region(w, &(*point - Point::from((0.0, 32.0))))
-                    }
+                    WindowElement::X11(w) => SpaceElement::is_in_input_region(
+                        w,
+                        &(*point - Point::from((0.0, HEADER_BAR_HEIGHT as f64))),
+                    ),
                 }
         } else {
             match self {
