@@ -26,7 +26,7 @@
 //!         )
 //!         .expect("Failed to attach X11 Window Manager");
 //!         
-//!         // store the WM somehwere
+//!         // store the WM somewhere
 //!     }
 //!     XWaylandEvent::Exited => {
 //!         // cleanup your state and drop the WM again
@@ -75,6 +75,9 @@ use x11rb::{
 mod surface;
 pub use self::surface::*;
 use super::xserver::XWaylandClientData;
+
+/// X11 wl_surface role
+pub const X11_SURFACE_ROLE: &str = "x11_surface";
 
 #[allow(missing_docs)]
 mod atoms {
@@ -468,7 +471,7 @@ impl X11WM {
     /// Raises a window in the internal X11 state
     ///
     /// Needs to be called to match raising of windows inside the compositor to keep the stacking order
-    /// in sync with the compositor to avoid errornous behavior.
+    /// in sync with the compositor to avoid erroneous behavior.
     pub fn raise_window<'a, W: X11Relatable + 'a>(&mut self, window: &'a W) -> Result<(), ConnectionError> {
         if let Some(elem) = self.windows.iter().find(|s| window.is_window(s)) {
             let _guard = scopeguard::guard((), |_| {
@@ -514,7 +517,7 @@ impl X11WM {
     /// no reordering will occur.
     ///  
     /// See [`X11Surface::update_stacking_order_upwards`] for a variant of this algorithm,
-    /// which works from the buttom up or [`X11Surface::raise_window`] for an easier but
+    /// which works from the bottom up or [`X11Surface::raise_window`] for an easier but
     /// much more limited way to reorder.
     pub fn update_stacking_order_downwards<'a, W: X11Relatable + 'a>(
         &mut self,
@@ -531,7 +534,7 @@ impl X11WM {
             let pos = self
                 .client_list_stacking
                 .iter()
-                .map(|w| self.windows.iter().find(|s| s.window_id() == *w).unwrap())
+                .filter_map(|w| self.windows.iter().find(|s| s.window_id() == *w))
                 .position(|w| relatable.is_window(w));
             if let (Some(pos), Some(last_pos)) = (pos, last_pos) {
                 if last_pos < pos {
@@ -599,7 +602,7 @@ impl X11WM {
             let pos = self
                 .client_list_stacking
                 .iter()
-                .map(|w| self.windows.iter().find(|s| s.window_id() == *w).unwrap())
+                .filter_map(|w| self.windows.iter().find(|s| s.window_id() == *w))
                 .position(|w| relatable.is_window(w));
             if let (Some(pos), Some(last_pos)) = (pos, last_pos) {
                 if last_pos > pos {
@@ -652,7 +655,7 @@ impl X11WM {
             surface.window_id(),
             wl_surface
         );
-        if give_role(&wl_surface, "x11_surface").is_err() {
+        if give_role(&wl_surface, X11_SURFACE_ROLE).is_err() {
             // It makes no sense to post a protocol error here since that would only kill Xwayland
             slog::error!(log, "Surface {:x?} already has a role?!", wl_surface);
             return;
