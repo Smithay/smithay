@@ -51,7 +51,7 @@ use smithay::{
             wlr_layer::WlrLayerShellState,
             xdg::{
                 decoration::{XdgDecorationHandler, XdgDecorationState},
-                ToplevelSurface, XdgShellState,
+                ToplevelSurface, XdgShellState, XdgToplevelSurfaceData,
             },
         },
         shm::{ShmHandler, ShmState},
@@ -291,7 +291,19 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
                     }
                 });
             });
-            toplevel.send_configure();
+
+            let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
+                states
+                    .data_map
+                    .get::<XdgToplevelSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .initial_configure_sent
+            });
+            if initial_configure_sent {
+                toplevel.send_configure();
+            }
         }
     }
     fn unset_mode(&mut self, toplevel: ToplevelSurface) {
@@ -305,7 +317,18 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
             toplevel.with_pending_state(|state| {
                 state.decoration_mode = Some(Mode::ClientSide);
             });
-            toplevel.send_configure();
+            let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
+                states
+                    .data_map
+                    .get::<XdgToplevelSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .initial_configure_sent
+            });
+            if initial_configure_sent {
+                toplevel.send_configure();
+            }
         }
     }
 }
