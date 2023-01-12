@@ -192,7 +192,7 @@ impl Output {
         // XdgOutput has to be updated before WlOutput
         // Because WlOutput::done() has to allways be called last
         if let Some(xdg_output) = inner.xdg_output.as_ref() {
-            xdg_output.change_current_state(new_mode, new_scale, new_location);
+            xdg_output.change_current_state(new_mode, new_scale, new_location, new_transform);
         }
 
         let mut flags = WMode::Current;
