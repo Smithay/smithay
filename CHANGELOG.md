@@ -117,6 +117,7 @@
 - `wl_shm` properly validates parameters when creating a `wl_buffer`.
 - `ServerDnDGrab` and `DnDGrab` now correctly send data device `leave` event on button release
 - Client are now allowed to reassign the same role to a surface
+- `xdg_output` now applies the output transforms to the reported logical size
 
 #### Backends
 

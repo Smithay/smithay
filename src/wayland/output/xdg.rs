@@ -9,7 +9,7 @@ use slog::{o, trace};
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1;
 use wayland_server::{protocol::wl_output::WlOutput, Resource};
 
-use crate::utils::{Logical, Physical, Point, Size};
+use crate::utils::{Logical, Physical, Point, Size, Transform};
 
 use super::{Mode, Scale};
 
@@ -21,6 +21,7 @@ pub(crate) struct Inner {
 
     pub(super) physical_size: Option<Size<i32, Physical>>,
     pub(super) scale: Scale,
+    transform: Transform,
 
     pub instances: Vec<ZxdgOutputV1>,
     _log: ::slog::Logger,
@@ -47,6 +48,7 @@ impl XdgOutput {
 
                 physical_size,
                 scale: output.scale,
+                transform: output.transform,
 
                 instances: Vec::new(),
                 _log: log,
@@ -64,7 +66,8 @@ impl XdgOutput {
                 .to_f64()
                 .to_logical(inner.scale.fractional_scale())
                 .to_i32_round();
-            xdg_output.logical_size(logical_size.w, logical_size.h);
+            let transformed_size = inner.transform.transform_size(logical_size);
+            xdg_output.logical_size(transformed_size.w, transformed_size.h);
         }
 
         if xdg_output.version() >= 2 {
@@ -87,6 +90,7 @@ impl XdgOutput {
         new_mode: Option<Mode>,
         new_scale: Option<Scale>,
         new_location: Option<Point<i32, Logical>>,
+        new_transform: Option<impl Into<Transform>>,
     ) {
         let mut output = self.inner.lock().unwrap();
 
@@ -99,6 +103,9 @@ impl XdgOutput {
         if let Some(new_location) = new_location {
             output.logical_position = new_location;
         }
+        if let Some(new_transform) = new_transform {
+            output.transform = new_transform.into();
+        }
 
         for instance in output.instances.iter() {
             if new_mode.is_some() | new_scale.is_some() {
@@ -107,7 +114,8 @@ impl XdgOutput {
                         .to_f64()
                         .to_logical(output.scale.fractional_scale())
                         .to_i32_round();
-                    instance.logical_size(logical_size.w, logical_size.h);
+                    let transformed_size = output.transform.transform_size(logical_size);
+                    instance.logical_size(transformed_size.w, transformed_size.h);
                 }
             }
 
