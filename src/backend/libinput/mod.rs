@@ -6,12 +6,15 @@ use crate::backend::session::{AsErrno, Session};
 use input as libinput;
 use input::event;
 
-#[cfg(feature = "backend_session")]
-use std::path::Path;
 use std::{
     io,
     os::unix::io::{AsRawFd, RawFd},
     path::PathBuf,
+};
+#[cfg(feature = "backend_session")]
+use std::{
+    os::unix::io::{FromRawFd, IntoRawFd, OwnedFd},
+    path::Path,
 };
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
@@ -430,15 +433,17 @@ impl<S: Session> From<S> for LibinputSessionInterface<S> {
 
 #[cfg(feature = "backend_session")]
 impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
-    fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<RawFd, i32> {
+    fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<OwnedFd, i32> {
         use nix::fcntl::OFlag;
-        self.0
+        let fd = self
+            .0
             .open(path, OFlag::from_bits_truncate(flags))
-            .map_err(|err| err.as_errno().unwrap_or(1 /*Use EPERM by default*/))
+            .map_err(|err| err.as_errno().unwrap_or(1 /*Use EPERM by default*/))?;
+        Ok(unsafe { OwnedFd::from_raw_fd(fd) })
     }
 
-    fn close_restricted(&mut self, fd: RawFd) {
-        let _ = self.0.close(fd);
+    fn close_restricted(&mut self, fd: OwnedFd) {
+        let _ = self.0.close(fd.into_raw_fd());
     }
 }
 

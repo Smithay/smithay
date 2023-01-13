@@ -36,7 +36,7 @@ drm = { version = "0.8.0", optional = true }
 drm-ffi = { version = "0.4.0", optional = true }
 gbm = { version = "0.11.0", optional = true, default-features = false, features = ["drm-support"] }
 glow = { version = "0.11.2", optional = true }
-input = { version = "0.7", default-features = false, features=["libinput_1_14"], optional = true }
+input = { version = "0.8.1", default-features = false, features=["libinput_1_14"], optional = true }
 indexmap = "1.7"
 lazy_static = "1"
 libc = "0.2.103"
@@ -50,7 +50,7 @@ slog = "2"
 slog-stdlog = { version = "4", optional = true }
 tempfile = { version = "3.0", optional = true }
 thiserror = "1.0.25"
-udev = { version = "0.6", optional = true }
+udev = { version = "0.7", optional = true }
 wayland-egl = { version = "0.30.0", optional = true }
 wayland-protocols = { version = "0.30.0", features = ["unstable", "staging", "server"], optional = true }
 wayland-protocols-wlr = { version = "0.1.0", features = ["server"]}
