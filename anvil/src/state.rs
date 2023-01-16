@@ -72,7 +72,7 @@ use crate::{focus::FocusTarget, shell::WindowElement};
 #[cfg(feature = "xwayland")]
 use smithay::{
     utils::Size,
-    xwayland::{XWayland, XWaylandEvent, X11WM},
+    xwayland::{X11Wm, XWayland, XWaylandEvent},
 };
 
 pub struct CalloopData<BackendData: Backend + 'static> {
@@ -131,7 +131,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     #[cfg(feature = "xwayland")]
     pub xwayland: XWayland,
     #[cfg(feature = "xwayland")]
-    pub xwm: Option<X11WM>,
+    pub xwm: Option<X11Wm>,
 
     #[cfg(feature = "debug")]
     pub renderdoc: Option<renderdoc::RenderDoc<renderdoc::V141>>,
@@ -481,7 +481,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     client_fd: _,
                     display: _,
                 } => {
-                    let mut wm = X11WM::start_wm(
+                    let mut wm = X11Wm::start_wm(
                         data.state.handle.clone(),
                         dh.clone(),
                         connection,

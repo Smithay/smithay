@@ -7,7 +7,7 @@ use smithay::{
     wayland::compositor::with_states,
     xwayland::{
         xwm::{ResizeEdge as X11ResizeEdge, XwmId},
-        X11Surface, XwmHandler, X11WM,
+        X11Surface, X11Wm, XwmHandler,
     },
 };
 
@@ -31,7 +31,7 @@ impl OldGeometry {
 }
 
 impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
-    fn xwm_state(&mut self, _xwm: XwmId) -> &mut X11WM {
+    fn xwm_state(&mut self, _xwm: XwmId) -> &mut X11Wm {
         self.state.xwm.as_mut().unwrap()
     }
 

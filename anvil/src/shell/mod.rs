@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 #[cfg(feature = "xwayland")]
-use smithay::xwayland::X11WM;
+use smithay::xwayland::X11Wm;
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
@@ -88,7 +88,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
     }
     fn commit(&mut self, surface: &WlSurface) {
         #[cfg(feature = "xwayland")]
-        X11WM::commit_hook(surface);
+        X11Wm::commit_hook(surface);
 
         on_commit_buffer_handler(surface);
         self.backend_data.early_import(surface);

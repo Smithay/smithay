@@ -1,10 +1,10 @@
 //!
 //! Xwayland Window Manager module
 //!
-//! Provides an [`X11WM`] type, which will register itself as a window manager for a previously spawned Xwayland instances,
+//! Provides an [`X11Wm`] type, which will register itself as a window manager for a previously spawned Xwayland instances,
 //! allowing backwards-compatibility by seemlessly integrating X11 windows into a wayland compositor.
 //!
-//! To use this functionality you must first spawn an [`XWayland`](super::XWayland) instance to attach a [`X11WM`] to.
+//! To use this functionality you must first spawn an [`XWayland`](super::XWayland) instance to attach a [`X11Wm`] to.
 //!
 //! ```norun
 //! # let dh = unreachable!();
@@ -17,7 +17,7 @@
 //!         client_fd: _,
 //!         display: _,
 //!     } => {
-//!         let wm = X11WM::start_wm(
+//!         let wm = X11Wm::start_wm(
 //!             data.state.handle.clone(),
 //!             dh.clone(),
 //!             connection,
@@ -145,10 +145,10 @@ crate::utils::ids::id_gen!(next_xwm_id, XWM_ID, XWM_IDS);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct XwmId(usize);
 
-/// Handler trait for X11WM interactions
+/// Handler trait for X11Wm interactions
 pub trait XwmHandler {
-    /// [`X11WM`] getter for a given ID.
-    fn xwm_state(&mut self, xwm: XwmId) -> &mut X11WM;
+    /// [`X11Wm`] getter for a given ID.
+    fn xwm_state(&mut self, xwm: XwmId) -> &mut X11Wm;
 
     /// A new X11 window was created.
     ///
@@ -235,7 +235,7 @@ pub trait XwmHandler {
 
 /// The runtime state of an reparenting XWayland window manager.
 #[derive(Debug)]
-pub struct X11WM {
+pub struct X11Wm {
     id: XwmId,
     conn: Arc<RustConnection>,
     dh: DisplayHandle,
@@ -255,7 +255,7 @@ pub struct X11WM {
     log: slog::Logger,
 }
 
-impl Drop for X11WM {
+impl Drop for X11Wm {
     fn drop(&mut self) {
         // TODO: Not really needed for Xwayland, but maybe cleanup set root properties?
         let _ = self.conn.destroy_window(self.wm_window);
@@ -296,7 +296,7 @@ pub enum ResizeEdge {
     BottomRight,
 }
 
-impl X11WM {
+impl X11Wm {
     /// Start a new window manager for a given Xwayland connection
     ///
     /// ## Arguments
@@ -1042,7 +1042,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                                 xwm.unpaired_surfaces.insert(id, msg.window);
                             }
                             Ok(wl_surface) => {
-                                X11WM::new_surface(surface, wl_surface, xwm.log.clone());
+                                X11Wm::new_surface(surface, wl_surface, xwm.log.clone());
                             }
                         }
                     }
@@ -1059,7 +1059,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                                 .wl_client
                                 .object_from_protocol_id::<WlSurface>(&xwm.dh, id)
                                 .unwrap();
-                            X11WM::new_surface(surface, wl_surface, xwm.log.clone());
+                            X11Wm::new_surface(surface, wl_surface, xwm.log.clone());
                         }
                     }
                 }

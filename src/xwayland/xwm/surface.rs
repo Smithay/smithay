@@ -25,7 +25,7 @@ use x11rb::{
     wrapper::ConnectionExt,
 };
 
-/// X11 window managed by an [`X11WM`](super::X11WM)
+/// X11 window managed by an [`X11Wm`](super::X11Wm)
 #[derive(Debug, Clone)]
 pub struct X11Surface {
     window: X11Window,
@@ -113,7 +113,7 @@ pub enum WmWindowType {
 }
 
 impl X11Surface {
-    /// Create a new [`X11Surface`] usually handled by an [`X11WM`]
+    /// Create a new [`X11Surface`] usually handled by an [`X11Wm`]
     ///
     /// ## Arguments
     ///
