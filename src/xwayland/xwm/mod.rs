@@ -664,13 +664,18 @@ impl X11WM {
         surface.state.lock().unwrap().wl_surface = Some(wl_surface);
     }
 
-    /// Set the default cursor used by X clients
+    /// Set the default cursor used by X clients.
+    ///
+    /// `pixels` is expected to be in `rgba`-format with each channel encoded as an u8.
+    ///
+    /// This function will panic, if `pixels` is not at least `size.w * size.h * 4` long.
     pub fn set_cursor(
         &mut self,
         pixels: &[u8],
         size: Size<u16, Logical>,
         hotspot: Point<u16, Logical>,
     ) -> Result<(), ReplyOrIdError> {
+        assert_eq!(pixels.len(), size.w as usize * size.h as usize * 4usize);
         let pixmap = PixmapWrapper::create_pixmap(&*self.conn, 32, self.screen.root, size.w, size.h)?;
         let Some(render_format) = self
             .conn
