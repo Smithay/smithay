@@ -790,6 +790,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             let geo = conn.get_geometry(n.window)?.reply()?;
 
             let surface = X11Surface::new(
+                xwmid,
                 n.window,
                 n.override_redirect,
                 Arc::downgrade(&conn),

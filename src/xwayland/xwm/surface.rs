@@ -25,9 +25,12 @@ use x11rb::{
     wrapper::ConnectionExt,
 };
 
+use super::XwmId;
+
 /// X11 window managed by an [`X11Wm`](super::X11Wm)
 #[derive(Debug, Clone)]
 pub struct X11Surface {
+    xwm: Option<XwmId>,
     window: X11Window,
     override_redirect: bool,
     conn: Weak<RustConnection>,
@@ -81,7 +84,7 @@ impl PartialEq for X11Surface {
     fn eq(&self, other: &Self) -> bool {
         let self_alive = self.state.lock().unwrap().alive;
         let other_alive = other.state.lock().unwrap().alive;
-        self.window == other.window && self_alive && other_alive
+        self.xwm == other.xwm && self.window == other.window && self_alive && other_alive
     }
 }
 
@@ -124,6 +127,7 @@ impl X11Surface {
     /// - `geometry` Initial geometry of the window
     /// - `log` slog logger to be used by this window
     pub fn new(
+        xwm: impl Into<Option<XwmId>>,
         window: u32,
         override_redirect: bool,
         conn: Weak<RustConnection>,
@@ -132,6 +136,7 @@ impl X11Surface {
         log: impl Into<Option<::slog::Logger>>,
     ) -> X11Surface {
         X11Surface {
+            xwm: xwm.into(),
             window,
             override_redirect,
             conn,
@@ -155,6 +160,11 @@ impl X11Surface {
             user_data: Arc::new(UserDataMap::new()),
             log: crate::slog_or_fallback(log).new(slog::o!("X11 Window" => window)),
         }
+    }
+
+    /// Returns the id of the X11Wm responsible for this surface, if any
+    pub fn xwm_id(&self) -> Option<XwmId> {
+        self.xwm
     }
 
     /// X11 protocol id of the underlying window
@@ -779,12 +789,6 @@ pub trait X11Relatable {
 impl X11Relatable for X11Surface {
     fn is_window(&self, window: &X11Surface) -> bool {
         self == window
-    }
-}
-
-impl X11Relatable for X11Window {
-    fn is_window(&self, window: &X11Surface) -> bool {
-        self == &window.window
     }
 }
 
