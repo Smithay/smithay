@@ -11,10 +11,9 @@
 //! special client, and play the role of an X11 Window Manager.
 //!
 //! Smithay does not provide any helper for doing that yet, but it is planned.
-
 mod x11_sockets;
 mod xserver;
 pub mod xwm;
 
-pub use self::xserver::{XWayland, XWaylandEvent, XWaylandSource};
+pub use self::xserver::{XWayland, XWaylandClientData, XWaylandEvent, XWaylandSource};
 pub use self::xwm::{X11Surface, X11Wm, XwmHandler};

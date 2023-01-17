@@ -457,7 +457,7 @@ impl X11Wm {
         client
             .get_data::<XWaylandClientData>()
             .unwrap()
-            .data_map
+            .user_data()
             .insert_if_missing(move || injector);
 
         let id = XwmId(next_xwm_id());
@@ -661,7 +661,7 @@ impl X11Wm {
         if let Some(client) = surface.client() {
             if let Some(x11) = client
                 .get_data::<XWaylandClientData>()
-                .and_then(|data| data.data_map.get::<X11Injector>())
+                .and_then(|data| data.user_data().get::<X11Injector>())
             {
                 if get_role(surface).is_none() {
                     x11.late_window(surface);

@@ -173,9 +173,11 @@ struct Inner {
     log: ::slog::Logger,
 }
 
-pub(super) struct XWaylandClientData {
+/// Inner `ClientData`-type of an xwayland client
+#[derive(Debug)]
+pub struct XWaylandClientData {
     inner: Arc<Mutex<Inner>>,
-    pub data_map: UserDataMap,
+    data_map: UserDataMap,
 }
 
 impl ClientData for XWaylandClientData {
@@ -187,6 +189,13 @@ impl ClientData for XWaylandClientData {
         if let Ok(mut guard) = self.inner.try_lock() {
             guard.shutdown();
         }
+    }
+}
+
+impl XWaylandClientData {
+    /// Access user_data map for a xwayland client
+    pub fn user_data(&self) -> &UserDataMap {
+        &self.data_map
     }
 }
 
