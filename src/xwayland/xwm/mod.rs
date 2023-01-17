@@ -6,9 +6,31 @@
 //!
 //! To use this functionality you must first spawn an [`XWayland`](super::XWayland) instance to attach a [`X11Wm`] to.
 //!
-//! ```norun
+//! ```no_run
+//! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge}};
+//! #
+//! struct State { /* ... */ }
+//! impl XwmHandler for State {
+//!     fn xwm_state(&mut self, xwm: XwmId) -> &mut X11Wm {
+//!         // ...
+//! #       unreachable!()
+//!     }
+//!     fn new_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn new_override_redirect_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn map_window_request(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn mapped_override_redirect_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn unmapped_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn destroyed_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
+//!     fn configure_request(&mut self, xwm: XwmId, window: X11Surface, x: Option<i32>, y: Option<i32>, w: Option<u32>, h: Option<u32>) { /* ... */ }
+//!     fn configure_notify(&mut self, xwm: XwmId, window: X11Surface, x: i32, y: i32, w: u32, h: u32) { /* ... */ }
+//!     fn resize_request(&mut self, xwm: XwmId, window: X11Surface, button: u32, resize_edge: ResizeEdge) { /* ... */ }
+//!     fn move_request(&mut self, xwm: XwmId, window: X11Surface, button: u32) { /* ... */ }
+//! }
+//! #
 //! # let dh = unreachable!();
-//! # let handle = unreachable!();
+//! # let handle: smithay::reexports::calloop::LoopHandle<'static, State> = unreachable!();
+//! # let log: slog::Logger = unreachable!();
+//!
 //! let (xwayland, channel) = XWayland::new(None, &dh);
 //! let ret = handle.insert_source(channel, move |event, _, data| match event {
 //!     XWaylandEvent::Ready {
@@ -18,11 +40,11 @@
 //!         display: _,
 //!     } => {
 //!         let wm = X11Wm::start_wm(
-//!             data.state.handle.clone(),
+//!             handle.clone(),
 //!             dh.clone(),
 //!             connection,
 //!             client,
-//!             log2.clone(),
+//!             log.clone(),
 //!         )
 //!         .expect("Failed to attach X11 Window Manager");
 //!         
@@ -33,7 +55,7 @@
 //!     }
 //! });
 //! if let Err(e) = ret {
-//!     error!(
+//!     slog::error!(
 //!         log,
 //!         "Failed to insert the XWaylandSource into the event loop: {}", e
 //!     );
