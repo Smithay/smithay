@@ -7,7 +7,8 @@
 //! To use this functionality you must first spawn an [`XWayland`](super::XWayland) instance to attach a [`X11Wm`] to.
 //!
 //! ```no_run
-//! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge}};
+//! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder}};
+//! #  use smithay::utils::{Rectangle, Logical};
 //! #
 //! struct State { /* ... */ }
 //! impl XwmHandler for State {
@@ -21,8 +22,8 @@
 //!     fn mapped_override_redirect_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
 //!     fn unmapped_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
 //!     fn destroyed_window(&mut self, xwm: XwmId, window: X11Surface) { /* ... */ }
-//!     fn configure_request(&mut self, xwm: XwmId, window: X11Surface, x: Option<i32>, y: Option<i32>, w: Option<u32>, h: Option<u32>) { /* ... */ }
-//!     fn configure_notify(&mut self, xwm: XwmId, window: X11Surface, x: i32, y: i32, w: u32, h: u32) { /* ... */ }
+//!     fn configure_request(&mut self, xwm: XwmId, window: X11Surface, x: Option<i32>, y: Option<i32>, w: Option<u32>, h: Option<u32>, reorder: Option<Reorder>) { /* ... */ }
+//!     fn configure_notify(&mut self, xwm: XwmId, window: X11Surface, geometry: Rectangle<i32, Logical>, above: Option<u32>) { /* ... */ }
 //!     fn resize_request(&mut self, xwm: XwmId, window: X11Surface, button: u32, resize_edge: ResizeEdge) { /* ... */ }
 //!     fn move_request(&mut self, xwm: XwmId, window: X11Surface, button: u32) { /* ... */ }
 //! }
