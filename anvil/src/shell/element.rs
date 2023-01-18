@@ -38,16 +38,10 @@ use smithay::{
 use super::ssd::HEADER_BAR_HEIGHT;
 use crate::AnvilState;
 
-#[cfg(not(feature = "xwayland"))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum WindowElement {
     Wayland(Window),
-}
-
-#[cfg(feature = "xwayland")]
-#[derive(Debug, Clone, PartialEq)]
-pub enum WindowElement {
-    Wayland(Window),
+    #[cfg(feature = "xwayland")]
     X11(X11Surface),
 }
 
