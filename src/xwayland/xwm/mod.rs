@@ -720,7 +720,7 @@ impl X11Wm {
         size: Size<u16, Logical>,
         hotspot: Point<u16, Logical>,
     ) -> Result<(), ReplyOrIdError> {
-        assert_eq!(pixels.len(), size.w as usize * size.h as usize * 4usize);
+        assert!(pixels.len() >= size.w as usize * size.h as usize * 4usize);
         let pixmap = PixmapWrapper::create_pixmap(&*self.conn, 32, self.screen.root, size.w, size.h)?;
         let Some(render_format) = self
             .conn
