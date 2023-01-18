@@ -168,7 +168,7 @@ impl X11Surface {
     }
 
     /// X11 protocol id of the underlying window
-    pub fn window_id(&self) -> u32 {
+    pub fn window_id(&self) -> X11Window {
         self.window
     }
 
