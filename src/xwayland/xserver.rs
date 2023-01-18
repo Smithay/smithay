@@ -40,7 +40,6 @@
  */
 use std::{
     env,
-    fmt::Write,
     io::{self, Read},
     os::unix::{
         io::{AsRawFd, RawFd},
@@ -64,6 +63,7 @@ use wayland_server::{
 use slog::{error, info, o};
 
 use super::x11_sockets::{prepare_x11_sockets, X11Lock};
+use crate::utils::user_data::UserDataMap;
 
 /// The XWayland handle
 #[derive(Debug)]
@@ -173,8 +173,11 @@ struct Inner {
     log: ::slog::Logger,
 }
 
-struct XWaylandClientData {
+/// Inner `ClientData`-type of an xwayland client
+#[derive(Debug)]
+pub struct XWaylandClientData {
     inner: Arc<Mutex<Inner>>,
+    data_map: UserDataMap,
 }
 
 impl ClientData for XWaylandClientData {
@@ -186,6 +189,13 @@ impl ClientData for XWaylandClientData {
         if let Ok(mut guard) = self.inner.try_lock() {
             guard.shutdown();
         }
+    }
+}
+
+impl XWaylandClientData {
+    /// Access user_data map for a xwayland client
+    pub fn user_data(&self) -> &UserDataMap {
+        &self.data_map
     }
 }
 
@@ -233,7 +243,13 @@ fn launch<D>(
         .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
     let client_fd = wl_me.as_raw_fd();
-    let client = dh.insert_client(wl_me, Arc::new(XWaylandClientData { inner: inner.clone() }))?;
+    let client = dh.insert_client(
+        wl_me,
+        Arc::new(XWaylandClientData {
+            inner: inner.clone(),
+            data_map: UserDataMap::new(),
+        }),
+    )?;
     guard.instance = Some(XWaylandInstance {
         display_lock: lock,
         wayland_client: client,
@@ -386,8 +402,7 @@ fn spawn_xwayland(
 
     let mut xwayland_args = format!(":{} -rootless -terminate -wm {}", display, wm_socket.as_raw_fd());
     for socket in listen_sockets {
-        // Will only fail to write on OOM, so this panic is fine.
-        write!(xwayland_args, " -listenfd {}", socket.as_raw_fd()).unwrap();
+        xwayland_args.push_str(&format!(" -listenfd {}", socket.as_raw_fd()));
     }
     // This command let sh to:
     // * Set up signal handler for USR1

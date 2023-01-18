@@ -32,7 +32,6 @@ use smithay::backend::input::AbsolutePositionEvent;
 #[cfg(any(feature = "winit", feature = "x11"))]
 use smithay::output::Output;
 
-#[cfg(feature = "udev")]
 use crate::state::Backend;
 #[cfg(feature = "udev")]
 use smithay::{
@@ -49,7 +48,10 @@ use smithay::{
     },
 };
 
-impl<Backend> AnvilState<Backend> {
+#[cfg(feature = "xwayland")]
+use crate::shell::WindowElement;
+
+impl<BackendData: Backend> AnvilState<BackendData> {
     fn process_common_key_action(&mut self, action: KeyAction) {
         match action {
             KeyAction::None => (),
@@ -118,8 +120,8 @@ impl<Backend> AnvilState<Backend> {
             .space
             .element_under(self.pointer_location)
             .and_then(|(window, _)| {
-                self.seat
-                    .keyboard_shortcuts_inhibitor_for_surface(window.toplevel().wl_surface())
+                let surface = window.wl_surface()?;
+                self.seat.keyboard_shortcuts_inhibitor_for_surface(&surface)
             })
             .map(|inhibitor| inhibitor.is_active())
             .unwrap_or(false);
@@ -216,6 +218,10 @@ impl<Backend> AnvilState<Backend> {
                         WindowSurfaceType::ALL,
                     ) {
                         input_method.set_point(&point);
+                        #[cfg(feature = "xwayland")]
+                        if let WindowElement::X11(surf) = &window {
+                            self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
+                        }
                         keyboard.set_focus(self, Some(window.into()), serial);
                         return;
                     }
@@ -249,6 +255,10 @@ impl<Backend> AnvilState<Backend> {
                 self.space.raise_element(&window, true);
                 input_method.set_point(&point);
                 keyboard.set_focus(self, Some(window.clone().into()), serial);
+                #[cfg(feature = "xwayland")]
+                if let WindowElement::X11(surf) = &window {
+                    self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
+                }
                 return;
             }
 

@@ -9,7 +9,7 @@
 #[macro_use]
 extern crate slog;
 
-#[cfg(feature = "udev")]
+#[cfg(any(feature = "udev", feature = "xwayland"))]
 pub mod cursor;
 pub mod drawing;
 pub mod focus;
@@ -23,7 +23,5 @@ pub mod udev;
 pub mod winit;
 #[cfg(feature = "x11")]
 pub mod x11;
-#[cfg(feature = "xwayland")]
-pub mod xwayland;
 
 pub use state::{AnvilState, CalloopData, ClientState};

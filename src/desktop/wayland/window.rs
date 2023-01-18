@@ -25,75 +25,14 @@ use std::{
 use wayland_protocols::{
     wp::presentation_time::server::wp_presentation_feedback, xdg::shell::server::xdg_toplevel,
 };
-use wayland_server::{backend::ObjectId, protocol::wl_surface, Resource};
+use wayland_server::protocol::wl_surface;
 
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
-
-/// Abstraction around different toplevel kinds
-#[derive(Debug, Clone, PartialEq)]
-pub enum Kind {
-    /// xdg-shell [`ToplevelSurface`]
-    Xdg(ToplevelSurface),
-    /// XWayland surface (TODO)
-    #[cfg(feature = "xwayland")]
-    X11(X11Surface),
-}
-
-/// Xwayland surface
-#[derive(Debug, Clone)]
-#[cfg(feature = "xwayland")]
-pub struct X11Surface {
-    /// underlying wl_surface
-    pub surface: wl_surface::WlSurface,
-}
-
-#[cfg(feature = "xwayland")]
-impl std::cmp::PartialEq for X11Surface {
-    fn eq(&self, other: &Self) -> bool {
-        self.alive() && other.alive() && self.surface == other.surface
-    }
-}
-
-#[cfg(feature = "xwayland")]
-impl IsAlive for X11Surface {
-    fn alive(&self) -> bool {
-        self.surface.alive()
-    }
-}
-
-#[cfg(feature = "xwayland")]
-impl X11Surface {
-    /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
-    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
-        &self.surface
-    }
-}
-
-impl Kind {
-    /// Returns the underlying [`WlSurface`](wl_surface::WlSurface), if still any.
-    pub fn wl_surface(&self) -> &wl_surface::WlSurface {
-        match *self {
-            Kind::Xdg(ref t) => t.wl_surface(),
-            #[cfg(feature = "xwayland")]
-            Kind::X11(ref t) => t.wl_surface(),
-        }
-    }
-}
-
-impl IsAlive for Kind {
-    fn alive(&self) -> bool {
-        match self {
-            Kind::Xdg(ref t) => t.alive(),
-            #[cfg(feature = "xwayland")]
-            Kind::X11(ref t) => t.alive(),
-        }
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct WindowInner {
     pub(crate) id: usize,
-    toplevel: Kind,
+    toplevel: ToplevelSurface,
     bbox: Mutex<Rectangle<i32, Logical>>,
     pub(crate) z_index: AtomicU8,
     focused_surface: Mutex<Option<wl_surface::WlSurface>>,
@@ -146,8 +85,8 @@ bitflags::bitflags! {
 }
 
 impl Window {
-    /// Construct a new [`Window`] from a given compatible toplevel surface
-    pub fn new(toplevel: Kind) -> Window {
+    /// Construct a new [`Window`] from a xdg toplevel surface
+    pub fn new(toplevel: ToplevelSurface) -> Window {
         let id = next_window_id();
 
         Window(Arc::new(WindowInner {
@@ -162,9 +101,8 @@ impl Window {
 
     /// Returns the geometry of this window.
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        let surface = self.0.toplevel.wl_surface();
         // It's the set geometry with the full bounding box as the fallback.
-        with_states(surface, |states| {
+        with_states(self.0.toplevel.wl_surface(), |states| {
             states.cached_state.current::<SurfaceCachedState>().geometry
         })
         .unwrap_or_else(|| self.bbox())
@@ -193,26 +131,13 @@ impl Window {
 
     /// Activate/Deactivate this window
     pub fn set_activated(&self, active: bool) -> bool {
-        match self.0.toplevel {
-            Kind::Xdg(ref t) => t.with_pending_state(|state| {
-                if active {
-                    state.states.set(xdg_toplevel::State::Activated)
-                } else {
-                    state.states.unset(xdg_toplevel::State::Activated)
-                }
-            }),
-            #[cfg(feature = "xwayland")]
-            Kind::X11(ref _t) => false,
-        }
-    }
-
-    /// Commit any changes to this window
-    pub fn configure(&self) {
-        match self.0.toplevel {
-            Kind::Xdg(ref t) => t.send_configure(),
-            #[cfg(feature = "xwayland")]
-            Kind::X11(ref _t) => unimplemented!(),
-        }
+        self.0.toplevel.with_pending_state(|state| {
+            if active {
+                state.states.set(xdg_toplevel::State::Activated)
+            } else {
+                state.states.unset(xdg_toplevel::State::Activated)
+            }
+        })
     }
 
     /// Sends the frame callback to all the subsurfaces in this window that requested it
@@ -230,7 +155,6 @@ impl Window {
     {
         let time = time.into();
         let surface = self.0.toplevel.wl_surface();
-
         send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
         for (popup, _) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
@@ -250,7 +174,7 @@ impl Window {
         F1: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
         F2: FnMut(&wl_surface::WlSurface, &SurfaceData) -> wp_presentation_feedback::Kind + Copy,
     {
-        let surface = self.toplevel().wl_surface();
+        let surface = self.0.toplevel.wl_surface();
         take_presentation_feedback_surface_tree(
             surface,
             output_feedback,
@@ -274,7 +198,6 @@ impl Window {
         F: FnMut(&wl_surface::WlSurface, &SurfaceData) + Copy,
     {
         let surface = self.0.toplevel.wl_surface();
-
         with_surfaces_surface_tree(surface, processor);
         for (popup, _) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
@@ -287,7 +210,8 @@ impl Window {
     /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
     /// to correctly update the bounding box of this window.
     pub fn on_commit(&self) {
-        *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(self.0.toplevel.wl_surface(), (0, 0));
+        let surface = self.0.toplevel.wl_surface();
+        *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(surface, (0, 0));
     }
 
     /// Finds the topmost surface under this point matching the input regions of the surface and returns
@@ -316,8 +240,8 @@ impl Window {
         under_from_surface_tree(surface, point, (0, 0), surface_type)
     }
 
-    /// Returns the underlying toplevel
-    pub fn toplevel(&self) -> &Kind {
+    /// Returns the underlying xdg toplevel surface
+    pub fn toplevel(&self) -> &ToplevelSurface {
         &self.0.toplevel
     }
 
@@ -394,10 +318,6 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
 
 impl WaylandFocus for Window {
     fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
-        Some(self.toplevel().wl_surface().clone())
-    }
-
-    fn same_client_as(&self, object_id: &ObjectId) -> bool {
-        self.toplevel().wl_surface().id().same_client_as(object_id)
+        Some(self.0.toplevel.wl_surface().clone())
     }
 }

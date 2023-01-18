@@ -15,6 +15,7 @@ use slog::Logger;
 use crate::{
     drawing::*,
     render::*,
+    shell::WindowElement,
     state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData},
 };
 #[cfg(feature = "debug")]
@@ -50,7 +51,6 @@ use smithay::{
     desktop::{
         space::{Space, SurfaceTree},
         utils::OutputPresentationFeedback,
-        Window,
     },
     input::pointer::{CursorImageAttributes, CursorImageStatus},
     output::{Mode, Output, PhysicalProperties, Subpixel},
@@ -282,6 +282,7 @@ pub fn run_udev(log: Logger) {
         })
         .unwrap();
     let handle = event_loop.handle();
+    let log2 = log.clone();
     event_loop
         .handle()
         .insert_source(notifier, move |event, &mut (), data| match event {
@@ -293,7 +294,7 @@ pub fn run_udev(log: Logger) {
             }
             SessionEvent::ActivateSession => {
                 if let Err(err) = libinput_context.resume() {
-                    slog::error!(log, "Failed to resume libinput context: {:?}", err);
+                    slog::error!(log2, "Failed to resume libinput context: {:?}", err);
                 }
                 for (node, backend) in data
                     .state
@@ -306,7 +307,7 @@ pub fn run_udev(log: Logger) {
                     let surfaces = backend.surfaces.borrow();
                     for surface in surfaces.values() {
                         if let Err(err) = surface.borrow().surface.surface().reset_state() {
-                            slog::warn!(log, "Failed to reset drm surface state: {}", err);
+                            slog::warn!(log2, "Failed to reset drm surface state: {}", err);
                         }
                     }
                     handle.insert_idle(move |data| data.state.render(node, None));
@@ -333,7 +334,9 @@ pub fn run_udev(log: Logger) {
      * Start XWayland if supported
      */
     #[cfg(feature = "xwayland")]
-    state.start_xwayland();
+    if let Err(e) = state.xwayland.start(state.handle.clone()) {
+        error!(log, "Failed to start XWayland: {}", e);
+    }
 
     /*
      * And run our loop
@@ -372,7 +375,7 @@ struct SurfaceData {
 impl Drop for SurfaceData {
     fn drop(&mut self) {
         if let Some(global) = self.global.take() {
-            self.dh.remove_global::<AnvilState<UdevBackend>>(global);
+            self.dh.remove_global::<AnvilState<UdevData>>(global);
         }
     }
 }
@@ -390,7 +393,7 @@ fn scan_connectors(
     device: &DrmDevice,
     gbm: &GbmDevice<DrmDeviceFd>,
     display: &mut Display<AnvilState<UdevData>>,
-    space: &mut Space<Window>,
+    space: &mut Space<WindowElement>,
     #[cfg(feature = "debug")] fps_texture: &MultiTexture,
     logger: &::slog::Logger,
 ) -> HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>> {
@@ -1005,7 +1008,7 @@ impl AnvilState<UdevData> {
 fn render_surface<'a>(
     surface: &'a mut SurfaceData,
     renderer: &mut UdevRenderer<'a>,
-    space: &Space<Window>,
+    space: &Space<WindowElement>,
     output: &Output,
     input_method: &InputMethodHandle,
     pointer_location: Point<f64, Logical>,

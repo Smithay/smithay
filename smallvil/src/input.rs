@@ -72,12 +72,12 @@ impl Smallvil {
                         self.space.raise_element(&window, true);
                         keyboard.set_focus(self, Some(window.toplevel().wl_surface().clone()), serial);
                         self.space.elements().for_each(|window| {
-                            window.configure();
+                            window.toplevel().send_configure();
                         });
                     } else {
                         self.space.elements().for_each(|window| {
                             window.set_activated(false);
-                            window.configure();
+                            window.toplevel().send_configure();
                         });
                         keyboard.set_focus(self, Option::<WlSurface>::None, serial);
                     }
