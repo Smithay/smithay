@@ -6,7 +6,7 @@ use smithay::{
     utils::{Logical, Rectangle, SERIAL_COUNTER},
     wayland::compositor::with_states,
     xwayland::{
-        xwm::{ResizeEdge as X11ResizeEdge, XwmId},
+        xwm::{Reorder, ResizeEdge as X11ResizeEdge, XwmId},
         X11Surface, X11Wm, XwmHandler,
     },
 };
@@ -79,6 +79,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
         _y: Option<i32>,
         w: Option<u32>,
         h: Option<u32>,
+        _reorder: Option<Reorder>,
     ) {
         // we just set the new size, but don't let windows move themselves around freely
         let mut geo = window.geometry();
@@ -91,7 +92,16 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
         let _ = window.configure(geo);
     }
 
-    fn configure_notify(&mut self, _xwm: XwmId, window: X11Surface, x: i32, y: i32, _w: u32, _h: u32) {
+    fn configure_notify(
+        &mut self,
+        _xwm: XwmId,
+        window: X11Surface,
+        x: i32,
+        y: i32,
+        _w: u32,
+        _h: u32,
+        _above: Option<u32>,
+    ) {
         let Some(elem) = self
             .state
             .space
@@ -100,6 +110,8 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .cloned()
         else { return };
         self.state.space.map_element(elem, (x, y), false);
+        // TODO: We don't properly handle the order of override-redirect windows here,
+        //       they are always mapped top and then never reordered.
     }
 
     fn maximize_request(&mut self, _xwm: XwmId, window: X11Surface) {

@@ -167,6 +167,19 @@ crate::utils::ids::id_gen!(next_xwm_id, XWM_ID, XWM_IDS);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct XwmId(usize);
 
+/// Window asks to be re-stacked
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Reorder {
+    /// to the top of the stack
+    Top,
+    /// directly above the given window id
+    Above(X11Window),
+    /// directly below the given window id
+    Below(X11Window),
+    /// to the bottom of the stack
+    Bottom,
+}
+
 /// Handler trait for X11Wm interactions
 pub trait XwmHandler {
     /// [`X11Wm`] getter for a given ID.
@@ -211,13 +224,23 @@ pub trait XwmHandler {
         y: Option<i32>,
         w: Option<u32>,
         h: Option<u32>,
+        reorder: Option<Reorder>,
     );
     /// Window was reconfigured.
     ///
     /// This call will be done as a notification for both normal and override-redirect windows.
-    /// Override-redirect windows can modify their size and position at any time and the compositor
-    /// should properly reflect the new position and size to avoid bugs.
-    fn configure_notify(&mut self, xwm: XwmId, window: X11Surface, x: i32, y: i32, w: u32, h: u32);
+    /// Override-redirect windows can modify their size, position and stack order at any time and the compositor
+    /// should properly reflect these new values to avoid bugs.
+    fn configure_notify(
+        &mut self,
+        xwm: XwmId,
+        window: X11Surface,
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        above: Option<X11Window>,
+    );
 
     /// Window requests to be maximized.
     fn maximize_request(&mut self, xwm: XwmId, window: X11Surface) {
@@ -920,6 +943,27 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     } else {
                         None
                     },
+                    if r.value_mask & u16::from(ConfigWindow::STACK_MODE) != 0 {
+                        match r.stack_mode {
+                            StackMode::ABOVE => {
+                                if r.value_mask & u16::from(ConfigWindow::SIBLING) != 0 {
+                                    Some(Reorder::Above(r.sibling))
+                                } else {
+                                    Some(Reorder::Top)
+                                }
+                            }
+                            StackMode::BELOW => {
+                                if r.value_mask & u16::from(ConfigWindow::SIBLING) != 0 {
+                                    Some(Reorder::Below(r.sibling))
+                                } else {
+                                    Some(Reorder::Bottom)
+                                }
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    },
                 );
                 // Synthetic event
                 surface.configure(None).map_err(|err| match err {
@@ -943,6 +987,11 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     n.y as i32,
                     n.width as u32,
                     n.height as u32,
+                    if n.above_sibling == x11rb::NONE {
+                        None
+                    } else {
+                        Some(n.above_sibling)
+                    },
                 );
             } else if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
                 if surface.is_override_redirect() {
@@ -953,6 +1002,11 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                         n.y as i32,
                         n.width as u32,
                         n.height as u32,
+                        if n.above_sibling == x11rb::NONE {
+                            None
+                        } else {
+                            Some(n.above_sibling)
+                        },
                     );
                 }
             }
