@@ -216,6 +216,7 @@ pub trait XwmHandler {
     /// Window asks to be positioned or sized differently.
     ///
     /// Requests can be granted by calling [`X11Surface::configure`] with updated values.
+    #[allow(clippy::too_many_arguments)]
     fn configure_request(
         &mut self,
         xwm: XwmId,
@@ -235,10 +236,7 @@ pub trait XwmHandler {
         &mut self,
         xwm: XwmId,
         window: X11Surface,
-        x: i32,
-        y: i32,
-        w: u32,
-        h: u32,
+        geometry: Rectangle<i32, Logical>,
         above: Option<X11Window>,
     );
 
@@ -983,10 +981,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 state.configure_notify(
                     id,
                     surface,
-                    n.x as i32,
-                    n.y as i32,
-                    n.width as u32,
-                    n.height as u32,
+                    Rectangle::from_loc_and_size((n.x as i32, n.y as i32), (n.width as i32, n.height as i32)),
                     if n.above_sibling == x11rb::NONE {
                         None
                     } else {
@@ -998,10 +993,10 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     state.configure_notify(
                         id,
                         surface,
-                        n.x as i32,
-                        n.y as i32,
-                        n.width as u32,
-                        n.height as u32,
+                        Rectangle::from_loc_and_size(
+                            (n.x as i32, n.y as i32),
+                            (n.width as i32, n.height as i32),
+                        ),
                         if n.above_sibling == x11rb::NONE {
                             None
                         } else {

@@ -96,10 +96,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
         &mut self,
         _xwm: XwmId,
         window: X11Surface,
-        x: i32,
-        y: i32,
-        _w: u32,
-        _h: u32,
+        geometry: Rectangle<i32, Logical>,
         _above: Option<u32>,
     ) {
         let Some(elem) = self
@@ -109,7 +106,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
             .cloned()
         else { return };
-        self.state.space.map_element(elem, (x, y), false);
+        self.state.space.map_element(elem, geometry.loc, false);
         // TODO: We don't properly handle the order of override-redirect windows here,
         //       they are always mapped top and then never reordered.
     }
