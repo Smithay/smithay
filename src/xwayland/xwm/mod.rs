@@ -834,7 +834,6 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
         }
         Event::MapRequest(r) => {
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
-                xwm.client_list.push(surface.window_id());
                 surface.update_properties(Some(xwm.atoms._NET_WM_STATE))?;
 
                 // we reparent windows, because a lot of stuff expects, that we do
@@ -865,13 +864,6 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     )?;
                     let cookie2 = conn.reparent_window(win, frame_win, 0, 0)?;
                     conn.map_window(win)?;
-                    conn.change_property32(
-                        PropMode::APPEND,
-                        xwm.screen.root,
-                        xwm.atoms._NET_CLIENT_LIST,
-                        AtomEnum::WINDOW,
-                        &[win],
-                    )?;
 
                     // Ignore all events caused by reparent_window(). All those events have the sequence number
                     // of the reparent_window() request, thus remember its sequence number. The
@@ -889,8 +881,21 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
         }
         Event::MapNotify(n) => {
             slog::trace!(xwm.log, "X11 Window mapped: {}", n.window);
-            if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
+            if let Some(surface) = xwm
+                .windows
+                .iter()
+                .find(|x| x.window_id() == n.window || x.state.lock().unwrap().mapped_onto == Some(n.window))
+                .cloned()
+            {
+                xwm.client_list.push(surface.window_id());
                 xwm.client_list_stacking.push(surface.window_id());
+                conn.change_property32(
+                    PropMode::APPEND,
+                    xwm.screen.root,
+                    xwm.atoms._NET_CLIENT_LIST,
+                    AtomEnum::WINDOW,
+                    &[surface.window_id()],
+                )?;
                 conn.change_property32(
                     PropMode::APPEND,
                     xwm.screen.root,
@@ -901,19 +906,6 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 if surface.is_override_redirect() {
                     state.mapped_override_redirect_window(id, surface);
                 }
-            } else if let Some(surface) = xwm
-                .windows
-                .iter()
-                .find(|x| x.state.lock().unwrap().mapped_onto == Some(n.window))
-            {
-                xwm.client_list_stacking.push(surface.window_id());
-                conn.change_property32(
-                    PropMode::APPEND,
-                    xwm.screen.root,
-                    xwm.atoms._NET_CLIENT_LIST_STACKING,
-                    AtomEnum::WINDOW,
-                    &[surface.window_id()],
-                )?;
             }
         }
         Event::ConfigureRequest(r) => {
