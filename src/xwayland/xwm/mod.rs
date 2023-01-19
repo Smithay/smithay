@@ -1112,7 +1112,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 }
                 x if x == xwm.atoms._LATE_SURFACE_ID => {
                     let id = msg.data.as_data32()[0];
-                    if let Some(window) = dbg!(&mut xwm.unpaired_surfaces).remove(&id) {
+                    if let Some(window) = xwm.unpaired_surfaces.remove(&id) {
                         if let Some(surface) = xwm.windows.iter_mut().find(|x| {
                             x.window_id() == msg.window || x.state.lock().unwrap().mapped_onto == Some(window)
                         }) {
