@@ -801,11 +801,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 return Ok(());
             }
 
-            if xwm
-                .windows
-                .iter()
-                .any(|s| s.state.lock().unwrap().mapped_onto == Some(n.window))
-            {
+            if xwm.windows.iter().any(|s| s.mapped_window_id() == Some(n.window)) {
                 return Ok(());
             }
 
@@ -884,7 +880,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             if let Some(surface) = xwm
                 .windows
                 .iter()
-                .find(|x| x.window_id() == n.window || x.state.lock().unwrap().mapped_onto == Some(n.window))
+                .find(|x| x.window_id() == n.window || x.mapped_window_id() == Some(n.window))
                 .cloned()
             {
                 xwm.client_list.push(surface.window_id());
@@ -968,7 +964,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             if let Some(surface) = xwm
                 .windows
                 .iter()
-                .find(|x| x.state.lock().unwrap().mapped_onto == Some(n.window))
+                .find(|x| x.mapped_window_id() == Some(n.window))
                 .cloned()
             {
                 state.configure_notify(
@@ -1090,9 +1086,11 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                         msg.window,
                         id,
                     );
-                    if let Some(surface) = xwm.windows.iter_mut().find(|x| {
-                        x.window_id() == msg.window || x.state.lock().unwrap().mapped_onto == Some(msg.window)
-                    }) {
+                    if let Some(surface) = xwm
+                        .windows
+                        .iter_mut()
+                        .find(|x| x.window_id() == msg.window || x.mapped_window_id() == Some(msg.window))
+                    {
                         // We get a WL_SURFACE_ID message when Xwayland creates a WlSurface for a
                         // window. Both the creation of the surface and this client message happen at
                         // roughly the same time and are sent over different sockets (X11 socket and
@@ -1113,9 +1111,11 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 x if x == xwm.atoms._LATE_SURFACE_ID => {
                     let id = msg.data.as_data32()[0];
                     if let Some(window) = xwm.unpaired_surfaces.remove(&id) {
-                        if let Some(surface) = xwm.windows.iter_mut().find(|x| {
-                            x.window_id() == msg.window || x.state.lock().unwrap().mapped_onto == Some(window)
-                        }) {
+                        if let Some(surface) = xwm
+                            .windows
+                            .iter_mut()
+                            .find(|x| x.window_id() == msg.window || x.mapped_window_id() == Some(window))
+                        {
                             let wl_surface = xwm
                                 .wl_client
                                 .object_from_protocol_id::<WlSurface>(&xwm.dh, id)
