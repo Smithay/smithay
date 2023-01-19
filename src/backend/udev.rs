@@ -142,8 +142,7 @@ impl EventSource for UdevBackend {
         if Some(token) != self.token {
             return Ok(PostAction::Continue);
         }
-        let monitor = self.monitor.clone();
-        for event in monitor {
+        for event in self.monitor.iter() {
             debug!(
                 self.logger,
                 "Udev event: type={}, devnum={:?} devnode={:?}",
