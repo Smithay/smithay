@@ -172,6 +172,11 @@ impl X11Surface {
         self.window
     }
 
+    /// X11 protocol id of the reparented window, if any
+    pub fn mapped_window_id(&self) -> Option<X11Window> {
+        self.state.lock().unwrap().mapped_onto
+    }
+
     /// Set the X11 windows as mapped/unmapped affecting its visibility.
     ///
     /// It is an error to call this function on override redirect windows
