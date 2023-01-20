@@ -19,9 +19,17 @@ impl NonNegativeClockSource for Monotonic {}
 #[derive(Debug)]
 pub struct Boottime;
 
+#[cfg(target_os = "linux")]
 impl ClockSource for Boottime {
     fn id() -> libc::clockid_t {
         libc::CLOCK_BOOTTIME
+    }
+}
+
+#[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
+impl ClockSource for Boottime {
+    fn id() -> libc::clockid_t {
+        libc::CLOCK_UPTIME
     }
 }
 
