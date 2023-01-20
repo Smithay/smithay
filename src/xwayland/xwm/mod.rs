@@ -922,37 +922,37 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 state.configure_request(
                     id,
                     surface.clone(),
-                    if r.value_mask & u16::from(ConfigWindow::X) != 0 {
+                    if u16::from(r.value_mask) & u16::from(ConfigWindow::X) != 0 {
                         Some(i32::from(r.x))
                     } else {
                         None
                     },
-                    if r.value_mask & u16::from(ConfigWindow::Y) != 0 {
+                    if u16::from(r.value_mask) & u16::from(ConfigWindow::Y) != 0 {
                         Some(i32::from(r.y))
                     } else {
                         None
                     },
-                    if r.value_mask & u16::from(ConfigWindow::WIDTH) != 0 {
+                    if u16::from(r.value_mask) & u16::from(ConfigWindow::WIDTH) != 0 {
                         Some(u32::from(r.width))
                     } else {
                         None
                     },
-                    if r.value_mask & u16::from(ConfigWindow::HEIGHT) != 0 {
+                    if u16::from(r.value_mask) & u16::from(ConfigWindow::HEIGHT) != 0 {
                         Some(u32::from(r.height))
                     } else {
                         None
                     },
-                    if r.value_mask & u16::from(ConfigWindow::STACK_MODE) != 0 {
+                    if u16::from(r.value_mask) & u16::from(ConfigWindow::STACK_MODE) != 0 {
                         match r.stack_mode {
                             StackMode::ABOVE => {
-                                if r.value_mask & u16::from(ConfigWindow::SIBLING) != 0 {
+                                if u16::from(r.value_mask) & u16::from(ConfigWindow::SIBLING) != 0 {
                                     Some(Reorder::Above(r.sibling))
                                 } else {
                                     Some(Reorder::Top)
                                 }
                             }
                             StackMode::BELOW => {
-                                if r.value_mask & u16::from(ConfigWindow::SIBLING) != 0 {
+                                if u16::from(r.value_mask) & u16::from(ConfigWindow::SIBLING) != 0 {
                                     Some(Reorder::Below(r.sibling))
                                 } else {
                                     Some(Reorder::Bottom)
