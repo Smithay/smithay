@@ -78,8 +78,8 @@ impl TouchHandle {
 
     /// Notify clients about touch cancellation.
     ///
-    /// This should be sent by the compositor when the currently active touch
-    /// slot was recognized as a gesture.
+    /// This should be sent by the compositor when the touch stream is recognized as
+    /// a global gesture. Cancellation applies to all currently active touch slots.
     pub fn cancel(&self) {
         self.inner.lock().unwrap().cancel();
     }
@@ -126,8 +126,13 @@ impl TouchInternal {
         });
     }
 
-    fn up(&self, serial: Serial, time: u32, slot: TouchSlot) {
+    fn up(&mut self, serial: Serial, time: u32, slot: TouchSlot) {
         self.with_focused_handles(slot, |handle| handle.up(serial.into(), time, slot.into()));
+
+        // Clear this slot's associated WlTouch handles.
+        if let Some(focus) = self.focus.get_mut(&slot) {
+            focus.handles.clear();
+        }
     }
 
     fn motion(&self, time: u32, slot: TouchSlot, location: Point<f64, Logical>) {
@@ -156,14 +161,14 @@ impl TouchInternal {
         });
     }
 
-    // TODO: In theory doesn't need to be sent for WlTouch that isn't in the focus hashmap?
-    fn cancel(&self) {
+    fn cancel(&mut self) {
         for handle in &self.known_handles {
             handle.cancel();
         }
+
+        self.focus.clear();
     }
 
-    // TODO: Document this also sends frame every time.
     #[inline]
     fn with_focused_handles<F>(&self, slot: TouchSlot, mut f: F)
     where
