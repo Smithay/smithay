@@ -36,8 +36,6 @@ use calloop::{
 pub struct X11Source {
     connection: Arc<RustConnection>,
     channel: Option<Channel<Event>>,
-    #[cfg(feature = "xwayland")]
-    pub(crate) sender: SyncSender<Event>,
     event_thread: Option<JoinHandle<()>>,
     close_window: Window,
     close_type: Atom,
@@ -60,16 +58,13 @@ impl X11Source {
         let (sender, channel) = sync_channel(5);
         let conn = Arc::clone(&connection);
         let log2 = log.clone();
-        let thread_sender = sender.clone();
         let event_thread = Some(spawn(move || {
-            run_event_thread(conn, thread_sender, log2);
+            run_event_thread(conn, sender, log2);
         }));
 
         Self {
             connection,
             channel: Some(channel),
-            #[cfg(feature = "xwayland")]
-            sender,
             event_thread,
             close_window,
             close_type,
