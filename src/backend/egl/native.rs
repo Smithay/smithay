@@ -201,6 +201,23 @@ impl EGLNativeDisplay for EGLDevice {
     }
 }
 
+/// Shallow type for the EGL_PLATFORM_SURFACELESS with default EGL display
+#[derive(Debug)]
+pub struct EGLSurfacelessDisplay;
+
+impl EGLNativeDisplay for EGLSurfacelessDisplay {
+    fn supported_platforms(&self) -> Vec<EGLPlatform<'_>> {
+        vec![
+            // see: https://www.khronos.org/registry/EGL/extensions/MESA/EGL_MESA_platform_surfaceless.txt
+            egl_platform!(
+                PLATFORM_SURFACELESS_MESA,
+                ffi::egl::DEFAULT_DISPLAY,
+                &["EGL_MESA_platform_surfaceless"]
+            ),
+        ]
+    }
+}
+
 /// Trait for types returning valid surface pointers for initializing egl.
 ///
 /// ## Safety
