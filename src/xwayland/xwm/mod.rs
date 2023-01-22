@@ -68,7 +68,7 @@ use crate::{
     utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
     wayland::compositor::{get_role, give_role},
 };
-use calloop::{channel::SyncSender, LoopHandle};
+use calloop::LoopHandle;
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
@@ -84,9 +84,9 @@ use x11rb::{
         composite::{ConnectionExt as _, Redirect},
         render::{ConnectionExt, CreatePictureAux, PictureWrapper},
         xproto::{
-            Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageData, ClientMessageEvent, ConfigWindow,
-            ConfigureWindowAux, ConnectionExt as _, CreateGCAux, CreateWindowAux, EventMask, GcontextWrapper,
-            ImageFormat, PixmapWrapper, PropMode, Screen, StackMode, Window as X11Window, WindowClass,
+            AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureWindowAux, ConnectionExt as _,
+            CreateGCAux, CreateWindowAux, EventMask, GcontextWrapper, ImageFormat, PixmapWrapper, PropMode,
+            Screen, StackMode, Window as X11Window, WindowClass,
         },
         Event,
     },
@@ -112,7 +112,6 @@ mod atoms {
             WL_SURFACE_ID,
 
             // private
-            _LATE_SURFACE_ID,
             _SMITHAY_CLOSE_CONNECTION,
 
             // data formats
@@ -307,20 +306,32 @@ impl Drop for X11Wm {
     }
 }
 
-struct X11Injector {
-    atom: Atom,
-    sender: SyncSender<Event>,
+struct X11Injector<D: XwmHandler> {
+    xwm: XwmId,
+    handle: LoopHandle<'static, D>,
 }
-impl X11Injector {
+impl<D: XwmHandler> X11Injector<D> {
     pub fn late_window(&self, surface: &WlSurface) {
-        let _ = self.sender.send(Event::ClientMessage(ClientMessageEvent {
-            response_type: 0,
-            format: 0,
-            sequence: 0,
-            window: 0,
-            type_: self.atom,
-            data: ClientMessageData::from([surface.id().protocol_id(), 0, 0, 0, 0]),
-        }));
+        let xwm = self.xwm;
+        let id = surface.id().protocol_id();
+
+        self.handle.insert_idle(move |data| {
+            let xwm = data.xwm_state(xwm);
+
+            if let Some(window) = xwm.unpaired_surfaces.remove(&id) {
+                if let Some(surface) = xwm
+                    .windows
+                    .iter_mut()
+                    .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
+                {
+                    let wl_surface = xwm
+                        .wl_client
+                        .object_from_protocol_id::<WlSurface>(&xwm.dh, id)
+                        .unwrap();
+                    X11Wm::new_surface(surface, wl_surface, xwm.log.clone());
+                }
+            }
+        });
     }
 }
 
@@ -350,14 +361,14 @@ impl X11Wm {
     /// - `client` is the wayland client instance of the Xwayland instance
     /// - `log` slog logger to be used by the WM
     pub fn start_wm<D, L>(
-        handle: LoopHandle<'_, D>,
+        handle: LoopHandle<'static, D>,
         dh: DisplayHandle,
         connection: UnixStream,
         client: Client,
         log: L,
     ) -> Result<Self, Box<dyn std::error::Error>>
     where
-        D: XwmHandler,
+        D: XwmHandler + 'static,
         L: Into<Option<::slog::Logger>>,
     {
         // Create an X11 connection. XWayland only uses screen 0.
@@ -472,9 +483,11 @@ impl X11Wm {
             atoms._SMITHAY_CLOSE_CONNECTION,
             log.clone(),
         );
+
+        let id = XwmId(next_xwm_id());
         let injector = X11Injector {
-            atom: atoms._LATE_SURFACE_ID,
-            sender: source.sender.clone(),
+            xwm: id,
+            handle: handle.clone(),
         };
         client
             .get_data::<XWaylandClientData>()
@@ -482,7 +495,6 @@ impl X11Wm {
             .user_data()
             .insert_if_missing(move || injector);
 
-        let id = XwmId(next_xwm_id());
         let wm = Self {
             id,
             dh,
@@ -679,11 +691,11 @@ impl X11Wm {
 
     /// This function has to be called on [`CompositorState::commit`] to correctly
     /// update the internal state of Xwayland WMs.
-    pub fn commit_hook(surface: &WlSurface) {
+    pub fn commit_hook<D: XwmHandler + 'static>(surface: &WlSurface) {
         if let Some(client) = surface.client() {
             if let Some(x11) = client
                 .get_data::<XWaylandClientData>()
-                .and_then(|data| data.user_data().get::<X11Injector>())
+                .and_then(|data| data.user_data().get::<X11Injector<D>>())
             {
                 if get_role(surface).is_none() {
                     x11.late_window(surface);
@@ -1105,22 +1117,6 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                             Ok(wl_surface) => {
                                 X11Wm::new_surface(surface, wl_surface, xwm.log.clone());
                             }
-                        }
-                    }
-                }
-                x if x == xwm.atoms._LATE_SURFACE_ID => {
-                    let id = msg.data.as_data32()[0];
-                    if let Some(window) = xwm.unpaired_surfaces.remove(&id) {
-                        if let Some(surface) = xwm
-                            .windows
-                            .iter_mut()
-                            .find(|x| x.window_id() == msg.window || x.mapped_window_id() == Some(window))
-                        {
-                            let wl_surface = xwm
-                                .wl_client
-                                .object_from_protocol_id::<WlSurface>(&xwm.dh, id)
-                                .unwrap();
-                            X11Wm::new_surface(surface, wl_surface, xwm.log.clone());
                         }
                     }
                 }
