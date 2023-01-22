@@ -991,13 +991,15 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 );
             } else if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
                 if surface.is_override_redirect() {
+                    let geometry = Rectangle::from_loc_and_size(
+                        (n.x as i32, n.y as i32),
+                        (n.width as i32, n.height as i32),
+                    );
+                    surface.state.lock().unwrap().geometry = geometry;
                     state.configure_notify(
                         id,
                         surface,
-                        Rectangle::from_loc_and_size(
-                            (n.x as i32, n.y as i32),
-                            (n.width as i32, n.height as i32),
-                        ),
+                        geometry,
                         if n.above_sibling == x11rb::NONE {
                             None
                         } else {
