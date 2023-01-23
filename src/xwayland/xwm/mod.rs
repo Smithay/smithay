@@ -586,6 +586,7 @@ impl X11Wm {
 
         let mut last_pos = None;
         self.conn.grab_server()?;
+        let mut changed = false;
         for relatable in order {
             let pos = self
                 .client_list_stacking
@@ -604,6 +605,7 @@ impl X11Wm {
                             .stack_mode(StackMode::BELOW),
                     )?;
                     self.client_list_stacking.insert(last_pos, elem);
+                    changed = true;
                     continue;
                 }
             }
@@ -611,13 +613,15 @@ impl X11Wm {
                 last_pos = pos;
             }
         }
-        self.conn.change_property32(
-            PropMode::REPLACE,
-            self.screen.root,
-            self.atoms._NET_CLIENT_LIST_STACKING,
-            AtomEnum::WINDOW,
-            &self.client_list_stacking,
-        )?;
+        if changed {
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                self.screen.root,
+                self.atoms._NET_CLIENT_LIST_STACKING,
+                AtomEnum::WINDOW,
+                &self.client_list_stacking,
+            )?;
+        }
         Ok(())
     }
 
@@ -654,6 +658,7 @@ impl X11Wm {
             let _ = self.conn.flush();
         });
         self.conn.grab_server()?;
+        let mut changed = false;
         for relatable in order {
             let pos = self
                 .client_list_stacking
@@ -672,6 +677,7 @@ impl X11Wm {
                             .stack_mode(StackMode::ABOVE),
                     )?;
                     self.client_list_stacking.insert(last_pos, elem);
+                    changed = true;
                     continue;
                 }
             }
@@ -679,13 +685,15 @@ impl X11Wm {
                 last_pos = pos;
             }
         }
-        self.conn.change_property32(
-            PropMode::REPLACE,
-            self.screen.root,
-            self.atoms._NET_CLIENT_LIST_STACKING,
-            AtomEnum::WINDOW,
-            &self.client_list_stacking,
-        )?;
+        if changed {
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                self.screen.root,
+                self.atoms._NET_CLIENT_LIST_STACKING,
+                AtomEnum::WINDOW,
+                &self.client_list_stacking,
+            )?;
+        }
         Ok(())
     }
 
