@@ -50,10 +50,10 @@ impl Device for WinitVirtualDevice {
 /// Winit-Backend internal event wrapping `winit`'s types into a [`KeyboardKeyEvent`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WinitKeyboardInputEvent {
-    pub(crate) time: u32,
-    pub(crate) key: u32,
-    pub(crate) count: u32,
-    pub(crate) state: ElementState,
+    pub time: u32,
+    pub key: u32,
+    pub count: u32,
+    pub state: ElementState,
 }
 
 impl Event<WinitInput> for WinitKeyboardInputEvent {
@@ -83,9 +83,9 @@ impl KeyboardKeyEvent<WinitInput> for WinitKeyboardInputEvent {
 /// Winit-Backend internal event wrapping `winit`'s types into a [`PointerMotionAbsoluteEvent`]
 #[derive(Debug, Clone)]
 pub struct WinitMouseMovedEvent {
-    pub(crate) size: Rc<RefCell<WindowSize>>,
-    pub(crate) time: u32,
-    pub(crate) logical_position: LogicalPosition<f64>,
+    pub size: Rc<RefCell<WindowSize>>,
+    pub time: u32,
+    pub logical_position: LogicalPosition<f64>,
 }
 
 impl Event<WinitInput> for WinitMouseMovedEvent {
@@ -127,8 +127,8 @@ impl AbsolutePositionEvent<WinitInput> for WinitMouseMovedEvent {
 /// Winit-Backend internal event wrapping `winit`'s types into a [`PointerAxisEvent`]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WinitMouseWheelEvent {
-    pub(crate) time: u32,
-    pub(crate) delta: MouseScrollDelta,
+    pub time: u32,
+    pub delta: MouseScrollDelta,
 }
 
 impl Event<WinitInput> for WinitMouseWheelEvent {
@@ -169,10 +169,10 @@ impl PointerAxisEvent<WinitInput> for WinitMouseWheelEvent {
 /// Winit-Backend internal event wrapping `winit`'s types into a [`PointerButtonEvent`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WinitMouseInputEvent {
-    pub(crate) time: u32,
-    pub(crate) button: WinitMouseButton,
-    pub(crate) state: ElementState,
-    pub(crate) is_x11: bool,
+    pub time: u32,
+    pub button: WinitMouseButton,
+    pub state: ElementState,
+    pub is_x11: bool,
 }
 
 impl Event<WinitInput> for WinitMouseInputEvent {
@@ -209,10 +209,10 @@ impl PointerButtonEvent<WinitInput> for WinitMouseInputEvent {
 /// Winit-Backend internal event wrapping `winit`'s types into a [`TouchDownEvent`]
 #[derive(Debug, Clone)]
 pub struct WinitTouchStartedEvent {
-    pub(crate) size: Rc<RefCell<WindowSize>>,
-    pub(crate) time: u32,
-    pub(crate) location: LogicalPosition<f64>,
-    pub(crate) id: u64,
+    pub size: Rc<RefCell<WindowSize>>,
+    pub time: u32,
+    pub location: LogicalPosition<f64>,
+    pub id: u64,
 }
 
 impl Event<WinitInput> for WinitTouchStartedEvent {
@@ -260,10 +260,10 @@ impl AbsolutePositionEvent<WinitInput> for WinitTouchStartedEvent {
 /// Winit-Backend internal event wrapping `winit`'s types into a [`TouchMotionEvent`]
 #[derive(Debug, Clone)]
 pub struct WinitTouchMovedEvent {
-    pub(crate) size: Rc<RefCell<WindowSize>>,
-    pub(crate) time: u32,
-    pub(crate) location: LogicalPosition<f64>,
-    pub(crate) id: u64,
+    pub size: Rc<RefCell<WindowSize>>,
+    pub time: u32,
+    pub location: LogicalPosition<f64>,
+    pub id: u64,
 }
 
 impl Event<WinitInput> for WinitTouchMovedEvent {
@@ -311,8 +311,8 @@ impl AbsolutePositionEvent<WinitInput> for WinitTouchMovedEvent {
 /// Winit-Backend internal event wrapping `winit`'s types into a `TouchUpEvent`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WinitTouchEndedEvent {
-    pub(crate) time: u32,
-    pub(crate) id: u64,
+    pub time: u32,
+    pub id: u64,
 }
 
 impl Event<WinitInput> for WinitTouchEndedEvent {
@@ -336,8 +336,8 @@ impl TouchEvent<WinitInput> for WinitTouchEndedEvent {
 /// Winit-Backend internal event wrapping `winit`'s types into a [`TouchCancelEvent`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WinitTouchCancelledEvent {
-    pub(crate) time: u32,
-    pub(crate) id: u64,
+    pub time: u32,
+    pub id: u64,
 }
 
 impl Event<WinitInput> for WinitTouchCancelledEvent {
