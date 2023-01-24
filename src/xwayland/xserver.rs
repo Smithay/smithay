@@ -351,11 +351,8 @@ impl Inner {
 
             // send error occurs if the user dropped the channel... We cannot do much except ignore.
             let _ = self.sender.send(XWaylandEvent::Exited);
-
             // All connections and lockfiles are cleaned by their destructors
 
-            // Remove DISPLAY from the env
-            ::std::env::remove_var("DISPLAY");
             // We do like wlroots:
             // > We do not kill the XWayland process, it dies to broken pipe
             // > after we close our side of the wm/wl fds. This is more reliable
@@ -385,9 +382,6 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
     };
 
     if success {
-        // setup the environment
-        ::std::env::set_var("DISPLAY", format!(":{}", instance.display_lock.display()));
-
         // signal the WM
         info!(
             guard.log,
