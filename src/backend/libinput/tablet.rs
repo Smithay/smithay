@@ -20,8 +20,8 @@ impl<E> backend::Event<LibinputInputBackend> for E
 where
     E: IsTabletEvent,
 {
-    fn time(&self) -> u32 {
-        tablet_tool::TabletToolEventTrait::time(self)
+    fn time(&self) -> u64 {
+        tablet_tool::TabletToolEventTrait::time_usec(self)
     }
 
     fn device(&self) -> libinput::Device {

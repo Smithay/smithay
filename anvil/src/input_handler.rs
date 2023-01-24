@@ -91,7 +91,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
         let serial = SCOUNTER.next_serial();
         let log = self.log.clone();
-        let time = Event::time(&evt);
+        let time = Event::time_msec(&evt);
         let mut suppressed_keys = self.suppressed_keys.clone();
         let keyboard = self.seat.get_keyboard().unwrap();
 
@@ -187,7 +187,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 button,
                 state: state.try_into().unwrap(),
                 serial,
-                time: evt.time(),
+                time: evt.time_msec(),
             },
         );
     }
@@ -331,7 +331,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let vertical_amount_discrete = evt.amount_discrete(input::Axis::Vertical);
 
         {
-            let mut frame = AxisFrame::new(evt.time()).source(evt.source());
+            let mut frame = AxisFrame::new(evt.time_msec()).source(evt.source());
             if horizontal_amount != 0.0 {
                 frame = frame.value(Axis::Horizontal, horizontal_amount);
                 if let Some(discrete) = horizontal_amount_discrete {
@@ -462,7 +462,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
             &MotionEvent {
                 location: pos,
                 serial,
-                time: evt.time(),
+                time: evt.time_msec(),
             },
         );
     }
@@ -651,7 +651,7 @@ impl AnvilState<UdevData> {
                 &MotionEvent {
                     location: self.pointer_location,
                     serial,
-                    time: evt.time(),
+                    time: evt.time_msec(),
                 },
             );
 
@@ -661,7 +661,7 @@ impl AnvilState<UdevData> {
                 &RelativeMotionEvent {
                     delta: evt.delta(),
                     delta_unaccel: evt.delta_unaccel(),
-                    utime: evt.utime(),
+                    utime: evt.time(),
                 },
             )
         }
@@ -701,7 +701,7 @@ impl AnvilState<UdevData> {
                 &MotionEvent {
                     location: self.pointer_location,
                     serial,
-                    time: evt.time(),
+                    time: evt.time_msec(),
                 },
             );
         }
@@ -748,7 +748,7 @@ impl AnvilState<UdevData> {
                     under.and_then(|(f, loc)| f.wl_surface().map(|s| (s, loc))),
                     &tablet,
                     SCOUNTER.next_serial(),
-                    evt.time(),
+                    evt.time_msec(),
                 );
             }
         }
@@ -788,9 +788,9 @@ impl AnvilState<UdevData> {
                         under,
                         &tablet,
                         SCOUNTER.next_serial(),
-                        evt.time(),
+                        evt.time_msec(),
                     ),
-                    ProximityState::Out => tool.proximity_out(evt.time()),
+                    ProximityState::Out => tool.proximity_out(evt.time_msec()),
                 }
             }
         }
@@ -803,13 +803,13 @@ impl AnvilState<UdevData> {
             match evt.tip_state() {
                 TabletToolTipState::Down => {
                     let serial = SCOUNTER.next_serial();
-                    tool.tip_down(serial, evt.time());
+                    tool.tip_down(serial, evt.time_msec());
 
                     // change the keyboard focus
                     self.update_keyboard_focus(serial);
                 }
                 TabletToolTipState::Up => {
-                    tool.tip_up(evt.time());
+                    tool.tip_up(evt.time_msec());
                 }
             }
         }
@@ -823,7 +823,7 @@ impl AnvilState<UdevData> {
                 evt.button(),
                 evt.button_state(),
                 SCOUNTER.next_serial(),
-                evt.time(),
+                evt.time_msec(),
             );
         }
     }

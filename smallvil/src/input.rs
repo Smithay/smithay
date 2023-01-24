@@ -18,7 +18,7 @@ impl Smallvil {
         match event {
             InputEvent::Keyboard { event, .. } => {
                 let serial = SERIAL_COUNTER.next_serial();
-                let time = Event::time(&event);
+                let time = Event::time_msec(&event);
 
                 self.seat.get_keyboard().unwrap().input::<(), _>(
                     self,
@@ -49,7 +49,7 @@ impl Smallvil {
                     &MotionEvent {
                         location: pos,
                         serial,
-                        time: event.time(),
+                        time: event.time_msec(),
                     },
                 );
             }
@@ -89,7 +89,7 @@ impl Smallvil {
                         button,
                         state: button_state,
                         serial,
-                        time: event.time(),
+                        time: event.time_msec(),
                     },
                 );
             }
@@ -105,7 +105,7 @@ impl Smallvil {
                 let horizontal_amount_discrete = event.amount_discrete(Axis::Horizontal);
                 let vertical_amount_discrete = event.amount_discrete(Axis::Vertical);
 
-                let mut frame = AxisFrame::new(event.time()).source(source);
+                let mut frame = AxisFrame::new(event.time_msec()).source(source);
                 if horizontal_amount != 0.0 {
                     frame = frame.value(Axis::Horizontal, horizontal_amount);
                     if let Some(discrete) = horizontal_amount_discrete {
