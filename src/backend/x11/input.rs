@@ -64,8 +64,8 @@ impl X11KeyboardInputEvent {
 }
 
 impl input::Event<X11Input> for X11KeyboardInputEvent {
-    fn time(&self) -> u32 {
-        self.time
+    fn time(&self) -> u64 {
+        self.time as u64 * 1000
     }
 
     fn device(&self) -> X11VirtualDevice {
@@ -106,8 +106,8 @@ impl X11MouseWheelEvent {
 }
 
 impl input::Event<X11Input> for X11MouseWheelEvent {
-    fn time(&self) -> u32 {
-        self.time
+    fn time(&self) -> u64 {
+        self.time as u64 * 1000
     }
 
     fn device(&self) -> X11VirtualDevice {
@@ -153,8 +153,8 @@ impl X11MouseInputEvent {
 }
 
 impl input::Event<X11Input> for X11MouseInputEvent {
-    fn time(&self) -> u32 {
-        self.time
+    fn time(&self) -> u64 {
+        self.time as u64 * 1000
     }
 
     fn device(&self) -> X11VirtualDevice {
@@ -192,8 +192,8 @@ impl X11MouseMovedEvent {
 }
 
 impl input::Event<X11Input> for X11MouseMovedEvent {
-    fn time(&self) -> u32 {
-        self.time
+    fn time(&self) -> u64 {
+        self.time as u64 * 1000
     }
 
     fn device(&self) -> X11VirtualDevice {

@@ -429,8 +429,7 @@ impl WinitEventLoop {
                     }
                     Event::WindowEvent { event, .. } => {
                         let duration = Instant::now().duration_since(*time);
-                        let nanos = duration.subsec_nanos() as u64;
-                        let time = ((1000 * duration.as_secs()) + (nanos / 1_000_000)) as u32;
+                        let time = duration.as_micros() as u64;
                         match event {
                             WindowEvent::Resized(psize) => {
                                 trace!(logger, "Resizing window to {:?}", psize);

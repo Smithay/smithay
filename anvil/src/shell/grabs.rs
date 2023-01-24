@@ -4,7 +4,7 @@ use smithay::{
     desktop::space::SpaceElement,
     input::pointer::{
         AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-        PointerInnerHandle,
+        PointerInnerHandle, RelativeMotionEvent,
     },
     reexports::wayland_protocols::xdg::shell::server::xdg_toplevel,
     utils::{IsAlive, Logical, Point, Serial, Size},
@@ -41,6 +41,16 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for MoveSurfaceG
 
         data.space
             .map_element(self.window.clone(), new_location.to_i32_round(), true);
+    }
+
+    fn relative_motion(
+        &mut self,
+        data: &mut AnvilState<BackendData>,
+        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        focus: Option<(FocusTarget, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        handle.relative_motion(data, focus, event);
     }
 
     fn button(
@@ -239,6 +249,16 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
                     .unwrap();
             }
         }
+    }
+
+    fn relative_motion(
+        &mut self,
+        data: &mut AnvilState<BackendData>,
+        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+        focus: Option<(FocusTarget, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        handle.relative_motion(data, focus, event);
     }
 
     fn button(

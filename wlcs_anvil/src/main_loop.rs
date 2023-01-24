@@ -9,7 +9,9 @@ use smithay::{
         input::ButtonState,
         renderer::{damage::DamageTrackedRenderer, element::AsRenderElements},
     },
-    input::pointer::{ButtonEvent, CursorImageAttributes, CursorImageStatus, MotionEvent},
+    input::pointer::{
+        ButtonEvent, CursorImageAttributes, CursorImageStatus, MotionEvent, RelativeMotionEvent,
+    },
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{
@@ -248,15 +250,26 @@ fn handle_event(
             let serial = SCOUNTER.next_serial();
             let under = state.surface_under();
             let time = Duration::from(state.clock.now()).as_millis() as u32;
-            state.seat.get_pointer().unwrap().motion(
+            let utime = Duration::from(state.clock.now()).as_micros() as u64;
+            let ptr = state.seat.get_pointer().unwrap();
+            ptr.motion(
                 state,
-                under,
+                under.clone(),
                 &MotionEvent {
                     location: state.pointer_location,
                     serial,
                     time,
                 },
             );
+            ptr.relative_motion(
+                state,
+                under,
+                &RelativeMotionEvent {
+                    delta: delta,
+                    delta_unaccel: delta,
+                    utime,
+                },
+            )
         }
         WlcsEvent::PointerButtonDown { button_id, .. } => {
             let serial = SCOUNTER.next_serial();

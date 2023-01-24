@@ -3,7 +3,7 @@ use smithay::{
     desktop::{Space, Window},
     input::pointer::{
         AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-        PointerInnerHandle,
+        PointerInnerHandle, RelativeMotionEvent,
     },
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel, wayland_server::protocol::wl_surface::WlSurface,
@@ -123,6 +123,16 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
         });
 
         xdg.send_configure();
+    }
+
+    fn relative_motion(
+        &mut self,
+        data: &mut Smallvil,
+        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        handle.relative_motion(data, focus, event);
     }
 
     fn button(

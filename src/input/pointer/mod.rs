@@ -32,6 +32,8 @@ pub struct PointerHandle<D: SeatHandler> {
     pub(crate) inner: Arc<Mutex<PointerInternal<D>>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_pointers: Arc<Mutex<Vec<wayland_server::protocol::wl_pointer::WlPointer>>>,
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) known_relative_pointers: Arc<Mutex<Vec<wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1>>>,
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
@@ -55,6 +57,7 @@ where
         f.debug_struct("PointerHandle")
             .field("inner", &self.inner)
             .field("known_pointers", &self.known_pointers)
+            .field("known_relative_pointers", &self.known_relative_pointers)
             .finish()
     }
 }
@@ -65,6 +68,8 @@ impl<D: SeatHandler> Clone for PointerHandle<D> {
             inner: self.inner.clone(),
             #[cfg(feature = "wayland_frontend")]
             known_pointers: self.known_pointers.clone(),
+            #[cfg(feature = "wayland_frontend")]
+            known_relative_pointers: self.known_relative_pointers.clone(),
         }
     }
 }
@@ -84,6 +89,8 @@ where
     fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);
     /// A pointer of a given seat moved over this handler
     fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent);
+    /// A pointer of a given seat that provides relative motion moved over this handler
+    fn relative_motion(&self, seat: &Seat<D>, data: &mut D, event: &RelativeMotionEvent);
     /// A pointer of a given seat clicked a button
     fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent);
     /// A pointer of a given seat scrolled on an axis
@@ -98,6 +105,8 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
             inner: Arc::new(Mutex::new(PointerInternal::new())),
             #[cfg(feature = "wayland_frontend")]
             known_pointers: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(feature = "wayland_frontend")]
+            known_relative_pointers: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -166,6 +175,25 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         let seat = self.get_seat(data);
         inner.with_grab(&seat, move |mut handle, grab| {
             grab.motion(data, &mut handle, focus, event);
+        });
+    }
+
+    /// Notify about relative pointer motion
+    ///
+    /// This will internally send the appropriate button event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the relative pointer protocol.
+    pub fn relative_motion(
+        &self,
+        data: &mut D,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.pending_focus = focus.clone();
+        let seat = self.get_seat(data);
+        inner.with_grab(&seat, move |mut handle, grab| {
+            grab.relative_motion(data, &mut handle, focus, event);
         });
     }
 
@@ -302,6 +330,20 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
         event: &MotionEvent,
     ) {
         self.inner.motion(data, self.seat, focus, event);
+    }
+
+    /// Notify about relative pointer motion
+    ///
+    /// This will internally send the appropriate button event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the relative pointer protocol.
+    pub fn relative_motion(
+        &mut self,
+        data: &mut D,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        self.inner.relative_motion(data, self.seat, focus, event);
     }
 
     /// Notify that a button was pressed
@@ -449,6 +491,18 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         }
     }
 
+    fn relative_motion(
+        &mut self,
+        data: &mut D,
+        seat: &Seat<D>,
+        _focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        if let Some((focused, _)) = self.focus.as_mut() {
+            focused.relative_motion(seat, data, event);
+        }
+    }
+
     fn with_grab<F>(&mut self, seat: &Seat<D>, f: F)
     where
         F: FnOnce(PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
@@ -487,6 +541,7 @@ pub enum Focus {
     /// Clear the current focus
     Clear,
 }
+
 /// Pointer motion event
 #[derive(Debug, Clone)]
 pub struct MotionEvent {
@@ -496,6 +551,17 @@ pub struct MotionEvent {
     pub serial: Serial,
     /// Timestamp of the event, with millisecond granularity
     pub time: u32,
+}
+
+/// Relative pointer motion event
+#[derive(Debug, Clone)]
+pub struct RelativeMotionEvent {
+    /// Motional vector
+    pub delta: Point<f64, Logical>,
+    /// Unaccelerated motion vector
+    pub delta_unaccel: Point<f64, Logical>,
+    /// Timestamp in microseconds
+    pub utime: u64,
 }
 
 /// Pointer button event

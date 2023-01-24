@@ -46,13 +46,19 @@ pub enum DeviceCapability {
 
 /// Trait for generic functions every input event does provide
 pub trait Event<B: InputBackend> {
-    /// Returns an upward counting variable useful for event ordering.
+    /// Timestamp in milliseconds
+    fn time_msec(&self) -> u32 {
+        (self.time() / 1000) as u32
+    }
+
+    /// Timestamp in microseconds, with an undefined base.
     ///
-    /// Makes no guarantees about actual time passed between events.
+    /// Libinput does not guarantee that timestamps always increase monotonically.
     // # TODO:
     // - check if events can even arrive out of order.
     // - Make stronger time guarantees, if possible
-    fn time(&self) -> u32;
+    fn time(&self) -> u64;
+
     /// Returns the device, that generated this event
     fn device(&self) -> B::Device;
 }
@@ -67,7 +73,7 @@ pub trait Event<B: InputBackend> {
 pub enum UnusedEvent {}
 
 impl<B: InputBackend> Event<B> for UnusedEvent {
-    fn time(&self) -> u32 {
+    fn time(&self) -> u64 {
         match *self {}
     }
 
@@ -259,10 +265,22 @@ pub trait PointerMotionEvent<B: InputBackend>: Event<B> {
         (self.delta_x(), self.delta_y()).into()
     }
 
+    /// Unaccelerated delta between the last and new pointer device position
+    fn delta_unaccel(&self) -> Point<f64, Logical> {
+        (self.delta_x_unaccel(), self.delta_y_unaccel()).into()
+    }
+
     /// Delta on the x axis between the last and new pointer device position interpreted as pixel movement
     fn delta_x(&self) -> f64;
+
     /// Delta on the y axis between the last and new pointer device position interpreted as pixel movement
     fn delta_y(&self) -> f64;
+
+    /// Unaccelerated delta on the x axis between the last and new pointer device position
+    fn delta_x_unaccel(&self) -> f64;
+
+    /// Unaccelerated delta on the y axis between the last and new pointer device position
+    fn delta_y_unaccel(&self) -> f64;
 }
 
 impl<B: InputBackend> PointerMotionEvent<B> for UnusedEvent {
@@ -271,6 +289,14 @@ impl<B: InputBackend> PointerMotionEvent<B> for UnusedEvent {
     }
 
     fn delta_y(&self) -> f64 {
+        match *self {}
+    }
+
+    fn delta_x_unaccel(&self) -> f64 {
+        match *self {}
+    }
+
+    fn delta_y_unaccel(&self) -> f64 {
         match *self {}
     }
 }

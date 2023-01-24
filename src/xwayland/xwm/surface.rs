@@ -2,7 +2,7 @@ use crate::{
     backend::{input::KeyState, renderer::element::Id},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget},
+        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget, RelativeMotionEvent},
         Seat, SeatHandler,
     },
     utils::{user_data::UserDataMap, IsAlive, Logical, Rectangle, Serial, Size},
@@ -929,6 +929,12 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for X11Surface {
     fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             PointerTarget::motion(surface, seat, data, event);
+        }
+    }
+
+    fn relative_motion(&self, seat: &Seat<D>, data: &mut D, event: &RelativeMotionEvent) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            PointerTarget::relative_motion(surface, seat, data, event);
         }
     }
 
