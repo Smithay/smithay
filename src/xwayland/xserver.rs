@@ -139,6 +139,7 @@ impl XWayland {
     pub fn start<D, K, V, I, F>(
         &self,
         loop_handle: LoopHandle<'_, D>,
+        display: impl Into<Option<u32>>,
         envs: I,
         user_data: F,
     ) -> io::Result<()>
@@ -149,7 +150,7 @@ impl XWayland {
         F: FnOnce(&UserDataMap),
     {
         let dh = self.inner.lock().unwrap().dh.clone();
-        launch(&self.inner, loop_handle, dh, envs, user_data)
+        launch(&self.inner, loop_handle, dh, display.into(), envs, user_data)
     }
 
     /// Shutdown XWayland
@@ -218,6 +219,7 @@ fn launch<D, K, V, I, F>(
     inner: &Arc<Mutex<Inner>>,
     loop_handle: LoopHandle<'_, D>,
     mut dh: DisplayHandle,
+    display: Option<u32>,
     envs: I,
     user_data: F,
 ) -> io::Result<()>
@@ -237,7 +239,7 @@ where
     let (x_wm_x11, x_wm_me) = UnixStream::pair()?;
     let (wl_x11, wl_me) = UnixStream::pair()?;
 
-    let (lock, x_fds) = prepare_x11_sockets(guard.log.clone())?;
+    let (lock, x_fds) = prepare_x11_sockets(guard.log.clone(), display)?;
 
     // we have now created all the required sockets
 
