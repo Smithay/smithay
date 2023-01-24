@@ -40,6 +40,7 @@
  */
 use std::{
     env,
+    ffi::OsStr,
     io::{self, Read},
     os::unix::{
         io::{AsRawFd, RawFd},
@@ -135,9 +136,18 @@ impl XWayland {
     /// wayland `Client` for XWayland.
     ///
     /// Does nothing if XWayland is already started or starting.
-    pub fn start<D>(&self, loop_handle: LoopHandle<'_, D>) -> io::Result<()> {
+    pub fn start<D, K, V, I>(
+        &self,
+        loop_handle: LoopHandle<'_, D>,
+        envs: I,
+    ) -> io::Result<()>
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+    {
         let dh = self.inner.lock().unwrap().dh.clone();
-        launch(&self.inner, loop_handle, dh)
+        launch(&self.inner, loop_handle, dh, envs)
     }
 
     /// Shutdown XWayland
@@ -202,11 +212,17 @@ impl XWaylandClientData {
 // Launch an XWayland server
 //
 // Does nothing if there is already a launched instance
-fn launch<D>(
+fn launch<D, K, V, I>(
     inner: &Arc<Mutex<Inner>>,
     loop_handle: LoopHandle<'_, D>,
     mut dh: DisplayHandle,
-) -> io::Result<()> {
+    envs: I,
+) -> io::Result<()>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
     let mut guard = inner.lock().unwrap();
     if guard.instance.is_some() {
         return Ok(());
@@ -222,7 +238,7 @@ fn launch<D>(
     // we have now created all the required sockets
 
     // all is ready, we can do the fork dance
-    let child_stdout = match spawn_xwayland(lock.display(), wl_x11, x_wm_x11, &x_fds) {
+    let child_stdout = match spawn_xwayland(lock.display(), wl_x11, x_wm_x11, &x_fds, envs) {
         Ok(child_stdout) => child_stdout,
         Err(e) => {
             error!(guard.log, "XWayland failed to spawn"; "err" => format!("{:?}", e));
@@ -389,12 +405,18 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
 /// Spawn XWayland with given sockets on given display
 ///
 /// Returns a pipe that outputs 'S' upon successful launch.
-fn spawn_xwayland(
+fn spawn_xwayland<K, V, I>(
     display: u32,
     wayland_socket: UnixStream,
     wm_socket: UnixStream,
     listen_sockets: &[UnixStream],
-) -> io::Result<ChildStdout> {
+    envs: I,
+) -> io::Result<ChildStdout>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
     let mut command = Command::new("sh");
 
     // We use output stream to communicate because FD is easier to handle than exit code.
@@ -423,6 +445,8 @@ fn spawn_xwayland(
         }
     }
     command.env("WAYLAND_SOCKET", format!("{}", wayland_socket.as_raw_fd()));
+    // add user provided environment
+    command.envs(envs);
 
     unsafe {
         let wayland_socket_fd = wayland_socket.as_raw_fd();
