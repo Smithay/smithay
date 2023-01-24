@@ -130,6 +130,19 @@ impl XWayland {
 
     /// Attempt to start the XWayland instance
     ///
+    /// ## Arguments
+    ///
+    /// - `display` - if provided only the given display number will be tested.
+    ///     If you wish smithay to choose a display for you, pass `None`.
+    /// - `envs` - Allows additionally environment variables for the xwayland executable to be set
+    /// - `user_data` - Allows mutating the `XWaylandClientData::user_data`-map before the client
+    ///    is added to the wayland display. Useful for initializing state for global filters.
+    ///
+    /// ## Return value
+    ///
+    /// Returns the display value, that was choosen to start the Xserver.
+    /// This function does **not** set the `DISPLAY` environment variable.
+    ///
     /// If it succeeds, you'll eventually receive an `XWaylandEvent::Ready`
     /// through the source provided by `XWayland::new()` containing an
     /// `UnixStream` representing your WM connection to XWayland, and the
