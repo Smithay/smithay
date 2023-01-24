@@ -136,18 +136,20 @@ impl XWayland {
     /// wayland `Client` for XWayland.
     ///
     /// Does nothing if XWayland is already started or starting.
-    pub fn start<D, K, V, I>(
+    pub fn start<D, K, V, I, F>(
         &self,
         loop_handle: LoopHandle<'_, D>,
         envs: I,
+        user_data: F,
     ) -> io::Result<()>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
+        F: FnOnce(&UserDataMap),
     {
         let dh = self.inner.lock().unwrap().dh.clone();
-        launch(&self.inner, loop_handle, dh, envs)
+        launch(&self.inner, loop_handle, dh, envs, user_data)
     }
 
     /// Shutdown XWayland
@@ -212,16 +214,18 @@ impl XWaylandClientData {
 // Launch an XWayland server
 //
 // Does nothing if there is already a launched instance
-fn launch<D, K, V, I>(
+fn launch<D, K, V, I, F>(
     inner: &Arc<Mutex<Inner>>,
     loop_handle: LoopHandle<'_, D>,
     mut dh: DisplayHandle,
     envs: I,
+    user_data: F,
 ) -> io::Result<()>
 where
     I: IntoIterator<Item = (K, V)>,
     K: AsRef<OsStr>,
     V: AsRef<OsStr>,
+    F: FnOnce(&UserDataMap),
 {
     let mut guard = inner.lock().unwrap();
     if guard.instance.is_some() {
@@ -259,11 +263,14 @@ where
         .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
     let client_fd = wl_me.as_raw_fd();
+
+    let data_map = UserDataMap::new();
+    user_data(&data_map);
     let client = dh.insert_client(
         wl_me,
         Arc::new(XWaylandClientData {
             inner: inner.clone(),
-            data_map: UserDataMap::new(),
+            data_map,
         }),
     )?;
     guard.instance = Some(XWaylandInstance {
