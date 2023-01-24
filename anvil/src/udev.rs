@@ -1,3 +1,5 @@
+#[cfg(feature = "xwayland")]
+use std::ffi::OsString;
 use std::{
     borrow::Cow,
     cell::RefCell,
@@ -334,7 +336,12 @@ pub fn run_udev(log: Logger) {
      * Start XWayland if supported
      */
     #[cfg(feature = "xwayland")]
-    if let Err(e) = state.xwayland.start(state.handle.clone()) {
+    if let Err(e) = state.xwayland.start(
+        state.handle.clone(),
+        None,
+        std::iter::empty::<(OsString, OsString)>(),
+        |_| {},
+    ) {
         error!(log, "Failed to start XWayland: {}", e);
     }
 
