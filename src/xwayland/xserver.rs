@@ -155,7 +155,7 @@ impl XWayland {
         display: impl Into<Option<u32>>,
         envs: I,
         user_data: F,
-    ) -> io::Result<()>
+    ) -> io::Result<u32>
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -235,7 +235,7 @@ fn launch<D, K, V, I, F>(
     display: Option<u32>,
     envs: I,
     user_data: F,
-) -> io::Result<()>
+) -> io::Result<u32>
 where
     I: IntoIterator<Item = (K, V)>,
     K: AsRef<OsStr>,
@@ -243,8 +243,8 @@ where
     F: FnOnce(&UserDataMap),
 {
     let mut guard = inner.lock().unwrap();
-    if guard.instance.is_some() {
-        return Ok(());
+    if let Some(instance) = guard.instance.as_ref() {
+        return Ok(instance.display_lock.display());
     }
 
     info!(guard.log, "Starting XWayland");
@@ -253,11 +253,12 @@ where
     let (wl_x11, wl_me) = UnixStream::pair()?;
 
     let (lock, x_fds) = prepare_x11_sockets(guard.log.clone(), display)?;
+    let display = lock.display();
 
     // we have now created all the required sockets
 
     // all is ready, we can do the fork dance
-    let child_stdout = match spawn_xwayland(lock.display(), wl_x11, x_wm_x11, &x_fds, envs) {
+    let child_stdout = match spawn_xwayland(display, wl_x11, x_wm_x11, &x_fds, envs) {
         Ok(child_stdout) => child_stdout,
         Err(e) => {
             error!(guard.log, "XWayland failed to spawn"; "err" => format!("{:?}", e));
@@ -296,7 +297,7 @@ where
         child_stdout,
     });
 
-    Ok(())
+    Ok(display)
 }
 
 /// An event source for monitoring XWayland status
