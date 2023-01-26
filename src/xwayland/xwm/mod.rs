@@ -85,8 +85,8 @@ use x11rb::{
         render::{ConnectionExt, CreatePictureAux, PictureWrapper},
         xproto::{
             AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureWindowAux, ConnectionExt as _,
-            CreateGCAux, CreateWindowAux, EventMask, GcontextWrapper, ImageFormat, PixmapWrapper, PropMode,
-            Screen, StackMode, Window as X11Window, WindowClass,
+            CreateGCAux, CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper,
+            ImageFormat, PixmapWrapper, PropMode, Screen, StackMode, Window as X11Window, WindowClass,
         },
         Event,
     },
@@ -380,16 +380,36 @@ impl X11Wm {
 
         let screen = conn.setup().roots[0].clone();
 
-        // Actually become the WM by redirecting some operations
-        conn.change_window_attributes(
-            screen.root,
-            &ChangeWindowAttributesAux::default().event_mask(
-                EventMask::SUBSTRUCTURE_REDIRECT
-                    | EventMask::SUBSTRUCTURE_NOTIFY
-                    | EventMask::PROPERTY_CHANGE
-                    | EventMask::FOCUS_CHANGE,
-            ),
-        )?;
+        {
+            let font = FontWrapper::open_font(&conn, "cursor".as_bytes())?;
+            let cursor = CursorWrapper::create_glyph_cursor(
+                &conn,
+                font.font(),
+                font.font(),
+                68,
+                69,
+                0,
+                0,
+                0,
+                u16::MAX,
+                u16::MAX,
+                u16::MAX,
+            )?;
+
+            // Actually become the WM by redirecting some operations
+            conn.change_window_attributes(
+                screen.root,
+                &ChangeWindowAttributesAux::default()
+                    .event_mask(
+                        EventMask::SUBSTRUCTURE_REDIRECT
+                            | EventMask::SUBSTRUCTURE_NOTIFY
+                            | EventMask::PROPERTY_CHANGE
+                            | EventMask::FOCUS_CHANGE,
+                    )
+                    // and also set a default root cursor in case downstream doesn't
+                    .cursor(cursor.cursor()),
+            )?;
+        }
 
         // Tell XWayland that we are the WM by acquiring the WM_S0 selection. No X11 clients are accepted before this.
         let win = conn.generate_id()?;
