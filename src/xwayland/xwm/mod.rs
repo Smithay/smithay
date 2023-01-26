@@ -760,19 +760,21 @@ impl X11Wm {
             render_format,
             &CreatePictureAux::new(),
         )?;
-        let gc = GcontextWrapper::create_gc(&*self.conn, picture.picture(), &CreateGCAux::new())?;
-        self.conn.put_image(
-            ImageFormat::Z_PIXMAP,
-            picture.picture(),
-            gc.gcontext(),
-            size.w,
-            size.h,
-            0,
-            0,
-            0,
-            32,
-            pixels,
-        )?;
+        {
+            let gc = GcontextWrapper::create_gc(&*self.conn, pixmap.pixmap(), &CreateGCAux::new())?;
+            self.conn.put_image(
+                ImageFormat::Z_PIXMAP,
+                pixmap.pixmap(),
+                gc.gcontext(),
+                size.w,
+                size.h,
+                0,
+                0,
+                0,
+                32,
+                pixels,
+            )?;
+        }
         let cursor = self.conn.generate_id()?;
         self.conn
             .render_create_cursor(cursor, picture.picture(), hotspot.x, hotspot.y)?;
