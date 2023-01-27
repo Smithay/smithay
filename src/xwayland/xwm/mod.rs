@@ -204,6 +204,10 @@ pub trait XwmHandler {
     ///
     /// To grant the wish you have to call `X11Surface::set_mapped(true)` for the window to become visible.
     fn map_window_request(&mut self, xwm: XwmId, window: X11Surface);
+    /// Notification a window was mapped sucessfully and now has a usable `wl_surface` attached.
+    fn map_window_notify(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
     /// Override redirect window was mapped.
     ///
     /// This is a notification. The XWM cannot prohibit override redirect windows to become mapped.
@@ -312,23 +316,25 @@ struct X11Injector<D: XwmHandler> {
 }
 impl<D: XwmHandler> X11Injector<D> {
     pub fn late_window(&self, surface: &WlSurface) {
-        let xwm = self.xwm;
+        let xwm_id = self.xwm;
         let id = surface.id().protocol_id();
 
         self.handle.insert_idle(move |data| {
-            let xwm = data.xwm_state(xwm);
+            let xwm = data.xwm_state(xwm_id);
 
             if let Some(window) = xwm.unpaired_surfaces.remove(&id) {
                 if let Some(surface) = xwm
                     .windows
-                    .iter_mut()
+                    .iter()
                     .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
                 {
                     let wl_surface = xwm
                         .wl_client
                         .object_from_protocol_id::<WlSurface>(&xwm.dh, id)
                         .unwrap();
-                    X11Wm::new_surface(surface, wl_surface, xwm.log.clone());
+                    let surface = surface.clone();
+                    let log = xwm.log.clone();
+                    X11Wm::new_surface(data, xwm_id, surface, wl_surface, log);
                 }
             }
         });
@@ -732,7 +738,13 @@ impl X11Wm {
         }
     }
 
-    fn new_surface(surface: &mut X11Surface, wl_surface: WlSurface, log: ::slog::Logger) {
+    fn new_surface<D: XwmHandler>(
+        state: &mut D,
+        xwm_id: XwmId,
+        surface: X11Surface,
+        wl_surface: WlSurface,
+        log: ::slog::Logger,
+    ) {
         slog::info!(
             log,
             "Matched X11 surface {:?} to {:x?}",
@@ -746,6 +758,7 @@ impl X11Wm {
         }
 
         surface.state.lock().unwrap().wl_surface = Some(wl_surface);
+        state.map_window_notify(xwm_id, surface);
     }
 
     /// Set the default cursor used by X clients.
@@ -1123,7 +1136,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             }
             match msg.type_ {
                 x if x == xwm.atoms.WL_SURFACE_ID => {
-                    let id = msg.data.as_data32()[0];
+                    let wid = msg.data.as_data32()[0];
                     slog::info!(
                         xwm.log,
                         "X11 surface {:?} corresponds to WlSurface {:?}",
@@ -1141,13 +1154,15 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                         // wayland socket). Thus, we could receive these two in any order. Hence, it
                         // can happen that we get None below when X11 was faster than Wayland.
 
-                        let wl_surface = xwm.wl_client.object_from_protocol_id::<WlSurface>(&xwm.dh, id);
+                        let wl_surface = xwm.wl_client.object_from_protocol_id::<WlSurface>(&xwm.dh, wid);
                         match wl_surface {
                             Err(_) => {
-                                xwm.unpaired_surfaces.insert(id, msg.window);
+                                xwm.unpaired_surfaces.insert(wid, msg.window);
                             }
                             Ok(wl_surface) => {
-                                X11Wm::new_surface(surface, wl_surface, xwm.log.clone());
+                                let log = xwm.log.clone();
+                                let surface = surface.clone();
+                                X11Wm::new_surface(state, id, surface, wl_surface, log);
                             }
                         }
                     }
