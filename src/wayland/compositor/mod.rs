@@ -116,6 +116,9 @@ use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
 use wayland_server::{DisplayHandle, GlobalDispatch, Resource};
 
+/// The role of a subsurface surface.
+pub const SUBSURFACE_ROLE: &str = "subsurface";
+
 /// Description of a part of a surface that
 /// should be considered damaged and needs to be redrawn
 #[derive(Debug, PartialEq, Eq)]
