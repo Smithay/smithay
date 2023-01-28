@@ -1,4 +1,4 @@
-use crate::utils::Serial;
+use crate::{utils::Serial, wayland::compositor::SUBSURFACE_ROLE};
 
 use super::{
     cache::MultiCache,
@@ -11,8 +11,6 @@ use std::{
     sync::{atomic::Ordering, Mutex},
 };
 use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle, Resource};
-
-pub(crate) static SUBSURFACE_ROLE: &str = "subsurface";
 
 /// Node of a subsurface tree, holding some user specified data type U
 /// at each node
