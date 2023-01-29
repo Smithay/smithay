@@ -85,8 +85,8 @@ use x11rb::{
         render::{ConnectionExt, CreatePictureAux, PictureWrapper},
         xproto::{
             AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureWindowAux, ConnectionExt as _,
-            CreateGCAux, CreateWindowAux, EventMask, GcontextWrapper, ImageFormat, PixmapWrapper, PropMode,
-            Screen, StackMode, Window as X11Window, WindowClass,
+            CreateGCAux, CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper,
+            ImageFormat, PixmapWrapper, PropMode, Screen, StackMode, Window as X11Window, WindowClass,
         },
         Event,
     },
@@ -204,6 +204,10 @@ pub trait XwmHandler {
     ///
     /// To grant the wish you have to call `X11Surface::set_mapped(true)` for the window to become visible.
     fn map_window_request(&mut self, xwm: XwmId, window: X11Surface);
+    /// Notification a window was mapped sucessfully and now has a usable `wl_surface` attached.
+    fn map_window_notify(&mut self, xwm: XwmId, window: X11Surface) {
+        let _ = (xwm, window);
+    }
     /// Override redirect window was mapped.
     ///
     /// This is a notification. The XWM cannot prohibit override redirect windows to become mapped.
@@ -312,23 +316,25 @@ struct X11Injector<D: XwmHandler> {
 }
 impl<D: XwmHandler> X11Injector<D> {
     pub fn late_window(&self, surface: &WlSurface) {
-        let xwm = self.xwm;
+        let xwm_id = self.xwm;
         let id = surface.id().protocol_id();
 
         self.handle.insert_idle(move |data| {
-            let xwm = data.xwm_state(xwm);
+            let xwm = data.xwm_state(xwm_id);
 
             if let Some(window) = xwm.unpaired_surfaces.remove(&id) {
                 if let Some(surface) = xwm
                     .windows
-                    .iter_mut()
+                    .iter()
                     .find(|x| x.window_id() == window || x.mapped_window_id() == Some(window))
                 {
                     let wl_surface = xwm
                         .wl_client
                         .object_from_protocol_id::<WlSurface>(&xwm.dh, id)
                         .unwrap();
-                    X11Wm::new_surface(surface, wl_surface, xwm.log.clone());
+                    let surface = surface.clone();
+                    let log = xwm.log.clone();
+                    X11Wm::new_surface(data, xwm_id, surface, wl_surface, log);
                 }
             }
         });
@@ -380,16 +386,36 @@ impl X11Wm {
 
         let screen = conn.setup().roots[0].clone();
 
-        // Actually become the WM by redirecting some operations
-        conn.change_window_attributes(
-            screen.root,
-            &ChangeWindowAttributesAux::default().event_mask(
-                EventMask::SUBSTRUCTURE_REDIRECT
-                    | EventMask::SUBSTRUCTURE_NOTIFY
-                    | EventMask::PROPERTY_CHANGE
-                    | EventMask::FOCUS_CHANGE,
-            ),
-        )?;
+        {
+            let font = FontWrapper::open_font(&conn, "cursor".as_bytes())?;
+            let cursor = CursorWrapper::create_glyph_cursor(
+                &conn,
+                font.font(),
+                font.font(),
+                68,
+                69,
+                0,
+                0,
+                0,
+                u16::MAX,
+                u16::MAX,
+                u16::MAX,
+            )?;
+
+            // Actually become the WM by redirecting some operations
+            conn.change_window_attributes(
+                screen.root,
+                &ChangeWindowAttributesAux::default()
+                    .event_mask(
+                        EventMask::SUBSTRUCTURE_REDIRECT
+                            | EventMask::SUBSTRUCTURE_NOTIFY
+                            | EventMask::PROPERTY_CHANGE
+                            | EventMask::FOCUS_CHANGE,
+                    )
+                    // and also set a default root cursor in case downstream doesn't
+                    .cursor(cursor.cursor()),
+            )?;
+        }
 
         // Tell XWayland that we are the WM by acquiring the WM_S0 selection. No X11 clients are accepted before this.
         let win = conn.generate_id()?;
@@ -586,6 +612,7 @@ impl X11Wm {
 
         let mut last_pos = None;
         self.conn.grab_server()?;
+        let mut changed = false;
         for relatable in order {
             let pos = self
                 .client_list_stacking
@@ -604,6 +631,7 @@ impl X11Wm {
                             .stack_mode(StackMode::BELOW),
                     )?;
                     self.client_list_stacking.insert(last_pos, elem);
+                    changed = true;
                     continue;
                 }
             }
@@ -611,13 +639,15 @@ impl X11Wm {
                 last_pos = pos;
             }
         }
-        self.conn.change_property32(
-            PropMode::REPLACE,
-            self.screen.root,
-            self.atoms._NET_CLIENT_LIST_STACKING,
-            AtomEnum::WINDOW,
-            &self.client_list_stacking,
-        )?;
+        if changed {
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                self.screen.root,
+                self.atoms._NET_CLIENT_LIST_STACKING,
+                AtomEnum::WINDOW,
+                &self.client_list_stacking,
+            )?;
+        }
         Ok(())
     }
 
@@ -654,6 +684,7 @@ impl X11Wm {
             let _ = self.conn.flush();
         });
         self.conn.grab_server()?;
+        let mut changed = false;
         for relatable in order {
             let pos = self
                 .client_list_stacking
@@ -672,6 +703,7 @@ impl X11Wm {
                             .stack_mode(StackMode::ABOVE),
                     )?;
                     self.client_list_stacking.insert(last_pos, elem);
+                    changed = true;
                     continue;
                 }
             }
@@ -679,13 +711,15 @@ impl X11Wm {
                 last_pos = pos;
             }
         }
-        self.conn.change_property32(
-            PropMode::REPLACE,
-            self.screen.root,
-            self.atoms._NET_CLIENT_LIST_STACKING,
-            AtomEnum::WINDOW,
-            &self.client_list_stacking,
-        )?;
+        if changed {
+            self.conn.change_property32(
+                PropMode::REPLACE,
+                self.screen.root,
+                self.atoms._NET_CLIENT_LIST_STACKING,
+                AtomEnum::WINDOW,
+                &self.client_list_stacking,
+            )?;
+        }
         Ok(())
     }
 
@@ -704,7 +738,13 @@ impl X11Wm {
         }
     }
 
-    fn new_surface(surface: &mut X11Surface, wl_surface: WlSurface, log: ::slog::Logger) {
+    fn new_surface<D: XwmHandler>(
+        state: &mut D,
+        xwm_id: XwmId,
+        surface: X11Surface,
+        wl_surface: WlSurface,
+        log: ::slog::Logger,
+    ) {
         slog::info!(
             log,
             "Matched X11 surface {:?} to {:x?}",
@@ -718,6 +758,7 @@ impl X11Wm {
         }
 
         surface.state.lock().unwrap().wl_surface = Some(wl_surface);
+        state.map_window_notify(xwm_id, surface);
     }
 
     /// Set the default cursor used by X clients.
@@ -752,19 +793,21 @@ impl X11Wm {
             render_format,
             &CreatePictureAux::new(),
         )?;
-        let gc = GcontextWrapper::create_gc(&*self.conn, picture.picture(), &CreateGCAux::new())?;
-        self.conn.put_image(
-            ImageFormat::Z_PIXMAP,
-            picture.picture(),
-            gc.gcontext(),
-            size.w,
-            size.h,
-            0,
-            0,
-            0,
-            32,
-            pixels,
-        )?;
+        {
+            let gc = GcontextWrapper::create_gc(&*self.conn, pixmap.pixmap(), &CreateGCAux::new())?;
+            self.conn.put_image(
+                ImageFormat::Z_PIXMAP,
+                pixmap.pixmap(),
+                gc.gcontext(),
+                size.w,
+                size.h,
+                0,
+                0,
+                0,
+                32,
+                pixels,
+            )?;
+        }
         let cursor = self.conn.generate_id()?;
         self.conn
             .render_create_cursor(cursor, picture.picture(), hotspot.x, hotspot.y)?;
@@ -991,13 +1034,15 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 );
             } else if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
                 if surface.is_override_redirect() {
+                    let geometry = Rectangle::from_loc_and_size(
+                        (n.x as i32, n.y as i32),
+                        (n.width as i32, n.height as i32),
+                    );
+                    surface.state.lock().unwrap().geometry = geometry;
                     state.configure_notify(
                         id,
                         surface,
-                        Rectangle::from_loc_and_size(
-                            (n.x as i32, n.y as i32),
-                            (n.width as i32, n.height as i32),
-                        ),
+                        geometry,
                         if n.above_sibling == x11rb::NONE {
                             None
                         } else {
@@ -1091,7 +1136,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             }
             match msg.type_ {
                 x if x == xwm.atoms.WL_SURFACE_ID => {
-                    let id = msg.data.as_data32()[0];
+                    let wid = msg.data.as_data32()[0];
                     slog::info!(
                         xwm.log,
                         "X11 surface {:?} corresponds to WlSurface {:?}",
@@ -1109,13 +1154,15 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                         // wayland socket). Thus, we could receive these two in any order. Hence, it
                         // can happen that we get None below when X11 was faster than Wayland.
 
-                        let wl_surface = xwm.wl_client.object_from_protocol_id::<WlSurface>(&xwm.dh, id);
+                        let wl_surface = xwm.wl_client.object_from_protocol_id::<WlSurface>(&xwm.dh, wid);
                         match wl_surface {
                             Err(_) => {
-                                xwm.unpaired_surfaces.insert(id, msg.window);
+                                xwm.unpaired_surfaces.insert(wid, msg.window);
                             }
                             Ok(wl_surface) => {
-                                X11Wm::new_surface(surface, wl_surface, xwm.log.clone());
+                                let log = xwm.log.clone();
+                                let surface = surface.clone();
+                                X11Wm::new_surface(state, id, surface, wl_surface, log);
                             }
                         }
                     }
