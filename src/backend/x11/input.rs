@@ -230,6 +230,15 @@ impl InputBackend for X11Input {
 
     type PointerMotionAbsoluteEvent = X11MouseMovedEvent;
 
+    type GestureSwipeBeginEvent = UnusedEvent;
+    type GestureSwipeUpdateEvent = UnusedEvent;
+    type GestureSwipeEndEvent = UnusedEvent;
+    type GesturePinchBeginEvent = UnusedEvent;
+    type GesturePinchUpdateEvent = UnusedEvent;
+    type GesturePinchEndEvent = UnusedEvent;
+    type GestureHoldBeginEvent = UnusedEvent;
+    type GestureHoldEndEvent = UnusedEvent;
+
     type TouchDownEvent = UnusedEvent;
     type TouchUpEvent = UnusedEvent;
     type TouchMotionEvent = UnusedEvent;

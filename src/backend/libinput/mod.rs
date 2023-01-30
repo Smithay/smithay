@@ -1,3 +1,7 @@
+// TODO: Update to use new `Scroll*` events instead of now deprecated
+// `PointerAxis*`.
+#![cfg_attr(feature = "libinput_1_19", allow(deprecated))]
+
 //! Implementation of input backend trait for types provided by `libinput`
 
 use crate::backend::input::{self as backend, Axis, InputBackend, InputEvent};
@@ -240,6 +244,148 @@ impl backend::AbsolutePositionEvent<LibinputInputBackend> for event::pointer::Po
     }
 }
 
+impl<T> backend::GestureBeginEvent<LibinputInputBackend> for T
+where
+    T: event::gesture::GestureEventTrait + backend::Event<LibinputInputBackend>,
+{
+    fn fingers(&self) -> u32 {
+        self.finger_count() as u32
+    }
+}
+
+impl<T> backend::GestureEndEvent<LibinputInputBackend> for T
+where
+    T: event::gesture::GestureEndEvent + backend::Event<LibinputInputBackend>,
+{
+    fn cancelled(&self) -> bool {
+        self.cancelled()
+    }
+}
+
+impl backend::Event<LibinputInputBackend> for event::gesture::GestureSwipeBeginEvent {
+    fn time(&self) -> u64 {
+        event::gesture::GestureEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::GestureSwipeBeginEvent<LibinputInputBackend> for event::gesture::GestureSwipeBeginEvent {}
+
+impl backend::Event<LibinputInputBackend> for event::gesture::GestureSwipeUpdateEvent {
+    fn time(&self) -> u64 {
+        event::gesture::GestureEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::GestureSwipeUpdateEvent<LibinputInputBackend> for event::gesture::GestureSwipeUpdateEvent {
+    fn delta_x(&self) -> f64 {
+        event::gesture::GestureEventCoordinates::dx(self)
+    }
+
+    fn delta_y(&self) -> f64 {
+        event::gesture::GestureEventCoordinates::dy(self)
+    }
+}
+
+impl backend::Event<LibinputInputBackend> for event::gesture::GestureSwipeEndEvent {
+    fn time(&self) -> u64 {
+        event::gesture::GestureEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::GestureSwipeEndEvent<LibinputInputBackend> for event::gesture::GestureSwipeEndEvent {}
+
+impl backend::Event<LibinputInputBackend> for event::gesture::GesturePinchBeginEvent {
+    fn time(&self) -> u64 {
+        event::gesture::GestureEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::GesturePinchBeginEvent<LibinputInputBackend> for event::gesture::GesturePinchBeginEvent {}
+
+impl backend::Event<LibinputInputBackend> for event::gesture::GesturePinchUpdateEvent {
+    fn time(&self) -> u64 {
+        event::gesture::GestureEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::GesturePinchUpdateEvent<LibinputInputBackend> for event::gesture::GesturePinchUpdateEvent {
+    fn delta_x(&self) -> f64 {
+        event::gesture::GestureEventCoordinates::dx(self)
+    }
+
+    fn delta_y(&self) -> f64 {
+        event::gesture::GestureEventCoordinates::dy(self)
+    }
+
+    fn scale(&self) -> f64 {
+        event::gesture::GesturePinchEventTrait::scale(self)
+    }
+
+    fn rotation(&self) -> f64 {
+        self.angle_delta()
+    }
+}
+
+impl backend::Event<LibinputInputBackend> for event::gesture::GesturePinchEndEvent {
+    fn time(&self) -> u64 {
+        event::gesture::GestureEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::GesturePinchEndEvent<LibinputInputBackend> for event::gesture::GesturePinchEndEvent {}
+
+#[cfg(feature = "libinput_1_19")]
+impl backend::Event<LibinputInputBackend> for event::gesture::GestureHoldBeginEvent {
+    fn time(&self) -> u64 {
+        event::gesture::GestureEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+#[cfg(feature = "libinput_1_19")]
+impl backend::GestureHoldBeginEvent<LibinputInputBackend> for event::gesture::GestureHoldBeginEvent {}
+
+#[cfg(feature = "libinput_1_19")]
+impl backend::Event<LibinputInputBackend> for event::gesture::GestureHoldEndEvent {
+    fn time(&self) -> u64 {
+        event::gesture::GestureEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> libinput::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+#[cfg(feature = "libinput_1_19")]
+impl backend::GestureHoldEndEvent<LibinputInputBackend> for event::gesture::GestureHoldEndEvent {}
+
 impl backend::Event<LibinputInputBackend> for event::touch::TouchDownEvent {
     fn time(&self) -> u64 {
         event::touch::TouchEventTrait::time_usec(self)
@@ -367,6 +513,22 @@ impl InputBackend for LibinputInputBackend {
     type PointerButtonEvent = event::pointer::PointerButtonEvent;
     type PointerMotionEvent = event::pointer::PointerMotionEvent;
     type PointerMotionAbsoluteEvent = event::pointer::PointerMotionAbsoluteEvent;
+
+    type GestureSwipeBeginEvent = event::gesture::GestureSwipeBeginEvent;
+    type GestureSwipeUpdateEvent = event::gesture::GestureSwipeUpdateEvent;
+    type GestureSwipeEndEvent = event::gesture::GestureSwipeEndEvent;
+    type GesturePinchBeginEvent = event::gesture::GesturePinchBeginEvent;
+    type GesturePinchUpdateEvent = event::gesture::GesturePinchUpdateEvent;
+    type GesturePinchEndEvent = event::gesture::GesturePinchEndEvent;
+    #[cfg(not(feature = "libinput_1_19"))]
+    type GestureHoldBeginEvent = backend::UnusedEvent;
+    #[cfg(not(feature = "libinput_1_19"))]
+    type GestureHoldEndEvent = backend::UnusedEvent;
+    #[cfg(feature = "libinput_1_19")]
+    type GestureHoldBeginEvent = event::gesture::GestureHoldBeginEvent;
+    #[cfg(feature = "libinput_1_19")]
+    type GestureHoldEndEvent = event::gesture::GestureHoldEndEvent;
+
     type TouchDownEvent = event::touch::TouchDownEvent;
     type TouchUpEvent = event::touch::TouchUpEvent;
     type TouchMotionEvent = event::touch::TouchMotionEvent;
@@ -544,6 +706,37 @@ impl EventSource for LibinputInputBackend {
                         }
                         _ => {
                             trace!(self.logger, "Unknown libinput pointer event");
+                        }
+                    },
+                    libinput::Event::Gesture(gesture_event) => match gesture_event {
+                        event::GestureEvent::Swipe(event::gesture::GestureSwipeEvent::Begin(event)) => {
+                            callback(InputEvent::GestureSwipeBegin { event }, &mut ());
+                        }
+                        event::GestureEvent::Swipe(event::gesture::GestureSwipeEvent::Update(event)) => {
+                            callback(InputEvent::GestureSwipeUpdate { event }, &mut ());
+                        }
+                        event::GestureEvent::Swipe(event::gesture::GestureSwipeEvent::End(event)) => {
+                            callback(InputEvent::GestureSwipeEnd { event }, &mut ());
+                        }
+                        event::GestureEvent::Pinch(event::gesture::GesturePinchEvent::Begin(event)) => {
+                            callback(InputEvent::GesturePinchBegin { event }, &mut ());
+                        }
+                        event::GestureEvent::Pinch(event::gesture::GesturePinchEvent::Update(event)) => {
+                            callback(InputEvent::GesturePinchUpdate { event }, &mut ());
+                        }
+                        event::GestureEvent::Pinch(event::gesture::GesturePinchEvent::End(event)) => {
+                            callback(InputEvent::GesturePinchEnd { event }, &mut ());
+                        }
+                        #[cfg(feature = "libinput_1_19")]
+                        event::GestureEvent::Hold(event::gesture::GestureHoldEvent::Begin(event)) => {
+                            callback(InputEvent::GestureHoldBegin { event }, &mut ());
+                        }
+                        #[cfg(feature = "libinput_1_19")]
+                        event::GestureEvent::Hold(event::gesture::GestureHoldEvent::End(event)) => {
+                            callback(InputEvent::GestureHoldEnd { event }, &mut ());
+                        }
+                        _ => {
+                            trace!(self.logger, "Unknown libinput gesture event");
                         }
                     },
                     libinput::Event::Tablet(tablet_event) => match tablet_event {
