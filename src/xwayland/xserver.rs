@@ -40,6 +40,7 @@
  */
 use std::{
     env,
+    ffi::OsStr,
     io::{self, Read},
     os::unix::{
         io::{AsRawFd, RawFd},
@@ -129,15 +130,40 @@ impl XWayland {
 
     /// Attempt to start the XWayland instance
     ///
+    /// ## Arguments
+    ///
+    /// - `display` - if provided only the given display number will be tested.
+    ///     If you wish smithay to choose a display for you, pass `None`.
+    /// - `envs` - Allows additionally environment variables for the xwayland executable to be set
+    /// - `user_data` - Allows mutating the `XWaylandClientData::user_data`-map before the client
+    ///    is added to the wayland display. Useful for initializing state for global filters.
+    ///
+    /// ## Return value
+    ///
+    /// Returns the display value, that was choosen to start the Xserver.
+    /// This function does **not** set the `DISPLAY` environment variable.
+    ///
     /// If it succeeds, you'll eventually receive an `XWaylandEvent::Ready`
     /// through the source provided by `XWayland::new()` containing an
     /// `UnixStream` representing your WM connection to XWayland, and the
     /// wayland `Client` for XWayland.
     ///
     /// Does nothing if XWayland is already started or starting.
-    pub fn start<D>(&self, loop_handle: LoopHandle<'_, D>) -> io::Result<()> {
+    pub fn start<D, K, V, I, F>(
+        &self,
+        loop_handle: LoopHandle<'_, D>,
+        display: impl Into<Option<u32>>,
+        envs: I,
+        user_data: F,
+    ) -> io::Result<u32>
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+        F: FnOnce(&UserDataMap),
+    {
         let dh = self.inner.lock().unwrap().dh.clone();
-        launch(&self.inner, loop_handle, dh)
+        launch(&self.inner, loop_handle, dh, display.into(), envs, user_data)
     }
 
     /// Shutdown XWayland
@@ -202,14 +228,23 @@ impl XWaylandClientData {
 // Launch an XWayland server
 //
 // Does nothing if there is already a launched instance
-fn launch<D>(
+fn launch<D, K, V, I, F>(
     inner: &Arc<Mutex<Inner>>,
     loop_handle: LoopHandle<'_, D>,
     mut dh: DisplayHandle,
-) -> io::Result<()> {
+    display: Option<u32>,
+    envs: I,
+    user_data: F,
+) -> io::Result<u32>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+    F: FnOnce(&UserDataMap),
+{
     let mut guard = inner.lock().unwrap();
-    if guard.instance.is_some() {
-        return Ok(());
+    if let Some(instance) = guard.instance.as_ref() {
+        return Ok(instance.display_lock.display());
     }
 
     info!(guard.log, "Starting XWayland");
@@ -217,12 +252,13 @@ fn launch<D>(
     let (x_wm_x11, x_wm_me) = UnixStream::pair()?;
     let (wl_x11, wl_me) = UnixStream::pair()?;
 
-    let (lock, x_fds) = prepare_x11_sockets(guard.log.clone())?;
+    let (lock, x_fds) = prepare_x11_sockets(guard.log.clone(), display)?;
+    let display = lock.display();
 
     // we have now created all the required sockets
 
     // all is ready, we can do the fork dance
-    let child_stdout = match spawn_xwayland(lock.display(), wl_x11, x_wm_x11, &x_fds) {
+    let child_stdout = match spawn_xwayland(display, wl_x11, x_wm_x11, &x_fds, envs) {
         Ok(child_stdout) => child_stdout,
         Err(e) => {
             error!(guard.log, "XWayland failed to spawn"; "err" => format!("{:?}", e));
@@ -243,11 +279,14 @@ fn launch<D>(
         .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
     let client_fd = wl_me.as_raw_fd();
+
+    let data_map = UserDataMap::new();
+    user_data(&data_map);
     let client = dh.insert_client(
         wl_me,
         Arc::new(XWaylandClientData {
             inner: inner.clone(),
-            data_map: UserDataMap::new(),
+            data_map,
         }),
     )?;
     guard.instance = Some(XWaylandInstance {
@@ -258,7 +297,7 @@ fn launch<D>(
         child_stdout,
     });
 
-    Ok(())
+    Ok(display)
 }
 
 /// An event source for monitoring XWayland status
@@ -328,11 +367,8 @@ impl Inner {
 
             // send error occurs if the user dropped the channel... We cannot do much except ignore.
             let _ = self.sender.send(XWaylandEvent::Exited);
-
             // All connections and lockfiles are cleaned by their destructors
 
-            // Remove DISPLAY from the env
-            ::std::env::remove_var("DISPLAY");
             // We do like wlroots:
             // > We do not kill the XWayland process, it dies to broken pipe
             // > after we close our side of the wm/wl fds. This is more reliable
@@ -347,7 +383,13 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
     let guard = &mut *guard;
     info!(guard.log, "XWayland ready");
     // instance should never be None at this point
-    let instance = guard.instance.as_mut().unwrap();
+    let Some(instance) = guard.instance.as_mut() else {
+        error!(
+            guard.log,
+            "XWayland crashed at startup, will not try to restart it."
+        );
+        return;
+    };
     // neither the child_stdout
     let child_stdout = &mut instance.child_stdout;
 
@@ -362,9 +404,6 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
     };
 
     if success {
-        // setup the environment
-        ::std::env::set_var("DISPLAY", format!(":{}", instance.display_lock.display()));
-
         // signal the WM
         info!(
             guard.log,
@@ -389,12 +428,18 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
 /// Spawn XWayland with given sockets on given display
 ///
 /// Returns a pipe that outputs 'S' upon successful launch.
-fn spawn_xwayland(
+fn spawn_xwayland<K, V, I>(
     display: u32,
     wayland_socket: UnixStream,
     wm_socket: UnixStream,
     listen_sockets: &[UnixStream],
-) -> io::Result<ChildStdout> {
+    envs: I,
+) -> io::Result<ChildStdout>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
+{
     let mut command = Command::new("sh");
 
     // We use output stream to communicate because FD is easier to handle than exit code.
@@ -423,6 +468,8 @@ fn spawn_xwayland(
         }
     }
     command.env("WAYLAND_SOCKET", format!("{}", wayland_socket.as_raw_fd()));
+    // add user provided environment
+    command.envs(envs);
 
     unsafe {
         let wayland_socket_fd = wayland_socket.as_raw_fd();

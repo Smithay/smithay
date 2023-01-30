@@ -8,19 +8,36 @@ use slog::{debug, info, warn};
 use nix::{errno::Errno, sys::socket};
 
 /// Find a free X11 display slot and setup
-pub(crate) fn prepare_x11_sockets(log: ::slog::Logger) -> Result<(X11Lock, [UnixStream; 2]), std::io::Error> {
-    for d in 0..33 {
-        // if fails, try the next one
-        if let Ok(lock) = X11Lock::grab(d, log.clone()) {
-            // we got a lockfile, try and create the socket
-            match open_x11_sockets_for_display(d) {
-                Ok(sockets) => return Ok((lock, sockets)),
-                Err(err) => warn!(log, "Failed to create sockets: {}", err),
+pub(crate) fn prepare_x11_sockets(
+    log: ::slog::Logger,
+    display: Option<u32>,
+) -> Result<(X11Lock, [UnixStream; 2]), std::io::Error> {
+    match display {
+        Some(d) => {
+            if let Ok(lock) = X11Lock::grab(d, log.clone()) {
+                // we got a lockfile, try and create the socket
+                match open_x11_sockets_for_display(d) {
+                    Ok(sockets) => return Ok((lock, sockets)),
+                    Err(err) => return Err(std::io::Error::from_raw_os_error(err as i32)),
+                };
             }
         }
+        None => {
+            for d in 0..33 {
+                // if fails, try the next one
+                if let Ok(lock) = X11Lock::grab(d, log.clone()) {
+                    // we got a lockfile, try and create the socket
+                    match open_x11_sockets_for_display(d) {
+                        Ok(sockets) => return Ok((lock, sockets)),
+                        Err(err) => warn!(log, "Failed to create sockets: {}", err),
+                    }
+                }
+            }
+            // If we reach here, all values from 0 to 32 failed
+            // we need to stop trying at some point
+        }
     }
-    // If we reach here, all values from 0 to 32 failed
-    // we need to stop trying at some point
+
     Err(std::io::Error::new(
         std::io::ErrorKind::AddrInUse,
         "Could not find a free socket for the XServer.",

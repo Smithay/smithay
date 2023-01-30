@@ -65,7 +65,21 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             KeyAction::Run(cmd) => {
                 info!(self.log, "Starting program"; "cmd" => cmd.clone());
 
-                if let Err(e) = Command::new(&cmd).spawn() {
+                if let Err(e) = Command::new(&cmd)
+                    .envs(
+                        self.socket_name
+                            .clone()
+                            .map(|v| ("WAYLAND_DISPLAY", v))
+                            .into_iter()
+                            .chain(
+                                #[cfg(feature = "xwayland")]
+                                self.xdisplay.map(|v| ("DISPLAY", format!(":{}", v))),
+                                #[cfg(not(feature = "xwayland"))]
+                                None,
+                            ),
+                    )
+                    .spawn()
+                {
                     error!(self.log,
                         "Failed to start program";
                         "cmd" => cmd,
