@@ -13,13 +13,13 @@
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
-//! // Create the viewporter state:
-//! let viewporter_state = PresentationState::new::<State>(
+//! // Create the presentation state:
+//! let presentation_state = PresentationState::new::<State>(
 //!     &display.handle(), // the display
 //!     1 // the id of the clock
 //! );
 //!
-//! // implement Dispatch for the Viewporter types
+//! // implement Dispatch for the Presentation types
 //! delegate_presentation!(State);
 //!
 //! // You're now ready to go!
