@@ -2128,6 +2128,11 @@ impl<'frame> Frame for Gles2Frame<'frame> {
             transform.invert().matrix()
         };
 
+        if src_size.w == 0. || src_size.h == 0. || tex_size.w == 0. || tex_size.h == 0. {
+            warn!(self.renderer.logger, "Texture/Src is zero sized");
+            return Ok(());
+        }
+
         let mut tex_mat = Matrix3::<f32>::identity();
         // first scale to meet the src size
         tex_mat = tex_mat
