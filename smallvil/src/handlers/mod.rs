@@ -36,6 +36,7 @@ delegate_seat!(Smallvil);
 //
 
 impl DataDeviceHandler for Smallvil {
+    type SelectionUserData = ();
     fn data_device_state(&self) -> &smithay::wayland::data_device::DataDeviceState {
         &self.data_device_state
     }

@@ -85,7 +85,10 @@ where
                 wl_data_device::Request::SetSelection { source, .. } => {
                     if let Some(keyboard) = seat.get_keyboard() {
                         if keyboard.client_of_object_has_focus(&resource.id()) {
-                            let seat_data = seat.user_data().get::<RefCell<SeatData>>().unwrap();
+                            let seat_data = seat
+                                .user_data()
+                                .get::<RefCell<SeatData<D::SelectionUserData>>>()
+                                .unwrap();
 
                             handler.new_selection(source.clone(), seat.clone());
                             // The client has kbd focus, it can set the selection
@@ -104,7 +107,7 @@ where
                 wl_data_device::Request::Release => {
                     // Clean up the known devices
                     seat.user_data()
-                        .get::<RefCell<SeatData>>()
+                        .get::<RefCell<SeatData<D::SelectionUserData>>>()
                         .unwrap()
                         .borrow_mut()
                         .retain_devices(|ndd| ndd != resource)

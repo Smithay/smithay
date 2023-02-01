@@ -84,7 +84,7 @@ where
         let seat_data = self
             .seat
             .user_data()
-            .get::<RefCell<SeatData>>()
+            .get::<RefCell<SeatData<D::SelectionUserData>>>()
             .unwrap()
             .borrow_mut();
         if focus.as_ref().and_then(|&(ref s, _)| s.wl_surface()) != self.current_focus.clone() {
@@ -198,7 +198,7 @@ where
             let seat_data = self
                 .seat
                 .user_data()
-                .get::<RefCell<SeatData>>()
+                .get::<RefCell<SeatData<D::SelectionUserData>>>()
                 .unwrap()
                 .borrow_mut();
             let validated = if let Some(ref data) = self.offer_data {
