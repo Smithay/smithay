@@ -235,7 +235,7 @@ impl WeakDmabuf {
 /// Buffer that can be exported as Dmabufs
 pub trait AsDmabuf {
     /// Error type returned, if exporting fails
-    type Error;
+    type Error: std::error::Error;
 
     /// Export this buffer as a new Dmabuf
     fn export(&self) -> Result<Dmabuf, Self::Error>;
