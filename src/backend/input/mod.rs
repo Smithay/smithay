@@ -185,6 +185,111 @@ impl<B: InputBackend> PointerButtonEvent<B> for UnusedEvent {
         match *self {}
     }
 }
+/// Trait for gesture begin events.
+pub trait GestureBeginEvent<B: InputBackend>: Event<B> {
+    /// Number of fingers.
+    fn fingers(&self) -> u32;
+}
+
+impl<B: InputBackend> GestureBeginEvent<B> for UnusedEvent {
+    fn fingers(&self) -> u32 {
+        match *self {}
+    }
+}
+
+/// Trait for gesture end events.
+pub trait GestureEndEvent<B: InputBackend>: Event<B> {
+    /// True if event was cancelled.
+    fn cancelled(&self) -> bool;
+}
+
+impl<B: InputBackend> GestureEndEvent<B> for UnusedEvent {
+    fn cancelled(&self) -> bool {
+        match *self {}
+    }
+}
+
+/// Trait for gesture swipe begin event.
+pub trait GestureSwipeBeginEvent<B: InputBackend>: GestureBeginEvent<B> {}
+
+impl<B: InputBackend> GestureSwipeBeginEvent<B> for UnusedEvent {}
+
+/// Trait for gesture swipe update event.
+pub trait GestureSwipeUpdateEvent<B: InputBackend>: Event<B> {
+    /// Delta of center on the x axis from last begin/update.
+    fn delta_x(&self) -> f64;
+
+    /// Delta of center on the y axis from last begin/update.
+    fn delta_y(&self) -> f64;
+}
+
+impl<B: InputBackend> GestureSwipeUpdateEvent<B> for UnusedEvent {
+    fn delta_x(&self) -> f64 {
+        match *self {}
+    }
+
+    fn delta_y(&self) -> f64 {
+        match *self {}
+    }
+}
+
+/// Trait for gesture swipe end event.
+pub trait GestureSwipeEndEvent<B: InputBackend>: GestureEndEvent<B> {}
+
+impl<B: InputBackend> GestureSwipeEndEvent<B> for UnusedEvent {}
+
+/// Trait for gesture pinch begin event.
+pub trait GesturePinchBeginEvent<B: InputBackend>: GestureBeginEvent<B> {}
+
+impl<B: InputBackend> GesturePinchBeginEvent<B> for UnusedEvent {}
+
+/// Trait for gesture pinch update event.
+pub trait GesturePinchUpdateEvent<B: InputBackend>: Event<B> {
+    /// Delta of center on the x axis from last begin/update.
+    fn delta_x(&self) -> f64;
+
+    /// Delta of center on the y axis from last begin/update.
+    fn delta_y(&self) -> f64;
+
+    /// Absolute scale compared to begin event.
+    fn scale(&self) -> f64;
+
+    /// Relative angle in degrees from last begin/update.
+    fn rotation(&self) -> f64;
+}
+
+impl<B: InputBackend> GesturePinchUpdateEvent<B> for UnusedEvent {
+    fn delta_x(&self) -> f64 {
+        match *self {}
+    }
+
+    fn delta_y(&self) -> f64 {
+        match *self {}
+    }
+
+    fn scale(&self) -> f64 {
+        match *self {}
+    }
+
+    fn rotation(&self) -> f64 {
+        match *self {}
+    }
+}
+
+/// Trait for gesture pinch end event.
+pub trait GesturePinchEndEvent<B: InputBackend>: GestureEndEvent<B> {}
+
+impl<B: InputBackend> GesturePinchEndEvent<B> for UnusedEvent {}
+
+/// Trait for gesture hold begin event.
+pub trait GestureHoldBeginEvent<B: InputBackend>: GestureBeginEvent<B> {}
+
+impl<B: InputBackend> GestureHoldBeginEvent<B> for UnusedEvent {}
+
+/// Trait for gesture hold end event.
+pub trait GestureHoldEndEvent<B: InputBackend>: GestureEndEvent<B> {}
+
+impl<B: InputBackend> GestureHoldEndEvent<B> for UnusedEvent {}
 
 /// Axis when scrolling
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -432,6 +537,22 @@ pub trait InputBackend: Sized {
     type PointerMotionEvent: PointerMotionEvent<Self>;
     /// Type representing motion events of pointer devices
     type PointerMotionAbsoluteEvent: PointerMotionAbsoluteEvent<Self>;
+    /// Type representing swipe begin events of pointer devices
+    type GestureSwipeBeginEvent: GestureSwipeBeginEvent<Self>;
+    /// Type representing swipe update events of pointer devices
+    type GestureSwipeUpdateEvent: GestureSwipeUpdateEvent<Self>;
+    /// Type representing swipe end events of pointer devices
+    type GestureSwipeEndEvent: GestureSwipeEndEvent<Self>;
+    /// Type representing pinch begin events of pointer devices
+    type GesturePinchBeginEvent: GesturePinchBeginEvent<Self>;
+    /// Type representing pinch update events of pointer devices
+    type GesturePinchUpdateEvent: GesturePinchUpdateEvent<Self>;
+    /// Type representing pinch end events of pointer devices
+    type GesturePinchEndEvent: GesturePinchEndEvent<Self>;
+    /// Type representing hold begin events of pointer devices
+    type GestureHoldBeginEvent: GestureHoldBeginEvent<Self>;
+    /// Type representing hold end events of pointer devices
+    type GestureHoldEndEvent: GestureHoldEndEvent<Self>;
     /// Type representing touch events starting
     type TouchDownEvent: TouchDownEvent<Self>;
     /// Type representing touch events ending
@@ -492,6 +613,46 @@ pub enum InputEvent<B: InputBackend> {
     PointerAxis {
         /// The pointer axis event
         event: B::PointerAxisEvent,
+    },
+    /// A pointer swipe gesture began
+    GestureSwipeBegin {
+        /// The gesture event
+        event: B::GestureSwipeBeginEvent,
+    },
+    /// A pointer swipe gesture updated
+    GestureSwipeUpdate {
+        /// The gesture event
+        event: B::GestureSwipeUpdateEvent,
+    },
+    /// A pointer swipe gesture ended
+    GestureSwipeEnd {
+        /// The gesture event
+        event: B::GestureSwipeEndEvent,
+    },
+    /// A pointer pinch gesture began
+    GesturePinchBegin {
+        /// The gesture event
+        event: B::GesturePinchBeginEvent,
+    },
+    /// A pointer pinch gesture updated
+    GesturePinchUpdate {
+        /// The gesture event
+        event: B::GesturePinchUpdateEvent,
+    },
+    /// A pointer pinch gesture ended
+    GesturePinchEnd {
+        /// The gesture event
+        event: B::GesturePinchEndEvent,
+    },
+    /// A pointer hold gesture began
+    GestureHoldBegin {
+        /// The gesture event
+        event: B::GestureHoldBeginEvent,
+    },
+    /// A pointer hold gesture ended
+    GestureHoldEnd {
+        /// The gesture event
+        event: B::GestureHoldEndEvent,
     },
     /// A new touchpoint appeared
     TouchDown {

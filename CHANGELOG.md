@@ -50,6 +50,7 @@
 - `ImportMem` and `ImportDma` were split and do now have accompanying traits `ImportMemWl` and `ImportDmaWl` to import wayland buffers.
 - Added `EGLSurface::get_size`
 - `EGLDisplay::get_extensions` was renamed to `extensions` and now returns a `&[String]`.
+- Added gesture input events, which are supported with the libinput backend.
 
 ### Additions
 

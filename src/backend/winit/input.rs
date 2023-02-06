@@ -383,6 +383,16 @@ impl InputBackend for WinitInput {
     type PointerButtonEvent = WinitMouseInputEvent;
     type PointerMotionEvent = UnusedEvent;
     type PointerMotionAbsoluteEvent = WinitMouseMovedEvent;
+
+    type GestureSwipeBeginEvent = UnusedEvent;
+    type GestureSwipeUpdateEvent = UnusedEvent;
+    type GestureSwipeEndEvent = UnusedEvent;
+    type GesturePinchBeginEvent = UnusedEvent;
+    type GesturePinchUpdateEvent = UnusedEvent;
+    type GesturePinchEndEvent = UnusedEvent;
+    type GestureHoldBeginEvent = UnusedEvent;
+    type GestureHoldEndEvent = UnusedEvent;
+
     type TouchDownEvent = WinitTouchStartedEvent;
     type TouchUpEvent = WinitTouchEndedEvent;
     type TouchMotionEvent = WinitTouchMovedEvent;
