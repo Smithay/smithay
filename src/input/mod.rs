@@ -508,4 +508,9 @@ impl<D: SeatHandler + 'static> Seat<D> {
             inner.send_all_caps();
         }
     }
+
+    /// Gets this seat's name
+    pub fn name(&self) -> &str {
+        &self.arc.name
+    }
 }
