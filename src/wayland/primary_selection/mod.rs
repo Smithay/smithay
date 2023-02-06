@@ -61,7 +61,7 @@
 
 use std::{
     cell::{Ref, RefCell},
-    os::unix::io::OwnedFd,
+    os::unix::io::{AsRawFd, OwnedFd},
 };
 
 use tracing::instrument;
@@ -69,7 +69,7 @@ use wayland_protocols::wp::primary_selection::zv1::server::{
     zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager,
     zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1 as PrimarySource,
 };
-use wayland_server::{backend::GlobalId, Client, DisplayHandle, GlobalDispatch};
+use wayland_server::{backend::GlobalId, Client, DisplayHandle, GlobalDispatch, Resource};
 
 use crate::input::{Seat, SeatHandler};
 
@@ -176,6 +176,64 @@ pub fn set_primary_selection<D>(
             user_data,
         },
     );
+}
+
+/// Errors happening when requesting selection contents
+#[derive(Debug, thiserror::Error)]
+pub enum SelectionRequestError {
+    /// Requested mime type is not available
+    #[error("Requested mime type is not available")]
+    InvalidMimetype,
+    /// Requesting server side selection contents is not supported
+    #[error("Current selection is server-side")]
+    ServerSideSelection,
+    /// There is no active selection
+    #[error("No active selection to query")]
+    NoSelection,
+}
+
+/// Request the current primary selection of the given seat
+/// to be written to the provided file descriptor in the given mime type.
+pub fn request_primary_client_selection<D>(
+    seat: &Seat<D>,
+    mime_type: String,
+    fd: OwnedFd,
+) -> Result<(), SelectionRequestError>
+where
+    D: SeatHandler + PrimarySelectionHandler + 'static,
+{
+    seat.user_data()
+        .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
+    let seat_data = seat
+        .user_data()
+        .get::<RefCell<SeatData<D::SelectionUserData>>>()
+        .unwrap();
+    match seat_data.borrow().get_selection() {
+        Selection::Client(source) => {
+            if !source
+                .data::<PrimarySourceUserData>()
+                .unwrap()
+                .inner
+                .lock()
+                .unwrap()
+                .mime_types
+                .contains(&mime_type)
+            {
+                Err(SelectionRequestError::InvalidMimetype)
+            } else {
+                source.send(mime_type, fd.as_raw_fd());
+                Ok(())
+            }
+        }
+        Selection::Compositor { metadata, .. } => {
+            if !metadata.mime_types.contains(&mime_type) {
+                Err(SelectionRequestError::InvalidMimetype)
+            } else {
+                Err(SelectionRequestError::ServerSideSelection)
+            }
+        }
+        Selection::Empty => Err(SelectionRequestError::NoSelection),
+    }
 }
 
 /// Gets the user_data for the currently active selection, if set by the compositor
