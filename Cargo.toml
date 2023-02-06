@@ -65,6 +65,8 @@ scan_fmt = { version = "0.2.3", default-features = false }
 encoding = { version = "0.2.33", optional = true }
 
 [dev-dependencies]
+clap = { version = "4", features = ["derive"] }
+image = "0.24"
 slog-term = "2.3"
 
 [build-dependencies]
@@ -111,3 +113,7 @@ required-features = ["wayland_frontend"]
 [[example]]
 name = "vulkan"
 required-features = ["backend_vulkan"]
+
+[[example]]
+name = "buffer_test"
+required-features = ["backend_drm", "backend_gbm", "backend_egl", "backend_vulkan", "renderer_gl"]
