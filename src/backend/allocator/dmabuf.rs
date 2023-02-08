@@ -10,11 +10,12 @@
 //! This can be especially useful in resources where other parts of the stack should decide upon
 //! the lifetime of the buffer. E.g. when you are only caching associated resources for a dmabuf.
 
-use super::{Buffer, Format, Fourcc, Modifier};
+use super::{Allocator, Buffer, Format, Fourcc, Modifier};
 use crate::utils::{Buffer as BufferCoords, Size};
 use std::hash::{Hash, Hasher};
 use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd};
 use std::sync::{Arc, Weak};
+use std::{error, fmt};
 
 /// Maximum amount of planes this implementation supports
 pub const MAX_PLANES: usize = 4;
@@ -246,5 +247,55 @@ impl AsDmabuf for Dmabuf {
 
     fn export(&self) -> Result<Dmabuf, std::convert::Infallible> {
         Ok(self.clone())
+    }
+}
+
+/// Type erased error
+#[derive(Debug)]
+pub struct AnyError(Box<dyn error::Error + Send + Sync>);
+
+impl fmt::Display for AnyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl error::Error for AnyError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        Some(&*self.0)
+    }
+}
+
+/// Wrapper for Allocators, whos buffer types implement [`AsDmabuf`].
+///
+/// Implements `Allocator<Buffer=Dmabuf, Error=AnyError>`
+#[derive(Debug)]
+pub struct DmabufAllocator<A>(pub A)
+where
+    A: Allocator,
+    <A as Allocator>::Buffer: AsDmabuf + 'static,
+    <A as Allocator>::Error: 'static;
+
+impl<A> Allocator for DmabufAllocator<A>
+where
+    A: Allocator,
+    <A as Allocator>::Buffer: AsDmabuf + 'static,
+    <A as Allocator>::Error: Send + Sync + 'static,
+    <<A as Allocator>::Buffer as AsDmabuf>::Error: Send + Sync + 'static,
+{
+    type Buffer = Dmabuf;
+    type Error = AnyError;
+
+    fn create_buffer(
+        &mut self,
+        width: u32,
+        height: u32,
+        fourcc: Fourcc,
+        modifiers: &[Modifier],
+    ) -> Result<Self::Buffer, Self::Error> {
+        self.0
+            .create_buffer(width, height, fourcc, modifiers)
+            .map_err(|err| AnyError(err.into()))
+            .and_then(|b| AsDmabuf::export(&b).map_err(|err| AnyError(err.into())))
     }
 }

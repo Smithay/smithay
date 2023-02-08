@@ -5,8 +5,8 @@ use slog::{o, Drain};
 use smithay::{
     backend::{
         allocator::{
-            dmabuf::{AsDmabuf, Dmabuf},
-            gbm::GbmDevice,
+            dmabuf::{AnyError, Dmabuf, DmabufAllocator},
+            gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
             vulkan::{ImageUsageFlags, VulkanAllocator},
             Allocator, Fourcc, Modifier,
         },
@@ -99,50 +99,6 @@ impl fmt::Display for RendererType {
     }
 }
 
-#[derive(Debug)]
-struct AnyError(Box<dyn error::Error>);
-
-impl fmt::Display for AnyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl error::Error for AnyError {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        Some(&*self.0)
-    }
-}
-
-struct AllocatorWrapper<A>(A)
-where
-    A: Allocator,
-    <A as Allocator>::Buffer: AsDmabuf + 'static,
-    <A as Allocator>::Error: 'static;
-
-impl<A> Allocator for AllocatorWrapper<A>
-where
-    A: Allocator,
-    <A as Allocator>::Buffer: AsDmabuf + 'static,
-    <A as Allocator>::Error: 'static,
-{
-    type Buffer = Dmabuf;
-    type Error = AnyError;
-
-    fn create_buffer(
-        &mut self,
-        width: u32,
-        height: u32,
-        fourcc: gbm::Format,
-        modifiers: &[gbm::Modifier],
-    ) -> Result<Self::Buffer, Self::Error> {
-        self.0
-            .create_buffer(width, height, fourcc, modifiers)
-            .map_err(|err| AnyError(err.into()))
-            .and_then(|b| AsDmabuf::export(&b).map_err(|err| AnyError(err.into())))
-    }
-}
-
 fn main() {
     let args = Cli::parse();
     let log = slog::Logger::root(std::sync::Mutex::new(slog_term::term_full().fuse()).fuse(), o!());
@@ -204,7 +160,7 @@ fn buffer_test(args: TestArgs, log: slog::Logger) {
         AllocatorType::DumbBuffer => {
             let file = File::open(&path).expect("Failed to open device node");
             let fd = DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)), log.clone());
-            Box::new(AllocatorWrapper(
+            Box::new(DmabufAllocator(
                 DrmDevice::new(fd, false, log.clone()).expect("Failed to init drm device"),
             )) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>
         }
@@ -212,7 +168,8 @@ fn buffer_test(args: TestArgs, log: slog::Logger) {
             let file = File::open(&path).expect("Failed to open device node");
             let fd = DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)), log.clone());
             let gbm = GbmDevice::new(fd).expect("Failed to init gbm device");
-            Box::new(AllocatorWrapper(gbm)) as Box<_>
+            let gbm_allocator = GbmAllocator::new(gbm, GbmBufferFlags::RENDERING);
+            Box::new(DmabufAllocator(gbm_allocator)) as Box<_>
         }
         AllocatorType::Vulkan => {
             let node = DrmNode::from_path(&path).expect("Failed to find drm node");
@@ -224,7 +181,7 @@ fn buffer_test(args: TestArgs, log: slog::Logger) {
                     phd.primary_node().unwrap() == Some(node) || phd.render_node().unwrap() == Some(node)
                 })
                 .expect("Unable to find physical device");
-            Box::new(AllocatorWrapper(
+            Box::new(DmabufAllocator(
                 VulkanAllocator::new(&physical_device, args.usage_flags.unwrap())
                     .expect("Failed to create vulkan allocator"),
             )) as Box<_>
