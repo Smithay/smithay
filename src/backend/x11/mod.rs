@@ -14,8 +14,8 @@
 //! ```rust,no_run
 //! # use std::{sync::{Arc, Mutex}, error::Error};
 //! # use smithay::backend::x11::{X11Backend, X11Surface, WindowBuilder};
+//! use smithay::backend::allocator::gbm::{GbmAllocator, GbmDevice, GbmBufferFlags};
 //! use smithay::backend::egl::{EGLDisplay, EGLContext};
-//! use smithay::reexports::gbm;
 //! use smithay::utils::DeviceFd;
 //! use std::collections::HashSet;
 //!
@@ -40,7 +40,7 @@
 //!     // Get the DRM node used by the X server for direct rendering.
 //!     let (_drm_node, fd) = x_handle.drm_node()?;
 //!     // Create the gbm device for allocating buffers
-//!     let device = gbm::Device::new(DeviceFd::from(fd))?;
+//!     let device = GbmDevice::new(DeviceFd::from(fd))?;
 //!     // Initialize EGL to retrieve the support modifier list
 //!     let egl = unsafe { EGLDisplay::new(device.clone(), logger.clone()).expect("Failed to create EGLDisplay") };
 //!     let context = EGLContext::new(&egl, logger).expect("Failed to create EGLContext");
@@ -48,7 +48,7 @@
 //!
 //!     // Finally create the X11 surface, you will use this to obtain buffers that will be presented to the
 //!     // window.
-//!     let surface = x_handle.create_surface(&window, device, modifiers.into_iter());
+//!     let surface = x_handle.create_surface(&window, GbmAllocator::new(device, GbmBufferFlags::RENDERING), modifiers.into_iter());
 //!
 //!     // Insert the backend into the event loop to receive events.
 //!     handle.insert_source(backend, |event, _window, state| {

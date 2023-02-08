@@ -16,7 +16,10 @@ use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
-        allocator::dmabuf::Dmabuf,
+        allocator::{
+            dmabuf::Dmabuf,
+            gbm::{GbmAllocator, GbmBufferFlags},
+        },
         renderer::{ImportDma, ImportEgl},
     },
     delegate_dmabuf,
@@ -112,7 +115,7 @@ pub fn run_x11(log: Logger) {
     let surface = handle
         .create_surface(
             &window,
-            device,
+            GbmAllocator::new(device, GbmBufferFlags::RENDERING),
             context
                 .dmabuf_render_formats()
                 .iter()

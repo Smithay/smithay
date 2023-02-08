@@ -33,6 +33,7 @@ use smithay::{
 };
 use smithay::{
     backend::{
+        allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
         drm::{
             DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata, DrmNode, GbmBufferedSurface,
             NodeType,
@@ -70,7 +71,6 @@ use smithay::{
                 Device as ControlDevice,
             },
         },
-        gbm::Device as GbmDevice,
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
@@ -366,7 +366,7 @@ pub fn run_udev(log: Logger) {
     }
 }
 
-pub type RenderSurface = GbmBufferedSurface<GbmDevice<DrmDeviceFd>, Option<OutputPresentationFeedback>>;
+pub type RenderSurface = GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, Option<OutputPresentationFeedback>>;
 
 struct SurfaceData {
     dh: DisplayHandle,
@@ -469,14 +469,18 @@ fn scan_connectors(
                 }
             };
 
-            let gbm_surface =
-                match GbmBufferedSurface::new(surface, gbm.clone(), formats.clone(), logger.clone()) {
-                    Ok(renderer) => renderer,
-                    Err(err) => {
-                        warn!(logger, "Failed to create rendering surface: {}", err);
-                        continue;
-                    }
-                };
+            let gbm_surface = match GbmBufferedSurface::new(
+                surface,
+                GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT),
+                formats.clone(),
+                logger.clone(),
+            ) {
+                Ok(renderer) => renderer,
+                Err(err) => {
+                    warn!(logger, "Failed to create rendering surface: {}", err);
+                    continue;
+                }
+            };
 
             let size = mode.size();
             let mode = Mode {
