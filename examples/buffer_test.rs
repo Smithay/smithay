@@ -1,4 +1,4 @@
-use std::{error, fmt, fs::File, os::unix::io::OwnedFd, path::PathBuf};
+use std::{ffi::CStr, fmt, fs::File, os::unix::io::OwnedFd, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use slog::{o, Drain};
@@ -177,6 +177,11 @@ fn buffer_test(args: TestArgs, log: slog::Logger) {
                 .expect("Unable to create vulkan instance");
             let physical_device = PhysicalDevice::enumerate(&instance)
                 .expect("Failed to enumerate physical devices")
+                .filter(|phd| {
+                    phd.has_device_extension(unsafe {
+                        CStr::from_bytes_with_nul_unchecked(b"VK_EXT_physical_device_drm\0")
+                    })
+                })
                 .find(|phd| {
                     phd.primary_node().unwrap() == Some(node) || phd.render_node().unwrap() == Some(node)
                 })
