@@ -21,7 +21,7 @@ use crate::{
         egl::display::EGLBufferReader,
         renderer::{
             multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
-            Bind, ExportDma, ExportMem, ImportDma, ImportEgl, ImportMem,
+            Bind, ExportMem, ImportDma, ImportEgl, ImportMem,
         },
     },
     utils::{Buffer as BufferCoords, Rectangle},
@@ -53,11 +53,6 @@ impl From<Error> for SwapBuffersError {
 }
 
 /// A [`GraphicsApi`] utilizing EGL for device enumeration and OpenGL ES for rendering.
-///
-/// If not necessary for other operations, it is recommended to not use a
-/// [`Gles2Texture`](crate::backend::renderer::gles2::Gles2Texture), but a
-/// [`Gles2Renderbuffer`](crate::backend::renderer::gles2::Gles2Renderbuffer)
-/// as a `Target`, when creating [`MultiRenderer`](super::MultiRenderer)s
 #[derive(Debug)]
 pub struct EglGlesBackend<R>(std::marker::PhantomData<R>);
 
@@ -157,7 +152,6 @@ where
         + ImportDma
         + ImportMem
         + ImportEgl
-        + ExportDma
         + ExportMem
         + 'static,
 {
@@ -219,7 +213,6 @@ where
         + ImportDma
         + ImportMem
         + ImportEgl
-        + ExportDma
         + ExportMem
         + 'static,
 {
