@@ -21,7 +21,7 @@ use crate::{
         egl::display::EGLBufferReader,
         renderer::{
             multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
-            ExportDma, ExportMem, ImportDma, ImportEgl, ImportMem, Offscreen,
+            Bind, ExportDma, ExportMem, ImportDma, ImportEgl, ImportMem,
         },
     },
     utils::{Buffer as BufferCoords, Rectangle},
@@ -147,19 +147,19 @@ impl<R: Renderer> ApiDevice for EglGlesDevice<R> {
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, Target, R> ImportEgl for MultiRenderer<'a, 'b, EglGlesBackend<R>, EglGlesBackend<R>, Target>
+impl<'render, 'target, 'alloc, R> ImportEgl
+    for MultiRenderer<'render, 'target, 'alloc, EglGlesBackend<R>, EglGlesBackend<R>>
 where
     R: From<Gles2Renderer>
         + BorrowMut<Gles2Renderer>
         + Renderer<Error = Gles2Error>
-        + Offscreen<Target>
+        + Bind<Dmabuf>
         + ImportDma
         + ImportMem
         + ImportEgl
         + ExportDma
         + ExportMem
         + 'static,
-    Target: Clone,
 {
     fn bind_wl_display(&mut self, display: &wayland_server::DisplayHandle) -> Result<(), EGLError> {
         self.render.renderer_mut().bind_wl_display(display)
@@ -210,12 +210,12 @@ where
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, Target, R> MultiRenderer<'a, 'b, EglGlesBackend<R>, EglGlesBackend<R>, Target>
+impl<'render, 'target, 'alloc, R>
+    MultiRenderer<'render, 'target, 'alloc, EglGlesBackend<R>, EglGlesBackend<R>>
 where
     R: From<Gles2Renderer>
         + BorrowMut<Gles2Renderer>
         + Renderer<Error = Gles2Error>
-        + Offscreen<Target>
         + ImportDma
         + ImportMem
         + ImportEgl

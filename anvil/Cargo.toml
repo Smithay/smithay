@@ -45,6 +45,7 @@ udev = [
   "smithay/backend_udev",
   "smithay/backend_drm",
   "smithay/backend_gbm",
+  "smithay/backend_vulkan",
   "smithay/backend_egl",
   "smithay/backend_session_libseat",
   "image",
