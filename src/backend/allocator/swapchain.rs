@@ -240,4 +240,9 @@ where
             }
         }
     }
+
+    /// Get set format
+    pub fn format(&self) -> Fourcc {
+        self.fourcc
+    }
 }

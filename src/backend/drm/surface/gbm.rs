@@ -370,6 +370,11 @@ where
     pub fn surface(&self) -> &DrmSurface {
         &self.drm
     }
+
+    /// Get the format of the underlying swapchain
+    pub fn format(&self) -> Fourcc {
+        self.swapchain.format()
+    }
 }
 
 #[derive(Debug)]
