@@ -1,7 +1,6 @@
 #[cfg(feature = "xwayland")]
 use std::ffi::OsString;
 use std::{
-    ffi::CStr,
     sync::{atomic::Ordering, Mutex},
     time::Duration,
 };
@@ -40,6 +39,7 @@ use smithay::{
     input::pointer::{CursorImageAttributes, CursorImageStatus},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
+        ash::vk::ExtPhysicalDeviceDrmFn,
         calloop::EventLoop,
         gbm,
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
@@ -129,11 +129,7 @@ pub fn run_x11(log: Logger) {
             .and_then(|instance| {
                 PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
                     devices
-                        .filter(|phd| {
-                            phd.has_device_extension(unsafe {
-                                CStr::from_bytes_with_nul_unchecked(b"VK_EXT_physical_device_drm\0")
-                            })
-                        })
+                        .filter(|phd| phd.has_device_extension(ExtPhysicalDeviceDrmFn::name()))
                         .find(|phd| {
                             phd.primary_node().unwrap() == Some(node)
                                 || phd.render_node().unwrap() == Some(node)

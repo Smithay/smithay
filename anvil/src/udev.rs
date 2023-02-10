@@ -5,7 +5,6 @@ use std::{
     cell::RefCell,
     collections::hash_map::{Entry, HashMap},
     convert::TryInto,
-    ffi::CStr,
     os::unix::io::FromRawFd,
     path::PathBuf,
     rc::Rc,
@@ -65,6 +64,7 @@ use smithay::{
     input::pointer::{CursorImageAttributes, CursorImageStatus},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
+        ash::vk::ExtPhysicalDeviceDrmFn,
         calloop::{
             timer::{TimeoutAction, Timer},
             Dispatcher, EventLoop, LoopHandle, RegistrationToken,
@@ -295,11 +295,7 @@ pub fn run_udev(log: Logger) {
         if let Ok(instance) = Instance::new(Version::VERSION_1_2, None, log.clone()) {
             if let Some(physical_device) = PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
                 devices
-                    .filter(|phd| {
-                        phd.has_device_extension(unsafe {
-                            CStr::from_bytes_with_nul_unchecked(b"VK_EXT_physical_device_drm\0")
-                        })
-                    })
+                    .filter(|phd| phd.has_device_extension(ExtPhysicalDeviceDrmFn::name()))
                     .find(|phd| {
                         phd.primary_node().unwrap() == Some(primary_gpu)
                             || phd.render_node().unwrap() == Some(primary_gpu)
