@@ -285,29 +285,37 @@ pub fn run_udev(log: Logger) {
         state.device_added(&mut display, dev, path.into())
     }
 
-    if let Ok(instance) = Instance::new(Version::VERSION_1_2, None, log.clone()) {
-        if let Some(physical_device) = PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
-            devices
-                .filter(|phd| {
-                    phd.has_device_extension(unsafe {
-                        CStr::from_bytes_with_nul_unchecked(b"VK_EXT_physical_device_drm\0")
+    let skip_vulkan = std::env::var("ANVIL_NO_VULKAN")
+        .map(|x| {
+            x == "1" || x.to_lowercase() == "true" || x.to_lowercase() == "yes" || x.to_lowercase() == "y"
+        })
+        .unwrap_or(false);
+
+    if !skip_vulkan {
+        if let Ok(instance) = Instance::new(Version::VERSION_1_2, None, log.clone()) {
+            if let Some(physical_device) = PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
+                devices
+                    .filter(|phd| {
+                        phd.has_device_extension(unsafe {
+                            CStr::from_bytes_with_nul_unchecked(b"VK_EXT_physical_device_drm\0")
+                        })
                     })
-                })
-                .find(|phd| {
-                    phd.primary_node().unwrap() == Some(primary_gpu)
-                        || phd.render_node().unwrap() == Some(primary_gpu)
-                })
-        }) {
-            match VulkanAllocator::new(
-                &physical_device,
-                ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
-            ) {
-                Ok(allocator) => {
-                    state.backend_data.allocator = Some(Box::new(DmabufAllocator(allocator))
-                        as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>);
-                }
-                Err(err) => {
-                    warn!(log, "Failed to create vulkan allocator: {}", err);
+                    .find(|phd| {
+                        phd.primary_node().unwrap() == Some(primary_gpu)
+                            || phd.render_node().unwrap() == Some(primary_gpu)
+                    })
+            }) {
+                match VulkanAllocator::new(
+                    &physical_device,
+                    ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
+                ) {
+                    Ok(allocator) => {
+                        state.backend_data.allocator = Some(Box::new(DmabufAllocator(allocator))
+                            as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>);
+                    }
+                    Err(err) => {
+                        warn!(log, "Failed to create vulkan allocator: {}", err);
+                    }
                 }
             }
         }

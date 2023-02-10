@@ -117,28 +117,41 @@ pub fn run_x11(log: Logger) {
         .build(&handle)
         .expect("Failed to create first window");
 
-    let surface = match Instance::new(Version::VERSION_1_2, None, log.clone())
-        .ok()
-        .and_then(|instance| {
-            PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
-                devices
-                    .filter(|phd| {
-                        phd.has_device_extension(unsafe {
-                            CStr::from_bytes_with_nul_unchecked(b"VK_EXT_physical_device_drm\0")
-                        })
-                    })
-                    .find(|phd| {
-                        phd.primary_node().unwrap() == Some(node) || phd.render_node().unwrap() == Some(node)
-                    })
-            })
+    let skip_vulkan = std::env::var("ANVIL_NO_VULKAN")
+        .map(|x| {
+            x == "1" || x.to_lowercase() == "true" || x.to_lowercase() == "yes" || x.to_lowercase() == "y"
         })
-        .and_then(|physical_device| {
-            VulkanAllocator::new(
-                &physical_device,
-                ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
-            )
+        .unwrap_or(false);
+
+    let vulkan_allocator = if !skip_vulkan {
+        Instance::new(Version::VERSION_1_2, None, log.clone())
             .ok()
-        }) {
+            .and_then(|instance| {
+                PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
+                    devices
+                        .filter(|phd| {
+                            phd.has_device_extension(unsafe {
+                                CStr::from_bytes_with_nul_unchecked(b"VK_EXT_physical_device_drm\0")
+                            })
+                        })
+                        .find(|phd| {
+                            phd.primary_node().unwrap() == Some(node)
+                                || phd.render_node().unwrap() == Some(node)
+                        })
+                })
+            })
+            .and_then(|physical_device| {
+                VulkanAllocator::new(
+                    &physical_device,
+                    ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
+                )
+                .ok()
+            })
+    } else {
+        None
+    };
+
+    let surface = match vulkan_allocator {
         // Create the surface for the window.
         Some(vulkan_allocator) => handle
             .create_surface(
