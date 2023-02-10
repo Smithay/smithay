@@ -4,13 +4,12 @@ use std::{
 };
 
 use drm_fourcc::DrmFourcc;
-use gbm::BufferObject;
 use x11rb::{connection::Connection, protocol::xproto::PixmapWrapper, rust_connection::RustConnection};
 
 use crate::{
     backend::{
         allocator::{
-            dmabuf::{AsDmabuf, Dmabuf},
+            dmabuf::{AnyError, Dmabuf},
             Allocator, Slot, Swapchain,
         },
         x11::{buffer::PixmapWrapperExt, window_inner::WindowInner, AllocateBuffersError, Window},
@@ -42,12 +41,11 @@ pub struct X11Surface {
     pub(crate) connection: Weak<RustConnection>,
     pub(crate) window: Weak<WindowInner>,
     pub(crate) resize: Receiver<Size<u16, Logical>>,
-    pub(crate) swapchain:
-        Swapchain<Box<dyn Allocator<Buffer = BufferObject<()>, Error = std::io::Error> + 'static>>,
+    pub(crate) swapchain: Swapchain<Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>>,
     pub(crate) format: DrmFourcc,
     pub(crate) width: u16,
     pub(crate) height: u16,
-    pub(crate) buffer: Option<Slot<BufferObject<()>>>,
+    pub(crate) buffer: Option<Slot<Dmabuf>>,
 }
 
 impl X11Surface {
@@ -84,14 +82,7 @@ impl X11Surface {
 
         let slot = self.buffer.as_ref().unwrap();
         let age = slot.age();
-        match slot.userdata().get::<Dmabuf>() {
-            Some(dmabuf) => Ok((dmabuf.clone(), age)),
-            None => {
-                let dmabuf = slot.export().map_err(Into::<AllocateBuffersError>::into)?;
-                slot.userdata().insert_if_missing(|| dmabuf.clone());
-                Ok((dmabuf, age))
-            }
-        }
+        Ok(((*slot).clone(), age))
     }
 
     /// Consume and submit the buffer to the window.
@@ -111,11 +102,7 @@ impl X11Surface {
 
             {
                 let window = self.window().ok_or(AllocateBuffersError::WindowDestroyed)?;
-                let pixmap = PixmapWrapper::with_dmabuf(
-                    &*connection,
-                    window.as_ref(),
-                    next.userdata().get::<Dmabuf>().unwrap(),
-                )?;
+                let pixmap = PixmapWrapper::with_dmabuf(&*connection, window.as_ref(), &next)?;
 
                 // Now present the current buffer
                 let _ = pixmap.present(&*connection, window.as_ref())?;
