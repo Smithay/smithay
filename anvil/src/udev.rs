@@ -315,9 +315,17 @@ pub fn run_udev(log: Logger) {
 
     if state.backend_data.allocator.is_none() {
         info!(log, "No vulkan allocator found, using GBM.");
-        let gbm = state.backend_data.backends.get(&primary_gpu).unwrap().gbm.clone();
-        state.backend_data.allocator =
-            Some(Box::new(DmabufAllocator(GbmAllocator::new(gbm, GbmBufferFlags::RENDERING))) as Box<_>);
+        let gbm = state
+            .backend_data
+            .backends
+            .get(&primary_gpu)
+            // If the primary_gpu failed to initialize, we likely have a kmsro device
+            .or_else(|| state.backend_data.backends.values().next())
+            // Don't fail, if there is no allocator. There is a chance, that this a single gpu system and we don't need one.
+            .map(|backend| backend.gbm.clone());
+        state.backend_data.allocator = gbm.map(|gbm| {
+            Box::new(DmabufAllocator(GbmAllocator::new(gbm, GbmBufferFlags::RENDERING))) as Box<_>
+        });
     }
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
@@ -991,7 +999,13 @@ impl AnvilState<UdevData> {
                 self.backend_data.gpus.renderer(
                     &primary_gpu,
                     &node,
-                    self.backend_data.allocator.as_mut().unwrap().as_mut(),
+                    self.backend_data
+                        .allocator
+                        .as_mut()
+                        // TODO: We could build some kind of `GLAllocator` using Renderbuffers in theory for this case.
+                        //  That would work for memcpy's of offscreen contents.
+                        .expect("We need an allocator for multigpu systems")
+                        .as_mut(),
                     format,
                 )
             }
