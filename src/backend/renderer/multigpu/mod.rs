@@ -57,6 +57,8 @@ use crate::{
 use wayland_server::protocol::{wl_buffer, wl_surface::WlSurface};
 #[cfg(all(feature = "backend_egl", feature = "renderer_gl"))]
 pub mod egl;
+#[cfg(all(feature = "backend_gbm", feature = "backend_egl", feature = "renderer_gl"))]
+pub mod gbm;
 
 /// Tracks available gpus from a given [`GraphicsApi`]
 #[derive(Debug)]
@@ -76,9 +78,6 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    /// The graphics api has not found any devices
-    #[error("No devices found")]
-    NoDevices,
     /// The graphics api errored on device enumeration
     #[error("The render graphics api failed enumerating devices {0:?}")]
     RenderApiError(#[source] R::Error),
@@ -117,7 +116,6 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::NoDevices => write!(f, "Error::NoDevices"),
             Error::RenderApiError(err) => write!(f, "Error::RenderApiError({:?})", err),
             Error::TargetApiError(err) => write!(f, "Error::TargetApiError({:?})", err),
             Error::NoDevice(dev) => write!(f, "Error::NoDevice({:?})", dev),
@@ -140,10 +138,9 @@ where
 {
     fn from(err: Error<R, T>) -> SwapBuffersError {
         match err {
-            x @ Error::NoDevices
-            | x @ Error::NoDevice(_)
-            | x @ Error::DeviceMissing
-            | x @ Error::AllocatorError(_) => SwapBuffersError::ContextLost(Box::new(x)),
+            x @ Error::NoDevice(_) | x @ Error::DeviceMissing | x @ Error::AllocatorError(_) => {
+                SwapBuffersError::ContextLost(Box::new(x))
+            }
             x @ Error::MismatchedDevice(_) | x @ Error::ImportFailed => {
                 SwapBuffersError::TemporaryFailure(Box::new(x))
             }
@@ -155,15 +152,24 @@ where
     }
 }
 
+impl<A: GraphicsApi> AsRef<A> for GpuManager<A> {
+    fn as_ref(&self) -> &A {
+        &self.api
+    }
+}
+
+impl<A: GraphicsApi> AsMut<A> for GpuManager<A> {
+    fn as_mut(&mut self) -> &mut A {
+        &mut self.api
+    }
+}
+
 impl<A: GraphicsApi> GpuManager<A> {
     /// Create a new [`GpuManager`] for a given [`GraphicsApi`].
     pub fn new(api: A, log: impl Into<Option<::slog::Logger>>) -> Result<GpuManager<A>, Error<A, A>> {
         let log = crate::slog_or_fallback(log);
         let mut devices = Vec::new();
         api.enumerate(&mut devices, &log).map_err(Error::RenderApiError)?;
-        if devices.is_empty() {
-            return Err(Error::NoDevices);
-        }
 
         Ok(GpuManager {
             api,

@@ -50,7 +50,7 @@ use smithay::{
             damage::{DamageTrackedRenderer, DamageTrackedRendererError},
             element::{texture::TextureBuffer, AsRenderElements},
             gles2::Gles2Renderer,
-            multigpu::{egl::EglGlesBackend, GpuManager, MultiRenderer, MultiTexture},
+            multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer, MultiTexture},
             Bind, Frame, Renderer,
         },
         session::{libseat::LibSeatSession, Event as SessionEvent, Session},
@@ -91,7 +91,7 @@ use smithay::{
 };
 
 type UdevRenderer<'a, 'b> =
-    MultiRenderer<'a, 'a, 'b, EglGlesBackend<Gles2Renderer>, EglGlesBackend<Gles2Renderer>>;
+    MultiRenderer<'a, 'a, 'b, GbmGlesBackend<Gles2Renderer>, GbmGlesBackend<Gles2Renderer>>;
 
 #[derive(Debug, PartialEq)]
 struct UdevOutputId {
@@ -106,12 +106,12 @@ pub struct UdevData {
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     primary_gpu: DrmNode,
     allocator: Option<Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>>,
-    gpus: GpuManager<EglGlesBackend<Gles2Renderer>>,
+    gpus: GpuManager<GbmGlesBackend<Gles2Renderer>>,
     backends: HashMap<DrmNode, BackendData>,
     pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<MultiTexture>)>,
     pointer_element: PointerElement<MultiTexture>,
     #[cfg(feature = "debug")]
-    fps_texture: MultiTexture,
+    fps_texture: Option<MultiTexture>,
     pointer_image: crate::cursor::Cursor,
     logger: slog::Logger,
 }
@@ -197,53 +197,12 @@ pub fn run_udev(log: Logger) {
     info!(log, "Using {} as primary gpu.", primary_gpu);
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let mut gpus = GpuManager::new(EglGlesBackend::default(), log.clone()).unwrap();
-    #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    #[cfg(any(feature = "egl", feature = "debug"))]
-    let mut renderer = gpus.single_renderer(&primary_gpu).unwrap();
-
-    #[cfg(feature = "debug")]
-    let fps_image =
-        image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
-            .decode()
-            .unwrap();
-    #[cfg(feature = "debug")]
-    let fps_texture = renderer
-        .import_memory(
-            &fps_image.to_rgba8(),
-            (fps_image.width() as i32, fps_image.height() as i32).into(),
-            false,
-        )
-        .expect("Unable to upload FPS texture");
-
-    // init dmabuf support with format list from our primary gpu
-    // TODO: This does not necessarily depend on egl, but mesa makes no use of it without wl_drm right now
-    #[cfg(feature = "egl")]
-    let dmabuf_state = {
-        info!(
-            log,
-            "Trying to initialize EGL Hardware Acceleration via {:?}", primary_gpu
-        );
-
-        if renderer.bind_wl_display(&display.handle()).is_ok() {
-            info!(log, "EGL hardware-acceleration enabled");
-            let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
-            let mut state = DmabufState::new();
-            let global = state.create_global::<AnvilState<UdevData>, _>(
-                &display.handle(),
-                dmabuf_formats,
-                log.clone(),
-            );
-            Some((state, global))
-        } else {
-            None
-        }
-    };
+    let gpus = GpuManager::new(GbmGlesBackend::default(), log.clone()).unwrap();
 
     let data = UdevData {
         dh: display.handle(),
         #[cfg(feature = "egl")]
-        dmabuf_state,
+        dmabuf_state: None,
         session,
         primary_gpu,
         gpus,
@@ -253,7 +212,7 @@ pub fn run_udev(log: Logger) {
         pointer_images: Vec::new(),
         pointer_element: PointerElement::default(),
         #[cfg(feature = "debug")]
-        fps_texture,
+        fps_texture: None,
         logger: log.clone(),
     };
     let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
@@ -345,23 +304,69 @@ pub fn run_udev(log: Logger) {
             ) {
                 Ok(allocator) => {
                     state.backend_data.allocator = Some(Box::new(DmabufAllocator(allocator))
-                    as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>);
-                },
+                        as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>);
+                }
                 Err(err) => {
                     warn!(log, "Failed to create vulkan allocator: {}", err);
                 }
             }
         }
     }
-    
+
     if state.backend_data.allocator.is_none() {
         info!(log, "No vulkan allocator found, using GBM.");
         let gbm = state.backend_data.backends.get(&primary_gpu).unwrap().gbm.clone();
-        state.backend_data.allocator = Some(Box::new(DmabufAllocator(GbmAllocator::new(
-            gbm,
-            GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT,
-        ))) as Box<_>);
+        state.backend_data.allocator =
+            Some(Box::new(DmabufAllocator(GbmAllocator::new(gbm, GbmBufferFlags::RENDERING))) as Box<_>);
     }
+
+    #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
+    #[cfg(any(feature = "egl", feature = "debug"))]
+    let mut renderer = state.backend_data.gpus.single_renderer(&primary_gpu).unwrap();
+
+    #[cfg(feature = "debug")]
+    {
+        let fps_image =
+            image::io::Reader::with_format(std::io::Cursor::new(FPS_NUMBERS_PNG), image::ImageFormat::Png)
+                .decode()
+                .unwrap();
+        let fps_texture = renderer
+            .import_memory(
+                &fps_image.to_rgba8(),
+                (fps_image.width() as i32, fps_image.height() as i32).into(),
+                false,
+            )
+            .expect("Unable to upload FPS texture");
+
+        for backend in state.backend_data.backends.values_mut() {
+            for surface in backend.surfaces.borrow_mut().values_mut() {
+                surface.borrow_mut().fps_element = Some(FpsElement::new(fps_texture.clone()));
+            }
+        }
+        state.backend_data.fps_texture = Some(fps_texture);
+    }
+
+    // init dmabuf support with format list from our primary gpu
+    // TODO: This does not necessarily depend on egl, but mesa makes no use of it without wl_drm right now
+    #[cfg(feature = "egl")]
+    {
+        info!(
+            log,
+            "Trying to initialize EGL Hardware Acceleration via {:?}", primary_gpu
+        );
+
+        if renderer.bind_wl_display(&display.handle()).is_ok() {
+            info!(log, "EGL hardware-acceleration enabled");
+            let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+            let mut dmabuf_state = DmabufState::new();
+            let global = dmabuf_state.create_global::<AnvilState<UdevData>, _>(
+                &display.handle(),
+                dmabuf_formats,
+                log.clone(),
+            );
+            state.backend_data.dmabuf_state = Some((dmabuf_state, global));
+        }
+    };
 
     event_loop
         .handle()
@@ -418,7 +423,7 @@ struct SurfaceData {
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
     #[cfg(feature = "debug")]
-    fps_element: FpsElement<MultiTexture>,
+    fps_element: Option<FpsElement<MultiTexture>>,
 }
 
 impl Drop for SurfaceData {
@@ -432,6 +437,7 @@ impl Drop for SurfaceData {
 struct BackendData {
     surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>>>>,
     gbm: GbmDevice<DrmDeviceFd>,
+    render_node: DrmNode,
     registration_token: RegistrationToken,
     event_dispatcher: Dispatcher<'static, DrmDevice, CalloopData<UdevData>>,
 }
@@ -443,7 +449,7 @@ fn scan_connectors(
     gbm: &GbmDevice<DrmDeviceFd>,
     display: &mut Display<AnvilState<UdevData>>,
     space: &mut Space<WindowElement>,
-    #[cfg(feature = "debug")] fps_texture: &MultiTexture,
+    #[cfg(feature = "debug")] fps_texture: Option<&MultiTexture>,
     logger: &::slog::Logger,
 ) -> HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>> {
     // Get a set of all modesetting resource handles (excluding planes):
@@ -571,7 +577,7 @@ fn scan_connectors(
 
             let damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
             #[cfg(feature = "debug")]
-            let fps_element = FpsElement::new(fps_texture.clone());
+            let fps_element = fps_texture.cloned().map(FpsElement::new);
 
             entry.insert(Rc::new(RefCell::new(SurfaceData {
                 dh: display.handle(),
@@ -635,6 +641,7 @@ impl AnvilState<UdevData> {
                 return;
             }
         };
+
         let backends = Rc::new(RefCell::new(scan_connectors(
             node,
             &device,
@@ -642,7 +649,7 @@ impl AnvilState<UdevData> {
             display,
             &mut self.space,
             #[cfg(feature = "debug")]
-            &self.backend_data.fps_texture,
+            self.backend_data.fps_texture.as_ref(),
             &self.log,
         )));
 
@@ -660,6 +667,23 @@ impl AnvilState<UdevData> {
             );
         let registration_token = self.handle.register_dispatcher(event_dispatcher.clone()).unwrap();
 
+        let render_node = {
+            let display = EGLDisplay::new(gbm.clone(), self.log.clone()).unwrap();
+            match EGLDevice::device_for_display(&display)
+                .ok()
+                .and_then(|x| x.try_get_render_node().ok().flatten())
+            {
+                Some(node) => node,
+                None => node,
+            }
+        };
+        if let Err(err) = self.backend_data.gpus.as_mut().add_node(render_node, gbm.clone()) {
+            warn!(
+                self.log,
+                "Failed to create renderer for GBM device {}: {}", device_id, err
+            );
+            return;
+        };
         for backend in backends.borrow_mut().values() {
             // render first frame
             trace!(self.log, "Scheduling frame");
@@ -676,6 +700,7 @@ impl AnvilState<UdevData> {
             BackendData {
                 registration_token,
                 event_dispatcher,
+                render_node,
                 surfaces: backends,
                 gbm,
             },
@@ -719,7 +744,7 @@ impl AnvilState<UdevData> {
                 display,
                 &mut self.space,
                 #[cfg(feature = "debug")]
-                &self.backend_data.fps_texture,
+                self.backend_data.fps_texture.as_ref(),
                 &logger,
             );
 
@@ -741,6 +766,11 @@ impl AnvilState<UdevData> {
         };
         // drop the backends on this side
         if let Some(backend_data) = self.backend_data.backends.remove(&node) {
+            self.backend_data
+                .gpus
+                .as_mut()
+                .remove_node(&backend_data.render_node);
+
             // drop surfaces
             backend_data.surfaces.borrow_mut().clear();
             debug!(self.log, "Surfaces dropped");
@@ -1157,10 +1187,10 @@ fn render_surface<'a, 'b>(
     }
 
     #[cfg(feature = "debug")]
-    {
-        surface.fps_element.update_fps(surface.fps.avg().round() as u32);
+    if let Some(element) = surface.fps_element.as_mut() {
+        element.update_fps(surface.fps.avg().round() as u32);
         surface.fps.tick();
-        elements.push(CustomRenderElements::Fps(surface.fps_element.clone()));
+        elements.push(CustomRenderElements::Fps(element.clone()));
     }
 
     // and draw to our buffer
@@ -1194,7 +1224,7 @@ fn render_surface<'a, 'b>(
 }
 
 fn schedule_initial_render(
-    gpus: &mut GpuManager<EglGlesBackend<Gles2Renderer>>,
+    gpus: &mut GpuManager<GbmGlesBackend<Gles2Renderer>>,
     surface: Rc<RefCell<SurfaceData>>,
     evt_handle: &LoopHandle<'static, CalloopData<UdevData>>,
     logger: ::slog::Logger,
