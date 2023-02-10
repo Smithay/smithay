@@ -16,10 +16,7 @@ use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
-        allocator::{
-            dmabuf::Dmabuf,
-            gbm::{GbmAllocator, GbmBufferFlags},
-        },
+        allocator::gbm::{GbmAllocator, GbmBufferFlags},
         renderer::{ImportDma, ImportEgl},
     },
     delegate_dmabuf,
@@ -28,7 +25,7 @@ use smithay::{
 use smithay::{
     backend::{
         allocator::{
-            dmabuf::DmabufAllocator,
+            dmabuf::{Dmabuf, DmabufAllocator},
             vulkan::{ImageUsageFlags, VulkanAllocator},
         },
         egl::{EGLContext, EGLDisplay},

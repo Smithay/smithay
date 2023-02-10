@@ -24,17 +24,14 @@ use crate::{
 use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
 use smithay::{
-    backend::{
-        allocator::dmabuf::Dmabuf,
-        renderer::{ImportDma, ImportEgl},
-    },
+    backend::renderer::{ImportDma, ImportEgl},
     delegate_dmabuf,
     wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
 };
 use smithay::{
     backend::{
         allocator::{
-            dmabuf::{AnyError, DmabufAllocator},
+            dmabuf::{AnyError, Dmabuf, DmabufAllocator},
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
             vulkan::{ImageUsageFlags, VulkanAllocator},
             Allocator,
