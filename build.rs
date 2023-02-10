@@ -81,6 +81,7 @@ fn test_gbm_bo_fd_for_plane() {
         .file("test_gbm_bo_get_fd_for_plane.c")
         .includes(gbm.include_paths)
         .warnings_into_errors(true)
+        .cargo_metadata(false)
         .try_compile("test_gbm_bo_get_fd_for_plane")
         .is_ok();
 
@@ -108,6 +109,7 @@ fn test_gbm_bo_create_with_modifiers2() {
         .file("test_gbm_bo_create_with_modifiers2.c")
         .includes(gbm.include_paths)
         .warnings_into_errors(true)
+        .cargo_metadata(false)
         .try_compile("test_gbm_bo_create_with_modifiers2")
         .is_ok();
 
