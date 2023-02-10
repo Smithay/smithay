@@ -430,6 +430,11 @@ pub trait CompositorHandler {
 
     /// Surface commit handler
     fn commit(&mut self, surface: &WlSurface);
+
+    /// The surface was destroyed.
+    ///
+    /// This allows the compositor to clean up any uses of the surface.
+    fn destroyed(&mut self, _surface: &WlSurface) {}
 }
 
 /// State of a compositor
@@ -438,6 +443,7 @@ pub struct CompositorState {
     log: slog::Logger,
     compositor: GlobalId,
     subcompositor: GlobalId,
+    surfaces: Vec<WlSurface>,
 }
 
 #[doc(hidden)]
@@ -461,6 +467,7 @@ impl CompositorState {
             log,
             compositor,
             subcompositor,
+            surfaces: Vec::new(),
         }
     }
 

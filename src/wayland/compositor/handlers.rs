@@ -83,6 +83,9 @@ where
                         alive_tracker: Default::default(),
                     },
                 );
+
+                state.compositor_state().surfaces.push(surface.clone());
+
                 PrivateSurfaceData::init(&surface);
             }
             wl_compositor::Request::CreateRegion { id } => {
@@ -294,13 +297,30 @@ where
     }
 
     fn destroyed(
-        _state: &mut D,
+        state: &mut D,
         _client_id: wayland_server::backend::ClientId,
         object_id: wayland_server::backend::ObjectId,
         data: &SurfaceUserData,
     ) {
+        let surface = state
+            .compositor_state()
+            .surfaces
+            .iter()
+            .find(|surface| surface.id() == object_id)
+            .cloned()
+            .unwrap();
+
+        // We let the destruction hooks run first and then tell the compositor handler the surface was
+        // destroyed.
         data.alive_tracker.destroy_notify();
-        PrivateSurfaceData::cleanup(data, object_id);
+        PrivateSurfaceData::cleanup(data, object_id.clone());
+        state.destroyed(&surface);
+
+        // Remove the surface after the callback is invoked.
+        state
+            .compositor_state()
+            .surfaces
+            .retain(|surface| surface.id() != object_id);
     }
 }
 
