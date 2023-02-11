@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 smithay = { path = "..", default-features=false, features=["wayland_frontend", "backend_egl", "use_system_lib"] }
 anvil = { path = "../anvil", default-features=false }
 wayland-sys = { version = "0.31.1", features = ["client", "server"] }
+wlcs = "0.1"
 libc = "0.2"
 memoffset = "0.9"
 cgmath = "0.18"

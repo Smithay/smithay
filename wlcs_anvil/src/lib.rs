@@ -1,4 +1,3 @@
-mod ffi_api;
 mod ffi_wrappers;
 mod main_loop;
 mod renderer;
@@ -10,18 +9,10 @@ use smithay::{
     utils::{Logical, Point},
 };
 
-use ffi_api::{WlcsExtensionDescriptor, WlcsIntegrationDescriptor};
-
-macro_rules! extension_list {
-    ($(($name: expr, $version: expr)),* $(,)?) => {
-        &[$(
-            WlcsExtensionDescriptor {
-                name: concat!($name, "\0").as_ptr() as *const std::os::raw::c_char,
-                version: $version
-            }
-        ),*]
-    };
-}
+use wlcs::{
+    extension_list,
+    ffi_display_server_api::{WlcsExtensionDescriptor, WlcsIntegrationDescriptor},
+};
 
 static SUPPORTED_EXTENSIONS: &[WlcsExtensionDescriptor] = extension_list!(
     ("wl_compositor", 4),
