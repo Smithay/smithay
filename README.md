@@ -14,7 +14,8 @@ Smithay aims to provide building blocks to create wayland compositors in Rust. W
 being a full-blown compositor, it'll provide objects and interfaces implementing common
 functionalities that pretty much any compositor will need, in a generic fashion.
 
-It supports the [core Wayland protocols](https://gitlab.freedesktop.org/wayland/wayland), the official [protocol extensions](https://gitlab.freedesktop.org/wayland/wayland-protocols), and *some* external extensions, such as those made by and for [wlroots](https://gitlab.freedesktop.org/wlroots/wlr-protocols) and [KDE](https://invent.kde.org/libraries/plasma-wayland-protocols)
+It supports the [core Wayland protocols](https://gitlab.freedesktop.org/wayland/wayland), the official [protocol extensions](https://gitlab.freedesktop.org/wayland/wayland-protocols), and _some_ external extensions, such as those made by and for [wlroots](https://gitlab.freedesktop.org/wlroots/wlr-protocols) and [KDE](https://invent.kde.org/libraries/plasma-wayland-protocols)
+
 <!-- https://github.com/Smithay/smithay/pull/779#discussion_r993640470 https://github.com/Smithay/smithay/issues/778 -->
 
 Also:
@@ -25,15 +26,45 @@ Also:
 - **Safety:** Smithay will target to be safe to use, because Rust.
 - **Modularity:** Smithay is not a framework, and will not be constraining. If there is a
   part you don't want to use, you should not be forced to use it.
-- **High-level:** You should be able to not have to worry about gory low-level stuff (but 
+- **High-level:** You should be able to not have to worry about gory low-level stuff (but
   Smithay won't stop you if you really want to dive into it).
-
 
 ## Anvil
 
 Like others, Smithay as a compositor library has its own sample compositor: anvil.
 
-You can run it with cargo after having cloned this repository:
+You can run it with cargo after having cloned this repository and installed the required dependencies:
+
+### Feature: Default
+
+- `libudev`
+- `libinput`
+- `libseat`
+- `libgbm`
+- `libsystemd`
+- `xwayland`
+
+### Feature: UDEV
+
+- `libudev`
+- `libinput`
+- `libseat`
+- `libgbm`
+- `libsystemd`
+
+### Feature: xwayland
+
+- `xwayland`
+
+```bash
+# (for Debian/Ubuntu)
+sudo apt install libdbus-glib-1-dev libudev-dev libsystemd-dev libxkbcommon-dev libinput-dev libgbm-dev
+
+# (for Arch Linux/Arch-Based Distro)
+sudo pacman -S seatd mesa xorg-xwayland
+```
+
+Then, run:
 
 ```
 cd anvil;
