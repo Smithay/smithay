@@ -81,11 +81,40 @@ fn test_gbm_bo_fd_for_plane() {
         .file("test_gbm_bo_get_fd_for_plane.c")
         .includes(gbm.include_paths)
         .warnings_into_errors(true)
+        .cargo_metadata(false)
         .try_compile("test_gbm_bo_get_fd_for_plane")
         .is_ok();
 
     if has_gbm_bo_get_fd_for_plane {
         println!("cargo:rustc-cfg=feature=\"backend_gbm_has_fd_for_plane\"");
+    }
+}
+
+#[cfg(all(
+    feature = "backend_gbm",
+    not(feature = "backend_gbm_has_create_with_modifiers2")
+))]
+fn test_gbm_bo_create_with_modifiers2() {
+    let gbm = match pkg_config::probe_library("gbm") {
+        Ok(lib) => lib,
+        Err(_) => {
+            println!(
+                "cargo:warning=failed to find gbm, assuming gbm_bo_create_with_modifiers2 is unavailable"
+            );
+            return;
+        }
+    };
+
+    let has_gbm_bo_create_with_modifiers2 = cc::Build::new()
+        .file("test_gbm_bo_create_with_modifiers2.c")
+        .includes(gbm.include_paths)
+        .warnings_into_errors(true)
+        .cargo_metadata(false)
+        .try_compile("test_gbm_bo_create_with_modifiers2")
+        .is_ok();
+
+    if has_gbm_bo_create_with_modifiers2 {
+        println!("cargo:rustc-cfg=feature=\"backend_gbm_has_create_with_modifiers2\"");
     }
 }
 
@@ -95,4 +124,9 @@ fn main() {
 
     #[cfg(all(feature = "backend_gbm", not(feature = "backend_gbm_has_fd_for_plane")))]
     test_gbm_bo_fd_for_plane();
+    #[cfg(all(
+        feature = "backend_gbm",
+        not(feature = "backend_gbm_has_create_with_modifiers2")
+    ))]
+    test_gbm_bo_create_with_modifiers2();
 }

@@ -14,8 +14,9 @@
 //! ```rust,no_run
 //! # use std::{sync::{Arc, Mutex}, error::Error};
 //! # use smithay::backend::x11::{X11Backend, X11Surface, WindowBuilder};
+//! use smithay::backend::allocator::dmabuf::DmabufAllocator;
+//! use smithay::backend::allocator::gbm::{GbmAllocator, GbmDevice, GbmBufferFlags};
 //! use smithay::backend::egl::{EGLDisplay, EGLContext};
-//! use smithay::reexports::gbm;
 //! use smithay::utils::DeviceFd;
 //! use std::collections::HashSet;
 //!
@@ -40,7 +41,7 @@
 //!     // Get the DRM node used by the X server for direct rendering.
 //!     let (_drm_node, fd) = x_handle.drm_node()?;
 //!     // Create the gbm device for allocating buffers
-//!     let device = gbm::Device::new(DeviceFd::from(fd))?;
+//!     let device = GbmDevice::new(DeviceFd::from(fd))?;
 //!     // Initialize EGL to retrieve the support modifier list
 //!     let egl = unsafe { EGLDisplay::new(device.clone(), logger.clone()).expect("Failed to create EGLDisplay") };
 //!     let context = EGLContext::new(&egl, logger).expect("Failed to create EGLContext");
@@ -48,7 +49,7 @@
 //!
 //!     // Finally create the X11 surface, you will use this to obtain buffers that will be presented to the
 //!     // window.
-//!     let surface = x_handle.create_surface(&window, device, modifiers.into_iter());
+//!     let surface = x_handle.create_surface(&window, DmabufAllocator(GbmAllocator::new(device, GbmBufferFlags::RENDERING)), modifiers.into_iter());
 //!
 //!     // Insert the backend into the event loop to receive events.
 //!     handle.insert_source(backend, |event, _window, state| {
@@ -92,7 +93,6 @@ use crate::{
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm_fourcc::{DrmFourcc, DrmModifier};
-use gbm::BufferObject;
 use nix::{
     fcntl::{self, OFlag},
     sys::stat::Mode,
@@ -124,6 +124,8 @@ use self::{extension::Extensions, window_inner::WindowInner};
 pub use self::error::*;
 pub use self::input::*;
 pub use self::surface::*;
+
+use super::allocator::dmabuf::{AnyError, Dmabuf};
 
 /// An event emitted by the X11 backend.
 #[derive(Debug)]
@@ -347,7 +349,7 @@ impl X11Handle {
     /// Creates a surface that allocates and presents buffers to the window.
     ///
     /// This will fail if the window has already been used to create a surface.
-    pub fn create_surface<A: Allocator<Buffer = BufferObject<()>, Error = std::io::Error> + 'static>(
+    pub fn create_surface<A: Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>(
         &self,
         window: &Window,
         allocator: A,
@@ -377,8 +379,7 @@ impl X11Handle {
         let format = window.0.format;
         let size = window.size();
         let swapchain = Swapchain::new(
-            Box::new(allocator)
-                as Box<dyn Allocator<Buffer = BufferObject<()>, Error = std::io::Error> + 'static>,
+            Box::new(allocator) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>,
             size.w as u32,
             size.h as u32,
             format,

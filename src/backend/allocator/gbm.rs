@@ -10,9 +10,82 @@ use super::{
 };
 use crate::utils::{Buffer as BufferCoords, Size};
 pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
-use std::os::unix::io::{AsFd, AsRawFd};
+use std::{
+    convert::{AsMut, AsRef},
+    os::unix::io::{AsFd, AsRawFd, BorrowedFd},
+};
 
-impl<A: AsFd + 'static> Allocator for GbmDevice<A> {
+/// Light wrapper around an [`GbmDevice`] to implement the [`Allocator`]-trait
+#[derive(Debug, Clone)]
+pub struct GbmAllocator<A: AsFd + 'static> {
+    device: GbmDevice<A>,
+    default_flags: GbmBufferFlags,
+}
+
+impl<A: AsFd + 'static> AsRef<GbmDevice<A>> for GbmAllocator<A> {
+    fn as_ref(&self) -> &GbmDevice<A> {
+        &self.device
+    }
+}
+
+impl<A: AsFd + 'static> AsMut<GbmDevice<A>> for GbmAllocator<A> {
+    fn as_mut(&mut self) -> &mut GbmDevice<A> {
+        &mut self.device
+    }
+}
+
+impl<A: AsFd + 'static> AsFd for GbmAllocator<A> {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.device.as_fd()
+    }
+}
+
+impl<A: AsFd + 'static> GbmAllocator<A> {
+    /// Create a new [`GbmAllocator`] from a [`GbmDevice`] with some default usage flags,
+    /// to be used when [`Allocator::create_buffer`] is invoked.
+    pub fn new(device: GbmDevice<A>, default_flags: GbmBufferFlags) -> GbmAllocator<A> {
+        GbmAllocator {
+            device,
+            default_flags,
+        }
+    }
+
+    /// Alternative to [`Allocator::create_buffer`], if you need a one-off buffer with
+    /// a different set of usage flags.
+    fn create_buffer_with_flags(
+        &mut self,
+        width: u32,
+        height: u32,
+        fourcc: Fourcc,
+        modifiers: &[Modifier],
+        flags: GbmBufferFlags,
+    ) -> Result<GbmBuffer<()>, std::io::Error> {
+        #[cfg(feature = "backend_gbm_has_create_with_modifiers2")]
+        let result = self.device.create_buffer_object_with_modifiers2(
+            width,
+            height,
+            fourcc,
+            modifiers.iter().copied(),
+            flags,
+        );
+        #[cfg(not(feature = "backend_gbm_has_create_with_modifiers2"))]
+        let result =
+            self.create_buffer_object_with_modifiers(width, height, fourcc, modifiers.iter().copied());
+
+        match result {
+            Ok(bo) => Ok(bo),
+            Err(err) => {
+                if modifiers.contains(&Modifier::Invalid) || modifiers.contains(&Modifier::Linear) {
+                    self.device.create_buffer_object(width, height, fourcc, flags)
+                } else {
+                    Err(err)
+                }
+            }
+        }
+    }
+}
+
+impl<A: AsFd + 'static> Allocator for GbmAllocator<A> {
     type Buffer = GbmBuffer<()>;
     type Error = std::io::Error;
 
@@ -23,20 +96,7 @@ impl<A: AsFd + 'static> Allocator for GbmDevice<A> {
         fourcc: Fourcc,
         modifiers: &[Modifier],
     ) -> Result<GbmBuffer<()>, Self::Error> {
-        match self.create_buffer_object_with_modifiers(width, height, fourcc, modifiers.iter().copied()) {
-            Ok(bo) => Ok(bo),
-            Err(err) => {
-                if modifiers.contains(&Modifier::Invalid) || modifiers.contains(&Modifier::Linear) {
-                    let mut usage = GbmBufferFlags::SCANOUT | GbmBufferFlags::RENDERING;
-                    if !modifiers.contains(&Modifier::Invalid) {
-                        usage |= GbmBufferFlags::LINEAR;
-                    }
-                    self.create_buffer_object(width, height, fourcc, usage)
-                } else {
-                    Err(err)
-                }
-            }
-        }
+        self.create_buffer_with_flags(width, height, fourcc, modifiers, self.default_flags)
     }
 }
 

@@ -1,12 +1,12 @@
 //! Implementation of the multi-gpu [`GraphicsApi`] using
-//! EGL for device enumeration and OpenGL ES for rendering.
+//! user provided GBM devices and OpenGL ES for rendering.
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use wayland_server::protocol::wl_buffer;
 
 use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode},
-    egl::{EGLContext, EGLDevice, EGLDisplay, Error as EGLError},
+    egl::{EGLContext, EGLDisplay, Error as EGLError},
     renderer::{
         gles2::{Gles2Error, Gles2Renderer},
         multigpu::{ApiDevice, Error as MultiError, GraphicsApi},
@@ -26,10 +26,12 @@ use crate::{
     },
     utils::{Buffer as BufferCoords, Rectangle},
 };
+use gbm::Device as GbmDevice;
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use std::borrow::BorrowMut;
+use std::{collections::HashMap, os::unix::prelude::AsFd};
 
-/// Errors raised by the [`EglGlesBackend`]
+/// Errors raised by the [`GbmGlesBackend`]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// EGL api error
@@ -52,55 +54,80 @@ impl From<Error> for SwapBuffersError {
     }
 }
 
-/// A [`GraphicsApi`] utilizing EGL for device enumeration and OpenGL ES for rendering.
+/// A [`GraphicsApi`] utilizing user-provided GBM Devices and OpenGL ES for rendering.
 #[derive(Debug)]
-pub struct EglGlesBackend<R>(std::marker::PhantomData<R>);
+pub struct GbmGlesBackend<R> {
+    devices: HashMap<DrmNode, EGLDisplay>,
+    _renderer: std::marker::PhantomData<R>,
+}
 
-impl<R> Default for EglGlesBackend<R> {
+impl<R> Default for GbmGlesBackend<R> {
     fn default() -> Self {
-        EglGlesBackend(std::marker::PhantomData)
+        GbmGlesBackend {
+            devices: HashMap::new(),
+            _renderer: std::marker::PhantomData,
+        }
     }
 }
 
-impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglGlesBackend<R> {
-    type Device = EglGlesDevice<R>;
+impl<R> GbmGlesBackend<R> {
+    /// Add a new GBM device for a given node to the api
+    pub fn add_node<T: AsFd + Send + 'static>(
+        &mut self,
+        node: DrmNode,
+        gbm: GbmDevice<T>,
+    ) -> Result<(), EGLError> {
+        self.devices.insert(node, EGLDisplay::new(gbm, None)?);
+        Ok(())
+    }
+
+    /// Remove a given node from the api
+    pub fn remove_node(&mut self, node: &DrmNode) {
+        self.devices.remove(node);
+    }
+}
+
+impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for GbmGlesBackend<R> {
+    type Device = GbmGlesDevice<R>;
     type Error = Error;
 
     fn enumerate(&self, list: &mut Vec<Self::Device>, log: &slog::Logger) -> Result<(), Self::Error> {
-        let devices = EGLDevice::enumerate()
-            .map_err(Error::Egl)?
-            .flat_map(|device| {
-                let node = device.try_get_render_node().ok()??;
-                Some((device, node))
-            })
-            .collect::<Vec<_>>();
         // remove old stuff
-        list.retain(|renderer| devices.iter().any(|(_, node)| &renderer.node == node));
-        // add new stuff
-        let new_renderers = devices
-            .into_iter()
-            .filter(|(_, node)| !list.iter().any(|renderer| &renderer.node == node))
-            .map(|(device, node)| {
-                slog::info!(log, "Trying to initialize {:?} from {}", device, node);
-                let display = EGLDisplay::new(device, None).map_err(Error::Egl)?;
-                let context = EGLContext::new(&display, None).map_err(Error::Egl)?;
-                let renderer = unsafe { Gles2Renderer::new(context, None).map_err(Error::Gl)? }.into();
+        list.retain(|renderer| {
+            self.devices
+                .keys()
+                .any(|node| renderer.node.dev_id() == node.dev_id())
+        });
 
-                Ok(EglGlesDevice {
-                    node,
-                    _display: display,
+        // add new stuff
+        let new_renderers = self
+            .devices
+            .iter()
+            .filter(|(node, _)| {
+                !list
+                    .iter()
+                    .any(|renderer| renderer.node.dev_id() == node.dev_id())
+            })
+            .map(|(node, display)| {
+                let context = EGLContext::new(display, log.clone()).map_err(Error::Egl)?;
+                let renderer = unsafe { Gles2Renderer::new(context, log.clone()).map_err(Error::Gl)? }.into();
+
+                Ok(GbmGlesDevice {
+                    node: *node,
+                    _display: display.clone(),
                     renderer,
                 })
             })
-            .flat_map(|x: Result<EglGlesDevice<R>, Error>| match x {
+            .flat_map(|x: Result<GbmGlesDevice<R>, Error>| match x {
                 Ok(x) => Some(x),
                 Err(x) => {
-                    slog::warn!(log, "Skipping EGLDevice: {}", x);
+                    slog::warn!(log, "Skipping GbmDevice: {}", x);
                     None
                 }
             })
-            .collect::<Vec<EglGlesDevice<R>>>();
+            .collect::<Vec<GbmGlesDevice<R>>>();
         list.extend(new_renderers);
+
         // but don't replace already initialized renderers
 
         Ok(())
@@ -109,25 +136,25 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglG
 
 // TODO: Replace with specialization impl in multigpu/mod once possible
 impl<T: GraphicsApi, R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> std::convert::From<Gles2Error>
-    for MultiError<EglGlesBackend<R>, T>
+    for MultiError<GbmGlesBackend<R>, T>
 where
     T::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn from(err: Gles2Error) -> MultiError<EglGlesBackend<R>, T> {
+    fn from(err: Gles2Error) -> MultiError<GbmGlesBackend<R>, T> {
         MultiError::Render(err)
     }
 }
 
 /// [`ApiDevice`] of the [`EglGlesBackend`]
 #[derive(Debug)]
-pub struct EglGlesDevice<R> {
+pub struct GbmGlesDevice<R> {
     node: DrmNode,
     renderer: R,
     _display: EGLDisplay,
 }
 
-impl<R: Renderer> ApiDevice for EglGlesDevice<R> {
+impl<R: Renderer> ApiDevice for GbmGlesDevice<R> {
     type Renderer = R;
 
     fn renderer(&self) -> &Self::Renderer {
@@ -142,8 +169,7 @@ impl<R: Renderer> ApiDevice for EglGlesDevice<R> {
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'render, 'target, 'alloc, R> ImportEgl
-    for MultiRenderer<'render, 'target, 'alloc, EglGlesBackend<R>, EglGlesBackend<R>>
+impl<'a, 'b, 'c, R> ImportEgl for MultiRenderer<'a, 'b, 'c, GbmGlesBackend<R>, GbmGlesBackend<R>>
 where
     R: From<Gles2Renderer>
         + BorrowMut<Gles2Renderer>
@@ -204,8 +230,7 @@ where
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'render, 'target, 'alloc, R>
-    MultiRenderer<'render, 'target, 'alloc, EglGlesBackend<R>, EglGlesBackend<R>>
+impl<'a, 'b, 'c, R> MultiRenderer<'a, 'b, 'c, GbmGlesBackend<R>, GbmGlesBackend<R>>
 where
     R: From<Gles2Renderer>
         + BorrowMut<Gles2Renderer>
@@ -219,7 +244,7 @@ where
     fn try_import_egl(
         renderer: &mut R,
         buffer: &wl_buffer::WlBuffer,
-    ) -> Result<Dmabuf, MultigpuError<EglGlesBackend<R>, EglGlesBackend<R>>> {
+    ) -> Result<Dmabuf, MultigpuError<GbmGlesBackend<R>, GbmGlesBackend<R>>> {
         if !renderer
             .borrow_mut()
             .extensions

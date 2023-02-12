@@ -16,7 +16,7 @@ use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
 use smithay::{
     backend::{
-        allocator::dmabuf::Dmabuf,
+        allocator::gbm::{GbmAllocator, GbmBufferFlags},
         renderer::{ImportDma, ImportEgl},
     },
     delegate_dmabuf,
@@ -24,13 +24,19 @@ use smithay::{
 };
 use smithay::{
     backend::{
+        allocator::{
+            dmabuf::{Dmabuf, DmabufAllocator},
+            vulkan::{ImageUsageFlags, VulkanAllocator},
+        },
         egl::{EGLContext, EGLDisplay},
         renderer::{damage::DamageTrackedRenderer, element::AsRenderElements, gles2::Gles2Renderer, Bind},
+        vulkan::{version::Version, Instance, PhysicalDevice},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
     input::pointer::{CursorImageAttributes, CursorImageStatus},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
+        ash::vk::ExtPhysicalDeviceDrmFn,
         calloop::EventLoop,
         gbm,
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
@@ -92,7 +98,7 @@ pub fn run_x11(log: Logger) {
     let handle = backend.handle();
 
     // Obtain the DRM node the X server uses for direct rendering.
-    let (_, fd) = handle
+    let (node, fd) = handle
         .drm_node()
         .expect("Could not get DRM node used by X server");
 
@@ -108,17 +114,59 @@ pub fn run_x11(log: Logger) {
         .build(&handle)
         .expect("Failed to create first window");
 
-    // Create the surface for the window.
-    let surface = handle
-        .create_surface(
-            &window,
-            device,
-            context
-                .dmabuf_render_formats()
-                .iter()
-                .map(|format| format.modifier),
-        )
-        .expect("Failed to create X11 surface");
+    let skip_vulkan = std::env::var("ANVIL_NO_VULKAN")
+        .map(|x| {
+            x == "1" || x.to_lowercase() == "true" || x.to_lowercase() == "yes" || x.to_lowercase() == "y"
+        })
+        .unwrap_or(false);
+
+    let vulkan_allocator = if !skip_vulkan {
+        Instance::new(Version::VERSION_1_2, None, log.clone())
+            .ok()
+            .and_then(|instance| {
+                PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
+                    devices
+                        .filter(|phd| phd.has_device_extension(ExtPhysicalDeviceDrmFn::name()))
+                        .find(|phd| {
+                            phd.primary_node().unwrap() == Some(node)
+                                || phd.render_node().unwrap() == Some(node)
+                        })
+                })
+            })
+            .and_then(|physical_device| {
+                VulkanAllocator::new(
+                    &physical_device,
+                    ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
+                )
+                .ok()
+            })
+    } else {
+        None
+    };
+
+    let surface = match vulkan_allocator {
+        // Create the surface for the window.
+        Some(vulkan_allocator) => handle
+            .create_surface(
+                &window,
+                DmabufAllocator(vulkan_allocator),
+                context
+                    .dmabuf_render_formats()
+                    .iter()
+                    .map(|format| format.modifier),
+            )
+            .expect("Failed to create X11 surface"),
+        None => handle
+            .create_surface(
+                &window,
+                DmabufAllocator(GbmAllocator::new(device, GbmBufferFlags::RENDERING)),
+                context
+                    .dmabuf_render_formats()
+                    .iter()
+                    .map(|format| format.modifier),
+            )
+            .expect("Failed to create X11 surface"),
+    };
 
     let mut renderer =
         unsafe { Gles2Renderer::new(context, log.clone()) }.expect("Failed to initialize renderer");
