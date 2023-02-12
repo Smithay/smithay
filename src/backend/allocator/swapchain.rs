@@ -164,12 +164,16 @@ where
             if free_slot.buffer.is_none() {
                 let mut free_slot =
                     Arc::get_mut(free_slot).expect("Acquired was false, but Arc is not unique?");
-                free_slot.buffer = Some(self.allocator.create_buffer(
-                    self.width,
-                    self.height,
-                    self.fourcc,
-                    &self.modifiers,
-                )?);
+                match self
+                    .allocator
+                    .create_buffer(self.width, self.height, self.fourcc, &self.modifiers)
+                {
+                    Ok(buffer) => free_slot.buffer = Some(buffer),
+                    Err(err) => {
+                        free_slot.acquired.store(false, Ordering::SeqCst);
+                        return Err(err);
+                    }
+                }
             }
             assert!(free_slot.buffer.is_some());
             return Ok(Some(Slot(free_slot.clone())));
