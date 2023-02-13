@@ -443,7 +443,7 @@ impl<'a> RenderContext<'a> {
 
 impl<'a> Drop for RenderContext<'a> {
     fn drop(&mut self) {
-        self.buffer.damage_tracker.add(&self.damage);
+        self.buffer.damage_tracker.add(std::mem::take(&mut self.damage));
         if let Some(opaque_regions) = self.opaque_regions.take() {
             self.buffer.opaque_regions = opaque_regions;
         }

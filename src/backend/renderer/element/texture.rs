@@ -501,7 +501,7 @@ impl<T: Texture> TextureRenderBuffer<T> {
     ) -> Result<(), <R as Renderer>::Error> {
         assert_eq!(self.renderer_id, renderer.id());
         renderer.update_memory(&self.texture, data, region)?;
-        self.damage_tracker.lock().unwrap().add(&[region]);
+        self.damage_tracker.lock().unwrap().add([region]);
         self.opaque_regions = opaque_regions;
         Ok(())
     }
@@ -543,7 +543,11 @@ impl<'a, T> RenderContext<'a, T> {
 
 impl<'a, T> Drop for RenderContext<'a, T> {
     fn drop(&mut self) {
-        self.buffer.damage_tracker.lock().unwrap().add(&self.damage);
+        self.buffer
+            .damage_tracker
+            .lock()
+            .unwrap()
+            .add(std::mem::take(&mut self.damage));
         if let Some(opaque_regions) = self.opaque_regions.take() {
             self.buffer.opaque_regions = opaque_regions;
         }

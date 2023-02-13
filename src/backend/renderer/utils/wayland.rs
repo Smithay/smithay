@@ -145,7 +145,7 @@ impl RendererSurfaceState {
                     })
                     .collect::<Vec<Rectangle<i32, BufferCoord>>>();
                 buffer_damage.dedup();
-                self.damage.add(&buffer_damage);
+                self.damage.add(buffer_damage);
 
                 self.opaque_regions.clear();
                 if !self.buffer_has_alpha.unwrap_or(true) {
