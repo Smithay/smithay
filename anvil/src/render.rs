@@ -7,7 +7,7 @@ use smithay::{
                 ConstrainAlign, ConstrainScaleBehavior, CropRenderElement, RelocateRenderElement,
                 RescaleRenderElement,
             },
-            AsRenderElements, RenderElementStates, Wrap,
+            AsRenderElements, RenderElement, RenderElementStates, Wrap,
         },
         ImportAll, ImportMem, Renderer,
     },
@@ -38,12 +38,43 @@ smithay::backend::renderer::element::render_elements! {
     Fps=FpsElement<<R as Renderer>::TextureId>,
 }
 
+impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for CustomRenderElements<R>
+where
+    <R as Renderer>::TextureId: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pointer(arg0) => f.debug_tuple("Pointer").field(arg0).finish(),
+            Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),
+            #[cfg(feature = "debug")]
+            Self::Fps(arg0) => f.debug_tuple("Fps").field(arg0).finish(),
+            Self::_GenericCatcher(arg0) => f.debug_tuple("_GenericCatcher").field(arg0).finish(),
+        }
+    }
+}
+
 smithay::backend::renderer::element::render_elements! {
     pub OutputRenderElements<R, E> where R: ImportAll + ImportMem;
     Space=SpaceRenderElements<R, E>,
     Window=Wrap<E>,
     Custom=CustomRenderElements<R>,
     Preview=CropRenderElement<RelocateRenderElement<RescaleRenderElement<WindowRenderElement<R>>>>,
+}
+
+impl<R: Renderer + ImportAll + ImportMem + std::fmt::Debug, E: RenderElement<R> + std::fmt::Debug>
+    std::fmt::Debug for OutputRenderElements<R, E>
+where
+    <R as Renderer>::TextureId: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Space(arg0) => f.debug_tuple("Space").field(arg0).finish(),
+            Self::Window(arg0) => f.debug_tuple("Window").field(arg0).finish(),
+            Self::Custom(arg0) => f.debug_tuple("Custom").field(arg0).finish(),
+            Self::Preview(arg0) => f.debug_tuple("Preview").field(arg0).finish(),
+            Self::_GenericCatcher(arg0) => f.debug_tuple("_GenericCatcher").field(arg0).finish(),
+        }
+    }
 }
 
 pub fn space_preview_elements<'a, R, C>(
