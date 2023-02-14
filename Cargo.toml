@@ -37,7 +37,7 @@ drm-ffi = { version = "0.4.0", optional = true }
 gbm = { version = "0.11.0", optional = true, default-features = false, features = ["drm-support"] }
 glow = { version = "0.11.2", optional = true }
 input = { version = "0.8.2", default-features = false, features=["libinput_1_14"], optional = true }
-indexmap = "1.7"
+indexmap = "1.9"
 lazy_static = "1"
 libc = "0.2.103"
 libseat= { version = "0.1.7", optional = true }
@@ -93,7 +93,7 @@ libinput_1_19 = ["input/libinput_1_19"]
 renderer_gl = ["gl_generator", "backend_egl"]
 renderer_glow = ["renderer_gl", "glow"]
 renderer_multi = ["backend_drm"]
-use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys"]
+use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys", "gbm?/import-wayland"]
 wayland_frontend = ["wayland-server", "wayland-protocols", "tempfile"]
 x11rb_event_source = ["x11rb"]
 xwayland = ["encoding", "wayland_frontend", "x11rb/composite", "x11rb_event_source", "scopeguard"]

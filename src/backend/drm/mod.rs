@@ -62,6 +62,12 @@
 //! Buffer management and details about the various types can be found in the [`allocator`-Module](crate::backend::allocator) and
 //! rendering abstractions, which can target these buffers can be found in the [`renderer`-Module](crate::backend::renderer).
 //!
+//! ### Hardware composition
+//!
+//! The [`DrmCompositor`](crate::backend::drm::compositor::DrmCompositor) provides a simplified way to utilize drm planes for
+//! using hardware composition.
+//! See the [`compositor`] module docs for more information on that topic.
+//!
 //! ## [`DrmNode`]
 //!
 //! A drm node refers to a drm device and the capabilities that may be performed using the node.
@@ -69,6 +75,8 @@
 //! to allocate buffers for use in X11 or Wayland. If you need to do mode setting, you should use
 //! [`DrmDevice`] instead.
 
+#[cfg(all(feature = "wayland_frontend", feature = "backend_gbm"))]
+pub mod compositor;
 pub(crate) mod device;
 pub(self) mod error;
 pub mod node;
