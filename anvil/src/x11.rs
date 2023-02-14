@@ -382,7 +382,7 @@ pub fn run_x11(log: Logger) {
             let render_res = render_output(
                 &output,
                 &state.space,
-                &elements,
+                elements,
                 &mut backend_data.renderer,
                 &mut backend_data.damage_tracked_renderer,
                 age.into(),

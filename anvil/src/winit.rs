@@ -297,7 +297,7 @@ pub fn run_winit(log: Logger) {
                 render_output(
                     &output,
                     space,
-                    &elements,
+                    elements,
                     renderer,
                     damage_tracked_renderer,
                     age,
