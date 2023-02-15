@@ -207,6 +207,13 @@ pub trait Frame {
     fn finish(self) -> Result<(), Self::Error>;
 }
 
+bitflags::bitflags! {
+    /// Debug flags that can be enabled at runtime
+    pub struct DebugFlags: u32 {
+        /// Tint all rendered textures
+        const TINT = 0b00000001;
+    }
+}
 /// Abstraction of commonly used rendering operations for compositors.
 pub trait Renderer {
     /// Error type returned by the rendering operations of this renderer.
@@ -226,6 +233,11 @@ pub trait Renderer {
     fn downscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error>;
     /// Set the filter method to be used when rendering a texture into a larger area than its size
     fn upscale_filter(&mut self, filter: TextureFilter) -> Result<(), Self::Error>;
+
+    /// Set the enabled [`DebugFlags`]
+    fn set_debug_flags(&mut self, flags: DebugFlags);
+    /// Returns the current enabled [`DebugFlags`]
+    fn debug_flags(&self) -> DebugFlags;
 
     /// Initialize a rendering context on the current rendering target with given dimensions and transformation.
     ///
@@ -756,4 +768,27 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffe
 
         Err(_) => None,
     }
+}
+
+/// Returns if the underlying buffer is y-inverted
+///
+/// *Note*: This will only return y-inverted for buffer types known to smithay (see [`buffer_type`])
+#[cfg(feature = "wayland_frontend")]
+pub fn buffer_y_inverted(buffer: &wl_buffer::WlBuffer) -> Option<bool> {
+    if let Ok(dmabuf) = crate::wayland::dmabuf::get_dmabuf(buffer) {
+        return Some(dmabuf.y_inverted());
+    }
+
+    #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
+    if let Some(Ok(egl_buffer)) = BUFFER_READER
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|x| x.upgrade())
+        .map(|x| x.egl_buffer_contents(buffer))
+    {
+        return Some(egl_buffer.y_inverted);
+    }
+
+    None
 }

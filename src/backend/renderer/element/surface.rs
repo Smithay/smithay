@@ -23,7 +23,7 @@
 //! # use smithay::{
 //! #     backend::allocator::dmabuf::Dmabuf,
 //! #     backend::renderer::{
-//! #         Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
+//! #         DebugFlags, Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
 //! #         TextureFilter,
 //! #     },
 //! #     utils::{Buffer, Physical},
@@ -84,6 +84,12 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
+//! #         unimplemented!()
+//! #     }
+//! #     fn debug_flags(&self) -> DebugFlags {
 //! #         unimplemented!()
 //! #     }
 //! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
@@ -463,11 +469,11 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
 {
-    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.and_then(|d| d.borrow().wl_buffer().cloned())
-                .map(|b| UnderlyingStorage::Wayland(b))
+            data.and_then(|d| d.borrow().buffer().cloned())
+                .map(UnderlyingStorage::Wayland)
         })
     }
 

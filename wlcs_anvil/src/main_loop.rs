@@ -164,7 +164,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
             let _ = render_output(
                 &output,
                 &state.space,
-                &elements,
+                elements,
                 &mut renderer,
                 &mut damage_tracked_renderer,
                 0,

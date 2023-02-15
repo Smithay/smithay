@@ -10,6 +10,7 @@ use crate::{
         viewporter,
     },
 };
+use std::sync::Arc;
 use std::{
     any::TypeId,
     cell::RefCell,
@@ -37,7 +38,7 @@ pub struct RendererSurfaceState {
     pub(crate) buffer_transform: Transform,
     pub(crate) buffer_delta: Option<Point<i32, Logical>>,
     pub(crate) buffer_has_alpha: Option<bool>,
-    pub(crate) buffer: Option<WlBuffer>,
+    pub(crate) buffer: Option<Buffer>,
     pub(crate) damage: DamageTracker<i32, BufferCoord>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
@@ -45,6 +46,49 @@ pub struct RendererSurfaceState {
     pub(crate) opaque_regions: Vec<Rectangle<i32, Logical>>,
 
     accumulated_buffer_delta: Point<i32, Logical>,
+}
+
+#[derive(Debug)]
+struct InnerBuffer(WlBuffer);
+
+impl Drop for InnerBuffer {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+
+/// A wayland buffer
+#[derive(Debug, Clone)]
+pub struct Buffer {
+    inner: Arc<InnerBuffer>,
+}
+
+impl From<WlBuffer> for Buffer {
+    fn from(buffer: WlBuffer) -> Self {
+        Buffer {
+            inner: Arc::new(InnerBuffer(buffer)),
+        }
+    }
+}
+
+impl std::ops::Deref for Buffer {
+    type Target = WlBuffer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner.0
+    }
+}
+
+impl PartialEq<WlBuffer> for Buffer {
+    fn eq(&self, other: &WlBuffer) -> bool {
+        self.inner.0 == *other
+    }
+}
+
+impl PartialEq<WlBuffer> for &Buffer {
+    fn eq(&self, other: &WlBuffer) -> bool {
+        self.inner.0 == *other
+    }
 }
 
 impl RendererSurfaceState {
@@ -69,11 +113,10 @@ impl RendererSurfaceState {
                 self.buffer_scale = attrs.buffer_scale;
                 self.buffer_transform = attrs.buffer_transform.into();
 
-                if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
-                    if &old_buffer != self.buffer.as_ref().unwrap() {
-                        old_buffer.release();
-                    }
+                if !self.buffer.as_ref().map_or(false, |b| b == buffer) {
+                    self.buffer = Some(Buffer::from(buffer));
                 }
+
                 self.textures.clear();
 
                 let surface_size = self
@@ -102,7 +145,7 @@ impl RendererSurfaceState {
                     })
                     .collect::<Vec<Rectangle<i32, BufferCoord>>>();
                 buffer_damage.dedup();
-                self.damage.add(&buffer_damage);
+                self.damage.add(buffer_damage);
 
                 self.opaque_regions.clear();
                 if !self.buffer_has_alpha.unwrap_or(true) {
@@ -135,7 +178,7 @@ impl RendererSurfaceState {
                                     RectangleKind::Add => {
                                         let added_regions = new_regions
                                             .iter()
-                                            .filter(|region| region.overlaps(rect))
+                                            .filter(|region| region.overlaps_or_touches(rect))
                                             .fold(vec![rect], |new_regions, existing_region| {
                                                 new_regions
                                                     .into_iter()
@@ -162,9 +205,7 @@ impl RendererSurfaceState {
             Some(BufferAssignment::Removed) => {
                 // remove the contents
                 self.buffer_dimensions = None;
-                if let Some(buffer) = self.buffer.take() {
-                    buffer.release();
-                };
+                self.buffer = None;
                 self.textures.clear();
                 self.damage.reset();
                 self.surface_view = None;
@@ -218,7 +259,7 @@ impl RendererSurfaceState {
 
     /// Get the attached buffer.
     /// Can be used to check if surface is mapped
-    pub fn wl_buffer(&self) -> Option<&WlBuffer> {
+    pub fn buffer(&self) -> Option<&Buffer> {
         self.buffer.as_ref()
     }
 
@@ -543,8 +584,9 @@ where
         .into_iter()
         .fold(Vec::new(), |new_damage, mut rect| {
             // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                new_damage.into_iter().partition(|other| other.overlaps(rect));
+            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
+                .into_iter()
+                .partition(|other| other.overlaps_or_touches(rect));
 
             for overlap in overlapping {
                 rect = rect.merge(overlap);

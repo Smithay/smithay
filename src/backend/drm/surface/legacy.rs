@@ -7,7 +7,9 @@ use std::sync::{
 };
 
 use crate::{
-    backend::drm::{device::legacy::set_connector_state, device::DrmDeviceInternal, error::Error},
+    backend::drm::{
+        device::legacy::set_connector_state, device::DrmDeviceInternal, error::Error, DrmDeviceFd,
+    },
     utils::DevPath,
 };
 
@@ -410,6 +412,10 @@ impl LegacyDrmSurface {
             State::current_state(&*self.fd, self.crtc)?
         };
         Ok(())
+    }
+
+    pub(crate) fn device_fd(&self) -> &DrmDeviceFd {
+        self.fd.device_fd()
     }
 }
 

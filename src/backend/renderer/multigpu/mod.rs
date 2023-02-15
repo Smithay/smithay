@@ -420,8 +420,9 @@ impl<A: GraphicsApi> GpuManager<A> {
                                 Vec::<Rectangle<i32, BufferCoords>>::new(),
                                 |damage, mut rect| {
                                     // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                                    let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                                        damage.into_iter().partition(|other| other.overlaps(rect));
+                                    let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = damage
+                                        .into_iter()
+                                        .partition(|other| other.overlaps_or_touches(rect));
 
                                     for overlap in overlapping {
                                         rect = rect.merge(overlap);
@@ -538,8 +539,9 @@ impl<A: GraphicsApi> GpuManager<A> {
                                 })
                                 .fold(Vec::<Rectangle<i32, BufferCoords>>::new(), |damage, mut rect| {
                                     // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                                    let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                                        damage.into_iter().partition(|other| other.overlaps(rect));
+                                    let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = damage
+                                        .into_iter()
+                                        .partition(|other| other.overlaps_or_touches(rect));
 
                                     for overlap in overlapping {
                                         rect = rect.merge(overlap);
@@ -909,6 +911,13 @@ where
             .map_err(Error::Render)
     }
 
+    fn set_debug_flags(&mut self, flags: DebugFlags) {
+        self.render.renderer_mut().set_debug_flags(flags)
+    }
+    fn debug_flags(&self) -> DebugFlags {
+        self.render.renderer().debug_flags()
+    }
+
     fn render<'frame>(
         &'frame mut self,
         size: Size<i32, Physical>,
@@ -1112,7 +1121,9 @@ where
 
                 // cpu copy
                 damage.dedup();
-                damage.retain(|rect| rect.overlaps(Rectangle::from_loc_and_size((0, 0), buffer_size)));
+                damage.retain(|rect| {
+                    rect.overlaps_or_touches(Rectangle::from_loc_and_size((0, 0), buffer_size))
+                });
                 damage.retain(|rect| rect.size.h > 0 && rect.size.w > 0);
 
                 let mut copy_rects = // merge overlapping rectangles
@@ -1120,7 +1131,7 @@ where
                         // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
                         let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
                             .into_iter()
-                            .partition(|other: &Rectangle<i32, BufferCoords>| other.overlaps(rect));
+                            .partition(|other: &Rectangle<i32, BufferCoords>| other.overlaps_or_touches(rect));
 
                         for overlap in overlapping {
                             rect = rect.merge(overlap);
@@ -1703,8 +1714,9 @@ where
                 .flat_map(|rect| rect.intersection(Rectangle::from_loc_and_size((0, 0), dmabuf.size())))
                 .fold(Vec::<Rectangle<i32, BufferCoords>>::new(), |damage, mut rect| {
                     // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                    let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                        damage.into_iter().partition(|other| other.overlaps(rect));
+                    let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = damage
+                        .into_iter()
+                        .partition(|other| other.overlaps_or_touches(rect));
 
                     for overlap in overlapping {
                         rect = rect.merge(overlap);

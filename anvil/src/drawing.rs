@@ -24,6 +24,8 @@ use smithay::{
 };
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
+pub static CLEAR_COLOR_FULLSCREEN: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+
 pub struct PointerElement<T: Texture> {
     texture: Option<TextureBuffer<T>>,
     status: CursorImageStatus,
@@ -53,6 +55,19 @@ render_elements! {
         R: ImportAll;
     Surface=WaylandSurfaceRenderElement<R>,
     Texture=TextureRenderElement<<R as Renderer>::TextureId>,
+}
+
+impl<R: Renderer> std::fmt::Debug for PointerRenderElement<R>
+where
+    <R as Renderer>::TextureId: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),
+            Self::Texture(arg0) => f.debug_tuple("Texture").field(arg0).finish(),
+            Self::_GenericCatcher(arg0) => f.debug_tuple("_GenericCatcher").field(arg0).finish(),
+        }
+    }
 }
 
 impl<T: Texture + Clone + 'static, R> AsRenderElements<R> for PointerElement<T>
@@ -102,7 +117,7 @@ where
 pub static FPS_NUMBERS_PNG: &[u8] = include_bytes!("../resources/numbers.png");
 
 #[cfg(feature = "debug")]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct FpsElement<T: Texture> {
     id: Id,
     value: u32,

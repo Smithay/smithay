@@ -216,7 +216,9 @@ impl<N: Coordinate, Kind> DamageTrackerSnapshot<N, Kind> {
         }
     }
 
-    fn add(&mut self, damage: &[Rectangle<N, Kind>]) {
+    fn add(&mut self, damage: impl IntoIterator<Item = Rectangle<N, Kind>>) {
+        let damage = damage.into_iter().collect::<Vec<_>>();
+
         if damage.is_empty() || damage.iter().all(|d| d.is_empty()) {
             // do not track empty damage
             return;
@@ -273,7 +275,7 @@ impl<N: Clone, Kind> DamageTracker<N, Kind> {
 
 impl<N: Coordinate, Kind> DamageTracker<N, Kind> {
     /// Add some damage to the tracker
-    pub fn add(&mut self, damage: &[Rectangle<N, Kind>]) {
+    pub fn add(&mut self, damage: impl IntoIterator<Item = Rectangle<N, Kind>>) {
         self.state.add(damage)
     }
 

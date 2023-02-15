@@ -21,13 +21,15 @@
 use std::{collections::HashMap, sync::Arc};
 
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{backend::ObjectId, protocol::wl_buffer, Resource};
+use wayland_server::{backend::ObjectId, Resource};
 
 use crate::{
     output::{Output, WeakOutput},
     utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform},
 };
 
+#[cfg(feature = "wayland_frontend")]
+use super::utils::Buffer;
 use super::{utils::CommitCounter, Renderer};
 
 pub mod memory;
@@ -91,13 +93,11 @@ impl<R: Resource> From<&R> for Id {
 }
 
 /// The underlying storage for a element
-#[derive(Debug)]
-pub enum UnderlyingStorage<'a, R: Renderer> {
+#[derive(Debug, Clone)]
+pub enum UnderlyingStorage {
     /// A wayland buffer
     #[cfg(feature = "wayland_frontend")]
-    Wayland(wl_buffer::WlBuffer),
-    /// A texture
-    External(&'a R::TextureId),
+    Wayland(Buffer),
 }
 
 /// Defines the presentation state of an element after rendering
@@ -348,7 +348,7 @@ pub trait RenderElement<R: Renderer>: Element {
     ) -> Result<(), R::Error>;
 
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         let _ = renderer;
         None
     }
@@ -416,7 +416,7 @@ where
     R: Renderer,
     E: RenderElement<R> + Element,
 {
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         (*self).underlying_storage(renderer)
     }
 
@@ -707,7 +707,7 @@ macro_rules! render_elements_internal {
             }
         }
 
-        fn underlying_storage(&self, renderer: &$renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_, $renderer>>
+        fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage>
         {
             match self {
                 $(
@@ -743,7 +743,7 @@ macro_rules! render_elements_internal {
             }
         }
 
-        fn underlying_storage(&self, renderer: &$renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_, $renderer>>
+        fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage>
         {
             match self {
                 $(
@@ -1160,7 +1160,7 @@ macro_rules! render_elements_internal {
 ///
 /// ```
 /// # use smithay::{
-/// #     backend::renderer::{Frame, Renderer, Texture, TextureFilter},
+/// #     backend::renderer::{DebugFlags, Frame, Renderer, Texture, TextureFilter},
 /// #     utils::{Buffer, Physical, Rectangle, Size, Transform},
 /// # };
 /// #
@@ -1217,6 +1217,12 @@ macro_rules! render_elements_internal {
 /// #         unimplemented!()
 /// #     }
 /// #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+/// #         unimplemented!()
+/// #     }
+/// #     fn set_debug_flags(&mut self, flags: DebugFlags) {
+/// #         unimplemented!()
+/// #     }
+/// #     fn debug_flags(&self) -> DebugFlags {
 /// #         unimplemented!()
 /// #     }
 /// #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
@@ -1367,7 +1373,7 @@ where
         self.0.draw(frame, src, dst, damage, log)
     }
 
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.0.underlying_storage(renderer)
     }
 }

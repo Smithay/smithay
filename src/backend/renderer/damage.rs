@@ -19,7 +19,7 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
 //! #     utils::{Buffer, Physical, Rectangle, Size},
 //! # };
 //! # use slog::Drain;
@@ -77,6 +77,12 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
+//! #         unimplemented!()
+//! #     }
+//! #     fn debug_flags(&self) -> DebugFlags {
 //! #         unimplemented!()
 //! #     }
 //! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
@@ -598,7 +604,7 @@ impl DamageTrackedRenderer {
                         state
                             .last_instances
                             .iter()
-                            .map(|i| i.last_geometry)
+                            .filter_map(|i| i.last_geometry.intersection(output_geo))
                             .collect::<Vec<_>>(),
                         |damage, opaque_region| {
                             damage
@@ -620,9 +626,18 @@ impl DamageTrackedRenderer {
                 .map(|s| !s.instance_matches(element_geometry, z_index))
                 .unwrap_or(true)
             {
-                let mut element_damage = vec![element_geometry];
+                let mut element_damage = if let Some(damage) = element_geometry.intersection(output_geo) {
+                    vec![damage]
+                } else {
+                    vec![]
+                };
                 if let Some(state) = element_last_state {
-                    element_damage.extend(state.last_instances.iter().map(|i| i.last_geometry));
+                    element_damage.extend(
+                        state
+                            .last_instances
+                            .iter()
+                            .filter_map(|i| i.last_geometry.intersection(output_geo)),
+                    );
                 }
                 damage.extend(
                     opaque_regions
@@ -672,7 +687,7 @@ impl DamageTrackedRenderer {
 
         // Optimize the damage for rendering
         damage.dedup();
-        damage.retain(|rect| rect.overlaps(output_geo));
+        damage.retain(|rect| rect.overlaps_or_touches(output_geo));
         damage.retain(|rect| !rect.is_empty());
         // filter damage outside of the output gep and merge overlapping rectangles
         *damage = damage
@@ -680,8 +695,9 @@ impl DamageTrackedRenderer {
             .filter_map(|rect| rect.intersection(output_geo))
             .fold(Vec::new(), |new_damage, mut rect| {
                 // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                    new_damage.into_iter().partition(|other| other.overlaps(rect));
+                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
+                    .into_iter()
+                    .partition(|other| other.overlaps_or_touches(rect));
 
                 for overlap in overlapping {
                     rect = rect.merge(overlap);

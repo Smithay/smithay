@@ -41,7 +41,7 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
 //! #     utils::{Buffer, Physical, Rectangle, Size},
 //! # };
 //! # use slog::Drain;
@@ -99,6 +99,12 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
+//! #         unimplemented!()
+//! #     }
+//! #     fn debug_flags(&self) -> DebugFlags {
 //! #         unimplemented!()
 //! #     }
 //! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
@@ -172,7 +178,7 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
 //! #     utils::{Buffer, Physical},
 //! # };
 //! # use slog::Drain;
@@ -230,6 +236,12 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
+//! #         unimplemented!()
+//! #     }
+//! #     fn debug_flags(&self) -> DebugFlags {
 //! #         unimplemented!()
 //! #     }
 //! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
@@ -357,7 +369,7 @@ use crate::{
     utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
+use super::{CommitCounter, Element, Id, RenderElement};
 
 /// A single texture buffer
 #[derive(Debug, Clone)]
@@ -489,7 +501,7 @@ impl<T: Texture> TextureRenderBuffer<T> {
     ) -> Result<(), <R as Renderer>::Error> {
         assert_eq!(self.renderer_id, renderer.id());
         renderer.update_memory(&self.texture, data, region)?;
-        self.damage_tracker.lock().unwrap().add(&[region]);
+        self.damage_tracker.lock().unwrap().add([region]);
         self.opaque_regions = opaque_regions;
         Ok(())
     }
@@ -531,7 +543,11 @@ impl<'a, T> RenderContext<'a, T> {
 
 impl<'a, T> Drop for RenderContext<'a, T> {
     fn drop(&mut self) {
-        self.buffer.damage_tracker.lock().unwrap().add(&self.damage);
+        self.buffer
+            .damage_tracker
+            .lock()
+            .unwrap()
+            .add(std::mem::take(&mut self.damage));
         if let Some(opaque_regions) = self.opaque_regions.take() {
             self.buffer.opaque_regions = opaque_regions;
         }
@@ -815,9 +831,5 @@ where
         }
 
         frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, self.alpha)
-    }
-
-    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
-        Some(UnderlyingStorage::External(&self.texture))
     }
 }

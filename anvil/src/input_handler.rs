@@ -4,6 +4,8 @@ use crate::{focus::FocusTarget, shell::FullscreenSurface, AnvilState};
 
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
+#[cfg(feature = "udev")]
+use smithay::backend::renderer::DebugFlags;
 
 use smithay::{
     backend::input::{
@@ -607,6 +609,11 @@ impl AnvilState<UdevData> {
                         self.backend_data.reset_buffers(&output);
                     }
                 }
+                KeyAction::ToggleTint => {
+                    let mut debug_flags = self.backend_data.debug_flags();
+                    debug_flags.toggle(DebugFlags::TINT);
+                    self.backend_data.set_debug_flags(debug_flags);
+                }
 
                 action => match action {
                     KeyAction::None | KeyAction::Quit | KeyAction::Run(_) | KeyAction::TogglePreview => {
@@ -886,6 +893,7 @@ enum KeyAction {
     ScaleDown,
     TogglePreview,
     RotateOutput,
+    ToggleTint,
     /// Do nothing more
     None,
 }
@@ -915,6 +923,8 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Optio
         Some(KeyAction::TogglePreview)
     } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_R {
         Some(KeyAction::RotateOutput)
+    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_T {
+        Some(KeyAction::ToggleTint)
     } else {
         None
     }
