@@ -70,7 +70,8 @@ impl<A: AsFd + 'static> GbmAllocator<A> {
         );
         #[cfg(not(feature = "backend_gbm_has_create_with_modifiers2"))]
         let result =
-            self.create_buffer_object_with_modifiers(width, height, fourcc, modifiers.iter().copied());
+            self.device
+                .create_buffer_object_with_modifiers(width, height, fourcc, modifiers.iter().copied());
 
         match result {
             Ok(bo) => Ok(bo),
