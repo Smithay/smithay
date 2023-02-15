@@ -152,6 +152,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             let geometry = self.state.space.output_geometry(output).unwrap();
 
             window.set_fullscreen(true).unwrap();
+            elem.set_ssd(false);
             window.configure(geometry).unwrap();
             output.user_data().insert_if_missing(FullscreenSurface::default);
             output
@@ -171,6 +172,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
         {
             window.set_fullscreen(false).unwrap();
+            elem.set_ssd(!window.is_decorated());
             if let Some(output) = self.state.space.outputs().find(|o| {
                 o.user_data()
                     .get::<FullscreenSurface>()
