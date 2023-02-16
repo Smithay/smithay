@@ -126,7 +126,9 @@ impl<D: SeatHandler> Inner<D> {
     pub(crate) fn send_all_caps(&self) {
         let capabilities = self.compute_caps();
         for seat in &self.known_seats {
-            seat.capabilities(capabilities);
+            if let Ok(seat) = seat.upgrade() {
+                seat.capabilities(capabilities);
+            }
         }
     }
 }
@@ -194,8 +196,8 @@ impl<D: SeatHandler + 'static> Seat<D> {
             .unwrap()
             .known_seats
             .iter()
+            .filter_map(|w| w.upgrade().ok())
             .filter(|s| s.client().map_or(false, |c| &c == client))
-            .cloned()
             .collect()
     }
 
@@ -414,6 +416,6 @@ where
 
         let mut inner = global_data.arc.inner.lock().unwrap();
         resource.capabilities(inner.compute_caps());
-        inner.known_seats.push(resource);
+        inner.known_seats.push(resource.downgrade());
     }
 }

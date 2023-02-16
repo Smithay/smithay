@@ -188,7 +188,7 @@ pub(crate) struct Inner<D: SeatHandler> {
     #[cfg(feature = "wayland_frontend")]
     pub(crate) global: Option<wayland_server::backend::GlobalId>,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) known_seats: Vec<wayland_server::protocol::wl_seat::WlSeat>,
+    pub(crate) known_seats: Vec<wayland_server::Weak<wayland_server::protocol::wl_seat::WlSeat>>,
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
