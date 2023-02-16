@@ -27,7 +27,7 @@ use super::{
     RegionAttributes, SurfaceAttributes,
 };
 
-use slog::trace;
+use tracing::trace;
 
 /*
  * wl_compositor
@@ -63,7 +63,7 @@ where
     D: 'static,
 {
     fn request(
-        state: &mut D,
+        _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlCompositor,
         request: wl_compositor::Request,
@@ -71,10 +71,9 @@ where
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let log = &state.compositor_state().log;
         match request {
             wl_compositor::Request::CreateSurface { id } => {
-                trace!(log, "Creating a new wl_surface.");
+                trace!(id = ?id, "Creating a new wl_surface");
 
                 let surface = data_init.init(
                     id,
@@ -86,7 +85,7 @@ where
                 PrivateSurfaceData::init(&surface);
             }
             wl_compositor::Request::CreateRegion { id } => {
-                trace!(log, "Creating a new wl_region.");
+                trace!(id = ?id, "Creating a new wl_region");
 
                 data_init.init(
                     id,
@@ -247,10 +246,7 @@ where
 
                 PrivateSurfaceData::invoke_post_commit_hooks(handle, surface);
 
-                trace!(
-                    state.compositor_state().log,
-                    "Calling user implementation for wl_surface.commit"
-                );
+                trace!("Calling user implementation for wl_surface.commit");
 
                 state.commit(surface);
             }

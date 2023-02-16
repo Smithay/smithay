@@ -23,7 +23,7 @@
 //! // Create a socket for clients to discover the compositor.
 //! //
 //! // This function will select the next open name for a listening socket.
-//! let listening_socket = ListeningSocketSource::new_auto(None).unwrap();
+//! let listening_socket = ListeningSocketSource::new_auto().unwrap();
 //!
 //! event_loop.handle().insert_source(listening_socket, |client_stream, _, state| {
 //!     // Inside the callback, you should insert the client into the display.
@@ -49,6 +49,7 @@ use std::{ffi::OsStr, io, os::unix::net::UnixStream};
 use calloop::{
     generic::Generic, EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory,
 };
+use tracing::{debug, info};
 use wayland_server::{BindError, ListeningSocket};
 
 /// A Wayland listening socket event source.
@@ -56,46 +57,31 @@ use wayland_server::{BindError, ListeningSocket};
 /// This implements [`EventSource`] and may be inserted into an event loop.
 #[derive(Debug)]
 pub struct ListeningSocketSource {
-    logger: slog::Logger,
     socket: Generic<ListeningSocket>,
 }
 
 impl ListeningSocketSource {
     /// Creates a new listening socket, automatically choosing the next available `wayland` socket name.
-    pub fn new_auto<L>(logger: L) -> Result<ListeningSocketSource, BindError>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
+    pub fn new_auto() -> Result<ListeningSocketSource, BindError> {
         // Try socket numbers 1-32. Remember the upper bound of Range is exclusive.
         //
         // We don't try wayland-0 due since clients may connect to the wrong compositor. Clients these days
         // should be connecting based off the WAYLAND_DISPLAY or WAYLAND_SOCKET environment variables.
         let socket = ListeningSocket::bind_auto("wayland", 1..33)?;
 
-        let logger = crate::slog_or_fallback(logger).new(
-            slog::o!("wayland_socket" => format!("{}", socket.socket_name().unwrap().to_string_lossy())),
-        );
-        slog::info!(logger, "Created new socket");
+        info!(name = ?socket.socket_name(),"Created new socket");
 
         Ok(ListeningSocketSource {
-            logger,
             socket: Generic::new(socket, Interest::READ, Mode::Level),
         })
     }
 
     /// Creates a new listening socket with the specified name.
-    pub fn with_name<L>(name: &str, logger: L) -> Result<ListeningSocketSource, BindError>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
+    pub fn with_name(name: &str) -> Result<ListeningSocketSource, BindError> {
         let socket = ListeningSocket::bind(name)?;
-        let logger = crate::slog_or_fallback(logger).new(
-            slog::o!("wayland_socket" => format!("{}", socket.socket_name().unwrap().to_string_lossy())),
-        );
-        slog::info!(logger, "Created new socket");
+        info!(name = ?socket.socket_name(), "Created new socket");
 
         Ok(ListeningSocketSource {
-            logger,
             socket: Generic::new(socket, Interest::READ, Mode::Level),
         })
     }
@@ -127,7 +113,7 @@ impl EventSource for ListeningSocketSource {
     {
         self.socket.process_events(readiness, token, |_, socket| {
             while let Some(client) = socket.accept()? {
-                slog::debug!(self.logger, "New client connected"; "client" => format!("{:?}", client));
+                debug!(socket = ?socket.socket_name(), client = ?client, "New client connected");
                 callback(client, &mut ());
             }
 

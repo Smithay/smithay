@@ -36,9 +36,8 @@
 //! # struct State { compositor_state: CompositorState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! // Create the compositor state
-//! let compositor_state = CompositorState::new::<State, _>(
+//! let compositor_state = CompositorState::new::<State>(
 //!     &display.handle(),
-//!     None // We don't add a logger in this example
 //! );
 //!
 //! // insert the CompositorState into your state
@@ -435,7 +434,6 @@ pub trait CompositorHandler {
 /// State of a compositor
 #[derive(Debug)]
 pub struct CompositorState {
-    log: slog::Logger,
     compositor: GlobalId,
     subcompositor: GlobalId,
 }
@@ -447,18 +445,14 @@ impl CompositorState {
     ///
     /// It returns the two global handles, in case you wish to remove these globals from
     /// the event loop in the future.
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> Self
+    pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
     {
-        let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
-
         let compositor = display.create_global::<D, WlCompositor, ()>(5, ());
         let subcompositor = display.create_global::<D, WlSubcompositor, ()>(1, ());
 
         CompositorState {
-            log,
             compositor,
             subcompositor,
         }

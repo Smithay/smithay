@@ -37,7 +37,6 @@
 //!         make: "Screens Inc".into(),     // make of the monitor
 //!         model: "Monitor Ultra".into(),  // model of the monitor
 //!     },
-//!     None // insert a logger here
 //! );
 //! // create a global, if you want to advertise it to clients
 //! let _global = output.create_global::<State>(

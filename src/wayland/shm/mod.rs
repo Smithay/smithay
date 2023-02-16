@@ -29,10 +29,9 @@
 //! // Create the ShmState.
 //! // Here, we specify that Yuyv and C8 format are supported
 //! // additionally to the standard Argb8888 and Xrgb8888.
-//! let state = ShmState::new::<State, _>(
+//! let state = ShmState::new::<State>(
 //!     &display.handle(),
 //!     vec![Format::Yuyv, Format::C8],
-//!     None // we don't provide a logger here
 //! );
 //!
 //! // insert the shmstate into your compositor state.
@@ -122,7 +121,6 @@ use super::buffer::BufferHandler;
 pub struct ShmState {
     formats: Vec<wl_shm::Format>,
     shm: GlobalId,
-    log: ::slog::Logger,
 }
 
 impl ShmState {
@@ -134,7 +132,7 @@ impl ShmState {
     /// The global is directly created on the provided [`Display`](wayland_server::Display),
     /// and this function returns the a delegate type. The id provided by [`ShmState::global`] may be used to
     /// remove this global in the future.
-    pub fn new<D, L>(display: &DisplayHandle, mut formats: Vec<wl_shm::Format>, logger: L) -> ShmState
+    pub fn new<D>(display: &DisplayHandle, mut formats: Vec<wl_shm::Format>) -> ShmState
     where
         D: GlobalDispatch<WlShm, ()>
             + Dispatch<WlShm, ()>
@@ -142,21 +140,14 @@ impl ShmState {
             + BufferHandler
             + ShmHandler
             + 'static,
-        L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_fallback(logger);
-
         // Mandatory formats
         formats.push(wl_shm::Format::Argb8888);
         formats.push(wl_shm::Format::Xrgb8888);
 
         let shm = display.create_global::<D, WlShm, _>(1, ());
 
-        ShmState {
-            formats,
-            shm,
-            log: log.new(slog::o!("smithay_module" => "shm_handler")),
-        }
+        ShmState { formats, shm }
     }
 
     /// Returns the id of the [`WlShm`] global.

@@ -54,7 +54,6 @@ pub struct Space<E: SpaceElement> {
     // in z-order, back to front
     elements: Vec<InnerElement<E>>,
     outputs: Vec<Output>,
-    _logger: ::slog::Logger,
 }
 
 impl<E: SpaceElement> PartialEq for Space<E> {
@@ -69,20 +68,17 @@ impl<E: SpaceElement> Drop for Space<E> {
     }
 }
 
-impl<E: SpaceElement + PartialEq> Space<E> {
-    /// Create a new [`Space`]
-    pub fn new<L>(log: L) -> Self
-    where
-        L: Into<Option<slog::Logger>>,
-    {
-        Space {
+impl<E: SpaceElement> Default for Space<E> {
+    fn default() -> Self {
+        Self {
             id: next_space_id(),
-            elements: Vec::new(),
-            outputs: Vec::new(),
-            _logger: crate::slog_or_fallback(log),
+            elements: Default::default(),
+            outputs: Default::default(),
         }
     }
+}
 
+impl<E: SpaceElement + PartialEq> Space<E> {
     /// Gets the id of this space
     pub fn id(&self) -> usize {
         self.id
@@ -653,7 +649,6 @@ pub fn render_output<
     #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
     C: RenderElement<R>,
     E: SpaceElement + PartialEq + AsRenderElements<R> + 'a,
-    L: Into<Option<slog::Logger>>,
     S: IntoIterator<Item = &'a Space<E>>,
 >(
     output: &Output,
@@ -663,7 +658,6 @@ pub fn render_output<
     custom_elements: &'a [C],
     damage_tracked_renderer: &mut DamageTrackedRenderer,
     clear_color: [f32; 4],
-    log: L,
 ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
 where
     <R as Renderer>::TextureId: Texture + 'static,
@@ -683,5 +677,5 @@ where
     render_elements.extend(custom_elements.iter().map(OutputRenderElements::Custom));
     render_elements.extend(space_render_elements.into_iter().map(OutputRenderElements::Space));
 
-    damage_tracked_renderer.render_output(renderer, age, &render_elements, clear_color, log)
+    damage_tracked_renderer.render_output(renderer, age, &render_elements, clear_color)
 }

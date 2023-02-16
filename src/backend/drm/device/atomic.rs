@@ -13,7 +13,7 @@ use drm::control::{
 use super::DrmDeviceFd;
 use crate::{backend::drm::error::Error, utils::DevPath};
 
-use slog::{error, o, trace};
+use tracing::{error, trace};
 
 type OldState = (
     Vec<(connector::Handle, PropertyValueSet)>,
@@ -33,22 +33,15 @@ pub struct AtomicDrmDevice {
     pub(crate) active: Arc<AtomicBool>,
     old_state: OldState,
     pub(crate) prop_mapping: Mapping,
-    logger: ::slog::Logger,
 }
 
 impl AtomicDrmDevice {
-    pub fn new(
-        fd: DrmDeviceFd,
-        active: Arc<AtomicBool>,
-        disable_connectors: bool,
-        logger: ::slog::Logger,
-    ) -> Result<Self, Error> {
+    pub fn new(fd: DrmDeviceFd, active: Arc<AtomicBool>, disable_connectors: bool) -> Result<Self, Error> {
         let mut dev = AtomicDrmDevice {
             fd,
             active,
             old_state: (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
             prop_mapping: (HashMap::new(), HashMap::new(), HashMap::new()),
-            logger: logger.new(o!("smithay_module" => "backend_drm_atomic", "drm_module" => "device")),
         };
 
         // Enumerate (and save) the current device state.
@@ -83,7 +76,7 @@ impl AtomicDrmDevice {
 
         dev.old_state = old_state;
         dev.prop_mapping = mapping;
-        trace!(dev.logger, "Mapping: {:#?}", dev.prop_mapping);
+        trace!("Mapping: {:#?}", dev.prop_mapping);
 
         // If the user does not explicitly requests us to skip this,
         // we clear out the complete connector<->crtc mapping on device creation.
@@ -216,7 +209,7 @@ impl Drop for AtomicDrmDevice {
             add_multiple_props(&mut req, &self.old_state.3);
 
             if let Err(err) = self.fd.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req) {
-                error!(self.logger, "Failed to restore previous state. Error: {}", err);
+                error!("Failed to restore previous state. Error: {}", err);
             }
         }
     }

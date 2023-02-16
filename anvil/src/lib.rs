@@ -6,9 +6,6 @@
     allow(dead_code, unused_imports)
 )]
 
-#[macro_use]
-extern crate slog;
-
 #[cfg(any(feature = "udev", feature = "xwayland"))]
 pub mod cursor;
 pub mod drawing;

@@ -32,9 +32,8 @@
 //!
 //! # struct State { xdg_shell_state: XdgShellState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
-//! let xdg_shell_state = XdgShellState::new::<State, _>(
+//! let xdg_shell_state = XdgShellState::new::<State>(
 //!     &display.handle(),
-//!     None  // put a logger if you want
 //! );
 //!
 //! // insert the xdg_shell_state into your state
@@ -892,17 +891,14 @@ pub(crate) struct InnerState {
 pub struct XdgShellState {
     inner: Arc<Mutex<InnerState>>,
     global: GlobalId,
-    _log: slog::Logger,
 }
 
 impl XdgShellState {
     /// Create a new `xdg_shell` global
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> XdgShellState
+    pub fn new<D>(display: &DisplayHandle) -> XdgShellState
     where
-        L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<XdgWmBase, ()> + 'static,
     {
-        let log = crate::slog_or_fallback(logger);
         let global = display.create_global::<D, XdgWmBase, _>(3, ());
 
         XdgShellState {
@@ -911,7 +907,6 @@ impl XdgShellState {
                 known_popups: Vec::new(),
             })),
             global,
-            _log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
         }
     }
 

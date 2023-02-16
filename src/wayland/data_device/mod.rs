@@ -37,9 +37,8 @@
 //! # struct State { data_device_state: DataDeviceState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! // Create the data_device state
-//! let data_device_state = DataDeviceState::new::<State, _>(
+//! let data_device_state = DataDeviceState::new::<State>(
 //!     &display.handle(),
-//!     None // We don't add a logger in this example
 //! );
 //!
 //! // insert the DataDeviceState into your state
@@ -171,23 +170,19 @@ pub trait ServerDndGrabHandler {
 /// State of data device
 #[derive(Debug)]
 pub struct DataDeviceState {
-    log: slog::Logger,
     manager_global: GlobalId,
 }
 
 impl DataDeviceState {
     /// Regiseter new [WlDataDeviceManager] global
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> Self
+    pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<WlDataDeviceManager, ()> + 'static,
         D: DataDeviceHandler,
     {
-        let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "data_device_mgr"));
-
         let manager_global = display.create_global::<D, WlDataDeviceManager, _>(3, ());
 
-        Self { log, manager_global }
+        Self { manager_global }
     }
 
     /// [WlDataDeviceManager] GlobalId getter
@@ -282,7 +277,7 @@ pub fn start_dnd<D, C>(
 mod handlers {
     use std::cell::RefCell;
 
-    use slog::error;
+    use tracing::error;
     use wayland_server::{
         protocol::{
             wl_data_device::WlDataDevice,
@@ -327,16 +322,14 @@ mod handlers {
         D: 'static,
     {
         fn request(
-            state: &mut D,
-            _client: &wayland_server::Client,
+            _state: &mut D,
+            client: &wayland_server::Client,
             _resource: &WlDataDeviceManager,
             request: wl_data_device_manager::Request,
             _data: &(),
             _dhandle: &DisplayHandle,
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
-            let data_device_state = state.data_device_state();
-
             match request {
                 wl_data_device_manager::Request::CreateDataSource { id } => {
                     data_init.init(id, DataSourceUserData::new());
@@ -353,7 +346,7 @@ mod handlers {
                             seat_data.borrow_mut().add_device(data_device);
                         }
                         None => {
-                            error!(&data_device_state.log, "Unmanaged seat given to a data device.");
+                            error!(client = ?client, data_device = ?id, "Unmanaged seat given to a data device.");
                         }
                     }
                 }

@@ -1,7 +1,6 @@
 use std::{ffi::CStr, fmt, fs::File, os::unix::io::OwnedFd, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use slog::{o, Drain};
 use smithay::{
     backend::{
         allocator::{
@@ -20,6 +19,7 @@ use smithay::{
     },
     utils::{DeviceFd, Rectangle, Transform},
 };
+use tracing::info;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -101,15 +101,20 @@ impl fmt::Display for RendererType {
 
 fn main() {
     let args = Cli::parse();
-    let log = slog::Logger::root(std::sync::Mutex::new(slog_term::term_full().fuse()).fuse(), o!());
+
+    if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    } else {
+        tracing_subscriber::fmt().init();
+    }
 
     match args.subcommand {
-        Subcommands::Formats { render, sample } => format_test(render, sample, log),
-        Subcommands::Test(args) => buffer_test(args, log),
+        Subcommands::Formats { render, sample } => format_test(render, sample),
+        Subcommands::Test(args) => buffer_test(args),
     }
 }
 
-fn format_test(render: Vec<String>, sample: Vec<String>, log: slog::Logger) {
+fn format_test(render: Vec<String>, sample: Vec<String>) {
     for format in render
         .iter()
         .map(|path| {
@@ -121,7 +126,7 @@ fn format_test(render: Vec<String>, sample: Vec<String>, log: slog::Logger) {
                         || device.render_device_path().ok().as_ref() == Some(&path)
                 })
                 .expect("Unable to find egl device");
-            let display = EGLDisplay::new(device, log.clone()).expect("Failed to create EGL display");
+            let display = EGLDisplay::new(device).expect("Failed to create EGL display");
             display.dmabuf_render_formats().clone()
         })
         .chain(sample.iter().map(|path| {
@@ -133,7 +138,7 @@ fn format_test(render: Vec<String>, sample: Vec<String>, log: slog::Logger) {
                         || device.render_device_path().ok().as_ref() == Some(&path)
                 })
                 .expect("Unable to find egl device");
-            let display = EGLDisplay::new(device, log.clone()).expect("Failed to create EGL display");
+            let display = EGLDisplay::new(device).expect("Failed to create EGL display");
             display.dmabuf_texture_formats().clone()
         }))
         .fold(None, |set, formats| match set {
@@ -150,31 +155,31 @@ fn format_test(render: Vec<String>, sample: Vec<String>, log: slog::Logger) {
     }
 }
 
-fn buffer_test(args: TestArgs, log: slog::Logger) {
+fn buffer_test(args: TestArgs) {
     // 1. create allocator
     let path = args
         .export
         .expect("Dumb buffer allocator requires an export device");
-    slog::info!(log, "Export device: {}", path);
+    info!("Export device: {}", path);
     let mut allocator = match args.allocator {
         AllocatorType::DumbBuffer => {
             let file = File::open(&path).expect("Failed to open device node");
-            let fd = DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)), log.clone());
+            let fd = DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)));
             Box::new(DmabufAllocator(
-                DrmDevice::new(fd, false, log.clone()).expect("Failed to init drm device"),
+                DrmDevice::new(fd, false).expect("Failed to init drm device"),
             )) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>
         }
         AllocatorType::Gbm => {
             let file = File::open(&path).expect("Failed to open device node");
-            let fd = DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)), log.clone());
+            let fd = DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)));
             let gbm = GbmDevice::new(fd).expect("Failed to init gbm device");
             let gbm_allocator = GbmAllocator::new(gbm, GbmBufferFlags::RENDERING);
             Box::new(DmabufAllocator(gbm_allocator)) as Box<_>
         }
         AllocatorType::Vulkan => {
             let node = DrmNode::from_path(&path).expect("Failed to find drm node");
-            let instance = Instance::new(Version::VERSION_1_2, None, log.clone())
-                .expect("Unable to create vulkan instance");
+            let instance =
+                Instance::new(Version::VERSION_1_2, None).expect("Unable to create vulkan instance");
             let physical_device = PhysicalDevice::enumerate(&instance)
                 .expect("Failed to enumerate physical devices")
                 .filter(|phd| {
@@ -210,11 +215,10 @@ fn buffer_test(args: TestArgs, log: slog::Logger) {
                         || device.render_device_path().ok().as_ref() == Some(&path)
                 })
                 .expect("Unable to find egl device");
-            let display = EGLDisplay::new(device, log.clone()).expect("Failed to create EGL display");
+            let display = EGLDisplay::new(device).expect("Failed to create EGL display");
 
-            let context = EGLContext::new(&display, log.clone()).expect("Failed to create EGL context");
-            let mut renderer =
-                unsafe { Gles2Renderer::new(context, log.clone()).expect("Failed to init GL ES renderer") };
+            let context = EGLContext::new(&display).expect("Failed to create EGL context");
+            let mut renderer = unsafe { Gles2Renderer::new(context).expect("Failed to init GL ES renderer") };
 
             render_into(
                 &mut renderer,
@@ -227,7 +231,7 @@ fn buffer_test(args: TestArgs, log: slog::Logger) {
 
     // 4. import / render buffer on dst device
     let path = PathBuf::from(args.import);
-    slog::info!(log, "Import device: {}", path.display());
+    info!("Import device: {}", path.display());
     match args.import_renderer {
         None => {
             let device = EGLDevice::enumerate()
@@ -237,7 +241,7 @@ fn buffer_test(args: TestArgs, log: slog::Logger) {
                         || device.render_device_path().ok().as_ref() == Some(&path)
                 })
                 .expect("Unable to find egl device");
-            let display = EGLDisplay::new(device, log.clone()).expect("Failed to create EGL display");
+            let display = EGLDisplay::new(device).expect("Failed to create EGL display");
 
             display
                 .create_image_from_dmabuf(&buffer)
@@ -251,11 +255,10 @@ fn buffer_test(args: TestArgs, log: slog::Logger) {
                         || device.render_device_path().ok().as_ref() == Some(&path)
                 })
                 .expect("Unable to find egl device");
-            let display = EGLDisplay::new(device, log.clone()).expect("Failed to create EGL display");
+            let display = EGLDisplay::new(device).expect("Failed to create EGL display");
 
-            let context = EGLContext::new(&display, log.clone()).expect("Failed to create EGL context");
-            let mut renderer =
-                unsafe { Gles2Renderer::new(context, log.clone()).expect("Failed to init GL ES renderer") };
+            let context = EGLContext::new(&display).expect("Failed to create EGL context");
+            let mut renderer = unsafe { Gles2Renderer::new(context).expect("Failed to init GL ES renderer") };
 
             render_from::<_, Gles2Renderbuffer>(
                 &mut renderer,

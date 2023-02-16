@@ -12,6 +12,7 @@ use std::{
     collections::HashSet,
     sync::{Arc, Mutex, Weak},
 };
+use tracing::warn;
 use wayland_server::protocol::wl_surface::WlSurface;
 
 use x11rb::{
@@ -37,7 +38,6 @@ pub struct X11Surface {
     atoms: super::Atoms,
     pub(crate) state: Arc<Mutex<SharedSurfaceState>>,
     user_data: Arc<UserDataMap>,
-    log: slog::Logger,
 }
 
 const MWM_HINTS_FLAGS_FIELD: usize = 0;
@@ -125,7 +125,6 @@ impl X11Surface {
     /// - `conn` Weak reference on the X11 connection
     /// - `atoms` Atoms struct as defined by the [xwm module](super).
     /// - `geometry` Initial geometry of the window
-    /// - `log` slog logger to be used by this window
     pub fn new(
         xwm: impl Into<Option<XwmId>>,
         window: u32,
@@ -133,7 +132,6 @@ impl X11Surface {
         conn: Weak<RustConnection>,
         atoms: super::Atoms,
         geometry: Rectangle<i32, Logical>,
-        log: impl Into<Option<::slog::Logger>>,
     ) -> X11Surface {
         X11Surface {
             xwm: xwm.into(),
@@ -158,7 +156,6 @@ impl X11Surface {
                 window_type: Vec::new(),
             })),
             user_data: Arc::new(UserDataMap::new()),
-            log: crate::slog_or_fallback(log).new(slog::o!("X11 Window" => window)),
         }
     }
 
@@ -834,12 +831,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
                 if let Some(conn) = self.conn.upgrade() {
                     if let Err(err) = conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME)
                     {
-                        slog::warn!(
-                            self.log,
-                            "Unable to set focus for X11Surface ({:?}): {}",
-                            self.window,
-                            err
-                        );
+                        warn!("Unable to set focus for X11Surface ({:?}): {}", self.window, err);
                     }
                     let _ = conn.flush();
                 }
@@ -853,11 +845,9 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
                         [self.atoms.WM_TAKE_FOCUS, x11rb::CURRENT_TIME, 0, 0, 0],
                     );
                     if let Err(err) = conn.send_event(false, self.window, EventMask::NO_EVENT, event) {
-                        slog::warn!(
-                            self.log,
+                        warn!(
                             "Unable to send take focus event for X11Surface ({:?}): {}",
-                            self.window,
-                            err
+                            self.window, err
                         );
                     }
                     let _ = conn.flush();
@@ -875,12 +865,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
             return;
         } else if let Some(conn) = self.conn.upgrade() {
             if let Err(err) = conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME) {
-                slog::warn!(
-                    self.log,
-                    "Unable to unfocus X11Surface ({:?}): {}",
-                    self.window,
-                    err
-                );
+                warn!("Unable to unfocus X11Surface ({:?}): {}", self.window, err);
             }
             let _ = conn.flush();
         }

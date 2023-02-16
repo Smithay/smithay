@@ -14,7 +14,7 @@ use crate::backend::egl::{
 };
 use crate::utils::{Physical, Rectangle, Size};
 
-use slog::{debug, o};
+use tracing::debug;
 
 /// EGL surface of a given EGL context for rendering
 pub struct EGLSurface {
@@ -24,7 +24,6 @@ pub struct EGLSurface {
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
     damage_impl: DamageSupport,
-    logger: ::slog::Logger,
 }
 
 impl fmt::Debug for EGLSurface {
@@ -35,7 +34,6 @@ impl fmt::Debug for EGLSurface {
             .field("surface", &self.surface)
             .field("config_id", &self.config_id)
             .field("pixel_format", &self.pixel_format)
-            .field("logger", &self.logger)
             .finish()
     }
 }
@@ -53,19 +51,15 @@ impl EGLSurface {
     /// - A valid `EGLConfig` (see `EGLContext::config_id()`)
     /// - A native type backing the surface matching the used platform
     /// - An (optional) Logger
-    pub fn new<N, L>(
+    pub fn new<N>(
         display: &EGLDisplay,
         pixel_format: PixelFormat,
         config: ffi::egl::types::EGLConfig,
         native: N,
-        log: L,
     ) -> Result<EGLSurface, EGLError>
     where
         N: EGLNativeSurface + Send + 'static,
-        L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "renderer_egl"));
-
         let surface = native.create(&display.get_display_handle(), config)?;
         if surface == ffi::egl::NO_SURFACE {
             return Err(EGLError::BadSurface);
@@ -78,7 +72,6 @@ impl EGLSurface {
             config_id: config,
             pixel_format,
             damage_impl: display.supports_damage_impl(),
-            logger: log,
         })
     }
 
@@ -95,8 +88,7 @@ impl EGLSurface {
             )
         };
         if ret == ffi::egl::FALSE {
-            slog::debug!(
-                self.logger,
+            debug!(
                 "Failed to query buffer age value for surface {:?}: {}",
                 self,
                 EGLError::from_last_call().unwrap_err()
@@ -129,8 +121,7 @@ impl EGLSurface {
             )
         };
         if ret_h == ffi::egl::FALSE || ret_w == ffi::egl::FALSE {
-            slog::debug!(
-                self.logger,
+            debug!(
                 "Failed to query size value for surface {:?}: {}",
                 self,
                 EGLError::from_last_call().unwrap_err()
@@ -180,7 +171,7 @@ impl EGLSurface {
             // if a recreation is pending anyway, ignore page-flip errors.
             // lets see if we still fail after the next commit.
             result.map_err(|err| {
-                debug!(self.logger, "Hiding page-flip error *before* recreation: {}", err);
+                debug!("Hiding page-flip error *before* recreation: {}", err);
                 SwapBuffersError::EGLSwapBuffers(EGLError::BadSurface)
             })
         } else {

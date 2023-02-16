@@ -34,9 +34,8 @@
 //! # struct State { primary_selection_state: PrimarySelectionState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! // Create the primary_selection state
-//! let primary_selection_state = PrimarySelectionState::new::<State, _>(
+//! let primary_selection_state = PrimarySelectionState::new::<State>(
 //!     &display.handle(),
-//!     None // We don't add a logger in this example
 //! );
 //!
 //! // insert the PrimarySelectionState into your state
@@ -98,23 +97,19 @@ pub trait PrimarySelectionHandler: Sized {
 /// State of data device
 #[derive(Debug)]
 pub struct PrimarySelectionState {
-    log: slog::Logger,
     manager_global: GlobalId,
 }
 
 impl PrimarySelectionState {
     /// Regiseter new [ZwpPrimarySelectionDeviceManagerV1] global
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> Self
+    pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<PrimaryDeviceManager, ()> + 'static,
         D: PrimarySelectionHandler,
     {
-        let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "primary_selection_mgr"));
-
         let manager_global = display.create_global::<D, PrimaryDeviceManager, _>(1, ());
 
-        Self { log, manager_global }
+        Self { manager_global }
     }
 
     /// [ZwpPrimarySelectionDeviceManagerV1] GlobalId getter
@@ -155,7 +150,7 @@ where
 mod handlers {
     use std::cell::RefCell;
 
-    use slog::error;
+    use tracing::error;
     use wayland_protocols::wp::primary_selection::zv1::server::{
         zwp_primary_selection_device_manager_v1::{
             self as primary_device_manager, ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager,
@@ -201,16 +196,14 @@ mod handlers {
         D: 'static,
     {
         fn request(
-            state: &mut D,
-            _client: &wayland_server::Client,
+            _state: &mut D,
+            client: &wayland_server::Client,
             _resource: &PrimaryDeviceManager,
             request: primary_device_manager::Request,
             _data: &(),
             _dhandle: &DisplayHandle,
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
-            let primary_selection_state = state.primary_selection_state();
-
             match request {
                 primary_device_manager::Request::CreateSource { id } => {
                     data_init.init(id, PrimarySourceUserData::new());
@@ -228,7 +221,8 @@ mod handlers {
                         }
                         None => {
                             error!(
-                                &primary_selection_state.log,
+                                primary_selection_device = ?id,
+                                client = ?client,
                                 "Unmanaged seat given to a primary selection device."
                             );
                         }

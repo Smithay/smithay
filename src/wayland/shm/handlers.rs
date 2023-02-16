@@ -45,7 +45,7 @@ where
     D: Dispatch<WlShm, ()> + Dispatch<WlShmPool, ShmPoolUserData> + ShmHandler + 'static,
 {
     fn request(
-        state: &mut D,
+        _state: &mut D,
         _client: &wayland_server::Client,
         shm: &WlShm,
         request: wl_shm::Request,
@@ -65,11 +65,7 @@ where
             return;
         }
 
-        let mmap_pool = match Pool::new(
-            fd,
-            NonZeroUsize::try_from(size as usize).unwrap(),
-            state.shm_state().log.clone(),
-        ) {
+        let mmap_pool = match Pool::new(fd, NonZeroUsize::try_from(size as usize).unwrap()) {
             Ok(p) => p,
             Err(fd) => {
                 shm.post_error(

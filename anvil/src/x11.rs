@@ -10,7 +10,6 @@ use crate::{
     render::*,
     state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData},
 };
-use slog::Logger;
 #[cfg(feature = "debug")]
 use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
@@ -45,6 +44,7 @@ use smithay::{
     utils::{DeviceFd, IsAlive, Point, Scale},
     wayland::{compositor, input_method::InputMethodSeat},
 };
+use tracing::{error, info, trace, warn};
 
 pub const OUTPUT_NAME: &str = "x11";
 
@@ -90,11 +90,11 @@ impl Backend for X11Data {
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
-pub fn run_x11(log: Logger) {
+pub fn run_x11() {
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();
 
-    let backend = X11Backend::new(log.clone()).expect("Failed to initilize X11 backend");
+    let backend = X11Backend::new().expect("Failed to initilize X11 backend");
     let handle = backend.handle();
 
     // Obtain the DRM node the X server uses for direct rendering.
@@ -105,9 +105,9 @@ pub fn run_x11(log: Logger) {
     // Create the gbm device for buffer allocation.
     let device = gbm::Device::new(DeviceFd::from(fd)).expect("Failed to create gbm device");
     // Initialize EGL using the GBM device.
-    let egl = EGLDisplay::new(device.clone(), log.clone()).expect("Failed to create EGLDisplay");
+    let egl = EGLDisplay::new(device.clone()).expect("Failed to create EGLDisplay");
     // Create the OpenGL context
-    let context = EGLContext::new(&egl, log.clone()).expect("Failed to create EGLContext");
+    let context = EGLContext::new(&egl).expect("Failed to create EGLContext");
 
     let window = WindowBuilder::new()
         .title("Anvil")
@@ -121,7 +121,7 @@ pub fn run_x11(log: Logger) {
         .unwrap_or(false);
 
     let vulkan_allocator = if !skip_vulkan {
-        Instance::new(Version::VERSION_1_2, None, log.clone())
+        Instance::new(Version::VERSION_1_2, None)
             .ok()
             .and_then(|instance| {
                 PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
@@ -168,16 +168,14 @@ pub fn run_x11(log: Logger) {
             .expect("Failed to create X11 surface"),
     };
 
-    let mut renderer =
-        unsafe { Gles2Renderer::new(context, log.clone()) }.expect("Failed to initialize renderer");
+    let mut renderer = unsafe { Gles2Renderer::new(context) }.expect("Failed to initialize renderer");
 
     #[cfg(feature = "egl")]
     let dmabuf_state = if renderer.bind_wl_display(&display.handle()).is_ok() {
-        info!(log, "EGL hardware-acceleration enabled");
+        info!("EGL hardware-acceleration enabled");
         let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
         let mut state = DmabufState::new();
-        let global =
-            state.create_global::<AnvilState<X11Data>, _>(&display.handle(), dmabuf_formats, log.clone());
+        let global = state.create_global::<AnvilState<X11Data>>(&display.handle(), dmabuf_formats);
         Some((state, global))
     } else {
         None
@@ -217,7 +215,6 @@ pub fn run_x11(log: Logger) {
             make: "Smithay".into(),
             model: "X11".into(),
         },
-        log.clone(),
     );
     let _global = output.create_global::<AnvilState<X11Data>>(&display.handle());
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
@@ -237,7 +234,7 @@ pub fn run_x11(log: Logger) {
         fps: fps_ticker::Fps::default(),
     };
 
-    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
+    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, true);
 
     state.space.map_output(&output, (0, 0));
 
@@ -280,9 +277,9 @@ pub fn run_x11(log: Logger) {
         std::iter::empty::<(OsString, OsString)>(),
         |_| {},
     ) {
-        error!(log, "Failed to start XWayland: {}", e);
+        error!("Failed to start XWayland: {}", e);
     }
-    info!(log, "Initialization completed, starting the main loop.");
+    info!("Initialization completed, starting the main loop.");
 
     let mut pointer_element = PointerElement::default();
 
@@ -298,7 +295,7 @@ pub fn run_x11(log: Logger) {
 
             let (buffer, age) = backend_data.surface.buffer().expect("gbm device was destroyed");
             if let Err(err) = backend_data.renderer.bind(buffer) {
-                error!(log, "Error while binding buffer: {}", err);
+                error!("Error while binding buffer: {}", err);
                 continue;
             }
 
@@ -387,15 +384,14 @@ pub fn run_x11(log: Logger) {
                 &mut backend_data.damage_tracked_renderer,
                 age.into(),
                 state.show_window_preview,
-                &log,
             );
 
             match render_res {
                 Ok((damage, states)) => {
-                    trace!(log, "Finished rendering");
+                    trace!("Finished rendering");
                     if let Err(err) = backend_data.surface.submit() {
                         backend_data.surface.reset_buffers();
-                        warn!(log, "Failed to submit buffer: {}. Retrying", err);
+                        warn!("Failed to submit buffer: {}. Retrying", err);
                     } else {
                         state.backend_data.render = false;
                     };
@@ -443,7 +439,7 @@ pub fn run_x11(log: Logger) {
                     }
 
                     backend_data.surface.reset_buffers();
-                    error!(log, "Rendering error: {}", err);
+                    error!("Rendering error: {}", err);
                     // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
                 }
             }

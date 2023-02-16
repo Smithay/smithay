@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use slog::debug;
+use tracing::debug;
 use wayland_protocols::wp::primary_selection::zv1::server::{
     zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1 as PrimaryDevice,
     zwp_primary_selection_offer_v1::{self as primary_offer, ZwpPrimarySelectionOfferV1 as PrimaryOffer},
@@ -189,13 +189,13 @@ where
     fn request(
         self: Arc<Self>,
         dh: &Handle,
-        handler: &mut D,
+        _handler: &mut D,
         _client_id: ClientId,
         msg: Message<ObjectId, OwnedFd>,
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((_resource, request)) = PrimaryOffer::parse_request(&dh, msg) {
-            handle_client_selection(handler, request, &self.source);
+            handle_client_selection(request, &self.source);
         }
 
         None
@@ -204,12 +204,7 @@ where
     fn destroyed(&self, _data: &mut D, _client_id: ClientId, _object_id: ObjectId) {}
 }
 
-fn handle_client_selection<D>(state: &mut D, request: primary_offer::Request, source: &PrimarySource)
-where
-    D: PrimarySelectionHandler,
-{
-    let primary_selection_state = state.primary_selection_state();
-
+fn handle_client_selection(request: primary_offer::Request, source: &PrimarySource) {
     // selection data offers only care about the `receive` event
     if let primary_offer::Request::Receive { fd, mime_type } = request {
         // check if the source and associated mime type is still valid
@@ -219,10 +214,7 @@ where
         // && source.as_ref().is_alive();
         if !valid {
             // deny the receive
-            debug!(
-                primary_selection_state.log,
-                "Denying a zwp_primary_selection_offer_v1.receive with invalid source."
-            );
+            debug!("Denying a zwp_primary_selection_offer_v1.receive with invalid source.");
         } else {
             source.send(mime_type, fd.as_raw_fd());
         }
@@ -262,17 +254,12 @@ pub fn handle_server_selection<D>(
 ) where
     D: PrimarySelectionHandler,
 {
-    let primary_selection_state = handler.primary_selection_state();
-
     // selection data offers only care about the `receive` event
     if let primary_offer::Request::Receive { fd, mime_type } = request {
         // check if the associated mime type is valid
         if !offer_meta.mime_types.contains(&mime_type) {
             // deny the receive
-            debug!(
-                primary_selection_state.log,
-                "Denying a zwp_primary_selection_offer_v1.receive with invalid source."
-            );
+            debug!("Denying a zwp_primary_selection_offer_v1.receive with invalid source.");
         } else {
             handler.send_selection(mime_type, fd);
         }

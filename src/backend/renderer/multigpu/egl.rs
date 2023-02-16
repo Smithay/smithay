@@ -1,6 +1,7 @@
 //! Implementation of the multi-gpu [`GraphicsApi`] using
 //! EGL for device enumeration and OpenGL ES for rendering.
 
+use tracing::{info, warn};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use wayland_server::protocol::wl_buffer;
 
@@ -66,7 +67,7 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglG
     type Device = EglGlesDevice<R>;
     type Error = Error;
 
-    fn enumerate(&self, list: &mut Vec<Self::Device>, log: &slog::Logger) -> Result<(), Self::Error> {
+    fn enumerate(&self, list: &mut Vec<Self::Device>) -> Result<(), Self::Error> {
         let devices = EGLDevice::enumerate()
             .map_err(Error::Egl)?
             .flat_map(|device| {
@@ -81,10 +82,10 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglG
             .into_iter()
             .filter(|(_, node)| !list.iter().any(|renderer| &renderer.node == node))
             .map(|(device, node)| {
-                slog::info!(log, "Trying to initialize {:?} from {}", device, node);
-                let display = EGLDisplay::new(device, None).map_err(Error::Egl)?;
-                let context = EGLContext::new(&display, None).map_err(Error::Egl)?;
-                let renderer = unsafe { Gles2Renderer::new(context, None).map_err(Error::Gl)? }.into();
+                info!("Trying to initialize {:?} from {}", device, node);
+                let display = EGLDisplay::new(device).map_err(Error::Egl)?;
+                let context = EGLContext::new(&display).map_err(Error::Egl)?;
+                let renderer = unsafe { Gles2Renderer::new(context).map_err(Error::Gl)? }.into();
 
                 Ok(EglGlesDevice {
                     node,
@@ -95,7 +96,7 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglG
             .flat_map(|x: Result<EglGlesDevice<R>, Error>| match x {
                 Ok(x) => Some(x),
                 Err(x) => {
-                    slog::warn!(log, "Skipping EGLDevice: {}", x);
+                    warn!("Skipping EGLDevice: {}", x);
                     None
                 }
             })

@@ -10,7 +10,7 @@
 //! ```no_run
 //! use smithay::backend::udev::{UdevBackend, UdevEvent};
 //!
-//! let udev = UdevBackend::new("seat0", None).expect("Failed to monitor udev.");
+//! let udev = UdevBackend::new("seat0").expect("Failed to monitor udev.");
 //!
 //! for (dev_id, node_path) in udev.device_list() {
 //!     // process the initial list of devices
@@ -49,7 +49,7 @@ use udev::{Enumerator, EventType, MonitorBuilder, MonitorSocket};
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
-use slog::{debug, info, o, warn};
+use tracing::{debug, info, warn};
 
 /// Backend to monitor available drm devices.
 ///
@@ -60,7 +60,6 @@ pub struct UdevBackend {
     devices: HashMap<dev_t, PathBuf>,
     monitor: MonitorSocket,
     token: Option<Token>,
-    logger: ::slog::Logger,
 }
 
 // MonitorSocket does not implement debug, so we have to impl Debug manually
@@ -70,7 +69,6 @@ impl fmt::Debug for UdevBackend {
         f.debug_struct("UdevBackend")
             .field("devices", &self.devices)
             .field("monitor", &format!("MonitorSocket ({:?})", self.monitor.as_raw()))
-            .field("logger", &self.logger)
             .finish()
     }
 }
@@ -86,20 +84,14 @@ impl UdevBackend {
     ///
     /// ## Arguments
     /// `seat`    - system seat which should be bound
-    /// `logger`  - slog Logger to be used by the backend and its `DrmDevices`.
-    pub fn new<L, S: AsRef<str>>(seat: S, logger: L) -> io::Result<UdevBackend>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_udev"));
-
+    pub fn new<S: AsRef<str>>(seat: S) -> io::Result<UdevBackend> {
         let devices = all_gpus(seat)?
             .into_iter()
             // Create devices
             .flat_map(|path| match stat(&path) {
                 Ok(stat) => Some((stat.st_rdev, path)),
                 Err(err) => {
-                    warn!(log, "Unable to get id of {:?}, Error: {:?}. Skipping", path, err);
+                    warn!("Unable to get id of {:?}, Error: {:?}. Skipping", path, err);
                     None
                 }
             })
@@ -111,7 +103,6 @@ impl UdevBackend {
             devices,
             monitor,
             token: None,
-            logger: log,
         })
     }
 
@@ -144,7 +135,6 @@ impl EventSource for UdevBackend {
         }
         for event in self.monitor.iter() {
             debug!(
-                self.logger,
                 "Udev event: type={}, devnum={:?} devnode={:?}",
                 event.event_type(),
                 event.devnum(),
@@ -154,7 +144,7 @@ impl EventSource for UdevBackend {
                 // New device
                 EventType::Add => {
                     if let (Some(path), Some(devnum)) = (event.devnode(), event.devnum()) {
-                        info!(self.logger, "New device: #{} at {}", devnum, path.display());
+                        info!("New device: #{} at {}", devnum, path.display());
                         if self.devices.insert(devnum, path.to_path_buf()).is_none() {
                             callback(
                                 UdevEvent::Added {
@@ -169,7 +159,7 @@ impl EventSource for UdevBackend {
                 // Device removed
                 EventType::Remove => {
                     if let Some(devnum) = event.devnum() {
-                        info!(self.logger, "Device removed: #{}", devnum);
+                        info!("Device removed: #{}", devnum);
                         if self.devices.remove(&devnum).is_some() {
                             callback(UdevEvent::Removed { device_id: devnum }, &mut ());
                         }
@@ -178,7 +168,7 @@ impl EventSource for UdevBackend {
                 // New connector
                 EventType::Change => {
                     if let Some(devnum) = event.devnum() {
-                        info!(self.logger, "Device changed: #{}", devnum);
+                        info!("Device changed: #{}", devnum);
                         if self.devices.contains_key(&devnum) {
                             callback(UdevEvent::Changed { device_id: devnum }, &mut ());
                         }

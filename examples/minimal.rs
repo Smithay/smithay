@@ -111,32 +111,31 @@ struct App {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    } else {
+        tracing_subscriber::fmt().init();
+    }
+
     run_winit()
 }
 
-fn log() -> ::slog::Logger {
-    use slog::Drain;
-    ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), slog::o!())
-}
-
 pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
-    let log = log();
-
     let mut display: Display<App> = Display::new()?;
     let dh = display.handle();
 
-    let compositor_state = CompositorState::new::<App, _>(&dh, None);
-    let shm_state = ShmState::new::<App, _>(&dh, vec![], None);
+    let compositor_state = CompositorState::new::<App>(&dh);
+    let shm_state = ShmState::new::<App>(&dh, vec![]);
     let mut seat_state = SeatState::new();
-    let seat = seat_state.new_wl_seat(&dh, "winit", None);
+    let seat = seat_state.new_wl_seat(&dh, "winit");
 
     let mut state = {
         App {
             compositor_state,
-            xdg_shell_state: XdgShellState::new::<App, _>(&dh, None),
+            xdg_shell_state: XdgShellState::new::<App>(&dh),
             shm_state,
             seat_state,
-            data_device_state: DataDeviceState::new::<App, _>(&dh, None),
+            data_device_state: DataDeviceState::new::<App>(&dh),
             seat,
         }
     };
@@ -144,7 +143,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let listener = ListeningSocket::bind("wayland-5").unwrap();
     let mut clients = Vec::new();
 
-    let (mut backend, mut winit) = winit::init::<Gles2Renderer, _>(None)?;
+    let (mut backend, mut winit) = winit::init::<Gles2Renderer>()?;
 
     let start_time = std::time::Instant::now();
 
@@ -193,20 +192,14 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             surfaces
                 .iter()
                 .flat_map(|surface| {
-                    render_elements_from_surface_tree(
-                        backend.renderer(),
-                        surface.wl_surface(),
-                        (0, 0),
-                        1.0,
-                        log.clone(),
-                    )
+                    render_elements_from_surface_tree(backend.renderer(), surface.wl_surface(), (0, 0), 1.0)
                 })
                 .collect::<Vec<WaylandSurfaceRenderElement<Gles2Renderer>>>()
         });
 
         let mut frame = backend.renderer().render(size, Transform::Flipped180).unwrap();
         frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
-        draw_render_elements(&mut frame, 1.0, &elements, &[damage], &log).unwrap();
+        draw_render_elements(&mut frame, 1.0, &elements, &[damage]).unwrap();
         frame.finish().unwrap();
 
         state.xdg_shell_state.toplevel_surfaces(|surfaces| {

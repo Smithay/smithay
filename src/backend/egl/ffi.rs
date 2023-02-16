@@ -1,5 +1,7 @@
 #![allow(missing_docs)]
 
+use tracing::{error, info, warn};
+
 use super::Error;
 use nix::libc::{c_long, c_uint, c_void};
 
@@ -46,7 +48,6 @@ extern "system" fn egl_debug_log(
     message: *const EGLchar,
 ) {
     let _ = std::panic::catch_unwind(move || unsafe {
-        let logger = crate::slog_or_fallback(None).new(slog::o!("backend" => "egl"));
         let mut text = format!("[EGL] 0x{:x} ({})", error, error_str(error));
         if !command.is_null() {
             let cmd = std::ffi::CStr::from_ptr(command as *const _);
@@ -59,10 +60,10 @@ extern "system" fn egl_debug_log(
             text.push_str(&msg.to_string_lossy());
         };
         match message_type {
-            egl::DEBUG_MSG_CRITICAL_KHR => slog::crit!(logger, "{}", text),
-            egl::DEBUG_MSG_ERROR_KHR => slog::error!(logger, "{}", text),
-            egl::DEBUG_MSG_WARN_KHR => slog::warn!(logger, "{}", text),
-            egl::DEBUG_MSG_INFO_KHR => slog::info!(logger, "{}", text),
+            egl::DEBUG_MSG_CRITICAL_KHR => error!("{}", text),
+            egl::DEBUG_MSG_ERROR_KHR => error!("{}", text),
+            egl::DEBUG_MSG_WARN_KHR => warn!("{}", text),
+            egl::DEBUG_MSG_INFO_KHR => info!("{}", text),
             _ => {}
         }
     });

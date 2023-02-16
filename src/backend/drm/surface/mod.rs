@@ -23,7 +23,7 @@ use crate::{
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
 
-use slog::trace;
+use tracing::trace;
 
 /// An open crtc + plane combination that can be used for scan-out
 #[derive(Debug)]
@@ -491,12 +491,7 @@ impl DrmSurface {
             });
         }
 
-        let logger = match &*self.internal {
-            DrmSurfaceInternal::Atomic(surf) => &surf.logger,
-            DrmSurfaceInternal::Legacy(surf) => &surf.logger,
-        };
         trace!(
-            logger,
             "Supported scan-out formats for plane ({:?}): {:?}",
             plane,
             formats

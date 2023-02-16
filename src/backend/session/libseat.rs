@@ -25,19 +25,18 @@ use calloop::{
 
 use crate::backend::session::{AsErrno, Event as SessionEvent, Session};
 
-use slog::{debug, error, o};
+use tracing::{debug, error};
 
 #[derive(Debug)]
 struct LibSeatSessionImpl {
     seat: RefCell<Seat>,
     active: Arc<AtomicBool>,
     devices: RefCell<HashMap<RawFd, i32>>,
-    logger: ::slog::Logger,
 }
 
 impl Drop for LibSeatSessionImpl {
     fn drop(&mut self) {
-        debug!(self.logger, "Closing seat")
+        debug!("Closing seat")
     }
 }
 
@@ -58,30 +57,23 @@ pub struct LibSeatSessionNotifier {
 
 impl LibSeatSession {
     /// Tries to create a new session via libseat.
-    pub fn new<L>(logger: L) -> Result<(LibSeatSession, LibSeatSessionNotifier), Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let logger = crate::slog_or_fallback(logger)
-            .new(o!("smithay_module" => "backend_session", "session_type" => "libseat"));
-
+    pub fn new() -> Result<(LibSeatSession, LibSeatSessionNotifier), Error> {
         let (tx, rx) = calloop::channel::channel();
 
         let seat = {
-            let log = logger.clone();
-
             Seat::open(
                 move |_seat, event| match event {
                     SeatEvent::Enable => {
-                        debug!(log, "Enable callback called");
+                        debug!("Enable callback called");
                         tx.send(event).unwrap();
                     }
                     SeatEvent::Disable => {
-                        debug!(log, "Disable callback called");
+                        debug!("Disable callback called");
                         tx.send(event).unwrap();
                     }
                 },
-                logger.clone(),
+                // TODO: libseat has a hard dependency on slog
+                None,
             )
         };
 
@@ -97,7 +89,6 @@ impl LibSeatSession {
                 seat: RefCell::new(seat),
                 active: Arc::new(AtomicBool::new(active)),
                 devices: RefCell::new(HashMap::new()),
-                logger,
             });
 
             let session = LibSeatSession {
@@ -122,7 +113,7 @@ impl Session for LibSeatSession {
 
     fn open(&mut self, path: &Path, _flags: OFlag) -> Result<RawFd, Self::Error> {
         if let Some(session) = self.internal.upgrade() {
-            debug!(session.logger, "Opening device: {:?}", path);
+            debug!("Opening device: {:?}", path);
 
             session
                 .seat
@@ -140,7 +131,7 @@ impl Session for LibSeatSession {
 
     fn close(&mut self, fd: RawFd) -> Result<(), Self::Error> {
         if let Some(session) = self.internal.upgrade() {
-            debug!(session.logger, "Closing device: {:?}", fd);
+            debug!("Closing device: {:?}", fd);
 
             let dev = session.devices.borrow().get(&fd).copied();
 
@@ -164,7 +155,7 @@ impl Session for LibSeatSession {
 
     fn change_vt(&mut self, vt: i32) -> Result<(), Self::Error> {
         if let Some(session) = self.internal.upgrade() {
-            debug!(session.logger, "Session switch: {:?}", vt);
+            debug!("Session switch: {:?}", vt);
             session
                 .seat
                 .borrow_mut()

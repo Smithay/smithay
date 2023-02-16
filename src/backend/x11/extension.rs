@@ -1,3 +1,5 @@
+use tracing::{error, info};
+
 use super::{MissingExtensionError, X11Error};
 
 /// The extension macro.
@@ -40,7 +42,7 @@ macro_rules! extensions {
         }
 
         impl Extensions {
-            pub fn check_extensions<C: x11rb::connection::Connection>(connection: &C, logger: &slog::Logger) -> Result<Extensions, X11Error> {
+            pub fn check_extensions<C: x11rb::connection::Connection>(connection: &C) -> Result<Extensions, X11Error> {
                 $(
                     let $extension = {
                         use x11rb::protocol::$extension::{ConnectionExt as _, X11_EXTENSION_NAME};
@@ -52,8 +54,7 @@ macro_rules! extensions {
                             if version.major_version >= $req_major
                                 || (version.major_version == $req_major && version.minor_version >= $req_minor)
                             {
-                                slog::info!(
-                                    logger,
+                                info!(
                                     "Loaded extension {} version {}.{}",
                                     X11_EXTENSION_NAME,
                                     version.major_version,
@@ -63,8 +64,7 @@ macro_rules! extensions {
                                 Some((version.major_version, version.minor_version))
                             } else {
                                 if $required {
-                                    slog::error!(
-                                        logger,
+                                    error!(
                                         "required extension {} version is too low (have {}.{}, expected {}.{})",
                                         X11_EXTENSION_NAME,
                                         version.major_version,
@@ -86,7 +86,7 @@ macro_rules! extensions {
                             }
                         } else {
                             if $required {
-                                slog::error!(logger, "required extension {} not found", X11_EXTENSION_NAME);
+                                error!("required extension {} not found", X11_EXTENSION_NAME);
 
                                 return Err(MissingExtensionError::NotFound {
                                     name: X11_EXTENSION_NAME,

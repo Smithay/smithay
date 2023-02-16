@@ -16,6 +16,7 @@ use std::{
         mpsc::{channel, Receiver, Sender},
     },
 };
+use tracing::{debug, error, info, instrument, span, span::EnteredSpan, trace, warn, Level};
 
 #[cfg(feature = "wayland_frontend")]
 use std::{cell::RefCell, collections::HashMap};
@@ -46,8 +47,6 @@ use super::{ImportDmaWl, ImportMemWl};
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
-
-use slog::{debug, error, info, o, trace, warn};
 
 #[allow(clippy::all, missing_docs, missing_debug_implementations)]
 pub mod ffi {
@@ -287,8 +286,6 @@ pub struct Gles2Renderer {
     min_filter: TextureFilter,
     max_filter: TextureFilter,
     supports_instancing: bool,
-    logger_ptr: Option<*mut ::slog::Logger>,
-    pub(crate) logger: ::slog::Logger,
     debug_flags: DebugFlags,
     _not_send: *mut (),
 }
@@ -312,6 +309,7 @@ pub struct Gles2Frame<'frame> {
     transform: Transform,
     size: Size<i32, Physical>,
     finished: AtomicBool,
+    _span: EnteredSpan,
 }
 
 impl<'frame> fmt::Debug for Gles2Frame<'frame> {
@@ -342,7 +340,6 @@ impl fmt::Debug for Gles2Renderer {
             .field("min_filter", &self.min_filter)
             .field("max_filter", &self.max_filter)
             .field("supports_instancing", &self.supports_instancing)
-            .field("logger", &self.logger)
             .finish()
     }
 }
@@ -454,20 +451,18 @@ extern "system" fn gl_debug_log(
     _severity: ffi::types::GLenum,
     _length: ffi::types::GLsizei,
     message: *const ffi::types::GLchar,
-    user_param: *mut nix::libc::c_void,
+    _: *mut nix::libc::c_void,
 ) {
     let _ = std::panic::catch_unwind(move || unsafe {
         let msg = CStr::from_ptr(message);
-        let log = Box::from_raw(user_param as *mut ::slog::Logger);
         let message_utf8 = msg.to_string_lossy();
         match gltype {
             ffi::DEBUG_TYPE_ERROR | ffi::DEBUG_TYPE_UNDEFINED_BEHAVIOR => {
-                error!(log, "[GL] {}", message_utf8)
+                error!("[GL] {}", message_utf8)
             }
-            ffi::DEBUG_TYPE_DEPRECATED_BEHAVIOR => warn!(log, "[GL] {}", message_utf8),
-            _ => debug!(log, "[GL] {}", message_utf8),
+            ffi::DEBUG_TYPE_DEPRECATED_BEHAVIOR => warn!("[GL] {}", message_utf8),
+            _ => debug!("[GL] {}", message_utf8),
         };
-        std::mem::forget(log);
     });
 }
 
@@ -578,15 +573,11 @@ impl Gles2Renderer {
     /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
     /// - Texture filtering starts with Linear-downscaling and Linear-upscaling
-    pub unsafe fn new<L>(context: EGLContext, logger: L) -> Result<Gles2Renderer, Gles2Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "renderer_gles2"));
-
+    #[instrument(skip_all)]
+    pub unsafe fn new(context: EGLContext) -> Result<Gles2Renderer, Gles2Error> {
         context.make_current()?;
 
-        let (gl, gl_version, exts, logger_ptr, supports_instancing) = {
+        let (gl, gl_version, exts, supports_instancing) = {
             let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
             let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const c_char;
             if ext_ptr.is_null() {
@@ -599,26 +590,23 @@ impl Gles2Renderer {
                 list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
             };
 
-            info!(log, "Initializing OpenGL ES Renderer");
+            info!("Initializing OpenGL ES Renderer");
             info!(
-                log,
                 "GL Version: {:?}",
                 CStr::from_ptr(gl.GetString(ffi::VERSION) as *const c_char)
             );
             info!(
-                log,
                 "GL Vendor: {:?}",
                 CStr::from_ptr(gl.GetString(ffi::VENDOR) as *const c_char)
             );
             info!(
-                log,
                 "GL Renderer: {:?}",
                 CStr::from_ptr(gl.GetString(ffi::RENDERER) as *const c_char)
             );
-            info!(log, "Supported GL Extensions: {:?}", exts);
+            info!("Supported GL Extensions: {:?}", exts);
 
             let gl_version = version::GlVersion::try_from(&gl).unwrap_or_else(|_| {
-                warn!(log, "Failed to detect GLES version, defaulting to 2.0");
+                warn!("Failed to detect GLES version, defaulting to 2.0");
                 version::GLES_2_0
             });
 
@@ -637,17 +625,13 @@ impl Gles2Renderer {
                 || (exts.iter().any(|ext| ext == "GL_EXT_instanced_arrays")
                     && exts.iter().any(|ext| ext == "GL_EXT_draw_instanced"));
 
-            let logger = if exts.iter().any(|ext| ext == "GL_KHR_debug") {
-                let logger = Box::into_raw(Box::new(log.clone()));
+            if exts.iter().any(|ext| ext == "GL_KHR_debug") {
                 gl.Enable(ffi::DEBUG_OUTPUT);
                 gl.Enable(ffi::DEBUG_OUTPUT_SYNCHRONOUS);
-                gl.DebugMessageCallback(Some(gl_debug_log), logger as *mut nix::libc::c_void);
-                Some(logger)
-            } else {
-                None
-            };
+                gl.DebugMessageCallback(Some(gl_debug_log), std::ptr::null());
+            }
 
-            (gl, gl_version, exts, logger, supports_instancing)
+            (gl, gl_version, exts, supports_instancing)
         };
 
         let tex_programs = [
@@ -697,8 +681,6 @@ impl Gles2Renderer {
             min_filter: TextureFilter::Linear,
             max_filter: TextureFilter::Linear,
             supports_instancing,
-            logger_ptr,
-            logger: log,
             debug_flags: DebugFlags::empty(),
             _not_send: std::ptr::null_mut(),
         };
@@ -778,6 +760,7 @@ impl Gles2Renderer {
 
 #[cfg(feature = "wayland_frontend")]
 impl ImportMemWl for Gles2Renderer {
+    #[instrument(skip(self))]
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -867,7 +850,7 @@ impl ImportMemWl for Gles2Renderer {
                 self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, stride / pixelsize);
 
                 if upload_full || damage.is_empty() {
-                    trace!(self.logger, "Uploading shm texture for {:?}", buffer);
+                    trace!("Uploading shm texture");
                     self.gl.TexImage2D(
                         ffi::TEXTURE_2D,
                         0,
@@ -881,7 +864,7 @@ impl ImportMemWl for Gles2Renderer {
                     );
                 } else {
                     for region in damage.iter() {
-                        trace!(self.logger, "Uploading partial shm texture for {:?}", buffer);
+                        trace!("Uploading partial shm texture");
                         self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
                         self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
                         self.gl.TexSubImage2D(
@@ -1136,12 +1119,7 @@ impl Gles2Renderer {
             .map(|(_, tex)| tex.clone());
 
         if let Some(texture) = existing_texture {
-            trace!(
-                self.logger,
-                "Re-using texture {:?} for {:?}",
-                texture.0.texture,
-                buffer
-            );
+            trace!("Re-using texture {:?} for {:?}", texture.0.texture, buffer);
             if !texture.0.is_external {
                 if let Some(egl_images) = texture.0.egl_images.as_ref() {
                     if egl_images[0] == ffi_egl::NO_IMAGE_KHR {
@@ -1473,7 +1451,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
             })
             .map(|buf| Ok((buf.clone(), buf.dmabuf.upgrade().unwrap())))
             .unwrap_or_else(|| {
-                trace!(self.logger, "Creating EGLImage for Dmabuf: {:?}", dmabuf);
+                trace!("Creating EGLImage for Dmabuf: {:?}", dmabuf);
                 let image = self
                     .egl
                     .display()
@@ -1805,9 +1783,6 @@ impl Drop for Gles2Renderer {
                     self.gl.Disable(ffi::DEBUG_OUTPUT);
                     self.gl.DebugMessageCallback(None, ptr::null());
                 }
-                if let Some(logger_ptr) = self.logger_ptr {
-                    let _ = Box::from_raw(logger_ptr);
-                }
 
                 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
                 let _ = self.egl_reader.take();
@@ -1923,13 +1898,17 @@ impl Renderer for Gles2Renderer {
         // We account for OpenGLs coordinate system here
         let flip180 = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
 
+        let current_projection = flip180 * transform.matrix() * renderer;
+        let span = span!(Level::INFO, "frame", current_projection = ?current_projection, size = ?output_size, transform = ?transform).entered();
+
         Ok(Gles2Frame {
             renderer: self,
             // output transformation passed in by the user
-            current_projection: flip180 * transform.matrix() * renderer,
+            current_projection,
             transform,
             size: output_size,
             finished: AtomicBool::new(false),
+            _span: span,
         })
     }
 
@@ -2117,6 +2096,7 @@ impl<'frame> Frame for Gles2Frame<'frame> {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn render_texture_from_to(
         &mut self,
         texture: &Gles2Texture,
@@ -2142,7 +2122,7 @@ impl<'frame> Frame for Gles2Frame<'frame> {
         };
 
         if src_size.w == 0. || src_size.h == 0. || tex_size.w == 0. || tex_size.h == 0. {
-            warn!(self.renderer.logger, "Texture/Src is zero sized");
+            warn!("Texture/Src is zero sized");
             return Ok(());
         }
 
@@ -2251,6 +2231,7 @@ impl<'frame> Gles2Frame<'frame> {
     /// The given texture matrix is used to transform the instances into texture coordinates.
     /// In case the texture is rotated, flipped or y-inverted the matrix has to be set up accordingly.
     /// Additionally the matrix can be used to crop the texture.
+    #[instrument(skip(self))]
     pub fn render_texture(
         &mut self,
         tex: &Gles2Texture,
@@ -2420,11 +2401,7 @@ impl<'frame> Gles2Frame<'frame> {
 impl<'frame> Drop for Gles2Frame<'frame> {
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
-            slog::warn!(
-                self.renderer.logger,
-                "Ignored error finishing Gles2Frame on drop: {}",
-                err
-            );
+            warn!("Ignored error finishing Gles2Frame on drop: {}", err);
         }
     }
 }

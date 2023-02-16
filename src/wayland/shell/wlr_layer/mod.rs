@@ -17,9 +17,8 @@
 //!
 //! # struct State { layer_shell_state: WlrLayerShellState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
-//! let layer_shell_state = WlrLayerShellState::new::<State, _>(
+//! let layer_shell_state = WlrLayerShellState::new::<State>(
 //!     &display.handle(),
-//!     None  // put a logger if you want
 //! );
 //!
 //! // - Put your layer_shell_state into your `State`.
@@ -190,25 +189,20 @@ impl Cacheable for LayerSurfaceCachedState {
 pub struct WlrLayerShellState {
     known_layers: Arc<Mutex<Vec<LayerSurface>>>,
     shell_global: GlobalId,
-    _log: slog::Logger,
 }
 
 impl WlrLayerShellState {
     /// Create a new `wlr_layer_shell` globals
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> WlrLayerShellState
+    pub fn new<D>(display: &DisplayHandle) -> WlrLayerShellState
     where
-        L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<ZwlrLayerShellV1, ()>,
         D: 'static,
     {
-        let log = crate::slog_or_fallback(logger);
-
         let shell_global = display.create_global::<D, ZwlrLayerShellV1, _>(4, ());
 
         WlrLayerShellState {
             known_layers: Default::default(),
             shell_global,
-            _log: log.new(slog::o!("smithay_module" => "layer_shell_handler")),
         }
     }
 

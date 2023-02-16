@@ -10,28 +10,21 @@ use super::DrmDeviceFd;
 use crate::backend::drm::error::Error;
 use crate::utils::DevPath;
 
-use slog::{error, info, o};
+use tracing::{error, info};
 
 #[derive(Debug)]
 pub struct LegacyDrmDevice {
     pub(crate) fd: DrmDeviceFd,
     pub(crate) active: Arc<AtomicBool>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
-    logger: ::slog::Logger,
 }
 
 impl LegacyDrmDevice {
-    pub fn new(
-        fd: DrmDeviceFd,
-        active: Arc<AtomicBool>,
-        disable_connectors: bool,
-        logger: slog::Logger,
-    ) -> Result<Self, Error> {
+    pub fn new(fd: DrmDeviceFd, active: Arc<AtomicBool>, disable_connectors: bool) -> Result<Self, Error> {
         let mut dev = LegacyDrmDevice {
             fd,
             active,
             old_state: HashMap::new(),
-            logger: logger.new(o!("smithay_module" => "backend_drm_legacy", "drm_module" => "device")),
         };
 
         // Enumerate (and save) the current device state.
@@ -112,7 +105,7 @@ impl LegacyDrmDevice {
 
 impl Drop for LegacyDrmDevice {
     fn drop(&mut self) {
-        info!(self.logger, "Dropping device: {:?}", self.fd.dev_path());
+        info!("Dropping device: {:?}", self.fd.dev_path());
         if self.active.load(Ordering::SeqCst) {
             // Here we restore the tty to it's previous state.
             // In case e.g. getty was running on the tty sets the correct framebuffer again,
@@ -127,7 +120,7 @@ impl Drop for LegacyDrmDevice {
                     &connectors,
                     info.mode(),
                 ) {
-                    error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
+                    error!("Failed to reset crtc ({:?}). Error: {}", handle, err);
                 }
             }
         }

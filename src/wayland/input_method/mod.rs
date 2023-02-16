@@ -48,7 +48,6 @@
 //! let seat = seat_state.new_wl_seat(
 //!     &display_handle,          // the display
 //!     "seat-0",                 // the name of the seat, will be advertized to clients
-//!     None                      // insert a logger here
 //! );
 //!
 //! seat.add_input_method(XkbConfig::default(), 200, 25);

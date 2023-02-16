@@ -149,7 +149,6 @@ where
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
-        _log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
         todo!()
     }
@@ -187,7 +186,6 @@ where
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
-        _log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
         todo!()
     }
@@ -234,7 +232,6 @@ where
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
-        _log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
         todo!()
     }
@@ -280,7 +277,6 @@ where
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
-        _log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
         todo!()
     }

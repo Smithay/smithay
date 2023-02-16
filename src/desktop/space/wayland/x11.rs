@@ -64,12 +64,7 @@ impl SpaceElement for X11Surface {
             (),
             |_, _, _| TraversalAction::DoChildren(()),
             |wl_surface, _, _| {
-                output_leave(
-                    output,
-                    &mut surface_list,
-                    wl_surface,
-                    &crate::slog_or_fallback(None),
-                );
+                output_leave(output, &mut surface_list, wl_surface);
             },
             |_, _, _| true,
         );
@@ -83,7 +78,7 @@ impl SpaceElement for X11Surface {
         let Some(surface) = state.wl_surface.as_ref() else { return };
         for (weak, overlap) in wo_state.output_overlap.iter() {
             if let Some(output) = weak.upgrade() {
-                output_update(&output, *overlap, surface, &crate::slog_or_fallback(None));
+                output_update(&output, *overlap, surface);
             }
         }
     }
@@ -112,6 +107,6 @@ where
     ) -> Vec<C> {
         let state = self.state.lock().unwrap();
         let Some(surface) = state.wl_surface.as_ref() else { return Vec::new() };
-        render_elements_from_surface_tree(renderer, surface, location, scale, None)
+        render_elements_from_surface_tree(renderer, surface, location, scale)
     }
 }

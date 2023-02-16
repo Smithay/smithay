@@ -44,7 +44,6 @@
 //! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
 //! #     utils::{Buffer, Physical, Rectangle, Size},
 //! # };
-//! # use slog::Drain;
 //! #
 //! # #[derive(Clone)]
 //! # struct FakeTexture;
@@ -142,8 +141,6 @@
 //! const WIDTH: i32 = 10;
 //! const HEIGHT: i32 = 10;
 //!
-//! # let log = slog::Logger::root(slog::Discard.fuse(), slog::o!());
-//!
 //! let memory = vec![0; (WIDTH * 4 * HEIGHT) as usize];
 //! # let mut renderer = FakeRenderer;
 //!
@@ -169,7 +166,7 @@
 //!
 //!     // Render the element(s)
 //!     damage_tracked_renderer
-//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0], log.clone())
+//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
 //! ```
@@ -181,7 +178,6 @@
 //! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
 //! #     utils::{Buffer, Physical},
 //! # };
-//! # use slog::Drain;
 //! #
 //! # #[derive(Clone)]
 //! # struct FakeTexture;
@@ -281,8 +277,6 @@
 //! const WIDTH: i32 = 10;
 //! const HEIGHT: i32 = 10;
 //!
-//! # let log = slog::Logger::root(slog::Discard.fuse(), slog::o!());
-//!
 //! let memory = vec![0; (WIDTH * 4 * HEIGHT) as usize];
 //! # let mut renderer = FakeRenderer;
 //!
@@ -352,14 +346,14 @@
 //!
 //!     // Render the element(s)
 //!     damage_tracked_renderer
-//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0], log.clone())
+//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
 //! ```
 
 use std::sync::{Arc, Mutex};
 
-use slog::warn;
+use tracing::{instrument, warn};
 
 use crate::{
     backend::renderer::{
@@ -817,16 +811,16 @@ where
     R: Renderer<TextureId = T>,
     T: Texture,
 {
+    #[instrument(skip(self, frame))]
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
         if frame.id() != self.renderer_id {
-            warn!(log, "trying to render texture from different renderer");
+            warn!("trying to render texture from different renderer");
             return Ok(());
         }
 

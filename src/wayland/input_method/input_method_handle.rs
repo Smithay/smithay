@@ -71,8 +71,7 @@ impl InputMethodHandle {
         )
         .ok_or(())
         .unwrap();
-        let log = crate::slog_or_fallback(None);
-        keyboard_inner.keymap_file = Some(KeymapFile::new(&keymap, log));
+        keyboard_inner.keymap_file = Some(KeymapFile::new(&keymap));
     }
 
     /// Callback function to access the input method object

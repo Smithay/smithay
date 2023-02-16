@@ -1,5 +1,5 @@
-use slog::{error, trace, warn};
 use std::fmt;
+use tracing::{error, trace, warn};
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::{
@@ -42,16 +42,16 @@ where
     ///
     /// This should be done first, before anything else is done with this keyboard.
     pub(crate) fn new_kbd(&self, kbd: WlKeyboard) {
-        trace!(self.arc.logger, "Sending keymap to client");
+        trace!("Sending keymap to client");
 
         // prepare a tempfile with the keymap, to send it to the client
         let keymap_file = self.arc.keymap.lock().unwrap();
         let ret = keymap_file.send(&kbd);
 
         if let Err(e) = ret {
-            warn!(self.arc.logger,
-                "Failed write keymap to client in a tempfile";
-                "err" => format!("{:?}", e)
+            warn!(
+                err = ?e,
+                "Failed write keymap to client in a tempfile"
             );
             return;
         };

@@ -1,5 +1,3 @@
-use slog::{crit, o, Drain};
-
 static POSSIBLE_BACKENDS: &[&str] = &[
     #[cfg(feature = "winit")]
     "--winit : Run anvil as a X11 or Wayland client using winit.",
@@ -10,38 +8,31 @@ static POSSIBLE_BACKENDS: &[&str] = &[
 ];
 
 fn main() {
-    // A logger facility, here we use the terminal here
-    let log = if std::env::var("ANVIL_MUTEX_LOG").is_ok() {
-        slog::Logger::root(std::sync::Mutex::new(slog_term::term_full().fuse()).fuse(), o!())
+    if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
     } else {
-        slog::Logger::root(
-            slog_async::Async::default(slog_term::term_full().fuse()).fuse(),
-            o!(),
-        )
-    };
-
-    let _guard = slog_scope::set_global_logger(log.clone());
-    slog_stdlog::init().expect("Could not setup log backend");
+        tracing_subscriber::fmt().init();
+    }
 
     let arg = ::std::env::args().nth(1);
     match arg.as_ref().map(|s| &s[..]) {
         #[cfg(feature = "winit")]
         Some("--winit") => {
-            slog::info!(log, "Starting anvil with winit backend");
-            anvil::winit::run_winit(log);
+            tracing::info!("Starting anvil with winit backend");
+            anvil::winit::run_winit();
         }
         #[cfg(feature = "udev")]
         Some("--tty-udev") => {
-            slog::info!(log, "Starting anvil on a tty using udev");
-            anvil::udev::run_udev(log);
+            tracing::info!("Starting anvil on a tty using udev");
+            anvil::udev::run_udev();
         }
         #[cfg(feature = "x11")]
         Some("--x11") => {
-            slog::info!(log, "Starting anvil with x11 backend");
-            anvil::x11::run_x11(log);
+            tracing::info!("Starting anvil with x11 backend");
+            anvil::x11::run_x11();
         }
         Some(other) => {
-            crit!(log, "Unknown backend: {}", other);
+            tracing::error!("Unknown backend: {}", other);
         }
         None => {
             println!("USAGE: anvil --backend");

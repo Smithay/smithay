@@ -26,7 +26,6 @@
 //! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
 //! #     utils::{Buffer, Physical},
 //! # };
-//! # use slog::Drain;
 //! #
 //! # #[derive(Clone)]
 //! # struct FakeTexture;
@@ -126,8 +125,6 @@
 //! const WIDTH: i32 = 10;
 //! const HEIGHT: i32 = 10;
 //!
-//! # let log = slog::Logger::root(slog::Discard.fuse(), slog::o!());
-//!
 //! // Initialize a empty render buffer
 //! let mut buffer = MemoryRenderBuffer::new((WIDTH, HEIGHT), 1, Transform::Normal, None);
 //!
@@ -176,12 +173,12 @@
 //!
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
-//!     let render_element = MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &buffer, None, None, None, None)
+//!     let render_element = MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &buffer, None, None, None)
 //!         .expect("Failed to upload from memory to gpu");
 //!
 //!     // Render the element(s)
 //!     damage_tracked_renderer
-//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0], log.clone())
+//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
 //! ```
@@ -193,7 +190,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use slog::{trace, warn};
+use tracing::{instrument, trace, warn};
 
 use crate::{
     backend::renderer::{
@@ -291,11 +288,8 @@ impl MemoryRenderBufferInner {
         }
     }
 
-    fn import_texture<R>(
-        &mut self,
-        renderer: &mut R,
-        log: &slog::Logger,
-    ) -> Result<(), <R as Renderer>::Error>
+    #[instrument(skip(renderer))]
+    fn import_texture<R>(&mut self, renderer: &mut R) -> Result<(), <R as Renderer>::Error>
     where
         R: Renderer + ImportMem,
         <R as Renderer>::TextureId: 'static,
@@ -312,12 +306,12 @@ impl MemoryRenderBufferInner {
         match self.textures.entry(texture_id) {
             Entry::Occupied(entry) => {
                 if !buffer_damage.is_empty() {
-                    trace!(log, "updating memory with damage {:#?}", &buffer_damage);
+                    trace!("updating memory with damage {:#?}", &buffer_damage);
                     renderer.update_memory(entry.get().downcast_ref().unwrap(), &self.mem, buffer_damage)?
                 }
             }
             Entry::Vacant(entry) => {
-                trace!(log, "importing memory");
+                trace!("importing memory");
                 let tex = renderer.import_memory(&self.mem, self.size, false)?;
                 entry.insert(Box::new(tex));
             }
@@ -471,14 +465,12 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
-        log: impl Into<Option<slog::Logger>>,
     ) -> Result<Self, <R as Renderer>::Error>
     where
         R: ImportMem,
         <R as Renderer>::TextureId: 'static,
     {
-        let logger = crate::slog_or_fallback(log);
-        buffer.inner.lock().unwrap().import_texture(renderer, &logger)?;
+        buffer.inner.lock().unwrap().import_texture(renderer)?;
         Ok(MemoryRenderBufferRenderElement {
             location: location.into(),
             buffer: buffer.clone(),
@@ -632,18 +624,18 @@ where
     R: Renderer + ImportMem,
     <R as Renderer>::TextureId: 'static,
 {
+    #[instrument(skip(self, frame))]
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
         let mut guard = self.buffer.inner.lock().unwrap();
         let transform = guard.transform;
         let Some(texture) = guard.get_texture::<R>(frame.id()) else {
-            warn!(log, "trying to render texture from different renderer");
+            warn!("trying to render texture from different renderer");
             return Ok(());
         };
 

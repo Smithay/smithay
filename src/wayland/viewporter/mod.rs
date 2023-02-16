@@ -15,9 +15,8 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //!
 //! // Create the viewporter state:
-//! let viewporter_state = ViewporterState::new::<State, _>(
+//! let viewporter_state = ViewporterState::new::<State>(
 //!     &display.handle(), // the display
-//!     None // provide a logger, if you want
 //! );
 //!
 //! // implement Dispatch for the Viewporter types
@@ -46,6 +45,7 @@
 
 use std::cell::RefCell;
 
+use tracing::trace;
 use wayland_protocols::wp::viewporter::server::{wp_viewport, wp_viewporter};
 use wayland_server::{
     backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource,
@@ -66,19 +66,15 @@ impl ViewporterState {
     ///
     /// It returns the viewporter state, which you can drop to remove these global from
     /// the event loop in the future.
-    pub fn new<D, L>(display: &DisplayHandle, log: L) -> ViewporterState
+    pub fn new<D>(display: &DisplayHandle) -> ViewporterState
     where
-        D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>
-            + Dispatch<wp_viewporter::WpViewporter, slog::Logger>
+        D: GlobalDispatch<wp_viewporter::WpViewporter, ()>
+            + Dispatch<wp_viewporter::WpViewporter, ()>
             + Dispatch<wp_viewport::WpViewport, ViewportState>
             + 'static,
-        L: Into<Option<slog::Logger>>,
     {
         ViewporterState {
-            global: display.create_global::<D, wp_viewporter::WpViewporter, slog::Logger>(
-                1,
-                crate::slog_or_fallback(log).new(slog::o!("smithay_module" => "wp_viewporter")),
-            ),
+            global: display.create_global::<D, wp_viewporter::WpViewporter, ()>(1, ()),
         }
     }
 
@@ -88,10 +84,10 @@ impl ViewporterState {
     }
 }
 
-impl<D> GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger, D> for ViewporterState
+impl<D> GlobalDispatch<wp_viewporter::WpViewporter, (), D> for ViewporterState
 where
-    D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>,
-    D: Dispatch<wp_viewporter::WpViewporter, slog::Logger>,
+    D: GlobalDispatch<wp_viewporter::WpViewporter, ()>,
+    D: Dispatch<wp_viewporter::WpViewporter, ()>,
     D: Dispatch<wp_viewport::WpViewport, ViewportState>,
 {
     fn bind(
@@ -99,17 +95,17 @@ where
         _handle: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: wayland_server::New<wp_viewporter::WpViewporter>,
-        global_data: &slog::Logger,
+        _global_data: &(),
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        data_init.init(resource, global_data.clone());
+        data_init.init(resource, ());
     }
 }
 
-impl<D> Dispatch<wp_viewporter::WpViewporter, slog::Logger, D> for ViewporterState
+impl<D> Dispatch<wp_viewporter::WpViewporter, (), D> for ViewporterState
 where
-    D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>,
-    D: Dispatch<wp_viewporter::WpViewporter, slog::Logger>,
+    D: GlobalDispatch<wp_viewporter::WpViewporter, ()>,
+    D: Dispatch<wp_viewporter::WpViewporter, ()>,
     D: Dispatch<wp_viewport::WpViewport, ViewportState>,
 {
     fn request(
@@ -117,7 +113,7 @@ where
         _client: &wayland_server::Client,
         _resource: &wp_viewporter::WpViewporter,
         request: <wp_viewporter::WpViewporter as wayland_server::Resource>::Request,
-        data: &slog::Logger,
+        _data: &(),
         _dhandle: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -145,7 +141,6 @@ where
                     id,
                     ViewportState {
                         surface: surface.clone(),
-                        log: data.new(slog::o!("surface" => format!("{:?}", surface))),
                     },
                 );
                 with_states(&surface, |states| {
@@ -164,8 +159,8 @@ where
 
 impl<D> Dispatch<wp_viewport::WpViewport, ViewportState, D> for ViewportState
 where
-    D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>,
-    D: Dispatch<wp_viewporter::WpViewporter, slog::Logger>,
+    D: GlobalDispatch<wp_viewporter::WpViewporter, ()>,
+    D: Dispatch<wp_viewporter::WpViewporter, ()>,
     D: Dispatch<wp_viewport::WpViewport, ViewportState>,
 {
     fn request(
@@ -220,7 +215,7 @@ where
                         None
                     } else {
                         let src = Rectangle::from_loc_and_size((x, y), (width, height));
-                        slog::trace!(data.log, "New destination: {:?}", src);
+                        trace!(surface = ?data.surface, src = ?src, "setting surface viewport src");
                         Some(src)
                     };
                     viewport_state.src = src;
@@ -256,7 +251,7 @@ where
                         None
                     } else {
                         let dst = Size::from((width, height));
-                        slog::trace!(data.log, "New destination: {:?}", dst);
+                        trace!(surface = ?data.surface, size = ?dst, "setting surface viewport destination size");
                         Some(dst)
                     };
                     viewport_state.dst = size;
@@ -271,7 +266,6 @@ where
 #[derive(Debug)]
 pub struct ViewportState {
     surface: wl_surface::WlSurface,
-    log: slog::Logger,
 }
 
 struct ViewportMarker(wp_viewport::WpViewport);
@@ -381,11 +375,11 @@ impl Cacheable for ViewportCachedState {
 macro_rules! delegate_viewporter {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: slog::Logger
+            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: ()
         ] => $crate::wayland::viewporter::ViewporterState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: slog::Logger
+            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: ()
         ] => $crate::wayland::viewporter::ViewporterState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewport::WpViewport: $crate::wayland::viewporter::ViewportState

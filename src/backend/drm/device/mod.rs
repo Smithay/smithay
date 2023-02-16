@@ -21,7 +21,7 @@ use super::{error::Error, planes, Planes};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
 
-use slog::{info, o, trace};
+use tracing::{error, info, trace};
 
 #[derive(Debug)]
 struct PlaneClaimInner {
@@ -115,7 +115,6 @@ pub struct DrmDevice {
     has_monotonic_timestamps: bool,
     cursor_size: Size<u32, Buffer>,
     resources: ResourceHandles,
-    pub(super) logger: ::slog::Logger,
     token: Option<Token>,
     plane_claim_storage: PlaneClaimStorage,
 }
@@ -172,19 +171,13 @@ impl DrmDevice {
     ///     requires usage of `drm-rs` to disable unused connectors to prevent them \
     ///     showing garbage, but will also prevent flickering of already turned on \
     ///     connectors (assuming you won't change the resolution).
-    /// - `logger` - Optional [`slog::Logger`] to be used by this device.
     ///
     /// # Return
     ///
     /// Returns an error if the file is no valid drm node or the device is not accessible.
 
-    pub fn new(
-        fd: DrmDeviceFd,
-        disable_connectors: bool,
-        logger: impl Into<Option<slog::Logger>>,
-    ) -> Result<Self, Error> {
-        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm"));
-        info!(log, "DrmDevice initializing");
+    pub fn new(fd: DrmDeviceFd, disable_connectors: bool) -> Result<Self, Error> {
+        info!("DrmDevice initializing");
 
         let dev_id = fd.dev_id().map_err(Error::UnableToGetDeviceId)?;
         let active = Arc::new(AtomicBool::new(true));
@@ -208,12 +201,7 @@ impl DrmDevice {
             dev: fd.dev_path(),
             source,
         })?;
-        let internal = Arc::new(DrmDevice::create_internal(
-            fd,
-            active,
-            disable_connectors,
-            log.clone(),
-        )?);
+        let internal = Arc::new(DrmDevice::create_internal(fd, active, disable_connectors)?);
 
         Ok(DrmDevice {
             dev_id,
@@ -222,7 +210,6 @@ impl DrmDevice {
             has_monotonic_timestamps,
             cursor_size,
             resources,
-            logger: log,
             token: None,
             plane_claim_storage: Default::default(),
         })
@@ -232,7 +219,6 @@ impl DrmDevice {
         fd: DrmDeviceFd,
         active: Arc<AtomicBool>,
         disable_connectors: bool,
-        log: ::slog::Logger,
     ) -> Result<DrmDeviceInternal, Error> {
         let force_legacy = std::env::var("SMITHAY_USE_LEGACY")
             .map(|x| {
@@ -241,15 +227,15 @@ impl DrmDevice {
             .unwrap_or(false);
 
         if force_legacy {
-            info!(log, "SMITHAY_USE_LEGACY is set. Forcing LegacyDrmDevice.");
+            info!("SMITHAY_USE_LEGACY is set. Forcing LegacyDrmDevice.");
         };
 
         Ok(
             if !force_legacy && fd.set_client_capability(ClientCapability::Atomic, true).is_ok() {
-                DrmDeviceInternal::Atomic(AtomicDrmDevice::new(fd, active, disable_connectors, log)?)
+                DrmDeviceInternal::Atomic(AtomicDrmDevice::new(fd, active, disable_connectors)?)
             } else {
-                info!(log, "Falling back to LegacyDrmDevice");
-                DrmDeviceInternal::Legacy(LegacyDrmDevice::new(fd, active, disable_connectors, log)?)
+                info!("Falling back to LegacyDrmDevice");
+                DrmDeviceInternal::Legacy(LegacyDrmDevice::new(fd, active, disable_connectors)?)
             },
         )
     }
@@ -346,7 +332,6 @@ impl DrmDevice {
                 mapping,
                 mode,
                 connectors,
-                self.logger.clone(),
             )?)
         } else {
             DrmSurfaceInternal::Legacy(LegacyDrmSurface::new(
@@ -355,7 +340,6 @@ impl DrmDevice {
                 crtc,
                 mode,
                 connectors,
-                self.logger.clone(),
             )?)
         };
 
@@ -388,7 +372,7 @@ impl DrmDevice {
         self.set_active(false);
         if self.device_fd().is_privileged() {
             if let Err(err) = self.release_master_lock() {
-                slog::error!(self.logger, "Failed to drop drm master state Error: {}", err);
+                error!("Failed to drop drm master state Error: {}", err);
             }
         }
     }
@@ -397,7 +381,7 @@ impl DrmDevice {
     pub fn activate(&self) {
         if self.device_fd().is_privileged() {
             if let Err(err) = self.acquire_master_lock() {
-                slog::crit!(self.logger, "Failed to acquire drm master again. Error: {}", err);
+                error!("Failed to acquire drm master again. Error: {}", err);
             }
         }
         self.set_active(true);
@@ -463,7 +447,7 @@ impl EventSource for DrmDevice {
             Ok(events) => {
                 for event in events {
                     if let Event::PageFlip(event) = event {
-                        trace!(self.logger, "Got a page-flip event for crtc ({:?})", event.crtc);
+                        trace!("Got a page-flip event for crtc ({:?})", event.crtc);
                         let metadata = EventMetadata {
                             time: if self.has_monotonic_timestamps {
                                 Time::Monotonic(event.duration)
@@ -474,11 +458,7 @@ impl EventSource for DrmDevice {
                         };
                         callback(DrmEvent::VBlank(event.crtc), &mut Some(metadata));
                     } else {
-                        trace!(
-                            self.logger,
-                            "Got a non-page-flip event of device '{:?}'.",
-                            self.dev_path()
-                        );
+                        trace!("Got a non-page-flip event of device '{:?}'.", self.dev_path());
                     }
                 }
             }

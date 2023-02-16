@@ -25,7 +25,7 @@ use crate::{
     utils::DevPath,
 };
 
-use slog::{debug, info, o, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use super::{PlaneConfig, PlaneState};
 
@@ -120,7 +120,6 @@ pub struct AtomicDrmSurface {
     prop_mapping: RwLock<Mapping>,
     state: RwLock<State>,
     pending: RwLock<State>,
-    pub(crate) logger: ::slog::Logger,
 }
 
 impl AtomicDrmSurface {
@@ -133,16 +132,10 @@ impl AtomicDrmSurface {
         mut prop_mapping: Mapping,
         mode: Mode,
         connectors: &[connector::Handle],
-        logger: ::slog::Logger,
     ) -> Result<Self, Error> {
-        let logger = logger.new(o!("smithay_module" => "backend_drm_atomic", "drm_module" => "surface"));
         info!(
-            logger,
             "Initializing drm surface ({:?}:{:?}) with mode {:?} and connectors {:?}",
-            crtc,
-            plane,
-            mode,
-            connectors
+            crtc, plane, mode, connectors
         );
 
         let state = State::current_state(&*fd, crtc, &mut prop_mapping)?;
@@ -166,7 +159,6 @@ impl AtomicDrmSurface {
             prop_mapping: RwLock::new(prop_mapping),
             state: RwLock::new(state),
             pending: RwLock::new(pending),
-            logger,
         };
 
         Ok(surface)
@@ -513,8 +505,8 @@ impl AtomicDrmSurface {
         let pending = self.pending.write().unwrap();
 
         debug!(
-            self.logger,
-            "Preparing Commit.\n\tCurrent: {:?}\n\tPending: {:?}\n", *current, *pending
+            "Preparing Commit.\n\tCurrent: {:?}\n\tPending: {:?}\n",
+            *current, *pending
         );
 
         // we need the differences to know, which connectors need to change properties
@@ -525,25 +517,25 @@ impl AtomicDrmSurface {
 
         for conn in removed.clone() {
             if let Ok(info) = self.fd.get_connector(*conn, false) {
-                info!(self.logger, "Removing connector: {:?}", info.interface());
+                info!("Removing connector: {:?}", info.interface());
             } else {
-                info!(self.logger, "Removing unknown connector");
+                info!("Removing unknown connector");
             }
         }
 
         for conn in added.clone() {
             if let Ok(info) = self.fd.get_connector(*conn, false) {
-                info!(self.logger, "Adding connector: {:?}", info.interface());
+                info!("Adding connector: {:?}", info.interface());
             } else {
-                info!(self.logger, "Adding unknown connector");
+                info!("Adding unknown connector");
             }
         }
 
         if current.mode != pending.mode {
-            info!(self.logger, "Setting new mode: {:?}", pending.mode.name());
+            info!("Setting new mode: {:?}", pending.mode.name());
         }
 
-        trace!(self.logger, "Testing screen config");
+        trace!("Testing screen config");
 
         // test the new config and return the request if it would be accepted by the driver.
         let req = {
@@ -557,16 +549,13 @@ impl AtomicDrmSurface {
                 )
                 .map_err(|_| Error::TestFailed(self.crtc))
             {
-                warn!(
-                    self.logger,
-                    "New screen configuration invalid!:\n\t{:#?}\n\t{}\n", req, err
-                );
+                warn!("New screen configuration invalid!:\n\t{:#?}\n\t{}\n", req, err);
 
                 return Err(err);
             } else {
                 if current.mode != pending.mode {
                     if let Err(err) = self.fd.destroy_property_blob(current.blob.into()) {
-                        warn!(self.logger, "Failed to destory old mode property blob: {}", err);
+                        warn!("Failed to destory old mode property blob: {}", err);
                     }
                 }
 
@@ -575,7 +564,7 @@ impl AtomicDrmSurface {
             }
         };
 
-        debug!(self.logger, "Setting screen: {:?}", req);
+        debug!("Setting screen: {:?}", req);
         let result = self
             .fd
             .atomic_commit(
@@ -633,7 +622,7 @@ impl AtomicDrmSurface {
         // .. and without `AtomicCommitFlags::AllowModeset`.
         // If we would set anything here, that would require a modeset, this would fail,
         // indicating a problem in our assumptions.
-        trace!(self.logger, "Queueing page flip: {:?}", req);
+        trace!("Queueing page flip: {:?}", req);
         let res = self
             .fd
             .atomic_commit(
@@ -1015,10 +1004,7 @@ impl Drop for AtomicDrmSurface {
         let used_planes = std::mem::take(&mut *self.used_planes.lock().unwrap());
         for plane in used_planes {
             if let Err(err) = self.clear_plane(plane) {
-                warn!(
-                    self.logger,
-                    "Failed to clear plane {:?} on {:?}: {}", plane, self.crtc, err
-                );
+                warn!("Failed to clear plane {:?} on {:?}: {}", plane, self.crtc, err);
             }
         }
 
@@ -1051,7 +1037,7 @@ impl Drop for AtomicDrmSurface {
         req.add_property(self.crtc, *active_prop, property::Value::Boolean(false));
         req.add_property(self.crtc, *mode_prop, property::Value::Unknown(0));
         if let Err(err) = self.fd.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req) {
-            warn!(self.logger, "Unable to disable connectors: {}", err);
+            warn!("Unable to disable connectors: {}", err);
         }
     }
 }

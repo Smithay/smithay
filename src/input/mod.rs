@@ -34,7 +34,6 @@
 //! // create the seat
 //! let seat = seat_state.new_seat(
 //!     "seat-0",  // the name of the seat, will be advertized to clients
-//!     None       // insert a logger here
 //! );
 //!
 //! # #[derive(Debug, Clone, PartialEq)]
@@ -227,7 +226,6 @@ pub(crate) struct SeatRc<D: SeatHandler> {
     pub(crate) name: String,
     pub(crate) inner: Mutex<Inner<D>>,
     user_data_map: UserDataMap,
-    log: ::slog::Logger,
 }
 
 impl<D: SeatHandler> fmt::Debug for SeatRc<D>
@@ -240,7 +238,6 @@ where
             .field("name", &self.name)
             .field("inner", &self.inner)
             .field("user_data_map", &self.user_data_map)
-            .field("log", &self.log)
             .finish()
     }
 }
@@ -266,15 +263,11 @@ impl<D: SeatHandler> SeatState<D> {
     }
 
     /// Create a new seat
-    pub fn new_seat<N, L>(&mut self, name: N, logger: L) -> Seat<D>
+    pub fn new_seat<N>(&mut self, name: N) -> Seat<D>
     where
         N: Into<String>,
-        L: Into<Option<::slog::Logger>>,
     {
         let name = name.into();
-
-        let log = crate::slog_or_fallback(logger);
-        let log = log.new(slog::o!("smithay_module" => "seat_handler", "seat_name" => name.clone()));
 
         let arc = Arc::new(SeatRc {
             name,
@@ -290,7 +283,6 @@ impl<D: SeatHandler> SeatState<D> {
                 known_seats: Vec::new(),
             }),
             user_data_map: UserDataMap::new(),
-            log,
         });
         self.seats.push(Seat { arc: arc.clone() });
 
@@ -477,8 +469,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
         repeat_rate: i32,
     ) -> Result<KeyboardHandle<D>, KeyboardError> {
         let mut inner = self.arc.inner.lock().unwrap();
-        let keyboard =
-            self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate, &self.arc.log)?;
+        let keyboard = self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate)?;
         if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change

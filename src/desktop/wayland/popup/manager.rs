@@ -8,37 +8,27 @@ use crate::{
     },
 };
 use std::sync::{Arc, Mutex};
+use tracing::trace;
 use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_wm_base};
 use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 
 use super::{PopupGrab, PopupGrabError, PopupGrabInner, PopupKind};
 
 /// Helper to track popups.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct PopupManager {
     unmapped_popups: Vec<PopupKind>,
     popup_trees: Vec<PopupTree>,
     popup_grabs: Vec<PopupGrabInner>,
-    logger: ::slog::Logger,
 }
 
 impl PopupManager {
-    /// Create a new [`PopupManager`].
-    pub fn new<L: Into<Option<::slog::Logger>>>(logger: L) -> Self {
-        PopupManager {
-            unmapped_popups: Vec::new(),
-            popup_trees: Vec::new(),
-            popup_grabs: Vec::new(),
-            logger: crate::slog_or_fallback(logger),
-        }
-    }
-
     /// Start tracking a new popup.
     pub fn track_popup(&mut self, kind: PopupKind) -> Result<(), DeadResource> {
         if kind.parent().is_some() {
             self.add_popup(kind)
         } else {
-            slog::trace!(self.logger, "Adding unmapped popups: {:?}", kind);
+            trace!("Adding unmapped popups: {:?}", kind);
             self.unmapped_popups.push(kind);
             Ok(())
         }
@@ -52,7 +42,7 @@ impl PopupManager {
                 .iter()
                 .position(|p| p.wl_surface() == surface)
             {
-                slog::trace!(self.logger, "Popup got mapped");
+                trace!("Popup got mapped");
                 let popup = self.unmapped_popups.swap_remove(i);
                 // at this point the popup must have a parent,
                 // or it would have raised a protocol error
@@ -155,7 +145,7 @@ impl PopupManager {
                 // if it previously had no popups, we likely removed it from our list already
                 self.popup_trees.push(tree.clone());
             }
-            slog::trace!(self.logger, "Adding popup {:?} to root {:?}", popup, root);
+            trace!("Adding popup {:?} to root {:?}", popup, root);
             tree.insert(popup);
         });
 

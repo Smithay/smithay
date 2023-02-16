@@ -45,8 +45,8 @@ use winit::{
     window::{Window as WinitWindow, WindowBuilder},
 };
 
-use slog::{debug, error, info, o, trace, warn};
 use std::cell::Cell;
+use tracing::{debug, error, info, trace, warn};
 
 pub use self::input::*;
 
@@ -110,7 +110,6 @@ pub struct WinitEventLoop {
     events_loop: EventLoop<()>,
     time: Instant,
     key_counter: u32,
-    logger: ::slog::Logger,
     initialized: bool,
     size: Rc<RefCell<WindowSize>>,
     resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
@@ -121,32 +120,28 @@ pub struct WinitEventLoop {
 /// Create a new [`WinitGraphicsBackend`], which implements the
 /// [`Renderer`](crate::backend::renderer::Renderer) trait and a corresponding
 /// [`WinitEventLoop`].
-pub fn init<R, L>(logger: L) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
+pub fn init<R>() -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
     R: From<Gles2Renderer> + Bind<Rc<EGLSurface>>,
     crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
-    L: Into<Option<::slog::Logger>>,
 {
     init_from_builder(
         WindowBuilder::new()
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             .with_title("Smithay")
             .with_visible(true),
-        logger,
     )
 }
 
 /// Create a new [`WinitGraphicsBackend`], which implements the
 /// [`Renderer`](crate::backend::renderer::Renderer) trait, from a given [`WindowBuilder`]
 /// struct and a corresponding [`WinitEventLoop`].
-pub fn init_from_builder<R, L>(
+pub fn init_from_builder<R>(
     builder: WindowBuilder,
-    logger: L,
 ) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
     R: From<Gles2Renderer> + Bind<Rc<EGLSurface>>,
     crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
-    L: Into<Option<::slog::Logger>>,
 {
     init_from_builder_with_gl_attr(
         builder,
@@ -156,7 +151,6 @@ where
             debug: cfg!(debug_assertions),
             vsync: true,
         },
-        logger,
     )
 }
 
@@ -164,31 +158,28 @@ where
 /// [`Renderer`](crate::backend::renderer::Renderer) trait, from a given [`WindowBuilder`]
 /// struct, as well as given [`GlAttributes`] for further customization of the rendering pipeline and a
 /// corresponding [`WinitEventLoop`].
-pub fn init_from_builder_with_gl_attr<R, L>(
+pub fn init_from_builder_with_gl_attr<R>(
     builder: WindowBuilder,
     attributes: GlAttributes,
-    logger: L,
 ) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
     R: From<Gles2Renderer> + Bind<Rc<EGLSurface>>,
     crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
-    L: Into<Option<::slog::Logger>>,
 {
-    let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_winit"));
-    info!(log, "Initializing a winit backend");
+    info!("Initializing a winit backend");
 
     let events_loop = EventLoop::new();
     let winit_window = Arc::new(builder.build(&events_loop).map_err(Error::InitFailed)?);
 
-    debug!(log, "Window created");
+    debug!("Window created");
 
     let reqs = Default::default();
     let (display, context, surface, is_x11) = {
-        let display = EGLDisplay::new(winit_window.clone(), log.clone())?;
-        let context = EGLContext::new_with_config(&display, attributes, reqs, log.clone())?;
+        let display = EGLDisplay::new(winit_window.clone())?;
+        let context = EGLContext::new_with_config(&display, attributes, reqs)?;
 
         let (surface, is_x11) = if let Some(wl_surface) = winit_window.wayland_surface() {
-            debug!(log, "Winit backend: Wayland");
+            debug!("Winit backend: Wayland");
             let size = winit_window.inner_size();
             let surface = unsafe {
                 wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
@@ -200,20 +191,18 @@ where
                     context.pixel_format().unwrap(),
                     context.config_id(),
                     surface,
-                    log.clone(),
                 )
                 .map_err(EGLError::CreationFailed)?,
                 false,
             )
         } else if let Some(xlib_window) = winit_window.xlib_window().map(native::XlibWindow) {
-            debug!(log, "Winit backend: X11");
+            debug!("Winit backend: X11");
             (
                 EGLSurface::new(
                     &display,
                     context.pixel_format().unwrap(),
                     context.config_id(),
                     xlib_window,
-                    log.clone(),
                 )
                 .map_err(EGLError::CreationFailed)?,
                 true,
@@ -234,7 +223,7 @@ where
     }));
 
     let egl = Rc::new(surface);
-    let renderer = unsafe { Gles2Renderer::new(context, log.clone())?.into() };
+    let renderer = unsafe { Gles2Renderer::new(context)?.into() };
     let resize_notification = Rc::new(Cell::new(None));
     let damage_tracking = display.supports_damage();
 
@@ -255,7 +244,6 @@ where
             time: Instant::now(),
             key_counter: 0,
             initialized: false,
-            logger: log.new(o!("smithay_winit_component" => "event_loop")),
             size,
             is_x11,
         },
@@ -408,7 +396,6 @@ impl WinitEventLoop {
             let time = &self.time;
             let window = &self.window;
             let resize_notification = &self.resize_notification;
-            let logger = &self.logger;
             let window_size = &self.size;
             let is_x11 = self.is_x11;
 
@@ -432,7 +419,7 @@ impl WinitEventLoop {
                         let time = duration.as_micros() as u64;
                         match event {
                             WindowEvent::Resized(psize) => {
-                                trace!(logger, "Resizing window to {:?}", psize);
+                                trace!("Resizing window to {:?}", psize);
                                 let scale_factor = window.scale_factor();
                                 let mut wsize = window_size.borrow_mut();
                                 let (pw, ph): (u32, u32) = psize.into();
@@ -575,7 +562,7 @@ impl WinitEventLoop {
                                 callback(Input(InputEvent::DeviceRemoved {
                                     device: WinitVirtualDevice,
                                 }));
-                                warn!(logger, "Window closed");
+                                warn!("Window closed");
                                 *closed_ptr = true;
                             }
                             _ => {}

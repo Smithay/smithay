@@ -75,10 +75,9 @@
 //! ];
 //!
 //! // And create the dmabuf global.
-//! let dmabuf_global = dmabuf_state.create_global::<State, _>(
+//! let dmabuf_global = dmabuf_state.create_global::<State>(
 //!     &display_handle,
 //!     formats,
-//!     None // we don't provide a logger in this example
 //! );
 //!
 //! let state = State {
@@ -136,20 +135,14 @@ impl DmabufState {
     }
 
     /// Creates a dmabuf global with the specified supported formats.
-    pub fn create_global<D, L>(
-        &mut self,
-        display: &DisplayHandle,
-        formats: Vec<Format>,
-        logger: L,
-    ) -> DmabufGlobal
+    pub fn create_global<D>(&mut self, display: &DisplayHandle, formats: Vec<Format>) -> DmabufGlobal
     where
         D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
             + BufferHandler
             + DmabufHandler
             + 'static,
-        L: Into<Option<::slog::Logger>>,
     {
-        self.create_global_with_filter::<D, _, L>(display, formats, |_| true, logger)
+        self.create_global_with_filter::<D, _>(display, formats, |_| true)
     }
 
     /// Creates a dmabuf global with the specified supported formats.
@@ -157,12 +150,11 @@ impl DmabufState {
     /// This function unlike [`DmabufState::create_global`] also allows you to specify a filter function to
     /// determine which clients may see this global. This functionality may be used on multi-gpu systems in
     /// order to make a client choose the correct gpu.
-    pub fn create_global_with_filter<D, F, L>(
+    pub fn create_global_with_filter<D, F>(
         &mut self,
         display: &DisplayHandle,
         formats: Vec<Format>,
         filter: F,
-        logger: L,
     ) -> DmabufGlobal
     where
         D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
@@ -170,17 +162,13 @@ impl DmabufState {
             + DmabufHandler
             + 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
-        L: Into<Option<::slog::Logger>>,
     {
         let id = next_global_id();
-        let logger = crate::slog_or_fallback(logger)
-            .new(slog::o!("smithay_module" => "wayland_dmabuf", "global" => id));
         let formats = Arc::new(formats);
         let data = DmabufGlobalData {
             filter: Box::new(filter),
             formats,
             id,
-            logger,
         };
 
         let global =
@@ -214,7 +202,6 @@ pub struct DmabufGlobalData {
     filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
     formats: Arc<Vec<Format>>,
     id: usize,
-    logger: slog::Logger,
 }
 
 /// Data associated with a dmabuf global protocol object.
@@ -222,7 +209,6 @@ pub struct DmabufGlobalData {
 pub struct DmabufData {
     formats: Arc<Vec<Format>>,
     id: usize,
-    logger: slog::Logger,
 }
 
 /// Data associated with a pending [`Dmabuf`] import.
@@ -238,8 +224,6 @@ pub struct DmabufParamsData {
 
     /// Pending planes for the params.
     planes: Mutex<Vec<Plane>>,
-
-    logger: slog::Logger,
 }
 
 /// A handle to a registered dmabuf global.

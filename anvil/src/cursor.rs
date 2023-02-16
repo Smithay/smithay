@@ -1,5 +1,6 @@
 use std::{io::Read, time::Duration};
 
+use tracing::warn;
 use xcursor::{
     parser::{parse_xcursor, Image},
     CursorTheme,
@@ -13,7 +14,7 @@ pub struct Cursor {
 }
 
 impl Cursor {
-    pub fn load(log: &::slog::Logger) -> Cursor {
+    pub fn load() -> Cursor {
         let name = std::env::var("XCURSOR_THEME")
             .ok()
             .unwrap_or_else(|| "default".into());
@@ -24,7 +25,7 @@ impl Cursor {
 
         let theme = CursorTheme::load(&name);
         let icons = load_icon(&theme)
-            .map_err(|err| slog::warn!(log, "Unable to load xcursor: {}, using fallback cursor", err))
+            .map_err(|err| warn!("Unable to load xcursor: {}, using fallback cursor", err))
             .unwrap_or_else(|_| {
                 vec![Image {
                     size: 32,

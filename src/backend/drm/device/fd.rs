@@ -3,6 +3,7 @@ use std::{
     os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd},
     sync::Arc,
 };
+use tracing::{error, info, warn};
 
 use crate::utils::{DevPath, DeviceFd};
 
@@ -10,15 +11,14 @@ use crate::utils::{DevPath, DeviceFd};
 struct InternalDrmDeviceFd {
     fd: DeviceFd,
     privileged: bool,
-    logger: slog::Logger,
 }
 
 impl Drop for InternalDrmDeviceFd {
     fn drop(&mut self) {
-        slog::info!(self.logger, "Dropping device: {:?}", self.fd.dev_path());
+        info!("Dropping device: {:?}", self.fd.dev_path());
         if self.privileged {
             if let Err(err) = self.release_master_lock() {
-                slog::error!(self.logger, "Failed to drop drm master state. Error: {}", err);
+                error!("Failed to drop drm master state. Error: {}", err);
             }
         }
     }
@@ -59,21 +59,17 @@ impl DrmDeviceFd {
     ///
     /// Failing to do so might fail to acquire set lock and release it early,
     /// which can cause some drm ioctls to fail later.
-    pub fn new(fd: DeviceFd, logger: impl Into<Option<slog::Logger>>) -> DrmDeviceFd {
+    pub fn new(fd: DeviceFd) -> DrmDeviceFd {
         let mut dev = InternalDrmDeviceFd {
             fd,
             privileged: false,
-            logger: crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "backend_drm")),
         };
 
         // We want to modeset, so we better be the master, if we run via a tty session.
         // This is only needed on older kernels. Newer kernels grant this permission,
         // if no other process is already the *master*. So we skip over this error.
         if dev.acquire_master_lock().is_err() {
-            slog::warn!(
-                dev.logger,
-                "Unable to become drm master, assuming unprivileged mode"
-            );
+            warn!("Unable to become drm master, assuming unprivileged mode");
         } else {
             dev.privileged = true;
         }

@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut display: Display<App> = Display::new()?;
     let dh = display.handle();
 
-    let compositor_state = CompositorState::new::<App, _>(&dh, None);
+    let compositor_state = CompositorState::new::<App>(&dh);
 
     let mut state = App { compositor_state };
 

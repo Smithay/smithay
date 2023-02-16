@@ -4,7 +4,6 @@ use std::{
 };
 
 use ash::{extensions::ext::DebugUtils, vk};
-use slog::Logger;
 
 use super::{version::Version, LoadError, LIBRARY};
 
@@ -20,7 +19,6 @@ pub struct InstanceInner {
 pub struct DebugState {
     pub debug_utils: DebugUtils,
     pub debug_messenger: vk::DebugUtilsMessengerEXT,
-    pub logger_ptr: *mut Logger,
 }
 
 impl fmt::Debug for InstanceInner {
@@ -33,26 +31,19 @@ impl fmt::Debug for InstanceInner {
 
 impl Drop for InstanceInner {
     fn drop(&mut self) {
-        let logger = if let Some(debug) = &self.debug_state {
+        if let Some(debug) = &self.debug_state {
             unsafe {
                 debug
                     .debug_utils
                     .destroy_debug_utils_messenger(debug.debug_messenger, None);
             }
-
-            Some(unsafe { Box::from_raw(debug.logger_ptr as *mut slog::Logger) })
-        } else {
-            None
-        };
+        }
 
         // Users of `Instance` are responsible for compliance with `VUID-vkDestroyInstance-instance-00629`.
 
         // SAFETY (Host Synchronization): InstanceInner is always stored in an Arc, therefore destruction is
         // synchronized (since the inner value of an Arc is always dropped on a single thread).
         unsafe { self.instance.destroy_instance(None) };
-
-        // Now that the instance has been destroyed, we can destroy the logger.
-        drop(logger);
     }
 }
 
