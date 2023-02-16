@@ -21,6 +21,7 @@ use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan
 #[cfg(feature = "wayland_frontend")]
 use std::{cell::RefCell, collections::HashMap};
 
+pub mod element;
 mod shaders;
 mod version;
 
@@ -72,6 +73,19 @@ struct Gles2SolidProgram {
     program: ffi::types::GLuint,
     uniform_matrix: ffi::types::GLint,
     uniform_color: ffi::types::GLint,
+    attrib_vert: ffi::types::GLint,
+    attrib_position: ffi::types::GLint,
+}
+
+/// Gles2 pixel shader
+#[derive(Debug, Clone)]
+pub struct Gles2PixelProgram {
+    program: ffi::types::GLuint,
+    uniform_matrix: ffi::types::GLint,
+    uniform_tex_matrix: ffi::types::GLint,
+    uniform_size: ffi::types::GLint,
+    uniform_tint: ffi::types::GLint,
+    uniform_alpha: ffi::types::GLint,
     attrib_vert: ffi::types::GLint,
     attrib_position: ffi::types::GLint,
 }
@@ -350,8 +364,8 @@ impl fmt::Debug for Gles2Renderer {
 #[derive(thiserror::Error, Debug)]
 pub enum Gles2Error {
     /// A shader could not be compiled
-    #[error("Failed to compile Shader: {0}")]
-    ShaderCompileError(&'static str),
+    #[error("Failed to compile Shader")]
+    ShaderCompileError,
     /// A program could not be linked
     #[error("Failed to link Program")]
     ProgramLinkError,
@@ -411,7 +425,7 @@ impl From<Gles2Error> for SwapBuffersError {
     #[cfg(feature = "wayland_frontend")]
     fn from(err: Gles2Error) -> SwapBuffersError {
         match err {
-            x @ Gles2Error::ShaderCompileError(_)
+            x @ Gles2Error::ShaderCompileError
             | x @ Gles2Error::ProgramLinkError
             | x @ Gles2Error::GLFunctionLoaderError
             | x @ Gles2Error::GLExtensionNotSupported(_)
@@ -433,7 +447,7 @@ impl From<Gles2Error> for SwapBuffersError {
     #[cfg(not(feature = "wayland_frontend"))]
     fn from(err: Gles2Error) -> SwapBuffersError {
         match err {
-            x @ Gles2Error::ShaderCompileError(_)
+            x @ Gles2Error::ShaderCompileError
             | x @ Gles2Error::ProgramLinkError
             | x @ Gles2Error::GLFunctionLoaderError
             | x @ Gles2Error::GLExtensionNotSupported(_)
@@ -478,7 +492,7 @@ extern "system" fn gl_debug_log(
 unsafe fn compile_shader(
     gl: &ffi::Gles2,
     variant: ffi::types::GLuint,
-    src: &'static str,
+    src: &str,
 ) -> Result<ffi::types::GLuint, Gles2Error> {
     let shader = gl.CreateShader(variant);
     if shader == 0 {
@@ -497,7 +511,7 @@ unsafe fn compile_shader(
     gl.GetShaderiv(shader, ffi::COMPILE_STATUS, &mut status as *mut _);
     if status == ffi::FALSE as i32 {
         gl.DeleteShader(shader);
-        return Err(Gles2Error::ShaderCompileError(src));
+        return Err(Gles2Error::ShaderCompileError);
     }
 
     Ok(shader)
@@ -505,8 +519,8 @@ unsafe fn compile_shader(
 
 unsafe fn link_program(
     gl: &ffi::Gles2,
-    vert_src: &'static str,
-    frag_src: &'static str,
+    vert_src: &str,
+    frag_src: &str,
 ) -> Result<ffi::types::GLuint, Gles2Error> {
     let vert = compile_shader(gl, ffi::VERTEX_SHADER, vert_src)?;
     let frag = compile_shader(gl, ffi::FRAGMENT_SHADER, frag_src)?;
@@ -1865,6 +1879,56 @@ impl Gles2Renderer {
         self.make_current()?;
         Ok(func(&self.gl))
     }
+
+    /// Compile a custom pixel shader for rendering with [`Gles2Renderer::render_pixel_shader_to`].
+    ///
+    /// Pixel shaders can be used for completely shader-driven drawing into a given region.
+    /// They receive the following variables:
+    /// - *varying* v_coords `vec2` - contains the position from the vertex shader
+    /// - *uniform* size `vec2` - size of the viewport in pixels
+    /// - *uniform* alpha `float` - for the alpha value passed by the renderer
+    /// - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0)
+    pub fn compile_custom_pixel_shader(
+        &self,
+        shader: impl AsRef<str>,
+    ) -> Result<Gles2PixelProgram, Gles2Error> {
+        let program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, shader.as_ref())? };
+
+        let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
+        let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
+        let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
+        let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
+        let size = CStr::from_bytes_with_nul(b"size\0").expect("NULL terminated");
+        let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
+        let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
+
+        unsafe {
+            Ok(Gles2PixelProgram {
+                program,
+                uniform_matrix: self
+                    .gl
+                    .GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
+                uniform_tex_matrix: self
+                    .gl
+                    .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
+                uniform_alpha: self
+                    .gl
+                    .GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
+                uniform_size: self
+                    .gl
+                    .GetUniformLocation(program, size.as_ptr() as *const ffi::types::GLchar),
+                uniform_tint: self
+                    .gl
+                    .GetUniformLocation(program, tint.as_ptr() as *const ffi::types::GLchar),
+                attrib_vert: self
+                    .gl
+                    .GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
+                attrib_position: self
+                    .gl
+                    .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
+            })
+        }
+    }
 }
 
 impl<'frame> Gles2Frame<'frame> {
@@ -2354,7 +2418,7 @@ impl<'frame> Gles2Frame<'frame> {
             gl.EnableVertexAttribArray(self.renderer.tex_programs[tex.0.texture_kind].attrib_vert as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[0]);
             gl.VertexAttribPointer(
-                self.renderer.solid_program.attrib_vert as u32,
+                self.renderer.tex_programs[tex.0.texture_kind].attrib_vert as u32,
                 2,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -2417,7 +2481,7 @@ impl<'frame> Gles2Frame<'frame> {
                     // Set damage pointer to the next 10 rectangles.
                     let offset = (i + 1) as usize * 6 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
                     gl.VertexAttribPointer(
-                        self.renderer.solid_program.attrib_position as u32,
+                        self.renderer.tex_programs[tex.0.texture_kind].attrib_vert_position as u32,
                         4,
                         ffi::FLOAT,
                         ffi::FALSE,
@@ -2437,6 +2501,151 @@ impl<'frame> Gles2Frame<'frame> {
             gl.DisableVertexAttribArray(
                 self.renderer.tex_programs[tex.0.texture_kind].attrib_vert_position as u32,
             );
+        }
+
+        Ok(())
+    }
+
+    /// Render a pixel shader into the current target at a given `dest`-region.
+    pub fn render_pixel_shader_to(
+        &mut self,
+        program: &Gles2PixelProgram,
+        dest: Rectangle<i32, Physical>,
+        damage: Option<&[Rectangle<i32, Physical>]>,
+        alpha: f32,
+    ) -> Result<(), Gles2Error> {
+        let damage = damage
+            .map(|damage| {
+                damage
+                    .iter()
+                    .flat_map(|rect| {
+                        let dest_size = dest.size;
+
+                        let rect_constrained_loc = rect
+                            .loc
+                            .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                        let rect_clamped_size = rect
+                            .size
+                            .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+
+                        let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                        [
+                            rect.loc.x as f32,
+                            rect.loc.y as f32,
+                            rect.size.w as f32,
+                            rect.size.h as f32,
+                        ]
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| vec![0.0, 0.0, 1.0, 1.0]);
+
+        if damage.is_empty() {
+            return Ok(());
+        }
+
+        let mut matrix = Matrix3::<f32>::identity();
+        let tex_matrix = Matrix3::<f32>::identity();
+
+        // dest position and scale
+        matrix = matrix * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
+        matrix = matrix * Matrix3::from_nonuniform_scale(dest.size.w as f32, dest.size.h as f32);
+
+        //apply output transformation
+        matrix = self.current_projection * matrix;
+
+        // render
+        let gl = &self.renderer.gl;
+        unsafe {
+            gl.UseProgram(program.program);
+            gl.Scissor(dest.loc.x, dest.loc.y, dest.size.w, dest.size.h);
+
+            gl.UniformMatrix3fv(program.uniform_matrix, 1, ffi::FALSE, matrix.as_ptr());
+            gl.UniformMatrix3fv(program.uniform_tex_matrix, 1, ffi::FALSE, tex_matrix.as_ptr());
+            gl.Uniform2f(program.uniform_size, dest.size.w as f32, dest.size.h as f32);
+            gl.Uniform1f(program.uniform_alpha, alpha);
+            let tint = if self.renderer.debug_flags.contains(DebugFlags::TINT) {
+                1.0f32
+            } else {
+                0.0f32
+            };
+            gl.Uniform1f(program.uniform_tint, tint);
+
+            gl.EnableVertexAttribArray(program.attrib_vert as u32);
+            gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[0]);
+            gl.VertexAttribPointer(
+                program.attrib_vert as u32,
+                2,
+                ffi::FLOAT,
+                ffi::FALSE,
+                0,
+                std::ptr::null(),
+            );
+
+            // Damage vertices.
+            let vertices = if self.renderer.supports_instancing {
+                Cow::Borrowed(&damage)
+            } else {
+                let mut vertices = Vec::with_capacity(damage.len() * 6);
+                // Add the 4 f32s per damage rectangle for each of the 6 vertices.
+                for chunk in damage.chunks(4) {
+                    for _ in 0..6 {
+                        vertices.extend_from_slice(chunk);
+                    }
+                }
+                Cow::Owned(vertices)
+            };
+
+            // vert_position
+            gl.EnableVertexAttribArray(program.attrib_position as u32);
+            gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[1]);
+            gl.BufferData(
+                ffi::ARRAY_BUFFER,
+                (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
+                vertices.as_ptr() as *const _,
+                ffi::STREAM_DRAW,
+            );
+
+            gl.VertexAttribPointer(
+                program.attrib_position as u32,
+                4,
+                ffi::FLOAT,
+                ffi::FALSE,
+                0,
+                std::ptr::null(),
+            );
+
+            let damage_len = (damage.len() / 4) as i32;
+            if self.renderer.supports_instancing {
+                gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
+                gl.VertexAttribDivisor(program.attrib_position as u32, 1);
+
+                gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
+            } else {
+                // When we have more than 10 rectangles, draw them in batches of 10.
+                for i in 0..(damage_len - 1) / 10 {
+                    gl.DrawArrays(ffi::TRIANGLES, 0, 6);
+
+                    // Set damage pointer to the next 10 rectangles.
+                    let offset = (i + 1) as usize * 6 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
+                    gl.VertexAttribPointer(
+                        program.attrib_position as u32,
+                        4,
+                        ffi::FLOAT,
+                        ffi::FALSE,
+                        0,
+                        offset as *const _,
+                    );
+                }
+
+                // Draw the up to 10 remaining rectangles.
+                let count = ((damage_len - 1) % 10 + 1) * 6;
+                gl.DrawArrays(ffi::TRIANGLES, 0, count);
+            }
+
+            gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
+            gl.DisableVertexAttribArray(program.attrib_vert as u32);
+            gl.DisableVertexAttribArray(program.attrib_position as u32);
         }
 
         Ok(())

@@ -153,6 +153,18 @@ impl BorrowMut<Gles2Renderer> for GlowRenderer {
     }
 }
 
+impl<'frame> Borrow<Gles2Frame<'frame>> for GlowFrame<'frame> {
+    fn borrow(&self) -> &Gles2Frame<'frame> {
+        self.frame.as_ref().unwrap()
+    }
+}
+
+impl<'frame> BorrowMut<Gles2Frame<'frame>> for GlowFrame<'frame> {
+    fn borrow_mut(&mut self) -> &mut Gles2Frame<'frame> {
+        self.frame.as_mut().unwrap()
+    }
+}
+
 impl Renderer for GlowRenderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
