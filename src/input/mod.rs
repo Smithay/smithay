@@ -476,9 +476,52 @@ impl<D: SeatHandler + 'static> Seat<D> {
         repeat_delay: i32,
         repeat_rate: i32,
     ) -> Result<KeyboardHandle<D>, KeyboardError> {
-        let mut inner = self.arc.inner.lock().unwrap();
         let keyboard =
             self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate, &self.arc.log)?;
+        self.add_keyboard_inner(&keyboard)?;
+        Ok(keyboard)
+    }
+
+    /// Adds the keyboard capability to this seat
+    ///
+    /// Like [`Seat::add_keyboard`] except it takes a keymap as a string
+    /// instead of a configuration.
+    ///
+    /// Can be used with `xkbcommon::xkb::Keymap::get_as_string` to copy from
+    /// an existing keymap. This can not directly take a `Keymap` since it
+    /// needs to create a `Keymap` with it's own xkb context.
+    ///
+    /// ``` no_run
+    /// let keyboard = seat
+    ///     .add_keyboard_from_string(
+    ///         keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1),
+    ///         200,
+    ///         25,
+    ///     )
+    ///     .expect("Failed to initialize the keyboard");
+    /// ```
+    ///
+    pub fn add_keyboard_from_keymap_string(
+        &mut self,
+        string: String,
+        repeat_delay: i32,
+        repeat_rate: i32,
+    ) -> Result<KeyboardHandle<D>, KeyboardError> {
+        let keyboard = self::keyboard::KeyboardHandle::from_keymap_string(
+            string,
+            repeat_delay,
+            repeat_rate,
+            &self.arc.log,
+        )?;
+        self.add_keyboard_inner(&keyboard)?;
+        Ok(keyboard)
+    }
+
+    fn add_keyboard_inner(
+        &mut self,
+        keyboard: &self::keyboard::KeyboardHandle<D>,
+    ) -> Result<(), KeyboardError> {
+        let mut inner = self.arc.inner.lock().unwrap();
         if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change
@@ -489,7 +532,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
         inner.keyboard = Some(keyboard.clone());
         #[cfg(feature = "wayland_frontend")]
         inner.send_all_caps();
-        Ok(keyboard)
+        Ok(())
     }
 
     /// Access the keyboard of this seat if any
