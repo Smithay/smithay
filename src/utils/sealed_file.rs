@@ -21,16 +21,18 @@ pub(crate) struct SealedFile {
 }
 
 impl SealedFile {
-    pub fn new(name: CString, contents: CString) -> Result<Self, std::io::Error> {
-        let contents = contents.as_bytes_with_nul();
+    pub fn with_content(name: CString, contents: CString) -> Result<Self, std::io::Error> {
+        Self::with_data(name, contents.as_bytes_with_nul())
+    }
 
+    pub fn with_data(name: CString, data: &[u8]) -> Result<Self, std::io::Error> {
         let fd = nix::sys::memfd::memfd_create(
             &name,
             MemFdCreateFlag::MFD_CLOEXEC | MemFdCreateFlag::MFD_ALLOW_SEALING,
         )?;
 
         let mut file = unsafe { File::from_raw_fd(fd) };
-        file.write_all(contents)?;
+        file.write_all(data)?;
         file.flush()?;
 
         file.seek(std::io::SeekFrom::Start(0))?;
@@ -47,7 +49,7 @@ impl SealedFile {
 
         Ok(Self {
             file,
-            size: contents.len(),
+            size: data.len(),
         })
     }
 
