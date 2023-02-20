@@ -284,7 +284,13 @@ impl Instance {
 
         // Setup the debug utils
         let debug_state = if has_debug_utils {
+            let span = info_span!("backend_vulkan_debug");
             let debug_utils = DebugUtils::new(library, &instance);
+            // Place the pointer to the span in a scopeguard to prevent a memory leak in case creating the
+            // debug messenger fails.
+            let span_ptr = scopeguard::guard(Box::into_raw(Box::new(span)), |ptr| unsafe {
+                let _ = Box::from_raw(ptr);
+            });
 
             let create_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
                 .message_severity(
@@ -298,13 +304,19 @@ impl Instance {
                         | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE
                         | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
                 )
-                .pfn_user_callback(Some(vulkan_debug_utils_callback));
+                .pfn_user_callback(Some(vulkan_debug_utils_callback))
+                .user_data(*span_ptr as *mut _);
 
             let debug_messenger = unsafe { debug_utils.create_debug_utils_messenger(&create_info, None) }?;
+
+            // Disarm the destructor for the logger pointer since the instance is now responsible for
+            // destroying the logger.
+            let span_ptr = ScopeGuard::into_inner(span_ptr);
 
             Some(DebugState {
                 debug_utils,
                 debug_messenger,
+                span_ptr,
             })
         } else {
             None
@@ -695,9 +707,15 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
     message_type: vk::DebugUtilsMessageTypeFlagsEXT,
     p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
-    _: *mut c_void,
+    span: *mut c_void,
 ) -> vk::Bool32 {
     let _ = std::panic::catch_unwind(|| {
+        // Get the span from the user data pointer we gave to Vulkan.
+        //
+        // The span is allocated on the heap using a box, but we do not want to drop the span,
+        // so read from the pointer.
+        let _guard = unsafe { (span as *mut tracing::Span).as_ref() }.unwrap().enter();
+
         // VUID-VkDebugUtilsMessengerCallbackDataEXT-pMessage-parameter: Message must be valid UTF-8 with a null
         // terminator.
         let message = unsafe { CStr::from_ptr((*p_callback_data).p_message) }.to_string_lossy();
@@ -706,11 +724,11 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
 
         match message_severity {
             vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => {
-                trace!(ty = ty, "{}", message)
+                trace!(ty, "{}", message)
             }
-            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => info!(ty = ty, "{}", message),
-            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => warn!(ty = ty, "{}", message),
-            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => error!(ty = ty, "{}", message),
+            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => info!(ty, "{}", message),
+            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => warn!(ty, "{}", message),
+            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => error!(ty, "{}", message),
             _ => (),
         }
     });

@@ -452,9 +452,11 @@ extern "system" fn gl_debug_log(
     _severity: ffi::types::GLenum,
     _length: ffi::types::GLsizei,
     message: *const ffi::types::GLchar,
-    _: *mut nix::libc::c_void,
+    user_param: *mut nix::libc::c_void,
 ) {
     let _ = std::panic::catch_unwind(move || unsafe {
+        let span = Box::from_raw(user_param as *mut tracing::Span);
+        let _guard = span.enter();
         let msg = CStr::from_ptr(message);
         let message_utf8 = msg.to_string_lossy();
         match gltype {
@@ -631,7 +633,8 @@ impl Gles2Renderer {
             if exts.iter().any(|ext| ext == "GL_KHR_debug") {
                 gl.Enable(ffi::DEBUG_OUTPUT);
                 gl.Enable(ffi::DEBUG_OUTPUT_SYNCHRONOUS);
-                gl.DebugMessageCallback(Some(gl_debug_log), std::ptr::null());
+                let span = Box::into_raw(Box::new(span.clone()));
+                gl.DebugMessageCallback(Some(gl_debug_log), span as *mut _);
             }
 
             (gl, gl_version, exts, supports_instancing)
@@ -1836,6 +1839,7 @@ impl Gles2Renderer {
     /// or check the source code of the version of Smithay you are using to ensure
     /// your changes don't interfere with the renderer's behavior.
     /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
+    #[instrument(parent = &self.span, skip_all)]
     pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
     where
         F: FnOnce(&ffi::Gles2) -> R,
@@ -1854,6 +1858,7 @@ impl<'frame> Gles2Frame<'frame> {
     /// or check the source code of the version of Smithay you are using to ensure
     /// your changes don't interfere with the renderer's behavior.
     /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
+    #[instrument(parent = &self.span, skip_all)]
     pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
     where
         F: FnOnce(&ffi::Gles2) -> R,

@@ -20,6 +20,7 @@ pub struct InstanceInner {
 pub struct DebugState {
     pub debug_utils: DebugUtils,
     pub debug_messenger: vk::DebugUtilsMessengerEXT,
+    pub span_ptr: *mut tracing::Span,
 }
 
 impl fmt::Debug for InstanceInner {
@@ -32,19 +33,25 @@ impl fmt::Debug for InstanceInner {
 
 impl Drop for InstanceInner {
     fn drop(&mut self) {
-        if let Some(debug) = &self.debug_state {
+        let span = if let Some(debug) = &self.debug_state {
             unsafe {
                 debug
                     .debug_utils
                     .destroy_debug_utils_messenger(debug.debug_messenger, None);
             }
-        }
+            Some(unsafe { Box::from_raw(debug.span_ptr as *mut tracing::Span) })
+        } else {
+            None
+        };
 
         // Users of `Instance` are responsible for compliance with `VUID-vkDestroyInstance-instance-00629`.
 
         // SAFETY (Host Synchronization): InstanceInner is always stored in an Arc, therefore destruction is
         // synchronized (since the inner value of an Arc is always dropped on a single thread).
         unsafe { self.instance.destroy_instance(None) };
+
+        // Now that the instance has been destroyed, we can destroy the span.
+        drop(span);
     }
 }
 
