@@ -61,7 +61,7 @@ use wayland_server::{
     Client, DisplayHandle,
 };
 
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use super::x11_sockets::{prepare_x11_sockets, X11Lock};
 use crate::utils::user_data::UserDataMap;
@@ -354,7 +354,10 @@ impl Inner {
     fn shutdown(&mut self) {
         // don't do anything if not running
         if let Some(instance) = self.instance.take() {
-            info!("Shutting down XWayland.");
+            info!(
+                display = instance.display_lock.display(),
+                "Shutting down XWayland."
+            );
             self.dh
                 .backend_handle()
                 .kill_client(instance.wayland_client.id(), DisconnectReason::ConnectionClosed);
@@ -371,6 +374,7 @@ impl Inner {
     }
 }
 
+#[instrument(name = "xwayland", skip(inner), fields(display = inner.lock().unwrap().instance.as_ref().map(|i| i.display_lock.display())))]
 fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
     // Lots of re-borrowing to please the borrow-checker
     let mut guard = inner.lock().unwrap();

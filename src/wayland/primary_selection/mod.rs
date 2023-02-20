@@ -60,6 +60,7 @@
 
 use std::{cell::RefCell, os::unix::io::OwnedFd};
 
+use tracing::instrument;
 use wayland_protocols::wp::primary_selection::zv1::server::{
     zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager,
     zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1 as PrimarySource,
@@ -119,6 +120,7 @@ impl PrimarySelectionState {
 }
 
 /// Set the primary selection focus to a certain client for a given seat
+#[instrument(name = "wayland_primary_selection", level = "debug", skip(dh, seat, client), fields(seat = seat.name(), client = ?client.as_ref().map(|c| c.id())))]
 pub fn set_primary_focus<D>(dh: &DisplayHandle, seat: &Seat<D>, client: Option<Client>)
 where
     D: SeatHandler + PrimarySelectionHandler + 'static,
@@ -135,6 +137,7 @@ where
 ///
 /// Whenever a client requests to read the selection, your callback will
 /// receive a [`PrimarySelectionHandler::send_selection`] event.
+#[instrument(name = "wayland_primary_selection", level = "debug", skip(dh, seat), fields(seat = seat.name()))]
 pub fn set_primary_selection<D>(dh: &DisplayHandle, seat: &Seat<D>, mime_types: Vec<String>)
 where
     D: SeatHandler + PrimarySelectionHandler + 'static,

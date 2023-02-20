@@ -49,7 +49,7 @@ use udev::{Enumerator, EventType, MonitorBuilder, MonitorSocket};
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
-use tracing::{debug, info, warn};
+use tracing::{debug, info, info_span, warn};
 
 /// Backend to monitor available drm devices.
 ///
@@ -60,6 +60,7 @@ pub struct UdevBackend {
     devices: HashMap<dev_t, PathBuf>,
     monitor: MonitorSocket,
     token: Option<Token>,
+    span: tracing::Span,
 }
 
 // MonitorSocket does not implement debug, so we have to impl Debug manually
@@ -85,6 +86,10 @@ impl UdevBackend {
     /// ## Arguments
     /// `seat`    - system seat which should be bound
     pub fn new<S: AsRef<str>>(seat: S) -> io::Result<UdevBackend> {
+        let seat = seat.as_ref();
+        let span = info_span!("backend_udev", seat = seat.to_string());
+        let _guard = span.enter();
+
         let devices = all_gpus(seat)?
             .into_iter()
             // Create devices
@@ -99,10 +104,12 @@ impl UdevBackend {
 
         let monitor = MonitorBuilder::new()?.match_subsystem("drm")?.listen()?;
 
+        drop(_guard);
         Ok(UdevBackend {
             devices,
             monitor,
             token: None,
+            span,
         })
     }
 
@@ -133,6 +140,8 @@ impl EventSource for UdevBackend {
         if Some(token) != self.token {
             return Ok(PostAction::Continue);
         }
+
+        let _guard = self.span.enter();
         for event in self.monitor.iter() {
             debug!(
                 "Udev event: type={}, devnum={:?} devnode={:?}",

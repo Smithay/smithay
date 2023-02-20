@@ -13,7 +13,7 @@ use crate::{
     utils::DevPath,
 };
 
-use tracing::{debug, info, trace};
+use tracing::{debug, info, info_span, instrument, trace};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
@@ -77,6 +77,7 @@ pub struct LegacyDrmSurface {
     crtc: crtc::Handle,
     state: RwLock<State>,
     pending: RwLock<State>,
+    pub(super) span: tracing::Span,
 }
 
 impl LegacyDrmSurface {
@@ -87,10 +88,9 @@ impl LegacyDrmSurface {
         mode: Mode,
         connectors: &[connector::Handle],
     ) -> Result<Self, Error> {
-        info!(
-            "Initializing drm surface with mode {:?} and connectors {:?}",
-            mode, connectors
-        );
+        let span = info_span!("drm_legacy", crtc = ?crtc);
+        let _guard = span.enter();
+        info!(?mode, ?connectors, ?crtc, "Initializing drm surface",);
 
         let state = State::current_state(&*fd, crtc)?;
         let pending = State {
@@ -98,12 +98,14 @@ impl LegacyDrmSurface {
             connectors: connectors.iter().copied().collect(),
         };
 
+        drop(_guard);
         let surface = LegacyDrmSurface {
             fd,
             active,
             crtc,
             state: RwLock::new(state),
             pending: RwLock::new(pending),
+            span,
         };
 
         Ok(surface)
@@ -125,6 +127,7 @@ impl LegacyDrmSurface {
         self.pending.read().unwrap().mode
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -139,6 +142,7 @@ impl LegacyDrmSurface {
         Ok(())
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn remove_connector(&self, connector: connector::Handle) -> Result<(), Error> {
         let mut pending = self.pending.write().unwrap();
 
@@ -150,6 +154,7 @@ impl LegacyDrmSurface {
         Ok(())
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error> {
         if connectors.is_empty() {
             return Err(Error::SurfaceWithoutConnectors(self.crtc));
@@ -174,6 +179,7 @@ impl LegacyDrmSurface {
         Ok(())
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn use_mode(&self, mode: Mode) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -207,6 +213,7 @@ impl LegacyDrmSurface {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn commit(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -297,6 +304,7 @@ impl LegacyDrmSurface {
         Ok(())
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         trace!("Queueing Page flip");
 
@@ -322,6 +330,7 @@ impl LegacyDrmSurface {
         })
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn test_buffer(&self, fb: framebuffer::Handle, mode: &Mode) -> Result<bool, Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -417,6 +426,7 @@ impl LegacyDrmSurface {
 
 impl Drop for LegacyDrmSurface {
     fn drop(&mut self) {
+        let _guard = self.span.enter();
         // ignore failure at this point
 
         if !self.active.load(Ordering::SeqCst) {

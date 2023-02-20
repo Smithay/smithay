@@ -66,7 +66,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             }
 
             KeyAction::Run(cmd) => {
-                info!(cmd = cmd, "Starting program");
+                info!(cmd, "Starting program");
 
                 if let Err(e) = Command::new(&cmd)
                     .envs(
@@ -84,7 +84,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     .spawn()
                 {
                     error!(
-                        cmd = cmd,
+                        cmd,
                         err = ?e,
                         "Failed to start program"
                     );
@@ -105,7 +105,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     fn keyboard_key_to_action<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) -> KeyAction {
         let keycode = evt.key_code();
         let state = evt.state();
-        debug!(keycode = keycode, state = ?state, "key");
+        debug!(keycode, ?state, "key");
         let serial = SCOUNTER.next_serial();
         let time = Event::time_msec(&evt);
         let mut suppressed_keys = self.suppressed_keys.clone();
@@ -148,7 +148,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 let keysym = handle.modified_sym();
 
                 debug!(
-                    state = ?state,
+                    ?state,
                     mods = ?modifiers,
                     keysym = ::xkbcommon::xkb::keysym_get_name(keysym),
                     "keysym"
@@ -439,9 +439,9 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                     }
 
                     _ => tracing::warn!(
-                        "Key action {:?} unsupported on on output {} backend.",
-                        action,
-                        output_name
+                        ?action,
+                        output_name,
+                        "Key action unsupported on on output backend.",
                     ),
                 },
             },
@@ -493,9 +493,9 @@ impl AnvilState<UdevData> {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
                 #[cfg(feature = "udev")]
                 KeyAction::VtSwitch(vt) => {
-                    info!("Trying to switch to vt {}", vt);
+                    info!(to = vt, "Trying to switch vt");
                     if let Err(err) = self.backend_data.session.change_vt(vt) {
-                        error!("Error switching to vt {}: {}", vt, err);
+                        error!(vt, "Error switching vt: {}", err);
                     }
                 }
                 KeyAction::Screen(num) => {

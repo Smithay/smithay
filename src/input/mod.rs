@@ -103,6 +103,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use tracing::{info_span, instrument};
+
 use self::keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardTarget};
 use self::pointer::{CursorImageStatus, PointerHandle, PointerTarget};
 use crate::utils::user_data::UserDataMap;
@@ -225,6 +227,7 @@ pub(crate) struct SeatRc<D: SeatHandler> {
     #[allow(dead_code)]
     pub(crate) name: String,
     pub(crate) inner: Mutex<Inner<D>>,
+    span: tracing::Span,
     user_data_map: UserDataMap,
 }
 
@@ -268,6 +271,7 @@ impl<D: SeatHandler> SeatState<D> {
         N: Into<String>,
     {
         let name = name.into();
+        let span = info_span!("input_seat", name);
 
         let arc = Arc::new(SeatRc {
             name,
@@ -282,6 +286,7 @@ impl<D: SeatHandler> SeatState<D> {
                 #[cfg(feature = "wayland_frontend")]
                 known_seats: Vec::new(),
             }),
+            span,
             user_data_map: UserDataMap::new(),
         });
         self.seats.push(Seat { arc: arc.clone() });
@@ -355,6 +360,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # let mut seat: Seat<State> = unimplemented!();
     /// let pointer_handle = seat.add_pointer();
     /// ```
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub fn add_pointer(&mut self) -> PointerHandle<D> {
         let mut inner = self.arc.inner.lock().unwrap();
         let pointer = PointerHandle::new();
@@ -379,6 +385,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// Remove the pointer capability from this seat
     ///
     /// Clients will be appropriately notified.
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub fn remove_pointer(&mut self) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.pointer.is_some() {
@@ -462,6 +469,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     ///     )
     ///     .expect("Failed to initialize the keyboard");
     /// ```
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub fn add_keyboard(
         &mut self,
         xkb_config: keyboard::XkbConfig<'_>,
@@ -491,6 +499,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// Remove the keyboard capability from this seat
     ///
     /// Clients will be appropriately notified.
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub fn remove_keyboard(&mut self) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.keyboard.is_some() {

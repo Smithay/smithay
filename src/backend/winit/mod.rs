@@ -46,7 +46,7 @@ use winit::{
 };
 
 use std::cell::Cell;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, info_span, instrument, trace, warn};
 
 pub use self::input::*;
 
@@ -98,6 +98,7 @@ pub struct WinitGraphicsBackend<R> {
     size: Rc<RefCell<WindowSize>>,
     damage_tracking: bool,
     resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
+    span: tracing::Span,
 }
 
 /// Abstracted event loop of a [`WinitWindow`].
@@ -115,6 +116,7 @@ pub struct WinitEventLoop {
     resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
     /// Whether winit is using Wayland or X11 as it's backend.
     is_x11: bool,
+    span: tracing::Span,
 }
 
 /// Create a new [`WinitGraphicsBackend`], which implements the
@@ -166,11 +168,14 @@ where
     R: From<Gles2Renderer> + Bind<Rc<EGLSurface>>,
     crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
 {
+    let span = info_span!("backend_winit", window = tracing::field::Empty);
+    let _guard = span.enter();
     info!("Initializing a winit backend");
 
     let events_loop = EventLoop::new();
     let winit_window = Arc::new(builder.build(&events_loop).map_err(Error::InitFailed)?);
 
+    span.record("window", Into::<u64>::into(winit_window.id()));
     debug!("Window created");
 
     let reqs = Default::default();
@@ -227,6 +232,7 @@ where
     let resize_notification = Rc::new(Cell::new(None));
     let damage_tracking = display.supports_damage();
 
+    drop(_guard);
     Ok((
         WinitGraphicsBackend {
             window: winit_window.clone(),
@@ -236,6 +242,7 @@ where
             damage_tracking,
             size: size.clone(),
             resize_notification: resize_notification.clone(),
+            span: span.clone(),
         },
         WinitEventLoop {
             resize_notification,
@@ -246,6 +253,7 @@ where
             initialized: false,
             size,
             is_x11,
+            span,
         },
     ))
 }
@@ -292,6 +300,7 @@ where
     }
 
     /// Bind the underlying window to the underlying renderer
+    #[instrument(parent = &self.span, skip(self))]
     pub fn bind(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
         // apparently the nvidia-driver doesn't like `wl_egl_window_resize`, if the surface is not current.
         // So the order here is important.
@@ -321,6 +330,7 @@ where
     /// Otherwise and on error this function returns `None`.
     /// If you are using this value actively e.g. for damage-tracking you should
     /// likely interpret an error just as if "0" was returned.
+    #[instrument(parent = &self.span, skip(self))]
     pub fn buffer_age(&self) -> Option<usize> {
         if self.damage_tracking {
             self.egl.buffer_age().map(|x| x as usize)
@@ -330,6 +340,7 @@ where
     }
 
     /// Submits the back buffer to the window by swapping, requires the window to be previously bound (see [`WinitGraphicsBackend::bind`]).
+    #[instrument(parent = &self.span, skip(self))]
     pub fn submit(
         &mut self,
         damage: Option<&[Rectangle<i32, Physical>]>,
@@ -377,6 +388,7 @@ impl WinitEventLoop {
     ///
     /// The linked [`WinitGraphicsBackend`] will error with a lost context and should
     /// not be used anymore as well.
+    #[instrument(parent = &self.span, skip_all)]
     pub fn dispatch_new_events<F>(&mut self, mut callback: F) -> Result<(), WinitError>
     where
         F: FnMut(WinitEvent),

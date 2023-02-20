@@ -72,7 +72,7 @@ use std::{
     os::unix::net::UnixStream,
     sync::Arc,
 };
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, info_span, trace, warn};
 use wayland_server::{protocol::wl_surface::WlSurface, Client, DisplayHandle, Resource};
 
 use x11rb::{
@@ -297,6 +297,8 @@ pub struct X11Wm {
     client_list: Vec<X11Window>,
     // bottom -> top
     client_list_stacking: Vec<X11Window>,
+
+    span: tracing::Span,
 }
 
 impl Drop for X11Wm {
@@ -370,6 +372,10 @@ impl X11Wm {
     where
         D: XwmHandler + 'static,
     {
+        let id = XwmId(next_xwm_id());
+        let span = info_span!("xwayland_wm", id = id.0);
+        let _guard = span.enter();
+
         // Create an X11 connection. XWayland only uses screen 0.
         let screen = 0;
         let stream = DefaultStream::from_unix_stream(connection)?;
@@ -491,13 +497,12 @@ impl X11Wm {
             atoms.UTF8_STRING,
             "Smithay X WM".as_bytes(),
         )?;
-        debug!(window = win, "WM Window");
+        debug!(window = win, "Created WM Window");
         conn.flush()?;
 
         let conn = Arc::new(conn);
         let source = X11Source::new(Arc::clone(&conn), win, atoms._SMITHAY_CLOSE_CONNECTION);
 
-        let id = XwmId(next_xwm_id());
         let injector = X11Injector {
             xwm: id,
             handle: handle.clone(),
@@ -508,6 +513,7 @@ impl X11Wm {
             .user_data()
             .insert_if_missing(move || injector);
 
+        drop(_guard);
         let wm = Self {
             id,
             dh,
@@ -521,11 +527,12 @@ impl X11Wm {
             windows: Vec::new(),
             client_list: Vec::new(),
             client_list_stacking: Vec::new(),
+            span,
         };
 
         handle.insert_source(source, move |event, _, data| {
             if let Err(err) = handle_event(data, id, event) {
-                warn!(id = ?id, err = ?err, "Failed to handle X11 event");
+                warn!(id = id.0, err = ?err, "Failed to handle X11 event");
             }
         })?;
         Ok(wm)
@@ -799,6 +806,7 @@ impl X11Wm {
 
 fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Result<(), ReplyOrIdError> {
     let xwm = state.xwm_state(xwmid);
+    let _guard = xwm.span.enter();
     let id = xwm.id;
     let conn = xwm.conn.clone();
 
@@ -854,6 +862,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             surface.update_properties(None)?;
             xwm.windows.push(surface.clone());
 
+            drop(_guard);
             if n.override_redirect {
                 state.new_override_redirect_window(id, surface);
             } else {
@@ -904,6 +913,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 }
 
                 surface.state.lock().unwrap().mapped_onto = Some(frame_win);
+                drop(_guard);
                 state.map_window_request(id, surface);
             }
         }
@@ -932,12 +942,14 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     &[surface.window_id()],
                 )?;
                 if surface.is_override_redirect() {
+                    drop(_guard);
                     state.mapped_override_redirect_window(id, surface);
                 }
             }
         }
         Event::ConfigureRequest(r) => {
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
+                drop(_guard);
                 // Pass the request to downstream to decide
                 state.configure_request(
                     id,
@@ -999,6 +1011,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 .find(|x| x.mapped_window_id() == Some(n.window))
                 .cloned()
             {
+                drop(_guard);
                 state.configure_notify(
                     id,
                     surface,
@@ -1016,6 +1029,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                         (n.width as i32, n.height as i32),
                     );
                     surface.state.lock().unwrap().geometry = geometry;
+                    drop(_guard);
                     state.configure_notify(
                         id,
                         surface,
@@ -1065,6 +1079,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                         }
                     }
                 }
+                drop(_guard);
                 state.unmapped_window(id, surface.clone());
                 {
                     let mut state = surface.state.lock().unwrap();
@@ -1076,6 +1091,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             if let Some(pos) = xwm.windows.iter().position(|x| x.window_id() == n.window) {
                 let surface = xwm.windows.remove(pos);
                 surface.state.lock().unwrap().alive = false;
+                drop(_guard);
                 state.destroyed_window(id, surface);
             }
         }
@@ -1136,6 +1152,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                             }
                             Ok(wl_surface) => {
                                 let surface = surface.clone();
+                                drop(_guard);
                                 X11Wm::new_surface(state, id, surface, wl_surface);
                             }
                         }
@@ -1143,6 +1160,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 }
                 x if x == xwm.atoms.WM_CHANGE_STATE => {
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
+                        drop(_guard);
                         state.minimize_request(id, surface);
                     }
                 }
@@ -1164,6 +1182,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                             .map(|reply| String::from_utf8(reply.name)),
                     );
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
+                        drop(_guard);
                         match &data[1..=2] {
                             &[x, y]
                                 if (x == xwm.atoms._NET_WM_STATE_MAXIMIZED_HORZ
@@ -1212,6 +1231,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 }
                 x if x == xwm.atoms._NET_WM_MOVERESIZE => {
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
+                        drop(_guard);
                         let data = msg.data.as_data32();
                         match data[2] {
                             x @ 0..=7 => {

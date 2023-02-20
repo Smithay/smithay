@@ -106,6 +106,10 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglG
 
         Ok(())
     }
+
+    fn identifier() -> &'static str {
+        "egl_gles"
+    }
 }
 
 // TODO: Replace with specialization impl in multigpu/mod once possible

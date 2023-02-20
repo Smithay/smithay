@@ -82,7 +82,6 @@ fn output_update(output: &Output, output_overlap: Rectangle<i32, Logical>, surfa
     );
 }
 
-#[instrument]
 fn output_enter(output: &Output, surface_list: &mut HashSet<WlWeak<WlSurface>>, surface: &WlSurface) {
     let weak = surface.downgrade();
     if !surface_list.contains(&weak) {
@@ -92,7 +91,6 @@ fn output_enter(output: &Output, surface_list: &mut HashSet<WlWeak<WlSurface>>, 
     }
 }
 
-#[instrument]
 fn output_leave(output: &Output, surface_list: &mut HashSet<WlWeak<WlSurface>>, surface: &WlSurface) {
     let weak = surface.downgrade();
     if surface_list.contains(&weak) {

@@ -105,7 +105,7 @@ use std::{
         mpsc, Arc, Mutex, Weak,
     },
 };
-use tracing::{error, info, warn};
+use tracing::{error, info, info_span, instrument, warn};
 use x11rb::{
     atom_manager,
     connection::Connection,
@@ -167,16 +167,21 @@ pub struct X11Backend {
     connection: Arc<RustConnection>,
     source: X11Source,
     inner: Arc<Mutex<X11Inner>>,
+    span: tracing::Span,
 }
 
 impl X11Backend {
     /// Initializes the X11 backend by connecting to the X server.
     pub fn new() -> Result<X11Backend, X11Error> {
+        let span = info_span!("backend_x11");
+        let _guard = span.enter();
+
         info!("Connecting to the X server");
 
         let (connection, screen_number) = RustConnection::connect(None)?;
         let connection = Arc::new(connection);
-        info!("Connected to screen {}", screen_number);
+        info!(screen = screen_number, "Connected");
+        span.record("screen", screen_number);
 
         let extensions = Extensions::check_extensions(&*connection)?;
 
@@ -205,6 +210,7 @@ impl X11Backend {
             32 => DrmFourcc::Argb8888,
             _ => unreachable!(),
         };
+        info!(?depth, visual_id, %format, "Window parameters selected");
 
         // Make a colormap
         let colormap = connection.generate_id()?;
@@ -247,10 +253,12 @@ impl X11Backend {
             devices: false,
         };
 
+        drop(_guard);
         Ok(X11Backend {
             connection,
             source,
             inner: Arc::new(Mutex::new(inner)),
+            span,
         })
     }
 
@@ -259,6 +267,7 @@ impl X11Backend {
         X11Handle {
             connection: self.connection.clone(),
             inner: self.inner.clone(),
+            span: self.span.clone(),
         }
     }
 }
@@ -278,6 +287,7 @@ enum EGLInitError {
 pub struct X11Handle {
     connection: Arc<RustConnection>,
     inner: Arc<Mutex<X11Inner>>,
+    span: tracing::Span,
 }
 
 impl X11Handle {
@@ -299,6 +309,7 @@ impl X11Handle {
     /// Returns the DRM node the X server uses for direct rendering.
     ///
     /// The DRM node may be used to create a [`gbm::Device`] to allocate buffers.
+    #[instrument(parent = &self.span, skip(self), ret, err)]
     pub fn drm_node(&self) -> Result<(DrmNode, OwnedFd), X11Error> {
         // Kernel documentation explains why we should prefer the node to be a render node:
         // https://kernel.readthedocs.io/en/latest/gpu/drm-uapi.html
@@ -332,6 +343,7 @@ impl X11Handle {
     /// Creates a surface that allocates and presents buffers to the window.
     ///
     /// This will fail if the window has already been used to create a surface.
+    #[instrument(parent = &self.span, skip(self, allocator, modifiers))]
     pub fn create_surface<A: Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>(
         &self,
         window: &Window,
@@ -385,6 +397,7 @@ impl X11Handle {
             height: size.h,
             buffer: None,
             resize: recv,
+            span: self.span.clone(),
         })
     }
 
@@ -435,6 +448,7 @@ impl<'a> WindowBuilder<'a> {
 
     /// Creates a window using the options specified in the builder.
     pub fn build(self, handle: &X11Handle) -> Result<Window, X11Error> {
+        let _guard = handle.span.enter();
         let connection = handle.connection();
 
         let inner = &mut *handle.inner.lock().unwrap();
@@ -542,6 +556,7 @@ impl EventSource for X11Backend {
     {
         let connection = self.connection.clone();
         let inner = self.inner.clone();
+        let _guard = self.span.enter();
 
         let post_action = self
             .source

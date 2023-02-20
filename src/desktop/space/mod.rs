@@ -19,6 +19,7 @@ use crate::{
     wayland::shell::wlr_layer::Layer,
 };
 use std::{collections::HashMap, fmt};
+use tracing::{debug, info_span, instrument};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_surface::WlSurface;
 
@@ -54,6 +55,7 @@ pub struct Space<E: SpaceElement> {
     // in z-order, back to front
     elements: Vec<InnerElement<E>>,
     outputs: Vec<Output>,
+    span: tracing::Span,
 }
 
 impl<E: SpaceElement> PartialEq for Space<E> {
@@ -70,10 +72,14 @@ impl<E: SpaceElement> Drop for Space<E> {
 
 impl<E: SpaceElement> Default for Space<E> {
     fn default() -> Self {
+        let id = next_space_id();
+        let span = info_span!("desktop_space", id);
+
         Self {
-            id: next_space_id(),
+            id,
             elements: Default::default(),
             outputs: Default::default(),
+            span,
         }
     }
 }
@@ -252,10 +258,10 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// *Note:* Remapping an output does reset it's damage memory.
     pub fn map_output<P: Into<Point<i32, Logical>>>(&mut self, output: &Output, location: P) {
         let mut state = output_state(self.id, output);
-        *state = OutputState {
-            location: location.into(),
-        };
+        let location = location.into();
+        *state = OutputState { location };
         if !self.outputs.contains(output) {
+            debug!(parent: &self.span, output = output.name(), "Mapping output at {:?}", location);
             self.outputs.push(output.clone());
         }
     }
@@ -272,6 +278,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         if !self.outputs.contains(output) {
             return;
         }
+        debug!(parent: &self.span, output = output.name(), "Unmapping output");
         if let Some(map) = output.user_data().get::<OutputUserdata>() {
             map.borrow_mut().remove(&self.id);
         }
@@ -371,6 +378,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// *Note:* Because this is not rendering a specific output,
     /// this will not contain layer surfaces.
     /// Use [`Space::render_elements_for_output`], if you care about this.
+    #[instrument(skip(self, renderer, scale), parent = &self.span)]
     pub fn render_elements_for_region<'a, R: Renderer, S: Into<Scale<f64>>>(
         &'a self,
         renderer: &mut R,
@@ -404,6 +412,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     }
 
     /// Retrieve the render elements for an output
+    #[instrument(skip(self, renderer), parent = &self.span)]
     pub fn render_elements_for_output<
         'a,
         #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
@@ -559,6 +568,7 @@ crate::backend::renderer::element::render_elements! {
 /// *Note*: If the `wayland_frontend`-feature is enabled
 /// this will include layer-shell surfaces added to this
 /// outputs [`LayerMap`].
+#[instrument(skip(spaces, renderer))]
 pub fn space_render_elements<
     'a,
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
@@ -608,6 +618,7 @@ where
     };
 
     for space in spaces {
+        let _guard = space.span.enter();
         if let Some(output_geo) = space.output_geometry(output) {
             render_elements.extend(
                 space

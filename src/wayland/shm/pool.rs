@@ -13,7 +13,7 @@ use nix::{
         signal::{self, SigAction, SigHandler, Signal},
     },
 };
-use tracing::{debug, trace};
+use tracing::{debug, instrument, trace};
 
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
 
@@ -37,6 +37,7 @@ pub enum ResizeError {
 }
 
 impl Pool {
+    #[instrument(skip_all, name = "wayland_shm")]
     pub fn new(fd: OwnedFd, size: NonZeroUsize) -> Result<Pool, OwnedFd> {
         let memmap = match MemMap::new(fd.as_raw_fd(), size) {
             Ok(memmap) => memmap,
@@ -70,6 +71,7 @@ impl Pool {
         self.map.read().unwrap().size
     }
 
+    #[instrument(skip_all, name = "wayland_shm")]
     pub fn with_data_slice<T, F: FnOnce(&[u8]) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {
@@ -106,6 +108,7 @@ impl Pool {
         })
     }
 
+    #[instrument(skip_all, name = "wayland_shm")]
     pub fn with_data_slice_mut<T, F: FnOnce(&mut [u8]) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {

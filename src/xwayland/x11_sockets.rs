@@ -28,7 +28,7 @@ pub(crate) fn prepare_x11_sockets(
                     // we got a lockfile, try and create the socket
                     match open_x11_sockets_for_display(d) {
                         Ok(sockets) => return Ok((lock, sockets)),
-                        Err(err) => warn!("Failed to create sockets: {}", err),
+                        Err(err) => warn!(display = d, "Failed to create sockets: {}", err),
                     }
                 }
             }

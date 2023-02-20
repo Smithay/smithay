@@ -34,7 +34,7 @@ use crate::{
     utils::{Buffer as BufferCoords, Size},
 };
 
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, info_span, instrument, trace, warn};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 lazy_static::lazy_static! {
@@ -79,12 +79,13 @@ pub struct EGLDisplay {
     dmabuf_import_formats: HashSet<DrmFormat>,
     dmabuf_render_formats: HashSet<DrmFormat>,
     surface_type: ffi::EGLint,
+    pub(super) span: tracing::Span,
 }
 
 unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
     native: &N,
     dp_extensions: &[String],
-) -> Result<*const c_void, Error> {
+) -> Result<(*const c_void, &'static str), Error> {
     for platform in native.supported_platforms() {
         debug!("Trying EGL platform: {}", platform.platform_name);
 
@@ -129,7 +130,7 @@ unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
         };
 
         info!("Successfully selected EGL platform: {}", platform.platform_name);
-        return Ok(display);
+        return Ok((display, platform.platform_name));
     }
 
     error!("Unable to find suitable EGL platform");
@@ -142,10 +143,21 @@ impl EGLDisplay {
     where
         N: EGLNativeDisplay + 'static,
     {
+        let span = info_span!(
+            "egl",
+            platform = tracing::field::Empty,
+            native = tracing::field::Empty,
+            version = tracing::field::Empty,
+        );
+        if let Some(value) = native.identifier() {
+            span.record("native", value);
+        }
+
         let dp_extensions = ffi::make_sure_egl_is_loaded()?;
         debug!("Supported EGL client extensions: {:?}", dp_extensions);
         // we create an EGLDisplay
-        let display = unsafe { select_platform_display(&native, &dp_extensions)? };
+        let (display, platform) = unsafe { select_platform_display(&native, &dp_extensions)? };
+        span.record("platform", platform);
 
         // We can then query the egl api version
         let egl_version = unsafe {
@@ -163,6 +175,7 @@ impl EGLDisplay {
 
             (major, minor)
         };
+        span.record("version", tracing::field::debug(egl_version));
 
         // the list of extensions supported by the client once initialized is different from the
         // list of extensions obtained earlier
@@ -191,6 +204,7 @@ impl EGLDisplay {
             extensions,
             dmabuf_import_formats,
             dmabuf_render_formats,
+            span,
         })
     }
 
@@ -201,6 +215,8 @@ impl EGLDisplay {
     /// - The display must be created from the system default EGL library (`dlopen("libEGL.so")`)
     /// - The `display` and `config` must be valid for the lifetime of the returned display and any handles created by this display (using [`EGLDisplay::get_display_handle`])
     pub unsafe fn from_raw(display: *const c_void, config_id: *const c_void) -> Result<EGLDisplay, Error> {
+        let span = info_span!("egl", platform = "unknown/raw", version = tracing::field::Empty);
+
         assert!(!display.is_null(), "EGLDisplay pointer is null");
         assert!(!config_id.is_null(), "EGL configuration id pointer is null");
 
@@ -232,6 +248,7 @@ impl EGLDisplay {
             info!("EGL Version: {:?}", (major, minor));
             (major, minor)
         };
+        span.record("version", tracing::field::debug(egl_version));
 
         let extensions = EGLDisplay::get_extensions(egl_version, display)?;
         info!("Supported EGL display extensions: {:?}", extensions);
@@ -271,6 +288,7 @@ impl EGLDisplay {
             extensions,
             dmabuf_import_formats,
             dmabuf_render_formats,
+            span,
         })
     }
 
@@ -520,6 +538,7 @@ impl EGLDisplay {
 
     /// Exports an [`EGLImage`] as a [`Dmabuf`]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    #[instrument(level = "trace", skip(self), parent = &self.span, err)]
     pub fn create_dmabuf_from_image(
         &self,
         image: EGLImage,
@@ -602,6 +621,7 @@ impl EGLDisplay {
     }
 
     /// Imports a [`Dmabuf`] as an [`EGLImage`]
+    #[instrument(level = "trace", skip(self), parent = &self.span, err)]
     pub fn create_image_from_dmabuf(&self, dmabuf: &Dmabuf) -> Result<EGLImage, Error> {
         if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
             && !self

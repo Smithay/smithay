@@ -19,7 +19,7 @@ use crate::{
     utils::user_data::UserDataMap,
 };
 
-use tracing::{info, trace};
+use tracing::{info, info_span, instrument, trace};
 
 /// EGL context for rendering
 #[derive(Debug)]
@@ -30,6 +30,7 @@ pub struct EGLContext {
     pixel_format: Option<PixelFormat>,
     user_data: Arc<UserDataMap>,
     externally_managed: bool,
+    pub(crate) span: tracing::Span,
 }
 
 // SAFETY: A context can be sent to another thread when this context is not current.
@@ -58,6 +59,8 @@ impl EGLContext {
         let display = EGLDisplay::from_raw(display, config_id)?;
         let pixel_format = display.get_pixel_format(config_id)?;
 
+        let span = info_span!(parent: &display.span, "egl_context");
+
         Ok(EGLContext {
             context,
             display,
@@ -65,6 +68,7 @@ impl EGLContext {
             pixel_format: Some(pixel_format),
             user_data: Arc::new(UserDataMap::default()),
             externally_managed: true,
+            span,
         })
     }
 
@@ -102,6 +106,9 @@ impl EGLContext {
         shared: Option<&EGLContext>,
         config: Option<(GlAttributes, PixelFormatRequirements)>,
     ) -> Result<EGLContext, Error> {
+        let span = info_span!(parent: &display.span, "egl_context");
+        let _guard = span.enter();
+
         let (pixel_format, config_id) = match config {
             Some((attributes, reqs)) => {
                 let (format, config_id) = display.choose_config(attributes, reqs)?;
@@ -182,6 +189,7 @@ impl EGLContext {
 
         info!("EGL context created");
 
+        drop(_guard);
         Ok(EGLContext {
             context,
             display: display.clone(),
@@ -193,6 +201,7 @@ impl EGLContext {
                 Arc::new(UserDataMap::default())
             },
             externally_managed: false,
+            span,
         })
     }
 
@@ -202,6 +211,7 @@ impl EGLContext {
     ///
     /// This function is marked unsafe, because the context cannot be made current on another thread without
     /// being unbound again (see [`EGLContext::unbind`]).
+    #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub unsafe fn make_current(&self) -> Result<(), MakeCurrentError> {
         wrap_egl_call(|| {
             ffi::egl::MakeCurrent(
@@ -233,6 +243,7 @@ impl EGLContext {
     ///
     /// This function is marked unsafe, because the context cannot be made current on another thread without
     /// being unbound again (see [`EGLContext::unbind`]).
+    #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub unsafe fn make_current_with_draw_and_read_surface(
         &self,
         draw_surface: &EGLSurface,
@@ -270,6 +281,7 @@ impl EGLContext {
     /// Unbinds this context from the current thread, if set.
     ///
     /// This does nothing if this context is not the current context.
+    #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub fn unbind(&self) -> Result<(), MakeCurrentError> {
         if self.is_current() {
             wrap_egl_call(|| unsafe {
@@ -318,6 +330,7 @@ impl EGLContext {
 impl Drop for EGLContext {
     fn drop(&mut self) {
         if !self.externally_managed {
+            let _guard = self.span.enter();
             unsafe {
                 // We need to ensure the context is unbound, otherwise it egl stalls the destroy call
                 // ignore failures at this point

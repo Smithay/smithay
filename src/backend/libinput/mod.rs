@@ -23,7 +23,7 @@ use std::{
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
-use tracing::{info, trace};
+use tracing::{info, info_span, trace};
 
 mod tablet;
 
@@ -35,14 +35,24 @@ mod tablet;
 pub struct LibinputInputBackend {
     context: libinput::Libinput,
     token: Option<Token>,
+    span: tracing::Span,
 }
 
 impl LibinputInputBackend {
     /// Initialize a new [`LibinputInputBackend`] from a given already initialized
     /// [libinput context](libinput::Libinput).
     pub fn new(context: libinput::Libinput) -> Self {
+        let span = info_span!("backend_libinput");
+        let _guard = span.enter();
+
         info!("Initializing a libinput backend");
-        LibinputInputBackend { context, token: None }
+
+        drop(_guard);
+        LibinputInputBackend {
+            context,
+            token: None,
+            span,
+        }
     }
 
     /// Returns a reference to the underlying libinput context
@@ -626,6 +636,7 @@ impl EventSource for LibinputInputBackend {
         F: FnMut(Self::Event, &mut ()) -> Self::Ret,
     {
         if Some(token) == self.token {
+            let _guard = self.span.enter();
             self.context.dispatch()?;
 
             for event in &mut self.context {

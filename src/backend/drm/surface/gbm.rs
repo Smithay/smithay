@@ -14,7 +14,7 @@ use crate::backend::drm::{DrmError, DrmSurface};
 use crate::backend::SwapBuffersError;
 use crate::utils::{DevPath, Physical, Point, Rectangle, Transform};
 
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info_span, instrument, trace, warn};
 
 use super::{PlaneConfig, PlaneDamageClips, PlaneState};
 
@@ -28,6 +28,7 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static,
     next_fb: Option<Slot<BufferObject<()>>>,
     swapchain: Swapchain<A>,
     drm: Arc<DrmSurface>,
+    span: tracing::Span,
 }
 
 // we cannot simply pick the first supported format of the intersection of *all* formats, because:
@@ -57,6 +58,9 @@ where
         mut allocator: A,
         renderer_formats: HashSet<Format>,
     ) -> Result<GbmBufferedSurface<A, U>, Error<A::Error>> {
+        let span = info_span!(parent: drm.span(), "drm_gbm");
+        let _guard = span.enter();
+
         let mut error = None;
         let drm = Arc::new(drm);
 
@@ -64,6 +68,7 @@ where
             debug!("Testing color format: {}", format);
             match Self::new_internal(drm.clone(), allocator, renderer_formats.clone(), *format) {
                 Ok((current_fb, swapchain)) => {
+                    drop(_guard);
                     return Ok(GbmBufferedSurface {
                         current_fb,
                         pending_fb: None,
@@ -71,6 +76,7 @@ where
                         next_fb: None,
                         swapchain,
                         drm,
+                        span,
                     });
                 }
                 Err((alloc, err)) => {
@@ -224,6 +230,7 @@ where
     ///
     /// *Note*: This function can be called multiple times and
     /// will return the same buffer until it is queued (see [`GbmBufferedSurface::queue_buffer`]).
+    #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub fn next_buffer(&mut self) -> Result<(Dmabuf, u8), Error<A::Error>> {
         if self.next_fb.is_none() {
             let slot = self

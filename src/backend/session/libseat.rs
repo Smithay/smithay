@@ -25,7 +25,7 @@ use calloop::{
 
 use crate::backend::session::{AsErrno, Event as SessionEvent, Session};
 
-use tracing::{debug, error};
+use tracing::{debug, error, info_span, instrument};
 
 #[derive(Debug)]
 struct LibSeatSessionImpl {
@@ -45,6 +45,7 @@ impl Drop for LibSeatSessionImpl {
 pub struct LibSeatSession {
     internal: Weak<LibSeatSessionImpl>,
     seat_name: String,
+    span: tracing::Span,
 }
 
 /// [`SessionNotifier`] via the libseat
@@ -53,11 +54,14 @@ pub struct LibSeatSessionNotifier {
     internal: Rc<LibSeatSessionImpl>,
     rx: Channel<SeatEvent>,
     token: Option<Token>,
+    span: tracing::Span,
 }
 
 impl LibSeatSession {
     /// Tries to create a new session via libseat.
     pub fn new() -> Result<(LibSeatSession, LibSeatSessionNotifier), Error> {
+        let span = info_span!("backend_session", "type" = "libseat");
+        let _guard = span.enter();
         let (tx, rx) = calloop::channel::channel();
 
         let seat = {
@@ -77,6 +81,7 @@ impl LibSeatSession {
             )
         };
 
+        drop(_guard);
         seat.map(|mut seat| {
             let seat_name = seat.name().to_owned();
 
@@ -94,12 +99,14 @@ impl LibSeatSession {
             let session = LibSeatSession {
                 internal: Rc::downgrade(&internal),
                 seat_name,
+                span: span.clone(),
             };
 
             let notifier = LibSeatSessionNotifier {
                 internal,
                 rx,
                 token: None,
+                span,
             };
 
             (session, notifier)
@@ -111,6 +118,7 @@ impl LibSeatSession {
 impl Session for LibSeatSession {
     type Error = Error;
 
+    #[instrument(parent = &self.span, skip(self))]
     fn open(&mut self, path: &Path, _flags: OFlag) -> Result<RawFd, Self::Error> {
         if let Some(session) = self.internal.upgrade() {
             debug!("Opening device: {:?}", path);
@@ -129,6 +137,7 @@ impl Session for LibSeatSession {
         }
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     fn close(&mut self, fd: RawFd) -> Result<(), Self::Error> {
         if let Some(session) = self.internal.upgrade() {
             debug!("Closing device: {:?}", fd);
@@ -153,6 +162,7 @@ impl Session for LibSeatSession {
         }
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     fn change_vt(&mut self, vt: i32) -> Result<(), Self::Error> {
         if let Some(session) = self.internal.upgrade() {
             debug!("Session switch: {:?}", vt);
@@ -185,6 +195,7 @@ impl LibSeatSessionNotifier {
         LibSeatSession {
             internal: Rc::downgrade(&self.internal),
             seat_name: self.internal.seat.borrow_mut().name().to_owned(),
+            span: self.span.clone(),
         }
     }
 }

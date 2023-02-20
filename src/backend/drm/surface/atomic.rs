@@ -25,7 +25,7 @@ use crate::{
     utils::DevPath,
 };
 
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, info_span, instrument, trace, warn};
 
 use super::{PlaneConfig, PlaneState};
 
@@ -120,6 +120,7 @@ pub struct AtomicDrmSurface {
     prop_mapping: RwLock<Mapping>,
     state: RwLock<State>,
     pending: RwLock<State>,
+    pub(super) span: tracing::Span,
 }
 
 impl AtomicDrmSurface {
@@ -133,6 +134,8 @@ impl AtomicDrmSurface {
         mode: Mode,
         connectors: &[connector::Handle],
     ) -> Result<Self, Error> {
+        let span = info_span!("drm_atomic", crtc = ?crtc);
+        let _guard = span.enter();
         info!(
             "Initializing drm surface ({:?}:{:?}) with mode {:?} and connectors {:?}",
             crtc, plane, mode, connectors
@@ -150,6 +153,7 @@ impl AtomicDrmSurface {
             connectors: connectors.iter().copied().collect(),
         };
 
+        drop(_guard);
         let surface = AtomicDrmSurface {
             fd,
             active,
@@ -159,6 +163,7 @@ impl AtomicDrmSurface {
             prop_mapping: RwLock::new(prop_mapping),
             state: RwLock::new(state),
             pending: RwLock::new(pending),
+            span,
         };
 
         Ok(surface)
@@ -247,6 +252,7 @@ impl AtomicDrmSurface {
         Ok(())
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn add_connector(&self, conn: connector::Handle) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -303,6 +309,7 @@ impl AtomicDrmSurface {
         }
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn remove_connector(&self, conn: connector::Handle) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -349,6 +356,7 @@ impl AtomicDrmSurface {
         Ok(())
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn set_connectors(&self, connectors: &[connector::Handle]) -> Result<(), Error> {
         // the test would also prevent this, but the error message is far less helpful
         if connectors.is_empty() {
@@ -400,6 +408,7 @@ impl AtomicDrmSurface {
         Ok(())
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     pub fn use_mode(&self, mode: Mode) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -460,6 +469,7 @@ impl AtomicDrmSurface {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
 
+    #[instrument(parent = &self.span, skip(self, planes))]
     pub fn test_state<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
@@ -490,6 +500,7 @@ impl AtomicDrmSurface {
         Ok(result)
     }
 
+    #[instrument(parent = &self.span, skip(self, planes))]
     pub fn commit<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
@@ -504,10 +515,7 @@ impl AtomicDrmSurface {
         let mut used_planes = self.used_planes.lock().unwrap();
         let pending = self.pending.write().unwrap();
 
-        debug!(
-            "Preparing Commit.\n\tCurrent: {:?}\n\tPending: {:?}\n",
-            *current, *pending
-        );
+        debug!(current = ?*current, pending = ?*pending, ?planes, "Preparing Commit",);
 
         // we need the differences to know, which connectors need to change properties
         let current_conns = current.connectors.clone();
@@ -604,6 +612,7 @@ impl AtomicDrmSurface {
         result
     }
 
+    #[instrument(parent = &self.span, skip(self, planes))]
     pub fn page_flip<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
@@ -622,7 +631,7 @@ impl AtomicDrmSurface {
         // .. and without `AtomicCommitFlags::AllowModeset`.
         // If we would set anything here, that would require a modeset, this would fail,
         // indicating a problem in our assumptions.
-        trace!("Queueing page flip: {:?}", req);
+        trace!(?planes, "Queueing page flip: {:?}", req);
         let res = self
             .fd
             .atomic_commit(
@@ -998,6 +1007,7 @@ impl Drop for AtomicDrmSurface {
             // by the device, when switching back
             return;
         }
+        let _guard = self.span.enter();
 
         // other ttys that use no cursor, might not clear it themselves.
         // This makes sure our cursor won't stay visible.

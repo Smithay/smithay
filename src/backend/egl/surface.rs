@@ -14,7 +14,7 @@ use crate::backend::egl::{
 };
 use crate::utils::{Physical, Rectangle, Size};
 
-use tracing::debug;
+use tracing::{debug, info_span, instrument};
 
 /// EGL surface of a given EGL context for rendering
 pub struct EGLSurface {
@@ -24,6 +24,7 @@ pub struct EGLSurface {
     config_id: ffi::egl::types::EGLConfig,
     pixel_format: PixelFormat,
     damage_impl: DamageSupport,
+    span: tracing::Span,
 }
 
 impl fmt::Debug for EGLSurface {
@@ -60,6 +61,15 @@ impl EGLSurface {
     where
         N: EGLNativeSurface + Send + 'static,
     {
+        let span = info_span!(
+            parent: &display.span,
+            "egl_surface",
+            native = tracing::field::Empty
+        );
+        if let Some(value) = native.identifier() {
+            span.record("native", value);
+        }
+
         let surface = native.create(&display.get_display_handle(), config)?;
         if surface == ffi::egl::NO_SURFACE {
             return Err(EGLError::BadSurface);
@@ -72,6 +82,7 @@ impl EGLSurface {
             config_id: config,
             pixel_format,
             damage_impl: display.supports_damage_impl(),
+            span,
         })
     }
 
@@ -122,6 +133,7 @@ impl EGLSurface {
         };
         if ret_h == ffi::egl::FALSE || ret_w == ffi::egl::FALSE {
             debug!(
+                parent: &self.span,
                 "Failed to query size value for surface {:?}: {}",
                 self,
                 EGLError::from_last_call().unwrap_err()
@@ -133,6 +145,7 @@ impl EGLSurface {
     }
 
     /// Swaps buffers at the end of a frame.
+    #[instrument(level = "trace", parent = &self.span, skip(self), err)]
     pub fn swap_buffers(
         &self,
         damage: Option<&mut [Rectangle<i32, Physical>]>,

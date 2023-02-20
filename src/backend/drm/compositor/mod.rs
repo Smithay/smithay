@@ -126,7 +126,7 @@ use ::gbm::{BufferObject, BufferObjectFlags};
 use drm::control::{connector, crtc, framebuffer, plane, Mode};
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::IndexMap;
-use tracing::{debug, info, instrument, trace, warn};
+use tracing::{debug, info, info_span, instrument, trace, warn};
 use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
 
 use crate::{
@@ -150,7 +150,7 @@ use crate::{
         SwapBuffersError,
     },
     output::Output,
-    utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
 use super::{DrmDeviceFd, DrmSurface, PlaneClaim, PlaneInfo, Planes};
@@ -1078,6 +1078,7 @@ where
     >,
 
     debug_flags: DebugFlags,
+    span: tracing::Span,
 }
 
 // we cannot simply pick the first supported format of the intersection of *all* formats, because:
@@ -1127,6 +1128,14 @@ where
         cursor_size: Size<u32, BufferCoords>,
         gbm: Option<GbmDevice<G>>,
     ) -> FrameResult<Self, A, F> {
+        let span = info_span!(
+            parent: None,
+            "drm_compositor",
+            output = output.name(),
+            device = ?surface.dev_path(),
+            crtc = ?surface.crtc(),
+        );
+
         let mut error = None;
         let surface = Arc::new(surface);
         let mut planes = match planes {
@@ -1183,6 +1192,7 @@ where
                         planes,
                         element_states: IndexMap::new(),
                         debug_flags: DebugFlags::empty(),
+                        span,
                     };
 
                     return Ok(drm_renderer);
@@ -1353,7 +1363,7 @@ where
     }
 
     /// Render the next frame
-    #[instrument(skip_all)]
+    #[instrument(parent = &self.span, skip_all)]
     pub fn render_frame<'a, R, E, Target>(
         &'a mut self,
         renderer: &mut R,
@@ -2265,7 +2275,7 @@ where
 
         // we no not have to re-render but update the planes location
         if !render && reposition {
-            info!("repositioning cursor plane");
+            trace!("repositioning cursor plane");
             let mut plane_state = previous_state.plane_state(plane_info.handle).unwrap().clone();
             plane_state.skip = false;
             let mut config = plane_state.config.as_mut().unwrap();

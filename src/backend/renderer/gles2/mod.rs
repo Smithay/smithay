@@ -16,7 +16,7 @@ use std::{
         mpsc::{channel, Receiver, Sender},
     },
 };
-use tracing::{debug, error, info, instrument, span, span::EnteredSpan, trace, warn, Level};
+use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn, Level};
 
 #[cfg(feature = "wayland_frontend")]
 use std::{cell::RefCell, collections::HashMap};
@@ -288,6 +288,7 @@ pub struct Gles2Renderer {
     supports_instancing: bool,
     debug_flags: DebugFlags,
     _not_send: *mut (),
+    span: tracing::Span,
 }
 
 struct RendererId(usize);
@@ -309,7 +310,7 @@ pub struct Gles2Frame<'frame> {
     transform: Transform,
     size: Size<i32, Physical>,
     finished: AtomicBool,
-    _span: EnteredSpan,
+    span: EnteredSpan,
 }
 
 impl<'frame> fmt::Debug for Gles2Frame<'frame> {
@@ -573,8 +574,10 @@ impl Gles2Renderer {
     /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
     /// - Texture filtering starts with Linear-downscaling and Linear-upscaling
-    #[instrument(skip_all)]
     pub unsafe fn new(context: EGLContext) -> Result<Gles2Renderer, Gles2Error> {
+        let span = info_span!(parent: &context.span, "renderer_gles2");
+        let _guard = span.enter();
+
         context.make_current()?;
 
         let (gl, gl_version, exts, supports_instancing) = {
@@ -663,6 +666,8 @@ impl Gles2Renderer {
             .user_data()
             .insert_if_missing(|| RendererId(next_renderer_id()));
         let (tx, rx) = channel();
+
+        drop(_guard);
         let renderer = Gles2Renderer {
             gl,
             egl: context,
@@ -683,6 +688,7 @@ impl Gles2Renderer {
             supports_instancing,
             debug_flags: DebugFlags::empty(),
             _not_send: std::ptr::null_mut(),
+            span,
         };
         renderer.egl.unbind()?;
         Ok(renderer)
@@ -760,7 +766,7 @@ impl Gles2Renderer {
 
 #[cfg(feature = "wayland_frontend")]
 impl ImportMemWl for Gles2Renderer {
-    #[instrument(skip(self))]
+    #[instrument(parent = &self.span, skip(self))]
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -903,6 +909,7 @@ impl ImportMemWl for Gles2Renderer {
 }
 
 impl ImportMem for Gles2Renderer {
+    #[instrument(parent = &self.span, skip(self))]
     fn import_memory(
         &mut self,
         data: &[u8],
@@ -952,6 +959,7 @@ impl ImportMem for Gles2Renderer {
         Ok(texture)
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     fn update_memory(
         &mut self,
         texture: &<Self as Renderer>::TextureId,
@@ -1016,6 +1024,7 @@ impl ImportEgl for Gles2Renderer {
         self.egl_reader.as_ref()
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     fn import_egl_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -1068,6 +1077,7 @@ impl ImportEgl for Gles2Renderer {
 }
 
 impl ImportDma for Gles2Renderer {
+    #[instrument(parent = &self.span, skip(self))]
     fn import_dmabuf(
         &mut self,
         buffer: &Dmabuf,
@@ -1164,6 +1174,7 @@ impl Gles2Renderer {
 impl ExportMem for Gles2Renderer {
     type TextureMapping = Gles2Mapping;
 
+    #[instrument(parent = &self.span, skip(self))]
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, BufferCoord>,
@@ -1197,6 +1208,7 @@ impl ExportMem for Gles2Renderer {
         })
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     fn copy_texture(
         &mut self,
         texture: &Self::TextureId,
@@ -1242,6 +1254,7 @@ impl ExportMem for Gles2Renderer {
         })
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     fn map_texture<'a>(
         &mut self,
         texture_mapping: &'a Self::TextureMapping,
@@ -1275,6 +1288,7 @@ impl ExportMem for Gles2Renderer {
 }
 
 impl ExportDma for Gles2Renderer {
+    #[instrument(parent = &self.span, skip(self))]
     fn export_texture(&mut self, texture: &Gles2Texture) -> Result<Dmabuf, Gles2Error> {
         self.make_current()?;
 
@@ -1324,6 +1338,7 @@ impl ExportDma for Gles2Renderer {
         res
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     fn export_framebuffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Dmabuf, Gles2Error> {
         self.make_current()?;
 
@@ -1426,6 +1441,7 @@ impl ExportDma for Gles2Renderer {
 }
 
 impl Bind<Rc<EGLSurface>> for Gles2Renderer {
+    #[instrument(parent = &self.span, skip(self))]
     fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), Gles2Error> {
         self.unbind()?;
         self.target = Some(Gles2Target::Surface(surface));
@@ -1435,6 +1451,7 @@ impl Bind<Rc<EGLSurface>> for Gles2Renderer {
 }
 
 impl Bind<Dmabuf> for Gles2Renderer {
+    #[instrument(parent = &self.span, skip(self))]
     fn bind(&mut self, dmabuf: Dmabuf) -> Result<(), Gles2Error> {
         self.unbind()?;
         self.make_current()?;
@@ -1507,6 +1524,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
 }
 
 impl Bind<Gles2Texture> for Gles2Renderer {
+    #[instrument(parent = &self.span, skip(self))]
     fn bind(&mut self, texture: Gles2Texture) -> Result<(), Gles2Error> {
         self.unbind()?;
         self.make_current()?;
@@ -1543,6 +1561,7 @@ impl Bind<Gles2Texture> for Gles2Renderer {
 }
 
 impl Offscreen<Gles2Texture> for Gles2Renderer {
+    #[instrument(parent = &self.span, skip(self))]
     fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Gles2Texture, Gles2Error> {
         self.make_current()?;
         let tex = unsafe {
@@ -1568,6 +1587,7 @@ impl Offscreen<Gles2Texture> for Gles2Renderer {
 }
 
 impl Bind<Gles2Renderbuffer> for Gles2Renderer {
+    #[instrument(parent = &self.span, skip(self))]
     fn bind(&mut self, renderbuffer: Gles2Renderbuffer) -> Result<(), Gles2Error> {
         self.unbind()?;
         self.make_current()?;
@@ -1604,6 +1624,7 @@ impl Bind<Gles2Renderbuffer> for Gles2Renderer {
 }
 
 impl Offscreen<Gles2Renderbuffer> for Gles2Renderer {
+    #[instrument(parent = &self.span, skip(self))]
     fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Gles2Renderbuffer, Gles2Error> {
         self.make_current()?;
         unsafe {
@@ -1626,6 +1647,7 @@ impl<Target> Blit<Target> for Gles2Renderer
 where
     Self: Bind<Target>,
 {
+    #[instrument(parent = &self.span, skip(self, to))]
     fn blit_to(
         &mut self,
         to: Target,
@@ -1646,6 +1668,7 @@ where
         result
     }
 
+    #[instrument(parent = &self.span, skip(self, from))]
     fn blit_from(
         &mut self,
         from: Target,
@@ -1770,6 +1793,7 @@ impl Unbind for Gles2Renderer {
 
 impl Drop for Gles2Renderer {
     fn drop(&mut self) {
+        let _guard = self.span.enter();
         unsafe {
             if self.egl.make_current().is_ok() {
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
@@ -1856,6 +1880,7 @@ impl Renderer for Gles2Renderer {
         Ok(())
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     fn render(
         &mut self,
         mut output_size: Size<i32, Physical>,
@@ -1899,7 +1924,7 @@ impl Renderer for Gles2Renderer {
         let flip180 = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
 
         let current_projection = flip180 * transform.matrix() * renderer;
-        let span = span!(Level::INFO, "frame", current_projection = ?current_projection, size = ?output_size, transform = ?transform).entered();
+        let span = span!(Level::INFO, "renderer_gles2_frame", current_projection = ?current_projection, size = ?output_size, transform = ?transform).entered();
 
         Ok(Gles2Frame {
             renderer: self,
@@ -1908,7 +1933,7 @@ impl Renderer for Gles2Renderer {
             transform,
             size: output_size,
             finished: AtomicBool::new(false),
-            _span: span,
+            span,
         })
     }
 
@@ -1976,6 +2001,7 @@ impl<'frame> Frame for Gles2Frame<'frame> {
         self.renderer.id()
     }
 
+    #[instrument(parent = &self.span, skip(self))]
     fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Gles2Error> {
         if at.is_empty() {
             return Ok(());
@@ -2096,7 +2122,7 @@ impl<'frame> Frame for Gles2Frame<'frame> {
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), parent = &self.span)]
     fn render_texture_from_to(
         &mut self,
         texture: &Gles2Texture,
@@ -2193,6 +2219,8 @@ impl<'frame> Frame for Gles2Frame<'frame> {
 
 impl<'frame> Gles2Frame<'frame> {
     fn finish_internal(&mut self) -> Result<(), Gles2Error> {
+        let _guard = self.span.enter();
+
         if self.finished.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
@@ -2231,7 +2259,7 @@ impl<'frame> Gles2Frame<'frame> {
     /// The given texture matrix is used to transform the instances into texture coordinates.
     /// In case the texture is rotated, flipped or y-inverted the matrix has to be set up accordingly.
     /// Additionally the matrix can be used to crop the texture.
-    #[instrument(skip(self))]
+    #[instrument(skip(self), parent = &self.span)]
     pub fn render_texture(
         &mut self,
         tex: &Gles2Texture,

@@ -80,7 +80,7 @@ use ash::{
 use libc::c_void;
 use once_cell::sync::Lazy;
 use scopeguard::ScopeGuard;
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, info_span, instrument, trace, warn};
 
 use crate::backend::vulkan::inner::DebugState;
 
@@ -187,6 +187,9 @@ impl Instance {
         );
         let requested_max_version = get_env_or_max_version(max_version);
 
+        let span = info_span!("backend_vulkan", version = tracing::field::Empty);
+        let _guard = span.enter();
+
         // Determine the maximum instance version that is possible.
         let max_version = {
             LIBRARY
@@ -207,6 +210,7 @@ impl Instance {
 
         // Pick the lower of the requested max version and max possible version
         let api_version = Version::from_raw(u32::min(max_version.to_raw(), requested_max_version.to_raw()));
+        span.record("version", tracing::field::display(api_version));
 
         let available_layers = Self::enumerate_layers()?.collect::<Vec<_>>();
         let available_extensions = Self::enumerate_extensions()?.collect::<Vec<_>>();
@@ -309,14 +313,16 @@ impl Instance {
         // Creating the debug messenger was successful, disarm the scopeguard and let InstanceInner manage
         // destroying the instance.
         let instance = ScopeGuard::into_inner(instance);
+        drop(_guard);
         let inner = InstanceInner {
             instance,
             version: api_version,
             debug_state,
+            span,
             enabled_extensions,
         };
 
-        info!(version = %api_version, "Created new instance");
+        info!("Created new instance");
         info!("Enabled instance extensions: {:?}", inner.enabled_extensions);
 
         Ok(Instance(Arc::new(inner)))
@@ -382,11 +388,14 @@ pub struct PhysicalDevice {
     info: PhdInfo,
     extensions: Vec<CString>,
     instance: Instance,
+    span: tracing::Span,
 }
 
 impl PhysicalDevice {
     /// Enumerates over all physical devices available on the system, returning an iterator of [`PhysicalDevice`]
     pub fn enumerate(instance: &Instance) -> VkResult<impl Iterator<Item = PhysicalDevice>> {
+        let _span = instance.0.span.enter();
+
         // Must clone instance or else the returned iterator has a lifetime over `&Instance`
         let instance = instance.clone();
         let devices = unsafe { instance.handle().enumerate_physical_devices() }?;
@@ -464,6 +473,7 @@ impl PhysicalDevice {
     /// Returns the major and minor numbers of the primary node which corresponds to this physical device's DRM
     /// device.
     #[cfg(feature = "backend_drm")]
+    #[instrument(parent = &self.span, skip(self))]
     pub fn primary_node(&self) -> Result<Option<DrmNode>, UnsupportedProperty> {
         let properties_drm = self.info.get_drm_properties()?;
         let node = Some(properties_drm)
@@ -481,6 +491,7 @@ impl PhysicalDevice {
     /// Note that not every device has a render node. If there is no render node (this function returns [`None`])
     /// then try to use the primary node.
     #[cfg(feature = "backend_drm")]
+    #[instrument(parent = &self.span, skip(self))]
     pub fn render_node(&self) -> Result<Option<DrmNode>, UnsupportedProperty> {
         let properties_drm = self.info.get_drm_properties()?;
         let node = Some(properties_drm)
@@ -529,6 +540,7 @@ impl PhysicalDevice {
     /// Returns properties for each supported DRM modifier for the specified format.
     ///
     /// Returns [`Err`] if the `VK_EXT_image_drm_format_modifier` extension is not supported.
+    #[instrument(parent = &self.span, skip(self))]
     pub fn get_format_modifier_properties(
         &self,
         format: vk::Format,

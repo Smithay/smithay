@@ -1,5 +1,5 @@
 use std::fmt;
-use tracing::{error, trace, warn};
+use tracing::{error, instrument, trace, warn};
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::{
@@ -41,6 +41,7 @@ where
     /// The keymap will automatically be sent to it
     ///
     /// This should be done first, before anything else is done with this keyboard.
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub(crate) fn new_kbd(&self, kbd: WlKeyboard) {
         trace!("Sending keymap to client");
 

@@ -4,6 +4,7 @@ use std::{
 };
 
 use drm_fourcc::DrmFourcc;
+use tracing::instrument;
 use x11rb::{connection::Connection, protocol::xproto::PixmapWrapper, rust_connection::RustConnection};
 
 use crate::{
@@ -46,6 +47,7 @@ pub struct X11Surface {
     pub(crate) width: u16,
     pub(crate) height: u16,
     pub(crate) buffer: Option<Slot<Dmabuf>>,
+    pub(crate) span: tracing::Span,
 }
 
 impl X11Surface {
@@ -66,6 +68,7 @@ impl X11Surface {
     /// You may bind this buffer to a renderer to render.
     /// This function will return the same buffer until [`submit`](Self::submit) is called
     /// or [`reset_buffers`](Self::reset_buffers) is used to reset the buffers.
+    #[instrument(parent = &self.span, skip(self))]
     pub fn buffer(&mut self) -> Result<(Dmabuf, u8), AllocateBuffersError> {
         if let Some(new_size) = self.resize.try_iter().last() {
             self.resize(new_size);
@@ -86,6 +89,7 @@ impl X11Surface {
     }
 
     /// Consume and submit the buffer to the window.
+    #[instrument(parent = &self.span, skip(self))]
     pub fn submit(&mut self) -> Result<(), X11Error> {
         if let Some(connection) = self.connection.upgrade() {
             // Get a new buffer
@@ -116,6 +120,7 @@ impl X11Surface {
     }
 
     /// Resets the internal buffers, e.g. to reset age values
+    #[instrument(parent = &self.span, skip(self))]
     pub fn reset_buffers(&mut self) {
         self.swapchain.reset_buffers();
         self.buffer = None;

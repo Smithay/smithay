@@ -318,6 +318,7 @@ impl Output {
     /// internal list.
     ///
     /// By default, transform status is `Normal`, and scale is `1`.
+    #[instrument(skip(self), fields(output = self.name()))]
     pub fn change_current_state(
         &self,
         new_mode: Option<Mode>,

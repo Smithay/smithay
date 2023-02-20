@@ -11,6 +11,7 @@ pub struct InstanceInner {
     pub instance: ash::Instance,
     pub version: Version,
     pub debug_state: Option<DebugState>,
+    pub span: tracing::Span,
 
     /// Enabled instance extensions.
     pub enabled_extensions: Vec<&'static CStr>,

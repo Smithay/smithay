@@ -69,7 +69,7 @@ impl ListeningSocketSource {
         // should be connecting based off the WAYLAND_DISPLAY or WAYLAND_SOCKET environment variables.
         let socket = ListeningSocket::bind_auto("wayland", 1..33)?;
 
-        info!(name = ?socket.socket_name(),"Created new socket");
+        info!(name = ?socket.socket_name(), "Created new socket");
 
         Ok(ListeningSocketSource {
             socket: Generic::new(socket, Interest::READ, Mode::Level),

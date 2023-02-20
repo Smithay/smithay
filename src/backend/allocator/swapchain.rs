@@ -7,6 +7,8 @@ use std::{
     },
 };
 
+use tracing::instrument;
+
 use crate::backend::allocator::{Allocator, Buffer, Fourcc, Modifier};
 use crate::utils::user_data::UserDataMap;
 
@@ -155,6 +157,7 @@ where
     ///
     /// The swapchain has an internal maximum of four re-usable buffers.
     /// This function returns the first free one.
+    #[instrument(level = "trace", skip_all, err)]
     pub fn acquire(&mut self) -> Result<Option<Slot<A::Buffer>>, A::Error> {
         if let Some(free_slot) = self
             .slots

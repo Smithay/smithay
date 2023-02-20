@@ -166,7 +166,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use indexmap::IndexMap;
-use tracing::{instrument, trace};
+use tracing::{info_span, instrument, trace};
 
 use crate::{
     backend::renderer::{element::RenderElementPresentationState, Frame},
@@ -259,6 +259,7 @@ impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for DamageTrackedRend
 pub struct DamageTrackedRenderer {
     mode: DamageTrackedRendererMode,
     last_state: RendererState,
+    span: tracing::Span,
 }
 
 /// Errors thrown by [`DamageTrackedRenderer::render_output`]
@@ -295,6 +296,7 @@ impl DamageTrackedRenderer {
                 transform,
             },
             last_state: Default::default(),
+            span: info_span!("renderer_damage"),
         }
     }
 
@@ -307,6 +309,7 @@ impl DamageTrackedRenderer {
         Self {
             mode: DamageTrackedRendererMode::Auto(output.clone()),
             last_state: Default::default(),
+            span: info_span!("renderer_damage", output = output.name()),
         }
     }
 
@@ -316,7 +319,7 @@ impl DamageTrackedRenderer {
     }
 
     /// Render this output
-    #[instrument(skip(renderer, elements))]
+    #[instrument(parent = &self.span, skip(renderer, elements))]
     pub fn render_output<E, R>(
         &mut self,
         renderer: &mut R,
@@ -442,7 +445,7 @@ impl DamageTrackedRenderer {
     }
 
     /// Damage this output and return the damage without actually rendering the difference
-    #[instrument(skip(elements))]
+    #[instrument(parent = &self.span, skip(elements))]
     pub fn damage_output<E>(
         &mut self,
         age: usize,

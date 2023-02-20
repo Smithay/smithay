@@ -9,7 +9,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use thiserror::Error;
-use tracing::{debug, error, info, instrument, trace};
+use tracing::{debug, error, info, info_span, instrument, trace};
 
 pub use xkbcommon::xkb::{self, keysyms, Keysym};
 
@@ -197,6 +197,7 @@ pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) keymap: Mutex<KeymapFile>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_kbds: Mutex<Vec<wayland_server::protocol::wl_keyboard::WlKeyboard>>,
+    pub(crate) span: tracing::Span,
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
@@ -380,8 +381,10 @@ impl<D: SeatHandler> ::std::cmp::PartialEq for KeyboardHandle<D> {
 
 impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Create a keyboard handler from a set of RMLVO rules
-    #[instrument]
     pub(crate) fn new(xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32) -> Result<Self, Error> {
+        let span = info_span!("input_keyboard");
+        let _guard = span.enter();
+
         info!("Initializing a xkbcommon handler with keymap query");
         let internal = KbdInternal::new(xkb_config, repeat_rate, repeat_delay).map_err(|_| {
             debug!("Loading keymap failed");
@@ -390,6 +393,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         info!(name = internal.keymap.layouts().next(), "Loaded Keymap");
 
+        drop(_guard);
         Ok(Self {
             arc: Arc::new(KbdRc {
                 #[cfg(feature = "wayland_frontend")]
@@ -397,11 +401,13 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 internal: Mutex::new(internal),
                 #[cfg(feature = "wayland_frontend")]
                 known_kbds: Mutex::new(Vec::new()),
+                span,
             }),
         })
     }
 
     #[cfg(feature = "wayland_frontend")]
+    #[instrument(parent = &self.arc.span, skip(self, keymap))]
     pub(crate) fn change_keymap(&self, keymap: xkb::Keymap) {
         let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
         let mut keymap_file = self.arc.keymap.lock().unwrap();
@@ -473,7 +479,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ///
     /// The module [`crate::wayland::seat::keysyms`] exposes definitions of all possible keysyms
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
-    #[instrument(skip(self, data, filter))]
+    #[instrument(parent = &self.arc.span, skip(self, data, filter))]
     pub fn input<T, F>(
         &self,
         data: &mut D,
@@ -526,6 +532,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
+    #[instrument(parent = &self.arc.span, skip(self, data, focus), fields(focus = focus.is_some()))]
     pub fn set_focus(&self, data: &mut D, focus: Option<<D as SeatHandler>::KeyboardFocus>, serial: Serial) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.pending_focus = focus.clone();
@@ -567,6 +574,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     }
 
     /// Change the repeat info configured for this keyboard
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub fn change_repeat_info(&self, rate: i32, delay: i32) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.repeat_delay = delay;

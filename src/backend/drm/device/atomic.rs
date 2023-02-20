@@ -13,7 +13,7 @@ use drm::control::{
 use super::DrmDeviceFd;
 use crate::{backend::drm::error::Error, utils::DevPath};
 
-use tracing::{error, trace};
+use tracing::{debug, error, info_span, trace};
 
 type OldState = (
     Vec<(connector::Handle, PropertyValueSet)>,
@@ -33,16 +33,20 @@ pub struct AtomicDrmDevice {
     pub(crate) active: Arc<AtomicBool>,
     old_state: OldState,
     pub(crate) prop_mapping: Mapping,
+    pub(super) span: tracing::Span,
 }
 
 impl AtomicDrmDevice {
     pub fn new(fd: DrmDeviceFd, active: Arc<AtomicBool>, disable_connectors: bool) -> Result<Self, Error> {
+        let span = info_span!("drm_atomic");
         let mut dev = AtomicDrmDevice {
             fd,
             active,
             old_state: (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
             prop_mapping: (HashMap::new(), HashMap::new(), HashMap::new()),
+            span,
         };
+        let _guard = dev.span.enter();
 
         // Enumerate (and save) the current device state.
         let res_handles = dev.fd.resource_handles().map_err(|source| Error::Access {
@@ -90,9 +94,11 @@ impl AtomicDrmDevice {
         // run into these errors on our own and not because previous compositors left the device
         // in a funny state.
         if disable_connectors {
+            debug!("Resetting drm device to known state");
             dev.reset_state()?;
         }
 
+        drop(_guard);
         Ok(dev)
     }
 
@@ -182,6 +188,8 @@ impl AtomicDrmDevice {
 impl Drop for AtomicDrmDevice {
     fn drop(&mut self) {
         if self.active.load(Ordering::SeqCst) {
+            let _guard = self.span.enter();
+
             // Here we restore the card/tty's to it's previous state.
             // In case e.g. getty was running on the tty sets the correct framebuffer again,
             // so that getty will be visible.
@@ -190,6 +198,8 @@ impl Drop for AtomicDrmDevice {
 
             // create an atomic mode request consisting of all properties we captured on creation.
             // TODO, check current connector status and remove deactivated connectors from this req.
+
+            debug!("Device still active, trying to restore previous state");
             let mut req = AtomicModeReq::new();
             fn add_multiple_props<T: ResourceHandle>(
                 req: &mut AtomicModeReq,
@@ -208,6 +218,7 @@ impl Drop for AtomicDrmDevice {
             add_multiple_props(&mut req, &self.old_state.2);
             add_multiple_props(&mut req, &self.old_state.3);
 
+            trace!("Previous state: {:?}", req);
             if let Err(err) = self.fd.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req) {
                 error!("Failed to restore previous state. Error: {}", err);
             }

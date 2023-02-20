@@ -377,10 +377,7 @@ pub fn run_udev() {
     // TODO: This does not necessarily depend on egl, but mesa makes no use of it without wl_drm right now
     #[cfg(feature = "egl")]
     {
-        info!(
-            "Trying to initialize EGL Hardware Acceleration via {:?}",
-            primary_gpu
-        );
+        info!(?primary_gpu, "Trying to initialize EGL Hardware Acceleration",);
 
         if renderer.bind_wl_display(&display.handle()).is_ok() {
             info!("EGL hardware-acceleration enabled");
@@ -638,10 +635,10 @@ fn scan_connectors(
             };
 
             info!(
-                "Trying to setup connector {:?}-{} with crtc {:?}",
+                ?crtc,
+                "Trying to setup connector {:?}-{}",
                 connector_info.interface(),
                 connector_info.interface_id(),
-                crtc,
             );
 
             let mode = connector_info.modes()[0];

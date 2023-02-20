@@ -133,6 +133,10 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for GbmG
 
         Ok(())
     }
+
+    fn identifier() -> &'static str {
+        "gbm_gles"
+    }
 }
 
 // TODO: Replace with specialization impl in multigpu/mod once possible

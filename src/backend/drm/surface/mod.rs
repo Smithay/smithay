@@ -532,6 +532,13 @@ impl DrmSurface {
             DrmSurfaceInternal::Legacy(surf) => surf.reset_state::<Self>(None),
         }
     }
+
+    pub(super) fn span(&self) -> &tracing::Span {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => &surf.span,
+            DrmSurfaceInternal::Legacy(surf) => &surf.span,
+        }
+    }
 }
 
 fn ensure_legacy_planes<'a>(
