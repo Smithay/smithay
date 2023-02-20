@@ -83,11 +83,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     )
                     .spawn()
                 {
-                    error!(
-                        cmd,
-                        err = ?e,
-                        "Failed to start program"
-                    );
+                    error!(cmd, err = %e, "Failed to start program");
                 }
             }
 

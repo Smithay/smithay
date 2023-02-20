@@ -533,6 +533,7 @@ impl DrmSurface {
         }
     }
 
+    #[cfg(feature = "backend_gbm")]
     pub(super) fn span(&self) -> &tracing::Span {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => &surf.span,

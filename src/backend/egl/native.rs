@@ -4,7 +4,9 @@ use super::{
     display::{DamageSupport, EGLDisplayHandle},
     ffi, wrap_egl_call, EGLDevice, SwapBuffersError,
 };
-use crate::utils::{DevPath, Physical, Rectangle};
+#[cfg(feature = "backend_gbm")]
+use crate::utils::DevPath;
+use crate::utils::{Physical, Rectangle};
 #[cfg(feature = "backend_winit")]
 use std::os::raw::c_int;
 use std::os::raw::c_void;

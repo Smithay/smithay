@@ -59,7 +59,7 @@ impl EGLContext {
         let display = EGLDisplay::from_raw(display, config_id)?;
         let pixel_format = display.get_pixel_format(config_id)?;
 
-        let span = info_span!(parent: &display.span, "egl_context");
+        let span = info_span!(parent: &display.span, "egl_context", ptr = context as usize);
 
         Ok(EGLContext {
             context,
@@ -106,8 +106,12 @@ impl EGLContext {
         shared: Option<&EGLContext>,
         config: Option<(GlAttributes, PixelFormatRequirements)>,
     ) -> Result<EGLContext, Error> {
-        let span = info_span!(parent: &display.span, "egl_context");
+        let span = info_span!(parent: &display.span, "egl_context", ptr = tracing::field::Empty, shared = tracing::field::Empty);
         let _guard = span.enter();
+
+        if let Some(shared) = shared {
+            span.record("shared", shared.context as usize);
+        }
 
         let (pixel_format, config_id) = match config {
             Some((attributes, reqs)) => {
@@ -186,6 +190,7 @@ impl EGLContext {
             )
         })
         .map_err(Error::CreationFailed)?;
+        span.record("ptr", context as usize);
 
         info!("EGL context created");
 
