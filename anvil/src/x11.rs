@@ -10,28 +10,25 @@ use crate::{
     render::*,
     state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData},
 };
+#[cfg(feature = "egl")]
+use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
 use smithay::backend::renderer::ImportMem;
-#[cfg(feature = "egl")]
-use smithay::{
-    backend::{
-        allocator::gbm::{GbmAllocator, GbmBufferFlags},
-        renderer::{ImportDma, ImportEgl},
-    },
-    delegate_dmabuf,
-    wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
-};
 use smithay::{
     backend::{
         allocator::{
             dmabuf::{Dmabuf, DmabufAllocator},
+            gbm::{GbmAllocator, GbmBufferFlags},
             vulkan::{ImageUsageFlags, VulkanAllocator},
         },
         egl::{EGLContext, EGLDisplay},
-        renderer::{damage::DamageTrackedRenderer, element::AsRenderElements, gles2::Gles2Renderer, Bind},
+        renderer::{
+            damage::DamageTrackedRenderer, element::AsRenderElements, gles2::Gles2Renderer, Bind, ImportDma,
+        },
         vulkan::{version::Version, Instance, PhysicalDevice},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
+    delegate_dmabuf,
     input::pointer::{CursorImageAttributes, CursorImageStatus},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
@@ -42,7 +39,13 @@ use smithay::{
         wayland_server::{protocol::wl_surface, Display},
     },
     utils::{DeviceFd, IsAlive, Point, Scale},
-    wayland::{compositor, input_method::InputMethodSeat},
+    wayland::{
+        compositor,
+        dmabuf::{
+            DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportError,
+        },
+        input_method::InputMethodSeat,
+    },
 };
 use tracing::{error, info, trace, warn};
 
@@ -57,16 +60,16 @@ pub struct X11Data {
     renderer: Gles2Renderer,
     damage_tracked_renderer: DamageTrackedRenderer,
     surface: X11Surface,
-    #[cfg(feature = "egl")]
-    dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
+    dmabuf_state: DmabufState,
+    _dmabuf_global: DmabufGlobal,
+    _dmabuf_default_feedback: DmabufFeedback,
     #[cfg(feature = "debug")]
     fps: fps_ticker::Fps,
 }
 
-#[cfg(feature = "egl")]
 impl DmabufHandler for AnvilState<X11Data> {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
-        &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
+        &mut self.backend_data.dmabuf_state
     }
 
     fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
@@ -77,7 +80,6 @@ impl DmabufHandler for AnvilState<X11Data> {
             .map_err(|_| ImportError::Failed)
     }
 }
-#[cfg(feature = "egl")]
 delegate_dmabuf!(AnvilState<X11Data>);
 
 impl Backend for X11Data {
@@ -168,18 +170,23 @@ pub fn run_x11() {
             .expect("Failed to create X11 surface"),
     };
 
+    #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     let mut renderer = unsafe { Gles2Renderer::new(context) }.expect("Failed to initialize renderer");
 
     #[cfg(feature = "egl")]
-    let dmabuf_state = if renderer.bind_wl_display(&display.handle()).is_ok() {
+    if renderer.bind_wl_display(&display.handle()).is_ok() {
         info!("EGL hardware-acceleration enabled");
-        let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
-        let mut state = DmabufState::new();
-        let global = state.create_global::<AnvilState<X11Data>>(&display.handle(), dmabuf_formats);
-        Some((state, global))
-    } else {
-        None
-    };
+    }
+
+    let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+    let dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
+        .build()
+        .unwrap();
+    let mut dmabuf_state = DmabufState::new();
+    let dmabuf_global = dmabuf_state.create_global_with_default_feedback::<AnvilState<X11Data>>(
+        &display.handle(),
+        &dmabuf_default_feedback,
+    );
 
     let size = {
         let s = window.size();
@@ -228,8 +235,9 @@ pub fn run_x11() {
         surface,
         renderer,
         damage_tracked_renderer,
-        #[cfg(feature = "egl")]
         dmabuf_state,
+        _dmabuf_global: dmabuf_global,
+        _dmabuf_default_feedback: dmabuf_default_feedback,
         #[cfg(feature = "debug")]
         fps: fps_ticker::Fps::default(),
     };
@@ -413,7 +421,7 @@ pub fn run_x11() {
 
                     // Send frame events so that client start drawing their next frame
                     let time = state.clock.now();
-                    post_repaint(&output, &states, &state.space, time);
+                    post_repaint(&output, &states, &state.space, None, time);
 
                     if damage.is_some() {
                         let mut output_presentation_feedback =

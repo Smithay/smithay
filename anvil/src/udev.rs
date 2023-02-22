@@ -2,7 +2,10 @@
 use std::ffi::OsString;
 use std::{
     borrow::Cow,
-    collections::hash_map::{Entry, HashMap},
+    collections::{
+        hash_map::{Entry, HashMap},
+        HashSet,
+    },
     convert::TryInto,
     os::unix::io::FromRawFd,
     path::Path,
@@ -10,20 +13,17 @@ use std::{
     time::Duration,
 };
 
+use crate::state::SurfaceDmabufFeedback;
 use crate::{
     drawing::*,
     render::*,
     shell::WindowElement,
     state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData},
 };
+#[cfg(feature = "egl")]
+use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
 use smithay::backend::renderer::ImportMem;
-#[cfg(feature = "egl")]
-use smithay::{
-    backend::renderer::{ImportDma, ImportEgl},
-    delegate_dmabuf,
-    wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
-};
 use smithay::{
     backend::{
         allocator::{
@@ -43,7 +43,7 @@ use smithay::{
             element::{texture::TextureBuffer, AsRenderElements, RenderElement, RenderElementStates},
             gles2::{Gles2Renderbuffer, Gles2Renderer},
             multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer, MultiTexture},
-            Bind, DebugFlags, ExportMem, Offscreen, Renderer,
+            Bind, DebugFlags, ExportMem, ImportDma, Offscreen, Renderer,
         },
         session::{
             libseat::{self, LibSeatSession},
@@ -53,6 +53,7 @@ use smithay::{
         vulkan::{version::Version, Instance, PhysicalDevice},
         SwapBuffersError,
     },
+    delegate_dmabuf,
     desktop::{
         space::{Space, SurfaceTree},
         utils::OutputPresentationFeedback,
@@ -77,12 +78,18 @@ use smithay::{
         },
         input::Libinput,
         nix::{fcntl::OFlag, sys::stat::dev_t},
-        wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
+        wayland_protocols::wp::{
+            linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1,
+            presentation_time::server::wp_presentation_feedback,
+        },
         wayland_server::{backend::GlobalId, protocol::wl_surface, Display, DisplayHandle},
     },
     utils::{Clock, DeviceFd, IsAlive, Logical, Monotonic, Point, Scale, Transform},
     wayland::{
         compositor,
+        dmabuf::{
+            DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportError,
+        },
         input_method::{InputMethodHandle, InputMethodSeat},
     },
 };
@@ -100,7 +107,6 @@ struct UdevOutputId {
 pub struct UdevData {
     pub session: LibSeatSession,
     dh: DisplayHandle,
-    #[cfg(feature = "egl")]
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     primary_gpu: DrmNode,
     allocator: Option<Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>>,
@@ -132,7 +138,6 @@ impl UdevData {
     }
 }
 
-#[cfg(feature = "egl")]
 impl DmabufHandler for AnvilState<UdevData> {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
@@ -147,7 +152,6 @@ impl DmabufHandler for AnvilState<UdevData> {
             .map_err(|_| ImportError::Failed)
     }
 }
-#[cfg(feature = "egl")]
 delegate_dmabuf!(AnvilState<UdevData>);
 
 impl Backend for UdevData {
@@ -215,7 +219,6 @@ pub fn run_udev() {
 
     let data = UdevData {
         dh: display.handle(),
-        #[cfg(feature = "egl")]
         dmabuf_state: None,
         session,
         primary_gpu,
@@ -349,7 +352,6 @@ pub fn run_udev() {
     }
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    #[cfg(any(feature = "egl", feature = "debug"))]
     let mut renderer = state.backend_data.gpus.single_renderer(&primary_gpu).unwrap();
 
     #[cfg(feature = "debug")]
@@ -374,21 +376,39 @@ pub fn run_udev() {
         state.backend_data.fps_texture = Some(fps_texture);
     }
 
-    // init dmabuf support with format list from our primary gpu
-    // TODO: This does not necessarily depend on egl, but mesa makes no use of it without wl_drm right now
     #[cfg(feature = "egl")]
     {
         info!(?primary_gpu, "Trying to initialize EGL Hardware Acceleration",);
-
-        if renderer.bind_wl_display(&display.handle()).is_ok() {
-            info!("EGL hardware-acceleration enabled");
-            let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
-            let mut dmabuf_state = DmabufState::new();
-            let global =
-                dmabuf_state.create_global::<AnvilState<UdevData>>(&display.handle(), dmabuf_formats);
-            state.backend_data.dmabuf_state = Some((dmabuf_state, global));
+        match renderer.bind_wl_display(&display.handle()) {
+            Ok(_) => info!("EGL hardware-acceleration enabled"),
+            Err(err) => info!(?err, "Failed to initialize EGL hardware-acceleration"),
         }
-    };
+    }
+
+    // init dmabuf support with format list from our primary gpu
+    let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+    let default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
+        .build()
+        .unwrap();
+    let mut dmabuf_state = DmabufState::new();
+    let global = dmabuf_state
+        .create_global_with_default_feedback::<AnvilState<UdevData>>(&display.handle(), &default_feedback);
+    state.backend_data.dmabuf_state = Some((dmabuf_state, global));
+
+    let gpus = &mut state.backend_data.gpus;
+    state.backend_data.backends.values_mut().for_each(|backend_data| {
+        // Update the per drm surface dmabuf feedback
+        backend_data.surfaces.values_mut().for_each(|surface_data| {
+            surface_data.dmabuf_feedback = surface_data.dmabuf_feedback.take().or_else(|| {
+                get_surface_dmabuf_feedback(
+                    primary_gpu,
+                    surface_data.render_node,
+                    gpus,
+                    &surface_data.compositor,
+                )
+            });
+        });
+    });
 
     event_loop
         .handle()
@@ -553,6 +573,11 @@ impl SurfaceComposition {
     }
 }
 
+struct DrmSurfaceDmabufFeedback {
+    render_feedback: DmabufFeedback,
+    scanout_feedback: DmabufFeedback,
+}
+
 struct SurfaceData {
     dh: DisplayHandle,
     device_id: DrmNode,
@@ -563,6 +588,7 @@ struct SurfaceData {
     fps: fps_ticker::Fps,
     #[cfg(feature = "debug")]
     fps_element: Option<FpsElement<MultiTexture>>,
+    dmabuf_feedback: Option<DrmSurfaceDmabufFeedback>,
 }
 
 impl Drop for SurfaceData {
@@ -605,7 +631,7 @@ fn scan_connectors(
 
     let mut backends = HashMap::new();
 
-    let (render_node, formats) = {
+    let (render_node, render_formats) = {
         let display = EGLDisplay::new(gbm.clone()).unwrap();
         let node = match EGLDevice::device_for_display(&display)
             .ok()
@@ -706,7 +732,7 @@ fn scan_connectors(
                 GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
 
             let compositor = if std::env::var("ANVIL_DISABLE_DRM_COMPOSITOR").is_ok() {
-                let gbm_surface = match GbmBufferedSurface::new(surface, allocator, formats.clone()) {
+                let gbm_surface = match GbmBufferedSurface::new(surface, allocator, render_formats.clone()) {
                     Ok(renderer) => renderer,
                     Err(err) => {
                         warn!("Failed to create rendering surface: {}", err);
@@ -752,7 +778,7 @@ fn scan_connectors(
                     Some(planes),
                     allocator,
                     gbm.clone(),
-                    formats.clone(),
+                    render_formats.clone(),
                     device.cursor_size(),
                     Some(gbm.clone()),
                 ) {
@@ -776,6 +802,7 @@ fn scan_connectors(
                 fps: fps_ticker::Fps::default(),
                 #[cfg(feature = "debug")]
                 fps_element,
+                dmabuf_feedback: None,
             });
 
             break;
@@ -799,6 +826,75 @@ enum DeviceAddError {
     AddNode(egl::Error),
 }
 
+fn get_surface_dmabuf_feedback(
+    primary_gpu: DrmNode,
+    render_node: DrmNode,
+    gpus: &mut GpuManager<GbmGlesBackend<Gles2Renderer>>,
+    composition: &SurfaceComposition,
+) -> Option<DrmSurfaceDmabufFeedback> {
+    let primary_formats = gpus
+        .single_renderer(&primary_gpu)
+        .ok()?
+        .dmabuf_formats()
+        .copied()
+        .collect::<HashSet<_>>();
+
+    let render_formats = gpus
+        .single_renderer(&render_node)
+        .ok()?
+        .dmabuf_formats()
+        .copied()
+        .collect::<HashSet<_>>();
+
+    let all_render_formats = primary_formats
+        .iter()
+        .copied()
+        .chain(render_formats.iter().copied())
+        .collect::<HashSet<_>>();
+
+    let surface = composition.surface();
+    let planes = surface.planes().unwrap();
+    // We limit the scan-out trache to formats we can also render from
+    // so that there is always a fallback render path available in case
+    // the supplied buffer can not be scanned out directly
+    let planes_formats = surface
+        .supported_formats(planes.primary.handle)
+        .unwrap()
+        .into_iter()
+        .chain(
+            planes
+                .overlay
+                .iter()
+                .flat_map(|p| surface.supported_formats(p.handle).unwrap()),
+        )
+        .collect::<HashSet<_>>()
+        .intersection(&all_render_formats)
+        .copied()
+        .collect::<Vec<_>>();
+
+    let builder = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), primary_formats);
+    let render_feedback = builder
+        .clone()
+        .add_preference_tranche(render_node.dev_id(), None, render_formats.clone())
+        .build()
+        .unwrap();
+
+    let scanout_feedback = builder
+        .add_preference_tranche(
+            surface.device_fd().dev_id().unwrap(),
+            Some(zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout),
+            planes_formats,
+        )
+        .add_preference_tranche(render_node.dev_id(), None, render_formats)
+        .build()
+        .unwrap();
+
+    Some(DrmSurfaceDmabufFeedback {
+        render_feedback,
+        scanout_feedback,
+    })
+}
+
 impl AnvilState<UdevData> {
     fn device_added(&mut self, device_id: dev_t, path: &Path) -> Result<(), DeviceAddError> {
         let node = DrmNode::from_dev_id(device_id).map_err(DeviceAddError::DrmNode)?;
@@ -818,7 +914,7 @@ impl AnvilState<UdevData> {
         let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
         let gbm = GbmDevice::new(fd).map_err(DeviceAddError::GbmDevice)?;
 
-        let surfaces = scan_connectors(
+        let mut surfaces = scan_connectors(
             node,
             &drm,
             &gbm,
@@ -854,6 +950,18 @@ impl AnvilState<UdevData> {
             .as_mut()
             .add_node(render_node, gbm.clone())
             .map_err(DeviceAddError::AddNode)?;
+
+        // Update the per drm surface dmabuf feedback
+        surfaces.values_mut().for_each(|surface_data| {
+            surface_data.dmabuf_feedback = surface_data.dmabuf_feedback.take().or_else(|| {
+                get_surface_dmabuf_feedback(
+                    self.backend_data.primary_gpu,
+                    surface_data.render_node,
+                    &mut self.backend_data.gpus,
+                    &surface_data.compositor,
+                )
+            });
+        });
 
         let crtcs: Vec<_> = surfaces.keys().copied().collect();
 
@@ -918,6 +1026,20 @@ impl AnvilState<UdevData> {
             self.backend_data.fps_texture.as_ref(),
             self.backend_data.debug_flags,
         );
+
+        // Update the per drm surface dmabuf feedback
+        let primary_gpu = self.backend_data.primary_gpu;
+        let gpus = &mut self.backend_data.gpus;
+        device.surfaces.values_mut().for_each(|surface_data| {
+            surface_data.dmabuf_feedback = surface_data.dmabuf_feedback.take().or_else(|| {
+                get_surface_dmabuf_feedback(
+                    primary_gpu,
+                    surface_data.render_node,
+                    gpus,
+                    &surface_data.compositor,
+                )
+            });
+        });
 
         // fixup window coordinates
         crate::shell::fixup_positions(&mut self.space);
@@ -1407,7 +1529,19 @@ fn render_surface<'a, 'b>(
             .compositor
             .render_frame::<_, _, Gles2Renderbuffer>(renderer, &elements, clear_color)?;
 
-    post_repaint(output, &states, space, clock.now());
+    post_repaint(
+        output,
+        &states,
+        space,
+        surface
+            .dmabuf_feedback
+            .as_ref()
+            .map(|feedback| SurfaceDmabufFeedback {
+                render_feedback: &feedback.render_feedback,
+                scanout_feedback: &feedback.scanout_feedback,
+            }),
+        clock.now(),
+    );
 
     if rendered {
         let output_presentation_feedback = take_presentation_feedback(output, space, &states);
