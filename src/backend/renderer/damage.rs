@@ -333,6 +333,11 @@ impl DamageTrackedRenderer {
         <R as Renderer>::TextureId: Texture,
     {
         let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
+
+        // Output transform is specified in surface-rotation, so inversion gives us the
+        // render transform for the output itself.
+        let output_transform = output_transform.invert();
+
         // We have to apply to output transform to the output size so that the intersection
         // tests in damage_output_internal produces the correct results and do not crop
         // damage with the wrong size

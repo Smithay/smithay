@@ -1382,6 +1382,11 @@ where
         let current_size = self.output.current_mode().unwrap().size;
         let output_scale = self.output.current_scale().fractional_scale().into();
         let output_transform = self.output.current_transform();
+
+        // Output transform is specified in surface-rotation, so inversion gives us the
+        // render transform for the output itself.
+        let output_transform = output_transform.invert();
+
         // Geometry of the output derived from the output mode including the transform
         // This is used to calculate the intersection between elements and the output.
         // The renderer (and also the logic for direct scan-out) will take care of the
