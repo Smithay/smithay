@@ -593,7 +593,7 @@ where
     let layer_map = layer_map_for_output(output);
     #[cfg(feature = "wayland_frontend")]
     let lower = {
-        let (upper, lower): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
+        let (lower, upper): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
             .layers()
             .rev()
             .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
