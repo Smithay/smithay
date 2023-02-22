@@ -14,8 +14,9 @@ use crate::{
         allocator::{dmabuf::Dmabuf, Format},
         egl::EGLContext,
         renderer::{
-            gles2::*, Bind, Blit, DebugFlags, ExportDma, ExportMem, ImportDma, ImportMem, Offscreen,
-            Renderer, TextureFilter, Unbind,
+            gles2::{element::*, *},
+            Bind, Blit, DebugFlags, ExportDma, ExportMem, ImportDma, ImportMem, Offscreen, Renderer,
+            TextureFilter, Unbind,
         },
     },
     utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
@@ -31,7 +32,7 @@ use std::{
     sync::Arc,
 };
 
-use super::Frame;
+use super::{element::RenderElement, Frame};
 
 #[derive(Debug)]
 /// A renderer utilizing OpenGL ES 2 and [`glow`] on top for easier custom rendering.
@@ -440,5 +441,17 @@ where
 impl Unbind for GlowRenderer {
     fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
         self.gl.unbind()
+    }
+}
+
+impl RenderElement<GlowRenderer> for PixelShaderElement {
+    fn draw<'a>(
+        &self,
+        frame: &mut GlowFrame<'a>,
+        src: Rectangle<f64, BufferCoord>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+    ) -> Result<(), Gles2Error> {
+        RenderElement::<Gles2Renderer>::draw(self, frame.borrow_mut(), src, dst, damage)
     }
 }

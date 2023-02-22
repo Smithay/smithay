@@ -1,5 +1,5 @@
-#[cfg(feature = "renderer_glow")]
-use crate::backend::renderer::glow::{GlowFrame, GlowRenderer};
+//! RenderElements specific to using a `Gles2Renderer`
+
 use crate::{
     backend::renderer::{
         element::{Element, Id, RenderElement},
@@ -11,6 +11,7 @@ use crate::{
 use super::{Gles2Error, Gles2Frame, Gles2PixelProgram, Gles2Renderer};
 
 /// Render element for drawing with a gles2 pixel shader
+#[derive(Debug)]
 pub struct PixelShaderElement {
     shader: Gles2PixelProgram,
     id: Id,
@@ -87,20 +88,5 @@ impl RenderElement<Gles2Renderer> for PixelShaderElement {
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), Gles2Error> {
         frame.render_pixel_shader_to(&self.shader, dst, Some(damage), self.alpha)
-    }
-}
-
-#[cfg(feature = "renderer_glow")]
-impl RenderElement<GlowRenderer> for PixelShaderElement {
-    fn draw<'a>(
-        &self,
-        frame: &mut GlowFrame<'a>,
-        src: Rectangle<f64, Buffer>,
-        dst: Rectangle<i32, Physical>,
-        damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
-    ) -> Result<(), Gles2Error> {
-        use std::borrow::BorrowMut;
-        RenderElement::<Gles2Renderer>::draw(self, frame.borrow_mut(), src, dst, damage, log)
     }
 }
