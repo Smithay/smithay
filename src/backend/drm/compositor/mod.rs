@@ -142,7 +142,7 @@ use crate::{
             damage::{DamageTrackedRenderer, DamageTrackedRendererError, OutputNoMode},
             element::{
                 Element, Id, RenderElement, RenderElementPresentationState, RenderElementState,
-                RenderElementStates, UnderlyingStorage,
+                RenderElementStates, RenderingReason, UnderlyingStorage,
             },
             utils::{CommitCounter, DamageTracker, DamageTrackerSnapshot},
             Bind, Blit, DebugFlags, ExportMem, Frame as RendererFrame, Offscreen, Renderer, Texture,
@@ -165,6 +165,13 @@ impl RenderElementState {
         RenderElementState {
             visible_area,
             presentation_state: RenderElementPresentationState::ZeroCopy,
+        }
+    }
+
+    pub(crate) fn rendering_with_reason(reason: RenderingReason) -> Self {
+        RenderElementState {
+            visible_area: 0,
+            presentation_state: RenderElementPresentationState::Rendering { reason: Some(reason) },
         }
     }
 }
@@ -264,20 +271,20 @@ where
     B: AsRef<framebuffer::Handle>,
 {
     /// Cache for framebuffer handles per cache key (e.g. wayland buffer)
-    fb_cache: HashMap<ElementFramebufferCacheKey, Option<OwnedFramebuffer<B>>>,
+    fb_cache: HashMap<ElementFramebufferCacheKey, Result<OwnedFramebuffer<B>, ExportBufferError>>,
 }
 
 impl<B> ElementFramebufferCache<B>
 where
     B: AsRef<framebuffer::Handle>,
 {
-    fn get(&self, buffer: &UnderlyingStorage) -> Option<Option<OwnedFramebuffer<B>>> {
+    fn get(&self, buffer: &UnderlyingStorage) -> Option<Result<OwnedFramebuffer<B>, ExportBufferError>> {
         self.fb_cache
             .get(&ElementFramebufferCacheKey::from(buffer))
             .cloned()
     }
 
-    fn insert(&mut self, buffer: &UnderlyingStorage, fb: Option<OwnedFramebuffer<B>>) {
+    fn insert(&mut self, buffer: &UnderlyingStorage, fb: Result<OwnedFramebuffer<B>, ExportBufferError>) {
         self.fb_cache.insert(ElementFramebufferCacheKey::from(buffer), fb);
     }
 
@@ -1042,6 +1049,35 @@ struct CursorState<G: AsFd + 'static> {
     previous_output_scale: Option<Scale<f64>>,
 }
 
+#[derive(Debug, thiserror::Error, Copy, Clone)]
+enum ExportBufferError {
+    #[error("the buffer has no underlying storage")]
+    NoUnderlyingStorage,
+    #[error("exporting the framebuffer failed")]
+    ExportFailed,
+    #[error("no framebuffer could be exported")]
+    Unsupported,
+}
+
+impl From<ExportBufferError> for Option<RenderingReason> {
+    fn from(err: ExportBufferError) -> Self {
+        if matches!(err, ExportBufferError::ExportFailed) {
+            // Export failed could mean the buffer could
+            // not be used to add a drm framebuffer. This
+            // especially can happen on kmsro devices where
+            // a buffer format not usable for scan-out can
+            // not be used to add a framebuffer
+            // We can try to give the client another chance
+            // by announcing a scan-out tranche
+            Some(RenderingReason::ScanoutFailed)
+        } else {
+            // We provide no reason for rendering here as there
+            // is no action that can be taken to make it work
+            None
+        }
+    }
+}
+
 /// Composite an output using a combination of planes and rendering
 ///
 /// see the [`module docs`](crate::backend::drm::compositor) for more information
@@ -1608,7 +1644,7 @@ where
                 false
             };
 
-            let direct_scan_out_plane = self.try_assign_element(
+            match self.try_assign_element(
                 renderer,
                 element,
                 &mut element_states,
@@ -1619,29 +1655,38 @@ where
                 output_transform,
                 output_geometry,
                 try_assign_primary_plane,
-            );
-
-            if let Some(direct_scan_out_plane) = direct_scan_out_plane {
-                match direct_scan_out_plane.type_ {
-                    drm::control::PlaneType::Overlay => {
-                        overlay_plane_elements.insert(direct_scan_out_plane.handle, element);
+            ) {
+                Ok(direct_scan_out_plane) => {
+                    match direct_scan_out_plane.type_ {
+                        drm::control::PlaneType::Overlay => {
+                            overlay_plane_elements.insert(direct_scan_out_plane.handle, element);
+                        }
+                        drm::control::PlaneType::Primary => primary_plane_scanout_element = Some(element),
+                        drm::control::PlaneType::Cursor => cursor_plane_element = Some(element),
                     }
-                    drm::control::PlaneType::Primary => primary_plane_scanout_element = Some(element),
-                    drm::control::PlaneType::Cursor => cursor_plane_element = Some(element),
-                }
 
-                if let Some(state) = render_element_states.states.get_mut(element_id) {
-                    state.presentation_state = RenderElementPresentationState::ZeroCopy;
-                    state.visible_area += element_visible_area;
-                } else {
-                    render_element_states.states.insert(
-                        element_id.clone(),
-                        RenderElementState::zero_copy(element_visible_area),
-                    );
+                    if let Some(state) = render_element_states.states.get_mut(element_id) {
+                        state.presentation_state = RenderElementPresentationState::ZeroCopy;
+                        state.visible_area += element_visible_area;
+                    } else {
+                        render_element_states.states.insert(
+                            element_id.clone(),
+                            RenderElementState::zero_copy(element_visible_area),
+                        );
+                    }
                 }
-            } else {
-                // No need to insert a state, this will be done by the dtr
-                primary_plane_elements.push(element);
+                Err(reason) => {
+                    if let Some(reason) = reason {
+                        if !render_element_states.states.contains_key(element_id) {
+                            render_element_states.states.insert(
+                                element_id.clone(),
+                                RenderElementState::rendering_with_reason(reason),
+                            );
+                        }
+                    }
+
+                    primary_plane_elements.push(element);
+                }
             }
         }
 
@@ -2075,13 +2120,15 @@ where
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
         try_assign_primary_plane: bool,
-    ) -> Option<PlaneInfo>
+    ) -> Result<PlaneInfo, Option<RenderingReason>>
     where
         R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
         E: RenderElement<R>,
     {
+        let mut rendering_reason: Option<RenderingReason> = None;
+
         if try_assign_primary_plane {
-            if let Some(plane) = self.try_assign_primary_plane(
+            match self.try_assign_primary_plane(
                 renderer,
                 element,
                 element_states,
@@ -2089,13 +2136,16 @@ where
                 frame_state,
                 output_damage,
                 output_geometry,
-            ) {
-                trace!(
-                    "assigned element {:?} to primary plane {:?}",
-                    element.id(),
-                    self.planes.primary.handle
-                );
-                return Some(plane);
+            )? {
+                Ok(plane) => {
+                    trace!(
+                        "assigned element {:?} to primary plane {:?}",
+                        element.id(),
+                        self.planes.primary.handle
+                    );
+                    return Ok(plane);
+                }
+                Err(err) => rendering_reason = rendering_reason.or(err),
             }
         }
 
@@ -2114,10 +2164,10 @@ where
                 element.id(),
                 self.planes.cursor.as_ref().map(|p| p.handle)
             );
-            return Some(plane);
+            return Ok(plane);
         }
 
-        if let Some(plane) = self.try_assign_overlay_plane(
+        match self.try_assign_overlay_plane(
             renderer,
             element,
             element_states,
@@ -2127,12 +2177,15 @@ where
             output_damage,
             output_transform,
             output_geometry,
-        ) {
-            trace!("assigned element {:?} to overlay plane", element.id());
-            return Some(plane);
+        )? {
+            Ok(plane) => {
+                trace!("assigned element {:?} to overlay plane", element.id());
+                return Ok(plane);
+            }
+            Err(err) => rendering_reason = rendering_reason.or(err),
         }
 
-        None
+        Err(rendering_reason)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2156,9 +2209,8 @@ where
         E: RenderElement<R>,
     {
         // if we have no cursor plane we can exit early
-        let plane_info = match self.planes.cursor.as_ref() {
-            Some(plane_info) => plane_info,
-            None => return None,
+        let Some(plane_info) = self.planes.cursor.as_ref() else {
+            return None;
         };
 
         // something is already assigned to our cursor plane
@@ -2193,7 +2245,7 @@ where
                 element.id(),
                 plane_info.handle,
             );
-            if let Some(plane) = self.try_assign_plane(
+            if let Ok(Ok(plane)) = self.try_assign_plane(
                 element,
                 element_geometry,
                 &underlying_storage,
@@ -2216,7 +2268,7 @@ where
 
         let Some(cursor_state) = self.cursor_state.as_mut() else {
             trace!("no cursor state, skipping cursor rendering");
-            return None
+            return None;
         };
 
         // this calculates the location of the cursor plane taking the simulated transform
@@ -2472,7 +2524,7 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-    ) -> Option<PlaneInfo>
+    ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
         E: RenderElement<R>,
@@ -2491,15 +2543,13 @@ where
                 "skipping overlay planes for element {:?}, no free planes",
                 element_id
             );
+            return Ok(Err(None));
         }
 
         // We can only try to do direct scan-out for element that provide a underlying storage
-        let underlying_storage = match element.underlying_storage(renderer) {
-            Some(underlying_storage) => underlying_storage,
-            None => {
-                return None;
-            }
-        };
+        let underlying_storage = element
+            .underlying_storage(renderer)
+            .ok_or(ExportBufferError::NoUnderlyingStorage)?;
 
         let element_geometry = element.geometry(scale);
 
@@ -2507,6 +2557,8 @@ where
             let other_geometry = e.geometry(scale);
             other_geometry.overlaps(element_geometry)
         });
+
+        let mut rendering_reason: Option<RenderingReason> = None;
 
         for plane in self.planes.overlay.iter() {
             // something is already assigned to our overlay plane
@@ -2540,7 +2592,7 @@ where
                 trace!(
                     "skipping direct scan-out on plane plane {:?} with zpos {:?}, element {:?} overlaps with element on primary plane", plane.handle, plane.zpos, element_id,
                 );
-                return None;
+                return Ok(Err(None));
             }
 
             let overlaps_with_plane_underneath = self
@@ -2563,7 +2615,7 @@ where
                 continue;
             }
 
-            if let Some(plane) = self.try_assign_plane(
+            match self.try_assign_plane(
                 element,
                 element_geometry,
                 &underlying_storage,
@@ -2574,12 +2626,13 @@ where
                 output_damage,
                 output_transform,
                 output_geometry,
-            ) {
-                return Some(plane);
+            )? {
+                Ok(plane) => return Ok(Ok(plane)),
+                Err(err) => rendering_reason = rendering_reason.or(err),
             }
         }
 
-        None
+        Ok(Err(rendering_reason))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2596,18 +2649,17 @@ where
         frame_state: &mut Frame<A, F>,
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_geometry: Rectangle<i32, Physical>,
-    ) -> Option<PlaneInfo>
+    ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
         E: RenderElement<R>,
     {
         // We can only try to do direct scan-out for element that provide a underlying storage
-        let underlying_storage = match element.underlying_storage(renderer) {
-            Some(underlying_storage) => underlying_storage,
-            None => {
-                return None;
-            }
-        };
+        let underlying_storage = element
+            .underlying_storage(renderer)
+            .ok_or(ExportBufferError::NoUnderlyingStorage)?;
+
+        // TODO: We should check if there is already an element assigned to the primary plane for completeness here
 
         trace!(
             "trying to assign element {:?} to primary plane {:?}",
@@ -2648,7 +2700,7 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-    ) -> Option<PlaneInfo>
+    ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
         E: RenderElement<R>,
@@ -2678,13 +2730,16 @@ where
             let fb = self
                 .framebuffer_exporter
                 .add_framebuffer(self.surface.device_fd(), ExportBuffer::from(underlying_storage))
-                .map(|fb| fb.map(|fb| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb))))
-                .unwrap_or_else(|err| {
+                .map_err(|err| {
                     trace!("failed to add framebuffer: {:?}", err);
-                    None
+                    ExportBufferError::ExportFailed
+                })
+                .and_then(|fb| {
+                    fb.map(|fb| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb)))
+                        .ok_or(ExportBufferError::Unsupported)
                 });
 
-            if fb.is_none() {
+            if fb.is_err() {
                 trace!(
                     "could not import framebuffer for element {:?} underlying storage {:?}",
                     element_id,
@@ -2701,17 +2756,8 @@ where
             );
         }
 
-        element_states.insert(element_id.clone(), element_state);
-
-        let fb = match element_states
-            .get(element_id)
-            .and_then(|state| state.get(underlying_storage).unwrap())
-        {
-            Some(fb) => fb,
-            None => {
-                return None;
-            }
-        };
+        element_states.insert(element_id.clone(), element_state.clone());
+        let fb = element_state.get(underlying_storage).unwrap()?;
 
         let plane_claim = match self.surface.claim_plane(plane.handle) {
             Some(claim) => claim,
@@ -2721,7 +2767,7 @@ where
                     plane.handle,
                     element_id
                 );
-                return None;
+                return Ok(Err(None));
             }
         };
 
@@ -2824,7 +2870,7 @@ where
                 plane.zpos,
             );
 
-            Some(*plane)
+            Ok(Ok(*plane))
         } else {
             trace!(
                 "skipping direct scan-out on plane {:?} with zpos {:?} for element {:?}, test failed",
@@ -2833,7 +2879,7 @@ where
                 element_id
             );
 
-            None
+            Ok(Err(Some(RenderingReason::ScanoutFailed)))
         }
     }
 }

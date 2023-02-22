@@ -100,11 +100,25 @@ pub enum UnderlyingStorage {
     Wayland(Buffer),
 }
 
+/// Defines the (optional) reason why a [`Element`] was selected for
+/// rendering instead of direct scan-out
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderingReason {
+    /// Element was selected for direct scan-out but failed
+    ScanoutFailed,
+}
+
 /// Defines the presentation state of an element after rendering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderElementPresentationState {
     /// The element was selected for rendering
-    Rendering,
+    Rendering {
+        /// Optional reason why the element was selected for rendering
+        ///
+        /// Can be used to make a decision on sending an dmabuf feedback
+        /// scan-out tranche.
+        reason: Option<RenderingReason>,
+    },
     /// The element was selected for zero-copy scan-out
     ZeroCopy,
     /// The element was skipped as it is current not visible
@@ -133,7 +147,7 @@ impl RenderElementState {
     pub(crate) fn rendered(visible_area: usize) -> Self {
         RenderElementState {
             visible_area,
-            presentation_state: RenderElementPresentationState::Rendering,
+            presentation_state: RenderElementPresentationState::Rendering { reason: None },
         }
     }
 }
