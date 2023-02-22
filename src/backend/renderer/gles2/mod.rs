@@ -4,9 +4,9 @@ use cgmath::{prelude::*, Matrix3, Vector2};
 use core::slice;
 use std::{
     borrow::Cow,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     convert::TryFrom,
-    ffi::CStr,
+    ffi::{CStr, CString},
     fmt, mem,
     os::raw::c_char,
     ptr,
@@ -19,11 +19,14 @@ use std::{
 use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn, Level};
 
 #[cfg(feature = "wayland_frontend")]
-use std::{cell::RefCell, collections::HashMap};
+use std::cell::RefCell;
 
 pub mod element;
 mod shaders;
+mod uniform;
 mod version;
+
+pub use uniform::*;
 
 use super::{
     Bind, Blit, DebugFlags, ExportDma, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer, Texture,
@@ -96,6 +99,7 @@ struct Gles2PixelProgramInternal {
     uniform_alpha: ffi::types::GLint,
     attrib_vert: ffi::types::GLint,
     attrib_position: ffi::types::GLint,
+    additional_uniforms: HashMap<String, UniformDesc>,
 }
 
 /// A handle to a GLES2 texture
@@ -427,6 +431,17 @@ pub enum Gles2Error {
     /// An error occured while creating the shader object.
     #[error("An error occured while creating the shader object.")]
     CreateShaderObject,
+    /// Uniform was not declared when compiling shader
+    #[error("Uniform {0:?} was not declared when compiling the provided shader")]
+    UnknownUniform(String),
+    /// The provided uniform has a different type then was provided when compiling the shader
+    #[error("Uniform with different type (got {provided:?}, expected: {declared:?})")]
+    UniformTypeMismatch {
+        /// Uniform type that was provided during the call
+        provided: UniformType,
+        /// Uniform type that was declared when compiling
+        declared: UniformType,
+    },
 }
 
 impl From<Gles2Error> for SwapBuffersError {
@@ -449,6 +464,8 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::UnexpectedSize
             | x @ Gles2Error::BlitError
             | x @ Gles2Error::CreateShaderObject
+            | x @ Gles2Error::UniformTypeMismatch { .. }
+            | x @ Gles2Error::UnknownUniform(_)
             | x @ Gles2Error::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
@@ -468,6 +485,8 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::UnexpectedSize
             | x @ Gles2Error::BlitError
             | x @ Gles2Error::CreateShaderObject
+            | x @ Gles2Error::UniformTypeMismatch { .. }
+            | x @ Gles2Error::UnknownUniform(_)
             | x @ Gles2Error::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
@@ -1922,9 +1941,17 @@ impl Gles2Renderer {
     /// - *uniform* size `vec2` - size of the viewport in pixels
     /// - *uniform* alpha `float` - for the alpha value passed by the renderer
     /// - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0)
+    ///
+    /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
+    /// and can then be set in functions utilizing `Gles2PixelProgram` (like [`Gles2Renderer::render_pixel_shader_to`]).
+    ///
+    /// ## Panics
+    ///
+    /// Panics if any of the names of the passed additional uniforms contains a `\0`/NUL-byte.
     pub fn compile_custom_pixel_shader(
         &self,
         shader: impl AsRef<str>,
+        additional_uniforms: &[UniformName<'_>],
     ) -> Result<Gles2PixelProgram, Gles2Error> {
         let program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, shader.as_ref())? };
         let debug_shader = format!("#define {}\n{}", shaders::DEBUG_FLAGS, shader.as_ref());
@@ -1960,6 +1987,22 @@ impl Gles2Renderer {
                     attrib_position: self
                         .gl
                         .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
+                    additional_uniforms: additional_uniforms
+                        .iter()
+                        .map(|uniform| {
+                            let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
+                            let location = self
+                                .gl
+                                .GetUniformLocation(program, name.as_ptr() as *const ffi::types::GLchar);
+                            (
+                                uniform.name.clone().into_owned(),
+                                UniformDesc {
+                                    location,
+                                    type_: uniform.type_,
+                                },
+                            )
+                        })
+                        .collect(),
                 },
                 debug: Gles2PixelProgramInternal {
                     program: debug_program,
@@ -1982,6 +2025,23 @@ impl Gles2Renderer {
                         debug_program,
                         vert_position.as_ptr() as *const ffi::types::GLchar,
                     ),
+                    additional_uniforms: additional_uniforms
+                        .iter()
+                        .map(|uniform| {
+                            let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
+                            let location = self.gl.GetUniformLocation(
+                                debug_program,
+                                name.as_ptr() as *const ffi::types::GLchar,
+                            );
+                            (
+                                uniform.name.clone().into_owned(),
+                                UniformDesc {
+                                    location,
+                                    type_: uniform.type_,
+                                },
+                            )
+                        })
+                        .collect(),
                 },
                 uniform_tint: self
                     .gl
@@ -2562,6 +2622,7 @@ impl<'frame> Gles2Frame<'frame> {
         dest: Rectangle<i32, Physical>,
         damage: Option<&[Rectangle<i32, Physical>]>,
         alpha: f32,
+        additional_uniforms: &[Uniform<'_>],
     ) -> Result<(), Gles2Error> {
         let damage = damage
             .map(|damage| {
@@ -2627,6 +2688,14 @@ impl<'frame> Gles2Frame<'frame> {
 
             if self.renderer.debug_flags.is_empty() {
                 gl.Uniform1f(pixel_shader.uniform_tint, tint);
+            }
+
+            for uniform in additional_uniforms {
+                let desc = program
+                    .additional_uniforms
+                    .get(&*uniform.name)
+                    .ok_or_else(|| Gles2Error::UnknownUniform(uniform.name.clone().into_owned()))?;
+                uniform.value.set(gl, desc)?;
             }
 
             gl.EnableVertexAttribArray(program.attrib_vert as u32);
