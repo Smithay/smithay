@@ -16,6 +16,7 @@ use std::{
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},
 };
+use tracing::{error, instrument, warn};
 
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
@@ -418,11 +419,8 @@ where
 /// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn import_surface<R>(
-    renderer: &mut R,
-    states: &SurfaceData,
-    log: &slog::Logger,
-) -> Result<(), <R as Renderer>::Error>
+#[instrument(skip_all)]
+pub fn import_surface<R>(renderer: &mut R, states: &SurfaceData) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
@@ -442,11 +440,11 @@ where
                         data.renderer_seen.insert(texture_id, data.current_commit());
                     }
                     Some(Err(err)) => {
-                        slog::warn!(log, "Error loading buffer: {}", err);
+                        warn!("Error loading buffer: {}", err);
                         return Err(err);
                     }
                     None => {
-                        slog::error!(log, "Unknown buffer format for: {:?}", buffer);
+                        error!("Unknown buffer format for: {:?}", buffer);
                     }
                 }
             }
@@ -463,11 +461,8 @@ where
 /// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn import_surface_tree<R>(
-    renderer: &mut R,
-    surface: &WlSurface,
-    log: &slog::Logger,
-) -> Result<(), <R as Renderer>::Error>
+#[instrument(skip_all)]
+pub fn import_surface_tree<R>(renderer: &mut R, surface: &WlSurface) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
@@ -483,7 +478,7 @@ where
         |_surface, states, location| {
             let mut location = *location;
             // Import a new buffer if necessary
-            if let Err(err) = import_surface(renderer, states, log) {
+            if let Err(err) = import_surface(renderer, states) {
                 result = Err(err);
             }
 
@@ -520,12 +515,12 @@ where
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
+#[instrument(skip(frame, scale, elements))]
 pub fn draw_render_elements<'a, R, S, E>(
     frame: &mut <R as Renderer>::Frame<'a>,
     scale: S,
     elements: &[E],
     damage: &[Rectangle<i32, Physical>],
-    log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, <R as Renderer>::Error>
 where
     R: Renderer,
@@ -615,7 +610,7 @@ where
             continue;
         }
 
-        element.draw(frame, element.src(), element_geometry, &element_damage, log)?;
+        element.draw(frame, element.src(), element_geometry, &element_damage)?;
     }
 
     Ok(Some(render_damage))

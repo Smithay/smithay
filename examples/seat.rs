@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dh = display.handle();
 
     let mut seat_state = SeatState::new();
-    let seat = seat_state.new_wl_seat(&dh, "Example", None);
+    let seat = seat_state.new_wl_seat(&dh, "Example");
 
     let mut state = App { seat_state, seat };
 

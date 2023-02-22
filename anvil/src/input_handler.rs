@@ -33,6 +33,7 @@ use smithay::backend::input::AbsolutePositionEvent;
 
 #[cfg(any(feature = "winit", feature = "x11"))]
 use smithay::output::Output;
+use tracing::{debug, error, info};
 
 use crate::state::Backend;
 #[cfg(feature = "udev")]
@@ -60,12 +61,12 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             KeyAction::None => (),
 
             KeyAction::Quit => {
-                info!(self.log, "Quitting.");
+                info!("Quitting.");
                 self.running.store(false, Ordering::SeqCst);
             }
 
             KeyAction::Run(cmd) => {
-                info!(self.log, "Starting program"; "cmd" => cmd.clone());
+                info!(cmd, "Starting program");
 
                 if let Err(e) = Command::new(&cmd)
                     .envs(
@@ -82,11 +83,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     )
                     .spawn()
                 {
-                    error!(self.log,
-                        "Failed to start program";
-                        "cmd" => cmd,
-                        "err" => format!("{:?}", e)
-                    );
+                    error!(cmd, err = %e, "Failed to start program");
                 }
             }
 
@@ -104,9 +101,8 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     fn keyboard_key_to_action<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) -> KeyAction {
         let keycode = evt.key_code();
         let state = evt.state();
-        debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
+        debug!(keycode, ?state, "key");
         let serial = SCOUNTER.next_serial();
-        let log = self.log.clone();
         let time = Event::time_msec(&evt);
         let mut suppressed_keys = self.suppressed_keys.clone();
         let keyboard = self.seat.get_keyboard().unwrap();
@@ -147,10 +143,11 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             .input(self, keycode, state, serial, time, |_, modifiers, handle| {
                 let keysym = handle.modified_sym();
 
-                debug!(log, "keysym";
-                    "state" => format!("{:?}", state),
-                    "mods" => format!("{:?}", modifiers),
-                    "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
+                debug!(
+                    ?state,
+                    mods = ?modifiers,
+                    keysym = ::xkbcommon::xkb::keysym_get_name(keysym),
+                    "keysym"
                 );
 
                 // If the key is pressed and triggered a action
@@ -437,9 +434,10 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                         self.process_common_key_action(action)
                     }
 
-                    _ => warn!(
-                        self.log,
-                        "Key action {:?} unsupported on on output {} backend.", action, output_name
+                    _ => tracing::warn!(
+                        ?action,
+                        output_name,
+                        "Key action unsupported on on output backend.",
                     ),
                 },
             },
@@ -491,9 +489,9 @@ impl AnvilState<UdevData> {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
                 #[cfg(feature = "udev")]
                 KeyAction::VtSwitch(vt) => {
-                    info!(self.log, "Trying to switch to vt {}", vt);
+                    info!(to = vt, "Trying to switch vt");
                     if let Err(err) = self.backend_data.session.change_vt(vt) {
-                        error!(self.log, "Error switching to vt {}: {}", vt, err);
+                        error!(vt, "Error switching vt: {}", err);
                     }
                 }
                 KeyAction::Screen(num) => {

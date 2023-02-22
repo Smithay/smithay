@@ -30,9 +30,8 @@
 //! #
 //! # let dh = unreachable!();
 //! # let handle: smithay::reexports::calloop::LoopHandle<'static, State> = unreachable!();
-//! # let log: slog::Logger = unreachable!();
 //!
-//! let (xwayland, channel) = XWayland::new(None, &dh);
+//! let (xwayland, channel) = XWayland::new(&dh);
 //! let ret = handle.insert_source(channel, move |event, _, data| match event {
 //!     XWaylandEvent::Ready {
 //!         connection,
@@ -45,7 +44,6 @@
 //!             dh.clone(),
 //!             connection,
 //!             client,
-//!             log.clone(),
 //!         )
 //!         .expect("Failed to attach X11 Window Manager");
 //!         
@@ -56,8 +54,7 @@
 //!     }
 //! });
 //! if let Err(e) = ret {
-//!     slog::error!(
-//!         log,
+//!     tracing::error!(
 //!         "Failed to insert the XWaylandSource into the event loop: {}", e
 //!     );
 //! }
@@ -75,6 +72,7 @@ use std::{
     os::unix::net::UnixStream,
     sync::Arc,
 };
+use tracing::{debug, error, info, info_span, trace, warn};
 use wayland_server::{protocol::wl_surface::WlSurface, Client, DisplayHandle, Resource};
 
 use x11rb::{
@@ -299,7 +297,8 @@ pub struct X11Wm {
     client_list: Vec<X11Window>,
     // bottom -> top
     client_list_stacking: Vec<X11Window>,
-    log: slog::Logger,
+
+    span: tracing::Span,
 }
 
 impl Drop for X11Wm {
@@ -333,8 +332,7 @@ impl<D: XwmHandler> X11Injector<D> {
                         .object_from_protocol_id::<WlSurface>(&xwm.dh, id)
                         .unwrap();
                     let surface = surface.clone();
-                    let log = xwm.log.clone();
-                    X11Wm::new_surface(data, xwm_id, surface, wl_surface, log);
+                    X11Wm::new_surface(data, xwm_id, surface, wl_surface);
                 }
             }
         });
@@ -365,20 +363,20 @@ impl X11Wm {
     /// - `dh` is the corresponding display handle to the wayland connection of the Xwayland instance
     /// - `connection` is the corresponding x11 client connection of the Xwayland instance
     /// - `client` is the wayland client instance of the Xwayland instance
-    /// - `log` slog logger to be used by the WM
-    pub fn start_wm<D, L>(
+    pub fn start_wm<D>(
         handle: LoopHandle<'static, D>,
         dh: DisplayHandle,
         connection: UnixStream,
         client: Client,
-        log: L,
     ) -> Result<Self, Box<dyn std::error::Error>>
     where
         D: XwmHandler + 'static,
-        L: Into<Option<::slog::Logger>>,
     {
+        let id = XwmId(next_xwm_id());
+        let span = info_span!("xwayland_wm", id = id.0);
+        let _guard = span.enter();
+
         // Create an X11 connection. XWayland only uses screen 0.
-        let log = crate::slog_or_fallback(log);
         let screen = 0;
         let stream = DefaultStream::from_unix_stream(connection)?;
         let conn = RustConnection::connect_to_stream(stream, screen)?;
@@ -499,18 +497,12 @@ impl X11Wm {
             atoms.UTF8_STRING,
             "Smithay X WM".as_bytes(),
         )?;
-        slog::debug!(log, "WM Window Id: {}", win);
+        debug!(window = win, "Created WM Window");
         conn.flush()?;
 
         let conn = Arc::new(conn);
-        let source = X11Source::new(
-            Arc::clone(&conn),
-            win,
-            atoms._SMITHAY_CLOSE_CONNECTION,
-            log.clone(),
-        );
+        let source = X11Source::new(Arc::clone(&conn), win, atoms._SMITHAY_CLOSE_CONNECTION);
 
-        let id = XwmId(next_xwm_id());
         let injector = X11Injector {
             xwm: id,
             handle: handle.clone(),
@@ -521,6 +513,7 @@ impl X11Wm {
             .user_data()
             .insert_if_missing(move || injector);
 
+        drop(_guard);
         let wm = Self {
             id,
             dh,
@@ -534,12 +527,12 @@ impl X11Wm {
             windows: Vec::new(),
             client_list: Vec::new(),
             client_list_stacking: Vec::new(),
-            log: log.clone(),
+            span,
         };
 
         handle.insert_source(source, move |event, _, data| {
             if let Err(err) = handle_event(data, id, event) {
-                slog::warn!(log, "Failed to handle X11 event ({:?}): {}", id, err);
+                warn!(id = id.0, err = ?err, "Failed to handle X11 event");
             }
         })?;
         Ok(wm)
@@ -738,22 +731,15 @@ impl X11Wm {
         }
     }
 
-    fn new_surface<D: XwmHandler>(
-        state: &mut D,
-        xwm_id: XwmId,
-        surface: X11Surface,
-        wl_surface: WlSurface,
-        log: ::slog::Logger,
-    ) {
-        slog::info!(
-            log,
-            "Matched X11 surface {:?} to {:x?}",
-            surface.window_id(),
-            wl_surface
+    fn new_surface<D: XwmHandler>(state: &mut D, xwm_id: XwmId, surface: X11Surface, wl_surface: WlSurface) {
+        info!(
+            window_id = surface.window_id(),
+            surface = ?wl_surface,
+            "Matched X11 surface to wayland surface",
         );
         if give_role(&wl_surface, X11_SURFACE_ROLE).is_err() {
             // It makes no sense to post a protocol error here since that would only kill Xwayland
-            slog::error!(log, "Surface {:x?} already has a role?!", wl_surface);
+            error!(surface = ?wl_surface, "Surface already has a role?!");
             return;
         }
 
@@ -820,6 +806,7 @@ impl X11Wm {
 
 fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Result<(), ReplyOrIdError> {
     let xwm = state.xwm_state(xwmid);
+    let _guard = xwm.span.enter();
     let id = xwm.id;
     let conn = xwm.conn.clone();
 
@@ -840,11 +827,10 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
         }
     }
 
-    slog::debug!(
-        xwm.log,
-        "X11: Got event {:?}{}",
-        event,
-        if should_ignore { " [ignored]" } else { "" }
+    debug!(
+        event = ?event,
+        should_ignore = should_ignore,
+        "Got X11 event",
     );
     if should_ignore {
         return Ok(());
@@ -872,11 +858,11 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     (geo.x as i32, geo.y as i32),
                     (geo.width as i32, geo.height as i32),
                 ),
-                xwm.log.clone(),
             );
             surface.update_properties(None)?;
             xwm.windows.push(surface.clone());
 
+            drop(_guard);
             if n.override_redirect {
                 state.new_override_redirect_window(id, surface);
             } else {
@@ -927,11 +913,12 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 }
 
                 surface.state.lock().unwrap().mapped_onto = Some(frame_win);
+                drop(_guard);
                 state.map_window_request(id, surface);
             }
         }
         Event::MapNotify(n) => {
-            slog::trace!(xwm.log, "X11 Window mapped: {}", n.window);
+            trace!(window = ?n.window, "mapped X11 Window");
             if let Some(surface) = xwm
                 .windows
                 .iter()
@@ -955,12 +942,14 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     &[surface.window_id()],
                 )?;
                 if surface.is_override_redirect() {
+                    drop(_guard);
                     state.mapped_override_redirect_window(id, surface);
                 }
             }
         }
         Event::ConfigureRequest(r) => {
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
+                drop(_guard);
                 // Pass the request to downstream to decide
                 state.configure_request(
                     id,
@@ -1015,13 +1004,14 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             }
         }
         Event::ConfigureNotify(n) => {
-            slog::trace!(xwm.log, "X11 Window configured: {:?}", n);
+            trace!(window = ?n, "configured X11 Window");
             if let Some(surface) = xwm
                 .windows
                 .iter()
                 .find(|x| x.mapped_window_id() == Some(n.window))
                 .cloned()
             {
+                drop(_guard);
                 state.configure_notify(
                     id,
                     surface,
@@ -1039,6 +1029,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                         (n.width as i32, n.height as i32),
                     );
                     surface.state.lock().unwrap().geometry = geometry;
+                    drop(_guard);
                     state.configure_notify(
                         id,
                         surface,
@@ -1088,6 +1079,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                         }
                     }
                 }
+                drop(_guard);
                 state.unmapped_window(id, surface.clone());
                 {
                     let mut state = surface.state.lock().unwrap();
@@ -1099,6 +1091,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             if let Some(pos) = xwm.windows.iter().position(|x| x.window_id() == n.window) {
                 let surface = xwm.windows.remove(pos);
                 surface.state.lock().unwrap().alive = false;
+                drop(_guard);
                 state.destroyed_window(id, surface);
             }
         }
@@ -1127,21 +1120,19 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
         }
         Event::ClientMessage(msg) => {
             if let Some(reply) = conn.get_atom_name(msg.type_)?.reply_unchecked()? {
-                slog::debug!(
-                    xwm.log,
-                    "X11: Got ClientMessage event ({:?}): {:?}",
-                    std::str::from_utf8(&reply.name).unwrap(),
-                    msg,
+                debug!(
+                    event = std::str::from_utf8(&reply.name).unwrap(),
+                    message = ?msg,
+                    "got X11 client event message",
                 );
             }
             match msg.type_ {
                 x if x == xwm.atoms.WL_SURFACE_ID => {
                     let wid = msg.data.as_data32()[0];
-                    slog::info!(
-                        xwm.log,
-                        "X11 surface {:?} corresponds to WlSurface {:?}",
-                        msg.window,
-                        id,
+                    info!(
+                        window = ?msg.window,
+                        surface = ?id,
+                        "mapped X11 window to surface",
                     );
                     if let Some(surface) = xwm
                         .windows
@@ -1160,22 +1151,22 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                                 xwm.unpaired_surfaces.insert(wid, msg.window);
                             }
                             Ok(wl_surface) => {
-                                let log = xwm.log.clone();
                                 let surface = surface.clone();
-                                X11Wm::new_surface(state, id, surface, wl_surface, log);
+                                drop(_guard);
+                                X11Wm::new_surface(state, id, surface, wl_surface);
                             }
                         }
                     }
                 }
                 x if x == xwm.atoms.WM_CHANGE_STATE => {
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
+                        drop(_guard);
                         state.minimize_request(id, surface);
                     }
                 }
                 x if x == xwm.atoms._NET_WM_STATE => {
                     let data = msg.data.as_data32();
-                    slog::debug!(
-                        xwm.log,
+                    debug!(
                         "X11: Got _NET_WM_STATE change request to ({:?}): {:?} / {:?}",
                         match &data[0] {
                             0 => "REMOVE",
@@ -1191,6 +1182,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                             .map(|reply| String::from_utf8(reply.name)),
                     );
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
+                        drop(_guard);
                         match &data[1..=2] {
                             &[x, y]
                                 if (x == xwm.atoms._NET_WM_STATE_MAXIMIZED_HORZ
@@ -1239,6 +1231,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 }
                 x if x == xwm.atoms._NET_WM_MOVERESIZE => {
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
+                        drop(_guard);
                         let data = msg.data.as_data32();
                         match data[2] {
                             x @ 0..=7 => {
@@ -1261,8 +1254,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                     }
                 }
                 x => {
-                    slog::debug!(
-                        xwm.log,
+                    debug!(
                         "Unhandled client msg of type {:?}",
                         String::from_utf8(conn.get_atom_name(x)?.reply_unchecked()?.unwrap().name).ok()
                     )

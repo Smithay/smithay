@@ -4,6 +4,8 @@ use std::{
     time::Duration,
 };
 
+use tracing::{info, warn};
+
 use smithay::{
     backend::renderer::element::{default_primary_scanout_output_compare, RenderElementStates},
     delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_input_method_manager,
@@ -119,7 +121,6 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub fractional_scale_manager_state: FractionalScaleManagerState,
 
     pub dnd_icon: Option<WlSurface>,
-    pub log: slog::Logger,
 
     // input-related fields
     pub suppressed_keys: Vec<u32>,
@@ -396,14 +397,13 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         display: &mut Display<AnvilState<BackendData>>,
         handle: LoopHandle<'static, CalloopData<BackendData>>,
         backend_data: BackendData,
-        log: slog::Logger,
         listen_on_socket: bool,
     ) -> AnvilState<BackendData> {
         let clock = Clock::new().expect("failed to initialize clock");
 
         // init wayland clients
         let socket_name = if listen_on_socket {
-            let source = ListeningSocketSource::new_auto(log.clone()).unwrap();
+            let source = ListeningSocketSource::new_auto().unwrap();
             let socket_name = source.socket_name().to_string_lossy().into_owned();
             handle
                 .insert_source(source, |client_stream, _, data| {
@@ -412,11 +412,11 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                         .handle()
                         .insert_client(client_stream, Arc::new(ClientState))
                     {
-                        slog::warn!(data.state.log, "Error adding wayland client: {}", err);
+                        warn!("Error adding wayland client: {}", err);
                     };
                 })
                 .expect("Failed to init wayland socket source");
-            info!(log, "Listening on wayland socket"; "name" => socket_name.clone());
+            info!(name = socket_name, "Listening on wayland socket");
             Some(socket_name)
         } else {
             None
@@ -437,19 +437,19 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         // init globals
         let dh = display.handle();
-        let compositor_state = CompositorState::new::<Self, _>(&dh, log.clone());
-        let data_device_state = DataDeviceState::new::<Self, _>(&dh, log.clone());
-        let layer_shell_state = WlrLayerShellState::new::<Self, _>(&dh, log.clone());
+        let compositor_state = CompositorState::new::<Self>(&dh);
+        let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
-        let primary_selection_state = PrimarySelectionState::new::<Self, _>(&dh, log.clone());
+        let primary_selection_state = PrimarySelectionState::new::<Self>(&dh);
         let mut seat_state = SeatState::new();
-        let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
-        let viewporter_state = ViewporterState::new::<Self, _>(&dh, log.clone());
-        let xdg_activation_state = XdgActivationState::new::<Self, _>(&dh, log.clone());
-        let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&dh, log.clone());
-        let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone());
+        let shm_state = ShmState::new::<Self>(&dh, vec![]);
+        let viewporter_state = ViewporterState::new::<Self>(&dh);
+        let xdg_activation_state = XdgActivationState::new::<Self>(&dh);
+        let xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
+        let xdg_shell_state = XdgShellState::new::<Self>(&dh);
         let presentation_state = PresentationState::new::<Self>(&dh, clock.id() as u32);
-        let fractional_scale_manager_state = FractionalScaleManagerState::new::<Self, _>(&dh, log.clone());
+        let fractional_scale_manager_state = FractionalScaleManagerState::new::<Self>(&dh);
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self>(&dh);
         VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
@@ -460,7 +460,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         // init input
         let seat_name = backend_data.seat_name();
-        let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone(), log.clone());
+        let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone());
 
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
         seat.add_pointer();
@@ -480,8 +480,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         #[cfg(feature = "xwayland")]
         let xwayland = {
-            let (xwayland, channel) = XWayland::new(log.clone(), &dh);
-            let log2 = log.clone();
+            let (xwayland, channel) = XWayland::new(&dh);
             let ret = handle.insert_source(channel, move |event, _, data| match event {
                 XWaylandEvent::Ready {
                     connection,
@@ -489,15 +488,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     client_fd: _,
                     display,
                 } => {
-                    let mut wm = X11Wm::start_wm(
-                        data.state.handle.clone(),
-                        dh.clone(),
-                        connection,
-                        client,
-                        log2.clone(),
-                    )
-                    .expect("Failed to attach X11 Window Manager");
-                    let cursor = Cursor::load(&log2);
+                    let mut wm = X11Wm::start_wm(data.state.handle.clone(), dh.clone(), connection, client)
+                        .expect("Failed to attach X11 Window Manager");
+                    let cursor = Cursor::load();
                     let image = cursor.get_image(1, Duration::ZERO);
                     wm.set_cursor(
                         &image.pixels_rgba,
@@ -513,10 +506,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 }
             });
             if let Err(e) = ret {
-                error!(
-                    log,
-                    "Failed to insert the XWaylandSource into the event loop: {}", e
-                );
+                tracing::error!("Failed to insert the XWaylandSource into the event loop: {}", e);
             }
             xwayland
         };
@@ -527,8 +517,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             socket_name,
             running: Arc::new(AtomicBool::new(true)),
             handle,
-            space: Space::new(log.clone()),
-            popups: PopupManager::new(log.clone()),
+            space: Space::default(),
+            popups: PopupManager::default(),
             compositor_state,
             data_device_state,
             layer_shell_state,
@@ -544,7 +534,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             presentation_state,
             fractional_scale_manager_state,
             dnd_icon: None,
-            log,
             suppressed_keys: Vec::new(),
             pointer_location: (0.0, 0.0).into(),
             cursor_status,

@@ -18,6 +18,7 @@ use crate::{
     },
 };
 use indexmap::IndexSet;
+use tracing::{info_span, trace};
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use wayland_server::{
     backend::ObjectId,
@@ -45,7 +46,6 @@ pub struct LayerMap {
     zone: Rectangle<i32, Logical>,
     // surfaces for tracking enter and leave events
     surfaces: HashSet<Weak<WlSurface>>,
-    logger: ::slog::Logger,
 }
 
 /// Retrieve a [`LayerMap`] for a given [`Output`].
@@ -75,13 +75,6 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
                     .unwrap_or_else(|| (0, 0).into()),
             ),
             surfaces: HashSet::new(),
-            logger: o
-                .inner
-                .0
-                .lock()
-                .unwrap()
-                .log
-                .new(slog::o!("smithay_module" => "layer_map")),
         })
     });
     userdata.get::<RefCell<LayerMap>>().unwrap().borrow_mut()
@@ -254,6 +247,9 @@ impl LayerMap {
     /// Note: Mapping or unmapping a layer surface will automatically cause a re-arrangement.
     pub fn arrange(&mut self) {
         if let Some(output) = self.output() {
+            let span = info_span!("layer_map", output = output.name());
+            let _guard = span.enter();
+
             let output_rect = Rectangle::from_loc_and_size(
                 (0, 0),
                 output
@@ -267,7 +263,7 @@ impl LayerMap {
                     .unwrap_or_else(|| (0, 0).into()),
             );
             let mut zone = output_rect;
-            slog::trace!(self.logger, "Arranging layers into {:?}", output_rect.size);
+            trace!("Arranging layers into {:?}", output_rect.size);
 
             for layer in self.layers.iter() {
                 let surface = layer.wl_surface();
@@ -364,12 +360,7 @@ impl LayerMap {
                     }
                 }
 
-                slog::trace!(
-                    self.logger,
-                    "Setting layer to pos {:?} and size {:?}",
-                    location,
-                    size
-                );
+                trace!("Setting layer to pos {:?} and size {:?}", location, size);
                 let size_changed = layer.0.surface.with_pending_state(|state| {
                     state.size.replace(size).map(|old| old != size).unwrap_or(true)
                 });
@@ -396,7 +387,7 @@ impl LayerMap {
                 layer_state(layer).location = location;
             }
 
-            slog::trace!(self.logger, "Remaining zone {:?}", zone);
+            trace!("Remaining zone {:?}", zone);
             self.zone = zone;
         }
     }

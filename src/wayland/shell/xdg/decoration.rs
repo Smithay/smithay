@@ -20,9 +20,8 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //!
 //! // Create a decoration state
-//! let decoration_state = XdgDecorationState::new::<State, _>(
+//! let decoration_state = XdgDecorationState::new::<State>(
 //!     &display.handle(),
-//!     None,
 //! );
 //!
 //! // store that state inside your compositor state
@@ -76,7 +75,6 @@ use crate::wayland::shell::xdg::XdgShellSurfaceUserData;
 /// Delegate type for handling xdg decoration events.
 #[derive(Debug)]
 pub struct XdgDecorationState {
-    _logger: ::slog::Logger,
     global: GlobalId,
 }
 
@@ -84,18 +82,16 @@ impl XdgDecorationState {
     /// Creates a new delegate type for handling xdg decoration events.
     ///
     /// A global id is also returned to allow destroying the global in the future.
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> XdgDecorationState
+    pub fn new<D>(display: &DisplayHandle) -> XdgDecorationState
     where
         D: GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
             + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
             + 'static,
-        L: Into<Option<::slog::Logger>>,
     {
-        let _logger = crate::slog_or_fallback(logger);
         let global =
             display.create_global::<D, zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _>(1, ());
 
-        XdgDecorationState { _logger, global }
+        XdgDecorationState { global }
     }
 
     /// Returns the xdg-decoration global.

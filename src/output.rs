@@ -34,7 +34,6 @@
 //!         make: "Screens Inc".into(),     // make of the monitor
 //!         model: "Monitor Ultra".into(),  // model of the monitor
 //!     },
-//!     None // insert a logger here
 //! );
 //! // Now you can configure it
 //! output.change_current_state(
@@ -55,7 +54,7 @@ use std::{
     sync::{Arc, Mutex, Weak},
 };
 
-use slog::{info, o};
+use tracing::{info, instrument};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::output::xdg::XdgOutput;
@@ -177,9 +176,6 @@ pub(crate) struct Inner {
     pub(crate) handle: Option<WeakHandle>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) xdg_output: Option<XdgOutput>,
-
-    #[allow(dead_code)]
-    pub(crate) log: ::slog::Logger,
 }
 
 /// An abstract output.
@@ -205,13 +201,9 @@ pub(crate) type OutputData = Arc<(Mutex<Inner>, UserDataMap)>;
 
 impl Output {
     /// Create a new output with given name and physical properties.
-    pub fn new<L>(name: String, physical: PhysicalProperties, logger: L) -> Output
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "output_handler"));
-
-        info!(log, "Creating new wl_output"; "name" => &name);
+    #[instrument]
+    pub fn new(name: String, physical: PhysicalProperties) -> Output {
+        info!(name, "Creating new Output");
 
         let data = Arc::new((
             Mutex::new(Inner {
@@ -230,7 +222,6 @@ impl Output {
                 preferred_mode: None,
                 #[cfg(feature = "wayland_frontend")]
                 xdg_output: None,
-                log,
             }),
             UserDataMap::default(),
         ));
@@ -327,6 +318,7 @@ impl Output {
     /// internal list.
     ///
     /// By default, transform status is `Normal`, and scale is `1`.
+    #[instrument(skip(self), fields(output = self.name()))]
     pub fn change_current_state(
         &self,
         new_mode: Option<Mode>,

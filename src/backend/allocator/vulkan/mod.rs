@@ -33,6 +33,7 @@ use ash::{
 };
 use bitflags::bitflags;
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
+use tracing::instrument;
 
 use crate::{
     backend::{
@@ -138,6 +139,7 @@ impl fmt::Debug for VulkanAllocator {
         f.debug_struct("VulkanAllocator")
             .field("formats", &self.formats)
             .field("images", &self.images)
+            .field("default_usage", &self.default_usage)
             .field("remaining_allocations", &self.remaining_allocations)
             .field("dropped_recv", &self.dropped_recv)
             .field("dropped_sender", &self.dropped_sender)
@@ -188,6 +190,7 @@ impl VulkanAllocator {
     ///
     /// - If the version of instance which created the [`PhysicalDevice`] is higher than [`VulkanAllocator::MAX_INSTANCE_VERSION`].
     /// - If the default [`ImageUsageFlags`] are empty.
+    #[instrument(err, skip(phd), fields(physical_device = phd.name()))]
     pub fn new(phd: &PhysicalDevice, default_usage: ImageUsageFlags) -> Result<VulkanAllocator, Error> {
         // Panic if the instance version is too high
         if phd.instance().api_version() > Self::MAX_INSTANCE_VERSION {
@@ -285,6 +288,7 @@ impl VulkanAllocator {
     /// - All of the allowed `modifiers` are not supported.
     /// - The size of the buffer is too large for the `usage`, `fourcc` format or `modifiers`.
     /// - The `fourcc` format and `modifiers` do not support the specified usage.
+    #[instrument(level = "trace", err)]
     pub fn create_buffer_with_usage(
         &mut self,
         width: u32,

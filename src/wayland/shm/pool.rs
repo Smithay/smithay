@@ -13,7 +13,7 @@ use nix::{
         signal::{self, SigAction, SigHandler, Signal},
     },
 };
-use slog::{debug, trace};
+use tracing::{debug, instrument, trace};
 
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
 
@@ -24,7 +24,6 @@ static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
 pub struct Pool {
     map: RwLock<MemMap>,
     fd: OwnedFd,
-    log: ::slog::Logger,
 }
 
 // SAFETY: The memmap is owned by the pool and content is only accessible via a reference.
@@ -38,18 +37,18 @@ pub enum ResizeError {
 }
 
 impl Pool {
-    pub fn new(fd: OwnedFd, size: NonZeroUsize, log: ::slog::Logger) -> Result<Pool, OwnedFd> {
+    #[instrument(skip_all, name = "wayland_shm")]
+    pub fn new(fd: OwnedFd, size: NonZeroUsize) -> Result<Pool, OwnedFd> {
         let memmap = match MemMap::new(fd.as_raw_fd(), size) {
             Ok(memmap) => memmap,
             Err(_) => {
                 return Err(fd);
             }
         };
-        trace!(log, "Creating new shm pool"; "fd" => fd.as_raw_fd() as i32, "size" => usize::from(size));
+        trace!(fd = ?fd, size = ?size, "Creating new shm pool");
         Ok(Pool {
             map: RwLock::new(memmap),
             fd,
-            log,
         })
     }
 
@@ -61,10 +60,9 @@ impl Pool {
             return Err(ResizeError::InvalidSize);
         }
 
-        trace!(self.log, "Resizing shm pool"; "fd" => self.fd.as_raw_fd() as i32, "oldsize" => oldsize, "newsize" => usize::from(newsize));
-
+        trace!(fd = ?self.fd, oldsize = oldsize, newsize = ?newsize, "Resizing shm pool");
         guard.remap(newsize).map_err(|()| {
-            debug!(self.log, "SHM pool resize failed"; "fd" => self.fd.as_raw_fd() as i32, "oldsize" => oldsize, "newsize" => usize::from(newsize));
+            debug!(fd = ?self.fd, oldsize = oldsize, newsize = ?newsize, "SHM pool resize failed");
             ResizeError::MremapFailed
         })
     }
@@ -73,6 +71,7 @@ impl Pool {
         self.map.read().unwrap().size
     }
 
+    #[instrument(skip_all, name = "wayland_shm")]
     pub fn with_data_slice<T, F: FnOnce(&[u8]) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {
@@ -81,7 +80,7 @@ impl Pool {
 
         let pool_guard = self.map.read().unwrap();
 
-        trace!(self.log, "Buffer access on shm pool"; "fd" => self.fd.as_raw_fd() as i32);
+        trace!(fd = ?self.fd, "Buffer access on shm pool");
 
         // Prepare the access
         SIGBUS_GUARD.with(|guard| {
@@ -101,7 +100,7 @@ impl Pool {
             let (_, triggered) = guard.get();
             guard.set((ptr::null_mut(), false));
             if triggered {
-                debug!(self.log, "SIGBUS caught on access on shm pool"; "fd" => self.fd.as_raw_fd());
+                debug!(fd = ?self.fd, "SIGBUS caught on access on shm pool");
                 Err(())
             } else {
                 Ok(t)
@@ -109,6 +108,7 @@ impl Pool {
         })
     }
 
+    #[instrument(skip_all, name = "wayland_shm")]
     pub fn with_data_slice_mut<T, F: FnOnce(&mut [u8]) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {
@@ -117,7 +117,7 @@ impl Pool {
 
         let mut pool_guard = self.map.write().unwrap();
 
-        trace!(self.log, "Mutable buffer access on shm pool"; "fd" => self.fd.as_raw_fd() as i32);
+        trace!(fd = ?self.fd, "Mutable buffer access on shm pool");
 
         // Prepare the access
         SIGBUS_GUARD.with(|guard| {
@@ -137,7 +137,7 @@ impl Pool {
             let (_, triggered) = guard.get();
             guard.set((ptr::null_mut(), false));
             if triggered {
-                debug!(self.log, "SIGBUS caught on access on shm pool"; "fd" => self.fd.as_raw_fd());
+                debug!(fd = ?self.fd, "SIGBUS caught on access on shm pool");
                 Err(())
             } else {
                 Ok(t)

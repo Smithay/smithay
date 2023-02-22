@@ -18,6 +18,7 @@ pub use cursor_image::{CursorImageAttributes, CursorImageStatus, CursorImageSurf
 mod grab;
 use grab::{DefaultGrab, GrabStatus};
 pub use grab::{GrabStartData, PointerGrab};
+use tracing::{info_span, instrument};
 
 /// An handle to a pointer handler
 ///
@@ -34,6 +35,7 @@ pub struct PointerHandle<D: SeatHandler> {
     pub(crate) known_pointers: Arc<Mutex<Vec<wayland_server::protocol::wl_pointer::WlPointer>>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_relative_pointers: Arc<Mutex<Vec<wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1>>>,
+    pub(crate) span: tracing::Span,
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
@@ -70,6 +72,7 @@ impl<D: SeatHandler> Clone for PointerHandle<D> {
             known_pointers: self.known_pointers.clone(),
             #[cfg(feature = "wayland_frontend")]
             known_relative_pointers: self.known_relative_pointers.clone(),
+            span: self.span.clone(),
         }
     }
 }
@@ -107,6 +110,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
             known_pointers: Arc::new(Mutex::new(Vec::new())),
             #[cfg(feature = "wayland_frontend")]
             known_relative_pointers: Arc::new(Mutex::new(Vec::new())),
+            span: info_span!("input_pointer"),
         }
     }
 
@@ -115,6 +119,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// If focus is set to [`Focus::Clear`] any currently focused surface will be unfocused.
     ///
     /// Overwrites any current grab.
+    #[instrument(parent = &self.span, skip(self, data, grab))]
     pub fn set_grab<G: PointerGrab<D> + 'static>(&self, data: &mut D, grab: G, serial: Serial, focus: Focus) {
         let seat = self.get_seat(data);
         self.inner
@@ -124,6 +129,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     }
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
+    #[instrument(parent = &self.span, skip(self, data))]
     pub fn unset_grab(&self, data: &mut D, serial: Serial, time: u32) {
         let seat = self.get_seat(data);
         self.inner.lock().unwrap().unset_grab(data, &seat, serial, time);
@@ -164,6 +170,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
+    #[instrument(parent = &self.span, skip(self, data, focus), fields(focus = ?focus.as_ref().map(|(_, loc)| ("...", loc))))]
     pub fn motion(
         &self,
         data: &mut D,
@@ -183,6 +190,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface, if the client uses
     /// the relative pointer protocol.
+    #[instrument(parent = &self.span, skip(self, data, focus), fields(focus = ?focus.as_ref().map(|(_, loc)| ("...", loc))))]
     pub fn relative_motion(
         &self,
         data: &mut D,
@@ -201,6 +209,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
+    #[instrument(parent = &self.span, skip(self, data))]
     pub fn button(&self, data: &mut D, event: &ButtonEvent) {
         let mut inner = self.inner.lock().unwrap();
         match event.state {
@@ -220,6 +229,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// Start an axis frame
     ///
     /// A single frame will group multiple scroll events as if they happened in the same instance.
+    #[instrument(parent = &self.span, skip(self, data))]
     pub fn axis(&self, data: &mut D, details: AxisFrame) {
         let seat = self.get_seat(data);
         self.inner.lock().unwrap().with_grab(&seat, |mut handle, grab| {

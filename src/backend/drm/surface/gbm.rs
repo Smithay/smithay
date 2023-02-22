@@ -10,11 +10,11 @@ use crate::backend::allocator::{
     format::{get_bpp, get_depth},
     Allocator, Format, Fourcc, Modifier, Slot, Swapchain,
 };
-use crate::backend::drm::{surface::DrmSurfaceInternal, DrmError, DrmSurface};
+use crate::backend::drm::{DrmError, DrmSurface};
 use crate::backend::SwapBuffersError;
 use crate::utils::{DevPath, Physical, Point, Rectangle, Transform};
 
-use slog::{debug, error, o, trace, warn};
+use tracing::{debug, error, info_span, instrument, trace, warn};
 
 use super::{PlaneConfig, PlaneDamageClips, PlaneState};
 
@@ -28,6 +28,7 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static,
     next_fb: Option<Slot<BufferObject<()>>>,
     swapchain: Swapchain<A>,
     drm: Arc<DrmSurface>,
+    span: tracing::Span,
 }
 
 // we cannot simply pick the first supported format of the intersection of *all* formats, because:
@@ -52,29 +53,22 @@ where
     /// To successfully call this function, you need to have a renderer,
     /// which can render into a Dmabuf, and a gbm allocator that can produce
     /// buffers of a supported format for rendering.
-    pub fn new<L>(
+    pub fn new(
         drm: DrmSurface,
         mut allocator: A,
         renderer_formats: HashSet<Format>,
-        log: L,
-    ) -> Result<GbmBufferedSurface<A, U>, Error<A::Error>>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
+    ) -> Result<GbmBufferedSurface<A, U>, Error<A::Error>> {
+        let span = info_span!(parent: drm.span(), "drm_gbm");
+        let _guard = span.enter();
+
         let mut error = None;
         let drm = Arc::new(drm);
 
-        let log = crate::slog_or_fallback(log).new(o!("backend" => "drm_render"));
         for format in SUPPORTED_FORMATS {
-            debug!(log, "Testing color format: {}", format);
-            match Self::new_internal(
-                drm.clone(),
-                allocator,
-                renderer_formats.clone(),
-                *format,
-                log.clone(),
-            ) {
+            debug!("Testing color format: {}", format);
+            match Self::new_internal(drm.clone(), allocator, renderer_formats.clone(), *format) {
                 Ok((current_fb, swapchain)) => {
+                    drop(_guard);
                     return Ok(GbmBufferedSurface {
                         current_fb,
                         pending_fb: None,
@@ -82,10 +76,11 @@ where
                         next_fb: None,
                         swapchain,
                         drm,
+                        span,
                     });
                 }
                 Err((alloc, err)) => {
-                    warn!(log, "Preferred format {} not available: {:?}", format, err);
+                    warn!("Preferred format {} not available: {:?}", format, err);
                     allocator = alloc;
                     error = Some(err);
                 }
@@ -100,7 +95,6 @@ where
         allocator: A,
         mut renderer_formats: HashSet<Format>,
         code: Fourcc,
-        logger: slog::Logger,
     ) -> Result<(Slot<BufferObject<()>>, Swapchain<A>), (A, Error<A::Error>)> {
         // select a format
         let mut plane_formats = match drm.supported_formats(drm.plane()) {
@@ -114,10 +108,9 @@ where
         plane_formats.retain(|fmt| fmt.code == code);
         renderer_formats.retain(|fmt| fmt.code == code);
 
-        trace!(logger, "Plane formats: {:?}", plane_formats);
-        trace!(logger, "Renderer formats: {:?}", renderer_formats);
+        trace!("Plane formats: {:?}", plane_formats);
+        trace!("Renderer formats: {:?}", renderer_formats);
         debug!(
-            logger,
             "Remaining intersected formats: {:?}",
             plane_formats
                 .intersection(&renderer_formats)
@@ -155,7 +148,7 @@ where
                     .collect::<Vec<_>>()
             }
         };
-        debug!(logger, "Testing Formats: {:?}", formats);
+        debug!("Testing Formats: {:?}", formats);
 
         let modifiers = formats.iter().map(|x| x.modifier).collect::<Vec<_>>();
         let mode = drm.pending_mode();
@@ -213,20 +206,20 @@ where
 
         match drm.test_state([plane_state], true) {
             Ok(true) => {
-                debug!(logger, "Choosen format: {:?}", format);
+                debug!("Choosen format: {:?}", format);
                 Ok((buffer, swapchain))
             }
             Ok(false) => {
                 warn!(
-                    logger,
-                    "Mode-setting failed with automatically selected buffer format {:?}", format
+                    "Mode-setting failed with automatically selected buffer format {:?}",
+                    format
                 );
                 Err((swapchain.allocator, Error::NoSupportedPlaneFormat))
             }
             Err(err) => {
                 warn!(
-                    logger,
-                    "Mode-setting failed with automatically selected buffer format {:?}: {}", format, err
+                    "Mode-setting failed with automatically selected buffer format {:?}: {}",
+                    format, err
                 );
                 Err((swapchain.allocator, err.into()))
             }
@@ -237,6 +230,7 @@ where
     ///
     /// *Note*: This function can be called multiple times and
     /// will return the same buffer until it is queued (see [`GbmBufferedSurface::queue_buffer`]).
+    #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub fn next_buffer(&mut self) -> Result<(Dmabuf, u8), Error<A::Error>> {
         if self.next_fb.is_none() {
             let slot = self
@@ -460,11 +454,6 @@ where
         x => Some(x),
     };
 
-    let logger = match &*drm.internal {
-        DrmSurfaceInternal::Atomic(surf) => surf.logger.clone(),
-        DrmSurfaceInternal::Legacy(surf) => surf.logger.clone(),
-    };
-
     let fb = match if modifier.is_some() {
         let num = bo.plane_count().unwrap();
         let modifiers = [
@@ -487,7 +476,7 @@ where
                     source,
                 }));
             }
-            debug!(logger, "Failed to add framebuffer, trying legacy method");
+            debug!("Failed to add framebuffer, trying legacy method");
             let fourcc = bo.format().unwrap();
             let (depth, bpp) = get_depth(fourcc)
                 .and_then(|d| get_bpp(fourcc).map(|b| (d, b)))

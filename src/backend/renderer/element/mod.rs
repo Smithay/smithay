@@ -344,7 +344,6 @@ pub trait RenderElement<R: Renderer>: Element {
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
     ) -> Result<(), R::Error>;
 
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
@@ -426,9 +425,8 @@ where
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        (*self).draw(frame, src, dst, damage, log)
+        (*self).draw(frame, src, dst, damage)
     }
 }
 
@@ -684,7 +682,6 @@ macro_rules! render_elements_internal {
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
-            log: &slog::Logger,
         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
         where
         $(
@@ -701,7 +698,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -728,7 +725,6 @@ macro_rules! render_elements_internal {
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
-            log: &slog::Logger,
         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
         {
             match self {
@@ -737,7 +733,7 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1061,7 +1057,6 @@ macro_rules! render_elements_internal {
 /// #         _src: Rectangle<f64, Buffer>,
 /// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
-/// #         _log: &slog::Logger,
 /// #     ) -> Result<(), <R as Renderer>::Error> {
 /// #         unimplemented!()
 /// #     }
@@ -1092,7 +1087,6 @@ macro_rules! render_elements_internal {
 /// #         _src: Rectangle<f64, Buffer>,
 /// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
-/// #         _log: &slog::Logger,
 /// #     ) -> Result<(), <R as Renderer>::Error> {
 /// #         unimplemented!()
 /// #     }
@@ -1368,9 +1362,8 @@ where
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        self.0.draw(frame, src, dst, damage, log)
+        self.0.draw(frame, src, dst, damage)
     }
 
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {

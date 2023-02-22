@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use slog::debug;
+use tracing::debug;
 use wayland_server::{
     protocol::{
         wl_data_device::{self, WlDataDevice},
@@ -41,15 +41,13 @@ where
 {
     fn request(
         handler: &mut D,
-        _client: &Client,
+        client: &Client,
         resource: &WlDataDevice,
         request: wl_data_device::Request,
         data: &DataDeviceUserData,
         dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        let data_device_state = handler.data_device_state();
-
         if let Some(seat) = Seat::<D>::from_resource(&data.wl_seat) {
             match request {
                 wl_data_device::Request::StartDrag {
@@ -82,10 +80,7 @@ where
                             return;
                         }
                     }
-                    debug!(
-                        &data_device_state.log,
-                        "denying drag from client without implicit grab"
-                    );
+                    debug!(serial = ?serial, client = ?client, "denying drag from client without implicit grab");
                 }
                 wl_data_device::Request::SetSelection { source, .. } => {
                     if let Some(keyboard) = seat.get_keyboard() {
@@ -102,7 +97,7 @@ where
                         }
                     }
                     debug!(
-                        &data_device_state.log,
+                        client = ?client,
                         "denying setting selection by a non-focused client"
                     );
                 }

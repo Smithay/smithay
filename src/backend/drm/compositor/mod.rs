@@ -76,7 +76,6 @@
 //!         model: "N/A".into(),
 //!         subpixel: Subpixel::Unknown,
 //!     },
-//!     None,
 //! );
 //!
 //! # let device: DrmDevice = todo!();
@@ -99,13 +98,12 @@
 //!     renderer_formats,
 //!     device.cursor_size(),
 //!     Some(gbm),
-//!     None,
 //! )
 //! .expect("failed to initialize drm compositor");
 //!
 //! # let elements: Vec<WaylandSurfaceRenderElement<Gles2Renderer>> = Vec::new();
 //! let render_frame_result = compositor
-//!     .render_frame::<_, _, Gles2Renderbuffer, _>(&mut renderer, &elements, CLEAR_COLOR, None)
+//!     .render_frame::<_, _, Gles2Renderbuffer>(&mut renderer, &elements, CLEAR_COLOR)
 //!     .expect("failed to render frame");
 //!
 //! compositor.queue_frame(()).expect("failed to queue frame");
@@ -128,6 +126,7 @@ use ::gbm::{BufferObject, BufferObjectFlags};
 use drm::control::{connector, crtc, framebuffer, plane, Mode};
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::IndexMap;
+use tracing::{debug, info, info_span, instrument, trace, warn};
 use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
 
 use crate::{
@@ -151,7 +150,7 @@ use crate::{
         SwapBuffersError,
     },
     output::Output,
-    utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
 use super::{DrmDeviceFd, DrmSurface, PlaneClaim, PlaneInfo, Planes};
@@ -830,7 +829,6 @@ where
         dtr: &mut DamageTrackedRenderer,
         age: usize,
         filter: impl IntoIterator<Item = Id>,
-        log: slog::Logger,
     ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputNoMode>
     where
         E: Element,
@@ -868,7 +866,7 @@ where
 
         elements.push(primary_render_element);
 
-        dtr.damage_output(age, &elements, log)
+        dtr.damage_output(age, &elements)
     }
 }
 
@@ -887,7 +885,6 @@ where
         renderer: &mut R,
         damage: impl IntoIterator<Item = Rectangle<i32, Physical>>,
         filter: impl IntoIterator<Item = Id>,
-        log: &slog::Logger,
     ) -> Result<(), BlitFrameResultError<<R as Renderer>::Error, <B as AsDmabuf>::Error>>
     where
         R: Renderer + Blit<Dmabuf>,
@@ -951,7 +948,7 @@ where
         });
 
         if !clear_damage.is_empty() {
-            slog::trace!(log, "clearing frame damage {:#?}", clear_damage);
+            trace!("clearing frame damage {:#?}", clear_damage);
 
             let mut frame = renderer
                 .render(size, transform)
@@ -971,7 +968,7 @@ where
                 .filter_map(|d| d.intersection(geometry))
                 .collect::<Vec<_>>();
 
-            slog::trace!(log, "blitting frame with damage: {:#?}", blit_damage);
+            trace!("blitting frame with damage: {:#?}", blit_damage);
 
             for rect in blit_damage {
                 renderer
@@ -987,7 +984,7 @@ where
 
         // then render the remaining elements if any
         if !elements_to_render.is_empty() {
-            slog::trace!(log, "drawing {} frame element(s)", elements_to_render.len());
+            trace!("drawing {} frame element(s)", elements_to_render.len());
 
             let mut frame = renderer
                 .render(size, transform)
@@ -1011,10 +1008,10 @@ where
                     continue;
                 }
 
-                slog::trace!(log, "drawing frame element with damage: {:#?}", element_damage);
+                trace!("drawing frame element with damage: {:#?}", element_damage);
 
                 element
-                    .draw(&mut frame, src, dst, &element_damage, log)
+                    .draw(&mut frame, src, dst, &element_damage)
                     .map_err(BlitFrameResultError::Rendering)?;
             }
 
@@ -1081,6 +1078,7 @@ where
     >,
 
     debug_flags: DebugFlags,
+    span: tracing::Span,
 }
 
 // we cannot simply pick the first supported format of the intersection of *all* formats, because:
@@ -1119,7 +1117,8 @@ where
     /// - `cursor_size` as reported by the drm device, used for creating buffer for the cursor plane
     /// - `gbm` device used for creating buffers for the cursor plane, `None` will disable the cursor plane
     #[allow(clippy::too_many_arguments)]
-    pub fn new<L>(
+    #[instrument(skip(allocator, framebuffer_exporter))]
+    pub fn new(
         output: &Output,
         surface: DrmSurface,
         planes: Option<Planes>,
@@ -1128,12 +1127,14 @@ where
         renderer_formats: HashSet<DrmFormat>,
         cursor_size: Size<u32, BufferCoords>,
         gbm: Option<GbmDevice<G>>,
-        log: L,
-    ) -> FrameResult<Self, A, F>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_fallback(log).new(slog::o!("backend" => "drm_render"));
+    ) -> FrameResult<Self, A, F> {
+        let span = info_span!(
+            parent: None,
+            "drm_compositor",
+            output = output.name(),
+            device = ?surface.dev_path(),
+            crtc = ?surface.crtc(),
+        );
 
         let mut error = None;
         let surface = Arc::new(surface);
@@ -1151,7 +1152,7 @@ where
         let damage_tracked_renderer = DamageTrackedRenderer::from_output(output);
 
         for format in SUPPORTED_FORMATS {
-            slog::debug!(log, "Testing color format: {}", format);
+            debug!("Testing color format: {}", format);
             match Self::find_supported_format(
                 surface.clone(),
                 &planes,
@@ -1159,7 +1160,6 @@ where
                 &framebuffer_exporter,
                 renderer_formats.clone(),
                 *format,
-                log.clone(),
             ) {
                 Ok((swapchain, current_frame)) => {
                     let cursor_state = gbm.map(|gbm| {
@@ -1192,12 +1192,13 @@ where
                         planes,
                         element_states: IndexMap::new(),
                         debug_flags: DebugFlags::empty(),
+                        span,
                     };
 
                     return Ok(drm_renderer);
                 }
                 Err((alloc, err)) => {
-                    slog::warn!(log, "Preferred format {} not available: {:?}", format, err);
+                    warn!("Preferred format {} not available: {:?}", format, err);
                     allocator = alloc;
                     error = Some(err);
                 }
@@ -1213,7 +1214,6 @@ where
         framebuffer_exporter: &F,
         mut renderer_formats: HashSet<DrmFormat>,
         code: DrmFourcc,
-        logger: slog::Logger,
     ) -> Result<(Swapchain<A>, Frame<A, F>), (A, FrameErrorType<A, F>)> {
         // select a format
         let mut plane_formats = match drm.supported_formats(drm.plane()) {
@@ -1227,10 +1227,9 @@ where
         plane_formats.retain(|fmt| fmt.code == code);
         renderer_formats.retain(|fmt| fmt.code == code);
 
-        slog::trace!(logger, "Plane formats: {:?}", plane_formats);
-        slog::trace!(logger, "Renderer formats: {:?}", renderer_formats);
-        slog::debug!(
-            logger,
+        trace!("Plane formats: {:?}", plane_formats);
+        trace!("Renderer formats: {:?}", renderer_formats);
+        debug!(
             "Remaining intersected formats: {:?}",
             plane_formats
                 .intersection(&renderer_formats)
@@ -1270,7 +1269,7 @@ where
                     .collect::<Vec<_>>()
             }
         };
-        slog::debug!(logger, "Testing Formats: {:?}", formats);
+        debug!("Testing Formats: {:?}", formats);
 
         let modifiers = formats.iter().map(|x| x.modifier).collect::<Vec<_>>();
         let mode = drm.pending_mode();
@@ -1319,7 +1318,7 @@ where
         let plane_claim = match drm.claim_plane(planes.primary.handle) {
             Some(claim) => claim,
             None => {
-                slog::warn!(logger, "failed to claim primary plane",);
+                warn!("failed to claim primary plane",);
                 return Err((swapchain.allocator, FrameError::PrimaryPlaneTestFailed));
             }
         };
@@ -1342,20 +1341,18 @@ where
 
         match current_frame_state.test_state(&drm, planes.primary.handle, plane_state, true) {
             Ok(true) => {
-                slog::debug!(logger, "Chosen format: {:?}", dmabuf.format());
+                debug!("Chosen format: {:?}", dmabuf.format());
                 Ok((swapchain, current_frame_state))
             }
             Ok(false) => {
-                slog::warn!(
-                    logger,
+                warn!(
                     "Mode-setting failed with automatically selected buffer format {:?}: test state failed",
                     dmabuf.format()
                 );
                 Err((swapchain.allocator, FrameError::PrimaryPlaneTestFailed))
             }
             Err(err) => {
-                slog::warn!(
-                    logger,
+                warn!(
                     "Mode-setting failed with automatically selected buffer format {:?}: {}",
                     dmabuf.format(),
                     err
@@ -1366,21 +1363,18 @@ where
     }
 
     /// Render the next frame
-    pub fn render_frame<'a, R, E, Target, L>(
+    #[instrument(parent = &self.span, skip_all)]
+    pub fn render_frame<'a, R, E, Target>(
         &'a mut self,
         renderer: &mut R,
         elements: &'a [E],
         clear_color: [f32; 4],
-        log: L,
     ) -> Result<RenderFrameResult<'a, A::Buffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
         <R as Renderer>::TextureId: Texture + 'static,
-        L: Into<Option<slog::Logger>>,
     {
-        let log = crate::slog_or_fallback(log);
-
         // Just reset any next state, this will put
         // any already acquired slot back to the swapchain
         self.next_frame.take();
@@ -1535,7 +1529,7 @@ where
 
             if element_visible_area == 0 {
                 // No need to draw a completely hidden element
-                slog::trace!(log, "skipping completely obscured element {:?}", element.id());
+                trace!("skipping completely obscured element {:?}", element.id());
 
                 // We allow multiple instance of a single element, so do not
                 // override the state if we already have one
@@ -1620,7 +1614,6 @@ where
                 output_transform,
                 output_geometry,
                 try_assign_primary_plane,
-                &log,
             );
 
             if let Some(direct_scan_out_plane) = direct_scan_out_plane {
@@ -1674,8 +1667,7 @@ where
                     output_damage.push(previous_config.dst);
 
                     if let Some(next_config) = next_state {
-                        slog::trace!(
-                            log,
+                        trace!(
                             "damaging move plane {:?}: {:?} -> {:?}",
                             handle,
                             previous_config.dst,
@@ -1683,12 +1675,7 @@ where
                         );
                         output_damage.push(next_config.dst);
                     } else {
-                        slog::trace!(
-                            log,
-                            "damaging removed plane {:?}: {:?}",
-                            handle,
-                            previous_config.dst
-                        );
+                        trace!("damaging removed plane {:?}: {:?}", handle, previous_config.dst);
                     }
                 }
             }
@@ -1700,8 +1687,7 @@ where
             .unwrap_or(false);
 
         if render {
-            slog::trace!(
-                log,
+            trace!(
                 "rendering {} elements on the primary plane {:?}",
                 primary_plane_elements.len(),
                 self.planes.primary.handle,
@@ -1753,13 +1739,9 @@ where
                     .map(|e| DrmRenderElements::Other(*e)),
             );
 
-            let render_res = self.damage_tracked_renderer.render_output(
-                renderer,
-                age,
-                &elements,
-                clear_color,
-                log.clone(),
-            );
+            let render_res =
+                self.damage_tracked_renderer
+                    .render_output(renderer, age, &elements, clear_color);
 
             // restore the renderer debug flags
             renderer.set_debug_flags(renderer_debug_flags);
@@ -1802,7 +1784,7 @@ where
 
                     if !had_direct_scan_out {
                         if let Some(render_damage) = render_damage {
-                            slog::trace!(log, "rendering damage: {:?}", render_damage);
+                            trace!("rendering damage: {:?}", render_damage);
 
                             self.primary_plane_damage_tracker
                                 .add(render_damage.iter().map(|d| {
@@ -1822,7 +1804,7 @@ where
                             .ok()
                             .flatten();
                         } else {
-                            slog::trace!(log, "skipping primary plane, no damage");
+                            trace!("skipping primary plane, no damage");
 
                             primary_plane_state.skip = true;
                             *config = previous_state
@@ -1831,8 +1813,7 @@ where
                                 .unwrap_or_else(|| config.clone());
                         }
                     } else {
-                        slog::trace!(
-                            log,
+                        trace!(
                             "clearing previous direct scan-out on primary plane, damaging complete output"
                         );
                         output_damage.push(output_geometry);
@@ -2073,6 +2054,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all)]
     fn try_assign_element<'a, R, E, Target>(
         &mut self,
         renderer: &mut R,
@@ -2088,7 +2070,6 @@ where
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
         try_assign_primary_plane: bool,
-        log: &slog::Logger,
     ) -> Option<PlaneInfo>
     where
         R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
@@ -2103,10 +2084,8 @@ where
                 frame_state,
                 output_damage,
                 output_geometry,
-                log,
             ) {
-                slog::trace!(
-                    log,
+                trace!(
                     "assigned element {:?} to primary plane {:?}",
                     element.id(),
                     self.planes.primary.handle
@@ -2124,10 +2103,8 @@ where
             output_damage,
             output_transform,
             output_geometry,
-            log,
         ) {
-            slog::trace!(
-                log,
+            trace!(
                 "assigned element {:?} to cursor plane {:?}",
                 element.id(),
                 self.planes.cursor.as_ref().map(|p| p.handle)
@@ -2145,9 +2122,8 @@ where
             output_damage,
             output_transform,
             output_geometry,
-            log,
         ) {
-            slog::trace!(log, "assigned element {:?} to overlay plane", element.id());
+            trace!("assigned element {:?} to overlay plane", element.id());
             return Some(plane);
         }
 
@@ -2155,6 +2131,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all)]
     fn try_assign_cursor_plane<R, E, Target>(
         &mut self,
         renderer: &mut R,
@@ -2168,7 +2145,6 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-        log: &slog::Logger,
     ) -> Option<PlaneInfo>
     where
         R: Renderer + Offscreen<Target> + ExportMem,
@@ -2182,8 +2158,7 @@ where
 
         // something is already assigned to our cursor plane
         if frame_state.is_assigned(plane_info.handle) {
-            slog::trace!(
-                log,
+            trace!(
                 "skipping element {:?} on cursor plane {:?}, plane already has element assigned",
                 element.id(),
                 plane_info.handle
@@ -2197,8 +2172,7 @@ where
         // if the element is greater than the cursor size we can not
         // use the cursor plane to scan out the element
         if element_size.w > self.cursor_size.w || element_size.h > self.cursor_size.h {
-            slog::trace!(
-                log,
+            trace!(
                 "element {:?} too big for cursor plane {:?}, skipping",
                 element.id(),
                 plane_info.handle,
@@ -2209,8 +2183,7 @@ where
         // if the element exposes the underlying storage we can try to do
         // direct scan-out
         if let Some(underlying_storage) = element.underlying_storage(renderer) {
-            slog::trace!(
-                log,
+            trace!(
                 "trying to assign element {:?} for direct scan-out on cursor plane {:?}",
                 element.id(),
                 plane_info.handle,
@@ -2226,10 +2199,8 @@ where
                 output_damage,
                 output_transform,
                 output_geometry,
-                log,
             ) {
-                slog::trace!(
-                    log,
+                trace!(
                     "assigned element {:?} for direct scan-out on cursor plane {:?}",
                     element.id(),
                     plane_info.handle,
@@ -2239,7 +2210,7 @@ where
         }
 
         let Some(cursor_state) = self.cursor_state.as_mut() else {
-            slog::trace!(log, "no cursor state, skipping cursor rendering");
+            trace!("no cursor state, skipping cursor rendering");
             return None
         };
 
@@ -2304,7 +2275,7 @@ where
 
         // we no not have to re-render but update the planes location
         if !render && reposition {
-            slog::info!(log, "repositioning cursor plane");
+            trace!("repositioning cursor plane");
             let mut plane_state = previous_state.plane_state(plane_info.handle).unwrap().clone();
             plane_state.skip = false;
             let mut config = plane_state.config.as_mut().unwrap();
@@ -2320,8 +2291,7 @@ where
             }
         }
 
-        slog::trace!(
-            log,
+        trace!(
             "trying to render element {:?} on cursor plane {:?}",
             element.id(),
             plane_info.handle
@@ -2337,7 +2307,7 @@ where
         ) {
             Ok(buffer) => buffer,
             Err(err) => {
-                slog::debug!(log, "failed to create cursor buffer: {}", err);
+                debug!("failed to create cursor buffer: {}", err);
                 return None;
             }
         };
@@ -2349,19 +2319,16 @@ where
         {
             Ok(Some(fb)) => fb,
             Ok(None) => {
-                slog::debug!(
-                    log,
+                debug!(
                     "failed to export framebuffer for cursor plane {:?}: no framebuffer available",
                     plane_info.handle
                 );
                 return None;
             }
             Err(err) => {
-                slog::debug!(
-                    log,
+                debug!(
                     "failed to export framebuffer for cursor plane {:?}: {}",
-                    plane_info.handle,
-                    err
+                    plane_info.handle, err
                 );
                 return None;
             }
@@ -2371,22 +2338,18 @@ where
         let offscreen_buffer = match renderer.create_buffer(cursor_buffer_size) {
             Ok(buffer) => buffer,
             Err(err) => {
-                slog::debug!(
-                    log,
+                debug!(
                     "failed to create offscreen buffer for cursor plane {:?}: {}",
-                    plane_info.handle,
-                    err
+                    plane_info.handle, err
                 );
                 return None;
             }
         };
 
         if let Err(err) = renderer.bind(offscreen_buffer) {
-            slog::debug!(
-                log,
+            debug!(
                 "failed to bind cursor buffer for cursor plane {:?}: {}",
-                plane_info.handle,
-                err
+                plane_info.handle, err
             );
             return None;
         };
@@ -2395,7 +2358,7 @@ where
         let plane_claim = match self.surface.claim_plane(plane_info.handle) {
             Some(claim) => claim,
             None => {
-                slog::trace!(log, "failed to claim plane {:?}", plane_info.handle);
+                trace!("failed to claim plane {:?}", plane_info.handle);
                 return None;
             }
         };
@@ -2414,7 +2377,7 @@ where
 
             let src = element.src();
             let dst = Rectangle::from_loc_and_size((0, 0), element_geometry.size);
-            element.draw(&mut frame, src, dst, &[dst], log)?;
+            element.draw(&mut frame, src, dst, &[dst])?;
 
             frame.finish()?;
 
@@ -2427,7 +2390,7 @@ where
         renderer.set_debug_flags(renderer_debug_flags);
 
         if let Err(err) = render_res {
-            slog::debug!(log, "failed to render cursor element: {}", err);
+            debug!("failed to render cursor element: {}", err);
             return None;
         }
 
@@ -2435,20 +2398,20 @@ where
         let mapping = match renderer.copy_framebuffer(copy_rect) {
             Ok(mapping) => mapping,
             Err(err) => {
-                slog::info!(log, "failed to export cursor offscreen buffer: {}", err);
+                info!("failed to export cursor offscreen buffer: {}", err);
                 return None;
             }
         };
         let data = match renderer.map_texture(&mapping) {
             Ok(data) => data,
             Err(err) => {
-                slog::info!(log, "failed to map exported cursor offscreen buffer: {}", err);
+                info!("failed to map exported cursor offscreen buffer: {}", err);
                 return None;
             }
         };
 
         if let Err(err) = cursor_buffer.write(data) {
-            slog::info!(log, "failed to write cursor buffer; {}", err);
+            info!("failed to write cursor buffer; {}", err);
             return None;
         }
 
@@ -2483,12 +2446,13 @@ where
             output_damage.push(dst);
             Some(*plane_info)
         } else {
-            slog::info!(log, "failed to test cursor plane {:?} state", plane_info.handle);
+            info!("failed to test cursor plane {:?} state", plane_info.handle);
             None
         }
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all)]
     fn try_assign_overlay_plane<'a, R, E>(
         &self,
         renderer: &mut R,
@@ -2503,7 +2467,6 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-        log: &slog::Logger,
     ) -> Option<PlaneInfo>
     where
         R: Renderer,
@@ -2519,8 +2482,7 @@ where
                 .iter()
                 .all(|plane| frame_state.is_assigned(plane.handle))
         {
-            slog::trace!(
-                log,
+            trace!(
                 "skipping overlay planes for element {:?}, no free planes",
                 element_id
             );
@@ -2544,8 +2506,7 @@ where
         for plane in self.planes.overlay.iter() {
             // something is already assigned to our overlay plane
             if frame_state.is_assigned(plane.handle) {
-                slog::trace!(
-                    log,
+                trace!(
                     "skipping plane {:?} with zpos {:?} for element {:?}, already has element assigned, skipping",
                     plane.handle,
                     plane.zpos,
@@ -2558,8 +2519,7 @@ where
             let is_underlay = self.planes.primary.zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
 
             if is_underlay && !element_is_opaque(element, scale) {
-                slog::trace!(
-                    log,
+                trace!(
                     "skipping direct scan-out on plane plane {:?} with zpos {:?}, element {:?} is not opaque",
                     plane.handle,
                     plane.zpos,
@@ -2572,8 +2532,7 @@ where
             // the primary plane and is not an underlay
             // we can not assign it to any overlay plane
             if overlaps_with_primary_plane_element && !is_underlay {
-                slog::trace!(
-                    log,
+                trace!(
                     "skipping direct scan-out on plane plane {:?} with zpos {:?}, element {:?} overlaps with element on primary plane", plane.handle, plane.zpos, element_id,
                 );
                 return None;
@@ -2593,8 +2552,7 @@ where
             // has an element assigned we can not use the
             // plane for direct scan-out
             if overlaps_with_plane_underneath {
-                slog::trace!(
-                    log,
+                trace!(
                     "skipping direct scan-out on plane {:?} with zpos {:?}, element {:?} geometry {:?} overlaps with plane underneath", plane.handle, plane.zpos, element_id, element_geometry,
                 );
                 continue;
@@ -2611,7 +2569,6 @@ where
                 output_damage,
                 output_transform,
                 output_geometry,
-                log,
             ) {
                 return Some(plane);
             }
@@ -2621,6 +2578,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all)]
     fn try_assign_primary_plane<R, E>(
         &self,
         renderer: &mut R,
@@ -2633,7 +2591,6 @@ where
         frame_state: &mut Frame<A, F>,
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_geometry: Rectangle<i32, Physical>,
-        log: &slog::Logger,
     ) -> Option<PlaneInfo>
     where
         R: Renderer,
@@ -2647,8 +2604,7 @@ where
             }
         };
 
-        slog::trace!(
-            log,
+        trace!(
             "trying to assign element {:?} to primary plane {:?}",
             element.id(),
             self.planes.primary.handle
@@ -2667,11 +2623,11 @@ where
             output_damage,
             Transform::Normal,
             output_geometry,
-            log,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[instrument(skip_all)]
     fn try_assign_plane<R, E>(
         &self,
         element: &E,
@@ -2687,7 +2643,6 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-        log: &slog::Logger,
     ) -> Option<PlaneInfo>
     where
         R: Renderer,
@@ -2709,8 +2664,7 @@ where
         let cached_fb = element_state.get(underlying_storage);
 
         if cached_fb.is_none() {
-            slog::trace!(
-                log,
+            trace!(
                 "no cached fb, exporting new fb for element {:?} underlying storage {:?}",
                 element_id,
                 &underlying_storage
@@ -2721,13 +2675,12 @@ where
                 .add_framebuffer(self.surface.device_fd(), ExportBuffer::from(underlying_storage))
                 .map(|fb| fb.map(|fb| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb))))
                 .unwrap_or_else(|err| {
-                    slog::trace!(log, "failed to add framebuffer: {:?}", err);
+                    trace!("failed to add framebuffer: {:?}", err);
                     None
                 });
 
             if fb.is_none() {
-                slog::trace!(
-                    log,
+                trace!(
                     "could not import framebuffer for element {:?} underlying storage {:?}",
                     element_id,
                     &underlying_storage
@@ -2736,8 +2689,7 @@ where
 
             element_state.insert(underlying_storage, fb);
         } else {
-            slog::trace!(
-                log,
+            trace!(
                 "using cached fb for element {:?} underlying storage {:?}",
                 element_id,
                 &underlying_storage
@@ -2759,8 +2711,7 @@ where
         let plane_claim = match self.surface.claim_plane(plane.handle) {
             Some(claim) => claim,
             None => {
-                slog::trace!(
-                    log,
+                trace!(
                     "failed to claim plane {:?} for element {:?}",
                     plane.handle,
                     element_id
@@ -2770,7 +2721,7 @@ where
         };
 
         // Try to assign the element to a plane
-        slog::trace!(log, "testing direct scan-out for element {:?} on plane {:?} with zpos {:?}: fb: {:?}, underlying storage: {:?}, element_geometry: {:?}", element_id, plane.handle, plane.zpos, &fb, &underlying_storage, element_geometry);
+        trace!("testing direct scan-out for element {:?} on plane {:?} with zpos {:?}: fb: {:?}, underlying storage: {:?}, element_geometry: {:?}", element_id, plane.handle, plane.zpos, &fb, &underlying_storage, element_geometry);
 
         let transform = apply_output_transform(
             apply_underlying_storage_transform(element.transform(), underlying_storage),
@@ -2861,8 +2812,7 @@ where
         if res {
             output_damage.extend(element_output_damage);
 
-            slog::trace!(
-                log,
+            trace!(
                 "successfully assigned element {:?} to plane {:?} with zpos {:?} for direct scan-out",
                 element_id,
                 plane.handle,
@@ -2871,8 +2821,7 @@ where
 
             Some(*plane)
         } else {
-            slog::trace!(
-                log,
+            trace!(
                 "skipping direct scan-out on plane {:?} with zpos {:?} for element {:?}, test failed",
                 plane.handle,
                 plane.zpos,

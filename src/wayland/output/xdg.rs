@@ -5,7 +5,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use slog::{o, trace};
+use tracing::trace;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1;
 use wayland_server::{protocol::wl_output::WlOutput, Resource};
 
@@ -24,7 +24,6 @@ pub(crate) struct Inner {
     transform: Transform,
 
     pub instances: Vec<ZxdgOutputV1>,
-    _log: ::slog::Logger,
 }
 
 #[derive(Debug, Clone)]
@@ -33,10 +32,8 @@ pub(crate) struct XdgOutput {
 }
 
 impl XdgOutput {
-    pub(super) fn new(output: &super::Inner, log: ::slog::Logger) -> Self {
-        let log = log.new(o!("smithay_module" => "xdg_output_handler"));
-
-        trace!(log, "Creating new xdg_output"; "name" => &output.name);
+    pub(super) fn new(output: &super::Inner) -> Self {
+        trace!(name = output.name, "Creating new xdg_output");
 
         let physical_size = output.current_mode.map(|mode| mode.size);
 
@@ -51,7 +48,6 @@ impl XdgOutput {
                 transform: output.transform,
 
                 instances: Vec::new(),
-                _log: log,
             })),
         }
     }

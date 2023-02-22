@@ -10,29 +10,26 @@ use super::DrmDeviceFd;
 use crate::backend::drm::error::Error;
 use crate::utils::DevPath;
 
-use slog::{error, info, o};
+use tracing::{debug, error, info_span, trace};
 
 #[derive(Debug)]
 pub struct LegacyDrmDevice {
     pub(crate) fd: DrmDeviceFd,
     pub(crate) active: Arc<AtomicBool>,
     old_state: HashMap<crtc::Handle, (crtc::Info, Vec<connector::Handle>)>,
-    logger: ::slog::Logger,
+    pub(super) span: tracing::Span,
 }
 
 impl LegacyDrmDevice {
-    pub fn new(
-        fd: DrmDeviceFd,
-        active: Arc<AtomicBool>,
-        disable_connectors: bool,
-        logger: slog::Logger,
-    ) -> Result<Self, Error> {
+    pub fn new(fd: DrmDeviceFd, active: Arc<AtomicBool>, disable_connectors: bool) -> Result<Self, Error> {
+        let span = info_span!("drm_legacy");
         let mut dev = LegacyDrmDevice {
             fd,
             active,
             old_state: HashMap::new(),
-            logger: logger.new(o!("smithay_module" => "backend_drm_legacy", "drm_module" => "device")),
+            span,
         };
+        let _guard = dev.span.enter();
 
         // Enumerate (and save) the current device state.
         // We need to keep the previous device configuration to restore the state later,
@@ -77,9 +74,11 @@ impl LegacyDrmDevice {
         // on surface creation (it might be changed on another thread during the enumeration).
         // An easy workaround is to set a known state on device creation.
         if disable_connectors {
+            debug!("Resetting drm device to known state");
             dev.reset_state()?;
         }
 
+        drop(_guard);
         Ok(dev)
     }
 
@@ -112,14 +111,25 @@ impl LegacyDrmDevice {
 
 impl Drop for LegacyDrmDevice {
     fn drop(&mut self) {
-        info!(self.logger, "Dropping device: {:?}", self.fd.dev_path());
         if self.active.load(Ordering::SeqCst) {
+            let _guard = self.span.enter();
+
             // Here we restore the tty to it's previous state.
             // In case e.g. getty was running on the tty sets the correct framebuffer again,
             // so that getty will be visible.
             // We do exit correctly, if this fails, but the user will be presented with
             // a black screen, if no display handler takes control again.
+
+            debug!("Device still active, trying to restore previous state");
             for (handle, (info, connectors)) in self.old_state.drain() {
+                trace!(
+                    framebuffer = ?info.framebuffer(),
+                    offset = ?info.position(),
+                    ?connectors,
+                    mode = ?info.mode(),
+                    "Resetting crtc {:?}",
+                    handle,
+                );
                 if let Err(err) = self.fd.set_crtc(
                     handle,
                     info.framebuffer(),
@@ -127,7 +137,7 @@ impl Drop for LegacyDrmDevice {
                     &connectors,
                     info.mode(),
                 ) {
-                    error!(self.logger, "Failed to reset crtc ({:?}). Error: {}", handle, err);
+                    error!("Failed to reset crtc ({:?}). Error: {}", handle, err);
                 }
             }
         }
@@ -169,6 +179,7 @@ where
                 // to find out, if we got the handle of the "DPMS" property ...
                 if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
                     // so we can use that to turn on / off the connector
+                    trace!(connector = ?conn, "Setting DPMS {}", enabled);
                     dev.set_property(
                         conn,
                         *handle,

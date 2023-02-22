@@ -10,6 +10,7 @@ use smithay::{
         X11Surface, X11Wm, XwmHandler,
     },
 };
+use tracing::trace;
 
 use crate::{state::Backend, AnvilState, CalloopData};
 
@@ -160,7 +161,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
                 .get::<FullscreenSurface>()
                 .unwrap()
                 .set(elem.clone());
-            slog::trace!(self.state.log, "Fullscreening: {:?}", elem);
+            trace!("Fullscreening: {:?}", elem);
         }
     }
 
@@ -180,7 +181,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
                     .map(|w| &w == elem)
                     .unwrap_or(false)
             }) {
-                slog::trace!(self.state.log, "Unfullscreening: {:?}", elem);
+                trace!("Unfullscreening: {:?}", elem);
                 output.user_data().get::<FullscreenSurface>().unwrap().clear();
                 window.configure(self.state.space.element_bbox(elem)).unwrap();
                 self.state.backend_data.reset_buffers(output);

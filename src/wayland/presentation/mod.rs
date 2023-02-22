@@ -53,7 +53,6 @@
 //! #         make: "Screens Inc".into(),     // make of the monitor
 //! #         model: "Monitor Ultra".into(),  // model of the monitor
 //! #     },
-//! #     None // insert a logger here
 //! # );
 //! // ... render frame ...
 //!

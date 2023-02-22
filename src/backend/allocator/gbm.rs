@@ -14,9 +14,10 @@ use std::{
     convert::{AsMut, AsRef},
     os::unix::io::{AsFd, AsRawFd, BorrowedFd},
 };
+use tracing::instrument;
 
 /// Light wrapper around an [`GbmDevice`] to implement the [`Allocator`]-trait
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct GbmAllocator<A: AsFd + 'static> {
     device: GbmDevice<A>,
     default_flags: GbmBufferFlags,
@@ -52,7 +53,8 @@ impl<A: AsFd + 'static> GbmAllocator<A> {
 
     /// Alternative to [`Allocator::create_buffer`], if you need a one-off buffer with
     /// a different set of usage flags.
-    fn create_buffer_with_flags(
+    #[instrument(level = "trace", skip(self), fields(self.device = ?self.device, err))]
+    pub fn create_buffer_with_flags(
         &mut self,
         width: u32,
         height: u32,

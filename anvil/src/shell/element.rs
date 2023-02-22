@@ -487,7 +487,6 @@ where
                 None,
                 None,
                 None,
-                None,
             ) else { return Vec::new() };
 
             location.y += (scale.y * HEADER_BAR_HEIGHT as f64) as i32;

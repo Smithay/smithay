@@ -1,5 +1,5 @@
-use slog::error;
 use std::sync::Mutex;
+use tracing::error;
 
 use wayland_server::{
     backend::{ClientId, ObjectId},
@@ -53,7 +53,7 @@ where
     D: 'static,
 {
     fn request(
-        state: &mut D,
+        _state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlDataSource,
         request: wl_data_source::Request,
@@ -61,7 +61,6 @@ where
         _dhandle: &DisplayHandle,
         _data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        let data_device_state = state.data_device_state();
         let mut data = data.inner.lock().unwrap();
 
         match request {
@@ -73,7 +72,7 @@ where
                     data.dnd_action = dnd_actions;
                 }
                 wayland_server::WEnum::Unknown(action) => {
-                    error!(&data_device_state.log, "Unknown dnd_action: {:?}", action);
+                    error!("Unknown dnd_action: {:?}", action);
                 }
             },
             wl_data_source::Request::Destroy => {}

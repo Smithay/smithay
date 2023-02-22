@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use slog::debug;
+use tracing::debug;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::{
     self as primary_device, ZwpPrimarySelectionDeviceV1 as PrimaryDevice,
 };
@@ -32,15 +32,13 @@ where
 {
     fn request(
         handler: &mut D,
-        _client: &Client,
+        client: &Client,
         resource: &PrimaryDevice,
         request: primary_device::Request,
         data: &PrimaryDeviceUserData,
         dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        let primary_selection_state = handler.primary_selection_state();
-
         if let Some(seat) = Seat::<D>::from_resource(&data.wl_seat) {
             match request {
                 primary_device::Request::SetSelection { source, .. } => {
@@ -58,7 +56,7 @@ where
                         }
                     }
                     debug!(
-                        &primary_selection_state.log,
+                        client = ?client,
                         "denying setting selection by a non-focused client"
                     );
                 }

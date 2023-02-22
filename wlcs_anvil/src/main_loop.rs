@@ -50,19 +50,11 @@ pub fn run(channel: Channel<WlcsEvent>) {
     let mut display = Display::new().expect("Failed to init display");
     let dh = display.handle();
 
-    let logger = slog::Logger::root(slog::Discard, slog::o!());
-
     let test_state = TestState {
         clients: HashMap::new(),
     };
 
-    let mut state = AnvilState::init(
-        &mut display,
-        event_loop.handle(),
-        test_state,
-        logger.clone(),
-        false,
-    );
+    let mut state = AnvilState::init(&mut display, event_loop.handle(), test_state, false);
 
     event_loop
         .handle()
@@ -87,7 +79,6 @@ pub fn run(channel: Channel<WlcsEvent>) {
             make: "Smithay".into(),
             model: "WLCS".into(),
         },
-        logger.clone(),
     );
     let _global = output.create_global::<AnvilState<TestState>>(&dh);
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
@@ -169,7 +160,6 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 &mut damage_tracked_renderer,
                 0,
                 false,
-                &logger,
             );
         }
 
@@ -265,7 +255,7 @@ fn handle_event(
                 state,
                 under,
                 &RelativeMotionEvent {
-                    delta: delta,
+                    delta,
                     delta_unaccel: delta,
                     utime,
                 },

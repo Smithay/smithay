@@ -19,7 +19,7 @@ use crate::{
     utils::user_data::UserDataMap,
 };
 
-use slog::{info, o, trace};
+use tracing::{info, info_span, instrument, trace};
 
 /// EGL context for rendering
 #[derive(Debug)]
@@ -30,6 +30,7 @@ pub struct EGLContext {
     pixel_format: Option<PixelFormat>,
     user_data: Arc<UserDataMap>,
     externally_managed: bool,
+    pub(crate) span: tracing::Span,
 }
 
 // SAFETY: A context can be sent to another thread when this context is not current.
@@ -46,22 +47,19 @@ impl EGLContext {
     ///
     /// - The context must be created from the system default EGL library (`dlopen("libEGL.so")`)
     /// - The `display`, `config`, and `context` must be valid for the lifetime of the returned context.
-    pub unsafe fn from_raw<L>(
+    pub unsafe fn from_raw(
         display: *const c_void,
         config_id: *const c_void,
         context: *const c_void,
-        log: L,
-    ) -> Result<EGLContext, Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
+    ) -> Result<EGLContext, Error> {
         assert!(!display.is_null(), "EGLDisplay pointer is null");
         assert!(!config_id.is_null(), "EGL configuration id pointer is null");
         assert!(!context.is_null(), "EGLContext pointer is null");
-        let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "backend_egl"));
 
-        let display = EGLDisplay::from_raw(display, config_id, log)?;
+        let display = EGLDisplay::from_raw(display, config_id)?;
         let pixel_format = display.get_pixel_format(config_id)?;
+
+        let span = info_span!(parent: &display.span, "egl_context", ptr = context as usize);
 
         Ok(EGLContext {
             context,
@@ -70,62 +68,50 @@ impl EGLContext {
             pixel_format: Some(pixel_format),
             user_data: Arc::new(UserDataMap::default()),
             externally_managed: true,
+            span,
         })
     }
 
     /// Creates a new configless `EGLContext` from a given `EGLDisplay`
-    pub fn new<L>(display: &EGLDisplay, log: L) -> Result<EGLContext, Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        Self::new_internal(display, None, None, log)
+    pub fn new(display: &EGLDisplay) -> Result<EGLContext, Error> {
+        Self::new_internal(display, None, None)
     }
 
     /// Create a new [`EGLContext`] from a given `EGLDisplay` and configuration requirements
-    pub fn new_with_config<L>(
+    pub fn new_with_config(
         display: &EGLDisplay,
         attributes: GlAttributes,
         reqs: PixelFormatRequirements,
-        log: L,
-    ) -> Result<EGLContext, Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        Self::new_internal(display, None, Some((attributes, reqs)), log)
+    ) -> Result<EGLContext, Error> {
+        Self::new_internal(display, None, Some((attributes, reqs)))
     }
 
     /// Create a new configless `EGLContext` from a given `EGLDisplay` sharing resources with another context
-    pub fn new_shared<L>(display: &EGLDisplay, share: &EGLContext, log: L) -> Result<EGLContext, Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        Self::new_internal(display, Some(share), None, log)
+    pub fn new_shared(display: &EGLDisplay, share: &EGLContext) -> Result<EGLContext, Error> {
+        Self::new_internal(display, Some(share), None)
     }
 
     /// Create a new `EGLContext` from a given `EGLDisplay` and configuration requirements sharing resources with another context
-    pub fn new_shared_with_config<L>(
+    pub fn new_shared_with_config(
         display: &EGLDisplay,
         share: &EGLContext,
         attributes: GlAttributes,
         reqs: PixelFormatRequirements,
-        log: L,
-    ) -> Result<EGLContext, Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        Self::new_internal(display, Some(share), Some((attributes, reqs)), log)
+    ) -> Result<EGLContext, Error> {
+        Self::new_internal(display, Some(share), Some((attributes, reqs)))
     }
 
-    fn new_internal<L>(
+    fn new_internal(
         display: &EGLDisplay,
         shared: Option<&EGLContext>,
         config: Option<(GlAttributes, PixelFormatRequirements)>,
-        log: L,
-    ) -> Result<EGLContext, Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "backend_egl"));
+    ) -> Result<EGLContext, Error> {
+        let span = info_span!(parent: &display.span, "egl_context", ptr = tracing::field::Empty, shared = tracing::field::Empty);
+        let _guard = span.enter();
+
+        if let Some(shared) = shared {
+            span.record("shared", shared.context as usize);
+        }
 
         let (pixel_format, config_id) = match config {
             Some((attributes, reqs)) => {
@@ -164,15 +150,15 @@ impl EGLContext {
             if display.get_egl_version() >= (1, 5)
                 || display.extensions().iter().any(|s| s == "EGL_KHR_create_context")
             {
-                trace!(log, "Setting CONTEXT_MAJOR_VERSION to {}", version.0);
+                trace!("Setting CONTEXT_MAJOR_VERSION to {}", version.0);
                 context_attributes.push(ffi::egl::CONTEXT_MAJOR_VERSION as i32);
                 context_attributes.push(version.0 as i32);
-                trace!(log, "Setting CONTEXT_MINOR_VERSION to {}", version.1);
+                trace!("Setting CONTEXT_MINOR_VERSION to {}", version.1);
                 context_attributes.push(ffi::egl::CONTEXT_MINOR_VERSION as i32);
                 context_attributes.push(version.1 as i32);
 
                 if attributes.debug && display.get_egl_version() >= (1, 5) {
-                    trace!(log, "Setting CONTEXT_OPENGL_DEBUG to TRUE");
+                    trace!("Setting CONTEXT_OPENGL_DEBUG to TRUE");
                     context_attributes.push(ffi::egl::CONTEXT_OPENGL_DEBUG as i32);
                     context_attributes.push(ffi::egl::TRUE as i32);
                 }
@@ -180,19 +166,19 @@ impl EGLContext {
                 context_attributes.push(ffi::egl::CONTEXT_FLAGS_KHR as i32);
                 context_attributes.push(0);
             } else if display.get_egl_version() >= (1, 3) {
-                trace!(log, "Setting CONTEXT_CLIENT_VERSION to {}", version.0);
+                trace!("Setting CONTEXT_CLIENT_VERSION to {}", version.0);
                 context_attributes.push(ffi::egl::CONTEXT_CLIENT_VERSION as i32);
                 context_attributes.push(version.0 as i32);
             }
         } else {
-            trace!(log, "Setting CONTEXT_CLIENT_VERSION to 2");
+            trace!("Setting CONTEXT_CLIENT_VERSION to 2");
             context_attributes.push(ffi::egl::CONTEXT_CLIENT_VERSION as i32);
             context_attributes.push(2);
         }
 
         context_attributes.push(ffi::egl::NONE as i32);
 
-        trace!(log, "Creating EGL context...");
+        trace!("Creating EGL context...");
         let context = wrap_egl_call(|| unsafe {
             ffi::egl::CreateContext(
                 **display.get_display_handle(),
@@ -204,9 +190,11 @@ impl EGLContext {
             )
         })
         .map_err(Error::CreationFailed)?;
+        span.record("ptr", context as usize);
 
-        info!(log, "EGL context created");
+        info!("EGL context created");
 
+        drop(_guard);
         Ok(EGLContext {
             context,
             display: display.clone(),
@@ -218,6 +206,7 @@ impl EGLContext {
                 Arc::new(UserDataMap::default())
             },
             externally_managed: false,
+            span,
         })
     }
 
@@ -227,6 +216,7 @@ impl EGLContext {
     ///
     /// This function is marked unsafe, because the context cannot be made current on another thread without
     /// being unbound again (see [`EGLContext::unbind`]).
+    #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub unsafe fn make_current(&self) -> Result<(), MakeCurrentError> {
         wrap_egl_call(|| {
             ffi::egl::MakeCurrent(
@@ -258,6 +248,7 @@ impl EGLContext {
     ///
     /// This function is marked unsafe, because the context cannot be made current on another thread without
     /// being unbound again (see [`EGLContext::unbind`]).
+    #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub unsafe fn make_current_with_draw_and_read_surface(
         &self,
         draw_surface: &EGLSurface,
@@ -295,6 +286,7 @@ impl EGLContext {
     /// Unbinds this context from the current thread, if set.
     ///
     /// This does nothing if this context is not the current context.
+    #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub fn unbind(&self) -> Result<(), MakeCurrentError> {
         if self.is_current() {
             wrap_egl_call(|| unsafe {
@@ -343,6 +335,7 @@ impl EGLContext {
 impl Drop for EGLContext {
     fn drop(&mut self) {
         if !self.externally_managed {
+            let _guard = self.span.enter();
             unsafe {
                 // We need to ensure the context is unbound, otherwise it egl stalls the destroy call
                 // ignore failures at this point
@@ -420,58 +413,50 @@ impl Default for PixelFormatRequirements {
 
 impl PixelFormatRequirements {
     /// Append the requirements to the given attribute list
-    pub fn create_attributes(&self, out: &mut Vec<c_int>, logger: &slog::Logger) {
+    pub fn create_attributes(&self, out: &mut Vec<c_int>) {
         if let Some(hardware_accelerated) = self.hardware_accelerated {
             out.push(ffi::egl::CONFIG_CAVEAT as c_int);
             out.push(if hardware_accelerated {
-                trace!(logger, "Setting CONFIG_CAVEAT to NONE");
+                trace!("Setting CONFIG_CAVEAT to NONE");
                 ffi::egl::NONE as c_int
             } else {
-                trace!(logger, "Setting CONFIG_CAVEAT to SLOW_CONFIG");
+                trace!("Setting CONFIG_CAVEAT to SLOW_CONFIG");
                 ffi::egl::SLOW_CONFIG as c_int
             });
         }
 
         if let Some(color) = self.color_bits {
-            trace!(logger, "Setting RED_SIZE to {}", color / 3);
+            trace!("Setting RED_SIZE to {}", color / 3);
             out.push(ffi::egl::RED_SIZE as c_int);
             out.push((color / 3) as c_int);
-            trace!(
-                logger,
-                "Setting GREEN_SIZE to {}",
-                color / 3 + u8::from(color % 3 != 0)
-            );
+            trace!("Setting GREEN_SIZE to {}", color / 3 + u8::from(color % 3 != 0));
             out.push(ffi::egl::GREEN_SIZE as c_int);
             out.push((color / 3 + u8::from(color % 3 != 0)) as c_int);
-            trace!(
-                logger,
-                "Setting BLUE_SIZE to {}",
-                color / 3 + u8::from(color % 3 == 2)
-            );
+            trace!("Setting BLUE_SIZE to {}", color / 3 + u8::from(color % 3 == 2));
             out.push(ffi::egl::BLUE_SIZE as c_int);
             out.push((color / 3 + u8::from(color % 3 == 2)) as c_int);
         }
 
         if let Some(alpha) = self.alpha_bits {
-            trace!(logger, "Setting ALPHA_SIZE to {}", alpha);
+            trace!("Setting ALPHA_SIZE to {}", alpha);
             out.push(ffi::egl::ALPHA_SIZE as c_int);
             out.push(alpha as c_int);
         }
 
         if let Some(depth) = self.depth_bits {
-            trace!(logger, "Setting DEPTH_SIZE to {}", depth);
+            trace!("Setting DEPTH_SIZE to {}", depth);
             out.push(ffi::egl::DEPTH_SIZE as c_int);
             out.push(depth as c_int);
         }
 
         if let Some(stencil) = self.stencil_bits {
-            trace!(logger, "Setting STENCIL_SIZE to {}", stencil);
+            trace!("Setting STENCIL_SIZE to {}", stencil);
             out.push(ffi::egl::STENCIL_SIZE as c_int);
             out.push(stencil as c_int);
         }
 
         if let Some(multisampling) = self.multisampling {
-            trace!(logger, "Setting SAMPLES to {}", multisampling);
+            trace!("Setting SAMPLES to {}", multisampling);
             out.push(ffi::egl::SAMPLES as c_int);
             out.push(multisampling as c_int);
         }

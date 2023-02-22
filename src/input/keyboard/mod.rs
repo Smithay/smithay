@@ -2,7 +2,6 @@
 
 use crate::backend::input::KeyState;
 use crate::utils::{IsAlive, Serial};
-use slog::{debug, error, info, o, trace};
 use std::collections::HashSet;
 use std::{
     default::Default,
@@ -10,6 +9,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use thiserror::Error;
+use tracing::{debug, error, info, info_span, instrument, trace};
 
 pub use xkbcommon::xkb::{self, keysyms, Keysym};
 
@@ -150,7 +150,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         }
     }
 
-    fn with_grab<F>(&mut self, seat: &Seat<D>, f: F, logger: ::slog::Logger)
+    fn with_grab<F>(&mut self, seat: &Seat<D>, f: F)
     where
         F: FnOnce(KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
     {
@@ -162,35 +162,14 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
                 if let Some(ref surface) = handler.start_data().focus {
                     if !surface.alive() {
                         self.grab = GrabStatus::None;
-                        f(
-                            KeyboardInnerHandle {
-                                inner: self,
-                                seat,
-                                logger,
-                            },
-                            &mut DefaultGrab,
-                        );
+                        f(KeyboardInnerHandle { inner: self, seat }, &mut DefaultGrab);
                         return;
                     }
                 }
-                f(
-                    KeyboardInnerHandle {
-                        inner: self,
-                        seat,
-                        logger,
-                    },
-                    &mut **handler,
-                );
+                f(KeyboardInnerHandle { inner: self, seat }, &mut **handler);
             }
             GrabStatus::None => {
-                f(
-                    KeyboardInnerHandle {
-                        inner: self,
-                        seat,
-                        logger,
-                    },
-                    &mut DefaultGrab,
-                );
+                f(KeyboardInnerHandle { inner: self, seat }, &mut DefaultGrab);
             }
         }
 
@@ -216,9 +195,9 @@ pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) internal: Mutex<KbdInternal<D>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) keymap: Mutex<KeymapFile>,
-    pub(crate) logger: ::slog::Logger,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_kbds: Mutex<Vec<wayland_server::protocol::wl_keyboard::WlKeyboard>>,
+    pub(crate) span: tracing::Span,
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
@@ -227,10 +206,7 @@ where
     <D as SeatHandler>::KeyboardFocus: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("KbdRc")
-            .field("internal", &self.internal)
-            .field("logger", &self.logger)
-            .finish()
+        f.debug_struct("KbdRc").field("internal", &self.internal).finish()
     }
 }
 
@@ -243,7 +219,6 @@ where
         f.debug_struct("KbdRc")
             .field("internal", &self.internal)
             .field("keymap", &self.keymap)
-            .field("logger", &self.logger)
             .field("known_kbds", &self.known_kbds)
             .finish()
     }
@@ -406,45 +381,40 @@ impl<D: SeatHandler> ::std::cmp::PartialEq for KeyboardHandle<D> {
 
 impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Create a keyboard handler from a set of RMLVO rules
-    pub(crate) fn new(
-        xkb_config: XkbConfig<'_>,
-        repeat_delay: i32,
-        repeat_rate: i32,
-        logger: &::slog::Logger,
-    ) -> Result<Self, Error> {
-        let log = logger.new(o!("smithay_module" => "xkbcommon_handler"));
-        info!(log, "Initializing a xkbcommon handler with keymap query";
-            "rules" => xkb_config.rules, "model" => xkb_config.model, "layout" => xkb_config.layout,
-            "variant" => xkb_config.variant, "options" => &xkb_config.options
-        );
+    pub(crate) fn new(xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32) -> Result<Self, Error> {
+        let span = info_span!("input_keyboard");
+        let _guard = span.enter();
+
+        info!("Initializing a xkbcommon handler with keymap query");
         let internal = KbdInternal::new(xkb_config, repeat_rate, repeat_delay).map_err(|_| {
-            debug!(log, "Loading keymap failed");
+            debug!("Loading keymap failed");
             Error::BadKeymap
         })?;
 
-        info!(log, "Loaded Keymap"; "name" => internal.keymap.layouts().next());
+        info!(name = internal.keymap.layouts().next(), "Loaded Keymap");
 
+        drop(_guard);
         Ok(Self {
             arc: Arc::new(KbdRc {
                 #[cfg(feature = "wayland_frontend")]
-                keymap: Mutex::new(KeymapFile::new(&internal.keymap, log.clone())),
+                keymap: Mutex::new(KeymapFile::new(&internal.keymap)),
                 internal: Mutex::new(internal),
-                logger: log,
                 #[cfg(feature = "wayland_frontend")]
                 known_kbds: Mutex::new(Vec::new()),
+                span,
             }),
         })
     }
 
     #[cfg(feature = "wayland_frontend")]
+    #[instrument(parent = &self.arc.span, skip(self, keymap))]
     pub(crate) fn change_keymap(&self, keymap: xkb::Keymap) {
         let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
-        let logger = &self.arc.logger;
         let mut keymap_file = self.arc.keymap.lock().unwrap();
-        keymap_file.change_keymap(keymap, logger.clone());
+        keymap_file.change_keymap(keymap);
 
-        use slog::warn;
         use std::os::unix::io::AsRawFd;
+        use tracing::warn;
         use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
         let known_kbds = &self.arc.known_kbds;
         for kbd in &*known_kbds.lock().unwrap() {
@@ -452,9 +422,9 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 kbd.keymap(KeymapFormat::XkbV1, fd.as_raw_fd(), size as u32)
             });
             if let Err(e) = res {
-                warn!(logger,
-                    "Failed to send keymap to client";
-                    "err" => format!("{:?}", e)
+                warn!(
+                    err = ?e,
+                    "Failed to send keymap to client"
                 );
             }
         }
@@ -509,6 +479,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ///
     /// The module [`crate::wayland::seat::keysyms`] exposes definitions of all possible keysyms
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
+    #[instrument(parent = &self.arc.span, skip(self, data, filter))]
     pub fn input<T, F>(
         &self,
         data: &mut D,
@@ -521,7 +492,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     where
         F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
     {
-        trace!(self.arc.logger, "Handling keystroke"; "keycode" => keycode, "state" => format_args!("{:?}", state));
+        trace!("Handling keystroke");
         let mut guard = self.arc.internal.lock().unwrap();
         let mods_changed = guard.key_input(keycode, state);
         let key_handle = KeysymHandle {
@@ -532,30 +503,24 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             keymap: &guard.keymap,
         };
 
-        trace!(self.arc.logger, "Calling input filter";
-            "mods_state" => format_args!("{:?}", guard.mods_state), "sym" => xkb::keysym_get_name(key_handle.modified_sym())
-        );
+        trace!(mods_state = ?guard.mods_state, sym = xkb::keysym_get_name(key_handle.modified_sym()), "Calling input filter");
 
         if let FilterResult::Intercept(val) = filter(data, &guard.mods_state, key_handle) {
             // the filter returned false, we do not forward to client
-            trace!(self.arc.logger, "Input was intercepted by filter");
+            trace!("Input was intercepted by filter");
             return Some(val);
         }
 
         // forward to client if no keybinding is triggered
         let seat = self.get_seat(data);
         let modifiers = mods_changed.then_some(guard.mods_state);
-        guard.with_grab(
-            &seat,
-            move |mut handle, grab| {
-                grab.input(data, &mut handle, keycode, state, modifiers, serial, time);
-            },
-            self.arc.logger.clone(),
-        );
+        guard.with_grab(&seat, move |mut handle, grab| {
+            grab.input(data, &mut handle, keycode, state, modifiers, serial, time);
+        });
         if guard.focus.is_some() {
-            trace!(self.arc.logger, "Input forwarded to client");
+            trace!("Input forwarded to client");
         } else {
-            trace!(self.arc.logger, "No client currently focused");
+            trace!("No client currently focused");
         }
 
         None
@@ -567,17 +532,14 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
+    #[instrument(parent = &self.arc.span, skip(self, data, focus), fields(focus = focus.is_some()))]
     pub fn set_focus(&self, data: &mut D, focus: Option<<D as SeatHandler>::KeyboardFocus>, serial: Serial) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.pending_focus = focus.clone();
         let seat = self.get_seat(data);
-        guard.with_grab(
-            &seat,
-            move |mut handle, grab| {
-                grab.set_focus(data, &mut handle, focus, serial);
-            },
-            self.arc.logger.clone(),
-        );
+        guard.with_grab(&seat, move |mut handle, grab| {
+            grab.set_focus(data, &mut handle, focus, serial);
+        });
     }
 
     /// Iterate over the keysyms of the currently pressed keys.
@@ -612,6 +574,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     }
 
     /// Change the repeat info configured for this keyboard
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub fn change_repeat_info(&self, rate: i32, delay: i32) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.repeat_delay = delay;
@@ -655,7 +618,6 @@ where
 pub struct KeyboardInnerHandle<'a, D: SeatHandler> {
     inner: &'a mut KbdInternal<D>,
     seat: &'a Seat<D>,
-    logger: ::slog::Logger,
 }
 
 impl<'a, D: SeatHandler> fmt::Debug for KeyboardInnerHandle<'a, D>
@@ -666,7 +628,6 @@ where
         f.debug_struct("KeyboardInnerHandle")
             .field("inner", &self.inner)
             .field("seat", &self.seat.arc.name)
-            .field("logger", &self.logger)
             .finish()
     }
 }
@@ -804,12 +765,12 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
                 data.focus_changed(self.seat, focus.as_ref().map(|f| &f.0));
             }
             if self.inner.focus.is_some() {
-                trace!(self.logger, "Focus set to new surface");
+                trace!("Focus set to new surface");
             } else {
-                trace!(self.logger, "Focus unset");
+                trace!("Focus unset");
             }
         } else {
-            trace!(self.logger, "Focus unchanged");
+            trace!("Focus unchanged");
         }
     }
 }

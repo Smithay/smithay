@@ -1,5 +1,7 @@
 use std::sync::{atomic::AtomicBool, Mutex};
 
+use tracing::error;
+
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{zwp_linux_buffer_params_v1, zwp_linux_dmabuf_v1};
 use wayland_server::{
     protocol::wl_buffer, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
@@ -64,7 +66,6 @@ where
                         used: AtomicBool::new(false),
                         formats: data.formats.clone(),
                         planes: Mutex::new(Vec::with_capacity(MAX_PLANES)),
-                        logger: data.logger.clone(),
                     },
                 );
             }
@@ -96,7 +97,6 @@ where
         let data = DmabufData {
             formats: global_data.formats.clone(),
             id: global_data.id,
-            logger: global_data.logger.clone(),
         };
 
         let zwp_dmabuf = data_init.init(resource, data);
@@ -202,10 +202,7 @@ where
                                     }
 
                                     Err(_) => {
-                                        slog::error!(
-                                            data.logger,
-                                            "failed to create protocol object for \"create\" request"
-                                        );
+                                        error!("failed to create protocol object for \"create\" request");
                                         // Failed to import since the buffer protocol object could not be created.
                                         params.failed();
                                     }

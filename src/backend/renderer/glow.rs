@@ -1,4 +1,5 @@
 //! Integration for using [`glow`] on top of smithays OpenGL ES 2 renderer
+use tracing::warn;
 
 #[cfg(feature = "wayland_frontend")]
 use crate::backend::renderer::{ImportDmaWl, ImportMemWl};
@@ -37,7 +38,6 @@ use super::Frame;
 pub struct GlowRenderer {
     gl: Gles2Renderer,
     glow: Arc<Context>,
-    logger: slog::Logger,
 }
 
 #[derive(Debug)]
@@ -47,7 +47,6 @@ pub struct GlowRenderer {
 pub struct GlowFrame<'a> {
     frame: Option<Gles2Frame<'a>>,
     glow: Arc<Context>,
-    log: slog::Logger,
 }
 
 impl GlowRenderer {
@@ -67,21 +66,16 @@ impl GlowRenderer {
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
     /// - Texture filtering starts with Linear-downscaling and Linear-upscaling
 
-    pub unsafe fn new<L>(context: EGLContext, logger: L) -> Result<GlowRenderer, Gles2Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "renderer_glow"));
+    pub unsafe fn new(context: EGLContext) -> Result<GlowRenderer, Gles2Error> {
         let glow = {
             context.make_current()?;
             Context::from_loader_function(|s| crate::backend::egl::get_proc_address(s) as *const _)
         };
-        let gl = Gles2Renderer::new(context, log.clone())?;
+        let gl = Gles2Renderer::new(context)?;
 
         Ok(GlowRenderer {
             gl,
             glow: Arc::new(glow),
-            logger: log,
         })
     }
 
@@ -135,7 +129,6 @@ impl<'frame> GlowFrame<'frame> {
 //  just as `TryFrom<Gles2Renderer, Error=Gles2Error> for GlowRenderer`
 impl From<Gles2Renderer> for GlowRenderer {
     fn from(mut renderer: Gles2Renderer) -> GlowRenderer {
-        let log = renderer.logger.new(slog::o!("smithay_module" => "renderer_glow"));
         let glow = unsafe {
             renderer.make_current().unwrap();
             Context::from_loader_function(|s| crate::backend::egl::get_proc_address(s) as *const _)
@@ -144,7 +137,6 @@ impl From<Gles2Renderer> for GlowRenderer {
         GlowRenderer {
             gl: renderer,
             glow: Arc::new(glow),
-            logger: log,
         }
     }
 }
@@ -194,7 +186,6 @@ impl Renderer for GlowRenderer {
         Ok(GlowFrame {
             frame: Some(frame),
             glow,
-            log: self.logger.clone(),
         })
     }
 }
@@ -269,7 +260,7 @@ impl<'frame> GlowFrame<'frame> {
 impl<'frame> Drop for GlowFrame<'frame> {
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
-            slog::warn!(self.log, "Ignored error finishing GlowFrame on drop: {}", err);
+            warn!("Ignored error finishing GlowFrame on drop: {}", err);
         }
     }
 }

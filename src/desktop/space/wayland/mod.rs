@@ -3,6 +3,7 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
+use tracing::{debug, instrument};
 use wayland_server::{protocol::wl_surface::WlSurface, Resource, Weak as WlWeak};
 
 use crate::{
@@ -26,12 +27,8 @@ fn output_surfaces(o: &Output) -> RefMut<'_, HashSet<WlWeak<WlSurface>>> {
     surfaces
 }
 
-fn output_update(
-    output: &Output,
-    output_overlap: Rectangle<i32, Logical>,
-    surface: &WlSurface,
-    logger: &slog::Logger,
-) {
+#[instrument]
+fn output_update(output: &Output, output_overlap: Rectangle<i32, Logical>, surface: &WlSurface) {
     let mut surface_list = output_surfaces(output);
 
     with_surface_tree_downward(
@@ -60,7 +57,7 @@ fn output_update(
             if *parent_unmapped {
                 // The parent is unmapped, just send a leave event
                 // if we were previously mapped and exit early
-                output_leave(output, &mut surface_list, wl_surface, logger);
+                output_leave(output, &mut surface_list, wl_surface);
                 return;
             }
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
@@ -70,54 +67,34 @@ fn output_update(
                 let surface_rectangle = Rectangle::from_loc_and_size(location, surface_view.dst);
                 if output_overlap.overlaps(surface_rectangle) {
                     // We found a matching output, check if we already sent enter
-                    output_enter(output, &mut surface_list, wl_surface, logger);
+                    output_enter(output, &mut surface_list, wl_surface);
                 } else {
                     // Surface does not match output, if we sent enter earlier
                     // we should now send leave
-                    output_leave(output, &mut surface_list, wl_surface, logger);
+                    output_leave(output, &mut surface_list, wl_surface);
                 }
             } else {
                 // Maybe the the surface got unmapped, send leave on output
-                output_leave(output, &mut surface_list, wl_surface, logger);
+                output_leave(output, &mut surface_list, wl_surface);
             }
         },
         |_, _, _| true,
     );
 }
 
-fn output_enter(
-    output: &Output,
-    surface_list: &mut HashSet<WlWeak<WlSurface>>,
-    surface: &WlSurface,
-    logger: &slog::Logger,
-) {
+fn output_enter(output: &Output, surface_list: &mut HashSet<WlWeak<WlSurface>>, surface: &WlSurface) {
     let weak = surface.downgrade();
     if !surface_list.contains(&weak) {
-        slog::debug!(
-            logger,
-            "surface ({:?}) entering output {:?}",
-            surface,
-            output.name()
-        );
+        debug!("surface entering output",);
         output.enter(surface);
         surface_list.insert(weak);
     }
 }
 
-fn output_leave(
-    output: &Output,
-    surface_list: &mut HashSet<WlWeak<WlSurface>>,
-    surface: &WlSurface,
-    logger: &slog::Logger,
-) {
+fn output_leave(output: &Output, surface_list: &mut HashSet<WlWeak<WlSurface>>, surface: &WlSurface) {
     let weak = surface.downgrade();
     if surface_list.contains(&weak) {
-        slog::debug!(
-            logger,
-            "surface ({:?}) leaving output {:?}",
-            surface,
-            output.name()
-        );
+        debug!("surface leaving output",);
         output.leave(surface);
         surface_list.remove(&weak);
     }

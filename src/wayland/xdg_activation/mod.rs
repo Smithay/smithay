@@ -50,7 +50,7 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! let state = State {
-//!     activation_state: XdgActivationState::new::<State, _>(&display_handle, None),
+//!     activation_state: XdgActivationState::new::<State>(&display_handle),
 //! };
 //!
 //! // Rest of the compositor goes here...
@@ -158,7 +158,6 @@ impl XdgActivationTokenData {
 /// Tracks the list of pending and current activation requests
 #[derive(Debug)]
 pub struct XdgActivationState {
-    _logger: ::slog::Logger,
     global: GlobalId,
     pending_tokens: HashMap<XdgActivationToken, XdgActivationTokenData>,
     activation_requests: HashMap<XdgActivationToken, (XdgActivationTokenData, WlSurface)>,
@@ -168,19 +167,16 @@ impl XdgActivationState {
     /// Creates a new xdg activation global.
     ///
     /// In order to use this abstraction, your `D` type needs to implement [`XdgActivationHandler`].
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> XdgActivationState
+    pub fn new<D>(display: &DisplayHandle) -> XdgActivationState
     where
         D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, ()>
             + Dispatch<xdg_activation_v1::XdgActivationV1, ()>
             + XdgActivationHandler
             + 'static,
-        L: Into<Option<::slog::Logger>>,
     {
-        let logger = crate::slog_or_fallback(logger);
         let global = display.create_global::<D, xdg_activation_v1::XdgActivationV1, _>(1, ());
 
         XdgActivationState {
-            _logger: logger.new(slog::o!("smithay_module" => "xdg_activation_handler")),
             global,
             pending_tokens: HashMap::new(),
             activation_requests: HashMap::new(),

@@ -1,7 +1,5 @@
 #![allow(irrefutable_let_patterns)]
 
-use slog::Drain;
-
 mod handlers;
 
 mod grabs;
@@ -18,17 +16,20 @@ pub struct CalloopData {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let log = ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), slog::o!());
-    slog_stdlog::init()?;
+    if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    } else {
+        tracing_subscriber::fmt().init();
+    }
 
     let mut event_loop: EventLoop<CalloopData> = EventLoop::try_new()?;
 
     let mut display: Display<Smallvil> = Display::new()?;
-    let state = Smallvil::new(&mut event_loop, &mut display, log.clone());
+    let state = Smallvil::new(&mut event_loop, &mut display);
 
     let mut data = CalloopData { state, display };
 
-    crate::winit::init_winit(&mut event_loop, &mut data, log)?;
+    crate::winit::init_winit(&mut event_loop, &mut data)?;
 
     let mut args = std::env::args().skip(1);
     let flag = args.next();

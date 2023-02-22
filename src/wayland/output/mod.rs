@@ -37,7 +37,6 @@
 //!         make: "Screens Inc".into(),     // make of the monitor
 //!         model: "Monitor Ultra".into(),  // model of the monitor
 //!     },
-//!     None // insert a logger here
 //! );
 //! // create a global, if you want to advertise it to clients
 //! let _global = output.create_global::<State>(
@@ -63,6 +62,7 @@ mod handlers;
 pub(crate) mod xdg;
 use crate::output::{Inner, Mode, Output, OutputData, Scale, Subpixel};
 
+use tracing::info;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1;
 use wayland_server::{
     backend::{ClientId, GlobalId},
@@ -165,6 +165,7 @@ impl Output {
         D: GlobalDispatch<WlOutput, WlOutputData>,
         D: 'static,
     {
+        info!(output = self.name(), "Creating new wl_output");
         self.inner.0.lock().unwrap().handle = Some(display.backend_handle().downgrade());
         display.create_global::<D, WlOutput, _>(
             4,

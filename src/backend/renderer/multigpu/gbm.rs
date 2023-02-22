@@ -1,6 +1,7 @@
 //! Implementation of the multi-gpu [`GraphicsApi`] using
 //! user provided GBM devices and OpenGL ES for rendering.
 
+use tracing::warn;
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use wayland_server::protocol::wl_buffer;
 
@@ -77,7 +78,7 @@ impl<R> GbmGlesBackend<R> {
         node: DrmNode,
         gbm: GbmDevice<T>,
     ) -> Result<(), EGLError> {
-        self.devices.insert(node, EGLDisplay::new(gbm, None)?);
+        self.devices.insert(node, EGLDisplay::new(gbm)?);
         Ok(())
     }
 
@@ -91,7 +92,7 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for GbmG
     type Device = GbmGlesDevice<R>;
     type Error = Error;
 
-    fn enumerate(&self, list: &mut Vec<Self::Device>, log: &slog::Logger) -> Result<(), Self::Error> {
+    fn enumerate(&self, list: &mut Vec<Self::Device>) -> Result<(), Self::Error> {
         // remove old stuff
         list.retain(|renderer| {
             self.devices
@@ -109,8 +110,8 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for GbmG
                     .any(|renderer| renderer.node.dev_id() == node.dev_id())
             })
             .map(|(node, display)| {
-                let context = EGLContext::new(display, log.clone()).map_err(Error::Egl)?;
-                let renderer = unsafe { Gles2Renderer::new(context, log.clone()).map_err(Error::Gl)? }.into();
+                let context = EGLContext::new(display).map_err(Error::Egl)?;
+                let renderer = unsafe { Gles2Renderer::new(context).map_err(Error::Gl)? }.into();
 
                 Ok(GbmGlesDevice {
                     node: *node,
@@ -121,7 +122,7 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for GbmG
             .flat_map(|x: Result<GbmGlesDevice<R>, Error>| match x {
                 Ok(x) => Some(x),
                 Err(x) => {
-                    slog::warn!(log, "Skipping GbmDevice: {}", x);
+                    warn!("Skipping GbmDevice: {}", x);
                     None
                 }
             })
@@ -131,6 +132,10 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for GbmG
         // but don't replace already initialized renderers
 
         Ok(())
+    }
+
+    fn identifier() -> &'static str {
+        "gbm_gles"
     }
 }
 

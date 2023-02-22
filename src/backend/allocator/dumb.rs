@@ -5,6 +5,7 @@ use std::os::unix::io::{FromRawFd, OwnedFd};
 
 use drm::buffer::Buffer as DrmBuffer;
 use drm::control::{dumbbuffer::DumbBuffer as Handle, Device as ControlDevice};
+use tracing::instrument;
 
 use super::dmabuf::{AsDmabuf, Dmabuf, DmabufFlags};
 use super::{format::get_bpp, Allocator, Buffer, Format, Fourcc, Modifier};
@@ -32,6 +33,7 @@ impl Allocator for DrmDevice {
     type Buffer = DumbBuffer;
     type Error = drm::SystemError;
 
+    #[instrument(level = "trace", err)]
     fn create_buffer(
         &mut self,
         width: u32,

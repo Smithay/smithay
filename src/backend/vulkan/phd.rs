@@ -3,6 +3,7 @@
 use std::ffi::{CStr, CString};
 
 use ash::{prelude::VkResult, vk};
+use tracing::info_span;
 
 use super::{version::Version, DriverInfo, PhdInfo, UnsupportedProperty};
 
@@ -28,11 +29,13 @@ impl super::PhysicalDevice {
         if let Some(info) =
             unsafe { PhdInfo::from_phd(instance.handle(), instance.api_version(), phd, &extensions) }
         {
+            let span = info_span!(parent: &instance.0.span, "backend_vulkan_device", name = info.name);
             Ok(Some(Self {
                 phd,
                 info,
                 extensions,
                 instance,
+                span,
             }))
         } else {
             Ok(None)

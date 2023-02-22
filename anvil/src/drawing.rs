@@ -105,7 +105,7 @@ where
             CursorImageStatus::Surface(surface) => {
                 let elements: Vec<PointerRenderElement<R>> =
                     smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
-                        renderer, surface, location, scale, None,
+                        renderer, surface, location, scale,
                     );
                 elements.into_iter().map(E::from).collect()
             }
@@ -196,7 +196,6 @@ where
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        _log: &slog::Logger,
     ) -> Result<(), R::Error> {
         // FIXME: respect the src for cropping
         let scale = dst.size.to_f64() / self.src().size;
