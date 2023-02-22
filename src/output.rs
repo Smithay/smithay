@@ -203,7 +203,7 @@ impl Output {
     /// Create a new output with given name and physical properties.
     #[instrument]
     pub fn new(name: String, physical: PhysicalProperties) -> Output {
-        info!("Creating new wl_output");
+        info!(name, "Creating new Output");
 
         let data = Arc::new((
             Mutex::new(Inner {
