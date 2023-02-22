@@ -12,6 +12,7 @@ use crate::{
     utils::{Logical, Point, Rectangle, Time},
     wayland::{
         compositor::{with_surface_tree_downward, SurfaceAttributes, SurfaceData, TraversalAction},
+        dmabuf::{DmabufFeedback, SurfaceDmabufFeedbackState},
         presentation::{PresentationFeedbackCachedState, PresentationFeedbackCallback},
     },
 };
@@ -256,6 +257,44 @@ pub fn send_frames_surface_tree<T, F>(
                     callback.done(time.as_millis() as u32);
                 }
             }
+        },
+        |_, _, &()| true,
+    );
+}
+
+/// Sends dmabuf feedback for a surface and its subsurfaces with the given select function.
+///
+/// The dmabuf feedback for a [`WlSurface`](wl_surface::WlSurface) will only be sent if the
+/// primary scan-out output equals the provided output and the surface has requested dmabuf
+/// feedback.
+pub fn send_dmabuf_feedback_surface_tree<'a, P, F>(
+    surface: &wl_surface::WlSurface,
+    output: &Output,
+    mut primary_scan_out_output: P,
+    select_dmabuf_feedback: F,
+) where
+    P: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output>,
+    F: Fn(&wl_surface::WlSurface, &SurfaceData) -> &'a DmabufFeedback,
+{
+    with_surface_tree_downward(
+        surface,
+        (),
+        |_, _, &()| TraversalAction::DoChildren(()),
+        |surface, states, &()| {
+            let on_primary_scanout_output = primary_scan_out_output(surface, states)
+                .map(|preferred_output| preferred_output == *output)
+                .unwrap_or(false);
+
+            if !on_primary_scanout_output {
+                return;
+            }
+
+            let Some(surface_feedback) = SurfaceDmabufFeedbackState::from_states(states) else {
+                return;
+            };
+
+            let feedback = select_dmabuf_feedback(surface, states);
+            surface_feedback.set_feedback(feedback);
         },
         |_, _, &()| true,
     );
