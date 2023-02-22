@@ -9,7 +9,7 @@ uniform mat3 tex_matrix;
 attribute vec2 vert;
 attribute vec4 vert_position;
 
-varying vec2 v_tex_coords;
+varying vec2 v_coords;
 
 mat2 scale(vec2 scale_vec){
     return mat2(
@@ -27,67 +27,43 @@ void main() {
 }
 "#;
 
-pub const FRAGMENT_COUNT: usize = 3;
+pub const XBGR: &str = "XBGR";
+pub const EXTERNAL: &str = "EXTERNAL";
+pub const DEBUG_FLAGS: &str = "DEBUG_FLAGS";
 
-pub const FRAGMENT_SHADER_ABGR: &str = r#"
+pub const FRAGMENT_SHADER: &str = r#"
 #version 100
-
-precision mediump float;
-uniform sampler2D tex;
-uniform float alpha;
-varying vec2 v_tex_coords;
-uniform float tint;
-
-void main() {
-    vec4 color;
-
-    color = texture2D(tex, v_tex_coords) * alpha;
-
-    if (tint == 1.0)
-        color = vec4(0.0, 0.3, 0.0, 0.2) + color * 0.8;
-
-    gl_FragColor = color;
-}
-"#;
-
-pub const FRAGMENT_SHADER_XBGR: &str = r#"
-#version 100
-
-precision mediump float;
-uniform sampler2D tex;
-uniform float alpha;
-varying vec2 v_tex_coords;
-uniform float tint;
-
-void main() {
-    vec4 color;
-
-    color = vec4(texture2D(tex, v_tex_coords).rgb, 1.0) * alpha;
-
-    if (tint == 1.0)
-        color = vec4(0.0, 0.3, 0.0, 0.2) + color * 0.8;
-
-    gl_FragColor = color;
-}
-"#;
-
-pub const FRAGMENT_SHADER_EXTERNAL: &str = r#"
-#version 100
+#if defined(EXTERNAL)
 #extension GL_OES_EGL_image_external : require
+#endif
 
 precision mediump float;
+#if defined(EXTERNAL)
 uniform samplerExternalOES tex;
+#else
+uniform sampler2D tex;
+#endif
+
 uniform float alpha;
-varying vec2 v_tex_coords;
+varying vec2 v_coords;
+
+#if defined(DEBUG_FLAGS)
 uniform float tint;
+#endif
 
 void main() {
     vec4 color;
 
-    color = texture2D(tex, v_tex_coords) * alpha;
+#if defined(XBGR)
+    color = vec4(texture2D(tex, v_coords).rgb, 1.0) * alpha;
+#else
+    color = texture2D(tex, v_coords) * alpha;
+#endif
 
+#if defined(DEBUG_FLAGS)
     if (tint == 1.0)
         color = vec4(0.0, 0.3, 0.0, 0.2) + color * 0.8;
+#endif
 
     gl_FragColor = color;
 }
