@@ -30,6 +30,12 @@ impl DummyRenderer {
     }
 }
 
+impl Default for DummyRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Renderer for DummyRenderer {
     type Error = SwapBuffersError;
     type TextureId = DummyTexture;
@@ -167,6 +173,7 @@ impl ImportEgl for DummyRenderer {
 #[cfg(feature = "wayland_frontend")]
 impl ImportDmaWl for DummyRenderer {}
 
+#[derive(Debug)]
 pub struct DummyFrame {}
 
 impl Frame for DummyFrame {
