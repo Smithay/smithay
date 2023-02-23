@@ -46,6 +46,8 @@ pub mod damage;
 
 pub mod sync;
 
+pub mod test;
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Texture filtering methods
 pub enum TextureFilter {

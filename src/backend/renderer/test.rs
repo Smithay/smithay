@@ -1,17 +1,18 @@
+#![allow(missing_docs)]
 use std::cell::Cell;
 
-use smithay::{
+use crate::{
     backend::{
         allocator::{dmabuf::Dmabuf, Fourcc},
         renderer::{
             sync::SyncPoint, DebugFlags, Frame, ImportDma, ImportDmaWl, ImportEgl, ImportMem, ImportMemWl,
             Renderer, Texture, TextureFilter,
         },
-        SwapBuffersError,
+        SwapBuffersError, self,
     },
     reexports::wayland_server::protocol::wl_buffer,
     utils::{Buffer, Physical, Rectangle, Size, Transform},
-    wayland::compositor::SurfaceData,
+    wayland::{compositor::SurfaceData, self},
 };
 
 #[derive(Debug)]
@@ -87,7 +88,7 @@ impl ImportMemWl for DummyRenderer {
         surface: Option<&SurfaceData>,
         _damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        use smithay::wayland::shm::with_buffer_contents;
+        use wayland::shm::with_buffer_contents;
         use std::ptr;
         let ret = with_buffer_contents(buffer, |ptr, len, data| {
             let offset = data.offset as u32;
@@ -132,8 +133,8 @@ impl ImportDma for DummyRenderer {
 impl ImportEgl for DummyRenderer {
     fn bind_wl_display(
         &mut self,
-        _display: &smithay::reexports::wayland_server::DisplayHandle,
-    ) -> Result<(), smithay::backend::egl::Error> {
+        _display: &::wayland_server::DisplayHandle,
+    ) -> Result<(), backend::egl::Error> {
         unimplemented!()
     }
 
@@ -141,14 +142,14 @@ impl ImportEgl for DummyRenderer {
         unimplemented!()
     }
 
-    fn egl_reader(&self) -> Option<&smithay::backend::egl::display::EGLBufferReader> {
+    fn egl_reader(&self) -> Option<&backend::egl::display::EGLBufferReader> {
         unimplemented!()
     }
 
     fn import_egl_buffer(
         &mut self,
         _buffer: &wl_buffer::WlBuffer,
-        _surface: Option<&smithay::wayland::compositor::SurfaceData>,
+        _surface: Option<&wayland::compositor::SurfaceData>,
         _damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         unimplemented!()

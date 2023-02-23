@@ -1,6 +1,5 @@
 mod ffi_wrappers;
 mod main_loop;
-mod renderer;
 
 use std::{os::unix::net::UnixStream, thread::JoinHandle};
 
