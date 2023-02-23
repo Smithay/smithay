@@ -28,7 +28,7 @@ use anvil::{drawing::PointerElement, render::*, state::Backend, AnvilState, Call
 
 use crate::WlcsEvent;
 
-pub const OUTPUT_NAME: &str = "anvil";
+const OUTPUT_NAME: &str = "anvil";
 
 struct TestState {
     clients: HashMap<i32, Client>,
