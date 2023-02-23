@@ -60,7 +60,7 @@ pub mod ffi {
 crate::utils::ids::id_gen!(next_renderer_id, RENDERER_ID, RENDERER_IDS);
 
 #[derive(Debug, Clone)]
-struct Gles2TexProgram {
+struct Gles2TexProgramInternal {
     program: ffi::types::GLuint,
     uniform_tex: ffi::types::GLint,
     uniform_tex_matrix: ffi::types::GLint,
@@ -68,7 +68,36 @@ struct Gles2TexProgram {
     uniform_alpha: ffi::types::GLint,
     attrib_vert: ffi::types::GLint,
     attrib_vert_position: ffi::types::GLint,
-    uniform_tint: Option<ffi::types::GLint>,
+    additional_uniforms: HashMap<String, UniformDesc>,
+}
+
+#[derive(Debug, Clone)]
+struct Gles2TexProgramVariant {
+    normal: Gles2TexProgramInternal,
+    debug: Gles2TexProgramInternal,
+
+    // debug flags
+    uniform_tint: ffi::types::GLint,
+}
+
+/// Gles2 texture shader
+#[derive(Debug, Clone)]
+pub struct Gles2TexProgram {
+    variants: [Gles2TexProgramVariant; 3],
+    destruction_callback_sender: Sender<CleanupResource>,
+}
+
+impl Drop for Gles2TexProgram {
+    fn drop(&mut self) {
+        for variant in &self.variants {
+            let _ = self
+                .destruction_callback_sender
+                .send(CleanupResource::Program(variant.normal.program));
+            let _ = self
+                .destruction_callback_sender
+                .send(CleanupResource::Program(variant.debug.program));
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +114,7 @@ struct Gles2SolidProgram {
 pub struct Gles2PixelProgram {
     normal: Gles2PixelProgramInternal,
     debug: Gles2PixelProgramInternal,
+    destruction_callback_sender: Sender<CleanupResource>,
 
     // debug flags
     uniform_tint: ffi::types::GLint,
@@ -100,6 +130,17 @@ struct Gles2PixelProgramInternal {
     attrib_vert: ffi::types::GLint,
     attrib_position: ffi::types::GLint,
     additional_uniforms: HashMap<String, UniformDesc>,
+}
+
+impl Drop for Gles2PixelProgram {
+    fn drop(&mut self) {
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::Program(self.normal.program));
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::Program(self.debug.program));
+    }
 }
 
 /// A handle to a GLES2 texture
@@ -174,6 +215,7 @@ enum CleanupResource {
     RenderbufferObject(ffi::types::GLuint),
     EGLImage(EGLImage),
     Mapping(ffi::types::GLuint, *const nix::libc::c_void),
+    Program(ffi::types::GLuint),
 }
 
 impl Texture for Gles2Texture {
@@ -296,19 +338,21 @@ pub struct Gles2Renderer {
     buffers: Vec<Gles2Buffer>,
     target: Option<Gles2Target>,
     pub(crate) extensions: Vec<String>,
-    tex_programs: [Gles2TexProgram; 6],
+
+    tex_program: Gles2TexProgram,
     solid_program: Gles2SolidProgram,
+
     dmabuf_cache: std::collections::HashMap<WeakDmabuf, Gles2Texture>,
     egl: EGLContext,
     #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
     egl_reader: Option<EGLBufferReader>,
+
     gl_version: version::GlVersion,
     vbos: [ffi::types::GLuint; 2],
     gl: ffi::Gles2,
     destruction_callback: Receiver<CleanupResource>,
-    // This field is only accessed if the image or wayland_frontend features are active
-    #[allow(dead_code)]
     destruction_callback_sender: Sender<CleanupResource>,
+
     min_filter: TextureFilter,
     max_filter: TextureFilter,
     supports_instancing: bool,
@@ -358,7 +402,7 @@ impl fmt::Debug for Gles2Renderer {
             .field("buffers", &self.buffers)
             .field("target", &self.target)
             .field("extensions", &self.extensions)
-            .field("tex_programs", &self.tex_programs)
+            .field("tex_program", &self.tex_program)
             .field("solid_program", &self.solid_program)
             .field("dmabuf_cache", &self.dmabuf_cache)
             .field("egl", &self.egl)
@@ -573,39 +617,94 @@ unsafe fn link_program(
 unsafe fn texture_program(
     gl: &ffi::Gles2,
     frag: &str,
-    defines: &[&str],
+    additional_uniforms: &[UniformName<'_>],
+    destruction_callback_sender: Sender<CleanupResource>,
 ) -> Result<Gles2TexProgram, Gles2Error> {
-    let mut src = String::new();
-    for define in defines {
-        src.push_str(&format!("#define {}\n", define));
-    }
-    src.push_str(frag);
+    let create_variant = |variant: Option<&str>| -> Result<Gles2TexProgramVariant, Gles2Error> {
+        let shader = match variant {
+            None => Cow::Borrowed(frag),
+            Some(define) => Cow::Owned(format!("#define {}\n{}", define, frag)),
+        };
+        let program = unsafe { link_program(gl, shaders::VERTEX_SHADER, &shader)? };
 
-    let program = link_program(gl, shaders::VERTEX_SHADER, frag)?;
+        let debug_shader = format!("#define {}\n{}", shaders::DEBUG_FLAGS, shader);
+        let debug_program = unsafe { link_program(gl, shaders::VERTEX_SHADER, debug_shader.as_ref())? };
 
-    let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-    let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
-    let tex = CStr::from_bytes_with_nul(b"tex\0").expect("NULL terminated");
-    let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-    let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
-    let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
+        let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
+        let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
+        let tex = CStr::from_bytes_with_nul(b"tex\0").expect("NULL terminated");
+        let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
+        let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
+        let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
+        let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
 
-    // debug flags
-    let debug_flags = defines.contains(&shaders::DEBUG_FLAGS);
-    let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
+        Ok(Gles2TexProgramVariant {
+            normal: Gles2TexProgramInternal {
+                program,
+                uniform_tex: gl.GetUniformLocation(program, tex.as_ptr() as *const ffi::types::GLchar),
+                uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
+                uniform_tex_matrix: gl
+                    .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
+                uniform_alpha: gl.GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
+                attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
+                attrib_vert_position: gl
+                    .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
+                additional_uniforms: additional_uniforms
+                    .iter()
+                    .map(|uniform| {
+                        let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
+                        let location =
+                            gl.GetUniformLocation(program, name.as_ptr() as *const ffi::types::GLchar);
+                        (
+                            uniform.name.clone().into_owned(),
+                            UniformDesc {
+                                location,
+                                type_: uniform.type_,
+                            },
+                        )
+                    })
+                    .collect(),
+            },
+            debug: Gles2TexProgramInternal {
+                program: debug_program,
+                uniform_tex: gl.GetUniformLocation(debug_program, tex.as_ptr() as *const ffi::types::GLchar),
+                uniform_matrix: gl
+                    .GetUniformLocation(debug_program, matrix.as_ptr() as *const ffi::types::GLchar),
+                uniform_tex_matrix: gl
+                    .GetUniformLocation(debug_program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
+                uniform_alpha: gl
+                    .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
+                attrib_vert: gl.GetAttribLocation(debug_program, vert.as_ptr() as *const ffi::types::GLchar),
+                attrib_vert_position: gl
+                    .GetAttribLocation(debug_program, vert_position.as_ptr() as *const ffi::types::GLchar),
+                additional_uniforms: additional_uniforms
+                    .iter()
+                    .map(|uniform| {
+                        let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
+                        let location =
+                            gl.GetUniformLocation(debug_program, name.as_ptr() as *const ffi::types::GLchar);
+                        (
+                            uniform.name.clone().into_owned(),
+                            UniformDesc {
+                                location,
+                                type_: uniform.type_,
+                            },
+                        )
+                    })
+                    .collect(),
+            },
+            // debug flags
+            uniform_tint: gl.GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
+        })
+    };
 
     Ok(Gles2TexProgram {
-        program,
-        uniform_tex: gl.GetUniformLocation(program, tex.as_ptr() as *const ffi::types::GLchar),
-        uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
-        uniform_tex_matrix: gl.GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-        uniform_alpha: gl.GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
-        attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
-        attrib_vert_position: gl
-            .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
-        // debug flags
-        uniform_tint: debug_flags
-            .then(|| gl.GetUniformLocation(program, tint.as_ptr() as *const ffi::types::GLchar)),
+        variants: [
+            create_variant(None)?,
+            create_variant(Some(shaders::XBGR))?,
+            create_variant(Some(shaders::EXTERNAL))?,
+        ],
+        destruction_callback_sender,
     })
 }
 
@@ -709,22 +808,8 @@ impl Gles2Renderer {
             (gl, gl_version, exts, supports_instancing, gl_debug_span)
         };
 
-        let tex_programs = [
-            texture_program(&gl, shaders::FRAGMENT_SHADER, &[])?,
-            texture_program(&gl, shaders::FRAGMENT_SHADER, &[shaders::XBGR])?,
-            texture_program(&gl, shaders::FRAGMENT_SHADER, &[shaders::EXTERNAL])?,
-            texture_program(&gl, shaders::FRAGMENT_SHADER, &[shaders::DEBUG_FLAGS])?,
-            texture_program(
-                &gl,
-                shaders::FRAGMENT_SHADER,
-                &[shaders::DEBUG_FLAGS, shaders::XBGR],
-            )?,
-            texture_program(
-                &gl,
-                shaders::FRAGMENT_SHADER,
-                &[shaders::DEBUG_FLAGS, shaders::EXTERNAL],
-            )?,
-        ];
+        let (tx, rx) = channel();
+        let tex_program = texture_program(&gl, shaders::FRAGMENT_SHADER, &[], tx.clone())?;
         let solid_program = solid_program(&gl)?;
 
         // Initialize vertices based on drawing methodology.
@@ -748,7 +833,6 @@ impl Gles2Renderer {
         context
             .user_data()
             .insert_if_missing(|| RendererId(next_renderer_id()));
-        let (tx, rx) = channel();
 
         drop(_guard);
         let renderer = Gles2Renderer {
@@ -758,7 +842,7 @@ impl Gles2Renderer {
             egl_reader: None,
             extensions: exts,
             gl_version,
-            tex_programs,
+            tex_program,
             solid_program,
             target: None,
             buffers: Vec::new(),
@@ -842,6 +926,9 @@ impl Gles2Renderer {
                         self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
                     }
                     self.gl.DeleteBuffers(1, &pbo);
+                },
+                CleanupResource::Program(program) => unsafe {
+                    self.gl.DeleteProgram(program);
                 },
             }
         }
@@ -1881,9 +1968,6 @@ impl Drop for Gles2Renderer {
         unsafe {
             if self.egl.make_current().is_ok() {
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-                for program in &self.tex_programs {
-                    self.gl.DeleteProgram(program.program);
-                }
                 self.gl.DeleteProgram(self.solid_program.program);
                 self.gl.DeleteBuffers(self.vbos.len() as i32, self.vbos.as_ptr());
 
@@ -1936,11 +2020,15 @@ impl Gles2Renderer {
     /// Compile a custom pixel shader for rendering with [`Gles2Renderer::render_pixel_shader_to`].
     ///
     /// Pixel shaders can be used for completely shader-driven drawing into a given region.
+    ///
+    /// They need to handle the following #define variants:
+    /// - `DEBUG_FLAGS` see below
+    ///
     /// They receive the following variables:
     /// - *varying* v_coords `vec2` - contains the position from the vertex shader
     /// - *uniform* size `vec2` - size of the viewport in pixels
     /// - *uniform* alpha `float` - for the alpha value passed by the renderer
-    /// - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0)
+    /// - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0) - only if `DEBUG_FLAGS` was defined
     ///
     /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
     /// and can then be set in functions utilizing `Gles2PixelProgram` (like [`Gles2Renderer::render_pixel_shader_to`]).
@@ -2043,10 +2131,45 @@ impl Gles2Renderer {
                         })
                         .collect(),
                 },
+                destruction_callback_sender: self.destruction_callback_sender.clone(),
                 uniform_tint: self
                     .gl
                     .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
             })
+        }
+    }
+
+    /// Compile a custom texture shader for rendering with [`Gles2Renderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`].
+    ///
+    /// They need to handle the following #define variants:
+    /// - `EXTERNAL` uses samplerExternalOES instead of sampler2D, requires the GL_OES_EGL_image_external extension
+    /// - `XBGR` needs to ignore the alpha channel of the texture and replace it with 1.0
+    /// - `DEBUG_FLAGS` see below
+    ///
+    /// They receive the following variables:
+    /// - *varying* v_coords `vec2` - contains the position from the vertex shader
+    /// - *uniform* tex `sample2d` - texture sampler
+    /// - *uniform* alpha `float` - for the alpha value passed by the renderer
+    /// - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0) - only if `DEBUG_FLAGS` was defined
+    ///
+    /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
+    /// and can then be set in functions utilizing `Gles2TexProgram` (like [`Gles2Renderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`]).
+    ///
+    /// ## Panics
+    ///
+    /// Panics if any of the names of the passed additional uniforms contains a `\0`/NUL-byte.
+    pub fn compile_custom_texture_shader(
+        &self,
+        shader: impl AsRef<str>,
+        additional_uniforms: &[UniformName<'_>],
+    ) -> Result<Gles2TexProgram, Gles2Error> {
+        unsafe {
+            texture_program(
+                &self.gl,
+                shader.as_ref(),
+                additional_uniforms,
+                self.destruction_callback_sender.clone(),
+            )
         }
     }
 }
@@ -2338,6 +2461,66 @@ impl<'frame> Frame for Gles2Frame<'frame> {
         transform: Transform,
         alpha: f32,
     ) -> Result<(), Gles2Error> {
+        self.render_texture_from_to(texture, src, dest, damage, transform, alpha, None, &[])
+    }
+
+    fn transformation(&self) -> Transform {
+        self.transform
+    }
+
+    fn finish(mut self) -> Result<(), Self::Error> {
+        self.finish_internal()
+    }
+}
+
+impl<'frame> Gles2Frame<'frame> {
+    fn finish_internal(&mut self) -> Result<(), Gles2Error> {
+        let _guard = self.span.enter();
+
+        if self.finished.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        unsafe {
+            self.renderer.gl.Flush();
+            // We need to wait for the previously submitted GL commands to complete
+            // or otherwise the buffer could be submitted to the drm surface while
+            // still writing to the buffer which results in flickering on the screen.
+            // The proper solution would be to create a fence just before calling
+            // glFlush that the backend can use to wait for the commands to be finished.
+            // In case of a drm atomic backend the fence could be supplied by using the
+            // IN_FENCE_FD property.
+            // See https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#explicit-fencing-properties for
+            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c
+            // especially here
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L147
+            // and here
+            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L235
+            self.renderer.gl.Finish();
+            self.renderer.gl.Disable(ffi::BLEND);
+        }
+        Ok(())
+    }
+
+    /// Render part of a texture as given by src to the current target into the rectangle described by dst
+    /// as a flat 2d-plane after applying the inverse of the given transformation.
+    /// (Meaning `src_transform` should match the orientation of surface being rendered).
+    ///
+    /// Optionally allows a custom texture program and matching additional uniforms to be passed in.
+    #[instrument(skip(self), parent = &self.span)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_texture_from_to(
+        &mut self,
+        texture: &Gles2Texture,
+        src: Rectangle<f64, BufferCoord>,
+        dest: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        transform: Transform,
+        alpha: f32,
+        program: Option<&Gles2TexProgram>,
+        additional_uniforms: &[Uniform<'_>],
+    ) -> Result<(), Gles2Error> {
         let mut mat = Matrix3::<f32>::identity();
 
         // dest position and scale
@@ -2411,46 +2594,15 @@ impl<'frame> Frame for Gles2Frame<'frame> {
             })
             .collect::<Vec<_>>();
 
-        self.render_texture(texture, tex_mat, mat, Some(&instances), alpha)
-    }
-
-    fn transformation(&self) -> Transform {
-        self.transform
-    }
-
-    fn finish(mut self) -> Result<(), Self::Error> {
-        self.finish_internal()
-    }
-}
-
-impl<'frame> Gles2Frame<'frame> {
-    fn finish_internal(&mut self) -> Result<(), Gles2Error> {
-        let _guard = self.span.enter();
-
-        if self.finished.swap(true, Ordering::SeqCst) {
-            return Ok(());
-        }
-
-        unsafe {
-            self.renderer.gl.Flush();
-            // We need to wait for the previously submitted GL commands to complete
-            // or otherwise the buffer could be submitted to the drm surface while
-            // still writing to the buffer which results in flickering on the screen.
-            // The proper solution would be to create a fence just before calling
-            // glFlush that the backend can use to wait for the commands to be finished.
-            // In case of a drm atomic backend the fence could be supplied by using the
-            // IN_FENCE_FD property.
-            // See https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#explicit-fencing-properties for
-            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c
-            // especially here
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L147
-            // and here
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L235
-            self.renderer.gl.Finish();
-            self.renderer.gl.Disable(ffi::BLEND);
-        }
-        Ok(())
+        self.render_texture(
+            texture,
+            tex_mat,
+            mat,
+            Some(&instances),
+            alpha,
+            program,
+            additional_uniforms,
+        )
     }
 
     /// Render a texture to the current target using given projection matrix and alpha.
@@ -2465,7 +2617,10 @@ impl<'frame> Gles2Frame<'frame> {
     /// The given texture matrix is used to transform the instances into texture coordinates.
     /// In case the texture is rotated, flipped or y-inverted the matrix has to be set up accordingly.
     /// Additionally the matrix can be used to crop the texture.
+    ///
+    /// Optionally allows a custom texture program and matching additional uniforms to be passed in.
     #[instrument(level = "trace", skip(self), parent = &self.span)]
+    #[allow(clippy::too_many_arguments)]
     pub fn render_texture(
         &mut self,
         tex: &Gles2Texture,
@@ -2473,6 +2628,8 @@ impl<'frame> Gles2Frame<'frame> {
         mut matrix: Matrix3<f32>,
         instances: Option<&[ffi::types::GLfloat]>,
         alpha: f32,
+        program: Option<&Gles2TexProgram>,
+        additional_uniforms: &[Uniform<'_>],
     ) -> Result<(), Gles2Error> {
         let damage = instances.unwrap_or(&[0.0, 0.0, 1.0, 1.0]);
         if damage.is_empty() {
@@ -2487,12 +2644,13 @@ impl<'frame> Gles2Frame<'frame> {
         } else {
             ffi::TEXTURE_2D
         };
-        let program_index = if !self.renderer.debug_flags.is_empty() {
-            tex.0.texture_kind + 3
+        let tex_program = program.unwrap_or(&self.renderer.tex_program);
+        let program_variant = &tex_program.variants[tex.0.texture_kind];
+        let program = if self.renderer.debug_flags.is_empty() {
+            &program_variant.normal
         } else {
-            tex.0.texture_kind
+            &program_variant.debug
         };
-        let program = &self.renderer.tex_programs[program_index];
 
         // render
         let gl = &self.renderer.gl;
@@ -2528,10 +2686,15 @@ impl<'frame> Gles2Frame<'frame> {
                 } else {
                     0.0f32
                 };
-                gl.Uniform1f(
-                    program.uniform_tint.expect("Debug flag enables debug shader"),
-                    tint,
-                );
+                gl.Uniform1f(program_variant.uniform_tint, tint);
+            }
+
+            for uniform in additional_uniforms {
+                let desc = program
+                    .additional_uniforms
+                    .get(&*uniform.name)
+                    .ok_or_else(|| Gles2Error::UnknownUniform(uniform.name.clone().into_owned()))?;
+                uniform.value.set(gl, desc)?;
             }
 
             gl.EnableVertexAttribArray(program.attrib_vert as u32);
