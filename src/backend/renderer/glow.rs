@@ -224,10 +224,15 @@ impl<'frame> Frame for GlowFrame<'frame> {
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
-        self.frame
-            .as_mut()
-            .unwrap()
-            .render_texture_from_to(texture, src, dst, damage, src_transform, alpha)
+        Frame::render_texture_from_to(
+            self.frame.as_mut().unwrap(),
+            texture,
+            src,
+            dst,
+            damage,
+            src_transform,
+            alpha,
+        )
     }
 
     fn transformation(&self) -> Transform {
