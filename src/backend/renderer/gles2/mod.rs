@@ -380,6 +380,7 @@ pub struct Gles2Frame<'frame> {
     current_projection: Matrix3<f32>,
     transform: Transform,
     size: Size<i32, Physical>,
+    tex_program_override: Option<(Gles2TexProgram, Vec<Uniform<'static>>)>,
     finished: AtomicBool,
     span: EnteredSpan,
 }
@@ -390,6 +391,7 @@ impl<'frame> fmt::Debug for Gles2Frame<'frame> {
             .field("renderer", &self.renderer)
             .field("current_projection", &self.current_projection)
             .field("transform", &self.transform)
+            .field("tex_program_override", &self.tex_program_override)
             .field("size", &self.size)
             .field("finished", &self.finished)
             .finish_non_exhaustive()
@@ -2285,6 +2287,7 @@ impl Renderer for Gles2Renderer {
             current_projection,
             transform,
             size: output_size,
+            tex_program_override: None,
             finished: AtomicBool::new(false),
             span,
         })
@@ -2527,6 +2530,25 @@ impl<'frame> Gles2Frame<'frame> {
         Ok(())
     }
 
+    /// Overrides the default texture shader used, if none is specified.
+    ///
+    /// This affects calls to [`Frame::render_texture_at`] or [`Frame::render_texture_from_to`] as well as
+    /// calls to [`Gles2Frame::render_texture_to`] or [`Gles2Frame::render_texture`], if the passed in `program` is `None`.
+    ///
+    /// Override is active only for the lifetime of this `Gles2Frame` and can be reset via [`Gles2Frame::clear_tex_program_override`].
+    pub fn override_default_tex_program(
+        &mut self,
+        program: Gles2TexProgram,
+        additional_uniforms: Vec<Uniform<'static>>,
+    ) {
+        self.tex_program_override = Some((program, additional_uniforms));
+    }
+
+    /// Resets a texture shader override previously set by [`Gles2Frame::override_default_tex_program`].
+    pub fn clear_tex_program_override(&mut self) {
+        self.tex_program_override = None;
+    }
+
     /// Render part of a texture as given by src to the current target into the rectangle described by dst
     /// as a flat 2d-plane after applying the inverse of the given transformation.
     /// (Meaning `src_transform` should match the orientation of surface being rendered).
@@ -2668,7 +2690,10 @@ impl<'frame> Gles2Frame<'frame> {
         } else {
             ffi::TEXTURE_2D
         };
-        let tex_program = program.unwrap_or(&self.renderer.tex_program);
+        let (tex_program, additional_uniforms) = program
+            .map(|p| (p, additional_uniforms))
+            .or_else(|| self.tex_program_override.as_ref().map(|(p, a)| (p, &**a)))
+            .unwrap_or((&self.renderer.tex_program, &[]));
         let program_variant = &tex_program.variants[tex.0.texture_kind];
         let program = if self.renderer.debug_flags.is_empty() {
             &program_variant.normal
