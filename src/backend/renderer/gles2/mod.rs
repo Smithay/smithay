@@ -289,6 +289,7 @@ pub struct Gles2Renderer {
     debug_flags: DebugFlags,
     _not_send: *mut (),
     span: tracing::Span,
+    gl_debug_span: Option<*mut tracing::Span>,
 }
 
 struct RendererId(usize);
@@ -455,7 +456,7 @@ extern "system" fn gl_debug_log(
     user_param: *mut nix::libc::c_void,
 ) {
     let _ = std::panic::catch_unwind(move || unsafe {
-        let span = Box::from_raw(user_param as *mut tracing::Span);
+        let span = &mut *(user_param as *mut tracing::Span);
         let _guard = span.enter();
         let msg = CStr::from_ptr(message);
         let message_utf8 = msg.to_string_lossy();
@@ -582,7 +583,7 @@ impl Gles2Renderer {
 
         context.make_current()?;
 
-        let (gl, gl_version, exts, supports_instancing) = {
+        let (gl, gl_version, exts, supports_instancing, gl_debug_span) = {
             let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
             let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const c_char;
             if ext_ptr.is_null() {
@@ -630,14 +631,17 @@ impl Gles2Renderer {
                 || (exts.iter().any(|ext| ext == "GL_EXT_instanced_arrays")
                     && exts.iter().any(|ext| ext == "GL_EXT_draw_instanced"));
 
-            if exts.iter().any(|ext| ext == "GL_KHR_debug") {
+            let gl_debug_span = if exts.iter().any(|ext| ext == "GL_KHR_debug") {
                 gl.Enable(ffi::DEBUG_OUTPUT);
                 gl.Enable(ffi::DEBUG_OUTPUT_SYNCHRONOUS);
                 let span = Box::into_raw(Box::new(span.clone()));
                 gl.DebugMessageCallback(Some(gl_debug_log), span as *mut _);
-            }
+                Some(span)
+            } else {
+                None
+            };
 
-            (gl, gl_version, exts, supports_instancing)
+            (gl, gl_version, exts, supports_instancing, gl_debug_span)
         };
 
         let tex_programs = [
@@ -692,6 +696,7 @@ impl Gles2Renderer {
             debug_flags: DebugFlags::empty(),
             _not_send: std::ptr::null_mut(),
             span,
+            gl_debug_span,
         };
         renderer.egl.unbind()?;
         Ok(renderer)
@@ -1814,6 +1819,10 @@ impl Drop for Gles2Renderer {
                 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
                 let _ = self.egl_reader.take();
                 let _ = self.egl.unbind();
+            }
+
+            if let Some(gl_debug_ptr) = self.gl_debug_span.take() {
+                let _ = Box::from_raw(gl_debug_ptr);
             }
         }
     }
