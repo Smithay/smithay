@@ -2,7 +2,7 @@
 
 use crate::{
     backend::renderer::{
-        element::{Element, Id, RenderElement},
+        element::{Element, Id, RenderElement, UnderlyingStorage},
         utils::CommitCounter,
     },
     utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform},
@@ -105,5 +105,9 @@ impl RenderElement<Gles2Renderer> for PixelShaderElement {
             self.alpha,
             &self.additional_uniforms,
         )
+    }
+
+    fn underlying_storage(&self, _renderer: &mut Gles2Renderer) -> Option<UnderlyingStorage> {
+        None
     }
 }
