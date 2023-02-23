@@ -1,4 +1,3 @@
-#version 100
 #if defined(EXTERNAL)
 #extension GL_OES_EGL_image_external : require
 #endif

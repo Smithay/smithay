@@ -1,4 +1,5 @@
 #version 100
+
 uniform mat3 matrix;
 uniform mat3 tex_matrix;
 
@@ -18,6 +19,6 @@ void main() {
     vec2 vert_transform_translation = vert_position.xy;
     vec2 vert_transform_scale = vert_position.zw;
     vec3 position = vec3(vert * scale(vert_transform_scale) + vert_transform_translation, 1.0);
-    v_tex_coords = (tex_matrix * position).xy;
+    v_coords = (tex_matrix * position).xy;
     gl_Position = vec4(matrix * position, 1.0);
 }

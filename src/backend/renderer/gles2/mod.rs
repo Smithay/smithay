@@ -621,13 +621,14 @@ unsafe fn texture_program(
     destruction_callback_sender: Sender<CleanupResource>,
 ) -> Result<Gles2TexProgram, Gles2Error> {
     let create_variant = |variant: Option<&str>| -> Result<Gles2TexProgramVariant, Gles2Error> {
-        let shader = match variant {
+        let src = match variant {
             None => Cow::Borrowed(frag),
             Some(define) => Cow::Owned(format!("#define {}\n{}", define, frag)),
         };
+        let shader = format!("#version 100\n{}", src);
         let program = unsafe { link_program(gl, shaders::VERTEX_SHADER, &shader)? };
 
-        let debug_shader = format!("#define {}\n{}", shaders::DEBUG_FLAGS, shader);
+        let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src);
         let debug_program = unsafe { link_program(gl, shaders::VERTEX_SHADER, debug_shader.as_ref())? };
 
         let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
@@ -2033,17 +2034,20 @@ impl Gles2Renderer {
     /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
     /// and can then be set in functions utilizing `Gles2PixelProgram` (like [`Gles2Renderer::render_pixel_shader_to`]).
     ///
+    /// The shader must **not** contain a `#version` directive. It will be interpreted as version 100.
+    ///
     /// ## Panics
     ///
     /// Panics if any of the names of the passed additional uniforms contains a `\0`/NUL-byte.
     pub fn compile_custom_pixel_shader(
         &self,
-        shader: impl AsRef<str>,
+        src: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<Gles2PixelProgram, Gles2Error> {
-        let program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, shader.as_ref())? };
-        let debug_shader = format!("#define {}\n{}", shaders::DEBUG_FLAGS, shader.as_ref());
-        let debug_program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, debug_shader.as_ref())? };
+        let shader = format!("#version 100\n{}", src.as_ref());
+        let program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &shader)? };
+        let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src.as_ref());
+        let debug_program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &debug_shader)? };
 
         let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
         let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
@@ -2154,6 +2158,8 @@ impl Gles2Renderer {
     ///
     /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
     /// and can then be set in functions utilizing `Gles2TexProgram` (like [`Gles2Renderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`]).
+    ///
+    /// The shader must **not** contain a `#version` directive. It will be interpreted as version 100.
     ///
     /// ## Panics
     ///
