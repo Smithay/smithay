@@ -166,7 +166,7 @@ fn buffer_test(args: TestArgs) {
             let file = File::open(&path).expect("Failed to open device node");
             let fd = DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)));
             Box::new(DmabufAllocator(
-                DrmDevice::new(fd, false).expect("Failed to init drm device"),
+                DrmDevice::new(fd, false).expect("Failed to init drm device").0,
             )) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>
         }
         AllocatorType::Gbm => {
