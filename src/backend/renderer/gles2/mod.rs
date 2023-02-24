@@ -59,7 +59,7 @@ pub mod ffi {
 
 crate::utils::ids::id_gen!(next_renderer_id, RENDERER_ID, RENDERER_IDS);
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Gles2TexProgramInternal {
     program: ffi::types::GLuint,
     uniform_tex: ffi::types::GLint,
@@ -71,7 +71,7 @@ struct Gles2TexProgramInternal {
     additional_uniforms: HashMap<String, UniformDesc>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Gles2TexProgramVariant {
     normal: Gles2TexProgramInternal,
     debug: Gles2TexProgramInternal,
@@ -82,12 +82,15 @@ struct Gles2TexProgramVariant {
 
 /// Gles2 texture shader
 #[derive(Debug, Clone)]
-pub struct Gles2TexProgram {
+pub struct Gles2TexProgram(Rc<Gles2TexProgramInner>);
+
+#[derive(Debug)]
+struct Gles2TexProgramInner {
     variants: [Gles2TexProgramVariant; 3],
     destruction_callback_sender: Sender<CleanupResource>,
 }
 
-impl Drop for Gles2TexProgram {
+impl Drop for Gles2TexProgramInner {
     fn drop(&mut self) {
         for variant in &self.variants {
             let _ = self
@@ -111,7 +114,10 @@ struct Gles2SolidProgram {
 
 /// Gles2 pixel shader
 #[derive(Debug, Clone)]
-pub struct Gles2PixelProgram {
+pub struct Gles2PixelProgram(Rc<Gles2PixelProgramInner>);
+
+#[derive(Debug)]
+struct Gles2PixelProgramInner {
     normal: Gles2PixelProgramInternal,
     debug: Gles2PixelProgramInternal,
     destruction_callback_sender: Sender<CleanupResource>,
@@ -120,7 +126,7 @@ pub struct Gles2PixelProgram {
     uniform_tint: ffi::types::GLint,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Gles2PixelProgramInternal {
     program: ffi::types::GLuint,
     uniform_matrix: ffi::types::GLint,
@@ -132,7 +138,7 @@ struct Gles2PixelProgramInternal {
     additional_uniforms: HashMap<String, UniformDesc>,
 }
 
-impl Drop for Gles2PixelProgram {
+impl Drop for Gles2PixelProgramInner {
     fn drop(&mut self) {
         let _ = self
             .destruction_callback_sender
@@ -719,14 +725,14 @@ unsafe fn texture_program(
         })
     };
 
-    Ok(Gles2TexProgram {
+    Ok(Gles2TexProgram(Rc::new(Gles2TexProgramInner {
         variants: [
             create_variant(None)?,
             create_variant(Some(shaders::XBGR))?,
             create_variant(Some(shaders::EXTERNAL))?,
         ],
         destruction_callback_sender,
-    })
+    })))
 }
 
 unsafe fn solid_program(gl: &ffi::Gles2) -> Result<Gles2SolidProgram, Gles2Error> {
@@ -2078,7 +2084,7 @@ impl Gles2Renderer {
         let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
 
         unsafe {
-            Ok(Gles2PixelProgram {
+            Ok(Gles2PixelProgram(Rc::new(Gles2PixelProgramInner {
                 normal: Gles2PixelProgramInternal {
                     program,
                     uniform_matrix: self
@@ -2159,7 +2165,7 @@ impl Gles2Renderer {
                 uniform_tint: self
                     .gl
                     .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
-            })
+            })))
         }
     }
 
@@ -2694,7 +2700,7 @@ impl<'frame> Gles2Frame<'frame> {
             .map(|p| (p, additional_uniforms))
             .or_else(|| self.tex_program_override.as_ref().map(|(p, a)| (p, &**a)))
             .unwrap_or((&self.renderer.tex_program, &[]));
-        let program_variant = &tex_program.variants[tex.0.texture_kind];
+        let program_variant = &tex_program.0.variants[tex.0.texture_kind];
         let program = if self.renderer.debug_flags.is_empty() {
             &program_variant.normal
         } else {
@@ -2877,9 +2883,9 @@ impl<'frame> Gles2Frame<'frame> {
         matrix = self.current_projection * matrix;
 
         let program = if self.renderer.debug_flags.is_empty() {
-            &pixel_shader.normal
+            &pixel_shader.0.normal
         } else {
-            &pixel_shader.debug
+            &pixel_shader.0.debug
         };
 
         // render
@@ -2898,8 +2904,8 @@ impl<'frame> Gles2Frame<'frame> {
                 0.0f32
             };
 
-            if self.renderer.debug_flags.is_empty() {
-                gl.Uniform1f(pixel_shader.uniform_tint, tint);
+            if !self.renderer.debug_flags.is_empty() {
+                gl.Uniform1f(pixel_shader.0.uniform_tint, tint);
             }
 
             for uniform in additional_uniforms {
