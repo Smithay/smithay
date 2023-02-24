@@ -633,6 +633,24 @@ unsafe fn link_program(
     let mut status = ffi::FALSE as i32;
     gl.GetProgramiv(program, ffi::LINK_STATUS, &mut status as *mut _);
     if status == ffi::FALSE as i32 {
+        let mut max_len = 0;
+        gl.GetProgramiv(program, ffi::INFO_LOG_LENGTH, &mut max_len as *mut _);
+
+        let mut error = Vec::with_capacity(max_len as usize);
+        let mut len = 0;
+        gl.GetProgramInfoLog(
+            program,
+            max_len as _,
+            &mut len as *mut _,
+            error.as_mut_ptr() as *mut _,
+        );
+        error.set_len(len as usize);
+
+        error!(
+            "[GL] {}",
+            std::str::from_utf8(&error).unwrap_or("<Error Message no utf8>")
+        );
+
         gl.DeleteProgram(program);
         return Err(Gles2Error::ProgramLinkError);
     }
