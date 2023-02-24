@@ -7,12 +7,26 @@ use libc::dev_t;
 
 use std::{
     fmt::{self, Display, Formatter},
-    fs, io,
+    io,
     os::unix::io::{AsRawFd, RawFd},
     path::{Path, PathBuf},
 };
 
-use nix::sys::stat::{fstat, major, minor, stat, FileStat};
+use nix::sys::stat::{fstat, stat, FileStat};
+#[cfg(not(target_os = "freebsd"))]
+use nix::sys::stat::{major, minor};
+
+// Not currently provided in `libc` or `nix`
+// https://github.com/rust-lang/libc/pull/2999
+#[cfg(target_os = "freebsd")]
+fn major(dev: dev_t) -> u64 {
+    ((dev >> 8) & 0xff) as u64
+}
+
+#[cfg(target_os = "freebsd")]
+fn minor(dev: dev_t) -> u64 {
+    (dev & 0xffff00ff) as u64
+}
 
 /// A node which refers to a DRM device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -205,38 +219,43 @@ pub fn is_device_drm(major: u64, minor: u64) -> bool {
     stat(path.as_str()).is_ok()
 }
 
-/// Returns if the given device by major:minor pair is a drm device
 #[cfg(target_os = "freebsd")]
-pub fn is_device_drm(major: u64, _minor: u64) -> bool {
-    use nix::sys::stat::makedev;
+fn devname(major: u64, minor: u64) -> Option<String> {
     use nix::sys::stat::SFlag;
-    use std::ffi::CStr;
     use std::os::raw::{c_char, c_int};
 
-    let dev_name = Vec::<c_char>::with_capacity(255); // Matching value of SPECNAMELEN in FreeBSD 13+
+    // Matching value of SPECNAMELEN in FreeBSD 13+
+    let mut dev_name = vec![0u8; 255];
 
     let buf: *mut c_char = unsafe {
         libc::devname_r(
-            makedev(major, minor),
+            libc::makedev(major as _, minor as _),
             SFlag::S_IFCHR.bits(), // Must be S_IFCHR or S_IFBLK
-            dev_name.as_mut_ptr(),
+            dev_name.as_mut_ptr() as *mut c_char,
             dev_name.len() as c_int,
         )
     };
 
     // Buffer was too small (weird issue with the size of buffer) or the device could not be named.
     if buf.is_null() {
-        return Err(CreateDrmNodeError::NotDrmNode);
+        return None;
     }
 
     // SAFETY: The buffer written to by devname_r is guaranteed to be NUL terminated.
-    let dev_name = unsafe { CStr::from_ptr(buf) };
-    let dev_name = dev_name.to_str().expect("Returned device name is not valid utf8");
+    unsafe { dev_name.set_len(libc::strlen(buf)) };
 
-    dev_name.starts_with("drm/")
-        || dev_name.starts_with("dri/card")
-        || dev_name.starts_with("dri/control")
-        || dev_name.starts_with("dri/renderD")
+    Some(String::from_utf8(dev_name).expect("Returned device name is not valid utf8"))
+}
+
+/// Returns if the given device by major:minor pair is a drm device
+#[cfg(target_os = "freebsd")]
+pub fn is_device_drm(major: u64, minor: u64) -> bool {
+    devname(major, minor).map_or(false, |dev_name| {
+        dev_name.starts_with("drm/")
+            || dev_name.starts_with("dri/card")
+            || dev_name.starts_with("dri/control")
+            || dev_name.starts_with("dri/renderD")
+    })
 }
 
 /// Returns if the given device by major:minor pair is a drm device
@@ -246,7 +265,7 @@ pub fn is_device_drm(major: u64, _minor: u64) -> bool {
 }
 
 /// Returns the path of a specific type of node from the same DRM device as another path of the same node.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub fn path_to_type<P: AsRef<Path>>(path: P, ty: NodeType) -> io::Result<PathBuf> {
     let stat = stat(path.as_ref()).map_err(Into::<io::Error>::into)?;
     let dev = stat.st_rdev;
@@ -257,7 +276,7 @@ pub fn path_to_type<P: AsRef<Path>>(path: P, ty: NodeType) -> io::Result<PathBuf
 }
 
 /// Returns the path of a specific type of node from the same DRM device as an existing DrmNode.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub fn node_path(node: &DrmNode, ty: NodeType) -> io::Result<PathBuf> {
     let major = node.major();
     let minor = node.minor();
@@ -268,6 +287,7 @@ pub fn node_path(node: &DrmNode, ty: NodeType) -> io::Result<PathBuf> {
 /// Returns the path of a specific type of node from the DRM device described by major and minor device numbers.
 #[cfg(target_os = "linux")]
 pub fn dev_path(major: u64, minor: u64, ty: NodeType) -> io::Result<PathBuf> {
+    use std::fs;
     use std::io::ErrorKind;
 
     if !is_device_drm(major, minor) {
@@ -300,4 +320,59 @@ pub fn dev_path(major: u64, minor: u64, ty: NodeType) -> io::Result<PathBuf> {
             ty, major, minor
         ),
     ))
+}
+
+/// Returns the path of a specific type of node from the DRM device described by major and minor device numbers.
+#[cfg(target_os = "freebsd")]
+fn dev_path(major: u64, minor: u64, ty: NodeType) -> io::Result<PathBuf> {
+    // Based on libdrm `drmGetMinorNameForFD`. Should be updated if the code
+    // there is replaced with anything more sensible...
+
+    use std::io::ErrorKind;
+
+    if !is_device_drm(major, minor) {
+        return Err(io::Error::new(
+            ErrorKind::NotFound,
+            format!("{}:{} is no DRM device", major, minor),
+        ));
+    }
+
+    if let Some(dev_name) = devname(major, minor) {
+        let suffix = dev_name.trim_start_matches(|c: char| !c.is_numeric());
+        if let Ok(old_id) = suffix.parse::<u32>() {
+            let old_ty = match old_id >> 6 {
+                0 => NodeType::Primary,
+                1 => NodeType::Control,
+                2 => NodeType::Render,
+                _ => {
+                    return Err(io::Error::new(
+                        ErrorKind::NotFound,
+                        format!("{}:{} is no DRM device", major, minor),
+                    ));
+                }
+            };
+            let id = old_id - get_minor_base(old_ty) + get_minor_base(ty);
+            let path = PathBuf::from(format!("/dev/dri/{}{}", ty.minor_name_prefix(), id));
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+    }
+
+    Err(io::Error::new(
+        ErrorKind::NotFound,
+        format!(
+            "Could not find node of type {} from DRM device {}:{}",
+            ty, major, minor
+        ),
+    ))
+}
+
+#[cfg(target_os = "freebsd")]
+fn get_minor_base(type_: NodeType) -> u32 {
+    match type_ {
+        NodeType::Primary => 0,
+        NodeType::Control => 64,
+        NodeType::Render => 128,
+    }
 }
