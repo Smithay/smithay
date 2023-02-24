@@ -129,6 +129,19 @@ impl<BackendData: Backend> WlrLayerShellHandler for AnvilState<BackendData> {
         let mut map = layer_map_for_output(&output);
         map.map_layer(&LayerSurface::new(surface, namespace)).unwrap();
     }
+
+    fn layer_destroyed(&mut self, surface: WlrLayerSurface) {
+        if let Some((mut map, layer)) = self.space.outputs().find_map(|o| {
+            let map = layer_map_for_output(o);
+            let layer = map
+                .layers()
+                .find(|&layer| layer.layer_surface() == &surface)
+                .cloned();
+            layer.map(|layer| (map, layer))
+        }) {
+            map.unmap_layer(&layer);
+        }
+    }
 }
 
 impl<BackendData: Backend> AnvilState<BackendData> {
