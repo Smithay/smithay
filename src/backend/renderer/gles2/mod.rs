@@ -2914,7 +2914,6 @@ impl<'frame> Gles2Frame<'frame> {
         let gl = &self.renderer.gl;
         unsafe {
             gl.UseProgram(program.program);
-            gl.Scissor(dest.loc.x, dest.loc.y, dest.size.w, dest.size.h);
 
             gl.UniformMatrix3fv(program.uniform_matrix, 1, ffi::FALSE, matrix.as_ptr());
             gl.UniformMatrix3fv(program.uniform_tex_matrix, 1, ffi::FALSE, tex_matrix.as_ptr());
