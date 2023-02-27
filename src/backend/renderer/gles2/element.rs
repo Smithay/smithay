@@ -11,7 +11,7 @@ use crate::{
 use super::{Gles2Error, Gles2Frame, Gles2PixelProgram, Gles2Renderer, Uniform};
 
 /// Render element for drawing with a gles2 pixel shader
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PixelShaderElement {
     shader: Gles2PixelProgram,
     id: Id,
@@ -49,9 +49,12 @@ impl PixelShaderElement {
         area: Rectangle<i32, Logical>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
     ) {
-        self.area = area;
-        self.opaque_regions = opaque_regions.unwrap_or_default();
-        self.commit_counter.increment();
+        let opaque_regions = opaque_regions.unwrap_or_default();
+        if self.area != area || self.opaque_regions != opaque_regions {
+            self.area = area;
+            self.opaque_regions = opaque_regions;
+            self.commit_counter.increment();
+        }
     }
 
     /// Update the additional uniforms
@@ -60,6 +63,7 @@ impl PixelShaderElement {
     /// This replaces the stored uniforms, you have to update all of them, partial updates are not possible.
     pub fn update_uniforms(&mut self, additional_uniforms: Vec<Uniform<'_>>) {
         self.additional_uniforms = additional_uniforms.into_iter().map(|u| u.into_owned()).collect();
+        self.commit_counter.increment();
     }
 }
 
