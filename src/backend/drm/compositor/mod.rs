@@ -1728,7 +1728,7 @@ where
                 .iter()
                 .map(|(p, element)| {
                     let is_underlay = overlay_plane_lookup.get(p).unwrap().zpos.unwrap_or_default()
-                        <= self.planes.primary.zpos.unwrap_or_default();
+                        < self.planes.primary.zpos.unwrap_or_default();
                     if is_underlay {
                         HolepunchRenderElement::from_render_element(element, output_scale).into()
                     } else {
