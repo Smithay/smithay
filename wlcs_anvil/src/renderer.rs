@@ -82,7 +82,8 @@ impl ImportMemWl for DummyRenderer {
         _damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         use smithay::wayland::shm::with_buffer_contents;
-        let ret = with_buffer_contents(buffer, |slice, data| {
+        use std::ptr;
+        let ret = with_buffer_contents(buffer, |ptr, len, data| {
             let offset = data.offset as u32;
             let width = data.width as u32;
             let height = data.height as u32;
@@ -91,7 +92,9 @@ impl ImportMemWl for DummyRenderer {
             let mut x = 0;
             for h in 0..height {
                 for w in 0..width {
-                    x |= slice[(offset + w + h * stride) as usize];
+                    let idx = (offset + w + h * stride) as usize;
+                    assert!(idx < len);
+                    x |= unsafe { ptr::read(ptr.offset(idx as isize)) };
                 }
             }
 

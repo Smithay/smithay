@@ -676,7 +676,7 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
     }
 
     if !matches!(
-        crate::wayland::shm::with_buffer_contents(buffer, |_, _| ()),
+        crate::wayland::shm::with_buffer_contents(buffer, |_, _, _| ()),
         Err(BufferAccessError::NotManaged)
     ) {
         return Some(BufferType::Shm);
@@ -711,7 +711,7 @@ pub fn buffer_has_alpha(buffer: &wl_buffer::WlBuffer) -> Option<bool> {
         return Some(crate::backend::allocator::format::has_alpha(dmabuf.0.format));
     }
 
-    if let Ok(has_alpha) = crate::wayland::shm::with_buffer_contents(buffer, |_, data| {
+    if let Ok(has_alpha) = crate::wayland::shm::with_buffer_contents(buffer, |_, _, data| {
         crate::wayland::shm::has_alpha(data.format)
     }) {
         return Some(has_alpha);
@@ -747,7 +747,7 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffe
         return Some((buf.width() as i32, buf.height() as i32).into());
     }
 
-    match shm::with_buffer_contents(buffer, |_, data| (data.width, data.height).into()) {
+    match shm::with_buffer_contents(buffer, |_, _, data| (data.width, data.height).into()) {
         Ok(data) => Some(data),
 
         Err(BufferAccessError::NotManaged) => {

@@ -63,7 +63,7 @@
 //! use smithay::wayland::shm::{with_buffer_contents, BufferData, BufferAccessError};
 //!
 //! let content = with_buffer_contents(&buffer,
-//!     |slice: &[u8], buffer_metadata: BufferData| {
+//!     |ptr: *const u8, len: usize, buffer_metadata: BufferData| {
 //!         // do something to extract the contents of the buffer
 //!     }
 //! );
@@ -198,21 +198,30 @@ impl From<UnmanagedResource> for BufferAccessError {
 /// If the buffer is managed by the provided `ShmGlobal`, its contents are
 /// extracted and the closure is extracted with them:
 ///
-/// - The first argument is a data slice of the contents of the pool
-/// - The second argument is the specification of this buffer is this pool
+/// - The first argument is a pointer to the contents of the pool
+/// - The second argument is the length of the contents of the pool
+/// - The third argument is the specification of this buffer is this pool
+///
+/// The pool cannot be provided as a slice since it is shared memory that could be mutated
+/// by the client.
 ///
 /// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
 /// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
 /// EGL buffer for example).
+///
+/// # Safety
+/// The pointer passed to the callback is only valid while the callback is running. The shared
+/// memory may be mutated by the client at any time. Creating a reference or slice into this memory
+/// is undefined behavior if it is mutated by the client while the reference exists.
 pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<T, BufferAccessError>
 where
-    F: FnOnce(&[u8], BufferData) -> T,
+    F: FnOnce(*const u8, usize, BufferData) -> T,
 {
     let data = buffer
         .data::<ShmBufferUserData>()
         .ok_or(BufferAccessError::NotManaged)?;
 
-    match data.pool.with_data_slice(|slice| f(slice, data.data)) {
+    match data.pool.with_data(|ptr, len| f(ptr, len, data.data)) {
         Ok(t) => Ok(t),
         Err(()) => {
             // SIGBUS error occurred
@@ -227,21 +236,30 @@ where
 /// If the buffer is managed by the provided `ShmGlobal`, its contents are
 /// extracted and the closure is extracted with them:
 ///
-/// - The first argument is a data slice of the contents of the pool
-/// - The second argument is the specification of this buffer is this pool
+/// - The first argument is a pointer to the contents of the pool
+/// - The second argument is the length of the contents of the pool
+/// - The third argument is the specification of this buffer is this pool
+///
+/// The pool cannot be provided as a slice since it is shared memory that could be mutated
+/// by the client.
 ///
 /// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
 /// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
 /// EGL buffer for example).
+///
+/// # Safety
+/// The pointer passed to the callback is only valid while the callback is running. The shared
+/// memory may be mutated by the client at any time. Creating a reference or slice into this memory
+/// is undefined behavior if it is mutated by the client while the reference exists.
 pub fn with_buffer_contents_mut<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<T, BufferAccessError>
 where
-    F: FnOnce(&mut [u8], BufferData) -> T,
+    F: FnOnce(*mut u8, usize, BufferData) -> T,
 {
     let data = buffer
         .data::<ShmBufferUserData>()
         .ok_or(BufferAccessError::NotManaged)?;
 
-    match data.pool.with_data_slice_mut(|slice| f(slice, data.data)) {
+    match data.pool.with_data_mut(|ptr, len| f(ptr, len, data.data)) {
         Ok(t) => Ok(t),
         Err(()) => {
             // SIGBUS error occurred

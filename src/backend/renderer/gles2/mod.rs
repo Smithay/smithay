@@ -787,7 +787,7 @@ impl ImportMemWl for Gles2Renderer {
         // this is guaranteed a non-public internal type, so we are good.
         type CacheMap = HashMap<usize, Rc<Gles2TextureInternal>>;
 
-        with_buffer_contents(buffer, |slice, data| {
+        with_buffer_contents(buffer, |ptr, len, data| {
             self.make_current()?;
 
             let offset = data.offset as i32;
@@ -800,7 +800,7 @@ impl ImportMemWl for Gles2Renderer {
             let pixelsize = 4i32;
 
             // ensure consistency, the SHM handler of smithay should ensure this
-            assert!((offset + (height - 1) * stride + width * pixelsize) as usize <= slice.len());
+            assert!((offset + (height - 1) * stride + width * pixelsize) as usize <= len);
 
             let (gl_format, shader_idx) = match data.format {
                 wl_shm::Format::Abgr8888 => (ffi::RGBA, 0),
@@ -874,7 +874,7 @@ impl ImportMemWl for Gles2Renderer {
                         0,
                         gl_format,
                         ffi::UNSIGNED_BYTE as u32,
-                        slice.as_ptr().offset(offset as isize) as *const _,
+                        ptr.offset(offset as isize) as *const _,
                     );
                 } else {
                     for region in damage.iter() {
@@ -890,7 +890,7 @@ impl ImportMemWl for Gles2Renderer {
                             region.size.h,
                             gl_format,
                             ffi::UNSIGNED_BYTE as u32,
-                            slice.as_ptr().offset(offset as isize) as *const _,
+                            ptr.offset(offset as isize) as *const _,
                         );
                         self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, 0);
                         self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, 0);

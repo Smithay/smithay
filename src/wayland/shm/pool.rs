@@ -72,7 +72,7 @@ impl Pool {
     }
 
     #[instrument(skip_all, name = "wayland_shm")]
-    pub fn with_data_slice<T, F: FnOnce(&[u8]) -> T>(&self, f: F) -> Result<T, ()> {
+    pub fn with_data<T, F: FnOnce(*const u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {
             place_sigbus_handler();
@@ -92,8 +92,7 @@ impl Pool {
             guard.set((&*pool_guard as *const MemMap, false))
         });
 
-        let slice = pool_guard.get_slice();
-        let t = f(slice);
+        let t = f(pool_guard.ptr as *const _, pool_guard.size);
 
         // Cleanup Post-access
         SIGBUS_GUARD.with(|guard| {
@@ -109,13 +108,13 @@ impl Pool {
     }
 
     #[instrument(skip_all, name = "wayland_shm")]
-    pub fn with_data_slice_mut<T, F: FnOnce(&mut [u8]) -> T>(&self, f: F) -> Result<T, ()> {
+    pub fn with_data_mut<T, F: FnOnce(*mut u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {
             place_sigbus_handler();
         });
 
-        let mut pool_guard = self.map.write().unwrap();
+        let pool_guard = self.map.write().unwrap();
 
         trace!(fd = ?self.fd, "Mutable buffer access on shm pool");
 
@@ -129,8 +128,7 @@ impl Pool {
             guard.set((&*pool_guard as *const MemMap, false))
         });
 
-        let slice = pool_guard.get_slice_mut();
-        let t = f(slice);
+        let t = f(pool_guard.ptr, pool_guard.size);
 
         // Cleanup Post-access
         SIGBUS_GUARD.with(|guard| {
@@ -188,24 +186,6 @@ impl MemMap {
 
     fn size(&self) -> usize {
         self.size
-    }
-
-    fn get_slice(&self) -> &[u8] {
-        if self.ptr.is_null() {
-            &[]
-        } else {
-            // SAFETY: if we are in the 'invalid state', `self.ptr` is null and the previous branch is used
-            unsafe { ::std::slice::from_raw_parts(self.ptr, self.size) }
-        }
-    }
-
-    fn get_slice_mut(&mut self) -> &mut [u8] {
-        if self.ptr.is_null() {
-            &mut []
-        } else {
-            // SAFETY: if we are in the 'invalid state', `self.ptr` is null and the previous branch is used
-            unsafe { ::std::slice::from_raw_parts_mut(self.ptr, self.size) }
-        }
     }
 
     fn contains(&self, ptr: *mut u8) -> bool {
