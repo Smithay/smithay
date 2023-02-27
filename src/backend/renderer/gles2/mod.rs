@@ -2084,10 +2084,12 @@ impl Gles2Renderer {
     ///
     /// Panics if any of the names of the passed additional uniforms contains a `\0`/NUL-byte.
     pub fn compile_custom_pixel_shader(
-        &self,
+        &mut self,
         src: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<Gles2PixelProgram, Gles2Error> {
+        self.make_current()?;
+
         let shader = format!("#version 100\n{}", src.as_ref());
         let program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &shader)? };
         let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src.as_ref());
@@ -2209,10 +2211,12 @@ impl Gles2Renderer {
     ///
     /// Panics if any of the names of the passed additional uniforms contains a `\0`/NUL-byte.
     pub fn compile_custom_texture_shader(
-        &self,
+        &mut self,
         shader: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<Gles2TexProgram, Gles2Error> {
+        self.make_current()?;
+
         unsafe {
             texture_program(
                 &self.gl,
