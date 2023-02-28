@@ -300,7 +300,7 @@ where
     }
 
     /// Bind the underlying window to the underlying renderer
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn bind(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
         // apparently the nvidia-driver doesn't like `wl_egl_window_resize`, if the surface is not current.
         // So the order here is important.
@@ -330,7 +330,7 @@ where
     /// Otherwise and on error this function returns `None`.
     /// If you are using this value actively e.g. for damage-tracking you should
     /// likely interpret an error just as if "0" was returned.
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn buffer_age(&self) -> Option<usize> {
         if self.damage_tracking {
             self.egl.buffer_age().map(|x| x as usize)
@@ -340,7 +340,7 @@ where
     }
 
     /// Submits the back buffer to the window by swapping, requires the window to be previously bound (see [`WinitGraphicsBackend::bind`]).
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn submit(
         &mut self,
         damage: Option<&[Rectangle<i32, Physical>]>,
@@ -388,7 +388,7 @@ impl WinitEventLoop {
     ///
     /// The linked [`WinitGraphicsBackend`] will error with a lost context and should
     /// not be used anymore as well.
-    #[instrument(parent = &self.span, skip_all)]
+    #[instrument(level = "trace", parent = &self.span, skip_all)]
     pub fn dispatch_new_events<F>(&mut self, mut callback: F) -> Result<(), WinitError>
     where
         F: FnMut(WinitEvent),

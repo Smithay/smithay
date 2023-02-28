@@ -49,7 +49,7 @@ use udev::{Enumerator, EventType, MonitorBuilder, MonitorSocket};
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
-use tracing::{debug, info, info_span, warn};
+use tracing::{debug, debug_span, info, warn};
 
 /// Backend to monitor available drm devices.
 ///
@@ -87,7 +87,7 @@ impl UdevBackend {
     /// `seat`    - system seat which should be bound
     pub fn new<S: AsRef<str>>(seat: S) -> io::Result<UdevBackend> {
         let seat = seat.as_ref();
-        let span = info_span!("backend_udev", seat = seat.to_string());
+        let span = debug_span!("backend_udev", seat = seat.to_string());
         let _guard = span.enter();
 
         let devices = all_gpus(seat)?

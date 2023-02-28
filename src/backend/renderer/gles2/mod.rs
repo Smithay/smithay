@@ -774,7 +774,7 @@ impl Gles2Renderer {
 
 #[cfg(feature = "wayland_frontend")]
 impl ImportMemWl for Gles2Renderer {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -917,7 +917,7 @@ impl ImportMemWl for Gles2Renderer {
 }
 
 impl ImportMem for Gles2Renderer {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_memory(
         &mut self,
         data: &[u8],
@@ -967,7 +967,7 @@ impl ImportMem for Gles2Renderer {
         Ok(texture)
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn update_memory(
         &mut self,
         texture: &<Self as Renderer>::TextureId,
@@ -1032,7 +1032,7 @@ impl ImportEgl for Gles2Renderer {
         self.egl_reader.as_ref()
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_egl_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -1085,7 +1085,7 @@ impl ImportEgl for Gles2Renderer {
 }
 
 impl ImportDma for Gles2Renderer {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_dmabuf(
         &mut self,
         buffer: &Dmabuf,
@@ -1182,7 +1182,7 @@ impl Gles2Renderer {
 impl ExportMem for Gles2Renderer {
     type TextureMapping = Gles2Mapping;
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, BufferCoord>,
@@ -1216,7 +1216,7 @@ impl ExportMem for Gles2Renderer {
         })
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn copy_texture(
         &mut self,
         texture: &Self::TextureId,
@@ -1262,7 +1262,7 @@ impl ExportMem for Gles2Renderer {
         })
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn map_texture<'a>(
         &mut self,
         texture_mapping: &'a Self::TextureMapping,
@@ -1296,7 +1296,7 @@ impl ExportMem for Gles2Renderer {
 }
 
 impl ExportDma for Gles2Renderer {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn export_texture(&mut self, texture: &Gles2Texture) -> Result<Dmabuf, Gles2Error> {
         self.make_current()?;
 
@@ -1346,7 +1346,7 @@ impl ExportDma for Gles2Renderer {
         res
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn export_framebuffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Dmabuf, Gles2Error> {
         self.make_current()?;
 
@@ -1449,7 +1449,7 @@ impl ExportDma for Gles2Renderer {
 }
 
 impl Bind<Rc<EGLSurface>> for Gles2Renderer {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), Gles2Error> {
         self.unbind()?;
         self.target = Some(Gles2Target::Surface(surface));
@@ -1459,7 +1459,7 @@ impl Bind<Rc<EGLSurface>> for Gles2Renderer {
 }
 
 impl Bind<Dmabuf> for Gles2Renderer {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn bind(&mut self, dmabuf: Dmabuf) -> Result<(), Gles2Error> {
         self.unbind()?;
         self.make_current()?;
@@ -1532,7 +1532,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
 }
 
 impl Bind<Gles2Texture> for Gles2Renderer {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn bind(&mut self, texture: Gles2Texture) -> Result<(), Gles2Error> {
         self.unbind()?;
         self.make_current()?;
@@ -1569,7 +1569,7 @@ impl Bind<Gles2Texture> for Gles2Renderer {
 }
 
 impl Offscreen<Gles2Texture> for Gles2Renderer {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Gles2Texture, Gles2Error> {
         self.make_current()?;
         let tex = unsafe {
@@ -1595,7 +1595,7 @@ impl Offscreen<Gles2Texture> for Gles2Renderer {
 }
 
 impl Bind<Gles2Renderbuffer> for Gles2Renderer {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn bind(&mut self, renderbuffer: Gles2Renderbuffer) -> Result<(), Gles2Error> {
         self.unbind()?;
         self.make_current()?;
@@ -1632,7 +1632,7 @@ impl Bind<Gles2Renderbuffer> for Gles2Renderer {
 }
 
 impl Offscreen<Gles2Renderbuffer> for Gles2Renderer {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Gles2Renderbuffer, Gles2Error> {
         self.make_current()?;
         unsafe {
@@ -1655,7 +1655,7 @@ impl<Target> Blit<Target> for Gles2Renderer
 where
     Self: Bind<Target>,
 {
-    #[instrument(parent = &self.span, skip(self, to))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, to))]
     fn blit_to(
         &mut self,
         to: Target,
@@ -1676,7 +1676,7 @@ where
         result
     }
 
-    #[instrument(parent = &self.span, skip(self, from))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, from))]
     fn blit_from(
         &mut self,
         from: Target,
@@ -1848,7 +1848,7 @@ impl Gles2Renderer {
     /// or check the source code of the version of Smithay you are using to ensure
     /// your changes don't interfere with the renderer's behavior.
     /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
-    #[instrument(parent = &self.span, skip_all)]
+    #[instrument(level = "trace", parent = &self.span, skip_all)]
     pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
     where
         F: FnOnce(&ffi::Gles2) -> R,
@@ -1867,7 +1867,7 @@ impl<'frame> Gles2Frame<'frame> {
     /// or check the source code of the version of Smithay you are using to ensure
     /// your changes don't interfere with the renderer's behavior.
     /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
-    #[instrument(parent = &self.span, skip_all)]
+    #[instrument(level = "trace", parent = &self.span, skip_all)]
     pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
     where
         F: FnOnce(&ffi::Gles2) -> R,
@@ -1894,7 +1894,6 @@ impl Renderer for Gles2Renderer {
         Ok(())
     }
 
-    #[instrument(parent = &self.span, skip(self))]
     fn render(
         &mut self,
         mut output_size: Size<i32, Physical>,
@@ -1938,7 +1937,7 @@ impl Renderer for Gles2Renderer {
         let flip180 = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
 
         let current_projection = flip180 * transform.matrix() * renderer;
-        let span = span!(Level::INFO, "renderer_gles2_frame", current_projection = ?current_projection, size = ?output_size, transform = ?transform).entered();
+        let span = span!(parent: &self.span, Level::DEBUG, "renderer_gles2_frame", current_projection = ?current_projection, size = ?output_size, transform = ?transform).entered();
 
         Ok(Gles2Frame {
             renderer: self,
@@ -2015,7 +2014,7 @@ impl<'frame> Frame for Gles2Frame<'frame> {
         self.renderer.id()
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Gles2Error> {
         if at.is_empty() {
             return Ok(());
@@ -2136,7 +2135,7 @@ impl<'frame> Frame for Gles2Frame<'frame> {
         Ok(())
     }
 
-    #[instrument(skip(self), parent = &self.span)]
+    #[instrument(level = "trace", skip(self), parent = &self.span)]
     fn render_texture_from_to(
         &mut self,
         texture: &Gles2Texture,
@@ -2273,7 +2272,7 @@ impl<'frame> Gles2Frame<'frame> {
     /// The given texture matrix is used to transform the instances into texture coordinates.
     /// In case the texture is rotated, flipped or y-inverted the matrix has to be set up accordingly.
     /// Additionally the matrix can be used to crop the texture.
-    #[instrument(skip(self), parent = &self.span)]
+    #[instrument(level = "trace", skip(self), parent = &self.span)]
     pub fn render_texture(
         &mut self,
         tex: &Gles2Texture,

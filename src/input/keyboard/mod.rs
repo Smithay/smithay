@@ -479,7 +479,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ///
     /// The module [`crate::wayland::seat::keysyms`] exposes definitions of all possible keysyms
     /// to be compared against. This includes non-character keysyms, such as XF86 special keys.
-    #[instrument(parent = &self.arc.span, skip(self, data, filter))]
+    #[instrument(level = "trace", parent = &self.arc.span, skip(self, data, filter))]
     pub fn input<T, F>(
         &self,
         data: &mut D,
@@ -532,7 +532,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// will be sent a [`wl_keyboard::Event::Leave`](wayland_server::protocol::wl_keyboard::Event::Leave)
     /// event, and if the new focus is not `None`,
     /// a [`wl_keyboard::Event::Enter`](wayland_server::protocol::wl_keyboard::Event::Enter) event will be sent.
-    #[instrument(parent = &self.arc.span, skip(self, data, focus), fields(focus = focus.is_some()))]
+    #[instrument(level = "debug", parent = &self.arc.span, skip(self, data, focus), fields(focus = focus.is_some()))]
     pub fn set_focus(&self, data: &mut D, focus: Option<<D as SeatHandler>::KeyboardFocus>, serial: Serial) {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.pending_focus = focus.clone();

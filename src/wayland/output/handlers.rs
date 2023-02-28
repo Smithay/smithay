@@ -1,4 +1,4 @@
-use tracing::{span, trace, warn, Level};
+use tracing::{trace, warn, warn_span};
 use wayland_protocols::xdg::xdg_output::zv1::server::{
     zxdg_output_manager_v1::{self, ZxdgOutputManagerV1},
     zxdg_output_v1::{self, ZxdgOutputV1},
@@ -37,7 +37,7 @@ where
 
         let mut inner = global_data.inner.0.lock().unwrap();
 
-        let span = span!(Level::WARN, "output_bind", name = inner.name);
+        let span = warn_span!("output_bind", name = inner.name);
         let _enter = span.enter();
 
         trace!("New WlOutput global instantiated");

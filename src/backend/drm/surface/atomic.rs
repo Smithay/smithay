@@ -408,7 +408,7 @@ impl AtomicDrmSurface {
         Ok(())
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "debug", parent = &self.span, skip(self))]
     pub fn use_mode(&self, mode: Mode) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -469,7 +469,7 @@ impl AtomicDrmSurface {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
 
-    #[instrument(parent = &self.span, skip(self, planes))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, planes))]
     pub fn test_state<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
@@ -500,7 +500,7 @@ impl AtomicDrmSurface {
         Ok(result)
     }
 
-    #[instrument(parent = &self.span, skip(self, planes))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, planes))]
     pub fn commit<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
@@ -612,7 +612,7 @@ impl AtomicDrmSurface {
         result
     }
 
-    #[instrument(parent = &self.span, skip(self, planes))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, planes))]
     pub fn page_flip<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,

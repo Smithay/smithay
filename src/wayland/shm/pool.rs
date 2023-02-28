@@ -71,7 +71,7 @@ impl Pool {
         self.map.read().unwrap().size
     }
 
-    #[instrument(skip_all, name = "wayland_shm")]
+    #[instrument(level = "trace", skip_all, name = "wayland_shm")]
     pub fn with_data<T, F: FnOnce(*const u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {
@@ -107,7 +107,7 @@ impl Pool {
         })
     }
 
-    #[instrument(skip_all, name = "wayland_shm")]
+    #[instrument(level = "trace", skip_all, name = "wayland_shm")]
     pub fn with_data_mut<T, F: FnOnce(*mut u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {

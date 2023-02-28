@@ -185,7 +185,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     ///
     /// This a convenience function to deal with the same types even, if you only need one device.
     /// Because no copies are necessary in these cases, all extra arguments can be omitted.
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn single_renderer<'api>(
         &'api mut self,
         device: &DrmNode,
@@ -222,7 +222,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     /// - `copy_format` denotes the format buffers will be allocated in for offscreen rendering.
     ///
     /// It is valid to pass the same devices for both, but you *should* use [`GraphicsApi::single_renderer`] in those cases.
-    #[instrument(parent = &self.span, skip(self, allocator))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, allocator))]
     pub fn renderer<'api, 'alloc>(
         &'api mut self,
         render_device: &DrmNode,
@@ -291,7 +291,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     ///     to do offscreen composition on. Dma copies will be used, if buffers returned by the allocator
     ///     also work on the `target_device`.
     /// - `copy_format` denotes the format buffers will be allocated in for offscreen rendering.
-    #[instrument(skip(render_api, target_api, allocator), follows_from = [&render_api.span, &target_api.span])]
+    #[instrument(level = "trace", skip(render_api, target_api, allocator), follows_from = [&render_api.span, &target_api.span])]
     pub fn cross_renderer<'render, 'target, 'alloc, B: GraphicsApi, Alloc: Allocator>(
         render_api: &'render mut Self,
         target_api: &'target mut GpuManager<B>,
@@ -390,7 +390,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
     /// to let smithay handle buffer management.
     #[cfg(feature = "wayland_frontend")]
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn early_import(
         &mut self,
         source: Option<DrmNode>,
@@ -803,7 +803,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
         if let Some(target) = self.target.as_mut() {
             target.device.renderer_mut().unbind().map_err(Error::Target)
@@ -833,7 +833,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn create_buffer(&mut self, size: Size<i32, BufferCoords>) -> Result<Target, <Self as Renderer>::Error> {
         if let Some(target) = self.target.as_mut() {
             target
@@ -867,7 +867,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(parent = &self.span, skip(self, bind))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, bind))]
     fn bind(&mut self, bind: Target) -> Result<(), <Self as Renderer>::Error> {
         if let Some(target) = self.target.as_mut() {
             target.device.renderer_mut().bind(bind).map_err(Error::Target)
@@ -926,7 +926,7 @@ where
         self.render.renderer().debug_flags()
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn render<'frame>(
         &'frame mut self,
         size: Size<i32, Physical>,
@@ -1079,7 +1079,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn finish_internal(&mut self) -> Result<(), Error<R, T>> {
         if let Some(frame) = self.frame.take() {
             frame.finish().map_err(Error::Render)?;
@@ -1404,7 +1404,7 @@ where
         self.frame.as_ref().unwrap().id()
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Error<R, T>> {
         self.damage.extend(at);
         self.frame
@@ -1414,7 +1414,7 @@ where
             .map_err(Error::Render)
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn render_texture_from_to(
         &mut self,
         texture: &MultiTexture,
@@ -1468,7 +1468,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -1505,7 +1505,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_memory(
         &mut self,
         data: &[u8],
@@ -1522,7 +1522,7 @@ where
         Ok(texture)
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn update_memory(
         &mut self,
         texture: &<Self as Renderer>::TextureId,
@@ -1556,7 +1556,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_dma_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -1595,7 +1595,7 @@ where
         self.render.renderer().dmabuf_formats()
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_dmabuf(
         &mut self,
         dmabuf: &Dmabuf,
@@ -1990,7 +1990,7 @@ where
 {
     type TextureMapping = MultiTextureMapping<T, R>;
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, BufferCoords>,
@@ -2011,7 +2011,7 @@ where
         }
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn copy_texture(
         &mut self,
         texture: &Self::TextureId,
@@ -2027,7 +2027,7 @@ where
             .map_err(Error::Render)
     }
 
-    #[instrument(parent = &self.span, skip(self, texture_mapping))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, texture_mapping))]
     fn map_texture<'c>(
         &mut self,
         texture_mapping: &'c Self::TextureMapping,
@@ -2063,7 +2063,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn export_framebuffer(
         &mut self,
         size: Size<i32, BufferCoords>,
@@ -2082,7 +2082,7 @@ where
         }
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn export_texture(
         &mut self,
         texture: &<Self as Renderer>::TextureId,
@@ -2111,7 +2111,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(parent = &self.span, skip(self, to))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, to))]
     fn blit_to(
         &mut self,
         to: BlitTarget,
@@ -2133,7 +2133,7 @@ where
         }
     }
 
-    #[instrument(parent = &self.span, skip(self, from))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, from))]
     fn blit_from(
         &mut self,
         from: BlitTarget,

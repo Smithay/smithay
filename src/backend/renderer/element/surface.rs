@@ -211,7 +211,7 @@ use crate::{
 use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
 
 /// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
-#[instrument(skip(renderer, location, scale))]
+#[instrument(level = "trace", skip(renderer, location, scale))]
 pub fn render_elements_from_surface_tree<R, E>(
     renderer: &mut R,
     surface: &wl_surface::WlSurface,
@@ -466,7 +466,7 @@ where
         })
     }
 
-    #[instrument(skip(frame))]
+    #[instrument(level = "trace", skip(frame))]
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,

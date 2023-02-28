@@ -179,7 +179,7 @@ impl LegacyDrmSurface {
         Ok(())
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "debug", parent = &self.span, skip(self))]
     pub fn use_mode(&self, mode: Mode) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -213,7 +213,7 @@ impl LegacyDrmSurface {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn commit(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
@@ -304,7 +304,7 @@ impl LegacyDrmSurface {
         Ok(())
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
         trace!("Queueing Page flip");
 
@@ -330,7 +330,7 @@ impl LegacyDrmSurface {
         })
     }
 
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn test_buffer(&self, fb: framebuffer::Handle, mode: &Mode) -> Result<bool, Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);

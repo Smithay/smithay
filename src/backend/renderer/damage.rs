@@ -319,7 +319,7 @@ impl DamageTrackedRenderer {
     }
 
     /// Render this output
-    #[instrument(parent = &self.span, skip(renderer, elements))]
+    #[instrument(level = "trace", parent = &self.span, skip(renderer, elements))]
     pub fn render_output<E, R>(
         &mut self,
         renderer: &mut R,
@@ -450,7 +450,7 @@ impl DamageTrackedRenderer {
     }
 
     /// Damage this output and return the damage without actually rendering the difference
-    #[instrument(parent = &self.span, skip(elements))]
+    #[instrument(level = "trace", parent = &self.span, skip(elements))]
     pub fn damage_output<E>(
         &mut self,
         age: usize,

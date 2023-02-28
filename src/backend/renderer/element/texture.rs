@@ -811,7 +811,7 @@ where
     R: Renderer<TextureId = T>,
     T: Texture,
 {
-    #[instrument(skip(self, frame))]
+    #[instrument(level = "trace", skip(self, frame))]
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
