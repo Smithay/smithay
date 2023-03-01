@@ -6,7 +6,7 @@ use std::{
     collections::hash_map::{Entry, HashMap},
     convert::TryInto,
     os::unix::io::FromRawFd,
-    path::PathBuf,
+    path::Path,
     rc::Rc,
     sync::{atomic::Ordering, Mutex},
     time::Duration,
@@ -35,10 +35,10 @@ use smithay::{
             Allocator,
         },
         drm::{
-            compositor::DrmCompositor, DrmDevice, DrmDeviceFd, DrmError, DrmEvent, DrmEventMetadata, DrmNode,
-            DrmSurface, GbmBufferedSurface, NodeType,
+            compositor::DrmCompositor, CreateDrmNodeError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent,
+            DrmEventMetadata, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
         },
-        egl::{EGLContext, EGLDevice, EGLDisplay},
+        egl::{self, EGLContext, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::{DamageTrackedRenderer, DamageTrackedRendererError},
@@ -47,7 +47,10 @@ use smithay::{
             multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer, MultiTexture},
             Bind, DebugFlags, ExportMem, Offscreen, Renderer,
         },
-        session::{libseat::LibSeatSession, Event as SessionEvent, Session},
+        session::{
+            libseat::{self, LibSeatSession},
+            Event as SessionEvent, Session,
+        },
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
         vulkan::{version::Version, Instance, PhysicalDevice},
         SwapBuffersError,
@@ -212,7 +215,6 @@ pub fn run_udev() {
     };
     info!("Using {} as primary gpu.", primary_gpu);
 
-    #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     let gpus = GpuManager::new(GbmGlesBackend::default()).unwrap();
 
     let data = UdevData {
@@ -263,6 +265,7 @@ pub fn run_udev() {
             data.state.process_input_event(&dh, event)
         })
         .unwrap();
+
     let handle = event_loop.handle();
     event_loop
         .handle()
@@ -296,8 +299,11 @@ pub fn run_udev() {
             }
         })
         .unwrap();
-    for (dev, path) in udev_backend.device_list() {
-        state.device_added(&mut display, dev, path.into())
+
+    for (device_id, path) in udev_backend.device_list() {
+        if let Err(err) = state.device_added(device_id, path) {
+            error!("Skipping device {device_id}: {err}");
+        }
     }
 
     let skip_vulkan = std::env::var("ANVIL_NO_VULKAN")
@@ -393,9 +399,11 @@ pub fn run_udev() {
         .handle()
         .insert_source(udev_backend, move |event, _, data| match event {
             UdevEvent::Added { device_id, path } => {
-                data.state.device_added(&mut data.display, device_id, path)
+                if let Err(err) = data.state.device_added(device_id, &path) {
+                    error!("Skipping device {device_id}: {err}");
+                }
             }
-            UdevEvent::Changed { device_id } => data.state.device_changed(&mut data.display, device_id),
+            UdevEvent::Changed { device_id } => data.state.device_changed(device_id),
             UdevEvent::Removed { device_id } => data.state.device_removed(device_id),
         })
         .unwrap();
@@ -583,7 +591,7 @@ fn scan_connectors(
     device_id: DrmNode,
     device: &DrmDevice,
     gbm: &GbmDevice<DrmDeviceFd>,
-    display: &mut Display<AnvilState<UdevData>>,
+    dh: DisplayHandle,
     space: &mut Space<WindowElement>,
     #[cfg(feature = "debug")] fps_texture: Option<&MultiTexture>,
     debug_flags: DebugFlags,
@@ -680,7 +688,7 @@ fn scan_connectors(
                     model: "Generic DRM".into(),
                 },
             );
-            let global = output.create_global::<AnvilState<UdevData>>(&display.handle());
+            let global = output.create_global::<AnvilState<UdevData>>(&dh);
             let position = (
                 space
                     .outputs()
@@ -764,7 +772,7 @@ fn scan_connectors(
             };
 
             entry.insert(Rc::new(RefCell::new(SurfaceData {
-                dh: display.handle(),
+                dh: dh.clone(),
                 device_id,
                 render_node,
                 global: Some(global),
@@ -782,43 +790,44 @@ fn scan_connectors(
     backends
 }
 
+#[derive(Debug, thiserror::Error)]
+enum DeviceAddError {
+    #[error("Failed to open device using libseat: {0}")]
+    DeviceOpen(libseat::Error),
+    #[error("Failed to initialize drm device: {0}")]
+    DrmDevice(DrmError),
+    #[error("Failed to initialize gbm device: {0}")]
+    GbmDevice(std::io::Error),
+    #[error("Failed to access drm node: {0}")]
+    DrmNode(CreateDrmNodeError),
+    #[error("Failed to add device to GpuManager: {0}")]
+    AddNode(egl::Error),
+}
+
 impl AnvilState<UdevData> {
-    fn device_added(&mut self, display: &mut Display<Self>, device_id: dev_t, path: PathBuf) {
+    fn device_added(&mut self, device_id: dev_t, path: &Path) -> Result<(), DeviceAddError> {
+        let node = DrmNode::from_dev_id(device_id).map_err(DeviceAddError::DrmNode)?;
+
         // Try to open the device
-        let open_flags = OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK;
-        let device_fd = self.backend_data.session.open(&path, open_flags).ok();
-        let devices = device_fd
-            .map(|fd| DrmDeviceFd::new(unsafe { DeviceFd::from_raw_fd(fd) }))
-            .map(|fd| (DrmDevice::new(fd.clone(), true), GbmDevice::new(fd)));
+        let fd = self
+            .backend_data
+            .session
+            .open(
+                path,
+                OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK,
+            )
+            .map_err(DeviceAddError::DeviceOpen)?;
 
-        // Report device open failures.
-        let ((drm, drm_notifier), gbm) = match devices {
-            Some((Ok(drm), Ok(gbm))) => (drm, gbm),
-            Some((Err(err), _)) => {
-                warn!("Skipping device {:?}, because of drm error: {}", device_id, err);
-                return;
-            }
-            Some((_, Err(err))) => {
-                // TODO try DumbBuffer allocator in this case
-                warn!("Skipping device {:?}, because of gbm error: {}", device_id, err);
-                return;
-            }
-            None => return,
-        };
+        let fd = DrmDeviceFd::new(unsafe { DeviceFd::from_raw_fd(fd) });
 
-        let node = match DrmNode::from_dev_id(device_id) {
-            Ok(node) => node,
-            Err(err) => {
-                warn!("Failed to access drm node for {}: {}", device_id, err);
-                return;
-            }
-        };
+        let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
+        let gbm = GbmDevice::new(fd).map_err(DeviceAddError::GbmDevice)?;
 
-        let backends = Rc::new(RefCell::new(scan_connectors(
+        let surfaces = Rc::new(RefCell::new(scan_connectors(
             node,
             &drm,
             &gbm,
-            display,
+            self.display_handle.clone(),
             &mut self.space,
             #[cfg(feature = "debug")]
             self.backend_data.fps_texture.as_ref(),
@@ -828,7 +837,7 @@ impl AnvilState<UdevData> {
         let registration_token = self
             .handle
             .insert_source(
-                drm_notifier,
+                notifier,
                 move |event, metadata, data: &mut CalloopData<_>| match event {
                     DrmEvent::VBlank(crtc) => {
                         data.state.frame_finish(node, crtc, metadata);
@@ -840,24 +849,21 @@ impl AnvilState<UdevData> {
             )
             .unwrap();
 
-        let render_node = {
-            let display = EGLDisplay::new(gbm.clone()).unwrap();
-            match EGLDevice::device_for_display(&display)
-                .ok()
-                .and_then(|x| x.try_get_render_node().ok().flatten())
-            {
-                Some(node) => node,
-                None => node,
-            }
-        };
-        if let Err(err) = self.backend_data.gpus.as_mut().add_node(render_node, gbm.clone()) {
-            warn!("Failed to create renderer for GBM device {}: {}", device_id, err);
-            return;
-        };
-        for backend in backends.borrow_mut().values() {
+        let render_node = EGLDevice::device_for_display(&EGLDisplay::new(gbm.clone()).unwrap())
+            .ok()
+            .and_then(|x| x.try_get_render_node().ok().flatten())
+            .unwrap_or(node);
+
+        self.backend_data
+            .gpus
+            .as_mut()
+            .add_node(render_node, gbm.clone())
+            .map_err(DeviceAddError::AddNode)?;
+
+        for surface in surfaces.borrow_mut().values() {
             // render first frame
             trace!("Scheduling frame");
-            schedule_initial_render(&mut self.backend_data.gpus, backend.clone(), &self.handle);
+            schedule_initial_render(&mut self.backend_data.gpus, surface.clone(), &self.handle);
         }
 
         self.backend_data.backends.insert(
@@ -867,12 +873,14 @@ impl AnvilState<UdevData> {
                 gbm,
                 drm,
                 render_node,
-                surfaces: backends,
+                surfaces,
             },
         );
+
+        Ok(())
     }
 
-    fn device_changed(&mut self, display: &mut Display<Self>, device: dev_t) {
+    fn device_changed(&mut self, device: dev_t) {
         let node = match DrmNode::from_dev_id(device).ok() {
             Some(node) => node,
             None => return, // we already logged a warning on device_added
@@ -904,7 +912,7 @@ impl AnvilState<UdevData> {
                 node,
                 &backend_data.drm,
                 &backend_data.gbm,
-                display,
+                self.display_handle.clone(),
                 &mut self.space,
                 #[cfg(feature = "debug")]
                 self.backend_data.fps_texture.as_ref(),
