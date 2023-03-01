@@ -288,7 +288,7 @@ impl MemoryRenderBufferInner {
         }
     }
 
-    #[instrument(skip(renderer))]
+    #[instrument(level = "trace", skip(renderer))]
     fn import_texture<R>(&mut self, renderer: &mut R) -> Result<(), <R as Renderer>::Error>
     where
         R: Renderer + ImportMem,
@@ -624,7 +624,7 @@ where
     R: Renderer + ImportMem,
     <R as Renderer>::TextureId: 'static,
 {
-    #[instrument(skip(self, frame))]
+    #[instrument(level = "trace", skip(self, frame))]
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,

@@ -21,7 +21,7 @@ use super::{error::Error, planes, Planes};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
 
-use tracing::{error, info, info_span, instrument, trace};
+use tracing::{debug_span, error, info, instrument, trace};
 
 #[derive(Debug)]
 struct PlaneClaimInner {
@@ -182,7 +182,7 @@ impl DrmDevice {
     /// Returns an error if the file is no valid drm node or the device is not accessible.
     pub fn new(fd: DrmDeviceFd, disable_connectors: bool) -> Result<(Self, DrmDeviceNotifier), Error> {
         // setup parent span for internal device types
-        let span = info_span!(
+        let span = debug_span!(
             "drm_device",
             device = ?fd.dev_path()
         );

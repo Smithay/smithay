@@ -419,7 +419,7 @@ where
 /// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-#[instrument(skip_all)]
+#[instrument(level = "trace", skip_all)]
 pub fn import_surface<R>(renderer: &mut R, states: &SurfaceData) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
@@ -461,7 +461,7 @@ where
 /// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-#[instrument(skip_all)]
+#[instrument(level = "trace", skip_all)]
 pub fn import_surface_tree<R>(renderer: &mut R, surface: &WlSurface) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
@@ -515,7 +515,7 @@ where
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-#[instrument(skip(frame, scale, elements))]
+#[instrument(level = "trace", skip(frame, scale, elements))]
 pub fn draw_render_elements<'a, R, S, E>(
     frame: &mut <R as Renderer>::Frame<'a>,
     scale: S,

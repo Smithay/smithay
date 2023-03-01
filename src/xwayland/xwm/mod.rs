@@ -72,7 +72,7 @@ use std::{
     os::unix::net::UnixStream,
     sync::Arc,
 };
-use tracing::{debug, error, info, info_span, trace, warn};
+use tracing::{debug, debug_span, error, info, trace, warn};
 use wayland_server::{protocol::wl_surface::WlSurface, Client, DisplayHandle, Resource};
 
 use x11rb::{
@@ -373,7 +373,7 @@ impl X11Wm {
         D: XwmHandler + 'static,
     {
         let id = XwmId(next_xwm_id());
-        let span = info_span!("xwayland_wm", id = id.0);
+        let span = debug_span!("xwayland_wm", id = id.0);
         let _guard = span.enter();
 
         // Create an X11 connection. XWayland only uses screen 0.

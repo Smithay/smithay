@@ -11,7 +11,7 @@ bitflags = "1.2.1"
 fps_ticker = {version = "1.0.0", optional = true}
 image = {version = "0.24.0", default-features = false, optional = true}
 rand = "0.8"
-tracing = "0.1.37"
+tracing = { version = "0.1.37", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 thiserror = "1"
 xcursor = {version = "0.3.3", optional = true}

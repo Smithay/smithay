@@ -27,7 +27,7 @@ fn output_surfaces(o: &Output) -> RefMut<'_, HashSet<WlWeak<WlSurface>>> {
     surfaces
 }
 
-#[instrument]
+#[instrument(level = "debug", skip(output), fields(output = output.name()))]
 fn output_update(output: &Output, output_overlap: Rectangle<i32, Logical>, surface: &WlSurface) {
     let mut surface_list = output_surfaces(output);
 

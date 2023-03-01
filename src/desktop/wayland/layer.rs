@@ -18,7 +18,7 @@ use crate::{
     },
 };
 use indexmap::IndexSet;
-use tracing::{info_span, trace};
+use tracing::{debug_span, trace};
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use wayland_server::{
     backend::ObjectId,
@@ -247,7 +247,7 @@ impl LayerMap {
     /// Note: Mapping or unmapping a layer surface will automatically cause a re-arrangement.
     pub fn arrange(&mut self) {
         if let Some(output) = self.output() {
-            let span = info_span!("layer_map", output = output.name());
+            let span = debug_span!("layer_map", output = output.name());
             let _guard = span.enter();
 
             let output_rect = Rectangle::from_loc_and_size(

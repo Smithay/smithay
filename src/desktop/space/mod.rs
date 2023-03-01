@@ -19,7 +19,7 @@ use crate::{
     wayland::shell::wlr_layer::Layer,
 };
 use std::{collections::HashMap, fmt};
-use tracing::{debug, info_span, instrument};
+use tracing::{debug, debug_span, instrument};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_surface::WlSurface;
 
@@ -73,7 +73,7 @@ impl<E: SpaceElement> Drop for Space<E> {
 impl<E: SpaceElement> Default for Space<E> {
     fn default() -> Self {
         let id = next_space_id();
-        let span = info_span!("desktop_space", id);
+        let span = debug_span!("desktop_space", id);
 
         Self {
             id,
@@ -378,7 +378,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// *Note:* Because this is not rendering a specific output,
     /// this will not contain layer surfaces.
     /// Use [`Space::render_elements_for_output`], if you care about this.
-    #[instrument(skip(self, renderer, scale), parent = &self.span)]
+    #[instrument(level = "trace", skip(self, renderer, scale), parent = &self.span)]
     pub fn render_elements_for_region<'a, R: Renderer, S: Into<Scale<f64>>>(
         &'a self,
         renderer: &mut R,
@@ -412,7 +412,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     }
 
     /// Retrieve the render elements for an output
-    #[instrument(skip(self, renderer), parent = &self.span)]
+    #[instrument(level = "trace", skip(self, renderer), parent = &self.span)]
     pub fn render_elements_for_output<
         'a,
         #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
@@ -568,7 +568,7 @@ crate::backend::renderer::element::render_elements! {
 /// *Note*: If the `wayland_frontend`-feature is enabled
 /// this will include layer-shell surfaces added to this
 /// outputs [`LayerMap`].
-#[instrument(skip(spaces, renderer))]
+#[instrument(level = "trace", skip(spaces, renderer))]
 pub fn space_render_elements<
     'a,
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,

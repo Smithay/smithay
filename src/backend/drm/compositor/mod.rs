@@ -1363,7 +1363,7 @@ where
     }
 
     /// Render the next frame
-    #[instrument(parent = &self.span, skip_all)]
+    #[instrument(level = "trace", parent = &self.span, skip_all)]
     pub fn render_frame<'a, R, E, Target>(
         &'a mut self,
         renderer: &mut R,
@@ -2059,7 +2059,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[instrument(skip_all)]
+    #[instrument(level = "trace", skip_all)]
     fn try_assign_element<'a, R, E, Target>(
         &mut self,
         renderer: &mut R,
@@ -2136,7 +2136,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[instrument(skip_all)]
+    #[instrument(level = "trace", skip_all)]
     fn try_assign_cursor_plane<R, E, Target>(
         &mut self,
         renderer: &mut R,
@@ -2457,7 +2457,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[instrument(skip_all)]
+    #[instrument(level = "trace", skip_all)]
     fn try_assign_overlay_plane<'a, R, E>(
         &self,
         renderer: &mut R,
@@ -2583,7 +2583,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[instrument(skip_all)]
+    #[instrument(level = "trace", skip_all)]
     fn try_assign_primary_plane<R, E>(
         &self,
         renderer: &mut R,
@@ -2632,7 +2632,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[instrument(skip_all)]
+    #[instrument(level = "trace", skip_all)]
     fn try_assign_plane<R, E>(
         &self,
         element: &E,

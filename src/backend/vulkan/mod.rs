@@ -485,7 +485,7 @@ impl PhysicalDevice {
     /// Returns the major and minor numbers of the primary node which corresponds to this physical device's DRM
     /// device.
     #[cfg(feature = "backend_drm")]
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "debug", parent = &self.span, skip(self))]
     pub fn primary_node(&self) -> Result<Option<DrmNode>, UnsupportedProperty> {
         let properties_drm = self.info.get_drm_properties()?;
         let node = Some(properties_drm)
@@ -503,7 +503,7 @@ impl PhysicalDevice {
     /// Note that not every device has a render node. If there is no render node (this function returns [`None`])
     /// then try to use the primary node.
     #[cfg(feature = "backend_drm")]
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "debug", parent = &self.span, skip(self))]
     pub fn render_node(&self) -> Result<Option<DrmNode>, UnsupportedProperty> {
         let properties_drm = self.info.get_drm_properties()?;
         let node = Some(properties_drm)
@@ -552,7 +552,7 @@ impl PhysicalDevice {
     /// Returns properties for each supported DRM modifier for the specified format.
     ///
     /// Returns [`Err`] if the `VK_EXT_image_drm_format_modifier` extension is not supported.
-    #[instrument(parent = &self.span, skip(self))]
+    #[instrument(level = "debug", parent = &self.span, skip(self))]
     pub fn get_format_modifier_properties(
         &self,
         format: vk::Format,

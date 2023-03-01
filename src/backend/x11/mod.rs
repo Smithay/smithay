@@ -105,7 +105,7 @@ use std::{
         mpsc, Arc, Mutex, Weak,
     },
 };
-use tracing::{error, info, info_span, instrument, warn};
+use tracing::{debug_span, error, info, instrument, warn};
 use x11rb::{
     atom_manager,
     connection::Connection,
@@ -173,7 +173,7 @@ pub struct X11Backend {
 impl X11Backend {
     /// Initializes the X11 backend by connecting to the X server.
     pub fn new() -> Result<X11Backend, X11Error> {
-        let span = info_span!("backend_x11");
+        let span = debug_span!("backend_x11");
         let _guard = span.enter();
 
         info!("Connecting to the X server");

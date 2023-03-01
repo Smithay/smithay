@@ -23,7 +23,7 @@ use std::{
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
-use tracing::{info, info_span, trace};
+use tracing::{debug_span, info, trace};
 
 mod tablet;
 
@@ -42,7 +42,7 @@ impl LibinputInputBackend {
     /// Initialize a new [`LibinputInputBackend`] from a given already initialized
     /// [libinput context](libinput::Libinput).
     pub fn new(context: libinput::Libinput) -> Self {
-        let span = info_span!("backend_libinput");
+        let span = debug_span!("backend_libinput");
         let _guard = span.enter();
 
         info!("Initializing a libinput backend");
