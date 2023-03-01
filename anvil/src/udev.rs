@@ -367,8 +367,8 @@ pub fn run_udev() {
             .expect("Unable to upload FPS texture");
 
         for backend in state.backend_data.backends.values_mut() {
-            for surface in backend.surfaces.borrow_mut().values_mut() {
-                surface.borrow_mut().fps_element = Some(FpsElement::new(fps_texture.clone()));
+            for surface in backend.surfaces.values_mut() {
+                surface.fps_element = Some(FpsElement::new(fps_texture.clone()));
             }
         }
         state.backend_data.fps_texture = Some(fps_texture);
