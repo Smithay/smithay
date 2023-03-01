@@ -122,8 +122,7 @@ impl UdevData {
             self.debug_flags = flags;
 
             for (_, backend) in self.backends.iter_mut() {
-                let surfaces = backend.surfaces.borrow();
-                for (_, surface) in surfaces.iter() {
+                for (_, surface) in backend.surfaces.iter() {
                     surface.borrow_mut().compositor.set_debug_flags(flags);
                 }
             }
@@ -163,8 +162,7 @@ impl Backend for UdevData {
     fn reset_buffers(&mut self, output: &Output) {
         if let Some(id) = output.user_data().get::<UdevOutputId>() {
             if let Some(gpu) = self.backends.get(&id.device_id) {
-                let surfaces = gpu.surfaces.borrow();
-                if let Some(surface) = surfaces.get(&id.crtc) {
+                if let Some(surface) = gpu.surfaces.get(&id.crtc) {
                     surface.borrow_mut().compositor.reset_buffers();
                 }
             }
@@ -288,8 +286,7 @@ pub fn run_udev() {
                     .map(|(handle, backend)| (*handle, backend))
                 {
                     backend.drm.activate();
-                    let surfaces = backend.surfaces.borrow();
-                    for surface in surfaces.values() {
+                    for surface in backend.surfaces.values() {
                         if let Err(err) = surface.borrow().compositor.surface().reset_state() {
                             warn!("Failed to reset drm surface state: {}", err);
                         }
@@ -579,7 +576,7 @@ impl Drop for SurfaceData {
 }
 
 struct BackendData {
-    surfaces: Rc<RefCell<HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>>>>,
+    surfaces: HashMap<crtc::Handle, Rc<RefCell<SurfaceData>>>,
     gbm: GbmDevice<DrmDeviceFd>,
     drm: DrmDevice,
     render_node: DrmNode,
@@ -823,7 +820,7 @@ impl AnvilState<UdevData> {
         let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
         let gbm = GbmDevice::new(fd).map_err(DeviceAddError::GbmDevice)?;
 
-        let surfaces = Rc::new(RefCell::new(scan_connectors(
+        let surfaces = scan_connectors(
             node,
             &drm,
             &gbm,
@@ -832,7 +829,7 @@ impl AnvilState<UdevData> {
             #[cfg(feature = "debug")]
             self.backend_data.fps_texture.as_ref(),
             self.backend_data.debug_flags,
-        )));
+        );
 
         let registration_token = self
             .handle
@@ -860,7 +857,7 @@ impl AnvilState<UdevData> {
             .add_node(render_node, gbm.clone())
             .map_err(DeviceAddError::AddNode)?;
 
-        let crtcs: Vec<_> = surfaces.borrow_mut().keys().copied().collect();
+        let crtcs: Vec<_> = surfaces.keys().copied().collect();
 
         self.backend_data.backends.insert(
             node,
@@ -913,21 +910,18 @@ impl AnvilState<UdevData> {
             self.space.unmap_output(&output);
         }
 
-        let crtcs: Vec<_> = {
-            let mut backends = device.surfaces.borrow_mut();
-            *backends = scan_connectors(
-                node,
-                &device.drm,
-                &device.gbm,
-                self.display_handle.clone(),
-                &mut self.space,
-                #[cfg(feature = "debug")]
-                self.backend_data.fps_texture.as_ref(),
-                self.backend_data.debug_flags,
-            );
+        device.surfaces = scan_connectors(
+            node,
+            &device.drm,
+            &device.gbm,
+            self.display_handle.clone(),
+            &mut self.space,
+            #[cfg(feature = "debug")]
+            self.backend_data.fps_texture.as_ref(),
+            self.backend_data.debug_flags,
+        );
 
-            backends.keys().copied().collect()
-        };
+        let crtcs: Vec<_> = device.surfaces.keys().copied().collect();
 
         // fixup window coordinates
         crate::shell::fixup_positions(&mut self.space);
@@ -943,15 +937,16 @@ impl AnvilState<UdevData> {
             Some(node) => node,
             None => return, // we already logged a warning on device_added
         };
+
         // drop the backends on this side
-        if let Some(backend_data) = self.backend_data.backends.remove(&node) {
+        if let Some(mut backend_data) = self.backend_data.backends.remove(&node) {
             self.backend_data
                 .gpus
                 .as_mut()
                 .remove_node(&backend_data.render_node);
 
             // drop surfaces
-            backend_data.surfaces.borrow_mut().clear();
+            backend_data.surfaces.clear();
             debug!("Surfaces dropped");
 
             for output in self
@@ -986,8 +981,7 @@ impl AnvilState<UdevData> {
             }
         };
 
-        let surfaces = device_backend.surfaces.borrow();
-        let surface = match surfaces.get(&crtc) {
+        let surface = match device_backend.surfaces.get(&crtc) {
             Some(surface) => surface,
             None => {
                 error!("Trying to finish frame on non-existent crtc {:?}", crtc);
@@ -1136,11 +1130,10 @@ impl AnvilState<UdevData> {
         // setup two iterators on the stack, one over all surfaces for this backend, and
         // one containing only the one given as argument.
         // They make a trait-object to dynamically choose between the two
-        let surfaces = device_backend.surfaces.borrow();
-        let mut surfaces_iter = surfaces.iter();
+        let mut surfaces_iter = device_backend.surfaces.iter();
         let mut option_iter = crtc
             .iter()
-            .flat_map(|crtc| surfaces.get(crtc).map(|surface| (crtc, surface)));
+            .flat_map(|crtc| device_backend.surfaces.get(crtc).map(|surface| (crtc, surface)));
 
         let to_render_iter: &mut dyn Iterator<Item = (&crtc::Handle, &Rc<RefCell<SurfaceData>>)> =
             if crtc.is_some() {
@@ -1280,14 +1273,13 @@ impl AnvilState<UdevData> {
         crtc: crtc::Handle,
         evt_handle: LoopHandle<'static, CalloopData<UdevData>>,
     ) {
-        let device = if let Some(device) = self.backend_data.backends.get(&node) {
+        let device = if let Some(device) = self.backend_data.backends.get_mut(&node) {
             device
         } else {
             return;
         };
 
-        let mut surfaces = device.surfaces.borrow_mut();
-        let surface = if let Some(surface) = surfaces.get_mut(&crtc) {
+        let surface = if let Some(surface) = device.surfaces.get_mut(&crtc) {
             surface
         } else {
             return;
