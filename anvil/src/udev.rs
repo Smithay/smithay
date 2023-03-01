@@ -1162,13 +1162,19 @@ impl AnvilState<UdevData> {
                 warn!("Error during rendering: {:?}", err);
                 match err {
                     SwapBuffersError::AlreadySwapped => true,
+                    // If the device has been deactivated do not reschedule, this will be done
+                    // by session resume
+                    SwapBuffersError::TemporaryFailure(err)
+                        if matches!(err.downcast_ref::<DrmError>(), Some(&DrmError::DeviceInactive)) =>
+                    {
+                        false
+                    }
                     SwapBuffersError::TemporaryFailure(err) => matches!(
                         err.downcast_ref::<DrmError>(),
-                        Some(&DrmError::DeviceInactive)
-                            | Some(&DrmError::Access {
-                                source: drm::SystemError::PermissionDenied,
-                                ..
-                            })
+                        Some(&DrmError::Access {
+                            source: drm::SystemError::PermissionDenied,
+                            ..
+                        })
                     ),
                     SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
                 }
