@@ -271,11 +271,15 @@ pub fn run_udev() {
         .insert_source(notifier, move |event, &mut (), data| match event {
             SessionEvent::PauseSession => {
                 libinput_context.suspend();
+                info!("pausing session");
+
                 for backend in data.state.backend_data.backends.values() {
                     backend.drm.pause();
                 }
             }
             SessionEvent::ActivateSession => {
+                info!("resuming session");
+
                 if let Err(err) = libinput_context.resume() {
                     error!("Failed to resume libinput context: {:?}", err);
                 }
@@ -283,14 +287,19 @@ pub fn run_udev() {
                     .state
                     .backend_data
                     .backends
-                    .iter()
+                    .iter_mut()
                     .map(|(handle, backend)| (*handle, backend))
                 {
                     backend.drm.activate();
-                    for surface in backend.surfaces.values() {
+                    for surface in backend.surfaces.values_mut() {
                         if let Err(err) = surface.compositor.surface().reset_state() {
                             warn!("Failed to reset drm surface state: {}", err);
                         }
+                        // reset the buffers after resume to trigger a full redraw
+                        // this is important after a vt switch as the primary plane
+                        // has no content and damage tracking may prevent a redraw
+                        // otherwise
+                        surface.compositor.reset_buffers();
                     }
                     handle.insert_idle(move |data| data.state.render(node, None));
                 }
