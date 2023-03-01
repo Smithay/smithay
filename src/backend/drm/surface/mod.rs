@@ -308,13 +308,13 @@ impl DrmSurface {
 
     /// Test a state given a set of framebuffers.
     ///
-    /// *Note*: This will always return `true` for legacy devices if `allow_modeset = false`.
+    /// *Note*: This will always return `Ok` for legacy devices if `allow_modeset = false`.
     /// The legacy drm api has no way to test a buffer without triggering a modeset.
     pub fn test_state<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
         allow_modeset: bool,
-    ) -> Result<bool, Error> {
+    ) -> Result<(), Error> {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.test_state(planes, allow_modeset),
             DrmSurfaceInternal::Legacy(surf) => {
@@ -326,7 +326,7 @@ impl DrmSurface {
                     // Legacy can not test a buffer without triggering a modeset, so we can
                     // only assume it works and hope for the best. A later call to commit or
                     // page_flip will show the correct result
-                    Ok(true)
+                    Ok(())
                 }
             }
         }

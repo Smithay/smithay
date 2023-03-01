@@ -474,7 +474,7 @@ impl AtomicDrmSurface {
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
         allow_modeset: bool,
-    ) -> Result<bool, Error> {
+    ) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -496,8 +496,11 @@ impl AtomicDrmSurface {
         } else {
             AtomicCommitFlags::TEST_ONLY
         };
-        let result = self.fd.atomic_commit(flags, req).is_ok();
-        Ok(result)
+        self.fd.atomic_commit(flags, req).map_err(|source| Error::Access {
+            errmsg: "Error testing state",
+            dev: self.fd.dev_path(),
+            source,
+        })
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self, planes))]

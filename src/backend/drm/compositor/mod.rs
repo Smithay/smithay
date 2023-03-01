@@ -126,7 +126,7 @@ use ::gbm::{BufferObject, BufferObjectFlags};
 use drm::control::{connector, crtc, framebuffer, plane, Mode};
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::IndexMap;
-use tracing::{debug, info, info_span, instrument, trace, warn};
+use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
 
 use crate::{
@@ -468,10 +468,10 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
         plane: plane::Handle,
         state: PlaneState<B>,
         allow_modeset: bool,
-    ) -> Result<bool, DrmError> {
+    ) -> Result<(), DrmError> {
         let current_config = match self.planes.get_mut(&plane) {
             Some(config) => config,
-            None => return Ok(false),
+            None => return Ok(()),
         };
         let backup = current_config.clone();
         *current_config = state;
@@ -494,17 +494,12 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
             allow_modeset,
         );
 
-        match res {
-            Ok(true) => Ok(true),
-            Ok(false) => {
-                self.planes.insert(plane, backup);
-                Ok(false)
-            }
-            Err(err) => {
-                self.planes.insert(plane, backup);
-                Err(err)
-            }
+        if res.is_err() {
+            // test failed, restore previous state
+            self.planes.insert(plane, backup);
         }
+
+        res
     }
 
     fn commit(&self, surface: &DrmSurface, event: bool) -> Result<(), crate::backend::drm::error::Error> {
@@ -1355,7 +1350,7 @@ where
             Some(claim) => claim,
             None => {
                 warn!("failed to claim primary plane",);
-                return Err((swapchain.allocator, FrameError::PrimaryPlaneTestFailed));
+                return Err((swapchain.allocator, FrameError::PrimaryPlaneClaimFailed));
             }
         };
 
@@ -1376,16 +1371,9 @@ where
         };
 
         match current_frame_state.test_state(&drm, planes.primary.handle, plane_state, true) {
-            Ok(true) => {
+            Ok(_) => {
                 debug!("Chosen format: {:?}", dmabuf.format());
                 Ok((swapchain, current_frame_state))
-            }
-            Ok(false) => {
-                warn!(
-                    "Mode-setting failed with automatically selected buffer format {:?}: test state failed",
-                    dmabuf.format()
-                );
-                Err((swapchain.allocator, FrameError::PrimaryPlaneTestFailed))
             }
             Err(err) => {
                 warn!(
@@ -1509,7 +1497,10 @@ where
         let plane_claim = self
             .surface
             .claim_plane(self.planes.primary.handle)
-            .ok_or(FrameError::PrimaryPlaneTestFailed)?;
+            .ok_or_else(|| {
+                error!("failed to claim primary plane");
+                FrameError::PrimaryPlaneClaimFailed
+            })?;
         let primary_plane_state = PlaneState {
             skip: false,
             element_state: None,
@@ -1527,17 +1518,18 @@ where
             }),
         };
 
-        if !next_frame_state
+        // test that we can scan-out the primary plane
+        //
+        // Note: this should only fail if the device has been
+        // deactivated or we lost access (like during a vt switch)
+        next_frame_state
             .test_state(
                 &self.surface,
                 self.planes.primary.handle,
                 primary_plane_state,
                 self.surface.commit_pending(),
             )
-            .map_err(FrameError::DrmError)?
-        {
-            return Err(RenderFrameError::PrepareFrame(FrameError::PrimaryPlaneTestFailed));
-        }
+            .map_err(FrameError::DrmError)?;
 
         // This holds all elements that are visible on the output
         // A element is considered visible if it intersects with the output geometry
@@ -2319,11 +2311,9 @@ where
             let mut plane_state = previous_state.plane_state(plane_info.handle).unwrap().clone();
             plane_state.skip = true;
 
-            let res = frame_state
-                .test_state(&self.surface, plane_info.handle, plane_state, false)
-                .unwrap_or_default();
+            let res = frame_state.test_state(&self.surface, plane_info.handle, plane_state, false);
 
-            if res {
+            if res.is_ok() {
                 return Some(*plane_info);
             } else {
                 return None;
@@ -2337,11 +2327,9 @@ where
             plane_state.skip = false;
             let mut config = plane_state.config.as_mut().unwrap();
             config.dst.loc = cursor_plane_location;
-            let res = frame_state
-                .test_state(&self.surface, plane_info.handle, plane_state, false)
-                .unwrap_or_default();
+            let res = frame_state.test_state(&self.surface, plane_info.handle, plane_state, false);
 
-            if res {
+            if res.is_ok() {
                 return Some(*plane_info);
             } else {
                 return None;
@@ -2493,11 +2481,9 @@ where
             config,
         };
 
-        let res = frame_state
-            .test_state(&self.surface, plane_info.handle, plane_state, false)
-            .unwrap_or_default();
+        let res = frame_state.test_state(&self.surface, plane_info.handle, plane_state, false);
 
-        if res {
+        if res.is_ok() {
             cursor_state.previous_output_scale = Some(scale);
             cursor_state.previous_output_transform = Some(output_transform);
             output_damage.push(dst);
@@ -2856,11 +2842,9 @@ where
             }),
         };
 
-        let res = frame_state
-            .test_state(&self.surface, plane.handle, plane_state, false)
-            .unwrap_or_default();
+        let res = frame_state.test_state(&self.surface, plane.handle, plane_state, false);
 
-        if res {
+        if res.is_ok() {
             output_damage.extend(element_output_damage);
 
             trace!(
@@ -3031,9 +3015,9 @@ pub enum FrameError<
     B: std::error::Error + Send + Sync + 'static,
     F: std::error::Error + Send + Sync + 'static,
 > {
-    /// Testing the primary plane failed
-    #[error("Testing the primary plane failed")]
-    PrimaryPlaneTestFailed,
+    /// Failed to claim the primary plane
+    #[error("Failed to claim the primary plane")]
+    PrimaryPlaneClaimFailed,
     /// No supported pixel format for the given plane could be determined
     #[error("No supported plane buffer format found")]
     NoSupportedPlaneFormat,
@@ -3101,7 +3085,7 @@ impl<
         match err {
             x @ FrameError::NoSupportedPlaneFormat
             | x @ FrameError::NoSupportedRendererFormat
-            | x @ FrameError::PrimaryPlaneTestFailed
+            | x @ FrameError::PrimaryPlaneClaimFailed
             | x @ FrameError::NoFramebuffer => SwapBuffersError::ContextLost(Box::new(x)),
             x @ FrameError::NoFreeSlotsError => SwapBuffersError::TemporaryFailure(Box::new(x)),
             FrameError::DrmError(err) => err.into(),

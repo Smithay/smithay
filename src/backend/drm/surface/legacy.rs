@@ -331,7 +331,7 @@ impl LegacyDrmSurface {
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    pub fn test_buffer(&self, fb: framebuffer::Handle, mode: &Mode) -> Result<bool, Error> {
+    pub fn test_buffer(&self, fb: framebuffer::Handle, mode: &Mode) -> Result<(), Error> {
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -339,8 +339,7 @@ impl LegacyDrmSurface {
         let pending = self.pending.read().unwrap();
 
         debug!("Setting screen for buffer *testing*");
-        Ok(self
-            .fd
+        self.fd
             .set_crtc(
                 self.crtc,
                 Some(fb),
@@ -352,7 +351,11 @@ impl LegacyDrmSurface {
                     .collect::<Vec<connector::Handle>>(),
                 Some(*mode),
             )
-            .is_ok())
+            .map_err(|source| Error::Access {
+                errmsg: "Failed to test buffer",
+                dev: self.fd.dev_path(),
+                source,
+            })
     }
 
     // we use this function to verify, if a certain connector/mode combination
