@@ -303,10 +303,24 @@ impl LayerMap {
                     *states.cached_state.current::<LayerSurfaceCachedState>()
                 });
 
-                let source = match data.exclusive_zone {
-                    ExclusiveZone::Neutral | ExclusiveZone::Exclusive(_) => &zone,
-                    ExclusiveZone::DontCare => &output_rect,
+                let mut source = match data.exclusive_zone {
+                    ExclusiveZone::Exclusive(_) | ExclusiveZone::Neutral => zone,
+                    ExclusiveZone::DontCare => output_rect,
                 };
+
+                // adjust the copy rect to account for the margins
+                if data.anchor.contains(Anchor::LEFT) {
+                    source.size.w -= data.margin.left
+                }
+                if data.anchor.contains(Anchor::RIGHT) {
+                    source.size.w -= data.margin.right
+                }
+                if data.anchor.contains(Anchor::TOP) {
+                    source.size.h -= data.margin.top
+                }
+                if data.anchor.contains(Anchor::BOTTOM) {
+                    source.size.h -= data.margin.bottom
+                }
 
                 let mut size = data.size;
                 if size.w == 0 {
@@ -325,7 +339,7 @@ impl LayerMap {
                 let x = if data.anchor.contains(Anchor::LEFT) {
                     source.loc.x + data.margin.left
                 } else if data.anchor.contains(Anchor::RIGHT) {
-                    source.loc.x + (source.size.w - size.w) - data.margin.right
+                    source.loc.x + (source.size.w - size.w)
                 } else {
                     source.loc.x + ((source.size.w / 2) - (size.w / 2))
                 };
@@ -333,7 +347,7 @@ impl LayerMap {
                 let y = if data.anchor.contains(Anchor::TOP) {
                     source.loc.y + data.margin.top
                 } else if data.anchor.contains(Anchor::BOTTOM) {
-                    source.loc.y + (source.size.h - size.h) - data.margin.bottom
+                    source.loc.y + (source.size.h - size.h)
                 } else {
                     source.loc.y + ((source.size.h / 2) - (size.h / 2))
                 };
@@ -342,19 +356,43 @@ impl LayerMap {
 
                 if let ExclusiveZone::Exclusive(amount) = data.exclusive_zone {
                     match data.anchor {
+                        x if x.contains(Anchor::TOP) && x.contains(Anchor::BOTTOM) => {
+                            zone.size.w -= amount as i32;
+                            if x.contains(Anchor::LEFT) {
+                                zone.loc.x += amount as i32 + data.margin.left;
+                                zone.size.w -= data.margin.left;
+                            }
+                            if x.contains(Anchor::RIGHT) {
+                                zone.size.w -= data.margin.right
+                            }
+                        }
+                        x if x.contains(Anchor::LEFT) && x.contains(Anchor::RIGHT) => {
+                            zone.size.h -= amount as i32;
+                            if x.contains(Anchor::TOP) {
+                                zone.loc.y += amount as i32 + data.margin.top;
+                                zone.size.h -= data.margin.top
+                            }
+                            if x.contains(Anchor::BOTTOM) {
+                                zone.size.h -= data.margin.bottom
+                            }
+                        }
+                        x if x == Anchor::all() => {
+                            zone.size.w = 0;
+                            zone.size.h = 0;
+                        }
                         x if x.contains(Anchor::LEFT) && !x.contains(Anchor::RIGHT) => {
-                            zone.loc.x += amount as i32 + data.margin.left + data.margin.right;
-                            zone.size.w -= amount as i32 + data.margin.left + data.margin.right;
+                            zone.loc.x += amount as i32 + data.margin.left;
+                            zone.size.w -= amount as i32 + data.margin.left;
                         }
                         x if x.contains(Anchor::TOP) && !x.contains(Anchor::BOTTOM) => {
-                            zone.loc.y += amount as i32 + data.margin.top + data.margin.bottom;
-                            zone.size.h -= amount as i32 + data.margin.top + data.margin.bottom;
+                            zone.loc.y += amount as i32 + data.margin.top;
+                            zone.size.h -= amount as i32 + data.margin.top;
                         }
                         x if x.contains(Anchor::RIGHT) && !x.contains(Anchor::LEFT) => {
-                            zone.size.w -= amount as i32 + data.margin.left + data.margin.right;
+                            zone.size.w -= amount as i32 + data.margin.right;
                         }
                         x if x.contains(Anchor::BOTTOM) && !x.contains(Anchor::TOP) => {
-                            zone.size.h -= amount as i32 + data.margin.top + data.margin.bottom;
+                            zone.size.h -= amount as i32 + data.margin.bottom;
                         }
                         _ => {}
                     }
