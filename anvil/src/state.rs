@@ -77,8 +77,13 @@ use crate::cursor::Cursor;
 use crate::{focus::FocusTarget, shell::WindowElement};
 #[cfg(feature = "xwayland")]
 use smithay::{
+    reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1,
     utils::Size,
-    xwayland::{X11Wm, XWayland, XWaylandEvent},
+    wayland::{
+        data_device::with_source_metadata as with_data_device_source_metadata,
+        primary_selection::with_source_metadata as with_primary_source_metadata,
+    },
+    xwayland::{xwm::SelectionType, X11Wm, XWayland, XWaylandEvent},
 };
 
 pub struct CalloopData<BackendData: Backend + 'static> {
@@ -156,8 +161,30 @@ impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
-    fn send_selection(&mut self, _mime_type: String, _fd: OwnedFd, _seat: Seat<Self>) {
-        unreachable!("Anvil doesn't do server-side selections");
+
+    #[cfg(feature = "xwayland")]
+    fn new_selection(&mut self, source: Option<WlDataSource>, _seat: Seat<Self>) {
+        if let Some(xwm) = self.xwm.as_mut() {
+            if let Some(source) = source {
+                if let Ok(Err(err)) = with_data_device_source_metadata(&source, |metadata| {
+                    xwm.new_selection(SelectionType::Clipboard, Some(metadata.mime_types.clone()))
+                }) {
+                    warn!(?err, "Failed to set Xwayland clipboard selection");
+                }
+            } else if let Err(err) = xwm.new_selection(SelectionType::Clipboard, None) {
+                warn!(?err, "Failed to clear Xwayland clipboard selection");
+            }
+        }
+    }
+
+    #[cfg(feature = "xwayland")]
+    fn send_selection(&mut self, mime_type: String, fd: OwnedFd, _seat: Seat<Self>, _user_data: &()) {
+        if let Some(xwm) = self.xwm.as_mut() {
+            if let Err(err) = xwm.send_selection(SelectionType::Clipboard, mime_type, fd, self.handle.clone())
+            {
+                warn!(?err, "Failed to send clipboard (X11 -> Wayland)");
+            }
+        }
     }
 }
 impl<BackendData: Backend> ClientDndGrabHandler for AnvilState<BackendData> {
@@ -181,6 +208,30 @@ impl<BackendData: Backend> PrimarySelectionHandler for AnvilState<BackendData> {
     type SelectionUserData = ();
     fn primary_selection_state(&self) -> &PrimarySelectionState {
         &self.primary_selection_state
+    }
+
+    #[cfg(feature = "xwayland")]
+    fn new_selection(&mut self, source: Option<ZwpPrimarySelectionSourceV1>, _seat: Seat<Self>) {
+        if let Some(xwm) = self.xwm.as_mut() {
+            if let Some(source) = source {
+                if let Ok(Err(err)) = with_primary_source_metadata(&source, |metadata| {
+                    xwm.new_selection(SelectionType::Primary, Some(metadata.mime_types.clone()))
+                }) {
+                    warn!(?err, "Failed to set Xwayland primary selection");
+                }
+            } else if let Err(err) = xwm.new_selection(SelectionType::Primary, None) {
+                warn!(?err, "Failed to clear Xwayland primary selection");
+            }
+        }
+    }
+
+    #[cfg(feature = "xwayland")]
+    fn send_selection(&mut self, mime_type: String, fd: OwnedFd, _seat: Seat<Self>, _user_data: &()) {
+        if let Some(xwm) = self.xwm.as_mut() {
+            if let Err(err) = xwm.send_selection(SelectionType::Primary, mime_type, fd, self.handle.clone()) {
+                warn!(?err, "Failed to send primary (X11 -> Wayland)");
+            }
+        }
     }
 }
 delegate_primary_selection!(@<BackendData: Backend + 'static> AnvilState<BackendData>);

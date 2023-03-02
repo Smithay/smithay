@@ -1,18 +1,28 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, os::unix::io::OwnedFd};
 
 use smithay::{
     desktop::space::SpaceElement,
     input::pointer::Focus,
     utils::{Logical, Rectangle, SERIAL_COUNTER},
-    wayland::compositor::with_states,
+    wayland::{
+        compositor::with_states,
+        data_device::{
+            clear_data_device_selection, current_data_device_selection_userdata,
+            request_data_device_client_selection, set_data_device_selection,
+        },
+        primary_selection::{
+            clear_primary_selection, current_primary_selection_userdata, request_primary_client_selection,
+            set_primary_selection,
+        },
+    },
     xwayland::{
-        xwm::{Reorder, ResizeEdge as X11ResizeEdge, XwmId},
+        xwm::{Reorder, ResizeEdge as X11ResizeEdge, SelectionType, XwmId},
         X11Surface, X11Wm, XwmHandler,
     },
 };
-use tracing::trace;
+use tracing::{error, trace};
 
-use crate::{state::Backend, AnvilState, CalloopData};
+use crate::{focus::FocusTarget, state::Backend, AnvilState, CalloopData};
 
 use super::{
     place_new_window, FullscreenSurface, MoveSurfaceGrab, ResizeData, ResizeState, ResizeSurfaceGrab,
@@ -231,6 +241,64 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
 
     fn move_request(&mut self, _xwm: XwmId, window: X11Surface, _button: u32) {
         self.state.move_request_x11(&window)
+    }
+
+    fn allow_selection_access(&mut self, xwm: XwmId, _selection: SelectionType) -> bool {
+        if let Some(keyboard) = self.state.seat.get_keyboard() {
+            // check that an X11 window is focused
+            if let Some(FocusTarget::Window(WindowElement::X11(surface))) = keyboard.current_focus() {
+                if surface.xwm_id().unwrap() == xwm {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn send_selection(&mut self, _xwm: XwmId, selection: SelectionType, mime_type: String, fd: OwnedFd) {
+        match selection {
+            SelectionType::Clipboard => {
+                if let Err(err) = request_data_device_client_selection(&self.state.seat, mime_type, fd) {
+                    error!(?err, "Failed to request current wayland clipboard for Xwayland",);
+                }
+            }
+            SelectionType::Primary => {
+                if let Err(err) = request_primary_client_selection(&self.state.seat, mime_type, fd) {
+                    error!(
+                        ?err,
+                        "Failed to request current wayland primary selection for Xwayland",
+                    );
+                }
+            }
+        }
+    }
+
+    fn new_selection(&mut self, _xwm: XwmId, selection: SelectionType, mime_types: Vec<String>) {
+        trace!(?selection, ?mime_types, "Got Selection from X11",);
+        // TODO check, that focused windows is X11 window before doing this
+        match selection {
+            SelectionType::Clipboard => {
+                set_data_device_selection(&self.state.display_handle, &self.state.seat, mime_types, ())
+            }
+            SelectionType::Primary => {
+                set_primary_selection(&self.state.display_handle, &self.state.seat, mime_types, ())
+            }
+        }
+    }
+
+    fn cleared_selection(&mut self, _xwm: XwmId, selection: SelectionType) {
+        match selection {
+            SelectionType::Clipboard => {
+                if current_data_device_selection_userdata(&self.state.seat).is_some() {
+                    clear_data_device_selection(&self.state.display_handle, &self.state.seat)
+                }
+            }
+            SelectionType::Primary => {
+                if current_primary_selection_userdata(&self.state.seat).is_some() {
+                    clear_primary_selection(&self.state.display_handle, &self.state.seat)
+                }
+            }
+        }
     }
 }
 
