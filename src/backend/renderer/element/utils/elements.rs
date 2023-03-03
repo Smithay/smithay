@@ -1,11 +1,12 @@
 //! Utilities and helpers around the `Element` trait.
 
 use crate::{
-    backend::renderer::Renderer,
+    backend::renderer::{
+        element::{AsRenderElements, Element, Id, RenderElement, UnderlyingStorage},
+        Renderer,
+    },
     utils::{Buffer, Physical, Point, Rectangle, Scale},
 };
-
-use super::{AsRenderElements, Element, RenderElement};
 
 /// A element that allows to re-scale another element
 #[derive(Debug)]
@@ -31,7 +32,7 @@ impl<E: Element> RescaleRenderElement<E> {
 }
 
 impl<E: Element> Element for RescaleRenderElement<E> {
-    fn id(&self) -> &super::Id {
+    fn id(&self) -> &Id {
         self.element.id()
     }
 
@@ -96,7 +97,7 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement
         self.element.draw(frame, src, dst, damage)
     }
 
-    fn underlying_storage(&self, renderer: &mut R) -> Option<super::UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.element.underlying_storage(renderer)
     }
 }
@@ -187,7 +188,7 @@ impl<E: Element> CropRenderElement<E> {
 }
 
 impl<E: Element> Element for CropRenderElement<E> {
-    fn id(&self) -> &super::Id {
+    fn id(&self) -> &Id {
         self.element.id()
     }
 
@@ -267,7 +268,7 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E>
         self.element.draw(frame, src, dst, damage)
     }
 
-    fn underlying_storage(&self, renderer: &mut R) -> Option<super::UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.element.underlying_storage(renderer)
     }
 }
@@ -303,7 +304,7 @@ impl<E: Element> RelocateRenderElement<E> {
 }
 
 impl<E: Element> Element for RelocateRenderElement<E> {
-    fn id(&self) -> &super::Id {
+    fn id(&self) -> &Id {
         self.element.id()
     }
 
@@ -359,7 +360,7 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElemen
         self.element.draw(frame, src, dst, damage)
     }
 
-    fn underlying_storage(&self, renderer: &mut R) -> Option<super::UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.element.underlying_storage(renderer)
     }
 }

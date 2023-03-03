@@ -10,6 +10,7 @@ use crate::{
     utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle, Serial},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, SurfaceData, TraversalAction},
+        dmabuf::DmabufFeedback,
         seat::WaylandFocus,
         shell::wlr_layer::{
             Anchor, ExclusiveZone, KeyboardInteractivity, Layer as WlrLayer, LayerSurface as WlrLayerSurface,
@@ -625,6 +626,31 @@ impl LayerSurface {
         for (popup, _) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
             send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+        }
+    }
+
+    /// Sends the dmabuf feedback to all the subsurfaces in this window that requested it
+    ///
+    /// See [`send_dmabuf_feedback_surface_tree`] for more information
+    pub fn send_dmabuf_feedback<'a, P, F>(
+        &self,
+        output: &Output,
+        primary_scan_out_output: P,
+        select_dmabuf_feedback: F,
+    ) where
+        P: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
+        F: Fn(&wl_surface::WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy,
+    {
+        let surface = self.0.surface.wl_surface();
+        send_dmabuf_feedback_surface_tree(surface, output, primary_scan_out_output, select_dmabuf_feedback);
+        for (popup, _) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            send_dmabuf_feedback_surface_tree(
+                surface,
+                output,
+                primary_scan_out_output,
+                select_dmabuf_feedback,
+            );
         }
     }
 

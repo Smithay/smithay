@@ -24,13 +24,13 @@ use smithay::{
     },
     render_elements,
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
-    wayland::{compositor::SurfaceData as WlSurfaceData, seat::WaylandFocus},
+    wayland::{compositor::SurfaceData as WlSurfaceData, dmabuf::DmabufFeedback, seat::WaylandFocus},
 };
 #[cfg(feature = "xwayland")]
 use smithay::{
     desktop::utils::{
-        send_frames_surface_tree, take_presentation_feedback_surface_tree, under_from_surface_tree,
-        with_surfaces_surface_tree,
+        send_dmabuf_feedback_surface_tree, send_frames_surface_tree, take_presentation_feedback_surface_tree,
+        under_from_surface_tree, with_surfaces_surface_tree,
     },
     xwayland::X11Surface,
 };
@@ -91,6 +91,33 @@ impl WindowElement {
             WindowElement::X11(w) => {
                 if let Some(surface) = w.wl_surface() {
                     send_frames_surface_tree(&surface, output, time, throttle, primary_scan_out_output);
+                }
+            }
+        }
+    }
+
+    pub fn send_dmabuf_feedback<'a, P, F>(
+        &self,
+        output: &Output,
+        primary_scan_out_output: P,
+        select_dmabuf_feedback: F,
+    ) where
+        P: FnMut(&WlSurface, &WlSurfaceData) -> Option<Output> + Copy,
+        F: Fn(&WlSurface, &WlSurfaceData) -> &'a DmabufFeedback + Copy,
+    {
+        match self {
+            WindowElement::Wayland(w) => {
+                w.send_dmabuf_feedback(output, primary_scan_out_output, select_dmabuf_feedback)
+            }
+            #[cfg(feature = "xwayland")]
+            WindowElement::X11(w) => {
+                if let Some(surface) = w.wl_surface() {
+                    send_dmabuf_feedback_surface_tree(
+                        &surface,
+                        output,
+                        primary_scan_out_output,
+                        select_dmabuf_feedback,
+                    )
                 }
             }
         }

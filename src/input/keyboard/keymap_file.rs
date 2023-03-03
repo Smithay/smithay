@@ -17,7 +17,7 @@ impl KeymapFile {
     pub fn new(keymap: &Keymap) -> Self {
         let name = CString::new("smithay-keymap").unwrap();
         let keymap = keymap.get_as_string(KEYMAP_FORMAT_TEXT_V1);
-        let sealed = SealedFile::new(name, CString::new(keymap.as_str()).unwrap());
+        let sealed = SealedFile::with_content(name, CString::new(keymap.as_str()).unwrap());
 
         if let Err(err) = sealed.as_ref() {
             error!("Error when creating sealed keymap file: {}", err);
@@ -32,7 +32,7 @@ impl KeymapFile {
     #[cfg(feature = "wayland_frontend")]
     pub(crate) fn change_keymap(&mut self, keymap: String) {
         let name = CString::new("smithay-keymap-file").unwrap();
-        let sealed = SealedFile::new(name, CString::new(keymap.clone()).unwrap());
+        let sealed = SealedFile::with_content(name, CString::new(keymap.clone()).unwrap());
 
         if let Err(err) = sealed.as_ref() {
             error!("Error when creating sealed keymap file: {}", err);
