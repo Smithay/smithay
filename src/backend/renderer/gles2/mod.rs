@@ -2895,11 +2895,15 @@ impl<'frame> Gles2Frame<'frame> {
         }
 
         let mut matrix = Matrix3::<f32>::identity();
-        let tex_matrix = Matrix3::<f32>::identity();
+        let mut tex_matrix = Matrix3::<f32>::identity();
 
         // dest position and scale
         matrix = matrix * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
-        matrix = matrix * Matrix3::from_nonuniform_scale(dest.size.w as f32, dest.size.h as f32);
+        tex_matrix = tex_matrix
+            * Matrix3::from_nonuniform_scale(
+                (1.0f64 / dest.size.w as f64) as f32,
+                (1.0f64 / dest.size.h as f64) as f32,
+            );
 
         //apply output transformation
         matrix = self.current_projection * matrix;
