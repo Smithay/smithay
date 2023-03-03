@@ -607,13 +607,10 @@ fn scan_connectors(
 
     let (render_node, formats) = {
         let display = EGLDisplay::new(gbm.clone()).unwrap();
-        let node = match EGLDevice::device_for_display(&display)
+        let node = EGLDevice::device_for_display(&display)
             .ok()
             .and_then(|x| x.try_get_render_node().ok().flatten())
-        {
-            Some(node) => node,
-            None => return HashMap::new(),
-        };
+            .unwrap_or(device_id);
         let context = EGLContext::new(&display).unwrap();
         (node, context.dmabuf_render_formats().clone())
     };
