@@ -685,12 +685,6 @@ fn scan_connectors(
                 }
             };
 
-            let size = mode.size();
-            let mode = Mode {
-                size: (size.0 as i32, size.1 as i32).into(),
-                refresh: mode.vrefresh() as i32 * 1000,
-            };
-
             let interface_short_name = match connector_info.interface() {
                 drm::control::connector::Interface::DVII => Cow::Borrowed("DVI-I"),
                 drm::control::connector::Interface::DVID => Cow::Borrowed("DVI-D"),
@@ -723,6 +717,8 @@ fn scan_connectors(
                 0,
             )
                 .into();
+
+            let mode = Mode::from(mode);
             output.change_current_state(Some(mode), None, None, Some(position));
             output.set_preferred(mode);
             space.map_output(&output, position);
