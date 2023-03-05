@@ -289,7 +289,7 @@ pub fn default_primary_scanout_output_compare<'a>(
 }
 
 /// Holds the states for a set of [`RenderElement`]s
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct RenderElementStates {
     /// Holds the render states of the elements
     pub states: HashMap<Id, RenderElementState>,
