@@ -216,6 +216,9 @@ fn plane_zpos(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Res
             let plane_zpos = match info.value_type().convert_value(val) {
                 drm::control::property::Value::UnsignedRange(u) => Some(u as i32),
                 drm::control::property::Value::SignedRange(i) => Some(i as i32),
+                // A range from [0,1] will be interpreted as Boolean in drm-rs
+                // TODO: Once that has been changed we can remove this special handling here
+                drm::control::property::Value::Boolean(b) => Some(b.into()),
                 _ => None,
             };
             return Ok(plane_zpos);
