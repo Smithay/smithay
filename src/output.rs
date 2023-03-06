@@ -58,6 +58,8 @@ use tracing::{info, instrument};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::output::xdg::XdgOutput;
+#[cfg(feature = "backend_drm")]
+use drm::control::{Mode as DrmMode, ModeFlags};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{backend::WeakHandle, protocol::wl_output::WlOutput};
 
@@ -77,6 +79,36 @@ pub struct Mode {
     ///
     /// `1000` is one fps (frame per second), `2000` is 2 fps, etc...
     pub refresh: i32,
+}
+
+#[cfg(feature = "backend_drm")]
+impl From<DrmMode> for Mode {
+    fn from(mode: DrmMode) -> Self {
+        let clock = mode.clock() as u64;
+        let htotal = mode.hsync().2 as u64;
+        let vtotal = mode.vsync().2 as u64;
+
+        let mut refresh = (clock * 1_000_000 / htotal + vtotal / 2) / vtotal;
+
+        if mode.flags().contains(ModeFlags::INTERLACE) {
+            refresh *= 2;
+        }
+
+        if mode.flags().contains(ModeFlags::DBLSCAN) {
+            refresh /= 2;
+        }
+
+        if mode.vscan() > 1 {
+            refresh /= mode.vscan() as u64;
+        }
+
+        let (w, h) = mode.size();
+
+        Self {
+            size: (w as i32, h as i32).into(),
+            refresh: refresh as i32,
+        }
+    }
 }
 
 /// Subpixel geometry information
