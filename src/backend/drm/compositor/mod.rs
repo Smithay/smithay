@@ -2127,6 +2127,7 @@ where
                 scale,
                 frame_state,
                 output_damage,
+                output_transform,
                 output_geometry,
             )? {
                 Ok(plane) => {
@@ -2634,6 +2635,7 @@ where
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
+        output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
     ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
     where
@@ -2664,7 +2666,7 @@ where
             scale,
             frame_state,
             output_damage,
-            Transform::Normal,
+            output_transform,
             output_geometry,
         )
     }
