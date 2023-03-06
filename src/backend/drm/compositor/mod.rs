@@ -1627,7 +1627,7 @@ where
                     .planes
                     .overlay
                     .iter()
-                    .filter(|p| p.zpos.unwrap_or_default() <= self.planes.primary.zpos.unwrap_or_default())
+                    .filter(|p| p.zpos.unwrap_or_default() < self.planes.primary.zpos.unwrap_or_default())
                     .any(|p| next_frame_state.overlaps(p.handle, element_geometry));
                 !overlaps_with_underlay
                     && (crtc_background_matches_clear_color
