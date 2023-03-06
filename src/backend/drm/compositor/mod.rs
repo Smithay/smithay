@@ -1627,7 +1627,7 @@ where
                     .planes
                     .overlay
                     .iter()
-                    .filter(|p| p.zpos.unwrap_or_default() <= self.planes.primary.zpos.unwrap_or_default())
+                    .filter(|p| p.zpos.unwrap_or_default() < self.planes.primary.zpos.unwrap_or_default())
                     .any(|p| next_frame_state.overlaps(p.handle, element_geometry));
                 !overlaps_with_underlay
                     && (crtc_background_matches_clear_color
@@ -2127,6 +2127,7 @@ where
                 scale,
                 frame_state,
                 output_damage,
+                output_transform,
                 output_geometry,
             )? {
                 Ok(plane) => {
@@ -2634,6 +2635,7 @@ where
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
+        output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
     ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
     where
@@ -2664,7 +2666,7 @@ where
             scale,
             frame_state,
             output_damage,
-            Transform::Normal,
+            output_transform,
             output_geometry,
         )
     }

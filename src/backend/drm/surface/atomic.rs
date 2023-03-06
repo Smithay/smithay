@@ -787,6 +787,15 @@ impl AtomicDrmSurface {
                         prop,
                         property::Value::Bitmask(DrmRotation::from(config.transform).bits() as u64),
                     );
+                } else if config.transform != Transform::Normal {
+                    // if we are missing the rotation property we can no rely on
+                    // the driver to report a non working configuration and can
+                    // only guarantee that Transform::Normal (no rotation) will
+                    // work
+                    return Err(Error::UnknownProperty {
+                        handle: (*handle).into(),
+                        name: "rotation",
+                    });
                 }
                 if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "FB_DAMAGE_CLIPS") {
                     if let Some(damage) = config.damage_clips.as_ref() {
