@@ -160,6 +160,9 @@ macro_rules! xdg_role {
                 /// during the first commit a initial
                 /// configure event is sent to the client
                 pub initial_configure_sent: bool,
+                /// An `zxdg_toplevel_decoration_v1::configure` event has been sent
+                /// to the client.
+                pub initial_decoration_configure_sent: bool,
                 /// Holds the configures the server has sent out
                 /// to the client waiting to be acknowledged by
                 /// the client. All pending configures that are older
@@ -259,6 +262,7 @@ macro_rules! xdg_role {
                     configure_serial: None,
                     pending_configures: Vec::new(),
                     initial_configure_sent: false,
+                    initial_decoration_configure_sent: false,
                     server_pending: None,
                     last_acked: None,
                     current: Default::default(),
@@ -1094,6 +1098,9 @@ impl ToplevelSurface {
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
     pub fn send_configure(&self) {
+        let shell_surface_data = self.shell_surface.data::<XdgShellSurfaceUserData>();
+        let decoration =
+            shell_surface_data.and_then(|data| data.decoration.lock().unwrap().as_ref().cloned());
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -1106,8 +1113,8 @@ impl ToplevelSurface {
                 // if the mode has changed.
                 // We have to do this check before adding the pending state
                 // to the pending configures.
-                let decoration_mode_changed =
-                    pending.decoration_mode != attributes.current_server_state().decoration_mode;
+                let decoration_mode_changed = !attributes.initial_decoration_configure_sent
+                    || (pending.decoration_mode != attributes.current_server_state().decoration_mode);
 
                 let configure = ToplevelConfigure {
                     serial: SERIAL_COUNTER.next_serial(),
@@ -1116,6 +1123,9 @@ impl ToplevelSurface {
 
                 attributes.pending_configures.push(configure.clone());
                 attributes.initial_configure_sent = true;
+                if decoration.is_some() {
+                    attributes.initial_decoration_configure_sent = true;
+                }
 
                 Some((configure, decoration_mode_changed))
             } else {
@@ -1124,16 +1134,14 @@ impl ToplevelSurface {
         });
         if let Some((configure, decoration_mode_changed)) = configure {
             if decoration_mode_changed {
-                if let Some(data) = self.shell_surface.data::<XdgShellSurfaceUserData>() {
-                    if let Some(decoration) = &*data.decoration.lock().unwrap() {
-                        self::decoration::send_decoration_configure(
-                            decoration,
-                            configure
-                                .state
-                                .decoration_mode
-                                .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
-                        );
-                    }
+                if let Some(decoration) = &decoration {
+                    self::decoration::send_decoration_configure(
+                        decoration,
+                        configure
+                            .state
+                            .decoration_mode
+                            .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
+                    );
                 }
             }
 
