@@ -51,7 +51,7 @@ pub trait SpaceElement: IsAlive {
     fn bbox(&self) -> Rectangle<i32, Logical>;
     /// Returns whenever a given point inside this element will be able to receive input
     fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool;
-    /// Gets the z-index of this element on the specified space
+    /// Gets the z-index of this element
     fn z_index(&self) -> u8 {
         RenderZindex::Overlay as u8
     }
