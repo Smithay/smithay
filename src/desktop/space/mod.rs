@@ -92,11 +92,8 @@ impl<E: SpaceElement + PartialEq> Space<E> {
 
     /// Map a [`SpaceElement`] and move it to top of the stack
     ///
-    /// If a z_index is provided it will override the default
-    /// z_index of [`RenderZindex::Shell`] for the mapped window.
-    ///
     /// This can safely be called on an already mapped window
-    /// to update its location or z_index inside the space.
+    /// to update its location inside the space.
     ///
     /// If activate is true it will set the new windows state
     /// to be activate and removes that state from every
