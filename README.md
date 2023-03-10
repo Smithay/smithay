@@ -39,8 +39,9 @@ names may vary depending on your OS and linux distribution:
 - `libxkbcommon`
 - `libinput`
 - `libgbm`
+- `libwayland`
 
-If you want to enable X11 support (to run anvil in a X11 window for example),
+If you want to enable X11 support (to run X11 applications within anvil),
 then you'll need to install the following packages as well:
     - `xwayland`
 
