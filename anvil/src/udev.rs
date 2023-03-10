@@ -91,13 +91,18 @@ use smithay_drm_extras::{
 use tracing::{debug, error, info, trace, warn};
 
 // we cannot simply pick the first supported format of the intersection of *all* formats, because:
-// - we do not want something like Abgr4444, which looses color information, if something better is available.
-// - some formats might perform terribly.
-// - we might need some work-arounds, if one supports modifiers, but the other does not.
-// - we can't handle formats with small alpha channels yet in the renderer like `Abgr2101010`.
+// - we do not want something like Abgr4444, which looses color information, if something better is available
+// - some formats might perform terribly
+// - we might need some work-arounds, if one supports modifiers, but the other does not
 //
-// So lets just pick `ARGB8888`/`ABGR8888` for now, they are widely supported.
-const SUPPORTED_FORMATS: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8888];
+// So lets just pick `ARGB2101010` (10-bit) or `ARGB8888` (8-bit) for now, they are widely supported.
+const SUPPORTED_FORMATS: &[Fourcc] = &[
+    Fourcc::Abgr2101010,
+    Fourcc::Argb2101010,
+    Fourcc::Abgr8888,
+    Fourcc::Argb8888,
+];
+const SUPPORTED_FORMATS_8BIT_ONLY: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8888];
 
 type UdevRenderer<'a, 'b> =
     MultiRenderer<'a, 'a, 'b, GbmGlesBackend<Gles2Renderer>, GbmGlesBackend<Gles2Renderer>>;
@@ -857,15 +862,21 @@ impl AnvilState<UdevData> {
             GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT,
         );
 
+        let color_formats = if std::env::var("ANVIL_DISABLE_10BIT").is_ok() {
+            SUPPORTED_FORMATS_8BIT_ONLY
+        } else {
+            SUPPORTED_FORMATS
+        };
+
         let compositor = if std::env::var("ANVIL_DISABLE_DRM_COMPOSITOR").is_ok() {
-            let gbm_surface =
-                match GbmBufferedSurface::new(surface, allocator, SUPPORTED_FORMATS, render_formats) {
-                    Ok(renderer) => renderer,
-                    Err(err) => {
-                        warn!("Failed to create rendering surface: {}", err);
-                        return;
-                    }
-                };
+            let gbm_surface = match GbmBufferedSurface::new(surface, allocator, color_formats, render_formats)
+            {
+                Ok(renderer) => renderer,
+                Err(err) => {
+                    warn!("Failed to create rendering surface: {}", err);
+                    return;
+                }
+            };
             SurfaceComposition::Surface {
                 surface: gbm_surface,
                 damage_tracker: OutputDamageTracker::from_output(&output),
@@ -905,7 +916,7 @@ impl AnvilState<UdevData> {
                 Some(planes),
                 allocator,
                 device.gbm.clone(),
-                SUPPORTED_FORMATS,
+                color_formats,
                 render_formats,
                 device.drm.cursor_size(),
                 Some(device.gbm.clone()),
