@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use crate::backend::input::{ButtonState, TabletToolCapabilitys, TabletToolDescriptor, TabletToolType};
+use crate::backend::input::{ButtonState, TabletToolCapabilities, TabletToolDescriptor, TabletToolType};
 use crate::input::pointer::{CursorImageAttributes, CursorImageStatus};
 use crate::utils::{Logical, Point};
 use crate::wayland::seat::CURSOR_IMAGE_ROLE;
@@ -257,27 +257,27 @@ impl TabletToolHandle {
         let low: u32 = tool.hardware_id_wacom as u32;
         wl_tool.hardware_id_wacom(high, low);
 
-        if tool.capabilitys.contains(TabletToolCapabilitys::PRESSURE) {
+        if tool.capabilities.contains(TabletToolCapabilities::PRESSURE) {
             wl_tool.capability(zwp_tablet_tool_v2::Capability::Pressure);
         }
 
-        if tool.capabilitys.contains(TabletToolCapabilitys::DISTANCE) {
+        if tool.capabilities.contains(TabletToolCapabilities::DISTANCE) {
             wl_tool.capability(zwp_tablet_tool_v2::Capability::Distance);
         }
 
-        if tool.capabilitys.contains(TabletToolCapabilitys::TILT) {
+        if tool.capabilities.contains(TabletToolCapabilities::TILT) {
             wl_tool.capability(zwp_tablet_tool_v2::Capability::Tilt);
         }
 
-        if tool.capabilitys.contains(TabletToolCapabilitys::SLIDER) {
+        if tool.capabilities.contains(TabletToolCapabilities::SLIDER) {
             wl_tool.capability(zwp_tablet_tool_v2::Capability::Slider);
         }
 
-        if tool.capabilitys.contains(TabletToolCapabilitys::ROTATION) {
+        if tool.capabilities.contains(TabletToolCapabilities::ROTATION) {
             wl_tool.capability(zwp_tablet_tool_v2::Capability::Rotation);
         }
 
-        if tool.capabilitys.contains(TabletToolCapabilitys::WHEEL) {
+        if tool.capabilities.contains(TabletToolCapabilities::WHEEL) {
             wl_tool.capability(zwp_tablet_tool_v2::Capability::Wheel);
         }
 
