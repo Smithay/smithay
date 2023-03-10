@@ -33,8 +33,8 @@ Also:
 
 ### Dependencies
 
-You'll need to install the following dependencies; note, that those package
-names may vary depending on your OS and linux distribution:
+You'll need to install the following dependencies (note, that those package
+names may vary depending on your OS and linux distribution):
 - `libdbus-glib-1`
 
 Then we'll need the following dependencies for the Udev/DRM backend:
