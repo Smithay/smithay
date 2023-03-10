@@ -36,7 +36,6 @@ Also:
 You'll need to install the following dependencies (note, that those package
 names may vary depending on your OS and linux distribution):
 
-- `libdbus-glib-1`
 - `libudev`         # | these are needed for the "Udev/DRM backend"
 - `libxkbcommon`    # |
 - `libinput`        # |
