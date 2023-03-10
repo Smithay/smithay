@@ -11,9 +11,9 @@ pub struct TabletToolDescriptor {
     pub hardware_serial: u64,
     /// Hardware id in Wacom’s format
     pub hardware_id_wacom: u64,
-    /// Tool capability
+    /// Tool capabilities
     /// Notifies the client of any capabilities of this tool, beyond the main set of x/y axes and tip up/down detection
-    pub capabilitys: TabletToolCapabilitys,
+    pub capabilities: TabletToolCapabilities,
 }
 
 /// Describes the physical type of tool. The physical type of tool generally defines its base usage.
@@ -43,7 +43,7 @@ bitflags! {
     /// Describes extra capabilities on a tablet.
     ///
     /// Any tool must provide x and y values, extra axes are device-specific.
-    pub struct TabletToolCapabilitys: u32 {
+    pub struct TabletToolCapabilities: u32 {
         /// Tilt axes
         const TILT = 1;
         /// Pressure axis

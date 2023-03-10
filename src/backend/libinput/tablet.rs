@@ -1,5 +1,5 @@
 use crate::backend::input::{
-    self as backend, TabletToolCapabilitys, TabletToolDescriptor, TabletToolTipState, TabletToolType,
+    self as backend, TabletToolCapabilities, TabletToolDescriptor, TabletToolTipState, TabletToolType,
 };
 
 use input as libinput;
@@ -71,20 +71,20 @@ where
         let hardware_serial = tool.serial();
         let hardware_id_wacom = tool.tool_id();
 
-        let mut capabilitys = TabletToolCapabilitys::empty();
+        let mut capabilities = TabletToolCapabilities::empty();
 
-        capabilitys.set(TabletToolCapabilitys::TILT, tool.has_tilt());
-        capabilitys.set(TabletToolCapabilitys::PRESSURE, tool.has_pressure());
-        capabilitys.set(TabletToolCapabilitys::DISTANCE, tool.has_distance());
-        capabilitys.set(TabletToolCapabilitys::ROTATION, tool.has_rotation());
-        capabilitys.set(TabletToolCapabilitys::SLIDER, tool.has_slider());
-        capabilitys.set(TabletToolCapabilitys::WHEEL, tool.has_wheel());
+        capabilities.set(TabletToolCapabilities::TILT, tool.has_tilt());
+        capabilities.set(TabletToolCapabilities::PRESSURE, tool.has_pressure());
+        capabilities.set(TabletToolCapabilities::DISTANCE, tool.has_distance());
+        capabilities.set(TabletToolCapabilities::ROTATION, tool.has_rotation());
+        capabilities.set(TabletToolCapabilities::SLIDER, tool.has_slider());
+        capabilities.set(TabletToolCapabilities::WHEEL, tool.has_wheel());
 
         TabletToolDescriptor {
             tool_type,
             hardware_serial,
             hardware_id_wacom,
-            capabilitys,
+            capabilities,
         }
     }
 

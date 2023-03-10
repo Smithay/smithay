@@ -5,7 +5,7 @@ use std::path::PathBuf;
 mod tablet;
 
 pub use tablet::{
-    ProximityState, TabletToolAxisEvent, TabletToolButtonEvent, TabletToolCapabilitys, TabletToolDescriptor,
+    ProximityState, TabletToolAxisEvent, TabletToolButtonEvent, TabletToolCapabilities, TabletToolDescriptor,
     TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TabletToolType,
 };
 
