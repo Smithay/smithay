@@ -30,7 +30,7 @@ use smithay::{
             dmabuf::{AnyError, Dmabuf, DmabufAllocator},
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
             vulkan::{ImageUsageFlags, VulkanAllocator},
-            Allocator,
+            Allocator, Fourcc,
         },
         drm::{
             compositor::DrmCompositor, CreateDrmNodeError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent,
@@ -94,6 +94,15 @@ use smithay::{
     },
 };
 use tracing::{debug, error, info, trace, warn};
+
+// we cannot simply pick the first supported format of the intersection of *all* formats, because:
+// - we do not want something like Abgr4444, which looses color information, if something better is available.
+// - some formats might perform terribly.
+// - we might need some work-arounds, if one supports modifiers, but the other does not.
+// - we can't handle formats with small alpha channels yet in the renderer like `Abgr2101010`.
+//
+// So lets just pick `ARGB8888`/`ABGR8888` for now, they are widely supported.
+const SUPPORTED_FORMATS: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8888];
 
 type UdevRenderer<'a, 'b> =
     MultiRenderer<'a, 'a, 'b, GbmGlesBackend<Gles2Renderer>, GbmGlesBackend<Gles2Renderer>>;
@@ -734,7 +743,12 @@ fn scan_connectors(
                 GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
 
             let compositor = if std::env::var("ANVIL_DISABLE_DRM_COMPOSITOR").is_ok() {
-                let gbm_surface = match GbmBufferedSurface::new(surface, allocator, render_formats.clone()) {
+                let gbm_surface = match GbmBufferedSurface::new(
+                    surface,
+                    allocator,
+                    SUPPORTED_FORMATS,
+                    render_formats.clone(),
+                ) {
                     Ok(renderer) => renderer,
                     Err(err) => {
                         warn!("Failed to create rendering surface: {}", err);
@@ -780,6 +794,7 @@ fn scan_connectors(
                     Some(planes),
                     allocator,
                     gbm.clone(),
+                    SUPPORTED_FORMATS,
                     render_formats.clone(),
                     device.cursor_size(),
                     Some(gbm.clone()),

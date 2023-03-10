@@ -31,17 +31,6 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static,
     span: tracing::Span,
 }
 
-// we cannot simply pick the first supported format of the intersection of *all* formats, because:
-// - we do not want something like Abgr4444, which looses color information, if something better is available
-// - some formats might perform terribly
-// - we might need some work-arounds, if one supports modifiers, but the other does not
-//
-// So lets just pick `ARGB8888` or `XRGB8888` for now, they are widely supported.
-// Once we have proper color management and possibly HDR support,
-// we need to have a more sophisticated picker.
-// (Or maybe just select A/XRGB2101010, if available, we will see.)
-const SUPPORTED_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Xrgb8888];
-
 impl<A, U> GbmBufferedSurface<A, U>
 where
     A: Allocator<Buffer = BufferObject<()>>,
@@ -50,12 +39,15 @@ where
     /// Create a new `GbmBufferedSurface` from a given compatible combination
     /// of a surface, an allocator and renderer formats.
     ///
+    /// The provided color_formats are tested in order until a working configuration is found.
+    ///
     /// To successfully call this function, you need to have a renderer,
     /// which can render into a Dmabuf, and a gbm allocator that can produce
     /// buffers of a supported format for rendering.
     pub fn new(
         drm: DrmSurface,
         mut allocator: A,
+        color_formats: &[Fourcc],
         renderer_formats: HashSet<Format>,
     ) -> Result<GbmBufferedSurface<A, U>, Error<A::Error>> {
         let span = info_span!(parent: drm.span(), "drm_gbm");
@@ -64,7 +56,7 @@ where
         let mut error = None;
         let drm = Arc::new(drm);
 
-        for format in SUPPORTED_FORMATS {
+        for format in color_formats {
             debug!("Testing color format: {}", format);
             match Self::new_internal(drm.clone(), allocator, renderer_formats.clone(), *format) {
                 Ok((current_fb, swapchain)) => {

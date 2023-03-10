@@ -82,6 +82,7 @@
 //! # let surface: DrmSurface = todo!();
 //! # let allocator: GbmAllocator<DrmDeviceFd> = todo!();
 //! # let exporter: GbmDevice<DrmDeviceFd> = todo!();
+//! # let color_formats = &[DrmFourcc::Argb8888];
 //! # let renderer_formats = HashSet::from([DrmFormat {
 //! #     code: DrmFourcc::Argb8888,
 //! #     modifier: DrmModifier::Linear,
@@ -95,6 +96,7 @@
 //!     None,
 //!     allocator,
 //!     exporter,
+//!     color_formats,
 //!     renderer_formats,
 //!     device.cursor_size(),
 //!     Some(gbm),
@@ -1112,17 +1114,6 @@ where
     span: tracing::Span,
 }
 
-// we cannot simply pick the first supported format of the intersection of *all* formats, because:
-// - we do not want something like Abgr4444, which looses color information, if something better is available
-// - some formats might perform terribly
-// - we might need some work-arounds, if one supports modifiers, but the other does not
-//
-// So lets just pick `ARGB8888` or `XRGB8888` for now, they are widely supported.
-// Once we have proper color management and possibly HDR support,
-// we need to have a more sophisticated picker.
-// (Or maybe just select A/XRGB2101010, if available, we will see.)
-const SUPPORTED_FORMATS: &[DrmFourcc] = &[DrmFourcc::Argb8888, DrmFourcc::Xrgb8888];
-
 impl<A, F, U, G> DrmCompositor<A, F, U, G>
 where
     A: Allocator,
@@ -1141,6 +1132,7 @@ where
     /// - `planes` defines which planes the compositor is allowed to use for direct scan-out.
     ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`]
     /// - `allocator` used for the primary plane swapchain
+    /// - `color_formats` are tested in order until a working configuration is found
     /// - `renderer_formats` as reported by the used renderer, used to build the intersection between
     ///                      the possible scan-out formats of the primary plane and the renderer
     /// - `framebuffer_exporter` is used to create drm framebuffers for the swapchain buffers (and if possible
@@ -1155,6 +1147,7 @@ where
         planes: Option<Planes>,
         mut allocator: A,
         framebuffer_exporter: F,
+        color_formats: &[DrmFourcc],
         renderer_formats: HashSet<DrmFormat>,
         cursor_size: Size<u32, BufferCoords>,
         gbm: Option<GbmDevice<G>>,
@@ -1182,7 +1175,7 @@ where
         let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
         let damage_tracker = OutputDamageTracker::from_output(output);
 
-        for format in SUPPORTED_FORMATS {
+        for format in color_formats {
             debug!("Testing color format: {}", format);
             match Self::find_supported_format(
                 surface.clone(),
