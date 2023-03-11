@@ -119,6 +119,8 @@ fn test_gbm_bo_create_with_modifiers2() {
 }
 
 fn main() {
+    check_dependencies();
+
     #[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
     gl_generate();
 
@@ -129,4 +131,8 @@ fn main() {
         not(feature = "backend_gbm_has_create_with_modifiers2")
     ))]
     test_gbm_bo_create_with_modifiers2();
+}
+
+fn check_dependencies() {
+    system_deps::Config::new().probe().unwrap();
 }

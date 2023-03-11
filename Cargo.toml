@@ -63,12 +63,22 @@ xkbcommon = { version = "0.5.0", features = ["wayland"]}
 scan_fmt = { version = "0.2.3", default-features = false }
 encoding = { version = "0.2.33", optional = true }
 
+# external system dependencies
+[package.metadata.system-deps]
+libudev = "1.7.6"
+xkbcommon = "0.0.0"
+libinput = "1.22.0"
+gbm = "1.0.0"
+
+libseat = { version = "0.1.7", feature = "libseat" }
+
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
 image = "0.24"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 
 [build-dependencies]
+system-deps = "6.0.3"
 gl_generator = { version = "0.14", optional = true }
 pkg-config = { version = "0.3.17", optional = true }
 cc = { version = "1.0.79", optional = true }
