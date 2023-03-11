@@ -65,7 +65,7 @@ encoding = { version = "0.2.33", optional = true }
 
 # external system dependencies
 [package.metadata.system-deps]
-libudev = "1.7.6"
+libudev = { version = "1.7.6", feature = "backend_udev" }
 xkbcommon = "0.0.0"
 libinput = "1.22.0"
 gbm = "1.0.0"
