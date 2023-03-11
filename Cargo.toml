@@ -68,7 +68,7 @@ encoding = { version = "0.2.33", optional = true }
 libudev = { version = "1.7.6", feature = "backend_udev" }
 xkbcommon = "0.0.0"
 libinput = "1.22.0"
-gbm = "1.0.0"
+gbm = { version = "1.0.0", feature = "backend_gbm" }
 
 libseat = { version = "0.1.7", feature = "libseat" }
 
