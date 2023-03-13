@@ -1,3 +1,5 @@
+#![forbid(unsafe_op_in_unsafe_fn)]
+
 use std::{
     cell::Cell,
     num::NonZeroUsize,
@@ -17,8 +19,10 @@ use tracing::{debug, instrument, trace};
 
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
 
-static SIGBUS_INIT: Once = Once::new();
+/// SAFETY:
+/// This will be only set in the `SIGBUS_INIT` closure, hence only once!
 static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
+static SIGBUS_INIT: Once = Once::new();
 
 #[derive(Debug)]
 pub struct Pool {
@@ -205,37 +209,45 @@ impl Drop for MemMap {
     }
 }
 
+/// A simple wrapper with some default arguments for `nix::mman::mmap`.
 unsafe fn map(fd: RawFd, size: NonZeroUsize) -> Result<*mut u8, ()> {
-    let ret = mman::mmap(
-        None,
-        size,
-        mman::ProtFlags::PROT_READ | mman::ProtFlags::PROT_WRITE,
-        mman::MapFlags::MAP_SHARED,
-        fd,
-        0,
-    );
+    let ret = unsafe {
+        mman::mmap(
+            None,
+            size,
+            mman::ProtFlags::PROT_READ | mman::ProtFlags::PROT_WRITE,
+            mman::MapFlags::MAP_SHARED,
+            fd,
+            0,
+        )
+    };
     ret.map(|p| p as *mut u8).map_err(|_| ())
 }
 
+/// A simple wrapper for `nix::mman::munmap`.
 unsafe fn unmap(ptr: *mut u8, size: usize) -> Result<(), ()> {
-    let ret = mman::munmap(ptr as *mut _, size);
+    let ret = unsafe { mman::munmap(ptr as *mut _, size) };
     ret.map_err(|_| ())
 }
 
 unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
     let size = NonZeroUsize::try_from(size).map_err(|_| ())?;
     let addr = NonZeroUsize::try_from(ptr as usize).map_err(|_| ())?;
-    let ret = mman::mmap(
-        Some(addr),
-        size,
-        mman::ProtFlags::PROT_READ,
-        mman::MapFlags::MAP_ANONYMOUS | mman::MapFlags::MAP_PRIVATE | mman::MapFlags::MAP_FIXED,
-        -1,
-        0,
-    );
+    let ret = unsafe {
+        mman::mmap(
+            Some(addr),
+            size,
+            mman::ProtFlags::PROT_READ,
+            mman::MapFlags::MAP_ANONYMOUS | mman::MapFlags::MAP_PRIVATE | mman::MapFlags::MAP_FIXED,
+            -1,
+            0,
+        )
+    };
     ret.map(|_| ()).map_err(|_| ())
 }
 
+/// SAFETY: This function will be called only ONCE and that is in the closure of
+/// `SIGBUS_INIT`.
 unsafe fn place_sigbus_handler() {
     // create our sigbus handler
     let action = SigAction::new(
@@ -243,17 +255,17 @@ unsafe fn place_sigbus_handler() {
         signal::SaFlags::SA_NODEFER,
         signal::SigSet::empty(),
     );
-    match signal::sigaction(Signal::SIGBUS, &action) {
-        Ok(old_signal) => {
+    match unsafe { signal::sigaction(Signal::SIGBUS, &action) } {
+        Ok(old_signal) => unsafe {
             OLD_SIGBUS_HANDLER = Box::into_raw(Box::new(old_signal));
-        }
+        },
         Err(e) => panic!("sigaction failed sor SIGBUS handler: {:?}", e),
     }
 }
 
 unsafe fn reraise_sigbus() {
     // reset the old sigaction
-    let _ = signal::sigaction(Signal::SIGBUS, &*OLD_SIGBUS_HANDLER);
+    let _ = unsafe { signal::sigaction(Signal::SIGBUS, &*OLD_SIGBUS_HANDLER) };
     let _ = signal::raise(Signal::SIGBUS);
 }
 
@@ -280,10 +292,13 @@ extern "C" fn sigbus_handler(_signum: libc::c_int, info: *mut libc::siginfo_t, _
     });
 }
 
-// This was shamelessly stolen from rustc's source
-// so I expect it to work whenever rust works
-// I guess it's good enough?
-
+/// This was shamelessly stolen from rustc's source
+/// so I expect it to work whenever rust works
+/// I guess it's good enough?
+///
+/// SAFETY:
+/// The returned pointer points to a struct. Make sure that you use it
+/// appropriately.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
     #[repr(C)]
@@ -292,7 +307,7 @@ unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
         si_addr: *mut libc::c_void,
     }
 
-    (*(info as *const siginfo_t)).si_addr
+    unsafe { (*(info as *const siginfo_t)).si_addr }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
