@@ -475,19 +475,21 @@ unsafe fn compile_shader(
     variant: ffi::types::GLuint,
     src: &'static str,
 ) -> Result<ffi::types::GLuint, Gles2Error> {
-    let shader = gl.CreateShader(variant);
-    gl.ShaderSource(
-        shader,
-        1,
-        &src.as_ptr() as *const *const u8 as *const *const ffi::types::GLchar,
-        &(src.len() as i32) as *const _,
-    );
-    gl.CompileShader(shader);
+    let shader = unsafe { gl.CreateShader(variant) };
+    unsafe {
+        gl.ShaderSource(
+            shader,
+            1,
+            &src.as_ptr() as *const *const u8 as *const *const ffi::types::GLchar,
+            &(src.len() as i32) as *const _,
+        )
+    };
+    unsafe { gl.CompileShader(shader) };
 
     let mut status = ffi::FALSE as i32;
-    gl.GetShaderiv(shader, ffi::COMPILE_STATUS, &mut status as *mut _);
+    unsafe { gl.GetShaderiv(shader, ffi::COMPILE_STATUS, &mut status as *mut _) };
     if status == ffi::FALSE as i32 {
-        gl.DeleteShader(shader);
+        unsafe { gl.DeleteShader(shader) };
         return Err(Gles2Error::ShaderCompileError(src));
     }
 
@@ -499,21 +501,23 @@ unsafe fn link_program(
     vert_src: &'static str,
     frag_src: &'static str,
 ) -> Result<ffi::types::GLuint, Gles2Error> {
-    let vert = compile_shader(gl, ffi::VERTEX_SHADER, vert_src)?;
-    let frag = compile_shader(gl, ffi::FRAGMENT_SHADER, frag_src)?;
-    let program = gl.CreateProgram();
-    gl.AttachShader(program, vert);
-    gl.AttachShader(program, frag);
-    gl.LinkProgram(program);
-    gl.DetachShader(program, vert);
-    gl.DetachShader(program, frag);
-    gl.DeleteShader(vert);
-    gl.DeleteShader(frag);
+    let vert = unsafe { compile_shader(gl, ffi::VERTEX_SHADER, vert_src)? };
+    let frag = unsafe { compile_shader(gl, ffi::FRAGMENT_SHADER, frag_src)? };
+    let program = unsafe { gl.CreateProgram() };
+    unsafe {
+        gl.AttachShader(program, vert);
+        gl.AttachShader(program, frag);
+        gl.LinkProgram(program);
+        gl.DetachShader(program, vert);
+        gl.DetachShader(program, frag);
+        gl.DeleteShader(vert);
+        gl.DeleteShader(frag);
+    }
 
     let mut status = ffi::FALSE as i32;
-    gl.GetProgramiv(program, ffi::LINK_STATUS, &mut status as *mut _);
+    unsafe { gl.GetProgramiv(program, ffi::LINK_STATUS, &mut status as *mut _) };
     if status == ffi::FALSE as i32 {
-        gl.DeleteProgram(program);
+        unsafe { gl.DeleteProgram(program) };
         return Err(Gles2Error::ProgramLinkError);
     }
 
@@ -521,7 +525,7 @@ unsafe fn link_program(
 }
 
 unsafe fn texture_program(gl: &ffi::Gles2, frag: &'static str) -> Result<Gles2TexProgram, Gles2Error> {
-    let program = link_program(gl, shaders::VERTEX_SHADER, frag)?;
+    let program = unsafe { link_program(gl, shaders::VERTEX_SHADER, frag)? };
 
     let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
     let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
@@ -533,14 +537,19 @@ unsafe fn texture_program(gl: &ffi::Gles2, frag: &'static str) -> Result<Gles2Te
 
     Ok(Gles2TexProgram {
         program,
-        uniform_tex: gl.GetUniformLocation(program, tex.as_ptr() as *const ffi::types::GLchar),
-        uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
-        uniform_tex_matrix: gl.GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-        uniform_alpha: gl.GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
-        uniform_tint: gl.GetUniformLocation(program, tint.as_ptr() as *const ffi::types::GLchar),
-        attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
-        attrib_vert_position: gl
-            .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
+        uniform_tex: unsafe { gl.GetUniformLocation(program, tex.as_ptr() as *const ffi::types::GLchar) },
+        uniform_matrix: unsafe {
+            gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar)
+        },
+        uniform_tex_matrix: unsafe {
+            gl.GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar)
+        },
+        uniform_alpha: unsafe { gl.GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar) },
+        uniform_tint: unsafe { gl.GetUniformLocation(program, tint.as_ptr() as *const ffi::types::GLchar) },
+        attrib_vert: unsafe { gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar) },
+        attrib_vert_position: unsafe {
+            gl.GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar)
+        },
     })
 }
 
