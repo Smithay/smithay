@@ -62,8 +62,8 @@
 //! [^device_eq]: Two physical devices are only equal if both physical devices are created from the same
 //! instance and have the same physical device handle.
 
-#![warn(missing_debug_implementations)]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![warn(missing_debug_implementations)]
 
 use std::{
     env::{self, VarError},
