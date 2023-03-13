@@ -36,6 +36,7 @@ pub struct X11Surface {
     override_redirect: bool,
     conn: Weak<RustConnection>,
     atoms: super::Atoms,
+    root: u32,
     pub(crate) state: Arc<Mutex<SharedSurfaceState>>,
     user_data: Arc<UserDataMap>,
 }
@@ -131,6 +132,7 @@ impl X11Surface {
         override_redirect: bool,
         conn: Weak<RustConnection>,
         atoms: super::Atoms,
+        root: u32,
         geometry: Rectangle<i32, Logical>,
     ) -> X11Surface {
         X11Surface {
@@ -139,6 +141,7 @@ impl X11Surface {
             override_redirect,
             conn,
             atoms,
+            root,
             state: Arc::new(Mutex::new(SharedSurfaceState {
                 alive: true,
                 wl_surface: None,
@@ -833,6 +836,15 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
                     {
                         warn!("Unable to set focus for X11Surface ({:?}): {}", self.window, err);
                     }
+                    if let Err(err) = conn.change_property32(
+                        PropMode::REPLACE,
+                        self.root,
+                        self.atoms._NET_ACTIVE_WINDOW,
+                        AtomEnum::WINDOW,
+                        &[self.window],
+                    ) {
+                        warn!("Unable to set `_NET_ACTIVE_WINDOW`: {}", err);
+                    }
                     let _ = conn.flush();
                 }
             }
@@ -866,6 +878,15 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
         } else if let Some(conn) = self.conn.upgrade() {
             if let Err(err) = conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME) {
                 warn!("Unable to unfocus X11Surface ({:?}): {}", self.window, err);
+            }
+            if let Err(err) = conn.change_property32(
+                PropMode::REPLACE,
+                self.root,
+                self.atoms._NET_ACTIVE_WINDOW,
+                AtomEnum::WINDOW,
+                &[x11rb::NONE],
+            ) {
+                warn!("Unable to set `_NET_ACTIVE_WINDOW`: {}", err);
             }
             let _ = conn.flush();
         }

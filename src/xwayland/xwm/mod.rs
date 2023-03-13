@@ -854,6 +854,7 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
                 n.override_redirect,
                 Arc::downgrade(&conn),
                 xwm.atoms,
+                xwm.screen.root,
                 Rectangle::from_loc_and_size(
                     (geo.x as i32, geo.y as i32),
                     (geo.width as i32, geo.height as i32),
@@ -1099,24 +1100,6 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window) {
                 surface.update_properties(Some(n.atom))?;
             }
-        }
-        Event::FocusIn(n) => {
-            conn.change_property32(
-                PropMode::REPLACE,
-                xwm.screen.root,
-                xwm.atoms._NET_ACTIVE_WINDOW,
-                AtomEnum::WINDOW,
-                &[n.event],
-            )?;
-        }
-        Event::FocusOut(n) => {
-            conn.change_property32(
-                PropMode::REPLACE,
-                xwm.screen.root,
-                xwm.atoms._NET_ACTIVE_WINDOW,
-                AtomEnum::WINDOW,
-                &[n.event],
-            )?;
         }
         Event::ClientMessage(msg) => {
             if let Some(reply) = conn.get_atom_name(msg.type_)?.reply_unchecked()? {
