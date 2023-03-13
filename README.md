@@ -36,12 +36,14 @@ Also:
 You'll need to install the following dependencies (note, that those package
 names may vary depending on your OS and linux distribution):
 
-- `libudev`         # | these are needed for the "Udev/DRM backend"
-- `libxkbcommon`    # |
-- `libinput`        # |
-- `libgbm`          # |
-- `libwayland`      # |
-- `libseat` (if you want to make use of [`libseat`](https://git.sr.ht/~kennylevinsen/seatd))
+- `libwayland`
+- `libxkbcommon`
+
+##### These are needed for the "Udev/DRM backend"
+- `libudev`
+- `libinput`
+- `libgbm`
+- [`libseat`](https://git.sr.ht/~kennylevinsen/seatd)
 
 If you want to enable X11 support (to run X11 applications within anvil),
 then you'll need to install the following packages as well:
