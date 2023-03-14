@@ -31,6 +31,26 @@ Also:
 
 ## Anvil
 
+### Dependencies
+
+You'll need to install the following dependencies (note, that those package
+names may vary depending on your OS and linux distribution):
+
+- `libwayland`
+- `libxkbcommon`
+
+##### These are needed for the "Udev/DRM backend"
+- `libudev`
+- `libinput`
+- `libgbm`
+- [`libseat`](https://git.sr.ht/~kennylevinsen/seatd)
+
+If you want to enable X11 support (to run X11 applications within anvil),
+then you'll need to install the following packages as well:
+    - `xwayland`
+
+### Build and run
+
 Like others, Smithay as a compositor library has its own sample compositor: anvil.
 
 You can run it with cargo after having cloned this repository:
