@@ -58,7 +58,7 @@ pub(crate) struct SharedSurfaceState {
     hints: Option<WmHints>,
     normal_hints: Option<WmSizeHints>,
     transient_for: Option<X11Window>,
-    net_state: Vec<Atom>,
+    net_state: HashSet<Atom>,
     motif_hints: Vec<u32>,
     window_type: Vec<Atom>,
 }
@@ -151,7 +151,7 @@ impl X11Surface {
                 hints: None,
                 normal_hints: None,
                 transient_for: None,
-                net_state: Vec::new(),
+                net_state: HashSet::new(),
                 motif_hints: vec![0; 5],
                 window_type: Vec::new(),
             })),
@@ -472,41 +472,35 @@ impl X11Surface {
     }
 
     fn change_net_state(&self, added: &[Atom], removed: &[Atom]) -> Result<(), ConnectionError> {
-        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        conn.grab_server()?;
-        let _guard = scopeguard::guard((), |_| {
-            let _ = conn.ungrab_server();
-            let _ = conn.flush();
-        });
+        let mut state = self.state.lock().unwrap();
 
-        let props = conn
-            .get_property(
-                false,
+        let mut changed = false;
+        for atom in removed {
+            changed |= state.net_state.remove(atom);
+        }
+        for atom in added {
+            changed |= state.net_state.insert(*atom);
+        }
+
+        if changed {
+            let new_props = Vec::from_iter(state.net_state.iter().copied());
+
+            let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+            conn.grab_server()?;
+            let _guard = scopeguard::guard((), |_| {
+                let _ = conn.ungrab_server();
+                let _ = conn.flush();
+            });
+
+            conn.change_property32(
+                PropMode::REPLACE,
                 self.window,
                 self.atoms._NET_WM_STATE,
                 AtomEnum::ATOM,
-                0,
-                1024,
-            )?
-            .reply_unchecked()?;
-        let mut new_props = props
-            .and_then(|props| Some(props.value32()?.collect::<HashSet<_>>()))
-            .unwrap_or_default();
-        new_props.retain(|p| !removed.contains(p));
-        new_props.extend(added);
-        let new_props = Vec::from_iter(new_props.into_iter());
-
-        conn.change_property32(
-            PropMode::REPLACE,
-            self.window,
-            self.atoms._NET_WM_STATE,
-            AtomEnum::ATOM,
-            &new_props,
-        )?;
-        {
-            let mut state = self.state.lock().unwrap();
-            state.net_state = new_props;
+                &new_props,
+            )?;
         }
+
         Ok(())
     }
 
@@ -533,7 +527,6 @@ impl X11Surface {
             Some(atom) if atom == self.atoms.WM_HINTS => self.update_hints(),
             Some(atom) if atom == AtomEnum::WM_NORMAL_HINTS.into() => self.update_normal_hints(),
             Some(atom) if atom == AtomEnum::WM_TRANSIENT_FOR.into() => self.update_transient_for(),
-            Some(atom) if atom == self.atoms._NET_WM_STATE => self.update_net_state(),
             Some(atom) if atom == self.atoms._NET_WM_WINDOW_TYPE => self.update_net_window_type(),
             Some(atom) if atom == self.atoms._MOTIF_WM_HINTS => self.update_motif_hints(),
             Some(_) => Ok(()), // unknown
@@ -680,31 +673,6 @@ impl X11Surface {
 
         let mut state = self.state.lock().unwrap();
         state.title = title;
-        Ok(())
-    }
-
-    fn update_net_state(&self) -> Result<(), ConnectionError> {
-        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let atoms = match conn
-            .get_property(
-                false,
-                self.window,
-                self.atoms._NET_WM_STATE,
-                AtomEnum::ATOM,
-                0,
-                1024,
-            )?
-            .reply_unchecked()
-        {
-            Ok(atoms) => atoms,
-            Err(ConnectionError::ParseError(_)) => return Ok(()),
-            Err(err) => return Err(err),
-        };
-
-        let mut state = self.state.lock().unwrap();
-        state.net_state = atoms
-            .and_then(|atoms| Some(atoms.value32()?.collect::<Vec<_>>()))
-            .unwrap_or_default();
         Ok(())
     }
 
