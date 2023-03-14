@@ -727,7 +727,7 @@ impl X11Surface {
         };
 
         let mut state = self.state.lock().unwrap();
-        state.net_state = atoms
+        state.window_type = atoms
             .and_then(|atoms| Some(atoms.value32()?.collect::<Vec<_>>()))
             .unwrap_or_default();
         Ok(())
