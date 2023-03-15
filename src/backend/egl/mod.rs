@@ -83,7 +83,7 @@ impl ::std::error::Error for EglExtensionNotSupportedError {}
 pub unsafe fn get_proc_address(symbol: &str) -> *const c_void {
     let addr = CString::new(symbol.as_bytes()).unwrap();
     let addr = addr.as_ptr();
-    unsafe {ffi::egl::GetProcAddress(addr) as *const _}
+    ffi::egl::GetProcAddress(addr) as *const _
 }
 
 /// Error that can occur when accessing an EGL buffer

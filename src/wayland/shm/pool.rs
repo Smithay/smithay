@@ -18,7 +18,6 @@ use tracing::{debug, instrument, trace};
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
 
 static SIGBUS_INIT: Once = Once::new();
-
 static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
 
 #[derive(Debug)]
@@ -293,7 +292,7 @@ unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
         si_addr: *mut libc::c_void,
     }
 
-    unsafe {(*(info as *const siginfo_t)).si_addr}
+    (*(info as *const siginfo_t)).si_addr
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "android")))]

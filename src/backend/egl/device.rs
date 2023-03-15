@@ -261,7 +261,7 @@ impl EGLDevice {
 ///     - [`EGL_EXT_device_base`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_device_base.txt)
 ///     - [`EGL_EXT_device_query`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_device_query.txt)
 unsafe fn device_extensions(device: EGLDeviceEXT) -> Result<Vec<String>, EGLError> {
-    let raw_extensions = wrap_egl_call(|| unsafe {
+    let raw_extensions = wrap_egl_call(|| {
         ffi::egl::QueryDeviceStringEXT(device, ffi::egl::EXTENSIONS as ffi::egl::types::EGLint)
     })?;
 
@@ -269,7 +269,7 @@ unsafe fn device_extensions(device: EGLDeviceEXT) -> Result<Vec<String>, EGLErro
     // 1) The string returned by `eglQueryDeviceStringEXT` is string which will exist as long
     //    as the EGLDisplay is valid. Safety requirements for the function ensure this.
     // 2) The string returned by EGL is null terminated.
-    let c_extensions = unsafe { CStr::from_ptr(raw_extensions) };
+    let c_extensions = CStr::from_ptr(raw_extensions);
 
     Ok(c_extensions
         .to_str()

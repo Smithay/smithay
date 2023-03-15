@@ -56,9 +56,8 @@ impl EGLContext {
         assert!(!config_id.is_null(), "EGL configuration id pointer is null");
         assert!(!context.is_null(), "EGLContext pointer is null");
 
-        let display = unsafe { EGLDisplay::from_raw(display, config_id)? };
-
-        let pixel_format = unsafe { display.get_pixel_format(config_id)? };
+        let display = EGLDisplay::from_raw(display, config_id)?;
+        let pixel_format = display.get_pixel_format(config_id)?;
 
         let span = info_span!(parent: &display.span, "egl_context", ptr = context as usize);
 
@@ -219,7 +218,7 @@ impl EGLContext {
     /// being unbound again (see [`EGLContext::unbind`]).
     #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub unsafe fn make_current(&self) -> Result<(), MakeCurrentError> {
-        wrap_egl_call(|| unsafe {
+        wrap_egl_call(|| {
             ffi::egl::MakeCurrent(
                 **self.display.get_display_handle(),
                 ffi::egl::NO_SURFACE,
@@ -239,9 +238,7 @@ impl EGLContext {
     /// This function is marked unsafe, because the context cannot be made current on another thread without
     /// being unbound again (see [`EGLContext::unbind`]).
     pub unsafe fn make_current_with_surface(&self, surface: &EGLSurface) -> Result<(), MakeCurrentError> {
-        unsafe {
-            self.make_current_with_draw_and_read_surface(surface, surface)
-        }
+        self.make_current_with_draw_and_read_surface(surface, surface)
     }
 
     /// Makes the OpenGL context the current context in the current thread with surfaces to
@@ -259,7 +256,7 @@ impl EGLContext {
     ) -> Result<(), MakeCurrentError> {
         let draw_surface_ptr = draw_surface.surface.load(Ordering::SeqCst);
         let read_surface_ptr = read_surface.surface.load(Ordering::SeqCst);
-        wrap_egl_call(|| unsafe {
+        wrap_egl_call(|| {
             ffi::egl::MakeCurrent(
                 **self.display.get_display_handle(),
                 draw_surface_ptr,
