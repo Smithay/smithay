@@ -2467,7 +2467,7 @@ where
         };
 
         let cursor_buffer_size = self.cursor_size.to_logical(1).to_buffer(1, Transform::Normal);
-        let offscreen_buffer = match renderer.create_buffer(cursor_buffer_size) {
+        let offscreen_buffer = match renderer.create_buffer(DrmFourcc::Argb8888, cursor_buffer_size) {
             Ok(buffer) => buffer,
             Err(err) => {
                 debug!(

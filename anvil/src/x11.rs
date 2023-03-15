@@ -13,7 +13,8 @@ use crate::{
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::ImportMem;
+use smithay::backend::{allocator::Fourcc, renderer::ImportMem};
+
 use smithay::{
     backend::{
         allocator::{
@@ -178,7 +179,7 @@ pub fn run_x11() {
         info!("EGL hardware-acceleration enabled");
     }
 
-    let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+    let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
     let dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
         .build()
         .unwrap();
@@ -208,6 +209,7 @@ pub fn run_x11() {
     let fps_texture = renderer
         .import_memory(
             &fps_image.to_rgba8(),
+            Fourcc::Abgr8888,
             (fps_image.width() as i32, fps_image.height() as i32).into(),
             false,
         )

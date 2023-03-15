@@ -315,8 +315,8 @@ where
     let texture = renderer
         .import_dmabuf(&buffer, None)
         .expect("Failed to import dmabuf");
-    let offscreen =
-        Offscreen::<T>::create_buffer(renderer, (w, h).into()).expect("Failed to create offscreen buffer");
+    let offscreen = Offscreen::<T>::create_buffer(renderer, Fourcc::Abgr8888, (w, h).into())
+        .expect("Failed to create offscreen buffer");
     renderer.bind(offscreen).expect("Failed to bind offscreen buffer");
     let mut frame = renderer
         .render((w, h).into(), Transform::Normal)

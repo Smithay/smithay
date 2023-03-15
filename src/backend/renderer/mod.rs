@@ -14,7 +14,7 @@ use crate::utils::{Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Siz
 use cgmath::Matrix3;
 
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::compositor::SurfaceData;
+use crate::wayland::{compositor::SurfaceData, shm::fourcc_to_shm_format};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
@@ -24,7 +24,7 @@ pub mod gles2;
 #[cfg(feature = "renderer_glow")]
 pub mod glow;
 
-use crate::backend::allocator::{dmabuf::Dmabuf, Format};
+use crate::backend::allocator::{dmabuf::Dmabuf, Format, Fourcc};
 #[cfg(all(
     feature = "wayland_frontend",
     feature = "backend_egl",
@@ -119,6 +119,15 @@ pub trait Texture {
     fn width(&self) -> u32;
     /// Height of the texture plane
     fn height(&self) -> u32;
+
+    /// Format of the texture, if available.
+    ///
+    /// In case the format is hidden by the implementation,
+    /// it should be assumed, that the pixel representation cannot be read.
+    ///
+    /// Thus [`ExportMem::copy_texture`], if implemented, will not succeed for this texture.
+    /// Note that this does **not** mean every texture with a format is guaranteed to be copyable.
+    fn format(&self) -> Option<Fourcc>;
 }
 
 /// A downloaded texture buffer
@@ -126,6 +135,11 @@ pub trait TextureMapping: Texture {
     /// Returns if the mapped buffer is flipped on the y-axis
     /// (compared to the lower left being (0, 0))
     fn flipped(&self) -> bool;
+
+    /// Format of the texture
+    fn format(&self) -> Fourcc {
+        Texture::format(self).expect("Texture Mappings need to have a format")
+    }
 }
 
 /// Helper trait for [`Renderer`], which defines a rendering api for a currently in-progress frame during [`Renderer::render`].
@@ -272,8 +286,13 @@ pub trait Offscreen<Target>: Renderer + Bind<Target> {
     ///
     /// This call *may* fail, if (but not limited to):
     /// - The maximum amount of framebuffers for this renderer would be exceeded
+    /// - The format is not supported to be rendered into
     /// - The size is too large for a framebuffer
-    fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Target, <Self as Renderer>::Error>;
+    fn create_buffer(
+        &mut self,
+        format: Fourcc,
+        size: Size<i32, BufferCoord>,
+    ) -> Result<Target, <Self as Renderer>::Error>;
 }
 
 /// Trait for Renderers supporting importing wl_buffers using shared memory.
@@ -304,9 +323,8 @@ pub trait ImportMemWl: ImportMem {
     /// Returns supported formats for shared memory buffers.
     ///
     /// Will always contain At least `Argb8888` and `Xrgb8888`.
-    fn shm_formats(&self) -> &[wl_shm::Format] {
-        // Mandatory
-        &[wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888]
+    fn shm_formats(&self) -> Box<dyn Iterator<Item = wl_shm::Format>> {
+        Box::new(self.mem_formats().flat_map(fourcc_to_shm_format))
     }
 }
 
@@ -325,11 +343,13 @@ pub trait ImportMem: Renderer {
     /// This is a texture specific property, so future uploads to the same texture via [`ImportMem::update_memory`]
     /// will also be interpreted as flipped.
     ///
-    /// The provided data slice needs to be in RGBA8 format, its length should thus be `size.w * size.h * 4`.
+    /// The provided data slice needs to be in a format supported as indicated by [`ImportMem::mem_formats`].
+    /// Its length should thus be `size.w * size.h * bits_per_pixel`.
     /// Anything beyond will be truncated, if the buffer is too small an error will be returned.
     fn import_memory(
         &mut self,
         data: &[u8],
+        format: Fourcc,
         size: Size<i32, BufferCoord>,
         flipped: bool,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error>;
@@ -338,8 +358,8 @@ pub trait ImportMem: Renderer {
     ///
     /// This operation needs no bound or default rendering target.
     ///
-    /// The provided data slice needs to be in RGBA8 format and the same size of the texture.
-    /// Its length should this be `texture.size().w * texture.size().h * 4`.
+    /// The provided data slice needs to be in the same format used to create the texture and the same size of the texture.
+    /// Its length should this be `texture.size().w * texture.size().h * bits_per_pixel`.
     /// Anything beyond will be ignored, if the buffer is too small an error will be returned.
     ///
     /// This function *may* error, if (but not limited to):
@@ -354,6 +374,9 @@ pub trait ImportMem: Renderer {
         data: &[u8],
         region: Rectangle<i32, BufferCoord>,
     ) -> Result<(), <Self as Renderer>::Error>;
+
+    /// Returns supported formats for memory imports.
+    fn mem_formats(&self) -> Box<dyn Iterator<Item = Fourcc>>;
 }
 
 #[cfg(all(
@@ -440,8 +463,8 @@ pub trait ImportDmaWl: ImportDma {
 /// Trait for Renderers supporting importing dmabufs.
 pub trait ImportDma: Renderer {
     /// Returns supported formats for dmabufs.
-    fn dmabuf_formats<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Format> + 'a> {
-        Box::new([].iter())
+    fn dmabuf_formats(&self) -> Box<dyn Iterator<Item = Format>> {
+        Box::new(std::iter::empty())
     }
 
     /// Import a given raw dmabuf into the renderer.
@@ -552,6 +575,7 @@ pub trait ExportMem: Renderer {
         &mut self,
         region: Rectangle<i32, BufferCoord>,
     ) -> Result<Self::TextureMapping, <Self as Renderer>::Error>;
+
     /// Copies the contents of the passed texture.
     /// *Note*: This function may change or invalidate the current bind.
     ///
@@ -565,9 +589,10 @@ pub trait ExportMem: Renderer {
         texture: &Self::TextureId,
         region: Rectangle<i32, BufferCoord>,
     ) -> Result<Self::TextureMapping, Self::Error>;
+
     /// Returns a read-only pointer to a previously created texture mapping.
     ///
-    /// The format of the returned slice is RGBA8.
+    /// The format of the returned slice is given by [`Texture::format`] of the texture mapping.
     ///
     /// This function *may* fail, if (but not limited to):
     /// - There is not enough space in memory

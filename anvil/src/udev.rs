@@ -384,6 +384,7 @@ pub fn run_udev() {
         let fps_texture = renderer
             .import_memory(
                 &fps_image.to_rgba8(),
+                Fourcc::Abgr8888,
                 (fps_image.width() as i32, fps_image.height() as i32).into(),
                 false,
             )
@@ -1268,6 +1269,7 @@ impl AnvilState<UdevData> {
                 let texture = TextureBuffer::from_memory(
                     &mut renderer,
                     &frame.pixels_rgba,
+                    Fourcc::Abgr8888,
                     (frame.width as i32, frame.height as i32),
                     false,
                     1,

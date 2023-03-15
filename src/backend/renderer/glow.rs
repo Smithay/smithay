@@ -11,7 +11,7 @@ use crate::backend::renderer::{ImportDmaWl, ImportMemWl};
 use crate::backend::{egl::display::EGLBufferReader, renderer::ImportEgl};
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Format},
+        allocator::{dmabuf::Dmabuf, Format, Fourcc},
         egl::EGLContext,
         renderer::{
             element::UnderlyingStorage,
@@ -24,7 +24,7 @@ use crate::{
 };
 
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::wl_buffer;
+use wayland_server::protocol::{wl_buffer, wl_shm};
 
 use glow::Context;
 use std::{
@@ -303,16 +303,21 @@ impl ImportMemWl for GlowRenderer {
     ) -> Result<Gles2Texture, Gles2Error> {
         self.gl.import_shm_buffer(buffer, surface, damage)
     }
+
+    fn shm_formats(&self) -> Box<dyn Iterator<Item = wl_shm::Format>> {
+        self.gl.shm_formats()
+    }
 }
 
 impl ImportMem for GlowRenderer {
     fn import_memory(
         &mut self,
         data: &[u8],
+        format: Fourcc,
         size: Size<i32, BufferCoord>,
         flipped: bool,
     ) -> Result<Gles2Texture, Gles2Error> {
-        self.gl.import_memory(data, size, flipped)
+        self.gl.import_memory(data, format, size, flipped)
     }
 
     fn update_memory(
@@ -322,6 +327,10 @@ impl ImportMem for GlowRenderer {
         region: Rectangle<i32, BufferCoord>,
     ) -> Result<(), <Self as Renderer>::Error> {
         self.gl.update_memory(texture, data, region)
+    }
+
+    fn mem_formats(&self) -> Box<dyn Iterator<Item = Fourcc>> {
+        self.gl.mem_formats()
     }
 }
 
@@ -364,7 +373,7 @@ impl ImportDma for GlowRenderer {
     ) -> Result<Gles2Texture, Gles2Error> {
         self.gl.import_dmabuf(buffer, damage)
     }
-    fn dmabuf_formats<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Format> + 'a> {
+    fn dmabuf_formats(&self) -> Box<dyn Iterator<Item = Format>> {
         self.gl.dmabuf_formats()
     }
 }
@@ -423,8 +432,8 @@ impl<T> Offscreen<T> for GlowRenderer
 where
     Gles2Renderer: Offscreen<T>,
 {
-    fn create_buffer(&mut self, size: Size<i32, BufferCoord>) -> Result<T, Gles2Error> {
-        self.gl.create_buffer(size)
+    fn create_buffer(&mut self, format: Fourcc, size: Size<i32, BufferCoord>) -> Result<T, Gles2Error> {
+        self.gl.create_buffer(format, size)
     }
 }
 

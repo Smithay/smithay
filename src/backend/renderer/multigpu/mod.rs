@@ -489,7 +489,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                 let dmabuf = get_dmabuf(buffer).unwrap();
                 let format = dmabuf.format();
 
-                if target_device.renderer().dmabuf_formats().any(|f| f == &format) {
+                if target_device.renderer().dmabuf_formats().any(|f| f == format) {
                     match target_device
                         .renderer_mut()
                         .import_dma_buffer(buffer, Some(surface), damage)
@@ -834,17 +834,21 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn create_buffer(&mut self, size: Size<i32, BufferCoords>) -> Result<Target, <Self as Renderer>::Error> {
+    fn create_buffer(
+        &mut self,
+        format: Fourcc,
+        size: Size<i32, BufferCoords>,
+    ) -> Result<Target, <Self as Renderer>::Error> {
         if let Some(target) = self.target.as_mut() {
             target
                 .device
                 .renderer_mut()
-                .create_buffer(size)
+                .create_buffer(format, size)
                 .map_err(Error::Target)
         } else {
             self.render
                 .renderer_mut()
-                .create_buffer(size)
+                .create_buffer(format, size)
                 .map_err(Error::Render)
         }
     }
@@ -878,7 +882,7 @@ where
 
     fn supported_formats(&self) -> Option<HashSet<crate::backend::allocator::Format>> {
         if let Some(target) = self.target.as_ref() {
-            target.device.renderer().supported_formats()
+            Bind::<Target>::supported_formats(target.device.renderer())
         } else {
             Bind::<Target>::supported_formats(self.render.renderer())
         }
@@ -937,7 +941,7 @@ where
 
             if let Some((_, dmabuf)) = &target.cached_buffer {
                 if dmabuf.size() != buffer_size
-                    || dmabuf.format().code != target.format
+                    || BufferTrait::format(dmabuf).code != target.format
                     || self.render.renderer_mut().bind(dmabuf.clone()).is_err()
                 {
                     *target.cached_buffer = None;
@@ -947,8 +951,7 @@ where
             if target.cached_buffer.is_none() {
                 let target_formats = ImportDma::dmabuf_formats(target.device.renderer())
                     .filter(|format| format.code == target.format)
-                    .cloned()
-                    .collect::<HashSet<_>>();
+                    .collect::<HashSet<Format>>();
                 let render_formats =
                     Bind::<Dmabuf>::supported_formats(self.render.renderer()).unwrap_or_default();
                 let formats = target_formats.intersection(&render_formats);
@@ -1157,24 +1160,19 @@ where
                 let mut mappings = Vec::new();
                 for rect in copy_rects {
                     let mapping = (
-                        render
-                            .renderer_mut()
-                            .copy_framebuffer(rect)
-                            .map_err(Error::Render)?,
+                        ExportMem::copy_framebuffer(render.renderer_mut(), rect).map_err(Error::Render)?,
                         rect,
                     );
                     mappings.push(mapping);
                 }
 
                 for (mapping, rect) in mappings {
-                    let slice = render
-                        .renderer_mut()
-                        .map_texture(&mapping)
+                    let slice = ExportMem::map_texture(render.renderer_mut(), &mapping)
                         .map_err(Error::Render::<R, T>)?;
                     let texture = target
                         .device
                         .renderer_mut()
-                        .import_memory(slice, rect.size, false)
+                        .import_memory(slice, TextureMapping::format(&mapping), rect.size, false)
                         .map_err(Error::Target)?;
                     let mut frame = target
                         .device
@@ -1227,6 +1225,7 @@ pub struct MultiTexture(Rc<RefCell<MultiTextureInternal>>);
 struct MultiTextureInternal {
     textures: HashMap<TypeId, HashMap<DrmNode, GpuSingleTexture>>,
     size: Size<i32, BufferCoords>,
+    format: Option<Fourcc>,
 }
 
 type DamageAnyTextureMappings = Vec<(Rectangle<i32, BufferCoords>, Box<dyn Any + 'static>)>;
@@ -1253,6 +1252,7 @@ impl MultiTexture {
                 Rc::new(RefCell::new(MultiTextureInternal {
                     textures: HashMap::new(),
                     size,
+                    format: None,
                 }))
             });
         {
@@ -1269,6 +1269,7 @@ impl MultiTexture {
         MultiTexture(Rc::new(RefCell::new(MultiTextureInternal {
             textures: HashMap::new(),
             size,
+            format: None,
         })))
     }
 
@@ -1302,6 +1303,13 @@ impl MultiTexture {
         <<A::Device as ApiDevice>::Renderer as Renderer>::TextureId: 'static,
     {
         let mut tex = self.0.borrow_mut();
+        let format = texture.format();
+        if format != tex.format && !tex.textures.is_empty() {
+            warn!(has = ?tex.format, got = ?format, "Multi-SubTexture with wrong format!");
+            return;
+        }
+        tex.format = format;
+
         trace!(
             "Inserting into: {:p} for {:?}: {:?}",
             self.0.as_ptr(),
@@ -1337,7 +1345,9 @@ impl MultiTexture {
         <T::Device as ApiDevice>::Renderer: ExportMem,
         <<T::Device as ApiDevice>::Renderer as ExportMem>::TextureMapping: 'static,
     {
-        let mut tex = self.0.borrow_mut();
+        let mut tex_ref = self.0.borrow_mut();
+        let tex = &mut *tex_ref;
+
         let textures = tex.textures.entry(TypeId::of::<R>()).or_default();
         let (old_texture, old_mapping) = textures
             .remove(&render)
@@ -1348,13 +1358,24 @@ impl MultiTexture {
                 .map(|tex| tex.size())
                 == Some(size)
         });
+
         let mut mappings = old_mapping
             .filter(|(old_src, _)| *old_src == source)
             .map(|(_, mappings)| mappings)
             .unwrap_or_default();
 
         // don't keep old mappings that are superseeded by new ones
+        let format = tex.format;
         let new_mappings = new_mappings
+            .filter(|(_, mapping)| {
+                let mapping_fmt = TextureMapping::format(mapping);
+                if old_texture.is_some() && Some(mapping_fmt) != format {
+                    warn!(has = ?format, got = ?mapping_fmt, "Multi-SubTexture Mapping with wrong format!");
+                    false
+                } else {
+                    true
+                }
+            })
             .map(|(r, m)| (r, Box::new(m) as Box<_>))
             .collect::<Vec<_>>();
         mappings.retain(|(region, _)| {
@@ -1383,6 +1404,9 @@ impl Texture for MultiTexture {
     }
     fn height(&self) -> u32 {
         self.0.borrow().size.h as u32
+    }
+    fn format(&self) -> Option<Fourcc> {
+        self.0.borrow().format
     }
 }
 
@@ -1505,8 +1529,8 @@ where
         Ok(texture)
     }
 
-    fn shm_formats(&self) -> &[wl_shm::Format] {
-        self.render.renderer().shm_formats()
+    fn shm_formats(&self) -> Box<dyn Iterator<Item = wl_shm::Format>> {
+        ImportMemWl::shm_formats(self.render.renderer())
     }
 }
 
@@ -1527,13 +1551,14 @@ where
     fn import_memory(
         &mut self,
         data: &[u8],
+        format: Fourcc,
         size: Size<i32, BufferCoords>,
         flipped: bool,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         let mem_texture = self
             .render
             .renderer_mut()
-            .import_memory(data, size, flipped)
+            .import_memory(data, format, size, flipped)
             .map_err(Error::Render)?;
         let mut texture = MultiTexture::new(size);
         texture.insert_texture::<R>(*self.render.node(), mem_texture);
@@ -1554,6 +1579,10 @@ where
             .renderer_mut()
             .update_memory(&mem_texture, data, region)
             .map_err(Error::Render)
+    }
+
+    fn mem_formats(&self) -> Box<dyn Iterator<Item = Fourcc>> {
+        ImportMem::mem_formats(self.render.renderer())
     }
 }
 
@@ -1608,8 +1637,8 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn dmabuf_formats<'c>(&'c self) -> Box<dyn Iterator<Item = &'c Format> + 'c> {
-        self.render.renderer().dmabuf_formats()
+    fn dmabuf_formats(&self) -> Box<dyn Iterator<Item = Format>> {
+        ImportDma::dmabuf_formats(self.render.renderer())
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
@@ -1683,17 +1712,15 @@ where
             None => (Vec::new(), self.other_renderers.iter_mut().collect()),
         };
         for import_renderer in first.into_iter().chain(last.into_iter()) {
-            if let Ok(dma_texture) = import_renderer
-                .renderer_mut()
-                .import_dmabuf(dmabuf, Some(&*new_damage))
+            if let Ok(dma_texture) =
+                ImportDma::import_dmabuf(import_renderer.renderer_mut(), dmabuf, Some(&*new_damage))
             {
                 let mappings = new_damage
                     .into_iter()
                     .map(|damage| {
-                        let mapping = import_renderer
-                            .renderer_mut()
-                            .copy_texture(&dma_texture, damage)
-                            .map_err(Error::Render)?;
+                        let mapping =
+                            ExportMem::copy_texture(import_renderer.renderer_mut(), &dma_texture, damage)
+                                .map_err(Error::Render)?;
                         Ok((damage, mapping))
                     })
                     .collect::<Result<Vec<_>, Error<R, T>>>()?;
@@ -1718,7 +1745,7 @@ where
         damage: Option<&[Rectangle<i32, BufferCoords>]>,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         let format = dmabuf.format();
-        if self.render.renderer().dmabuf_formats().any(|f| f == &format) {
+        if ImportDma::dmabuf_formats(self.render.renderer()).any(|f| f == format) {
             match self.render.renderer_mut().import_dmabuf(dmabuf, damage) {
                 Ok(imported) => {
                     texture.insert_texture::<R>(*self.render.node(), imported);
@@ -1825,10 +1852,14 @@ where
                     .map_texture(mapping)
                     .map_err(Error::Target)?;
                 Some(
-                    self.render
-                        .renderer_mut()
-                        .import_memory(mapped, mapping.size(), false)
-                        .map_err(Error::Render)?,
+                    ImportMem::import_memory(
+                        self.render.renderer_mut(),
+                        mapped,
+                        TextureMapping::format(mapping),
+                        mapping.size(),
+                        false,
+                    )
+                    .map_err(Error::Render)?,
                 )
             } else if let Some(source) = self
                 .other_renderers
@@ -1843,14 +1874,11 @@ where
                 .unwrap();
 
                 trace!("Importing mapping as full buffer {:?}", mapping.size());
-                let mapped = source
-                    .renderer_mut()
-                    .map_texture(mapping)
-                    .map_err(Error::Render)?;
+                let mapped = ExportMem::map_texture(source.renderer_mut(), mapping).map_err(Error::Render)?;
                 Some(
                     self.render
                         .renderer_mut()
-                        .import_memory(mapped, mapping.size(), false)
+                        .import_memory(mapped, TextureMapping::format(mapping), mapping.size(), false)
                         .map_err(Error::Render)?,
                 )
             } else {
@@ -1906,10 +1934,8 @@ where
                         texture.size(),
                         region
                     );
-                    let mapped = source
-                        .renderer_mut()
-                        .map_texture(mapping)
-                        .map_err(Error::Render)?;
+                    let mapped =
+                        ExportMem::map_texture(source.renderer_mut(), mapping).map_err(Error::Render)?;
                     self.render
                         .renderer_mut()
                         .update_memory(texture, mapped, region)
@@ -1977,6 +2003,12 @@ where
             MultiTextureMapping::<A, B>(TextureMappingInternal::Or(x)) => x.height(),
         }
     }
+    fn format(&self) -> Option<Fourcc> {
+        match self {
+            MultiTextureMapping::<A, B>(TextureMappingInternal::Either(x)) => Texture::format(x),
+            MultiTextureMapping::<A, B>(TextureMappingInternal::Or(x)) => Texture::format(x),
+        }
+    }
 }
 impl<A: GraphicsApi, B: GraphicsApi> TextureMapping for MultiTextureMapping<A, B>
 where
@@ -1987,6 +2019,13 @@ where
         match self {
             MultiTextureMapping::<A, B>(TextureMappingInternal::Either(x)) => x.flipped(),
             MultiTextureMapping::<A, B>(TextureMappingInternal::Or(x)) => x.flipped(),
+        }
+    }
+
+    fn format(&self) -> Fourcc {
+        match self {
+            MultiTextureMapping::<A, B>(TextureMappingInternal::Either(x)) => TextureMapping::format(x),
+            MultiTextureMapping::<A, B>(TextureMappingInternal::Or(x)) => TextureMapping::format(x),
         }
     }
 }
