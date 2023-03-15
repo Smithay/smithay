@@ -16,6 +16,8 @@
 //! To get the required extensions a device must support to use the Vulkan allocator, use
 //! [`VulkanAllocator::required_extensions`].
 
+#![deny(unsafe_op_in_unsafe_fn)]
+
 pub mod format;
 
 use std::{

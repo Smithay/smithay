@@ -2,7 +2,6 @@
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 // Allow acronyms like EGL
 #![allow(clippy::upper_case_acronyms)]
-#![forbid(unsafe_op_in_unsafe_fn)]
 
 //! # Smithay: the Wayland compositor smithy
 //!
