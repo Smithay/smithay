@@ -1,10 +1,12 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use drm::buffer::PlanarBuffer;
 use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
 use gbm::BufferObject;
 
 use crate::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
+use crate::backend::allocator::format::get_opaque;
 use crate::backend::allocator::gbm::GbmConvertError;
 use crate::backend::allocator::{
     format::{get_bpp, get_depth},
@@ -94,18 +96,31 @@ where
             Err(err) => return Err((allocator, err.into())),
         };
 
-        if !plane_formats.iter().any(|fmt| fmt.code == code) {
+        let opaque_code = get_opaque(code).unwrap_or(code);
+        if !plane_formats
+            .iter()
+            .any(|fmt| fmt.code == code || fmt.code == opaque_code)
+        {
             return Err((allocator, Error::NoSupportedPlaneFormat));
         }
-        plane_formats.retain(|fmt| fmt.code == code);
+        plane_formats.retain(|fmt| fmt.code == code || fmt.code == opaque_code);
         renderer_formats.retain(|fmt| fmt.code == code);
+
+        let plane_modifiers = plane_formats
+            .iter()
+            .map(|fmt| fmt.modifier)
+            .collect::<HashSet<_>>();
+        let renderer_modifiers = renderer_formats
+            .iter()
+            .map(|fmt| fmt.modifier)
+            .collect::<HashSet<_>>();
 
         trace!("Plane formats: {:?}", plane_formats);
         trace!("Renderer formats: {:?}", renderer_formats);
         debug!(
-            "Remaining intersected formats: {:?}",
-            plane_formats
-                .intersection(&renderer_formats)
+            "Remaining intersected modifiers: {:?}",
+            plane_modifiers
+                .intersection(&renderer_modifiers)
                 .collect::<HashSet<_>>()
         );
 
@@ -134,9 +149,10 @@ where
                     modifier: Modifier::Invalid,
                 }]
             } else {
-                plane_formats
-                    .intersection(&renderer_formats)
+                plane_modifiers
+                    .intersection(&renderer_modifiers)
                     .cloned()
+                    .map(|modifier| Format { code, modifier })
                     .collect::<Vec<_>>()
             }
         };
@@ -430,6 +446,33 @@ impl Drop for FbHandle {
     }
 }
 
+struct BufferWrapper<'a, B>(&'a B);
+impl<'a, B> PlanarBuffer for BufferWrapper<'a, B>
+where
+    B: PlanarBuffer,
+{
+    fn size(&self) -> (u32, u32) {
+        self.0.size()
+    }
+
+    fn format(&self) -> Fourcc {
+        let fmt = self.0.format();
+        get_opaque(fmt).unwrap_or(fmt)
+    }
+
+    fn pitches(&self) -> [u32; 4] {
+        self.0.pitches()
+    }
+
+    fn handles(&self) -> [Option<drm::buffer::Handle>; 4] {
+        self.0.handles()
+    }
+
+    fn offsets(&self) -> [u32; 4] {
+        self.0.offsets()
+    }
+}
+
 fn attach_framebuffer<E>(drm: &Arc<DrmSurface>, bo: &BufferObject<()>) -> Result<FbHandle, Error<E>>
 where
     E: std::error::Error + Send + Sync,
@@ -448,8 +491,12 @@ where
             if num > 3 { modifier } else { None },
         ];
         drm.add_planar_framebuffer(bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
+            .or_else(|_| {
+                drm.add_planar_framebuffer(&BufferWrapper(bo), &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
+            })
     } else {
-        drm.add_planar_framebuffer(bo, &[None, None, None, None], 0)
+        drm.add_planar_framebuffer(&BufferWrapper(bo), &[None, None, None, None], 0)
+            .or_else(|_| drm.add_planar_framebuffer(&BufferWrapper(bo), &[None, None, None, None], 0))
     } {
         Ok(fb) => fb,
         Err(source) => {

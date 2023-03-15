@@ -125,7 +125,7 @@ use std::{
 };
 
 use ::gbm::{BufferObject, BufferObjectFlags};
-use drm::control::{connector, crtc, framebuffer, plane, Mode};
+use drm::control::{connector, crtc, framebuffer, plane, Mode, PlaneType};
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::IndexMap;
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
@@ -135,6 +135,7 @@ use crate::{
     backend::{
         allocator::{
             dmabuf::{AsDmabuf, Dmabuf},
+            format::get_opaque,
             gbm::{GbmAllocator, GbmDevice},
             Allocator, Buffer, Slot, Swapchain,
         },
@@ -578,6 +579,7 @@ where
         &self,
         drm: &DrmDeviceFd,
         buffer: ExportBuffer<'_, B>,
+        allow_opaque_fallback: bool,
     ) -> Result<Option<Self::Framebuffer>, Self::Error>;
 }
 
@@ -593,9 +595,10 @@ where
         &self,
         drm: &DrmDeviceFd,
         buffer: ExportBuffer<'_, B>,
+        allow_opaque_fallback: bool,
     ) -> Result<Option<Self::Framebuffer>, Self::Error> {
         let guard = self.lock().unwrap();
-        guard.add_framebuffer(drm, buffer)
+        guard.add_framebuffer(drm, buffer, allow_opaque_fallback)
     }
 }
 
@@ -611,8 +614,9 @@ where
         &self,
         drm: &DrmDeviceFd,
         buffer: ExportBuffer<'_, B>,
+        allow_opaque_fallback: bool,
     ) -> Result<Option<Self::Framebuffer>, Self::Error> {
-        self.borrow().add_framebuffer(drm, buffer)
+        self.borrow().add_framebuffer(drm, buffer, allow_opaque_fallback)
     }
 }
 
@@ -1245,18 +1249,31 @@ where
             Err(err) => return Err((allocator, err.into())),
         };
 
-        if !plane_formats.iter().any(|fmt| fmt.code == code) {
+        let opaque_code = get_opaque(code).unwrap_or(code);
+        if !plane_formats
+            .iter()
+            .any(|fmt| fmt.code == code || fmt.code == opaque_code)
+        {
             return Err((allocator, FrameError::NoSupportedPlaneFormat));
         }
-        plane_formats.retain(|fmt| fmt.code == code);
+        plane_formats.retain(|fmt| fmt.code == code || fmt.code == opaque_code);
         renderer_formats.retain(|fmt| fmt.code == code);
 
         trace!("Plane formats: {:?}", plane_formats);
         trace!("Renderer formats: {:?}", renderer_formats);
+
+        let plane_modifiers = plane_formats
+            .iter()
+            .map(|fmt| fmt.modifier)
+            .collect::<HashSet<_>>();
+        let renderer_modifiers = renderer_formats
+            .iter()
+            .map(|fmt| fmt.modifier)
+            .collect::<HashSet<_>>();
         debug!(
-            "Remaining intersected formats: {:?}",
-            plane_formats
-                .intersection(&renderer_formats)
+            "Remaining intersected modifiers: {:?}",
+            plane_modifiers
+                .intersection(&renderer_modifiers)
                 .collect::<HashSet<_>>()
         );
 
@@ -1287,9 +1304,10 @@ where
                     modifier: DrmModifier::Invalid,
                 }]
             } else {
-                plane_formats
-                    .intersection(&renderer_formats)
+                plane_modifiers
+                    .intersection(&renderer_modifiers)
                     .cloned()
+                    .map(|modifier| DrmFormat { code, modifier })
                     .collect::<Vec<_>>()
             }
         };
@@ -1319,12 +1337,15 @@ where
             }
         };
 
-        let fb_buffer =
-            match framebuffer_exporter.add_framebuffer(drm.device_fd(), ExportBuffer::Allocator(&buffer)) {
-                Ok(Some(fb_buffer)) => fb_buffer,
-                Ok(None) => return Err((swapchain.allocator, FrameError::NoFramebuffer)),
-                Err(err) => return Err((swapchain.allocator, FrameError::FramebufferExport(err))),
-            };
+        let fb_buffer = match framebuffer_exporter.add_framebuffer(
+            drm.device_fd(),
+            ExportBuffer::Allocator(&buffer),
+            true,
+        ) {
+            Ok(Some(fb_buffer)) => fb_buffer,
+            Ok(None) => return Err((swapchain.allocator, FrameError::NoFramebuffer)),
+            Err(err) => return Err((swapchain.allocator, FrameError::FramebufferExport(err))),
+        };
         buffer
             .userdata()
             .insert_if_missing(|| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb_buffer)));
@@ -1437,6 +1458,7 @@ where
                 .add_framebuffer(
                     self.surface.device_fd(),
                     ExportBuffer::Allocator(&primary_plane_buffer),
+                    true,
                 )
                 .map_err(FrameError::FramebufferExport)?
                 .ok_or(FrameError::NoFramebuffer)?;
@@ -2353,10 +2375,11 @@ where
         };
 
         // if we fail to export a framebuffer for our buffer we can skip the rest
-        let framebuffer = match cursor_state
-            .framebuffer_exporter
-            .add_framebuffer(self.surface.device_fd(), ExportBuffer::Allocator(&cursor_buffer))
-        {
+        let framebuffer = match cursor_state.framebuffer_exporter.add_framebuffer(
+            self.surface.device_fd(),
+            ExportBuffer::Allocator(&cursor_buffer),
+            false,
+        ) {
             Ok(Some(fb)) => fb,
             Ok(None) => {
                 debug!(
@@ -2711,7 +2734,11 @@ where
 
             let fb = self
                 .framebuffer_exporter
-                .add_framebuffer(self.surface.device_fd(), ExportBuffer::from(underlying_storage))
+                .add_framebuffer(
+                    self.surface.device_fd(),
+                    ExportBuffer::from(underlying_storage),
+                    plane.type_ == PlaneType::Primary,
+                )
                 .map_err(|err| {
                     trace!("failed to add framebuffer: {:?}", err);
                     ExportBufferError::ExportFailed
