@@ -28,8 +28,10 @@ impl AsRawFd for DeviceFd {
 }
 
 impl FromRawFd for DeviceFd {
+    /// SAFETY:
+    /// Make sure that `fd` is a valid value!
     unsafe fn from_raw_fd(fd: RawFd) -> Self {
-        DeviceFd(Arc::new(OwnedFd::from_raw_fd(fd)))
+        DeviceFd(Arc::new(unsafe { OwnedFd::from_raw_fd(fd) }))
     }
 }
 
