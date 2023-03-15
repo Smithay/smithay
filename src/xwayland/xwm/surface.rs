@@ -793,36 +793,39 @@ impl IsAlive for X11Surface {
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        match self.input_mode() {
+        let (set_input_focus, send_take_focus) = match self.input_mode() {
             InputMode::None => return,
-            InputMode::Passive => {
-                if let Some(conn) = self.conn.upgrade() {
-                    if let Err(err) = conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME)
-                    {
-                        warn!("Unable to set focus for X11Surface ({:?}): {}", self.window, err);
-                    }
-                    let _ = conn.flush();
-                }
-            }
-            InputMode::LocallyActive => {
-                if let Some(conn) = self.conn.upgrade() {
-                    let event = ClientMessageEvent::new(
-                        32,
-                        self.window,
-                        self.atoms.WM_PROTOCOLS,
-                        [self.atoms.WM_TAKE_FOCUS, x11rb::CURRENT_TIME, 0, 0, 0],
-                    );
-                    if let Err(err) = conn.send_event(false, self.window, EventMask::NO_EVENT, event) {
-                        warn!(
-                            "Unable to send take focus event for X11Surface ({:?}): {}",
-                            self.window, err
-                        );
-                    }
-                    let _ = conn.flush();
-                }
-            }
-            _ => {}
+            InputMode::Passive => (true, false),
+            InputMode::LocallyActive => (true, true),
+            InputMode::GloballyActive => (false, true),
         };
+
+        if let Some(conn) = self.conn.upgrade() {
+            if set_input_focus {
+                if let Err(err) = conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME) {
+                    warn!("Unable to set focus for X11Surface ({:?}): {}", self.window, err);
+                }
+            }
+
+            if send_take_focus {
+                let event = ClientMessageEvent::new(
+                    32,
+                    self.window,
+                    self.atoms.WM_PROTOCOLS,
+                    [self.atoms.WM_TAKE_FOCUS, x11rb::CURRENT_TIME, 0, 0, 0],
+                );
+                if let Err(err) = conn.send_event(false, self.window, EventMask::NO_EVENT, event) {
+                    warn!(
+                        "Unable to send take focus event for X11Surface ({:?}): {}",
+                        self.window, err
+                    );
+                }
+                let _ = conn.flush();
+            }
+
+            let _ = conn.flush();
+        }
+
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             KeyboardTarget::enter(surface, seat, data, keys, serial);
         }
