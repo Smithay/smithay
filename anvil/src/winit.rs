@@ -9,6 +9,7 @@ use std::{
 use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
 use smithay::backend::renderer::ImportMem;
+
 use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
