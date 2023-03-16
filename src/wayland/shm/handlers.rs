@@ -34,7 +34,7 @@ where
         let shm = data_init.init(resource, ());
 
         // send the formats
-        for &f in &state.shm_state().formats[..] {
+        for &f in &state.shm_state().formats {
             shm.format(f);
         }
     }

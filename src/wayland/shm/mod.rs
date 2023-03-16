@@ -95,7 +95,7 @@
 //!
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use wayland_server::{
     backend::GlobalId,
@@ -119,7 +119,7 @@ use super::buffer::BufferHandler;
 /// State of SHM module
 #[derive(Debug)]
 pub struct ShmState {
-    formats: Vec<wl_shm::Format>,
+    formats: HashSet<wl_shm::Format>,
     shm: GlobalId,
 }
 
@@ -132,7 +132,7 @@ impl ShmState {
     /// The global is directly created on the provided [`Display`](wayland_server::Display),
     /// and this function returns the a delegate type. The id provided by [`ShmState::global`] may be used to
     /// remove this global in the future.
-    pub fn new<D>(display: &DisplayHandle, mut formats: Vec<wl_shm::Format>) -> ShmState
+    pub fn new<D>(display: &DisplayHandle, formats: impl IntoIterator<Item = wl_shm::Format>) -> ShmState
     where
         D: GlobalDispatch<WlShm, ()>
             + Dispatch<WlShm, ()>
@@ -141,9 +141,11 @@ impl ShmState {
             + ShmHandler
             + 'static,
     {
+        let mut formats = formats.into_iter().collect::<HashSet<_>>();
+
         // Mandatory formats
-        formats.push(wl_shm::Format::Argb8888);
-        formats.push(wl_shm::Format::Xrgb8888);
+        formats.insert(wl_shm::Format::Argb8888);
+        formats.insert(wl_shm::Format::Xrgb8888);
 
         let shm = display.create_global::<D, WlShm, _>(1, ());
 
@@ -153,6 +155,13 @@ impl ShmState {
     /// Returns the id of the [`WlShm`] global.
     pub fn global(&self) -> GlobalId {
         self.shm.clone()
+    }
+
+    /// Updates the list of formats advertised by the global.
+    ///
+    /// This will only affect new binds to the wl_shm global.
+    pub fn add_formats(&mut self, formats: impl IntoIterator<Item = wl_shm::Format>) {
+        self.formats.extend(formats.into_iter());
     }
 }
 
