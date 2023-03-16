@@ -39,7 +39,7 @@ use smithay::{
             element::{texture::TextureBuffer, AsRenderElements, RenderElement, RenderElementStates},
             gles2::{Gles2Renderbuffer, Gles2Renderer},
             multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer, MultiTexture},
-            Bind, DebugFlags, ExportMem, ImportDma, Offscreen, Renderer,
+            Bind, DebugFlags, ExportMem, ImportDma, ImportMemWl, Offscreen, Renderer,
         },
         session::{
             libseat::{self, LibSeatSession},
@@ -324,6 +324,14 @@ pub fn run_udev() {
             error!("Skipping device {device_id}: {err}");
         }
     }
+    state.shm_state.add_formats(
+        state
+            .backend_data
+            .gpus
+            .single_renderer(&primary_gpu)
+            .unwrap()
+            .shm_formats(),
+    );
 
     let skip_vulkan = std::env::var("ANVIL_NO_VULKAN")
         .map(|x| {
@@ -408,7 +416,7 @@ pub fn run_udev() {
     }
 
     // init dmabuf support with format list from our primary gpu
-    let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+    let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
     let default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
         .build()
         .unwrap();
@@ -665,20 +673,18 @@ fn get_surface_dmabuf_feedback(
         .single_renderer(&primary_gpu)
         .ok()?
         .dmabuf_formats()
-        .copied()
         .collect::<HashSet<_>>();
 
     let render_formats = gpus
         .single_renderer(&render_node)
         .ok()?
         .dmabuf_formats()
-        .copied()
         .collect::<HashSet<_>>();
 
     let all_render_formats = primary_formats
         .iter()
+        .chain(render_formats.iter())
         .copied()
-        .chain(render_formats.iter().copied())
         .collect::<HashSet<_>>();
 
     let surface = composition.surface();

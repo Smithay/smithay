@@ -18,7 +18,7 @@ use smithay::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::AsRenderElements,
             gles2::{Gles2Renderer, Gles2Texture},
-            ImportDma,
+            ImportDma, ImportMemWl,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
         SwapBuffersError,
@@ -187,6 +187,9 @@ pub fn run_winit() {
         }
     };
     let mut state = AnvilState::init(&mut display, event_loop.handle(), data, true);
+    state
+        .shm_state
+        .add_formats(state.backend_data.backend.renderer().shm_formats());
     state.space.map_output(&output, (0, 0));
 
     #[cfg(feature = "xwayland")]
