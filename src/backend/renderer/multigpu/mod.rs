@@ -1547,7 +1547,6 @@ where
         data: &[u8],
         region: Rectangle<i32, BufferCoords>,
     ) -> Result<(), <Self as Renderer>::Error> {
-        let texture = MultiTexture::new(texture.size());
         let mem_texture = texture
             .get::<R>(self.render.node())
             .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
