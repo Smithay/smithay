@@ -100,9 +100,14 @@ where
                             format,
                             xkb::KEYMAP_COMPILE_NO_FLAGS,
                         )
-                        .unwrap()
-                        .unwrap()
                     };
+
+                    // Ignore requests with invalid keymap attached.
+                    let new_keymap = match new_keymap {
+                        Ok(Some(new_keymap)) => new_keymap,
+                        _ => return,
+                    };
+
                     if old_keymap != new_keymap.get_as_string(xkb::FORMAT_TEXT_V1) {
                         let mut inner = data.handle.inner.lock().unwrap();
                         inner.old_keymap = Some(old_keymap);
@@ -164,18 +169,26 @@ where
     ) {
         let mut inner = data.handle.inner.lock().unwrap();
         inner.instances -= 1;
-        if inner.instances == 0 {
-            if let Some(old_keymap) = &inner.old_keymap {
-                let keyboard_handle = data.seat.get_keyboard().unwrap();
-                let old_keymap = xkb::Keymap::new_from_string(
-                    &xkb::Context::new(xkb::CONTEXT_NO_FLAGS),
-                    old_keymap.to_string(),
-                    xkb::KEYMAP_FORMAT_TEXT_V1,
-                    xkb::KEYMAP_COMPILE_NO_FLAGS,
-                )
-                .unwrap();
-                keyboard_handle.change_keymap(old_keymap);
-            }
+        if inner.instances != 0 {
+            return;
+        }
+
+        let old_keymap = match &inner.old_keymap {
+            Some(old_keymap) => old_keymap,
+            None => return,
+        };
+
+        let keyboard_handle = data.seat.get_keyboard().unwrap();
+        let old_keymap = xkb::Keymap::new_from_string(
+            &xkb::Context::new(xkb::CONTEXT_NO_FLAGS),
+            old_keymap.to_string(),
+            xkb::KEYMAP_FORMAT_TEXT_V1,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        );
+
+        // Restore the old keymap.
+        if let Some(old_keymap) = old_keymap {
+            keyboard_handle.change_keymap(old_keymap);
         }
     }
 }
