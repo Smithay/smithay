@@ -1,15 +1,19 @@
+use std::fs::File;
+use std::io::Read;
+use std::os::unix::io::{FromRawFd, OwnedFd};
 use std::{
     fmt::Debug,
     os::unix::io::AsRawFd,
     sync::{Arc, Mutex},
 };
 
+use tracing::debug;
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::{
     self, ZwpVirtualKeyboardV1,
 };
 use wayland_server::{
     backend::{ClientId, ObjectId},
-    protocol::wl_keyboard::KeyState,
+    protocol::wl_keyboard::{KeyState, KeymapFormat},
     Client, DataInit, Dispatch, DisplayHandle,
 };
 use xkbcommon::xkb;
@@ -21,6 +25,9 @@ use crate::{
 };
 
 use super::VirtualKeyboardManagerState;
+
+/// Maximum keymap size. Up to 1MiB.
+const MAX_KEYMAP_SIZE: usize = 0x100000;
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 struct SerializedMods {
@@ -86,34 +93,7 @@ where
     ) {
         match request {
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
-                // This should be wl_keyboard::KeymapFormat::XkbV1,
-                // but the protocol does not state the parameter is an enum.
-                if format == 1 {
-                    let keyboard_handle = data.seat.get_keyboard().unwrap();
-                    let internal = keyboard_handle.arc.internal.lock().unwrap();
-                    let old_keymap = internal.keymap.get_as_string(xkb::FORMAT_TEXT_V1);
-                    let new_keymap = unsafe {
-                        xkb::Keymap::new_from_fd(
-                            &xkb::Context::new(xkb::CONTEXT_NO_FLAGS),
-                            fd.as_raw_fd(),
-                            size as usize,
-                            format,
-                            xkb::KEYMAP_COMPILE_NO_FLAGS,
-                        )
-                    };
-
-                    // Ignore requests with invalid keymap attached.
-                    let new_keymap = match new_keymap {
-                        Ok(Some(new_keymap)) => new_keymap,
-                        _ => return,
-                    };
-
-                    if old_keymap != new_keymap.get_as_string(xkb::FORMAT_TEXT_V1) {
-                        let mut inner = data.handle.inner.lock().unwrap();
-                        inner.old_keymap = Some(old_keymap);
-                        keyboard_handle.change_keymap(new_keymap);
-                    }
-                }
+                update_keymap(data, format, fd, size as usize);
             }
             zwp_virtual_keyboard_v1::Request::Key { time, key, state } => {
                 let keyboard_handle = data.seat.get_keyboard().unwrap();
@@ -190,5 +170,64 @@ where
         if let Some(old_keymap) = old_keymap {
             keyboard_handle.change_keymap(old_keymap);
         }
+    }
+}
+
+/// Handle the zwp_virtual_keyboard_v1::keymap request.
+fn update_keymap<D>(data: &VirtualKeyboardUserData<D>, format: u32, fd: OwnedFd, size: usize)
+where
+    D: SeatHandler + 'static,
+{
+    // Only libxkbcommon compatible keymaps are supported.
+    if format != KeymapFormat::XkbV1 as u32 {
+        debug!("Unsupported keymap format: {format:?}");
+        return;
+    }
+
+    // Ignore potentially malicious requests.
+    if size > MAX_KEYMAP_SIZE {
+        debug!("Excessive keymap size: {size:?}");
+        return;
+    }
+
+    // Read entire keymap.
+    let mut keymap_buffer = vec![0; size];
+    let mut file = unsafe { File::from_raw_fd(fd.as_raw_fd()) };
+    if let Err(err) = file.read_exact(&mut keymap_buffer) {
+        debug!("Could not read keymap: {err}");
+        return;
+    }
+    let new_keymap = match String::from_utf8(keymap_buffer) {
+        Ok(keymap) => keymap,
+        Err(err) => {
+            debug!("Invalid utf8 keymap: {err}");
+            return;
+        }
+    };
+
+    // Attempt to parse the new keymap.
+    let new_keymap = xkb::Keymap::new_from_string(
+        &xkb::Context::new(xkb::CONTEXT_NO_FLAGS),
+        new_keymap,
+        xkb::KEYMAP_FORMAT_TEXT_V1,
+        xkb::KEYMAP_COMPILE_NO_FLAGS,
+    );
+    let new_keymap = match new_keymap {
+        Some(keymap) => keymap,
+        None => {
+            debug!("Invalid libxkbcommon keymap");
+            return;
+        }
+    };
+
+    // Get old keymap to allow restoring to it later.
+    let keyboard_handle = data.seat.get_keyboard().unwrap();
+    let internal = keyboard_handle.arc.internal.lock().unwrap();
+    let old_keymap = internal.keymap.get_as_string(xkb::FORMAT_TEXT_V1);
+
+    if old_keymap != new_keymap.get_as_string(xkb::FORMAT_TEXT_V1) {
+        let mut inner = data.handle.inner.lock().unwrap();
+        inner.old_keymap = Some(old_keymap);
+        keyboard_handle.change_keymap(new_keymap);
     }
 }
