@@ -43,7 +43,7 @@ use smithay::{
             ServerDndGrabHandler,
         },
         dmabuf::DmabufFeedback,
-        fractional_scale::{with_fractional_scale, FractionScaleHandler, FractionalScaleManagerState},
+        fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
         input_method::{InputMethodManagerState, InputMethodSeat},
         keyboard_shortcuts_inhibit::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
@@ -347,7 +347,7 @@ delegate_xdg_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 delegate_layer_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 delegate_presentation!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData: Backend> FractionScaleHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
     fn new_fractional_scale(
         &mut self,
         surface: smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,

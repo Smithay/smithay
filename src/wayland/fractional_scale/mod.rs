@@ -5,7 +5,7 @@
 //! ### Initialization
 //!
 //! To initialize this implementation create the [`FractionalScaleManagerState`], store it inside your `State` struct
-//! and implement the [`FractionScaleHandler`], as shown in this example:
+//! and implement the [`FractionalScaleHandler`], as shown in this example:
 //!
 //! ```
 //! use smithay::delegate_fractional_scale;
@@ -14,7 +14,7 @@
 //! use smithay::wayland::fractional_scale::{
 //!     self,
 //!     FractionalScaleManagerState,
-//!     FractionScaleHandler,
+//!     FractionalScaleHandler,
 //! };
 //!
 //! # struct State { fractional_scale_manager_state: FractionalScaleManagerState }
@@ -28,7 +28,7 @@
 //! // ..
 //!
 //! // implement the necessary traits
-//! impl FractionScaleHandler for State {
+//! impl FractionalScaleHandler for State {
 //!    fn new_fractional_scale(&mut self, surface: wl_surface::WlSurface) {
 //!        compositor::with_states(&surface, |states| {
 //!            fractional_scale::with_fractional_scale(states, |fractional_scale| {
@@ -89,7 +89,7 @@ impl FractionalScaleManagerState {
             + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
             + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, Weak<wl_surface::WlSurface>>
             + 'static,
-        D: FractionScaleHandler,
+        D: FractionalScaleHandler,
     {
         FractionalScaleManagerState {
             global: display
@@ -109,7 +109,7 @@ where
     D: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
         + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
         + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, Weak<wl_surface::WlSurface>>,
-    D: FractionScaleHandler,
+    D: FractionalScaleHandler,
 {
     fn bind(
         _state: &mut D,
@@ -129,7 +129,7 @@ where
     D: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
         + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
         + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, Weak<wl_surface::WlSurface>>,
-    D: FractionScaleHandler,
+    D: FractionalScaleHandler,
 {
     fn request(
         state: &mut D,
@@ -195,7 +195,7 @@ where
     D: GlobalDispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
         + Dispatch<wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1, ()>
         + Dispatch<wp_fractional_scale_v1::WpFractionalScaleV1, Weak<wl_surface::WlSurface>>,
-    D: FractionScaleHandler,
+    D: FractionalScaleHandler,
 {
     fn request(
         _state: &mut D,
@@ -223,7 +223,7 @@ where
 }
 
 /// Fractional scale handler type
-pub trait FractionScaleHandler {
+pub trait FractionalScaleHandler {
     /// A new fractional scale was instantiated
     fn new_fractional_scale(&mut self, surface: wl_surface::WlSurface);
 }
