@@ -181,11 +181,14 @@ pub mod egl {
         callback: EGLDEBUGPROCKHR,
         attrib_list: *const types::EGLAttrib,
     ) -> types::EGLint {
-        __gl_imports::mem::transmute::<
-            _,
-            extern "system" fn(EGLDEBUGPROCKHR, *const types::EGLAttrib) -> types::EGLint,
-        >(wayland_storage::DebugMessageControlKHR.f)(callback, attrib_list)
+        unsafe {
+            __gl_imports::mem::transmute::<
+                _,
+                extern "system" fn(EGLDEBUGPROCKHR, *const types::EGLAttrib) -> types::EGLint,
+            >(wayland_storage::DebugMessageControlKHR.f)(callback, attrib_list)
+        }
     }
+
     /*
      * `gl_generator` cannot generate bindings for the `EGL_WL_bind_wayland_display` extension.
      *  Lets do it ourselves...
@@ -197,10 +200,12 @@ pub mod egl {
         dpy: types::EGLDisplay,
         display: *mut __gl_imports::raw::c_void,
     ) -> types::EGLBoolean {
-        __gl_imports::mem::transmute::<
-            _,
-            extern "system" fn(types::EGLDisplay, *mut __gl_imports::raw::c_void) -> types::EGLBoolean,
-        >(wayland_storage::BindWaylandDisplayWL.f)(dpy, display)
+        unsafe {
+            __gl_imports::mem::transmute::<
+                _,
+                extern "system" fn(types::EGLDisplay, *mut __gl_imports::raw::c_void) -> types::EGLBoolean,
+            >(wayland_storage::BindWaylandDisplayWL.f)(dpy, display)
+        }
     }
 
     #[allow(non_snake_case, unused_variables, dead_code)]
@@ -209,10 +214,12 @@ pub mod egl {
         dpy: types::EGLDisplay,
         display: *mut __gl_imports::raw::c_void,
     ) -> types::EGLBoolean {
-        __gl_imports::mem::transmute::<
-            _,
-            extern "system" fn(types::EGLDisplay, *mut __gl_imports::raw::c_void) -> types::EGLBoolean,
-        >(wayland_storage::UnbindWaylandDisplayWL.f)(dpy, display)
+        unsafe {
+            __gl_imports::mem::transmute::<
+                _,
+                extern "system" fn(types::EGLDisplay, *mut __gl_imports::raw::c_void) -> types::EGLBoolean,
+            >(wayland_storage::UnbindWaylandDisplayWL.f)(dpy, display)
+        }
     }
 
     #[allow(non_snake_case, unused_variables, dead_code)]
@@ -223,15 +230,17 @@ pub mod egl {
         attribute: types::EGLint,
         value: *mut types::EGLint,
     ) -> types::EGLBoolean {
-        __gl_imports::mem::transmute::<
-            _,
-            extern "system" fn(
-                types::EGLDisplay,
-                *mut __gl_imports::raw::c_void,
-                types::EGLint,
-                *mut types::EGLint,
-            ) -> types::EGLBoolean,
-        >(wayland_storage::QueryWaylandBufferWL.f)(dpy, buffer, attribute, value)
+        unsafe {
+            __gl_imports::mem::transmute::<
+                _,
+                extern "system" fn(
+                    types::EGLDisplay,
+                    *mut __gl_imports::raw::c_void,
+                    types::EGLint,
+                    *mut types::EGLint,
+                ) -> types::EGLBoolean,
+            >(wayland_storage::QueryWaylandBufferWL.f)(dpy, buffer, attribute, value)
+        }
     }
 
     mod wayland_storage {
