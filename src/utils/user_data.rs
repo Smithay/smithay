@@ -1,4 +1,5 @@
 //! Various utilities used for user data implementations
+#![forbid(unsafe_op_in_unsafe_fn)]
 
 use once_cell::sync::OnceCell;
 
@@ -191,11 +192,14 @@ mod list {
                 None => ptr::null_mut(),
             }
         }
+
+        /// SAFETY:
+        /// Make sure, that `ptr` is valid, otherwise UB will happen.
         unsafe fn node_from_raw(ptr: *mut Node<T>) -> NodePtr<T> {
             if ptr.is_null() {
                 None
             } else {
-                Some(Box::from_raw(ptr))
+                Some(unsafe { Box::from_raw(ptr) })
             }
         }
 
@@ -223,7 +227,11 @@ mod list {
                     Ok(_) => return,
                     Err(head) => {
                         if !head.is_null() {
-                            return (*head).next.append_ptr(p);
+                            // SAFETY:
+                            // You can only *add* elements to AppendList.
+                            // So `head` will be always valid and hence
+                            // `(*head).next`.
+                            return unsafe { (*head).next.append_ptr(p) };
                         }
                     }
                 }
