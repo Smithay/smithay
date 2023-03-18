@@ -160,6 +160,12 @@ impl<E: Element> CropRenderElement<E> {
                 &element_geometry.size.to_f64().to_logical(1.0),
             );
 
+            // Ensure cropping of the existing element is respected.
+            let src = match src.intersection(element_src) {
+                Some(src) => src,
+                None => return None,
+            };
+
             Some(CropRenderElement {
                 element,
                 src,
