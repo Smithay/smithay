@@ -426,6 +426,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::MappingError
             | x @ Gles2Error::UnexpectedSize
             | x @ Gles2Error::BlitError
+            | x @ Gles2Error::CreateShaderObject
             | x @ Gles2Error::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
@@ -444,6 +445,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::MappingError
             | x @ Gles2Error::UnexpectedSize
             | x @ Gles2Error::BlitError
+            | x @ Gles2Error::CreateShaderObject
             | x @ Gles2Error::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
