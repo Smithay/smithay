@@ -4,12 +4,14 @@ use std::cell::Cell;
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::renderer::ImportEgl;
+
 #[cfg(feature = "wayland_frontend")]
 use crate::{
-    backend::renderer::{ImportDmaWl, ImportMemWl},
+    backend::renderer::ImportDmaWl,
     reexports::wayland_server::protocol::wl_buffer,
-    wayland::{self, compositor::SurfaceData},
+    wayland::{self, compositor::SurfaceData, shm},
 };
+
 use crate::{
     backend::{
         allocator::{dmabuf::Dmabuf, Fourcc},
@@ -37,7 +39,7 @@ impl Default for DummyRenderer {
 }
 
 impl Renderer for DummyRenderer {
-    type Error = SwapBuffersError;
+    type Error = DummyRendererError;
     type TextureId = DummyTexture;
     type Frame<'a> = DummyFrame;
 
@@ -94,7 +96,7 @@ impl ImportMem for DummyRenderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl ImportMemWl for DummyRenderer {
+impl super::ImportMemWl for DummyRenderer {
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -128,7 +130,7 @@ impl ImportMemWl for DummyRenderer {
 
         match ret {
             Ok((width, height)) => Ok(DummyTexture { width, height }),
-            Err(e) => Err(SwapBuffersError::TemporaryFailure(Box::new(e))),
+            Err(e) => Err(DummyRendererError::BufferAccessError(e)),
         }
     }
 }
@@ -177,7 +179,7 @@ impl ImportDmaWl for DummyRenderer {}
 pub struct DummyFrame {}
 
 impl Frame for DummyFrame {
-    type Error = SwapBuffersError;
+    type Error = DummyRendererError;
     type TextureId = DummyTexture;
 
     fn id(&self) -> usize {
@@ -235,5 +237,22 @@ impl Texture for DummyTexture {
 
     fn format(&self) -> Option<Fourcc> {
         None
+    }
+}
+
+/// Error returned during rendering using GL ES
+#[derive(thiserror::Error, Debug)]
+pub enum DummyRendererError {
+    /// Couldn't access the buffer.
+    #[error("Error accessing the buffer ({0:?})")]
+    #[cfg(feature = "wayland_frontend")]
+    BufferAccessError(shm::BufferAccessError),
+}
+
+impl From<DummyRendererError> for SwapBuffersError {
+    fn from(value: DummyRendererError) -> Self {
+        match value {
+            x @ DummyRendererError::BufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
+        }
     }
 }
