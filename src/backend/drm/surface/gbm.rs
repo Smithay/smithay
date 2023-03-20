@@ -1,20 +1,17 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use drm::buffer::PlanarBuffer;
-use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
+use drm::control::{connector, crtc, plane, Mode};
 use gbm::BufferObject;
 
 use crate::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use crate::backend::allocator::format::get_opaque;
 use crate::backend::allocator::gbm::GbmConvertError;
-use crate::backend::allocator::{
-    format::{get_bpp, get_depth},
-    Allocator, Format, Fourcc, Modifier, Slot, Swapchain,
-};
+use crate::backend::allocator::{Allocator, Format, Fourcc, Modifier, Slot, Swapchain};
+use crate::backend::drm::gbm::{framebuffer_from_bo, GbmFramebuffer};
 use crate::backend::drm::{DrmError, DrmSurface};
 use crate::backend::SwapBuffersError;
-use crate::utils::{DevPath, Physical, Point, Rectangle, Transform};
+use crate::utils::{Physical, Point, Rectangle, Transform};
 
 use tracing::{debug, error, info_span, instrument, trace, warn};
 
@@ -182,9 +179,9 @@ where
                                                   // It has no further use.
         };
 
-        let fb = match attach_framebuffer(&drm, &buffer) {
+        let fb = match framebuffer_from_bo(drm.device_fd(), &buffer, true) {
             Ok(fb) => fb,
-            Err(err) => return Err((swapchain.allocator, err)),
+            Err(err) => return Err((swapchain.allocator, Error::DrmError(err.into()))),
         };
         match buffer.export() {
             Ok(dmabuf) => dmabuf,
@@ -192,7 +189,7 @@ where
         };
         buffer.userdata().insert_if_missing(|| fb);
 
-        let handle = buffer.userdata().get::<FbHandle>().unwrap();
+        let handle = buffer.userdata().get::<GbmFramebuffer>().unwrap();
 
         let plane_state = PlaneState {
             handle: drm.plane(),
@@ -208,7 +205,7 @@ where
                 ),
                 transform: Transform::Normal,
                 damage_clips: None,
-                fb: handle.fb,
+                fb: *handle.as_ref(),
             }),
         };
 
@@ -240,10 +237,11 @@ where
                 .map_err(Error::GbmError)?
                 .ok_or(Error::NoFreeSlotsError)?;
 
-            let maybe_buffer = slot.userdata().get::<FbHandle>();
+            let maybe_buffer = slot.userdata().get::<GbmFramebuffer>();
             if maybe_buffer.is_none() {
-                let fb_handle = attach_framebuffer(&self.drm, &slot)?;
-                slot.userdata().insert_if_missing(|| fb_handle);
+                let fb = framebuffer_from_bo(self.drm.device_fd(), &slot, true)
+                    .map_err(|err| Error::DrmError(err.into()))?;
+                slot.userdata().insert_if_missing(|| fb);
             }
 
             self.next_fb = Some(slot);
@@ -298,7 +296,7 @@ where
     fn submit(&mut self) -> Result<(), Error<A::Error>> {
         // yes it does not look like it, but both of these lines should be safe in all cases.
         let (slot, damage, user_data) = self.queued_fb.take().unwrap();
-        let handle = slot.userdata().get::<FbHandle>().unwrap();
+        let handle = slot.userdata().get::<GbmFramebuffer>().unwrap();
         let mode = self.drm.pending_mode();
         let src =
             Rectangle::from_loc_and_size(Point::default(), (mode.size().0 as i32, mode.size().1 as i32))
@@ -319,7 +317,7 @@ where
                 dst,
                 transform: Transform::Normal,
                 damage_clips: damage_clips.as_ref().map(|d| d.blob()),
-                fb: handle.fb,
+                fb: *handle.as_ref(),
             }),
         };
 
@@ -426,108 +424,6 @@ where
     pub fn format(&self) -> Fourcc {
         self.swapchain.format()
     }
-}
-
-#[derive(Debug)]
-struct FbHandle {
-    drm: Arc<DrmSurface>,
-    fb: framebuffer::Handle,
-}
-
-impl AsRef<framebuffer::Handle> for FbHandle {
-    fn as_ref(&self) -> &framebuffer::Handle {
-        &self.fb
-    }
-}
-
-impl Drop for FbHandle {
-    fn drop(&mut self) {
-        let _ = self.drm.destroy_framebuffer(self.fb);
-    }
-}
-
-struct BufferWrapper<'a, B>(&'a B);
-impl<'a, B> PlanarBuffer for BufferWrapper<'a, B>
-where
-    B: PlanarBuffer,
-{
-    fn size(&self) -> (u32, u32) {
-        self.0.size()
-    }
-
-    fn format(&self) -> Fourcc {
-        let fmt = self.0.format();
-        get_opaque(fmt).unwrap_or(fmt)
-    }
-
-    fn pitches(&self) -> [u32; 4] {
-        self.0.pitches()
-    }
-
-    fn handles(&self) -> [Option<drm::buffer::Handle>; 4] {
-        self.0.handles()
-    }
-
-    fn offsets(&self) -> [u32; 4] {
-        self.0.offsets()
-    }
-}
-
-fn attach_framebuffer<E>(drm: &Arc<DrmSurface>, bo: &BufferObject<()>) -> Result<FbHandle, Error<E>>
-where
-    E: std::error::Error + Send + Sync,
-{
-    let modifier = match bo.modifier().unwrap() {
-        Modifier::Invalid => None,
-        x => Some(x),
-    };
-
-    let fb = match if modifier.is_some() {
-        let num = bo.plane_count().unwrap();
-        let modifiers = [
-            modifier,
-            if num > 1 { modifier } else { None },
-            if num > 2 { modifier } else { None },
-            if num > 3 { modifier } else { None },
-        ];
-        drm.add_planar_framebuffer(bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
-            .or_else(|_| {
-                drm.add_planar_framebuffer(&BufferWrapper(bo), &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
-            })
-    } else {
-        drm.add_planar_framebuffer(&BufferWrapper(bo), &[None, None, None, None], 0)
-            .or_else(|_| drm.add_planar_framebuffer(&BufferWrapper(bo), &[None, None, None, None], 0))
-    } {
-        Ok(fb) => fb,
-        Err(source) => {
-            // We only support this as a fallback of last resort like xf86-video-modesetting does.
-            if bo.plane_count().unwrap() > 1 {
-                return Err(Error::DrmError(DrmError::Access {
-                    errmsg: "Failed to add framebuffer",
-                    dev: drm.dev_path(),
-                    source,
-                }));
-            }
-            debug!("Failed to add framebuffer, trying legacy method");
-            let fourcc = bo.format().unwrap();
-            let (depth, bpp) = get_depth(fourcc)
-                .and_then(|d| get_bpp(fourcc).map(|b| (d, b)))
-                .ok_or_else(|| {
-                    Error::DrmError(DrmError::Access {
-                        errmsg: "Unknown format for legacy framebuffer",
-                        dev: drm.dev_path(),
-                        source,
-                    })
-                })?;
-            drm.add_framebuffer(bo, depth as u32, bpp as u32)
-                .map_err(|source| DrmError::Access {
-                    errmsg: "Failed to add framebuffer",
-                    dev: drm.dev_path(),
-                    source,
-                })?
-        }
-    };
-    Ok(FbHandle { drm: drm.clone(), fb })
 }
 
 /// Errors thrown by a [`GbmBufferedSurface`]

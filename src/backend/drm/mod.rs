@@ -79,6 +79,8 @@
 pub mod compositor;
 pub(crate) mod device;
 pub(self) mod error;
+#[cfg(feature = "backend_gbm")]
+pub mod gbm;
 pub mod node;
 
 pub(self) mod surface;

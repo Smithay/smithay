@@ -196,7 +196,7 @@ impl<B: Buffer> From<UnderlyingStorage> for ScanoutBuffer<B> {
 
 enum DrmFramebuffer<F: AsRef<framebuffer::Handle>> {
     Exporter(F),
-    Gbm(gbm::GbmFramebuffer),
+    Gbm(super::gbm::GbmFramebuffer),
 }
 
 impl<F> AsRef<framebuffer::Handle> for DrmFramebuffer<F>
