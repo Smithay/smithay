@@ -154,11 +154,14 @@ impl<E: Element> CropRenderElement<E> {
             // Ok, for the src we need to know how much we cropped from the element geometry
             // and then bring that rectangle into buffer space. For this we have to first
             // apply the element transform and then scale it to buffer space.
-            let src = element_relative_intersection.to_f64().to_logical(1.0).to_buffer(
+            let mut src = element_relative_intersection.to_f64().to_logical(1.0).to_buffer(
                 physical_to_buffer_scale,
                 transform,
                 &element_geometry.size.to_f64().to_logical(1.0),
             );
+
+            // Ensure cropping of the existing element is respected.
+            src.loc += element_src.loc;
 
             Some(CropRenderElement {
                 element,
