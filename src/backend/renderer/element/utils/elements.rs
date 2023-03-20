@@ -162,10 +162,6 @@ impl<E: Element> CropRenderElement<E> {
 
             // Ensure cropping of the existing element is respected.
             src.loc += element_src.loc;
-            let src = match src.intersection(element_src) {
-                Some(src) => src,
-                None => return None,
-            };
 
             Some(CropRenderElement {
                 element,
