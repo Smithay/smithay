@@ -402,6 +402,9 @@ pub enum Gles2Error {
     /// The blitting operation was unsuccessful
     #[error("Error blitting between framebuffers")]
     BlitError,
+    /// An error occured while creating the shader object.
+    #[error("An error occured while creating the shader object.")]
+    CreateShaderObject,
 }
 
 impl From<Gles2Error> for SwapBuffersError {
@@ -423,6 +426,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::MappingError
             | x @ Gles2Error::UnexpectedSize
             | x @ Gles2Error::BlitError
+            | x @ Gles2Error::CreateShaderObject
             | x @ Gles2Error::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
@@ -441,6 +445,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::MappingError
             | x @ Gles2Error::UnexpectedSize
             | x @ Gles2Error::BlitError
+            | x @ Gles2Error::CreateShaderObject
             | x @ Gles2Error::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
@@ -476,6 +481,10 @@ unsafe fn compile_shader(
     src: &'static str,
 ) -> Result<ffi::types::GLuint, Gles2Error> {
     let shader = gl.CreateShader(variant);
+    if shader == 0 {
+        return Err(Gles2Error::CreateShaderObject);
+    }
+
     gl.ShaderSource(
         shader,
         1,
