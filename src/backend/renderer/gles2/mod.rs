@@ -509,6 +509,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::GLExtensionNotSupported(_)
             | x @ Gles2Error::EGLExtensionNotSupported(_)
             | x @ Gles2Error::GLVersionNotSupported(_)
+            | x @ Gles2Error::CreateProgram
             | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
             Gles2Error::ContextActivationError(err) => err.into(),
             x @ Gles2Error::FramebufferBindingError
@@ -517,7 +518,6 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::BufferAccessError(_)
             | x @ Gles2Error::MappingError
             | x @ Gles2Error::UnexpectedSize
-            | x @ Gles2Error::CreateProgram
             | x @ Gles2Error::BlitError
             | x @ Gles2Error::CreateShaderObject
             | x @ Gles2Error::UniformTypeMismatch { .. }
@@ -533,6 +533,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::GLFunctionLoaderError
             | x @ Gles2Error::GLExtensionNotSupported(_)
             | x @ Gles2Error::EGLExtensionNotSupported(_)
+            | x @ Gles2Error::CreateProgram
             | x @ Gles2Error::GLVersionNotSupported(_)
             | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
             Gles2Error::ContextActivationError(err) => err.into(),
@@ -541,7 +542,6 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::UnexpectedSize
             | x @ Gles2Error::BlitError
             | x @ Gles2Error::CreateShaderObject
-            | x @ Gles2Error::CreateProgram
             | x @ Gles2Error::UniformTypeMismatch { .. }
             | x @ Gles2Error::UnknownUniform(_)
             | x @ Gles2Error::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
