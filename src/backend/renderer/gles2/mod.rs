@@ -494,6 +494,9 @@ pub enum Gles2Error {
         /// Uniform type that was declared when compiling
         declared: UniformType,
     },
+    /// Indicates that an error occured during the `gl.CreateProgram` function.
+    #[error("An error occured while trying to create a program object")]
+    CreateProgram,
 }
 
 impl From<Gles2Error> for SwapBuffersError {
@@ -514,6 +517,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::BufferAccessError(_)
             | x @ Gles2Error::MappingError
             | x @ Gles2Error::UnexpectedSize
+            | x @ Gles2Error::CreateProgram
             | x @ Gles2Error::BlitError
             | x @ Gles2Error::CreateShaderObject
             | x @ Gles2Error::UniformTypeMismatch { .. }
@@ -537,6 +541,7 @@ impl From<Gles2Error> for SwapBuffersError {
             | x @ Gles2Error::UnexpectedSize
             | x @ Gles2Error::BlitError
             | x @ Gles2Error::CreateShaderObject
+            | x @ Gles2Error::CreateProgram
             | x @ Gles2Error::UniformTypeMismatch { .. }
             | x @ Gles2Error::UnknownUniform(_)
             | x @ Gles2Error::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
@@ -622,6 +627,10 @@ unsafe fn link_program(
     let vert = compile_shader(gl, ffi::VERTEX_SHADER, vert_src)?;
     let frag = compile_shader(gl, ffi::FRAGMENT_SHADER, frag_src)?;
     let program = gl.CreateProgram();
+    if program == 0 {
+        return Err(Gles2Error::CreateProgram);
+    }
+
     gl.AttachShader(program, vert);
     gl.AttachShader(program, frag);
     gl.LinkProgram(program);
