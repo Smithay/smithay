@@ -83,7 +83,7 @@ pub struct EGLDisplay {
 }
 
 /// SAFETY:
-/// `native.native_display` must be a valid pointer.
+/// `native.native_display` must return a valid pointer.
 unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
     native: &N,
     dp_extensions: &[String],
