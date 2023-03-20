@@ -63,7 +63,7 @@
 //! instance and have the same physical device handle.
 
 #![warn(missing_debug_implementations)]
-#![deny(unsafe_op_in_unsafe_fn)]
+#![forbid(unsafe_op_in_unsafe_fn)]
 
 use std::{
     env::{self, VarError},
