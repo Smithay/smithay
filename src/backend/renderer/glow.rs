@@ -14,8 +14,10 @@ use crate::{
         allocator::{dmabuf::Dmabuf, Format},
         egl::EGLContext,
         renderer::{
-            gles2::*, Bind, Blit, DebugFlags, ExportDma, ExportMem, ImportDma, ImportMem, Offscreen,
-            Renderer, TextureFilter, Unbind,
+            element::UnderlyingStorage,
+            gles2::{element::*, *},
+            Bind, Blit, DebugFlags, ExportDma, ExportMem, ImportDma, ImportMem, Offscreen, Renderer,
+            TextureFilter, Unbind,
         },
     },
     utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
@@ -31,7 +33,7 @@ use std::{
     sync::Arc,
 };
 
-use super::Frame;
+use super::{element::RenderElement, Frame};
 
 #[derive(Debug)]
 /// A renderer utilizing OpenGL ES 2 and [`glow`] on top for easier custom rendering.
@@ -153,6 +155,18 @@ impl BorrowMut<Gles2Renderer> for GlowRenderer {
     }
 }
 
+impl<'frame> Borrow<Gles2Frame<'frame>> for GlowFrame<'frame> {
+    fn borrow(&self) -> &Gles2Frame<'frame> {
+        self.frame.as_ref().unwrap()
+    }
+}
+
+impl<'frame> BorrowMut<Gles2Frame<'frame>> for GlowFrame<'frame> {
+    fn borrow_mut(&mut self) -> &mut Gles2Frame<'frame> {
+        self.frame.as_mut().unwrap()
+    }
+}
+
 impl Renderer for GlowRenderer {
     type Error = Gles2Error;
     type TextureId = Gles2Texture;
@@ -211,10 +225,15 @@ impl<'frame> Frame for GlowFrame<'frame> {
         src_transform: Transform,
         alpha: f32,
     ) -> Result<(), Self::Error> {
-        self.frame
-            .as_mut()
-            .unwrap()
-            .render_texture_from_to(texture, src, dst, damage, src_transform, alpha)
+        Frame::render_texture_from_to(
+            self.frame.as_mut().unwrap(),
+            texture,
+            src,
+            dst,
+            damage,
+            src_transform,
+            alpha,
+        )
     }
 
     fn transformation(&self) -> Transform {
@@ -428,5 +447,21 @@ where
 impl Unbind for GlowRenderer {
     fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
         self.gl.unbind()
+    }
+}
+
+impl RenderElement<GlowRenderer> for PixelShaderElement {
+    fn draw<'a>(
+        &self,
+        frame: &mut GlowFrame<'a>,
+        src: Rectangle<f64, BufferCoord>,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+    ) -> Result<(), Gles2Error> {
+        RenderElement::<Gles2Renderer>::draw(self, frame.borrow_mut(), src, dst, damage)
+    }
+
+    fn underlying_storage(&self, renderer: &mut GlowRenderer) -> Option<UnderlyingStorage> {
+        RenderElement::<Gles2Renderer>::underlying_storage(self, renderer.borrow_mut())
     }
 }
