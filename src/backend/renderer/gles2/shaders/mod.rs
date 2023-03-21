@@ -3,7 +3,7 @@
  */
 
 // define constants
-pub const XBGR: &str = "XBGR";
+pub const NO_ALPHA: &str = "NO_ALPHA";
 pub const EXTERNAL: &str = "EXTERNAL";
 pub const DEBUG_FLAGS: &str = "DEBUG_FLAGS";
 

@@ -17,12 +17,12 @@ uniform float tint;
 #endif
 
 void main() {
-    vec4 color;
+    vec4 color = texture2D(tex, v_coords);
 
-#if defined(XBGR)
-    color = vec4(texture2D(tex, v_coords).rgb, 1.0) * alpha;
+#if defined(NO_ALPHA)
+    color = vec4(color.rgb, 1.0) * alpha;
 #else
-    color = texture2D(tex, v_coords) * alpha;
+    color = color * alpha;
 #endif
 
 #if defined(DEBUG_FLAGS)
