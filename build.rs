@@ -118,6 +118,29 @@ fn test_gbm_bo_create_with_modifiers2() {
     }
 }
 
+#[cfg(all(feature = "backend_gbm", not(feature = "backend_gbm_has_bo_write")))]
+fn test_gbm_bo_write() {
+    let gbm = match pkg_config::probe_library("gbm") {
+        Ok(lib) => lib,
+        Err(_) => {
+            println!("cargo:warning=failed to find gbm, assuming backend_gbm_has_bo_write is unavailable");
+            return;
+        }
+    };
+
+    let has_gbm_bo_write = cc::Build::new()
+        .file("test_gbm_bo_write.c")
+        .includes(gbm.include_paths)
+        .warnings_into_errors(true)
+        .cargo_metadata(false)
+        .try_compile("test_gbm_bo_write")
+        .is_ok();
+
+    if has_gbm_bo_write {
+        println!("cargo:rustc-cfg=feature=\"backend_gbm_has_bo_write\"");
+    }
+}
+
 fn main() {
     #[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
     gl_generate();
@@ -129,4 +152,6 @@ fn main() {
         not(feature = "backend_gbm_has_create_with_modifiers2")
     ))]
     test_gbm_bo_create_with_modifiers2();
+    #[cfg(all(feature = "backend_gbm", not(feature = "backend_gbm_has_bo_write")))]
+    test_gbm_bo_write();
 }

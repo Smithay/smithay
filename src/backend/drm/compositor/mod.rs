@@ -2456,8 +2456,24 @@ where
             }
         };
 
+        #[cfg(feature = "backend_gbm_has_bo_write")]
         if let Err(err) = cursor_buffer.write(data) {
             info!("failed to write cursor buffer; {}", err);
+            return None;
+        }
+
+        #[cfg(not(feature = "backend_gbm_has_bo_write"))]
+        if let Err(err) = cursor_buffer.map_mut(
+            &cursor_state.framebuffer_exporter,
+            0,
+            0,
+            cursor_buffer_size.w as u32,
+            cursor_buffer_size.h as u32,
+            |map| {
+                map.buffer_mut().copy_from_slice(&data);
+            },
+        ) {
+            info!("failed to copy cursor buffer; {}", err);
             return None;
         }
 
