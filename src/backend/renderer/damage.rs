@@ -326,7 +326,9 @@ impl OutputDamageTracker {
         &self.mode
     }
 
-    /// Render this output
+    /// Render this output with the provided [`Renderer`]
+    ///
+    /// - `elements` for this output in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip(renderer, elements))]
     pub fn render_output<E, R>(
         &mut self,
@@ -458,6 +460,8 @@ impl OutputDamageTracker {
     }
 
     /// Damage this output and return the damage without actually rendering the difference
+    ///
+    /// - `elements` for this output in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip(elements))]
     pub fn damage_output<E>(
         &mut self,

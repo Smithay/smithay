@@ -1387,6 +1387,8 @@ where
     }
 
     /// Render the next frame
+    ///
+    /// - `elements` for this frame in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip_all)]
     pub fn render_frame<'a, R, E, Target>(
         &'a mut self,
