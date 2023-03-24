@@ -1,0 +1,18 @@
+[package]
+name = "smithay-drm-extras"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+edid-rs = "0.1.0"
+drm = "0.8.0"
+
+[features]
+default = []
+generate-hwdata = ["pkg-config"]
+
+[dev-dependencies.smithay]
+path = "../"
+
+[build-dependencies]
+pkg-config = { version = "0.3.26", optional = true }
