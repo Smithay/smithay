@@ -20,7 +20,7 @@ use tracing::{error, instrument, warn};
 
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
-use super::{CommitCounter, DamageTracker, SurfaceView};
+use super::{CommitCounter, DamageBag, SurfaceView};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -40,7 +40,7 @@ pub struct RendererSurfaceState {
     pub(crate) buffer_delta: Option<Point<i32, Logical>>,
     pub(crate) buffer_has_alpha: Option<bool>,
     pub(crate) buffer: Option<Buffer>,
-    pub(crate) damage: DamageTracker<i32, BufferCoord>,
+    pub(crate) damage: DamageBag<i32, BufferCoord>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,

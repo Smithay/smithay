@@ -132,7 +132,7 @@
 //! # }
 //! use smithay::{
 //!     backend::renderer::{
-//!         damage::DamageTrackedRenderer,
+//!         damage::OutputDamageTracker,
 //!         element::texture::{TextureBuffer, TextureRenderElement},
 //!     },
 //!     utils::{Point, Transform},
@@ -156,7 +156,7 @@
 //! )
 //! .expect("failed to import mem");
 //!
-//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
 //!
 //! loop {
 //!     // Create a render element from the buffer
@@ -165,7 +165,7 @@
 //!         TextureRenderElement::from_texture_buffer(location, &texture_buffer, None, None, None);
 //!
 //!     // Render the element(s)
-//!     damage_tracked_renderer
+//!     damage_tracker
 //!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
@@ -268,7 +268,7 @@
 //!
 //! use smithay::{
 //!     backend::renderer::{
-//!         damage::DamageTrackedRenderer,
+//!         damage::OutputDamageTracker,
 //!         element::texture::{TextureRenderBuffer, TextureRenderElement},
 //!     },
 //!     utils::{Point, Rectangle, Size, Transform},
@@ -315,7 +315,7 @@
 //! // We explicitly drop the context here to make the borrow checker happy
 //! std::mem::drop(render_context);
 //!
-//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
 //!
 //! let mut last_update = Instant::now();
 //!
@@ -345,7 +345,7 @@
 //!     );
 //!
 //!     // Render the element(s)
-//!     damage_tracked_renderer
+//!     damage_tracker
 //!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
@@ -357,7 +357,7 @@ use tracing::{instrument, warn};
 
 use crate::{
     backend::renderer::{
-        utils::{DamageTracker, DamageTrackerSnapshot},
+        utils::{DamageBag, DamageSnapshot},
         Frame, ImportMem, Renderer, Texture,
     },
     utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
@@ -425,7 +425,7 @@ pub struct TextureRenderBuffer<T> {
     scale: i32,
     transform: Transform,
     opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
-    damage_tracker: Arc<Mutex<DamageTracker<i32, Buffer>>>,
+    damage_tracker: Arc<Mutex<DamageBag<i32, Buffer>>>,
 }
 
 impl<T: Texture> TextureRenderBuffer<T> {
@@ -444,7 +444,7 @@ impl<T: Texture> TextureRenderBuffer<T> {
             scale,
             transform,
             opaque_regions,
-            damage_tracker: Arc::new(Mutex::new(DamageTracker::default())),
+            damage_tracker: Arc::new(Mutex::new(DamageBag::default())),
         }
     }
 
@@ -561,7 +561,7 @@ pub struct TextureRenderElement<T> {
     src: Option<Rectangle<f64, Logical>>,
     size: Option<Size<i32, Logical>>,
     opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
-    snapshot: DamageTrackerSnapshot<i32, Buffer>,
+    snapshot: DamageSnapshot<i32, Buffer>,
 }
 
 impl<T: Texture> TextureRenderElement<T> {
@@ -637,7 +637,7 @@ impl<T: Texture> TextureRenderElement<T> {
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
-        snapshot: DamageTrackerSnapshot<i32, Buffer>,
+        snapshot: DamageSnapshot<i32, Buffer>,
     ) -> Self {
         let opaque_regions = opaque_regions.map(|regions| {
             regions
@@ -686,7 +686,7 @@ impl<T: Texture> TextureRenderElement<T> {
             src,
             size,
             opaque_regions,
-            DamageTrackerSnapshot::empty(),
+            DamageSnapshot::empty(),
         )
     }
 

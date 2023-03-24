@@ -23,7 +23,7 @@ use smithay::{
         },
         egl::{EGLContext, EGLDisplay},
         renderer::{
-            damage::DamageTrackedRenderer, element::AsRenderElements, gles2::Gles2Renderer, Bind, ImportDma,
+            damage::OutputDamageTracker, element::AsRenderElements, gles2::Gles2Renderer, Bind, ImportDma,
         },
         vulkan::{version::Version, Instance, PhysicalDevice},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
@@ -58,7 +58,7 @@ pub struct X11Data {
     // FIXME: If Gles2Renderer is dropped before X11Surface, then the MakeCurrent call inside Gles2Renderer will
     // fail because the X11Surface is keeping gbm alive.
     renderer: Gles2Renderer,
-    damage_tracked_renderer: DamageTrackedRenderer,
+    damage_tracker: OutputDamageTracker,
     surface: X11Surface,
     dmabuf_state: DmabufState,
     _dmabuf_global: DmabufGlobal,
@@ -227,14 +227,14 @@ pub fn run_x11() {
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
 
-    let damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
+    let damage_tracker = OutputDamageTracker::from_output(&output);
 
     let data = X11Data {
         render: true,
         mode,
         surface,
         renderer,
-        damage_tracked_renderer,
+        damage_tracker,
         dmabuf_state,
         _dmabuf_global: dmabuf_global,
         _dmabuf_default_feedback: dmabuf_default_feedback,
@@ -389,7 +389,7 @@ pub fn run_x11() {
                 &state.space,
                 elements,
                 &mut backend_data.renderer,
-                &mut backend_data.damage_tracked_renderer,
+                &mut backend_data.damage_tracker,
                 age.into(),
                 state.show_window_preview,
             );
