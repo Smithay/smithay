@@ -11,6 +11,7 @@
 //! - [`memory`](crate::backend::renderer::element::memory) - Memory based render element
 //! - [`texture`](crate::backend::renderer::element::texture) - Texture based render element
 //! - [`surface`](crate::backend::renderer::element::surface) - Wayland surface render element
+//! - [`solid`](crate::backend::renderer::element::solid) - Solid color render element
 //!
 //! The [`render_elements!`] macro provides an easy way to aggregate multiple different [RenderElement]s
 //! into a single enum.
@@ -33,6 +34,7 @@ use super::utils::Buffer;
 use super::{utils::CommitCounter, Renderer};
 
 pub mod memory;
+pub mod solid;
 #[cfg(feature = "wayland_frontend")]
 pub mod surface;
 pub mod texture;
