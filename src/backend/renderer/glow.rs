@@ -216,6 +216,15 @@ impl<'frame> Frame for GlowFrame<'frame> {
         self.frame.as_mut().unwrap().clear(color, at)
     }
 
+    fn draw_solid(
+        &mut self,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        color: [f32; 4],
+    ) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().draw_solid(dst, damage, color)
+    }
+
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,

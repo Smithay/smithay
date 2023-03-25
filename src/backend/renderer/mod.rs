@@ -148,6 +148,14 @@ pub trait Frame {
     /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
     fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error>;
 
+    /// Draw a solid color to the current target at the specified destination with the specified color.
+    fn draw_solid(
+        &mut self,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        color: [f32; 4],
+    ) -> Result<(), Self::Error>;
+
     /// Render a texture to the current target as a flat 2d-plane at a given
     /// position and applying the given transformation with the given alpha value.
     /// (Meaning `src_transform` should match the orientation of surface being rendered).

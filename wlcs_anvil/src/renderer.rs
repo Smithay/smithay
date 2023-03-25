@@ -165,6 +165,15 @@ impl Frame for DummyFrame {
         Ok(())
     }
 
+    fn draw_solid(
+        &mut self,
+        _dst: Rectangle<i32, Physical>,
+        _damage: &[Rectangle<i32, Physical>],
+        _color: [f32; 4],
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     fn render_texture_from_to(
         &mut self,
         _texture: &Self::TextureId,
