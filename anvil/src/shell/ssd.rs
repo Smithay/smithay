@@ -1,7 +1,13 @@
 use smithay::{
-    backend::renderer::element::memory::MemoryRenderBuffer,
+    backend::renderer::{
+        element::{
+            solid::{SolidColorBuffer, SolidColorRenderElement},
+            AsRenderElements,
+        },
+        Renderer,
+    },
     input::Seat,
-    utils::{Logical, Point, Rectangle, Serial},
+    utils::{Logical, Point, Serial},
     wayland::shell::xdg::XdgShellHandler,
 };
 
@@ -23,14 +29,16 @@ pub struct HeaderBar {
     pub width: u32,
     pub close_button_hover: bool,
     pub maximize_button_hover: bool,
-    pub buffer: MemoryRenderBuffer,
+    pub background: SolidColorBuffer,
+    pub close_button: SolidColorBuffer,
+    pub maximize_button: SolidColorBuffer,
 }
 
-const BG_COLOR: &[u8] = &[255, 231, 199, 255];
-const MAX_COLOR: &[u8] = &[255, 246, 181, 255];
-const CLOSE_COLOR: &[u8] = &[255, 169, 156, 255];
-const MAX_COLOR_HOVER: &[u8] = &[181, 159, 0, 255];
-const CLOSE_COLOR_HOVER: &[u8] = &[191, 28, 4, 255];
+const BG_COLOR: [f32; 4] = [0.75f32, 0.9f32, 0.78f32, 1f32];
+const MAX_COLOR: [f32; 4] = [1f32, 0.965f32, 0.71f32, 1f32];
+const CLOSE_COLOR: [f32; 4] = [1f32, 0.66f32, 0.612f32, 1f32];
+const MAX_COLOR_HOVER: [f32; 4] = [0.71f32, 0.624f32, 0f32, 1f32];
+const CLOSE_COLOR_HOVER: [f32; 4] = [0.75f32, 0.11f32, 0.016f32, 1f32];
 
 pub const HEADER_BAR_HEIGHT: i32 = 32;
 const BUTTON_HEIGHT: u32 = HEADER_BAR_HEIGHT as u32;
@@ -102,22 +110,11 @@ impl HeaderBar {
             return;
         }
 
-        let mut render_context = self.buffer.render();
-        render_context.resize((width as i32, HEADER_BAR_HEIGHT));
+        self.background
+            .update((width as i32, HEADER_BAR_HEIGHT), BG_COLOR);
 
         let mut needs_redraw_buttons = false;
         if width != self.width {
-            render_context
-                .draw(|buffer| {
-                    buffer.chunks_exact_mut(4).for_each(|chunk| {
-                        chunk.copy_from_slice(BG_COLOR);
-                    });
-                    Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(
-                        (0, 0),
-                        (width as i32, HEADER_BAR_HEIGHT),
-                    )])
-                })
-                .unwrap();
             needs_redraw_buttons = true;
             self.width = width;
         }
@@ -129,20 +126,8 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || !self.close_button_hover)
         {
-            render_context
-                .draw(|buffer| {
-                    buffer
-                        .chunks_exact_mut((width * 4) as usize)
-                        .flat_map(|x| {
-                            x[((width - BUTTON_WIDTH) * 4) as usize..(width * 4) as usize].chunks_exact_mut(4)
-                        })
-                        .for_each(|chunk| chunk.copy_from_slice(CLOSE_COLOR_HOVER));
-                    Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(
-                        ((width - BUTTON_WIDTH) as i32, 0),
-                        (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
-                    )])
-                })
-                .unwrap();
+            self.close_button
+                .update((BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32), CLOSE_COLOR_HOVER);
             self.close_button_hover = true;
         } else if !self
             .pointer_loc
@@ -151,21 +136,8 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || self.close_button_hover)
         {
-            render_context
-                .draw(|buffer| {
-                    buffer
-                        .chunks_exact_mut((width * 4) as usize)
-                        .flat_map(|x| {
-                            x[((width - 32) * 4) as usize..(width * 4) as usize].chunks_exact_mut(4)
-                        })
-                        .for_each(|chunk| chunk.copy_from_slice(CLOSE_COLOR));
-                    Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(
-                        ((width - BUTTON_WIDTH) as i32, 0),
-                        (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
-                    )])
-                })
-                .unwrap();
-
+            self.close_button
+                .update((BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32), CLOSE_COLOR);
             self.close_button_hover = false;
         }
 
@@ -176,23 +148,8 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || !self.maximize_button_hover)
         {
-            render_context
-                .draw(|buffer| {
-                    buffer
-                        .chunks_exact_mut((width * 4) as usize)
-                        .flat_map(|x| {
-                            x[((width - (BUTTON_WIDTH * 2)) * 4) as usize
-                                ..((width - BUTTON_WIDTH) * 4) as usize]
-                                .chunks_exact_mut(4)
-                        })
-                        .for_each(|chunk| chunk.copy_from_slice(MAX_COLOR_HOVER));
-                    Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(
-                        ((width - BUTTON_WIDTH * 2) as i32, 0),
-                        (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
-                    )])
-                })
-                .unwrap();
-
+            self.maximize_button
+                .update((BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32), MAX_COLOR_HOVER);
             self.maximize_button_hover = true;
         } else if !self
             .pointer_loc
@@ -201,25 +158,40 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || self.maximize_button_hover)
         {
-            render_context
-                .draw(|buffer| {
-                    buffer
-                        .chunks_exact_mut((width * 4) as usize)
-                        .flat_map(|x| {
-                            x[((width - (BUTTON_WIDTH * 2)) * 4) as usize
-                                ..((width - BUTTON_WIDTH) * 4) as usize]
-                                .chunks_exact_mut(4)
-                        })
-                        .for_each(|chunk| chunk.copy_from_slice(MAX_COLOR));
-                    Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(
-                        ((width - BUTTON_WIDTH * 2) as i32, 0),
-                        (BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32),
-                    )])
-                })
-                .unwrap();
-
+            self.maximize_button
+                .update((BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32), MAX_COLOR);
             self.maximize_button_hover = false;
         }
+    }
+}
+
+impl<R: Renderer> AsRenderElements<R> for HeaderBar {
+    type RenderElement = SolidColorRenderElement;
+
+    fn render_elements<C: From<Self::RenderElement>>(
+        &self,
+        _renderer: &mut R,
+        location: Point<i32, smithay::utils::Physical>,
+        scale: smithay::utils::Scale<f64>,
+    ) -> Vec<C> {
+        let header_end_offset: Point<i32, Logical> = Point::from((self.width as i32, 0));
+        let button_offset: Point<i32, Logical> = Point::from((BUTTON_WIDTH as i32, 0));
+
+        vec![
+            SolidColorRenderElement::from_buffer(
+                &self.close_button,
+                location + (header_end_offset - button_offset).to_physical_precise_round(scale),
+                scale,
+            )
+            .into(),
+            SolidColorRenderElement::from_buffer(
+                &self.maximize_button,
+                location + (header_end_offset - button_offset.upscale(2)).to_physical_precise_round(scale),
+                scale,
+            )
+            .into(),
+            SolidColorRenderElement::from_buffer(&self.background, location, scale).into(),
+        ]
     }
 }
 
@@ -234,7 +206,9 @@ impl WindowElement {
                     width: 0,
                     close_button_hover: false,
                     maximize_button_hover: false,
-                    buffer: MemoryRenderBuffer::default(),
+                    background: SolidColorBuffer::default(),
+                    close_button: SolidColorBuffer::default(),
+                    maximize_button: SolidColorBuffer::default(),
                 },
             })
         });
