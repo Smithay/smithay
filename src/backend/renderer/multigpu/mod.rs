@@ -1415,6 +1415,24 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    fn draw_solid(
+        &mut self,
+        dst: Rectangle<i32, Physical>,
+        damage: &[Rectangle<i32, Physical>],
+        color: [f32; 4],
+    ) -> Result<(), Self::Error> {
+        self.damage.extend(damage.iter().copied().map(|mut rect| {
+            rect.loc += dst.loc;
+            rect
+        }));
+        self.frame
+            .as_mut()
+            .unwrap()
+            .draw_solid(dst, damage, color)
+            .map_err(Error::Render)
+    }
+
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn render_texture_from_to(
         &mut self,
         texture: &MultiTexture,

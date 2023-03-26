@@ -11,6 +11,7 @@
 //! - [`memory`](crate::backend::renderer::element::memory) - Memory based render element
 //! - [`texture`](crate::backend::renderer::element::texture) - Texture based render element
 //! - [`surface`](crate::backend::renderer::element::surface) - Wayland surface render element
+//! - [`solid`](crate::backend::renderer::element::solid) - Solid color render element
 //!
 //! The [`render_elements!`] macro provides an easy way to aggregate multiple different [RenderElement]s
 //! into a single enum.
@@ -33,6 +34,7 @@ use super::utils::Buffer;
 use super::{utils::CommitCounter, Renderer};
 
 pub mod memory;
+pub mod solid;
 #[cfg(feature = "wayland_frontend")]
 pub mod surface;
 pub mod texture;
@@ -1192,6 +1194,14 @@ macro_rules! render_elements_internal {
 /// #
 /// #     fn id(&self) -> usize { unimplemented!() }
 /// #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+/// #         unimplemented!()
+/// #     }
+/// #     fn draw_solid(
+/// #         &mut self,
+/// #         _dst: Rectangle<i32, Physical>,
+/// #         _damage: &[Rectangle<i32, Physical>],
+/// #         _color: [f32; 4],
+/// #     ) -> Result<(), Self::Error> {
 /// #         unimplemented!()
 /// #     }
 /// #     fn render_texture_from_to(

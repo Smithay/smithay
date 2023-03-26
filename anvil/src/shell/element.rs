@@ -5,8 +5,7 @@ use smithay::{
         input::KeyState,
         renderer::{
             element::{
-                memory::MemoryRenderBufferRenderElement, surface::WaylandSurfaceRenderElement,
-                AsRenderElements,
+                solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement, AsRenderElements,
             },
             ImportAll, ImportMem, Renderer, Texture,
         },
@@ -465,7 +464,7 @@ impl SpaceElement for WindowElement {
 render_elements!(
     pub WindowRenderElement<R> where R: ImportAll + ImportMem;
     Window=WaylandSurfaceRenderElement<R>,
-    Decoration=MemoryRenderBufferRenderElement<R>,
+    Decoration=SolidColorRenderElement,
 );
 
 impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for WindowRenderElement<R> {
@@ -507,18 +506,16 @@ where
             let mut state = self.decoration_state();
             let width = window_geo.size.w;
             state.header_bar.redraw(width as u32);
-            let Ok(decoration_render_element) = MemoryRenderBufferRenderElement::from_buffer(
+            let mut vec = AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
+                &state.header_bar,
                 renderer,
-                location.to_f64(),
-                &state.header_bar.buffer,
-                None,
-                None,
-                None,
-            ) else { return Vec::new() };
+                location,
+                scale,
+            );
 
             location.y += (scale.y * HEADER_BAR_HEIGHT as f64) as i32;
 
-            let vec = match self {
+            let window_elements = match self {
                 WindowElement::Wayland(xdg) => {
                     AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
                         xdg, renderer, location, scale,
@@ -529,12 +526,8 @@ where
                     x11, renderer, location, scale,
                 ),
             };
-            vec.into_iter()
-                .chain(std::iter::once(WindowRenderElement::Decoration(
-                    decoration_render_element,
-                )))
-                .map(C::from)
-                .collect()
+            vec.extend(window_elements);
+            vec.into_iter().map(C::from).collect()
         } else {
             match self {
                 WindowElement::Wayland(xdg) => {
