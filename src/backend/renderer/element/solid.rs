@@ -105,7 +105,7 @@
 //! # }
 //! use smithay::{
 //!     backend::renderer::{
-//!         damage::DamageTrackedRenderer,
+//!         damage::OutputDamageTracker,
 //!         element::solid::{SolidColorBuffer, SolidColorRenderElement},
 //!     },
 //!     utils::{Point, Size},
@@ -119,7 +119,7 @@
 //! let buffer = SolidColorBuffer::new((WIDTH, HEIGHT), COLOR);
 //!
 //! // Initialize a static damage tracked renderer
-//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
 //! # let mut renderer = FakeRenderer;
 //!
 //! loop {
@@ -128,7 +128,7 @@
 //!     let render_element = SolidColorRenderElement::from_buffer(&buffer, location, 1f64);
 //!
 //!     // Render the element(s)
-//!     damage_tracked_renderer
+//!     damage_tracker
 //!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
