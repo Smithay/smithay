@@ -277,6 +277,14 @@ fn place_new_window(space: &mut Space<WindowElement>, window: &WindowElement, ac
         })
         .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (800, 800)));
 
+    // set the initial toplevel bounds
+    #[allow(irrefutable_let_patterns)]
+    if let WindowElement::Wayland(window) = window {
+        window.toplevel().with_pending_state(|state| {
+            state.bounds = Some(output_geometry.size);
+        });
+    }
+
     let max_x = output_geometry.loc.x + (((output_geometry.size.w as f32) / 3.0) * 2.0) as i32;
     let max_y = output_geometry.loc.y + (((output_geometry.size.h as f32) / 3.0) * 2.0) as i32;
     let x_range = Uniform::new(output_geometry.loc.x, max_x);
