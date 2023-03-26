@@ -191,7 +191,11 @@ where
     })
 }
 
-pub fn send_toplevel_configure(resource: &xdg_toplevel::XdgToplevel, configure: ToplevelConfigure) {
+pub fn send_toplevel_configure(
+    resource: &xdg_toplevel::XdgToplevel,
+    configure: ToplevelConfigure,
+    send_bounds: bool,
+) {
     let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
     let (width, height) = configure.state.size.unwrap_or_default().into();
     // convert the Vec<State> (which is really a Vec<u32>) into Vec<u8>
@@ -205,6 +209,12 @@ pub fn send_toplevel_configure(resource: &xdg_toplevel::XdgToplevel, configure: 
         unsafe { Vec::from_raw_parts(ptr as *mut u8, len * 4, cap * 4) }
     };
     let serial = configure.serial;
+
+    // send bounds if requested
+    if send_bounds && resource.version() >= xdg_toplevel::EVT_CONFIGURE_BOUNDS_SINCE {
+        let bounds = configure.state.bounds.unwrap_or_default();
+        resource.configure_bounds(bounds.w, bounds.h);
+    }
 
     // Send the toplevel configure
     resource.configure(width, height, states);
