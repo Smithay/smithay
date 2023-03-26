@@ -4,7 +4,7 @@
 use crate::{
     backend::renderer::{
         damage::{
-            DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode, OutputNoMode,
+            Error as OutputDamageTrackerError, OutputDamageTracker, OutputDamageTrackerMode, OutputNoMode,
         },
         element::{AsRenderElements, RenderElement, RenderElementStates, Wrap},
         Renderer, Texture,
@@ -664,16 +664,16 @@ pub fn render_output<
     age: usize,
     spaces: S,
     custom_elements: &'a [C],
-    damage_tracked_renderer: &mut DamageTrackedRenderer,
+    damage_tracker: &mut OutputDamageTracker,
     clear_color: [f32; 4],
-) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
+) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputDamageTrackerError<R>>
 where
     <R as Renderer>::TextureId: Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
-    if let DamageTrackedRendererMode::Auto(renderer_output) = damage_tracked_renderer.mode() {
+    if let OutputDamageTrackerMode::Auto(renderer_output) = damage_tracker.mode() {
         assert!(renderer_output == output);
     }
 
@@ -685,5 +685,5 @@ where
     render_elements.extend(custom_elements.iter().map(OutputRenderElements::Custom));
     render_elements.extend(space_render_elements.into_iter().map(OutputRenderElements::Space));
 
-    damage_tracked_renderer.render_output(renderer, age, &render_elements, clear_color)
+    damage_tracker.render_output(renderer, age, &render_elements, clear_color)
 }

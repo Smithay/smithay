@@ -1,16 +1,24 @@
-//! Helper for effective damage tracked rendering
+//! Helper for effective output damage tracking
 //!
 //! # Why use this implementation
 //!
-//! The [`DamageTrackedRenderer`] in combination with the [`RenderElement`] trait
+//! The [`OutputDamageTracker`] in combination with the [`RenderElement`] trait
 //! can help you to reduce resource consumption by tracking what elements have
 //! been damaged and only redraw the damaged parts on an output.
 //!
 //! It does so by keeping track of the last used [`CommitCounter`] for all provided
-//! [`RenderElement`]s and queries the element for new damage on each call to [`render_output`](DamageTrackedRenderer::render_output).
+//! [`RenderElement`]s and queries the element for new damage on each call to [`render_output`](OutputDamageTracker::render_output) or [`damage_output`](OutputDamageTracker::damage_output).
 //!
-//! You can initialize it with a static output by using [`DamageTrackedRenderer::new`] or
-//! allow it to track a specific [`Output`] with [`DamageTrackedRenderer::from_output`].
+//! Additionally the damage tracker will automatically generate damage in the following situations:
+//! - Current geometry for elements entering the output
+//! - Current and last known geometry for moved elements (includes z-index changes)
+//! - Last known geometry for elements no longer present
+//!
+//! Elements fully occluded by opaque regions as defined by elements higher in the stack are skipped.
+//! The actual action taken by the damage tracker can be inspected from the returned [`RenderElementStates`].
+//!
+//! You can initialize it with a static output by using [`OutputDamageTracker::new`] or
+//! allow it to track a specific [`Output`] with [`OutputDamageTracker::from_output`].
 //!
 //! See the [`renderer::element`](crate::backend::renderer::element) module for more information
 //! about how to use [`RenderElement`].
@@ -118,7 +126,7 @@
 //! # }
 //! use smithay::{
 //!     backend::renderer::{
-//!         damage::DamageTrackedRenderer,
+//!         damage::OutputDamageTracker,
 //!         element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement}
 //!     },
 //!     utils::{Point, Transform},
@@ -130,8 +138,8 @@
 //! # let mut renderer = FakeRenderer;
 //! # let buffer_age = 0;
 //!
-//! // Initialize a new damage tracked renderer
-//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//! // Initialize a new damage tracker for a static output
+//! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
 //!
 //! // Initialize a buffer to render
 //! let mut memory_buffer = MemoryRenderBuffer::new((WIDTH, HEIGHT), 1, Transform::Normal, None);
@@ -160,7 +168,7 @@
 //!         .expect("Failed to upload memory to gpu");
 //!
 //!     // Render the output
-//!     damage_tracked_renderer
+//!     damage_tracker
 //!         .render_output(
 //!             &mut renderer,
 //!             buffer_age,
@@ -222,12 +230,12 @@ struct RendererState {
     old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
 }
 
-/// Mode for the [`DamageTrackedRenderer`]
+/// Mode for the [`OutputDamageTracker`] output
 #[derive(Debug, Clone)]
-pub enum DamageTrackedRendererMode {
-    /// Automatic mode based on a output
+pub enum OutputDamageTrackerMode {
+    /// Automatic mode based on a [`Output`]
     Auto(Output),
-    /// Static mode
+    /// Static output mode
     Static {
         /// Size of the static output
         size: Size<i32, Physical>,
@@ -243,17 +251,17 @@ pub enum DamageTrackedRendererMode {
 #[error("Output has no active mode")]
 pub struct OutputNoMode;
 
-impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for DamageTrackedRendererMode {
+impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for OutputDamageTrackerMode {
     type Error = OutputNoMode;
 
     fn try_into(self) -> Result<(Size<i32, Physical>, Scale<f64>, Transform), Self::Error> {
         match self {
-            DamageTrackedRendererMode::Auto(output) => Ok((
+            OutputDamageTrackerMode::Auto(output) => Ok((
                 output.current_mode().ok_or(OutputNoMode)?.size,
                 output.current_scale().fractional_scale().into(),
                 output.current_transform(),
             )),
-            DamageTrackedRendererMode::Static {
+            OutputDamageTrackerMode::Static {
                 size,
                 scale,
                 transform,
@@ -262,17 +270,17 @@ impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for DamageTrackedRend
     }
 }
 
-/// Damage tracked renderer for a single output
+/// Damage tracker for a single output
 #[derive(Debug)]
-pub struct DamageTrackedRenderer {
-    mode: DamageTrackedRendererMode,
+pub struct OutputDamageTracker {
+    mode: OutputDamageTrackerMode,
     last_state: RendererState,
     span: tracing::Span,
 }
 
-/// Errors thrown by [`DamageTrackedRenderer::render_output`]
+/// Errors thrown by [`OutputDamageTracker::render_output`]
 #[derive(thiserror::Error)]
-pub enum DamageTrackedRendererError<R: Renderer> {
+pub enum Error<R: Renderer> {
     /// The provided [`Renderer`] returned an error
     #[error(transparent)]
     Rendering(R::Error),
@@ -281,24 +289,24 @@ pub enum DamageTrackedRendererError<R: Renderer> {
     OutputNoMode(#[from] OutputNoMode),
 }
 
-impl<R: Renderer> std::fmt::Debug for DamageTrackedRendererError<R> {
+impl<R: Renderer> std::fmt::Debug for Error<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DamageTrackedRendererError::Rendering(err) => std::fmt::Debug::fmt(err, f),
-            DamageTrackedRendererError::OutputNoMode(err) => std::fmt::Debug::fmt(err, f),
+            Error::Rendering(err) => std::fmt::Debug::fmt(err, f),
+            Error::OutputNoMode(err) => std::fmt::Debug::fmt(err, f),
         }
     }
 }
 
-impl DamageTrackedRenderer {
-    /// Initialize a static [`DamageTrackedRenderer`]
+impl OutputDamageTracker {
+    /// Initialize a static [`OutputDamageTracker`]
     pub fn new(
         size: impl Into<Size<i32, Physical>>,
         scale: impl Into<Scale<f64>>,
         transform: Transform,
     ) -> Self {
         Self {
-            mode: DamageTrackedRendererMode::Static {
+            mode: OutputDamageTrackerMode::Static {
                 size: size.into(),
                 scale: scale.into(),
                 transform,
@@ -308,25 +316,27 @@ impl DamageTrackedRenderer {
         }
     }
 
-    /// Initialize a new [`DamageTrackedRenderer`] from an [`Output`]
+    /// Initialize a new [`OutputDamageTracker`] from an [`Output`]
     ///
     /// The renderer will keep track of changes to the [`Output`]
     /// and handle size and scaling changes automatically on the
-    /// next call to [`render_output`](DamageTrackedRenderer::render_output)
+    /// next call to [`render_output`](OutputDamageTracker::render_output)
     pub fn from_output(output: &Output) -> Self {
         Self {
-            mode: DamageTrackedRendererMode::Auto(output.clone()),
+            mode: OutputDamageTrackerMode::Auto(output.clone()),
             last_state: Default::default(),
             span: info_span!("renderer_damage", output = output.name()),
         }
     }
 
-    /// Get the [`DamageTrackedRendererMode`] of the [`DamageTrackedRenderer`]
-    pub fn mode(&self) -> &DamageTrackedRendererMode {
+    /// Get the [`OutputDamageTrackerMode`] of the [`OutputDamageTracker`]
+    pub fn mode(&self) -> &OutputDamageTrackerMode {
         &self.mode
     }
 
-    /// Render this output
+    /// Render this output with the provided [`Renderer`]
+    ///
+    /// - `elements` for this output in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip(renderer, elements))]
     pub fn render_output<E, R>(
         &mut self,
@@ -334,7 +344,7 @@ impl DamageTrackedRenderer {
         age: usize,
         elements: &[E],
         clear_color: [f32; 4],
-    ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
+    ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), Error<R>>
     where
         E: RenderElement<R>,
         R: Renderer,
@@ -451,13 +461,15 @@ impl DamageTrackedRenderer {
             // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
             // thus clean our old states before returning
             self.last_state = Default::default();
-            return Err(DamageTrackedRendererError::Rendering(err));
+            return Err(Error::Rendering(err));
         }
 
         Ok((Some(damage), states))
     }
 
     /// Damage this output and return the damage without actually rendering the difference
+    ///
+    /// - `elements` for this output in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip(elements))]
     pub fn damage_output<E>(
         &mut self,

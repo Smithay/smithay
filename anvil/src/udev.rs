@@ -39,7 +39,7 @@ use smithay::{
         egl::{self, EGLContext, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
-            damage::{DamageTrackedRenderer, DamageTrackedRendererError},
+            damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::{texture::TextureBuffer, AsRenderElements, RenderElement, RenderElementStates},
             gles2::{Gles2Renderbuffer, Gles2Renderer},
             multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer, MultiTexture},
@@ -476,7 +476,7 @@ pub type GbmDrmCompositor = DrmCompositor<
 enum SurfaceComposition {
     Surface {
         surface: RenderSurface,
-        dtr: DamageTrackedRenderer,
+        damage_tracker: OutputDamageTracker,
         debug_flags: DebugFlags,
     },
     Compositor(GbmDrmCompositor),
@@ -539,18 +539,18 @@ impl SurfaceComposition {
         match self {
             SurfaceComposition::Surface {
                 surface,
-                dtr,
+                damage_tracker,
                 debug_flags,
             } => {
                 let (dmabuf, age) = surface.next_buffer().map_err(Into::<SwapBuffersError>::into)?;
                 renderer.bind(dmabuf).map_err(Into::<SwapBuffersError>::into)?;
                 let current_debug_flags = renderer.debug_flags();
                 renderer.set_debug_flags(*debug_flags);
-                let res = dtr
+                let res = damage_tracker
                     .render_output(renderer, age.into(), elements, clear_color)
                     .map(|(damage, states)| (damage.is_some(), states))
                     .map_err(|err| match err {
-                        DamageTrackedRendererError::Rendering(err) => err.into(),
+                        OutputDamageTrackerError::Rendering(err) => err.into(),
                         _ => unreachable!(),
                     });
                 renderer.set_debug_flags(current_debug_flags);
@@ -562,7 +562,7 @@ impl SurfaceComposition {
                 .map_err(|err| match err {
                     smithay::backend::drm::compositor::RenderFrameError::PrepareFrame(err) => err.into(),
                     smithay::backend::drm::compositor::RenderFrameError::RenderFrame(
-                        DamageTrackedRendererError::Rendering(err),
+                        OutputDamageTrackerError::Rendering(err),
                     ) => err.into(),
                     _ => unreachable!(),
                 }),
@@ -743,7 +743,7 @@ fn scan_connectors(
                 };
                 SurfaceComposition::Surface {
                     surface: gbm_surface,
-                    dtr: DamageTrackedRenderer::from_output(&output),
+                    damage_tracker: OutputDamageTracker::from_output(&output),
                     debug_flags,
                 }
             } else {

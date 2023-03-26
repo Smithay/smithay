@@ -139,12 +139,12 @@ use crate::{
         drm::{DrmError, PlaneDamageClips},
         renderer::{
             buffer_y_inverted,
-            damage::{DamageTrackedRenderer, DamageTrackedRendererError, OutputNoMode},
+            damage::{Error as OutputDamageTrackerError, OutputDamageTracker, OutputNoMode},
             element::{
                 Element, Id, RenderElement, RenderElementPresentationState, RenderElementState,
                 RenderElementStates, RenderingReason, UnderlyingStorage,
             },
-            utils::{CommitCounter, DamageTracker, DamageTrackerSnapshot},
+            utils::{CommitCounter, DamageBag, DamageSnapshot},
             Bind, Blit, DebugFlags, ExportMem, Frame as RendererFrame, Offscreen, Renderer, Texture,
         },
         SwapBuffersError,
@@ -646,7 +646,7 @@ pub enum PrimaryPlaneElement<'a, B: Buffer, E> {
         /// The transform applied during rendering
         transform: Transform,
         /// The damage on the primary plane
-        damage: DamageTrackerSnapshot<i32, BufferCoords>,
+        damage: DamageSnapshot<i32, BufferCoords>,
     },
     /// An element has been assigned for direct scan-out
     Element(&'a E),
@@ -692,7 +692,7 @@ struct SwapchainElement<'a, B: Buffer> {
     id: Id,
     slot: &'a Slot<B>,
     transform: Transform,
-    damage: &'a DamageTrackerSnapshot<i32, BufferCoords>,
+    damage: &'a DamageSnapshot<i32, BufferCoords>,
 }
 
 impl<'a, B: Buffer> Element for SwapchainElement<'a, B> {
@@ -828,7 +828,7 @@ where
     /// Get the damage of this frame for the specified dtr and age
     pub fn damage_from_age(
         &self,
-        dtr: &mut DamageTrackedRenderer,
+        damage_tracker: &mut OutputDamageTracker,
         age: usize,
         filter: impl IntoIterator<Item = Id>,
     ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputNoMode>
@@ -868,7 +868,7 @@ where
 
         elements.push(primary_render_element);
 
-        dtr.damage_output(age, &elements)
+        damage_tracker.damage_output(age, &elements)
     }
 }
 
@@ -1087,9 +1087,9 @@ where
     output: Output,
     surface: Arc<DrmSurface>,
     planes: Planes,
-    damage_tracked_renderer: DamageTrackedRenderer,
+    damage_tracker: OutputDamageTracker,
     primary_plane_element_id: Id,
-    primary_plane_damage_tracker: DamageTracker<i32, BufferCoords>,
+    primary_plane_damage_bag: DamageBag<i32, BufferCoords>,
 
     framebuffer_exporter: F,
 
@@ -1180,7 +1180,7 @@ where
             .sort_by_key(|p| std::cmp::Reverse(p.zpos.unwrap_or_default()));
 
         let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
-        let damage_tracked_renderer = DamageTrackedRenderer::from_output(output);
+        let damage_tracker = OutputDamageTracker::from_output(output);
 
         for format in SUPPORTED_FORMATS {
             debug!("Testing color format: {}", format);
@@ -1208,7 +1208,7 @@ where
 
                     let drm_renderer = DrmCompositor {
                         primary_plane_element_id: Id::new(),
-                        primary_plane_damage_tracker: DamageTracker::new(4),
+                        primary_plane_damage_bag: DamageBag::new(4),
                         current_frame,
                         pending_frame: None,
                         queued_frame: None,
@@ -1218,7 +1218,7 @@ where
                         cursor_size,
                         cursor_state,
                         surface,
-                        damage_tracked_renderer,
+                        damage_tracker,
                         output: output.clone(),
                         planes,
                         element_states: IndexMap::new(),
@@ -1387,6 +1387,8 @@ where
     }
 
     /// Render the next frame
+    ///
+    /// - `elements` for this frame in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip_all)]
     pub fn render_frame<'a, R, E, Target>(
         &'a mut self,
@@ -1750,7 +1752,7 @@ where
 
             renderer
                 .bind(dmabuf)
-                .map_err(DamageTrackedRendererError::Rendering)?;
+                .map_err(OutputDamageTrackerError::Rendering)?;
 
             // store the current renderer debug flags and replace them
             // with our own
@@ -1781,9 +1783,9 @@ where
                     .map(|e| DrmRenderElements::Other(*e)),
             );
 
-            let render_res =
-                self.damage_tracked_renderer
-                    .render_output(renderer, age, &elements, clear_color);
+            let render_res = self
+                .damage_tracker
+                .render_output(renderer, age, &elements, clear_color);
 
             // restore the renderer debug flags
             renderer.set_debug_flags(renderer_debug_flags);
@@ -1828,14 +1830,13 @@ where
                         if let Some(render_damage) = render_damage {
                             trace!("rendering damage: {:?}", render_damage);
 
-                            self.primary_plane_damage_tracker
-                                .add(render_damage.iter().map(|d| {
-                                    d.to_logical(1).to_buffer(
-                                        1,
-                                        Transform::Normal,
-                                        &output_geometry.size.to_logical(1),
-                                    )
-                                }));
+                            self.primary_plane_damage_bag.add(render_damage.iter().map(|d| {
+                                d.to_logical(1).to_buffer(
+                                    1,
+                                    Transform::Normal,
+                                    &output_geometry.size.to_logical(1),
+                                )
+                            }));
                             output_damage.extend(render_damage.clone());
                             config.damage_clips = PlaneDamageClips::from_damage(
                                 self.surface.device_fd(),
@@ -1859,7 +1860,7 @@ where
                             "clearing previous direct scan-out on primary plane, damaging complete output"
                         );
                         output_damage.push(output_geometry);
-                        self.primary_plane_damage_tracker
+                        self.primary_plane_damage_bag
                             .add([output_geometry.to_logical(1).to_buffer(
                                 1,
                                 Transform::Normal,
@@ -1895,7 +1896,7 @@ where
             PrimaryPlaneElement::Swapchain {
                 slot,
                 transform: output_transform,
-                damage: self.primary_plane_damage_tracker.snapshot(),
+                damage: self.primary_plane_damage_bag.snapshot(),
             }
         } else {
             PrimaryPlaneElement::Element(primary_plane_scanout_element.unwrap())
@@ -3059,7 +3060,7 @@ pub enum RenderFrameError<
     PrepareFrame(#[from] FrameError<A, B, F>),
     /// Rendering the frame encountered en error
     #[error(transparent)]
-    RenderFrame(#[from] DamageTrackedRendererError<R>),
+    RenderFrame(#[from] OutputDamageTrackerError<R>),
 }
 
 impl<A, B, F, R> std::fmt::Debug for RenderFrameError<A, B, F, R>

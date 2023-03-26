@@ -14,7 +14,7 @@ use smithay::{
         allocator::dmabuf::Dmabuf,
         egl::EGLDevice,
         renderer::{
-            damage::{DamageTrackedRenderer, DamageTrackedRendererError},
+            damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::AsRenderElements,
             gles2::{Gles2Renderer, Gles2Texture},
             ImportDma,
@@ -48,7 +48,7 @@ pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData {
     backend: WinitGraphicsBackend<Gles2Renderer>,
-    damage_tracked_renderer: DamageTrackedRenderer,
+    damage_tracker: OutputDamageTracker,
     dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
     full_redraw: u8,
     #[cfg(feature = "debug")]
@@ -173,11 +173,11 @@ pub fn run_winit() {
     };
 
     let data = {
-        let damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
+        let damage_tracker = OutputDamageTracker::from_output(&output);
 
         WinitData {
             backend,
-            damage_tracked_renderer,
+            damage_tracker,
             dmabuf_state,
             full_redraw: 0,
             #[cfg(feature = "debug")]
@@ -254,7 +254,7 @@ pub fn run_winit() {
             let full_redraw = &mut state.backend_data.full_redraw;
             *full_redraw = full_redraw.saturating_sub(1);
             let space = &mut state.space;
-            let damage_tracked_renderer = &mut state.backend_data.damage_tracked_renderer;
+            let damage_tracker = &mut state.backend_data.damage_tracker;
             let show_window_preview = state.show_window_preview;
 
             let input_method = state.seat.input_method().unwrap();
@@ -325,12 +325,12 @@ pub fn run_winit() {
                     space,
                     elements,
                     renderer,
-                    damage_tracked_renderer,
+                    damage_tracker,
                     age,
                     show_window_preview,
                 )
                 .map_err(|err| match err {
-                    DamageTrackedRendererError::Rendering(err) => err.into(),
+                    OutputDamageTrackerError::Rendering(err) => err.into(),
                     _ => unreachable!(),
                 })
             });

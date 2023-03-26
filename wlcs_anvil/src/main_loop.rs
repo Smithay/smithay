@@ -7,7 +7,7 @@ use std::{
 use smithay::{
     backend::{
         input::ButtonState,
-        renderer::{damage::DamageTrackedRenderer, element::AsRenderElements},
+        renderer::{damage::OutputDamageTracker, element::AsRenderElements},
     },
     input::pointer::{
         ButtonEvent, CursorImageAttributes, CursorImageStatus, MotionEvent, RelativeMotionEvent,
@@ -85,7 +85,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
 
-    let mut damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
+    let mut damage_tracker = OutputDamageTracker::from_output(&output);
     let mut pointer_element = PointerElement::default();
 
     while state.running.load(Ordering::SeqCst) {
@@ -157,7 +157,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 &state.space,
                 elements,
                 &mut renderer,
-                &mut damage_tracked_renderer,
+                &mut damage_tracker,
                 0,
                 false,
             );

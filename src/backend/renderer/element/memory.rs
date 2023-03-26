@@ -124,7 +124,7 @@
 //!
 //! use smithay::{
 //!     backend::renderer::{
-//!         damage::DamageTrackedRenderer,
+//!         damage::OutputDamageTracker,
 //!         element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
 //!     },
 //!     utils::{Point, Rectangle, Size, Transform},
@@ -158,8 +158,8 @@
 //! // We explicitly drop the context here to make the borrow checker happy
 //! std::mem::drop(render_context);
 //!
-//! // Initialize a static damage tracked renderer
-//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//! // Initialize a static damage tracker
+//! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
 //! # let mut renderer = FakeRenderer;
 //!
 //! let mut last_update = Instant::now();
@@ -185,7 +185,7 @@
 //!         .expect("Failed to upload from memory to gpu");
 //!
 //!     // Render the element(s)
-//!     damage_tracked_renderer
+//!     damage_tracker
 //!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
@@ -202,7 +202,7 @@ use tracing::{instrument, trace, warn};
 
 use crate::{
     backend::renderer::{
-        utils::{CommitCounter, DamageTracker},
+        utils::{CommitCounter, DamageBag},
         Frame, ImportMem, Renderer,
     },
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
@@ -217,7 +217,7 @@ struct MemoryRenderBufferInner {
     scale: i32,
     transform: Transform,
     opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
-    damage_tracker: DamageTracker<i32, Buffer>,
+    damage_bag: DamageBag<i32, Buffer>,
     textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
 }
@@ -230,7 +230,7 @@ impl Default for MemoryRenderBufferInner {
             scale: 1,
             transform: Transform::Normal,
             opaque_regions: None,
-            damage_tracker: DamageTracker::default(),
+            damage_bag: DamageBag::default(),
             textures: HashMap::default(),
             renderer_seen: HashMap::default(),
         }
@@ -253,7 +253,7 @@ impl MemoryRenderBufferInner {
             scale,
             transform,
             opaque_regions,
-            damage_tracker: DamageTracker::default(),
+            damage_bag: DamageBag::default(),
             textures: HashMap::default(),
             renderer_seen: HashMap::default(),
         }
@@ -277,7 +277,7 @@ impl MemoryRenderBufferInner {
             scale,
             transform,
             opaque_regions,
-            damage_tracker: DamageTracker::default(),
+            damage_bag: DamageBag::default(),
             textures: HashMap::default(),
             renderer_seen: HashMap::default(),
         }
@@ -290,7 +290,7 @@ impl MemoryRenderBufferInner {
             self.mem.resize(mem_size, 0);
             self.renderer_seen.clear();
             self.textures.clear();
-            self.damage_tracker.reset();
+            self.damage_bag.reset();
             self.size = size;
             self.opaque_regions = None;
         }
@@ -303,10 +303,10 @@ impl MemoryRenderBufferInner {
         <R as Renderer>::TextureId: 'static,
     {
         let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
-        let current_commit = self.damage_tracker.current_commit();
+        let current_commit = self.damage_bag.current_commit();
         let last_commit = self.renderer_seen.get(&texture_id).copied();
         let buffer_damage = self
-            .damage_tracker
+            .damage_bag
             .damage_since(last_commit)
             .map(|d| d.into_iter().reduce(|a, b| a.merge(b)).unwrap_or_default())
             .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.size));
@@ -398,7 +398,7 @@ impl MemoryRenderBuffer {
     }
 
     fn current_commit(&self) -> CommitCounter {
-        self.inner.lock().unwrap().damage_tracker.current_commit()
+        self.inner.lock().unwrap().damage_bag.current_commit()
     }
 
     fn size(&self) -> Size<i32, Logical> {
@@ -445,7 +445,7 @@ impl<'a> RenderContext<'a> {
 
 impl<'a> Drop for RenderContext<'a> {
     fn drop(&mut self) {
-        self.buffer.damage_tracker.add(std::mem::take(&mut self.damage));
+        self.buffer.damage_bag.add(std::mem::take(&mut self.damage));
         if let Some(opaque_regions) = self.opaque_regions.take() {
             self.buffer.opaque_regions = opaque_regions;
         }
@@ -517,7 +517,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         let guard = self.buffer.inner.lock().unwrap();
 
         guard
-            .damage_tracker
+            .damage_bag
             .damage_since(commit)
             .map(|damage| {
                 damage
