@@ -59,6 +59,7 @@ pub mod relative_pointer;
 pub mod seat;
 pub mod shell;
 pub mod shm;
+pub mod single_pixel_buffer;
 pub mod socket;
 pub mod tablet_manager;
 pub mod text_input;
