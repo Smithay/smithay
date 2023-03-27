@@ -91,13 +91,15 @@ where
 
                 data.has_active_role.store(true, Ordering::Release);
 
-                compositor::with_states(surface, |states| {
+                let initial = compositor::with_states(surface, |states| {
                     states.data_map.insert_if_missing_threadsafe(|| {
                         Mutex::new(XdgToplevelSurfaceRoleAttributes::default())
                     })
                 });
 
-                compositor::add_pre_commit_hook(surface, super::super::ToplevelSurface::commit_hook);
+                if initial {
+                    compositor::add_pre_commit_hook(surface, super::super::ToplevelSurface::commit_hook);
+                }
 
                 let toplevel = data_init.init(
                     id,
@@ -160,8 +162,8 @@ where
 
                 data.has_active_role.store(true, Ordering::Release);
 
-                compositor::with_states(surface, |states| {
-                    states.data_map.insert_if_missing_threadsafe(|| {
+                let initial = compositor::with_states(surface, |states| {
+                    let inserted = states.data_map.insert_if_missing_threadsafe(|| {
                         Mutex::new(XdgPopupSurfaceRoleAttributes::default())
                     });
                     *states
@@ -170,9 +172,12 @@ where
                         .unwrap()
                         .lock()
                         .unwrap() = attributes;
+                    inserted
                 });
 
-                compositor::add_pre_commit_hook(surface, super::super::PopupSurface::commit_hook);
+                if initial {
+                    compositor::add_pre_commit_hook(surface, super::super::PopupSurface::commit_hook);
+                }
 
                 let popup = data_init.init(
                     id,
