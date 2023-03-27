@@ -276,10 +276,10 @@ delegate_xdg_activation!(@<BackendData: Backend + 'static> AnvilState<BackendDat
 impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
+        // Set the default to client side
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ClientSide);
         });
-        toplevel.send_configure();
     }
     fn request_mode(&mut self, toplevel: ToplevelSurface, mode: DecorationMode) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
