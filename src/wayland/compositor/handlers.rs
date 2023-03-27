@@ -548,10 +548,17 @@ where
         _object_id: wayland_server::backend::ObjectId,
         data: &SubsurfaceUserData,
     ) {
-        // TODO
-        // if surface.as_ref().is_alive() {
         PrivateSurfaceData::unset_parent(&data.surface);
-        // }
+        PrivateSurfaceData::with_states(&data.surface, |state| {
+            state
+                .data_map
+                .get::<SubsurfaceState>()
+                .unwrap()
+                .sync
+                .store(true, Ordering::Release);
+            *state.cached_state.pending::<SubsurfaceCachedState>() = Default::default();
+            *state.cached_state.current::<SubsurfaceCachedState>() = Default::default();
+        });
     }
 }
 
