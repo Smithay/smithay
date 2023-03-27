@@ -324,6 +324,8 @@ impl LayerMap {
                 }
 
                 let mut size = data.size;
+                size.w = size.w.min(source.size.w);
+                size.h = size.h.min(source.size.h);
                 if size.w == 0 {
                     size.w = source.size.w / 2;
                 }
