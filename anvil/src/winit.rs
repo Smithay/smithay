@@ -17,7 +17,7 @@ use smithay::{
         renderer::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::AsRenderElements,
-            gles2::{Gles2Renderer, Gles2Texture},
+            gles::{GlesRenderer, GlesTexture},
             ImportDma, ImportMemWl,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
@@ -48,7 +48,7 @@ use crate::{drawing::*, render::*};
 pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData {
-    backend: WinitGraphicsBackend<Gles2Renderer>,
+    backend: WinitGraphicsBackend<GlesRenderer>,
     damage_tracker: OutputDamageTracker,
     dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
     full_redraw: u8,
@@ -87,7 +87,7 @@ pub fn run_winit() {
     let mut display = Display::new().unwrap();
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let (mut backend, mut winit) = match winit::init::<Gles2Renderer>() {
+    let (mut backend, mut winit) = match winit::init::<GlesRenderer>() {
         Ok(ret) => ret,
         Err(err) => {
             error!("Failed to initialize Winit backend: {}", err);
@@ -204,7 +204,7 @@ pub fn run_winit() {
 
     info!("Initialization completed, starting the main loop.");
 
-    let mut pointer_element = PointerElement::<Gles2Texture>::default();
+    let mut pointer_element = PointerElement::<GlesTexture>::default();
 
     while state.running.load(Ordering::SeqCst) {
         if winit
@@ -300,7 +300,7 @@ pub fn run_winit() {
 
                 let renderer = backend.renderer();
 
-                let mut elements = Vec::<CustomRenderElements<Gles2Renderer>>::new();
+                let mut elements = Vec::<CustomRenderElements<GlesRenderer>>::new();
 
                 elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale));
 
@@ -311,7 +311,7 @@ pub fn run_winit() {
                     rectangle.loc.y + rectangle.size.h,
                 ));
                 input_method.with_surface(|surface| {
-                    elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                    elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
                         &smithay::desktop::space::SurfaceTree::from_surface(surface),
                         renderer,
                         position.to_physical_precise_round(scale),
@@ -322,7 +322,7 @@ pub fn run_winit() {
                 // draw the dnd icon if any
                 if let Some(surface) = dnd_icon {
                     if surface.alive() {
-                        elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                        elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
                             &smithay::desktop::space::SurfaceTree::from_surface(surface),
                             renderer,
                             cursor_pos_scaled,

@@ -19,7 +19,7 @@ use crate::wayland::{compositor::SurfaceData, shm::fourcc_to_shm_format};
 use wayland_server::protocol::{wl_buffer, wl_shm};
 
 #[cfg(feature = "renderer_gl")]
-pub mod gles2;
+pub mod gles;
 
 #[cfg(feature = "renderer_glow")]
 pub mod glow;

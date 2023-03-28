@@ -12,7 +12,7 @@
 //!
 //! - a [`WinitGraphicsBackend`], which can give you an implementation of a
 //!   [`Renderer`](crate::backend::renderer::Renderer)
-//!   (or even [`Gles2Renderer`]) through its `renderer` method in addition to further
+//!   (or even [`GlesRenderer`]) through its `renderer` method in addition to further
 //!   functionality to access and manage the created winit-window.
 //! - a [`WinitEventLoop`], which dispatches some [`WinitEvent`] from the host graphics server.
 //!
@@ -30,7 +30,7 @@ use crate::{
         },
         input::InputEvent,
         renderer::{
-            gles2::{Gles2Error, Gles2Renderer},
+            gles::{GlesError, GlesRenderer},
             Bind,
         },
     },
@@ -71,7 +71,7 @@ pub enum Error {
     Egl(#[from] EGLError),
     /// Renderer initialization failed
     #[error("Renderer creation failed: {0}")]
-    RendererCreationError(#[from] Gles2Error),
+    RendererCreationError(#[from] GlesError),
 }
 
 /// Size properties of a winit window
@@ -126,7 +126,7 @@ pub struct WinitEventLoop {
 /// [`WinitEventLoop`].
 pub fn init<R>() -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
-    R: From<Gles2Renderer> + Bind<Rc<EGLSurface>>,
+    R: From<GlesRenderer> + Bind<Rc<EGLSurface>>,
     crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
 {
     init_from_builder(
@@ -144,7 +144,7 @@ pub fn init_from_builder<R>(
     builder: WindowBuilder,
 ) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
-    R: From<Gles2Renderer> + Bind<Rc<EGLSurface>>,
+    R: From<GlesRenderer> + Bind<Rc<EGLSurface>>,
     crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
 {
     init_from_builder_with_gl_attr(
@@ -167,7 +167,7 @@ pub fn init_from_builder_with_gl_attr<R>(
     attributes: GlAttributes,
 ) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
-    R: From<Gles2Renderer> + Bind<Rc<EGLSurface>>,
+    R: From<GlesRenderer> + Bind<Rc<EGLSurface>>,
     crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
 {
     let span = info_span!("backend_winit", window = tracing::field::Empty);
@@ -229,7 +229,7 @@ where
     }));
 
     let egl = Rc::new(surface);
-    let renderer = unsafe { Gles2Renderer::new(context)?.into() };
+    let renderer = unsafe { GlesRenderer::new(context)?.into() };
     let resize_notification = Rc::new(Cell::new(None));
     let damage_tracking = display.supports_damage();
 

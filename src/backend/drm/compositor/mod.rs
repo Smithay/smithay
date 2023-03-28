@@ -52,7 +52,7 @@
 //! #     drm::{DrmDevice, DrmDeviceFd},
 //! #     renderer::{
 //! #       element::surface::WaylandSurfaceRenderElement,
-//! #       gles2::{Gles2Renderbuffer, Gles2Renderer},
+//! #       gles::{GlesRenderbuffer, GlesRenderer},
 //! #     },
 //! # };
 //! # use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
@@ -88,7 +88,7 @@
 //! #     modifier: DrmModifier::Linear,
 //! # }]);
 //! # let gbm: GbmDevice<DrmDeviceFd> = todo!();
-//! # let mut renderer: Gles2Renderer = todo!();
+//! # let mut renderer: GlesRenderer = todo!();
 //! #
 //! let mut compositor: DrmCompositor<_, _, (), _> = DrmCompositor::new(
 //!     &output,
@@ -103,9 +103,9 @@
 //! )
 //! .expect("failed to initialize drm compositor");
 //!
-//! # let elements: Vec<WaylandSurfaceRenderElement<Gles2Renderer>> = Vec::new();
+//! # let elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 //! let render_frame_result = compositor
-//!     .render_frame::<_, _, Gles2Renderbuffer>(&mut renderer, &elements, CLEAR_COLOR)
+//!     .render_frame::<_, _, GlesRenderbuffer>(&mut renderer, &elements, CLEAR_COLOR)
 //!     .expect("failed to render frame");
 //!
 //! compositor.queue_frame(()).expect("failed to queue frame");

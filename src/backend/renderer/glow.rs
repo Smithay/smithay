@@ -15,7 +15,7 @@ use crate::{
         egl::EGLContext,
         renderer::{
             element::UnderlyingStorage,
-            gles2::{element::*, *},
+            gles::{element::*, *},
             Bind, Blit, DebugFlags, ExportDma, ExportMem, ImportDma, ImportMem, Offscreen, Renderer,
             TextureFilter, Unbind,
         },
@@ -38,16 +38,16 @@ use super::{element::RenderElement, Frame};
 #[derive(Debug)]
 /// A renderer utilizing OpenGL ES 2 and [`glow`] on top for easier custom rendering.
 pub struct GlowRenderer {
-    gl: Gles2Renderer,
+    gl: GlesRenderer,
     glow: Arc<Context>,
 }
 
 #[derive(Debug)]
 /// [`Frame`](super::Frame) implementation of a [`GlowRenderer`].
 ///
-/// Leaking the frame will cause the same problems as leaking a [`Gles2Frame`].
+/// Leaking the frame will cause the same problems as leaking a [`GlesFrame`].
 pub struct GlowFrame<'a> {
-    frame: Option<Gles2Frame<'a>>,
+    frame: Option<GlesFrame<'a>>,
     glow: Arc<Context>,
 }
 
@@ -68,12 +68,12 @@ impl GlowRenderer {
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
     /// - Texture filtering starts with Linear-downscaling and Linear-upscaling
 
-    pub unsafe fn new(context: EGLContext) -> Result<GlowRenderer, Gles2Error> {
+    pub unsafe fn new(context: EGLContext) -> Result<GlowRenderer, GlesError> {
         let glow = {
             context.make_current()?;
             Context::from_loader_function(|s| crate::backend::egl::get_proc_address(s) as *const _)
         };
-        let gl = Gles2Renderer::new(context)?;
+        let gl = GlesRenderer::new(context)?;
 
         Ok(GlowRenderer {
             gl,
@@ -100,7 +100,7 @@ impl GlowRenderer {
     /// or check the source code of the version of Smithay you are using to ensure
     /// your changes don't interfere with the renderer's behavior.
     /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
-    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
+    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, GlesError>
     where
         F: FnOnce(&Arc<Context>) -> R,
     {
@@ -118,7 +118,7 @@ impl<'frame> GlowFrame<'frame> {
     /// or check the source code of the version of Smithay you are using to ensure
     /// your changes don't interfere with the renderer's behavior.
     /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
-    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
+    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, GlesError>
     where
         F: FnOnce(&Arc<Context>) -> R,
     {
@@ -127,10 +127,10 @@ impl<'frame> GlowFrame<'frame> {
 }
 
 // TODO: When GAT, use TryFrom and be generic over the Error,
-//  so `TryFrom<Gles2Renderer, Error=Infaillable> for Gles2Renderer` qualifies
-//  just as `TryFrom<Gles2Renderer, Error=Gles2Error> for GlowRenderer`
-impl From<Gles2Renderer> for GlowRenderer {
-    fn from(mut renderer: Gles2Renderer) -> GlowRenderer {
+//  so `TryFrom<GlesRenderer, Error=Infaillable> for GlesRenderer` qualifies
+//  just as `TryFrom<GlesRenderer, Error=GlesError> for GlowRenderer`
+impl From<GlesRenderer> for GlowRenderer {
+    fn from(mut renderer: GlesRenderer) -> GlowRenderer {
         let glow = unsafe {
             renderer.make_current().unwrap();
             Context::from_loader_function(|s| crate::backend::egl::get_proc_address(s) as *const _)
@@ -143,33 +143,33 @@ impl From<Gles2Renderer> for GlowRenderer {
     }
 }
 
-impl Borrow<Gles2Renderer> for GlowRenderer {
-    fn borrow(&self) -> &Gles2Renderer {
+impl Borrow<GlesRenderer> for GlowRenderer {
+    fn borrow(&self) -> &GlesRenderer {
         &self.gl
     }
 }
 
-impl BorrowMut<Gles2Renderer> for GlowRenderer {
-    fn borrow_mut(&mut self) -> &mut Gles2Renderer {
+impl BorrowMut<GlesRenderer> for GlowRenderer {
+    fn borrow_mut(&mut self) -> &mut GlesRenderer {
         &mut self.gl
     }
 }
 
-impl<'frame> Borrow<Gles2Frame<'frame>> for GlowFrame<'frame> {
-    fn borrow(&self) -> &Gles2Frame<'frame> {
+impl<'frame> Borrow<GlesFrame<'frame>> for GlowFrame<'frame> {
+    fn borrow(&self) -> &GlesFrame<'frame> {
         self.frame.as_ref().unwrap()
     }
 }
 
-impl<'frame> BorrowMut<Gles2Frame<'frame>> for GlowFrame<'frame> {
-    fn borrow_mut(&mut self) -> &mut Gles2Frame<'frame> {
+impl<'frame> BorrowMut<GlesFrame<'frame>> for GlowFrame<'frame> {
+    fn borrow_mut(&mut self) -> &mut GlesFrame<'frame> {
         self.frame.as_mut().unwrap()
     }
 }
 
 impl Renderer for GlowRenderer {
-    type Error = Gles2Error;
-    type TextureId = Gles2Texture;
+    type Error = GlesError;
+    type TextureId = GlesTexture;
     type Frame<'frame> = GlowFrame<'frame>;
 
     fn id(&self) -> usize {
@@ -205,8 +205,8 @@ impl Renderer for GlowRenderer {
 }
 
 impl<'frame> Frame for GlowFrame<'frame> {
-    type TextureId = Gles2Texture;
-    type Error = Gles2Error;
+    type TextureId = GlesTexture;
+    type Error = GlesError;
 
     fn id(&self) -> usize {
         self.frame.as_ref().unwrap().id()
@@ -276,7 +276,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
 }
 
 impl<'frame> GlowFrame<'frame> {
-    fn finish_internal(&mut self) -> Result<(), Gles2Error> {
+    fn finish_internal(&mut self) -> Result<(), GlesError> {
         if let Some(frame) = self.frame.take() {
             frame.finish()
         } else {
@@ -300,7 +300,7 @@ impl ImportMemWl for GlowRenderer {
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoord>],
-    ) -> Result<Gles2Texture, Gles2Error> {
+    ) -> Result<GlesTexture, GlesError> {
         self.gl.import_shm_buffer(buffer, surface, damage)
     }
 
@@ -316,7 +316,7 @@ impl ImportMem for GlowRenderer {
         format: Fourcc,
         size: Size<i32, BufferCoord>,
         flipped: bool,
-    ) -> Result<Gles2Texture, Gles2Error> {
+    ) -> Result<GlesTexture, GlesError> {
         self.gl.import_memory(data, format, size, flipped)
     }
 
@@ -360,7 +360,7 @@ impl ImportEgl for GlowRenderer {
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoord>],
-    ) -> Result<Gles2Texture, Gles2Error> {
+    ) -> Result<GlesTexture, GlesError> {
         self.gl.import_egl_buffer(buffer, surface, damage)
     }
 }
@@ -370,7 +370,7 @@ impl ImportDma for GlowRenderer {
         &mut self,
         buffer: &Dmabuf,
         damage: Option<&[Rectangle<i32, BufferCoord>]>,
-    ) -> Result<Gles2Texture, Gles2Error> {
+    ) -> Result<GlesTexture, GlesError> {
         self.gl.import_dmabuf(buffer, damage)
     }
     fn dmabuf_formats(&self) -> Box<dyn Iterator<Item = Format>> {
@@ -382,7 +382,7 @@ impl ImportDma for GlowRenderer {
 impl ImportDmaWl for GlowRenderer {}
 
 impl ExportMem for GlowRenderer {
-    type TextureMapping = Gles2Mapping;
+    type TextureMapping = GlesMapping;
 
     fn copy_framebuffer(
         &mut self,
@@ -418,9 +418,9 @@ impl ExportDma for GlowRenderer {
 
 impl<T> Bind<T> for GlowRenderer
 where
-    Gles2Renderer: Bind<T>,
+    GlesRenderer: Bind<T>,
 {
-    fn bind(&mut self, target: T) -> Result<(), Gles2Error> {
+    fn bind(&mut self, target: T) -> Result<(), GlesError> {
         self.gl.bind(target)
     }
     fn supported_formats(&self) -> Option<HashSet<Format>> {
@@ -430,16 +430,16 @@ where
 
 impl<T> Offscreen<T> for GlowRenderer
 where
-    Gles2Renderer: Offscreen<T>,
+    GlesRenderer: Offscreen<T>,
 {
-    fn create_buffer(&mut self, format: Fourcc, size: Size<i32, BufferCoord>) -> Result<T, Gles2Error> {
+    fn create_buffer(&mut self, format: Fourcc, size: Size<i32, BufferCoord>) -> Result<T, GlesError> {
         self.gl.create_buffer(format, size)
     }
 }
 
 impl<Target> Blit<Target> for GlowRenderer
 where
-    Gles2Renderer: Blit<Target>,
+    GlesRenderer: Blit<Target>,
 {
     fn blit_to(
         &mut self,
@@ -447,7 +447,7 @@ where
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Gles2Error> {
+    ) -> Result<(), GlesError> {
         self.gl.blit_to(to, src, dst, filter)
     }
 
@@ -457,7 +457,7 @@ where
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Gles2Error> {
+    ) -> Result<(), GlesError> {
         self.gl.blit_from(from, src, dst, filter)
     }
 }
@@ -475,11 +475,11 @@ impl RenderElement<GlowRenderer> for PixelShaderElement {
         src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-    ) -> Result<(), Gles2Error> {
-        RenderElement::<Gles2Renderer>::draw(self, frame.borrow_mut(), src, dst, damage)
+    ) -> Result<(), GlesError> {
+        RenderElement::<GlesRenderer>::draw(self, frame.borrow_mut(), src, dst, damage)
     }
 
     fn underlying_storage(&self, renderer: &mut GlowRenderer) -> Option<UnderlyingStorage> {
-        RenderElement::<Gles2Renderer>::underlying_storage(self, renderer.borrow_mut())
+        RenderElement::<GlesRenderer>::underlying_storage(self, renderer.borrow_mut())
     }
 }

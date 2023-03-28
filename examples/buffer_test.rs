@@ -12,7 +12,7 @@ use smithay::{
         drm::{DrmDevice, DrmDeviceFd, DrmNode},
         egl::{EGLContext, EGLDevice, EGLDisplay},
         renderer::{
-            gles2::{Gles2Renderbuffer, Gles2Renderer},
+            gles::{GlesRenderbuffer, GlesRenderer},
             Bind, ExportMem, Frame, ImportDma, Offscreen, Renderer,
         },
         vulkan::{version::Version, Instance, PhysicalDevice},
@@ -218,7 +218,7 @@ fn buffer_test(args: TestArgs) {
             let display = EGLDisplay::new(device).expect("Failed to create EGL display");
 
             let context = EGLContext::new(&display).expect("Failed to create EGL context");
-            let mut renderer = unsafe { Gles2Renderer::new(context).expect("Failed to init GL ES renderer") };
+            let mut renderer = unsafe { GlesRenderer::new(context).expect("Failed to init GL ES renderer") };
 
             render_into(
                 &mut renderer,
@@ -258,9 +258,9 @@ fn buffer_test(args: TestArgs) {
             let display = EGLDisplay::new(device).expect("Failed to create EGL display");
 
             let context = EGLContext::new(&display).expect("Failed to create EGL context");
-            let mut renderer = unsafe { Gles2Renderer::new(context).expect("Failed to init GL ES renderer") };
+            let mut renderer = unsafe { GlesRenderer::new(context).expect("Failed to init GL ES renderer") };
 
-            render_from::<_, Gles2Renderbuffer>(
+            render_from::<_, GlesRenderbuffer>(
                 &mut renderer,
                 buffer,
                 args.width as i32,

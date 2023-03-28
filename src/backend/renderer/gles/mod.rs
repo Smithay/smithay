@@ -60,7 +60,7 @@ pub mod ffi {
 crate::utils::ids::id_gen!(next_renderer_id, RENDERER_ID, RENDERER_IDS);
 
 #[derive(Debug)]
-struct Gles2TexProgramInternal {
+struct GlesTexProgramInternal {
     program: ffi::types::GLuint,
     uniform_tex: ffi::types::GLint,
     uniform_tex_matrix: ffi::types::GLint,
@@ -72,30 +72,30 @@ struct Gles2TexProgramInternal {
 }
 
 #[derive(Debug)]
-struct Gles2TexProgramVariant {
-    normal: Gles2TexProgramInternal,
-    debug: Gles2TexProgramInternal,
+struct GlesTexProgramVariant {
+    normal: GlesTexProgramInternal,
+    debug: GlesTexProgramInternal,
 
     // debug flags
     uniform_tint: ffi::types::GLint,
 }
 
-/// Gles2 texture shader
+/// Gles texture shader
 #[derive(Debug, Clone)]
-pub struct Gles2TexProgram(Rc<Gles2TexProgramInner>);
+pub struct GlesTexProgram(Rc<GlesTexProgramInner>);
 
 #[derive(Debug)]
-struct Gles2TexProgramInner {
-    variants: [Gles2TexProgramVariant; 3],
+struct GlesTexProgramInner {
+    variants: [GlesTexProgramVariant; 3],
     destruction_callback_sender: Sender<CleanupResource>,
 }
 
-impl Gles2TexProgram {
+impl GlesTexProgram {
     fn variant_for_format(
         &self,
         format: Option<ffi::types::GLenum>,
         has_alpha: bool,
-    ) -> &Gles2TexProgramVariant {
+    ) -> &GlesTexProgramVariant {
         match format {
             Some(ffi::RGBA) => {
                 if has_alpha {
@@ -110,7 +110,7 @@ impl Gles2TexProgram {
     }
 }
 
-impl Drop for Gles2TexProgramInner {
+impl Drop for GlesTexProgramInner {
     fn drop(&mut self) {
         for variant in &self.variants {
             let _ = self
@@ -124,7 +124,7 @@ impl Drop for Gles2TexProgramInner {
 }
 
 #[derive(Debug, Clone)]
-struct Gles2SolidProgram {
+struct GlesSolidProgram {
     program: ffi::types::GLuint,
     uniform_matrix: ffi::types::GLint,
     uniform_color: ffi::types::GLint,
@@ -132,14 +132,14 @@ struct Gles2SolidProgram {
     attrib_position: ffi::types::GLint,
 }
 
-/// Gles2 pixel shader
+/// Gles pixel shader
 #[derive(Debug, Clone)]
-pub struct Gles2PixelProgram(Rc<Gles2PixelProgramInner>);
+pub struct GlesPixelProgram(Rc<GlesPixelProgramInner>);
 
 #[derive(Debug)]
-struct Gles2PixelProgramInner {
-    normal: Gles2PixelProgramInternal,
-    debug: Gles2PixelProgramInternal,
+struct GlesPixelProgramInner {
+    normal: GlesPixelProgramInternal,
+    debug: GlesPixelProgramInternal,
     destruction_callback_sender: Sender<CleanupResource>,
 
     // debug flags
@@ -147,7 +147,7 @@ struct Gles2PixelProgramInner {
 }
 
 #[derive(Debug)]
-struct Gles2PixelProgramInternal {
+struct GlesPixelProgramInternal {
     program: ffi::types::GLuint,
     uniform_matrix: ffi::types::GLint,
     uniform_tex_matrix: ffi::types::GLint,
@@ -158,7 +158,7 @@ struct Gles2PixelProgramInternal {
     additional_uniforms: HashMap<String, UniformDesc>,
 }
 
-impl Drop for Gles2PixelProgramInner {
+impl Drop for GlesPixelProgramInner {
     fn drop(&mut self) {
         let _ = self
             .destruction_callback_sender
@@ -169,12 +169,12 @@ impl Drop for Gles2PixelProgramInner {
     }
 }
 
-/// A handle to a GLES2 texture
+/// A handle to a GLES texture
 #[derive(Debug, Clone)]
-pub struct Gles2Texture(Rc<Gles2TextureInternal>);
+pub struct GlesTexture(Rc<GlesTextureInternal>);
 
-impl Gles2Texture {
-    /// Create a Gles2Texture from a raw gl texture id.
+impl GlesTexture {
+    /// Create a GlesTexture from a raw gl texture id.
     ///
     /// This expects the texture to be in RGBA format to be rendered
     /// correctly by the `render_texture*`-functions of [`Frame`](super::Frame).
@@ -186,13 +186,13 @@ impl Gles2Texture {
     ///
     /// The renderer cannot make sure `tex` is a valid texture id.
     pub unsafe fn from_raw(
-        renderer: &Gles2Renderer,
+        renderer: &GlesRenderer,
         internal_format: Option<ffi::types::GLenum>,
         opaque: bool,
         tex: ffi::types::GLuint,
         size: Size<i32, BufferCoord>,
-    ) -> Gles2Texture {
-        Gles2Texture(Rc::new(Gles2TextureInternal {
+    ) -> GlesTexture {
+        GlesTexture(Rc::new(GlesTextureInternal {
             texture: tex,
             format: internal_format,
             has_alpha: !opaque,
@@ -206,14 +206,14 @@ impl Gles2Texture {
 
     /// OpenGL texture id of this texture
     ///
-    /// This id will become invalid, when the Gles2Texture is dropped and does not transfer ownership.
+    /// This id will become invalid, when the GlesTexture is dropped and does not transfer ownership.
     pub fn tex_id(&self) -> ffi::types::GLuint {
         self.0.texture
     }
 }
 
 #[derive(Debug)]
-struct Gles2TextureInternal {
+struct GlesTextureInternal {
     texture: ffi::types::GLuint,
     format: Option<ffi::types::GLenum>,
     has_alpha: bool,
@@ -224,7 +224,7 @@ struct Gles2TextureInternal {
     destruction_callback_sender: Sender<CleanupResource>,
 }
 
-impl Drop for Gles2TextureInternal {
+impl Drop for GlesTextureInternal {
     fn drop(&mut self) {
         let _ = self
             .destruction_callback_sender
@@ -248,7 +248,7 @@ enum CleanupResource {
     Program(ffi::types::GLuint),
 }
 
-impl Texture for Gles2Texture {
+impl Texture for GlesTexture {
     fn width(&self) -> u32 {
         self.0.size.w as u32
     }
@@ -268,9 +268,9 @@ impl Texture for Gles2Texture {
     }
 }
 
-/// Texture mapping of a GLES2 texture
+/// Texture mapping of a GLES texture
 #[derive(Debug)]
-pub struct Gles2Mapping {
+pub struct GlesMapping {
     pbo: ffi::types::GLuint,
     format: ffi::types::GLenum,
     layout: ffi::types::GLenum,
@@ -280,7 +280,7 @@ pub struct Gles2Mapping {
     destruction_callback_sender: Sender<CleanupResource>,
 }
 
-impl Texture for Gles2Mapping {
+impl Texture for GlesMapping {
     fn width(&self) -> u32 {
         self.size.w as u32
     }
@@ -299,7 +299,7 @@ impl Texture for Gles2Mapping {
         }
     }
 }
-impl TextureMapping for Gles2Mapping {
+impl TextureMapping for GlesMapping {
     fn flipped(&self) -> bool {
         true
     }
@@ -308,7 +308,7 @@ impl TextureMapping for Gles2Mapping {
     }
 }
 
-impl Drop for Gles2Mapping {
+impl Drop for GlesMapping {
     fn drop(&mut self) {
         let _ = self.destruction_callback_sender.send(CleanupResource::Mapping(
             self.pbo,
@@ -318,7 +318,7 @@ impl Drop for Gles2Mapping {
 }
 
 #[derive(Debug, Clone)]
-struct Gles2Buffer {
+struct GlesBuffer {
     dmabuf: WeakDmabuf,
     image: EGLImage,
     rbo: ffi::types::GLuint,
@@ -330,17 +330,17 @@ struct Gles2Buffer {
 /// Usually more performant than using a texture as a framebuffer.
 /// Can be read out, but not used like a texture otherwise.
 #[derive(Debug, Clone)]
-pub struct Gles2Renderbuffer(Rc<Gles2RenderbufferInternal>);
+pub struct GlesRenderbuffer(Rc<GlesRenderbufferInternal>);
 
 #[derive(Debug)]
-struct Gles2RenderbufferInternal {
+struct GlesRenderbufferInternal {
     rbo: ffi::types::GLuint,
     format: ffi::types::GLenum,
     has_alpha: bool,
     destruction_callback_sender: Sender<CleanupResource>,
 }
 
-impl Drop for Gles2RenderbufferInternal {
+impl Drop for GlesRenderbufferInternal {
     fn drop(&mut self) {
         let _ = self
             .destruction_callback_sender
@@ -349,27 +349,30 @@ impl Drop for Gles2RenderbufferInternal {
 }
 
 #[derive(Debug)]
-enum Gles2Target {
+enum GlesTarget {
     Image {
-        buf: Gles2Buffer,
+        // Gles2Buffer caches the shadow buffer and is renderer-local, so it works around the issue outlined below.
+        // TODO: Ideally we would be able to share the texture between renderers with shared EGLContexts though.
+        // But we definitly don't want to add user data to a dmabuf to facilitate this. Maybe use the EGLContexts userdata for storing the buffers?
+        buf: GlesBuffer,
         dmabuf: Dmabuf,
     },
     Surface(Rc<EGLSurface>),
     Texture {
-        texture: Gles2Texture,
+        texture: GlesTexture,
         fbo: ffi::types::GLuint,
         destruction_callback_sender: Sender<CleanupResource>,
     },
     Renderbuffer {
-        buf: Gles2Renderbuffer,
+        buf: GlesRenderbuffer,
         fbo: ffi::types::GLuint,
     },
 }
 
-impl Gles2Target {
+impl GlesTarget {
     fn format(&self) -> Option<(ffi::types::GLenum, bool)> {
         match self {
-            Gles2Target::Image { dmabuf, .. } => {
+            GlesTarget::Image { dmabuf, .. } => {
                 let format = crate::backend::allocator::Buffer::format(dmabuf).code;
                 let has_alpha = has_alpha(format);
                 let (format, _, _) = fourcc_to_gl_formats(if has_alpha {
@@ -380,7 +383,7 @@ impl Gles2Target {
 
                 Some((format, has_alpha))
             }
-            Gles2Target::Surface(surf) => {
+            GlesTarget::Surface(surf) => {
                 let format = surf.pixel_format();
                 let format = match (format.color_bits, format.alpha_bits) {
                     (24, 8) => ffi::RGB8,
@@ -391,23 +394,23 @@ impl Gles2Target {
 
                 Some((format, true))
             }
-            Gles2Target::Texture { texture, .. } => Some((texture.0.format?, texture.0.has_alpha)),
-            Gles2Target::Renderbuffer { buf, .. } => Some((buf.0.format, buf.0.has_alpha)),
+            GlesTarget::Texture { texture, .. } => Some((texture.0.format?, texture.0.has_alpha)),
+            GlesTarget::Renderbuffer { buf, .. } => Some((buf.0.format, buf.0.has_alpha)),
         }
     }
 }
 
-impl Drop for Gles2Target {
+impl Drop for GlesTarget {
     fn drop(&mut self) {
         match self {
-            Gles2Target::Texture {
+            GlesTarget::Texture {
                 fbo,
                 destruction_callback_sender,
                 ..
             } => {
                 let _ = destruction_callback_sender.send(CleanupResource::FramebufferObject(*fbo));
             }
-            Gles2Target::Renderbuffer { buf, fbo } => {
+            GlesTarget::Renderbuffer { buf, fbo, .. } => {
                 let _ = buf
                     .0
                     .destruction_callback_sender
@@ -418,16 +421,16 @@ impl Drop for Gles2Target {
     }
 }
 
-/// A renderer utilizing OpenGL ES 2
-pub struct Gles2Renderer {
-    buffers: Vec<Gles2Buffer>,
-    target: Option<Gles2Target>,
+/// A renderer utilizing OpenGL ES
+pub struct GlesRenderer {
+    buffers: Vec<GlesBuffer>,
+    target: Option<GlesTarget>,
     pub(crate) extensions: Vec<String>,
 
-    tex_program: Gles2TexProgram,
-    solid_program: Gles2SolidProgram,
+    tex_program: GlesTexProgram,
+    solid_program: GlesSolidProgram,
 
-    dmabuf_cache: std::collections::HashMap<WeakDmabuf, Gles2Texture>,
+    dmabuf_cache: std::collections::HashMap<WeakDmabuf, GlesTexture>,
     egl: EGLContext,
     #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
     egl_reader: Option<EGLBufferReader>,
@@ -454,25 +457,25 @@ impl Drop for RendererId {
     }
 }
 
-/// Handle to the currently rendered frame during [`Gles2Renderer::render`](Renderer::render).
+/// Handle to the currently rendered frame during [`GlesRenderer::render`](Renderer::render).
 ///
 /// Leaking this frame will prevent it from synchronizing the rendered framebuffer,
 /// which might cause glitches. Additionally parts of the GL state might not be reset correctly,
 /// causing unexpected results for later render commands.
 /// The internal GL context and framebuffer will remain valid, no re-creation will be necessary.
-pub struct Gles2Frame<'frame> {
-    renderer: &'frame mut Gles2Renderer,
+pub struct GlesFrame<'frame> {
+    renderer: &'frame mut GlesRenderer,
     current_projection: Matrix3<f32>,
     transform: Transform,
     size: Size<i32, Physical>,
-    tex_program_override: Option<(Gles2TexProgram, Vec<Uniform<'static>>)>,
+    tex_program_override: Option<(GlesTexProgram, Vec<Uniform<'static>>)>,
     finished: AtomicBool,
     span: EnteredSpan,
 }
 
-impl<'frame> fmt::Debug for Gles2Frame<'frame> {
+impl<'frame> fmt::Debug for GlesFrame<'frame> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Gles2Frame")
+        f.debug_struct("GlesFrame")
             .field("renderer", &self.renderer)
             .field("current_projection", &self.current_projection)
             .field("transform", &self.transform)
@@ -483,9 +486,9 @@ impl<'frame> fmt::Debug for Gles2Frame<'frame> {
     }
 }
 
-impl fmt::Debug for Gles2Renderer {
+impl fmt::Debug for GlesRenderer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Gles2Renderer")
+        f.debug_struct("GlesRenderer")
             .field("buffers", &self.buffers)
             .field("target", &self.target)
             .field("extensions", &self.extensions)
@@ -494,7 +497,7 @@ impl fmt::Debug for Gles2Renderer {
             .field("dmabuf_cache", &self.dmabuf_cache)
             .field("egl", &self.egl)
             .field("gl_version", &self.gl_version)
-            // ffi::Gles2 does not implement Debug
+            // ffi::Gles does not implement Debug
             .field("vbos", &self.vbos)
             .field("min_filter", &self.min_filter)
             .field("max_filter", &self.max_filter)
@@ -505,7 +508,7 @@ impl fmt::Debug for Gles2Renderer {
 
 /// Error returned during rendering using GL ES
 #[derive(thiserror::Error, Debug)]
-pub enum Gles2Error {
+pub enum GlesError {
     /// A shader could not be compiled
     #[error("Failed to compile Shader")]
     ShaderCompileError,
@@ -584,56 +587,56 @@ pub enum Gles2Error {
     },
 }
 
-impl From<Gles2Error> for SwapBuffersError {
+impl From<GlesError> for SwapBuffersError {
     #[cfg(feature = "wayland_frontend")]
-    fn from(err: Gles2Error) -> SwapBuffersError {
+    fn from(err: GlesError) -> SwapBuffersError {
         match err {
-            x @ Gles2Error::ShaderCompileError
-            | x @ Gles2Error::ProgramLinkError
-            | x @ Gles2Error::GLFunctionLoaderError
-            | x @ Gles2Error::GLExtensionNotSupported(_)
-            | x @ Gles2Error::EGLExtensionNotSupported(_)
-            | x @ Gles2Error::GLVersionNotSupported(_)
-            | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
-            Gles2Error::ContextActivationError(err) => err.into(),
-            x @ Gles2Error::FramebufferBindingError
-            | x @ Gles2Error::BindBufferEGLError(_)
-            | x @ Gles2Error::UnknownPixelFormat
-            | x @ Gles2Error::UnsupportedPixelFormat(_)
-            | x @ Gles2Error::UnsupportedWlPixelFormat(_)
-            | x @ Gles2Error::UnsupportedPixelLayout
-            | x @ Gles2Error::BufferAccessError(_)
-            | x @ Gles2Error::MappingError
-            | x @ Gles2Error::UnexpectedSize
-            | x @ Gles2Error::BlitError
-            | x @ Gles2Error::CreateShaderObject
-            | x @ Gles2Error::UniformTypeMismatch { .. }
-            | x @ Gles2Error::UnknownUniform(_)
-            | x @ Gles2Error::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ GlesError::ShaderCompileError
+            | x @ GlesError::ProgramLinkError
+            | x @ GlesError::GLFunctionLoaderError
+            | x @ GlesError::GLExtensionNotSupported(_)
+            | x @ GlesError::EGLExtensionNotSupported(_)
+            | x @ GlesError::GLVersionNotSupported(_)
+            | x @ GlesError::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
+            GlesError::ContextActivationError(err) => err.into(),
+            x @ GlesError::FramebufferBindingError
+            | x @ GlesError::BindBufferEGLError(_)
+            | x @ GlesError::UnknownPixelFormat
+            | x @ GlesError::UnsupportedPixelFormat(_)
+            | x @ GlesError::UnsupportedWlPixelFormat(_)
+            | x @ GlesError::UnsupportedPixelLayout
+            | x @ GlesError::BufferAccessError(_)
+            | x @ GlesError::MappingError
+            | x @ GlesError::UnexpectedSize
+            | x @ GlesError::BlitError
+            | x @ GlesError::CreateShaderObject
+            | x @ GlesError::UniformTypeMismatch { .. }
+            | x @ GlesError::UnknownUniform(_)
+            | x @ GlesError::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
     #[cfg(not(feature = "wayland_frontend"))]
-    fn from(err: Gles2Error) -> SwapBuffersError {
+    fn from(err: GlesError) -> SwapBuffersError {
         match err {
-            x @ Gles2Error::ShaderCompileError
-            | x @ Gles2Error::ProgramLinkError
-            | x @ Gles2Error::GLFunctionLoaderError
-            | x @ Gles2Error::GLExtensionNotSupported(_)
-            | x @ Gles2Error::EGLExtensionNotSupported(_)
-            | x @ Gles2Error::GLVersionNotSupported(_)
-            | x @ Gles2Error::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
-            Gles2Error::ContextActivationError(err) => err.into(),
-            x @ Gles2Error::FramebufferBindingError
-            | x @ Gles2Error::MappingError
-            | x @ Gles2Error::UnknownPixelFormat
-            | x @ Gles2Error::UnsupportedPixelFormat(_)
-            | x @ Gles2Error::UnsupportedPixelLayout
-            | x @ Gles2Error::UnexpectedSize
-            | x @ Gles2Error::BlitError
-            | x @ Gles2Error::CreateShaderObject
-            | x @ Gles2Error::UniformTypeMismatch { .. }
-            | x @ Gles2Error::UnknownUniform(_)
-            | x @ Gles2Error::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ GlesError::ShaderCompileError
+            | x @ GlesError::ProgramLinkError
+            | x @ GlesError::GLFunctionLoaderError
+            | x @ GlesError::GLExtensionNotSupported(_)
+            | x @ GlesError::EGLExtensionNotSupported(_)
+            | x @ GlesError::GLVersionNotSupported(_)
+            | x @ GlesError::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
+            GlesError::ContextActivationError(err) => err.into(),
+            x @ GlesError::FramebufferBindingError
+            | x @ GlesError::MappingError
+            | x @ GlesError::UnknownPixelFormat
+            | x @ GlesError::UnsupportedPixelFormat(_)
+            | x @ GlesError::UnsupportedPixelLayout
+            | x @ GlesError::UnexpectedSize
+            | x @ GlesError::BlitError
+            | x @ GlesError::CreateShaderObject
+            | x @ GlesError::UniformTypeMismatch { .. }
+            | x @ GlesError::UnknownUniform(_)
+            | x @ GlesError::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
 }
@@ -666,10 +669,10 @@ unsafe fn compile_shader(
     gl: &ffi::Gles2,
     variant: ffi::types::GLuint,
     src: &str,
-) -> Result<ffi::types::GLuint, Gles2Error> {
+) -> Result<ffi::types::GLuint, GlesError> {
     let shader = gl.CreateShader(variant);
     if shader == 0 {
-        return Err(Gles2Error::CreateShaderObject);
+        return Err(GlesError::CreateShaderObject);
     }
 
     gl.ShaderSource(
@@ -702,7 +705,7 @@ unsafe fn compile_shader(
         );
 
         gl.DeleteShader(shader);
-        return Err(Gles2Error::ShaderCompileError);
+        return Err(GlesError::ShaderCompileError);
     }
 
     Ok(shader)
@@ -712,7 +715,7 @@ unsafe fn link_program(
     gl: &ffi::Gles2,
     vert_src: &str,
     frag_src: &str,
-) -> Result<ffi::types::GLuint, Gles2Error> {
+) -> Result<ffi::types::GLuint, GlesError> {
     let vert = compile_shader(gl, ffi::VERTEX_SHADER, vert_src)?;
     let frag = compile_shader(gl, ffi::FRAGMENT_SHADER, frag_src)?;
     let program = gl.CreateProgram();
@@ -746,7 +749,7 @@ unsafe fn link_program(
         );
 
         gl.DeleteProgram(program);
-        return Err(Gles2Error::ProgramLinkError);
+        return Err(GlesError::ProgramLinkError);
     }
 
     Ok(program)
@@ -757,8 +760,8 @@ unsafe fn texture_program(
     frag: &str,
     additional_uniforms: &[UniformName<'_>],
     destruction_callback_sender: Sender<CleanupResource>,
-) -> Result<Gles2TexProgram, Gles2Error> {
-    let create_variant = |defines: &[&str]| -> Result<Gles2TexProgramVariant, Gles2Error> {
+) -> Result<GlesTexProgram, GlesError> {
+    let create_variant = |defines: &[&str]| -> Result<GlesTexProgramVariant, GlesError> {
         let mut src = String::from(frag);
         for define in defines {
             src = format!("#define {}\n{}", define, frag);
@@ -777,8 +780,8 @@ unsafe fn texture_program(
         let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
         let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
 
-        Ok(Gles2TexProgramVariant {
-            normal: Gles2TexProgramInternal {
+        Ok(GlesTexProgramVariant {
+            normal: GlesTexProgramInternal {
                 program,
                 uniform_tex: gl.GetUniformLocation(program, tex.as_ptr() as *const ffi::types::GLchar),
                 uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
@@ -804,7 +807,7 @@ unsafe fn texture_program(
                     })
                     .collect(),
             },
-            debug: Gles2TexProgramInternal {
+            debug: GlesTexProgramInternal {
                 program: debug_program,
                 uniform_tex: gl.GetUniformLocation(debug_program, tex.as_ptr() as *const ffi::types::GLchar),
                 uniform_matrix: gl
@@ -837,7 +840,7 @@ unsafe fn texture_program(
         })
     };
 
-    Ok(Gles2TexProgram(Rc::new(Gles2TexProgramInner {
+    Ok(GlesTexProgram(Rc::new(GlesTexProgramInner {
         variants: [
             create_variant(&[])?,
             create_variant(&[shaders::NO_ALPHA])?,
@@ -847,7 +850,7 @@ unsafe fn texture_program(
     })))
 }
 
-unsafe fn solid_program(gl: &ffi::Gles2) -> Result<Gles2SolidProgram, Gles2Error> {
+unsafe fn solid_program(gl: &ffi::Gles2) -> Result<GlesSolidProgram, GlesError> {
     let program = link_program(gl, shaders::VERTEX_SHADER_SOLID, shaders::FRAGMENT_SHADER_SOLID)?;
 
     let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
@@ -855,7 +858,7 @@ unsafe fn solid_program(gl: &ffi::Gles2) -> Result<Gles2SolidProgram, Gles2Error
     let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
     let position = CStr::from_bytes_with_nul(b"position\0").expect("NULL terminated");
 
-    Ok(Gles2SolidProgram {
+    Ok(GlesSolidProgram {
         program,
         uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
         uniform_color: gl.GetUniformLocation(program, color.as_ptr() as *const ffi::types::GLchar),
@@ -864,8 +867,8 @@ unsafe fn solid_program(gl: &ffi::Gles2) -> Result<Gles2SolidProgram, Gles2Error
     })
 }
 
-impl Gles2Renderer {
-    /// Creates a new OpenGL ES 2 renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
+impl GlesRenderer {
+    /// Creates a new OpenGL ES renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
     ///
     /// # Safety
     ///
@@ -880,7 +883,7 @@ impl Gles2Renderer {
     /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
     /// - Texture filtering starts with Linear-downscaling and Linear-upscaling
-    pub unsafe fn new(context: EGLContext) -> Result<Gles2Renderer, Gles2Error> {
+    pub unsafe fn new(context: EGLContext) -> Result<GlesRenderer, GlesError> {
         let span = info_span!(parent: &context.span, "renderer_gles2");
         let _guard = span.enter();
 
@@ -890,7 +893,7 @@ impl Gles2Renderer {
             let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
             let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const c_char;
             if ext_ptr.is_null() {
-                return Err(Gles2Error::GLFunctionLoaderError);
+                return Err(GlesError::GLFunctionLoaderError);
             }
 
             let exts = {
@@ -921,13 +924,13 @@ impl Gles2Renderer {
 
             // required for the manditory wl_shm formats
             if !exts.iter().any(|ext| ext == "GL_EXT_texture_format_BGRA8888") {
-                return Err(Gles2Error::GLExtensionNotSupported(&[
+                return Err(GlesError::GLExtensionNotSupported(&[
                     "GL_EXT_texture_format_BGRA8888",
                 ]));
             }
             // required for buffers without linear memory layout
             if gl_version < version::GLES_3_0 && !exts.iter().any(|ext| ext == "GL_EXT_unpack_subimage") {
-                return Err(Gles2Error::GLExtensionNotSupported(&["GL_EXT_unpack_subimage"]));
+                return Err(GlesError::GLExtensionNotSupported(&["GL_EXT_unpack_subimage"]));
             }
             // Check if GPU supports instanced rendering.
             let supports_instancing = gl_version >= version::GLES_3_0
@@ -974,7 +977,7 @@ impl Gles2Renderer {
             .insert_if_missing(|| RendererId(next_renderer_id()));
 
         drop(_guard);
-        let renderer = Gles2Renderer {
+        let renderer = GlesRenderer {
             gl,
             egl: context,
             #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
@@ -1003,18 +1006,18 @@ impl Gles2Renderer {
 
     pub(crate) fn make_current(&mut self) -> Result<(), MakeCurrentError> {
         unsafe {
-            if let Some(&Gles2Target::Surface(ref surface)) = self.target.as_ref() {
+            if let Some(&GlesTarget::Surface(ref surface)) = self.target.as_ref() {
                 self.egl.make_current_with_surface(surface)?;
             } else {
                 self.egl.make_current()?;
                 match self.target.as_ref() {
-                    Some(&Gles2Target::Image { ref buf, .. }) => {
+                    Some(&GlesTarget::Image { ref buf, .. }) => {
                         self.gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo)
                     }
-                    Some(&Gles2Target::Texture { ref fbo, .. }) => {
+                    Some(&GlesTarget::Texture { ref fbo, .. }) => {
                         self.gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
                     }
-                    Some(&Gles2Target::Renderbuffer { ref fbo, .. }) => {
+                    Some(&GlesTarget::Renderbuffer { ref fbo, .. }) => {
                         self.gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
                     }
                     _ => {}
@@ -1075,19 +1078,19 @@ impl Gles2Renderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl ImportMemWl for Gles2Renderer {
+impl ImportMemWl for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoord>],
-    ) -> Result<Gles2Texture, Gles2Error> {
+    ) -> Result<GlesTexture, GlesError> {
         use crate::wayland::shm::with_buffer_contents;
 
-        // why not store a `Gles2Texture`? because the user might do so.
+        // why not store a `GlesTexture`? because the user might do so.
         // this is guaranteed a non-public internal type, so we are good.
-        type CacheMap = HashMap<usize, Rc<Gles2TextureInternal>>;
+        type CacheMap = HashMap<usize, Rc<GlesTextureInternal>>;
 
         with_buffer_contents(buffer, |ptr, len, data| {
             self.make_current()?;
@@ -1097,7 +1100,7 @@ impl ImportMemWl for Gles2Renderer {
             let height = data.height as i32;
             let stride = data.stride as i32;
             let fourcc =
-                shm_format_to_fourcc(data.format).ok_or(Gles2Error::UnsupportedWlPixelFormat(data.format))?;
+                shm_format_to_fourcc(data.format).ok_or(GlesError::UnsupportedWlPixelFormat(data.format))?;
 
             if !SUPPORTED_MEM_FORMATS_2.contains(&fourcc) {
                 return Err(Gles2Error::UnsupportedWlPixelFormat(data.format));
@@ -1107,9 +1110,9 @@ impl ImportMemWl for Gles2Renderer {
             let (mut internal_format, read_format, type_) = fourcc_to_gl_formats(if has_alpha {
                 fourcc
             } else {
-                get_transparent(fourcc).ok_or(Gles2Error::UnsupportedWlPixelFormat(data.format))?
+                get_transparent(fourcc).ok_or(GlesError::UnsupportedWlPixelFormat(data.format))?
             })
-            .ok_or(Gles2Error::UnsupportedWlPixelFormat(data.format))?;
+            .ok_or(GlesError::UnsupportedWlPixelFormat(data.format))?;
             if self.gl_version.major == 2 {
                 // es 2.0 doesn't define sized variants
                 internal_format = match internal_format {
@@ -1127,7 +1130,7 @@ impl ImportMemWl for Gles2Renderer {
             let mut upload_full = false;
 
             let id = self.id();
-            let texture = Gles2Texture(
+            let texture = GlesTexture(
                 surface
                     .and_then(|surface| {
                         surface
@@ -1147,7 +1150,7 @@ impl ImportMemWl for Gles2Renderer {
                         unsafe { self.gl.GenTextures(1, &mut tex) };
                         // new texture, upload in full
                         upload_full = true;
-                        let new = Rc::new(Gles2TextureInternal {
+                        let new = Rc::new(GlesTextureInternal {
                             texture: tex,
                             format: Some(internal_format),
                             has_alpha,
@@ -1219,7 +1222,7 @@ impl ImportMemWl for Gles2Renderer {
 
             Ok(texture)
         })
-        .map_err(Gles2Error::BufferAccessError)?
+        .map_err(GlesError::BufferAccessError)?
     }
 }
 
@@ -1230,7 +1233,7 @@ const SUPPORTED_MEM_FORMATS: &[Fourcc] = &[
     Fourcc::Xrgb8888,
 ];
 
-impl ImportMem for Gles2Renderer {
+impl ImportMem for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_memory(
         &mut self,
@@ -1238,14 +1241,14 @@ impl ImportMem for Gles2Renderer {
         format: Fourcc,
         size: Size<i32, BufferCoord>,
         flipped: bool,
-    ) -> Result<Gles2Texture, Gles2Error> {
+    ) -> Result<GlesTexture, GlesError> {
         self.make_current()?;
 
         if data.len()
             < (size.w * size.h) as usize
-                * (get_bpp(format).ok_or(Gles2Error::UnsupportedPixelFormat(format))? / 8)
+                * (get_bpp(format).ok_or(GlesError::UnsupportedPixelFormat(format))? / 8)
         {
-            return Err(Gles2Error::UnexpectedSize);
+            return Err(GlesError::UnexpectedSize);
         }
 
         if !SUPPORTED_MEM_FORMATS.contains(&format) {
@@ -1268,7 +1271,7 @@ impl ImportMem for Gles2Renderer {
             };
         }
 
-        let texture = Gles2Texture(Rc::new({
+        let texture = GlesTexture(Rc::new({
             let mut tex = 0;
             unsafe {
                 self.gl.GenTextures(1, &mut tex);
@@ -1291,7 +1294,7 @@ impl ImportMem for Gles2Renderer {
                 self.gl.BindTexture(ffi::TEXTURE_2D, 0);
             }
             // new texture, upload in full
-            Gles2TextureInternal {
+            GlesTextureInternal {
                 texture: tex,
                 format: Some(internal),
                 has_alpha,
@@ -1316,19 +1319,19 @@ impl ImportMem for Gles2Renderer {
         self.make_current()?;
 
         if texture.0.format.is_none() {
-            return Err(Gles2Error::UnknownPixelFormat);
+            return Err(GlesError::UnknownPixelFormat);
         }
         if texture.0.is_external {
-            return Err(Gles2Error::UnsupportedPixelLayout);
+            return Err(GlesError::UnsupportedPixelLayout);
         }
         let (read_format, type_) = gl_read_for_internal(texture.0.format.expect("We check that before"))
-            .ok_or(Gles2Error::UnknownPixelFormat)?;
+            .ok_or(GlesError::UnknownPixelFormat)?;
 
         if data.len()
             < (region.size.w * region.size.h) as usize
-                * (gl_bpp(read_format, type_).ok_or(Gles2Error::UnknownPixelFormat)? / 8)
+                * (gl_bpp(read_format, type_).ok_or(GlesError::UnknownPixelFormat)? / 8)
         {
-            return Err(Gles2Error::UnexpectedSize);
+            return Err(GlesError::UnexpectedSize);
         }
 
         unsafe {
@@ -1370,7 +1373,7 @@ impl ImportMem for Gles2Renderer {
     feature = "backend_egl",
     feature = "use_system_lib"
 ))]
-impl ImportEgl for Gles2Renderer {
+impl ImportEgl for GlesRenderer {
     fn bind_wl_display(
         &mut self,
         display: &wayland_server::DisplayHandle,
@@ -1393,13 +1396,13 @@ impl ImportEgl for Gles2Renderer {
         buffer: &wl_buffer::WlBuffer,
         _surface: Option<&crate::wayland::compositor::SurfaceData>,
         _damage: &[Rectangle<i32, BufferCoord>],
-    ) -> Result<Gles2Texture, Gles2Error> {
+    ) -> Result<GlesTexture, GlesError> {
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
-            return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
+            return Err(GlesError::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
         if self.egl_reader().is_none() {
-            return Err(Gles2Error::EGLBufferAccessError(
+            return Err(GlesError::EGLBufferAccessError(
                 crate::backend::egl::BufferAccessError::NotManaged(crate::backend::egl::EGLError::BadDisplay),
             ));
         }
@@ -1416,15 +1419,14 @@ impl ImportEgl for Gles2Renderer {
             .as_ref()
             .unwrap()
             .egl_buffer_contents(buffer)
-            .map_err(Gles2Error::EGLBufferAccessError)?;
+            .map_err(GlesError::EGLBufferAccessError)?;
 
         let tex = self.import_egl_image(egl.image(0).unwrap(), egl.format == EGLFormat::External, None)?;
 
-        let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
+        let texture = GlesTexture(Rc::new(GlesTextureInternal {
             texture: tex,
             format: match egl.format {
-                EGLFormat::RGB => Some(ffi::RGB8),
-                EGLFormat::RGBA => Some(ffi::RGBA8),
+                EGLFormat::RGB | EGLFormat::RGBA => Some(ffi::RGBA8),
                 EGLFormat::External => None,
                 _ => unreachable!("EGLBuffer currenly does not expose multi-planar buffers to us"),
             },
@@ -1440,16 +1442,16 @@ impl ImportEgl for Gles2Renderer {
     }
 }
 
-impl ImportDma for Gles2Renderer {
+impl ImportDma for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn import_dmabuf(
         &mut self,
         buffer: &Dmabuf,
         _damage: Option<&[Rectangle<i32, BufferCoord>]>,
-    ) -> Result<Gles2Texture, Gles2Error> {
+    ) -> Result<GlesTexture, GlesError> {
         use crate::backend::allocator::Buffer;
         if !self.extensions.iter().any(|ext| ext == "GL_OES_EGL_image") {
-            return Err(Gles2Error::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
+            return Err(GlesError::GLExtensionNotSupported(&["GL_OES_EGL_image"]));
         }
 
         self.make_current()?;
@@ -1459,14 +1461,14 @@ impl ImportDma for Gles2Renderer {
                 .egl
                 .display()
                 .create_image_from_dmabuf(buffer)
-                .map_err(Gles2Error::BindBufferEGLError)?;
+                .map_err(GlesError::BindBufferEGLError)?;
 
             let tex = self.import_egl_image(image, is_external, None)?;
-            let format = fourcc_to_gl_formats(buffer.format().code).map(|(internal, _, _)| internal);
-            let texture = Gles2Texture(Rc::new(Gles2TextureInternal {
+            let has_alpha = has_alpha(buffer.format().code);
+            let texture = GlesTexture(Rc::new(GlesTextureInternal {
                 texture: tex,
-                format,
-                has_alpha: has_alpha(buffer.format().code),
+                format: Some(ffi::RGBA8),
+                has_alpha,
                 is_external,
                 y_inverted: buffer.y_inverted(),
                 size: buffer.size(),
@@ -1491,10 +1493,10 @@ impl ImportDma for Gles2Renderer {
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl ImportDmaWl for Gles2Renderer {}
+impl ImportDmaWl for GlesRenderer {}
 
-impl Gles2Renderer {
-    fn existing_dmabuf_texture(&self, buffer: &Dmabuf) -> Result<Option<Gles2Texture>, Gles2Error> {
+impl GlesRenderer {
+    fn existing_dmabuf_texture(&self, buffer: &Dmabuf) -> Result<Option<GlesTexture>, GlesError> {
         let existing_texture = self
             .dmabuf_cache
             .iter()
@@ -1521,7 +1523,7 @@ impl Gles2Renderer {
         image: EGLImage,
         is_external: bool,
         tex: Option<u32>,
-    ) -> Result<u32, Gles2Error> {
+    ) -> Result<u32, GlesError> {
         let tex = tex.unwrap_or_else(|| unsafe {
             let mut tex = 0;
             self.gl.GenTextures(1, &mut tex);
@@ -1542,8 +1544,8 @@ impl Gles2Renderer {
     }
 }
 
-impl ExportMem for Gles2Renderer {
-    type TextureMapping = Gles2Mapping;
+impl ExportMem for GlesRenderer {
+    type TextureMapping = GlesMapping;
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn copy_framebuffer(
@@ -1555,10 +1557,10 @@ impl ExportMem for Gles2Renderer {
         let (internal, has_alpha) = self
             .target
             .as_ref()
-            .ok_or(Gles2Error::UnknownPixelFormat)?
+            .ok_or(GlesError::UnknownPixelFormat)?
             .format()
-            .ok_or(Gles2Error::UnknownPixelFormat)?;
-        let (format, layout) = gl_read_for_internal(internal).ok_or(Gles2Error::UnknownPixelFormat)?;
+            .ok_or(GlesError::UnknownPixelFormat)?;
+        let (format, layout) = gl_read_for_internal(internal).ok_or(GlesError::UnknownPixelFormat)?;
 
         let mut pbo = 0;
         unsafe {
@@ -1566,7 +1568,7 @@ impl ExportMem for Gles2Renderer {
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
             let size = (region.size.w
                 * region.size.h
-                * (gl_bpp(format, layout).ok_or(Gles2Error::UnsupportedPixelLayout)? / 8) as i32)
+                * (gl_bpp(format, layout).ok_or(GlesError::UnsupportedPixelLayout)? / 8) as i32)
                 as isize;
             self.gl
                 .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_READ);
@@ -1583,7 +1585,7 @@ impl ExportMem for Gles2Renderer {
             self.gl.ReadBuffer(ffi::NONE);
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
         }
-        Ok(Gles2Mapping {
+        Ok(GlesMapping {
             pbo,
             format,
             layout,
@@ -1604,8 +1606,8 @@ impl ExportMem for Gles2Renderer {
         let old_target = self.target.take();
         self.bind(texture.clone())?;
 
-        let (format, layout) = gl_read_for_internal(texture.0.format.ok_or(Gles2Error::UnknownPixelFormat)?)
-            .ok_or(Gles2Error::UnknownPixelFormat)?;
+        let (format, layout) = gl_read_for_internal(texture.0.format.ok_or(GlesError::UnknownPixelFormat)?)
+            .ok_or(GlesError::UnknownPixelFormat)?;
 
         unsafe {
             self.gl.GenBuffers(1, &mut pbo);
@@ -1638,7 +1640,7 @@ impl ExportMem for Gles2Renderer {
         self.target = old_target;
         self.make_current()?;
 
-        Ok(Gles2Mapping {
+        Ok(GlesMapping {
             pbo,
             format,
             layout,
@@ -1668,7 +1670,7 @@ impl ExportMem for Gles2Renderer {
                 self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
 
                 if ptr.is_null() {
-                    return Err(Gles2Error::MappingError);
+                    return Err(GlesError::MappingError);
                 }
 
                 texture_mapping.mapping.store(ptr, Ordering::SeqCst);
@@ -1682,9 +1684,9 @@ impl ExportMem for Gles2Renderer {
     }
 }
 
-impl ExportDma for Gles2Renderer {
+impl ExportDma for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn export_texture(&mut self, texture: &Gles2Texture) -> Result<Dmabuf, Gles2Error> {
+    fn export_texture(&mut self, texture: &GlesTexture) -> Result<Dmabuf, GlesError> {
         self.make_current()?;
 
         if !self
@@ -1694,7 +1696,7 @@ impl ExportDma for Gles2Renderer {
             .iter()
             .any(|s| s == "EGL_KHR_gl_texture_2D_image")
         {
-            return Err(Gles2Error::EGLExtensionNotSupported(&[
+            return Err(GlesError::EGLExtensionNotSupported(&[
                 "EGL_KHR_gl_texture_2D_image",
             ]));
         }
@@ -1716,7 +1718,7 @@ impl ExportDma for Gles2Renderer {
                     attributes.as_ptr() as *const _,
                 );
                 if img == ffi_egl::NO_IMAGE_KHR {
-                    return Err(Gles2Error::BindBufferEGLError(
+                    return Err(GlesError::BindBufferEGLError(
                         crate::backend::egl::Error::EGLImageCreationFailed,
                     ));
                 }
@@ -1728,13 +1730,13 @@ impl ExportDma for Gles2Renderer {
             .egl
             .display()
             .create_dmabuf_from_image(image, texture.size(), true)
-            .map_err(Gles2Error::BindBufferEGLError);
+            .map_err(GlesError::BindBufferEGLError);
         unsafe { ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image) };
         res
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn export_framebuffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Dmabuf, Gles2Error> {
+    fn export_framebuffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Dmabuf, GlesError> {
         self.make_current()?;
 
         if !self
@@ -1744,19 +1746,19 @@ impl ExportDma for Gles2Renderer {
             .iter()
             .any(|s| s == "EGL_KHR_gl_renderbuffer_image")
         {
-            return Err(Gles2Error::EGLExtensionNotSupported(&[
+            return Err(GlesError::EGLExtensionNotSupported(&[
                 "EGL_KHR_gl_renderbuffer_image",
             ]));
         }
 
         let rbo = match self.target.as_ref() {
-            Some(&Gles2Target::Image { ref dmabuf, .. }) => return Ok(dmabuf.clone()),
-            Some(&Gles2Target::Texture { ref texture, .. }) => {
+            Some(&GlesTarget::Image { ref dmabuf, .. }) => return Ok(dmabuf.clone()),
+            Some(&GlesTarget::Texture { ref texture, .. }) => {
                 // work around immutable borrow of self..
                 let texture = texture.clone();
                 return self.export_texture(&texture);
             }
-            Some(&Gles2Target::Renderbuffer { ref buf, .. }) => buf.0.rbo,
+            Some(&GlesTarget::Renderbuffer { ref buf, .. }) => buf.0.rbo,
             _ => unsafe {
                 let mut rbo = 0;
                 self.gl.GenRenderbuffers(1, &mut rbo);
@@ -1773,19 +1775,19 @@ impl ExportDma for Gles2Renderer {
                 ptr::null(),
             );
             if img == ffi_egl::NO_IMAGE_KHR {
-                return Err(Gles2Error::BindBufferEGLError(
+                return Err(GlesError::BindBufferEGLError(
                     crate::backend::egl::Error::EGLImageCreationFailed,
                 ));
             }
             img
         };
 
-        if !matches!(self.target.as_ref(), Some(&Gles2Target::Renderbuffer { .. })) {
+        if !matches!(self.target.as_ref(), Some(&GlesTarget::Renderbuffer { .. })) {
             // At this point the user tries to copy from an EGLSurface or another
             // default framebuffer, we need glBlitFramebuffer to do this, which
             // only exists for GL ES 3.0 and higher.
             if self.gl_version < version::GLES_3_0 {
-                return Err(Gles2Error::GLVersionNotSupported(version::GLES_3_0));
+                return Err(GlesError::GLVersionNotSupported(version::GLES_3_0));
             }
 
             unsafe {
@@ -1802,7 +1804,7 @@ impl ExportDma for Gles2Renderer {
 
                 if status != ffi::FRAMEBUFFER_COMPLETE {
                     //TODO wrap image and drop here
-                    return Err(Gles2Error::FramebufferBindingError);
+                    return Err(GlesError::FramebufferBindingError);
                 }
 
                 self.gl.BlitFramebuffer(
@@ -1827,7 +1829,7 @@ impl ExportDma for Gles2Renderer {
             .egl
             .display()
             .create_dmabuf_from_image(image, size, true)
-            .map_err(Gles2Error::BindBufferEGLError);
+            .map_err(GlesError::BindBufferEGLError);
         unsafe {
             ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
         }
@@ -1835,19 +1837,19 @@ impl ExportDma for Gles2Renderer {
     }
 }
 
-impl Bind<Rc<EGLSurface>> for Gles2Renderer {
+impl Bind<Rc<EGLSurface>> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), Gles2Error> {
+    fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), GlesError> {
         self.unbind()?;
-        self.target = Some(Gles2Target::Surface(surface));
+        self.target = Some(GlesTarget::Surface(surface));
         self.make_current()?;
         Ok(())
     }
 }
 
-impl Bind<Dmabuf> for Gles2Renderer {
+impl Bind<Dmabuf> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn bind(&mut self, dmabuf: Dmabuf) -> Result<(), Gles2Error> {
+    fn bind(&mut self, dmabuf: Dmabuf) -> Result<(), GlesError> {
         self.unbind()?;
         self.make_current()?;
 
@@ -1868,7 +1870,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
                     .egl
                     .display()
                     .create_image_from_dmabuf(&dmabuf)
-                    .map_err(Gles2Error::BindBufferEGLError)?;
+                    .map_err(GlesError::BindBufferEGLError)?;
 
                 unsafe {
                     let mut rbo = 0;
@@ -1892,10 +1894,10 @@ impl Bind<Dmabuf> for Gles2Renderer {
 
                     if status != ffi::FRAMEBUFFER_COMPLETE {
                         //TODO wrap image and drop here
-                        return Err(Gles2Error::FramebufferBindingError);
+                        return Err(GlesError::FramebufferBindingError);
                     }
 
-                    let buf = Gles2Buffer {
+                    let buf = GlesBuffer {
                         dmabuf: dmabuf.weak(),
                         image,
                         rbo,
@@ -1908,7 +1910,7 @@ impl Bind<Dmabuf> for Gles2Renderer {
                 }
             })?;
 
-        self.target = Some(Gles2Target::Image { buf, dmabuf });
+        self.target = Some(GlesTarget::Image { buf, dmabuf });
         self.make_current()?;
         Ok(())
     }
@@ -1918,9 +1920,9 @@ impl Bind<Dmabuf> for Gles2Renderer {
     }
 }
 
-impl Bind<Gles2Texture> for Gles2Renderer {
+impl Bind<GlesTexture> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn bind(&mut self, texture: Gles2Texture) -> Result<(), Gles2Error> {
+    fn bind(&mut self, texture: GlesTexture) -> Result<(), GlesError> {
         self.unbind()?;
         self.make_current()?;
 
@@ -1940,11 +1942,11 @@ impl Bind<Gles2Texture> for Gles2Renderer {
 
             if status != ffi::FRAMEBUFFER_COMPLETE {
                 self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
-                return Err(Gles2Error::FramebufferBindingError);
+                return Err(GlesError::FramebufferBindingError);
             }
         }
 
-        self.target = Some(Gles2Target::Texture {
+        self.target = Some(GlesTarget::Texture {
             texture,
             destruction_callback_sender: self.destruction_callback_sender.clone(),
             fbo,
@@ -1955,22 +1957,22 @@ impl Bind<Gles2Texture> for Gles2Renderer {
     }
 }
 
-impl Offscreen<Gles2Texture> for Gles2Renderer {
+impl Offscreen<GlesTexture> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn create_buffer(
         &mut self,
         format: Fourcc,
         size: Size<i32, BufferCoord>,
-    ) -> Result<Gles2Texture, Gles2Error> {
+    ) -> Result<GlesTexture, GlesError> {
         self.make_current()?;
 
         let has_alpha = has_alpha(format);
         let (internal, format, layout) = fourcc_to_gl_formats(if has_alpha {
             format
         } else {
-            get_transparent(format).ok_or(Gles2Error::UnsupportedPixelFormat(format))?
+            get_transparent(format).ok_or(GlesError::UnsupportedPixelFormat(format))?
         })
-        .ok_or(Gles2Error::UnsupportedPixelFormat(format))?;
+        .ok_or(GlesError::UnsupportedPixelFormat(format))?;
 
         let tex = unsafe {
             let mut tex = 0;
@@ -1990,13 +1992,13 @@ impl Offscreen<Gles2Texture> for Gles2Renderer {
             tex
         };
 
-        Ok(unsafe { Gles2Texture::from_raw(self, Some(internal), has_alpha, tex, size) })
+        Ok(unsafe { GlesTexture::from_raw(self, Some(internal), has_alpha, tex, size) })
     }
 }
 
-impl Bind<Gles2Renderbuffer> for Gles2Renderer {
+impl Bind<GlesRenderbuffer> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn bind(&mut self, renderbuffer: Gles2Renderbuffer) -> Result<(), Gles2Error> {
+    fn bind(&mut self, renderbuffer: GlesRenderbuffer) -> Result<(), GlesError> {
         self.unbind()?;
         self.make_current()?;
 
@@ -2017,11 +2019,11 @@ impl Bind<Gles2Renderbuffer> for Gles2Renderer {
 
             if status != ffi::FRAMEBUFFER_COMPLETE {
                 self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
-                return Err(Gles2Error::FramebufferBindingError);
+                return Err(GlesError::FramebufferBindingError);
             }
         }
 
-        self.target = Some(Gles2Target::Renderbuffer {
+        self.target = Some(GlesTarget::Renderbuffer {
             buf: renderbuffer,
             fbo,
         });
@@ -2031,22 +2033,22 @@ impl Bind<Gles2Renderbuffer> for Gles2Renderer {
     }
 }
 
-impl Offscreen<Gles2Renderbuffer> for Gles2Renderer {
+impl Offscreen<GlesRenderbuffer> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn create_buffer(
         &mut self,
         format: Fourcc,
         size: Size<i32, BufferCoord>,
-    ) -> Result<Gles2Renderbuffer, Gles2Error> {
+    ) -> Result<GlesRenderbuffer, GlesError> {
         self.make_current()?;
 
         let has_alpha = has_alpha(format);
         let (internal, _, _) = fourcc_to_gl_formats(if has_alpha {
             format
         } else {
-            get_transparent(format).ok_or(Gles2Error::UnsupportedPixelFormat(format))?
+            get_transparent(format).ok_or(GlesError::UnsupportedPixelFormat(format))?
         })
-        .ok_or(Gles2Error::UnsupportedPixelFormat(format))?;
+        .ok_or(GlesError::UnsupportedPixelFormat(format))?;
 
         unsafe {
             let mut rbo = 0;
@@ -2056,7 +2058,7 @@ impl Offscreen<Gles2Renderbuffer> for Gles2Renderer {
                 .RenderbufferStorage(ffi::RENDERBUFFER, internal, size.w, size.h);
             self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
-            Ok(Gles2Renderbuffer(Rc::new(Gles2RenderbufferInternal {
+            Ok(GlesRenderbuffer(Rc::new(GlesRenderbufferInternal {
                 rbo,
                 format: internal,
                 has_alpha,
@@ -2066,7 +2068,7 @@ impl Offscreen<Gles2Renderbuffer> for Gles2Renderer {
     }
 }
 
-impl<Target> Blit<Target> for Gles2Renderer
+impl<Target> Blit<Target> for GlesRenderer
 where
     Self: Bind<Target>,
 {
@@ -2077,8 +2079,8 @@ where
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Gles2Error> {
-        let src_target = self.target.take().ok_or(Gles2Error::BlitError)?;
+    ) -> Result<(), GlesError> {
+        let src_target = self.target.take().ok_or(GlesError::BlitError)?;
         self.bind(to)?;
         let dst_target = self.target.take().unwrap();
         self.unbind()?;
@@ -2098,8 +2100,8 @@ where
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Gles2Error> {
-        let dst_target = self.target.take().ok_or(Gles2Error::BlitError)?;
+    ) -> Result<(), GlesError> {
+        let dst_target = self.target.take().ok_or(GlesError::BlitError)?;
         self.bind(from)?;
         let src_target = self.target.take().unwrap();
         self.unbind()?;
@@ -2114,28 +2116,28 @@ where
     }
 }
 
-impl Gles2Renderer {
+impl GlesRenderer {
     fn blit(
         &mut self,
-        src_target: &Gles2Target,
-        dst_target: &Gles2Target,
+        src_target: &GlesTarget,
+        dst_target: &GlesTarget,
         src: Rectangle<i32, Physical>,
         dst: Rectangle<i32, Physical>,
         filter: TextureFilter,
-    ) -> Result<(), Gles2Error> {
+    ) -> Result<(), GlesError> {
         // glBlitFramebuffer is sadly only available for GLES 3.0 and higher
         if self.gl_version < version::GLES_3_0 {
-            return Err(Gles2Error::GLVersionNotSupported(version::GLES_3_0));
+            return Err(GlesError::GLVersionNotSupported(version::GLES_3_0));
         }
 
         match (src_target, dst_target) {
-            (&Gles2Target::Surface(ref src), &Gles2Target::Surface(ref dst)) => unsafe {
+            (&GlesTarget::Surface(ref src), &GlesTarget::Surface(ref dst)) => unsafe {
                 self.egl.make_current_with_draw_and_read_surface(dst, src)?;
             },
-            (&Gles2Target::Surface(ref src), _) => unsafe {
+            (&GlesTarget::Surface(ref src), _) => unsafe {
                 self.egl.make_current_with_surface(src)?;
             },
-            (_, &Gles2Target::Surface(ref dst)) => unsafe {
+            (_, &GlesTarget::Surface(ref dst)) => unsafe {
                 self.egl.make_current_with_surface(dst)?;
             },
             (_, _) => unsafe {
@@ -2144,25 +2146,25 @@ impl Gles2Renderer {
         }
 
         match src_target {
-            Gles2Target::Image { ref buf, .. } => unsafe {
+            GlesTarget::Image { ref buf, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.fbo)
             },
-            Gles2Target::Texture { ref fbo, .. } => unsafe {
+            GlesTarget::Texture { ref fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
-            Gles2Target::Renderbuffer { ref fbo, .. } => unsafe {
+            GlesTarget::Renderbuffer { ref fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, *fbo)
             },
             _ => {} // Note: The only target missing is `Surface` and handled above
         }
         match dst_target {
-            Gles2Target::Image { ref buf, .. } => unsafe {
+            GlesTarget::Image { ref buf, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, buf.fbo)
             },
-            Gles2Target::Texture { ref fbo, .. } => unsafe {
+            GlesTarget::Texture { ref fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
-            Gles2Target::Renderbuffer { ref fbo, .. } => unsafe {
+            GlesTarget::Renderbuffer { ref fbo, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, *fbo)
             },
             _ => {} // Note: The only target missing is `Surface` and handled above
@@ -2171,7 +2173,7 @@ impl Gles2Renderer {
         let status = unsafe { self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER) };
         if status != ffi::FRAMEBUFFER_COMPLETE {
             let _ = self.unbind();
-            return Err(Gles2Error::FramebufferBindingError);
+            return Err(GlesError::FramebufferBindingError);
         }
 
         let errno = unsafe {
@@ -2195,14 +2197,14 @@ impl Gles2Renderer {
         };
 
         if errno == ffi::INVALID_OPERATION {
-            Err(Gles2Error::BlitError)
+            Err(GlesError::BlitError)
         } else {
             Ok(())
         }
     }
 }
 
-impl Unbind for Gles2Renderer {
+impl Unbind for GlesRenderer {
     fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
         unsafe {
             self.egl.make_current()?;
@@ -2214,7 +2216,7 @@ impl Unbind for Gles2Renderer {
     }
 }
 
-impl Drop for Gles2Renderer {
+impl Drop for GlesRenderer {
     fn drop(&mut self) {
         let _guard = self.span.enter();
         unsafe {
@@ -2240,7 +2242,7 @@ impl Drop for Gles2Renderer {
     }
 }
 
-impl Gles2Renderer {
+impl GlesRenderer {
     /// Get access to the underlying [`EGLContext`].
     ///
     /// *Note*: Modifying the context state, might result in rendering issues.
@@ -2261,7 +2263,7 @@ impl Gles2Renderer {
     /// your changes don't interfere with the renderer's behavior.
     /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
     #[instrument(level = "trace", parent = &self.span, skip_all)]
-    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
+    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, GlesError>
     where
         F: FnOnce(&ffi::Gles2) -> R,
     {
@@ -2269,7 +2271,7 @@ impl Gles2Renderer {
         Ok(func(&self.gl))
     }
 
-    /// Compile a custom pixel shader for rendering with [`Gles2Renderer::render_pixel_shader_to`].
+    /// Compile a custom pixel shader for rendering with [`GlesRenderer::render_pixel_shader_to`].
     ///
     /// Pixel shaders can be used for completely shader-driven drawing into a given region.
     ///
@@ -2283,7 +2285,7 @@ impl Gles2Renderer {
     /// - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0) - only if `DEBUG_FLAGS` was defined
     ///
     /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
-    /// and can then be set in functions utilizing `Gles2PixelProgram` (like [`Gles2Renderer::render_pixel_shader_to`]).
+    /// and can then be set in functions utilizing `GlesPixelProgram` (like [`Gles2Renderer::render_pixel_shader_to`]).
     ///
     /// The shader must **not** contain a `#version` directive. It will be interpreted as version 100.
     ///
@@ -2294,7 +2296,7 @@ impl Gles2Renderer {
         &mut self,
         src: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
-    ) -> Result<Gles2PixelProgram, Gles2Error> {
+    ) -> Result<GlesPixelProgram, GlesError> {
         self.make_current()?;
 
         let shader = format!("#version 100\n{}", src.as_ref());
@@ -2311,8 +2313,8 @@ impl Gles2Renderer {
         let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
 
         unsafe {
-            Ok(Gles2PixelProgram(Rc::new(Gles2PixelProgramInner {
-                normal: Gles2PixelProgramInternal {
+            Ok(GlesPixelProgram(Rc::new(GlesPixelProgramInner {
+                normal: GlesPixelProgramInternal {
                     program,
                     uniform_matrix: self
                         .gl
@@ -2349,7 +2351,7 @@ impl Gles2Renderer {
                         })
                         .collect(),
                 },
-                debug: Gles2PixelProgramInternal {
+                debug: GlesPixelProgramInternal {
                     program: debug_program,
                     uniform_matrix: self
                         .gl
@@ -2396,7 +2398,7 @@ impl Gles2Renderer {
         }
     }
 
-    /// Compile a custom texture shader for rendering with [`Gles2Renderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`].
+    /// Compile a custom texture shader for rendering with [`GlesRenderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`].
     ///
     /// They need to handle the following #define variants:
     /// - `EXTERNAL` uses samplerExternalOES instead of sampler2D, requires the GL_OES_EGL_image_external extension
@@ -2410,7 +2412,7 @@ impl Gles2Renderer {
     /// - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0) - only if `DEBUG_FLAGS` was defined
     ///
     /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
-    /// and can then be set in functions utilizing `Gles2TexProgram` (like [`Gles2Renderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`]).
+    /// and can then be set in functions utilizing `GlesTexProgram` (like [`Gles2Renderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`]).
     ///
     /// The shader must **not** contain a `#version` directive. It will be interpreted as version 100.
     ///
@@ -2421,7 +2423,7 @@ impl Gles2Renderer {
         &mut self,
         shader: impl AsRef<str>,
         additional_uniforms: &[UniformName<'_>],
-    ) -> Result<Gles2TexProgram, Gles2Error> {
+    ) -> Result<GlesTexProgram, GlesError> {
         self.make_current()?;
 
         unsafe {
@@ -2435,7 +2437,7 @@ impl Gles2Renderer {
     }
 }
 
-impl<'frame> Gles2Frame<'frame> {
+impl<'frame> GlesFrame<'frame> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -2445,7 +2447,7 @@ impl<'frame> Gles2Frame<'frame> {
     /// your changes don't interfere with the renderer's behavior.
     /// Doing otherwise can lead to rendering errors while using other functions of this renderer.
     #[instrument(level = "trace", parent = &self.span, skip_all)]
-    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, Gles2Error>
+    pub fn with_context<F, R>(&mut self, func: F) -> Result<R, GlesError>
     where
         F: FnOnce(&ffi::Gles2) -> R,
     {
@@ -2453,10 +2455,10 @@ impl<'frame> Gles2Frame<'frame> {
     }
 }
 
-impl Renderer for Gles2Renderer {
-    type Error = Gles2Error;
-    type TextureId = Gles2Texture;
-    type Frame<'frame> = Gles2Frame<'frame>;
+impl Renderer for GlesRenderer {
+    type Error = GlesError;
+    type TextureId = GlesTexture;
+    type Frame<'frame> = GlesFrame<'frame>;
 
     fn id(&self) -> usize {
         self.egl.user_data().get::<RendererId>().unwrap().0
@@ -2475,7 +2477,7 @@ impl Renderer for Gles2Renderer {
         &mut self,
         mut output_size: Size<i32, Physical>,
         transform: Transform,
-    ) -> Result<Gles2Frame<'_>, Self::Error> {
+    ) -> Result<GlesFrame<'_>, Self::Error> {
         self.make_current()?;
 
         unsafe {
@@ -2516,7 +2518,7 @@ impl Renderer for Gles2Renderer {
         let current_projection = flip180 * transform.matrix() * renderer;
         let span = span!(parent: &self.span, Level::DEBUG, "renderer_gles2_frame", current_projection = ?current_projection, size = ?output_size, transform = ?transform).entered();
 
-        Ok(Gles2Frame {
+        Ok(GlesFrame {
             renderer: self,
             // output transformation passed in by the user
             current_projection,
@@ -2584,16 +2586,16 @@ const fn triangle_verts() -> [ffi::types::GLfloat; 12 * MAX_RECTS_PER_DRAW] {
     verts
 }
 
-impl<'frame> Frame for Gles2Frame<'frame> {
-    type TextureId = Gles2Texture;
-    type Error = Gles2Error;
+impl<'frame> Frame for GlesFrame<'frame> {
+    type TextureId = GlesTexture;
+    type Error = GlesError;
 
     fn id(&self) -> usize {
         self.renderer.id()
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Gles2Error> {
+    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), GlesError> {
         if at.is_empty() {
             return Ok(());
         }
@@ -2645,13 +2647,13 @@ impl<'frame> Frame for Gles2Frame<'frame> {
     #[instrument(level = "trace", skip(self), parent = &self.span)]
     fn render_texture_from_to(
         &mut self,
-        texture: &Gles2Texture,
+        texture: &GlesTexture,
         src: Rectangle<f64, BufferCoord>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         transform: Transform,
         alpha: f32,
-    ) -> Result<(), Gles2Error> {
+    ) -> Result<(), GlesError> {
         self.render_texture_from_to(texture, src, dest, damage, transform, alpha, None, &[])
     }
 
@@ -2664,8 +2666,8 @@ impl<'frame> Frame for Gles2Frame<'frame> {
     }
 }
 
-impl<'frame> Gles2Frame<'frame> {
-    fn finish_internal(&mut self) -> Result<(), Gles2Error> {
+impl<'frame> GlesFrame<'frame> {
+    fn finish_internal(&mut self) -> Result<(), GlesError> {
         let _guard = self.span.enter();
 
         if self.finished.swap(true, Ordering::SeqCst) {
@@ -2697,18 +2699,18 @@ impl<'frame> Gles2Frame<'frame> {
     /// Overrides the default texture shader used, if none is specified.
     ///
     /// This affects calls to [`Frame::render_texture_at`] or [`Frame::render_texture_from_to`] as well as
-    /// calls to [`Gles2Frame::render_texture_to`] or [`Gles2Frame::render_texture`], if the passed in `program` is `None`.
+    /// calls to [`GlesFrame::render_texture_to`] or [`Gles2Frame::render_texture`], if the passed in `program` is `None`.
     ///
-    /// Override is active only for the lifetime of this `Gles2Frame` and can be reset via [`Gles2Frame::clear_tex_program_override`].
+    /// Override is active only for the lifetime of this `GlesFrame` and can be reset via [`Gles2Frame::clear_tex_program_override`].
     pub fn override_default_tex_program(
         &mut self,
-        program: Gles2TexProgram,
+        program: GlesTexProgram,
         additional_uniforms: Vec<Uniform<'static>>,
     ) {
         self.tex_program_override = Some((program, additional_uniforms));
     }
 
-    /// Resets a texture shader override previously set by [`Gles2Frame::override_default_tex_program`].
+    /// Resets a texture shader override previously set by [`GlesFrame::override_default_tex_program`].
     pub fn clear_tex_program_override(&mut self) {
         self.tex_program_override = None;
     }
@@ -2720,7 +2722,7 @@ impl<'frame> Gles2Frame<'frame> {
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         color: [f32; 4],
-    ) -> Result<(), Gles2Error> {
+    ) -> Result<(), GlesError> {
         if damage.is_empty() {
             return Ok(());
         }
@@ -2856,15 +2858,15 @@ impl<'frame> Gles2Frame<'frame> {
     #[allow(clippy::too_many_arguments)]
     pub fn render_texture_from_to(
         &mut self,
-        texture: &Gles2Texture,
+        texture: &GlesTexture,
         src: Rectangle<f64, BufferCoord>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         transform: Transform,
         alpha: f32,
-        program: Option<&Gles2TexProgram>,
+        program: Option<&GlesTexProgram>,
         additional_uniforms: &[Uniform<'_>],
-    ) -> Result<(), Gles2Error> {
+    ) -> Result<(), GlesError> {
         let mut mat = Matrix3::<f32>::identity();
 
         // dest position and scale
@@ -2967,14 +2969,14 @@ impl<'frame> Gles2Frame<'frame> {
     #[allow(clippy::too_many_arguments)]
     pub fn render_texture(
         &mut self,
-        tex: &Gles2Texture,
+        tex: &GlesTexture,
         tex_matrix: Matrix3<f32>,
         mut matrix: Matrix3<f32>,
         instances: Option<&[ffi::types::GLfloat]>,
         alpha: f32,
-        program: Option<&Gles2TexProgram>,
+        program: Option<&GlesTexProgram>,
         additional_uniforms: &[Uniform<'_>],
-    ) -> Result<(), Gles2Error> {
+    ) -> Result<(), GlesError> {
         let damage = instances.unwrap_or(&[0.0, 0.0, 1.0, 1.0]);
         if damage.is_empty() {
             return Ok(());
@@ -3043,7 +3045,7 @@ impl<'frame> Gles2Frame<'frame> {
                 let desc = program
                     .additional_uniforms
                     .get(&*uniform.name)
-                    .ok_or_else(|| Gles2Error::UnknownUniform(uniform.name.clone().into_owned()))?;
+                    .ok_or_else(|| GlesError::UnknownUniform(uniform.name.clone().into_owned()))?;
                 uniform.value.set(gl, desc)?;
             }
 
@@ -3131,12 +3133,12 @@ impl<'frame> Gles2Frame<'frame> {
     /// Render a pixel shader into the current target at a given `dest`-region.
     pub fn render_pixel_shader_to(
         &mut self,
-        pixel_shader: &Gles2PixelProgram,
+        pixel_shader: &GlesPixelProgram,
         dest: Rectangle<i32, Physical>,
         damage: Option<&[Rectangle<i32, Physical>]>,
         alpha: f32,
         additional_uniforms: &[Uniform<'_>],
-    ) -> Result<(), Gles2Error> {
+    ) -> Result<(), GlesError> {
         let damage = damage
             .map(|damage| {
                 damage
@@ -3210,7 +3212,7 @@ impl<'frame> Gles2Frame<'frame> {
                 let desc = program
                     .additional_uniforms
                     .get(&*uniform.name)
-                    .ok_or_else(|| Gles2Error::UnknownUniform(uniform.name.clone().into_owned()))?;
+                    .ok_or_else(|| GlesError::UnknownUniform(uniform.name.clone().into_owned()))?;
                 uniform.value.set(gl, desc)?;
             }
 
@@ -3300,10 +3302,10 @@ impl<'frame> Gles2Frame<'frame> {
     }
 }
 
-impl<'frame> Drop for Gles2Frame<'frame> {
+impl<'frame> Drop for GlesFrame<'frame> {
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
-            warn!("Ignored error finishing Gles2Frame on drop: {}", err);
+            warn!("Ignored error finishing GlesFrame on drop: {}", err);
         }
     }
 }
