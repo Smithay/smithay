@@ -24,7 +24,9 @@ mod input;
 use crate::{
     backend::{
         egl::{
-            context::GlAttributes, display::EGLDisplay, native, EGLContext, EGLSurface, Error as EGLError,
+            context::{GlAttributes, PixelFormatRequirements},
+            display::EGLDisplay,
+            native, EGLContext, EGLSurface, Error as EGLError,
         },
         input::InputEvent,
         renderer::{
@@ -178,10 +180,9 @@ where
     span.record("window", Into::<u64>::into(winit_window.id()));
     debug!("Window created");
 
-    let reqs = Default::default();
     let (display, context, surface, is_x11) = {
         let display = EGLDisplay::new(winit_window.clone())?;
-        let context = EGLContext::new_with_config(&display, attributes, reqs)?;
+        let context = EGLContext::new_with_config(&display, attributes, PixelFormatRequirements::_8_bit())?;
 
         let (surface, is_x11) = if let Some(wl_surface) = winit_window.wayland_surface() {
             debug!("Winit backend: Wayland");

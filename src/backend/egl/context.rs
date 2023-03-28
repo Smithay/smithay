@@ -397,13 +397,40 @@ pub struct PixelFormatRequirements {
     pub multisampling: Option<u16>,
 }
 
-impl Default for PixelFormatRequirements {
-    fn default() -> Self {
+impl PixelFormatRequirements {
+    /// Format selection to get a 8-bit color format with alpha, depth and stencil bits
+    pub fn _8_bit() -> Self {
         PixelFormatRequirements {
             hardware_accelerated: Some(true),
             color_bits: Some(24),
             float_color_buffer: false,
             alpha_bits: Some(8),
+            depth_bits: Some(24),
+            stencil_bits: Some(8),
+            multisampling: None,
+        }
+    }
+
+    /// Format selection to get a 10-bit color format with alpha, depth and stencil bits
+    pub fn _10_bit() -> Self {
+        PixelFormatRequirements {
+            hardware_accelerated: Some(true),
+            color_bits: Some(30),
+            float_color_buffer: false,
+            alpha_bits: Some(2),
+            depth_bits: Some(24),
+            stencil_bits: Some(8),
+            multisampling: None,
+        }
+    }
+
+    /// Format selection to get a 10-bit color format based on floating point values with alpha, depth and stencil bits
+    pub fn _10f_bit() -> Self {
+        PixelFormatRequirements {
+            hardware_accelerated: Some(true),
+            color_bits: Some(48),
+            float_color_buffer: true,
+            alpha_bits: Some(16),
             depth_bits: Some(24),
             stencil_bits: Some(8),
             multisampling: None,
@@ -435,6 +462,11 @@ impl PixelFormatRequirements {
             trace!("Setting BLUE_SIZE to {}", color / 3 + u8::from(color % 3 == 2));
             out.push(ffi::egl::BLUE_SIZE as c_int);
             out.push((color / 3 + u8::from(color % 3 == 2)) as c_int);
+        }
+
+        if self.float_color_buffer {
+            out.push(ffi::egl::COLOR_COMPONENT_TYPE_EXT as c_int);
+            out.push(ffi::egl::COLOR_COMPONENT_TYPE_FLOAT_EXT as c_int);
         }
 
         if let Some(alpha) = self.alpha_bits {
