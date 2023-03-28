@@ -2106,53 +2106,6 @@ where
     }
 }
 
-impl<'render, 'target, 'alloc, R: GraphicsApi, T: GraphicsApi> ExportDma
-    for MultiRenderer<'render, 'target, 'alloc, R, T>
-where
-    <T::Device as ApiDevice>::Renderer: ExportDma,
-    // We need this because the Renderer-impl does and ExportDma requires Renderer
-    R: 'static,
-    R::Error: 'static,
-    T::Error: 'static,
-    <R::Device as ApiDevice>::Renderer: Bind<Dmabuf> + ExportDma + ExportMem + ImportDma + ImportMem,
-    <T::Device as ApiDevice>::Renderer: ImportDma + ImportMem,
-    <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
-    <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
-{
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn export_framebuffer(
-        &mut self,
-        size: Size<i32, BufferCoords>,
-    ) -> Result<Dmabuf, <Self as Renderer>::Error> {
-        if let Some(target) = self.target.as_mut() {
-            target
-                .device
-                .renderer_mut()
-                .export_framebuffer(size)
-                .map_err(Error::Target)
-        } else {
-            self.render
-                .renderer_mut()
-                .export_framebuffer(size)
-                .map_err(Error::Render)
-        }
-    }
-
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn export_texture(
-        &mut self,
-        texture: &<Self as Renderer>::TextureId,
-    ) -> Result<Dmabuf, <Self as Renderer>::Error> {
-        let tex = texture
-            .get::<R>(self.render.node())
-            .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
-        self.render
-            .renderer_mut()
-            .export_texture(&tex)
-            .map_err(Error::Render)
-    }
-}
-
 impl<'render, 'target, 'alloc, R: GraphicsApi, T: GraphicsApi, BlitTarget> Blit<BlitTarget>
     for MultiRenderer<'render, 'target, 'alloc, R, T>
 where

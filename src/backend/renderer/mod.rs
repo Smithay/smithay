@@ -602,32 +602,6 @@ pub trait ExportMem: Renderer {
     ) -> Result<&'a [u8], <Self as Renderer>::Error>;
 }
 
-/// Trait for renderers supporting exporting contents of framebuffers or textures as dmabufs.
-pub trait ExportDma: Renderer {
-    /// Exports the currently bound framebuffer as a dmabuf.
-    ///
-    /// This operation is not destructive, the contents of the framebuffer keep being valid.
-    ///
-    /// This function *may* fail, if (but not limited to):
-    /// - The framebuffer is not readable
-    /// - The size is larger than the framebuffer
-    /// - There is not enough space to create a copy
-    fn export_framebuffer(
-        &mut self,
-        size: Size<i32, BufferCoord>,
-    ) -> Result<Dmabuf, <Self as Renderer>::Error>;
-    /// Exports the given texture as a dmabuf.
-    ///
-    /// This operation is not destructive, the contents of the texture keep being valid.
-    ///
-    /// This function *may* fail, if (but not limited to):
-    /// - The texture cannot be exported
-    fn export_texture(
-        &mut self,
-        texture: &<Self as Renderer>::TextureId,
-    ) -> Result<Dmabuf, <Self as Renderer>::Error>;
-}
-
 /// Trait for renderers supporting blitting contents from one framebuffer to another.
 pub trait Blit<Target>
 where

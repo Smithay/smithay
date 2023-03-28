@@ -16,8 +16,8 @@ use crate::{
         renderer::{
             element::UnderlyingStorage,
             gles::{element::*, *},
-            Bind, Blit, DebugFlags, ExportDma, ExportMem, ImportDma, ImportMem, Offscreen, Renderer,
-            TextureFilter, Unbind,
+            Bind, Blit, DebugFlags, ExportMem, ImportDma, ImportMem, Offscreen, Renderer, TextureFilter,
+            Unbind,
         },
     },
     utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
@@ -404,15 +404,6 @@ impl ExportMem for GlowRenderer {
         texture_mapping: &'a Self::TextureMapping,
     ) -> Result<&'a [u8], Self::Error> {
         self.gl.map_texture(texture_mapping)
-    }
-}
-
-impl ExportDma for GlowRenderer {
-    fn export_texture(&mut self, texture: &Gles2Texture) -> Result<Dmabuf, Gles2Error> {
-        self.gl.export_texture(texture)
-    }
-    fn export_framebuffer(&mut self, size: Size<i32, BufferCoord>) -> Result<Dmabuf, Gles2Error> {
-        self.gl.export_framebuffer(size)
     }
 }
 
