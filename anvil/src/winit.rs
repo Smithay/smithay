@@ -8,7 +8,7 @@ use std::{
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::ImportMem;
+use smithay::backend::{allocator::Fourcc, renderer::ImportMem};
 
 use smithay::{
     backend::{
@@ -278,7 +278,16 @@ pub fn run_winit() {
             let cursor_pos = state.pointer_location - cursor_hotspot.to_f64();
             let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
+            #[cfg(feature = "debug")]
+            let mut renderdoc = state.renderdoc.as_mut();
             let render_res = backend.bind().and_then(|_| {
+                #[cfg(feature = "debug")]
+                if let Some(renderdoc) = renderdoc.as_mut() {
+                    renderdoc.start_frame_capture(
+                        backend.renderer().egl_context().get_context_handle(),
+                        backend.window().wayland_surface().unwrap_or_else(std::ptr::null),
+                    );
+                }
                 let age = if *full_redraw > 0 {
                     0
                 } else {
@@ -344,6 +353,15 @@ pub fn run_winit() {
                             warn!("Failed to submit buffer: {}", err);
                         }
                     }
+
+                    #[cfg(feature = "debug")]
+                    if let Some(renderdoc) = renderdoc.as_mut() {
+                        renderdoc.end_frame_capture(
+                            backend.renderer().egl_context().get_context_handle(),
+                            backend.window().wayland_surface().unwrap_or_else(std::ptr::null),
+                        );
+                    }
+
                     backend.window().set_cursor_visible(cursor_visible);
 
                     // Send frame events so that client start drawing their next frame
@@ -365,6 +383,14 @@ pub fn run_winit() {
                     }
                 }
                 Err(SwapBuffersError::ContextLost(err)) => {
+                    #[cfg(feature = "debug")]
+                    if let Some(renderdoc) = renderdoc.as_mut() {
+                        renderdoc.discard_frame_capture(
+                            backend.renderer().egl_context().get_context_handle(),
+                            backend.window().wayland_surface().unwrap_or_else(std::ptr::null),
+                        );
+                    }
+
                     error!("Critical Rendering Error: {}", err);
                     state.running.store(false, Ordering::SeqCst);
                 }
