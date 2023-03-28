@@ -182,7 +182,11 @@ where
 
     let (display, context, surface, is_x11) = {
         let display = EGLDisplay::new(winit_window.clone())?;
-        let context = EGLContext::new_with_config(&display, attributes, PixelFormatRequirements::_8_bit())?;
+
+        let context = EGLContext::new_with_config(&display, attributes, PixelFormatRequirements::_10_bit())
+            .or_else(|_| {
+            EGLContext::new_with_config(&display, attributes, PixelFormatRequirements::_8_bit())
+        })?;
 
         let (surface, is_x11) = if let Some(wl_surface) = winit_window.wayland_surface() {
             debug!("Winit backend: Wayland");

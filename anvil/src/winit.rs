@@ -8,7 +8,10 @@ use std::{
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
-use smithay::backend::{allocator::Fourcc, renderer::ImportMem};
+use smithay::{
+    backend::{allocator::Fourcc, renderer::ImportMem},
+    reexports::winit::platform::unix::WindowExtUnix,
+};
 
 use smithay::{
     backend::{
@@ -289,7 +292,10 @@ pub fn run_winit() {
                 if let Some(renderdoc) = renderdoc.as_mut() {
                     renderdoc.start_frame_capture(
                         backend.renderer().egl_context().get_context_handle(),
-                        backend.window().wayland_surface().unwrap_or_else(std::ptr::null),
+                        backend
+                            .window()
+                            .wayland_surface()
+                            .unwrap_or_else(std::ptr::null_mut),
                     );
                 }
                 let age = if *full_redraw > 0 {
@@ -362,7 +368,10 @@ pub fn run_winit() {
                     if let Some(renderdoc) = renderdoc.as_mut() {
                         renderdoc.end_frame_capture(
                             backend.renderer().egl_context().get_context_handle(),
-                            backend.window().wayland_surface().unwrap_or_else(std::ptr::null),
+                            backend
+                                .window()
+                                .wayland_surface()
+                                .unwrap_or_else(std::ptr::null_mut),
                         );
                     }
 
@@ -391,7 +400,10 @@ pub fn run_winit() {
                     if let Some(renderdoc) = renderdoc.as_mut() {
                         renderdoc.discard_frame_capture(
                             backend.renderer().egl_context().get_context_handle(),
-                            backend.window().wayland_surface().unwrap_or_else(std::ptr::null),
+                            backend
+                                .window()
+                                .wayland_surface()
+                                .unwrap_or_else(std::ptr::null_mut),
                         );
                     }
 
