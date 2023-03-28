@@ -22,11 +22,20 @@ use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan
 use std::cell::RefCell;
 
 pub mod element;
+mod error;
+pub mod format;
 mod shaders;
+mod texture;
 mod uniform;
 mod version;
 
+pub use error::*;
+use format::*;
+pub use shaders::*;
+pub use texture::*;
 pub use uniform::*;
+
+use self::version::GlVersion;
 
 use super::{
     Bind, Blit, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer, Texture,
@@ -34,13 +43,13 @@ use super::{
 };
 use crate::backend::allocator::{
     dmabuf::{Dmabuf, WeakDmabuf},
+    format::{get_bpp, get_opaque, get_transparent, has_alpha},
     Format, Fourcc,
 };
 use crate::backend::egl::{
     ffi::egl::{self as ffi_egl, types::EGLImage},
     EGLContext, EGLSurface, MakeCurrentError,
 };
-use crate::backend::SwapBuffersError;
 use crate::utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
@@ -50,7 +59,9 @@ use super::{ImportDmaWl, ImportMemWl};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{display::EGLBufferReader, Format as EGLFormat};
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_buffer, wl_shm};
+use crate::wayland::shm::shm_format_to_fourcc;
+#[cfg(feature = "wayland_frontend")]
+use wayland_server::protocol::wl_buffer;
 
 #[allow(clippy::all, missing_docs, missing_debug_implementations)]
 pub mod ffi {
@@ -58,184 +69,10 @@ pub mod ffi {
 }
 
 crate::utils::ids::id_gen!(next_renderer_id, RENDERER_ID, RENDERER_IDS);
-
-#[derive(Debug)]
-struct GlesTexProgramInternal {
-    program: ffi::types::GLuint,
-    uniform_tex: ffi::types::GLint,
-    uniform_tex_matrix: ffi::types::GLint,
-    uniform_matrix: ffi::types::GLint,
-    uniform_alpha: ffi::types::GLint,
-    attrib_vert: ffi::types::GLint,
-    attrib_vert_position: ffi::types::GLint,
-    additional_uniforms: HashMap<String, UniformDesc>,
-}
-
-#[derive(Debug)]
-struct GlesTexProgramVariant {
-    normal: GlesTexProgramInternal,
-    debug: GlesTexProgramInternal,
-
-    // debug flags
-    uniform_tint: ffi::types::GLint,
-}
-
-/// Gles texture shader
-#[derive(Debug, Clone)]
-pub struct GlesTexProgram(Rc<GlesTexProgramInner>);
-
-#[derive(Debug)]
-struct GlesTexProgramInner {
-    variants: [GlesTexProgramVariant; 3],
-    destruction_callback_sender: Sender<CleanupResource>,
-}
-
-impl GlesTexProgram {
-    fn variant_for_format(
-        &self,
-        format: Option<ffi::types::GLenum>,
-        has_alpha: bool,
-    ) -> &GlesTexProgramVariant {
-        match format {
-            Some(ffi::RGBA) => {
-                if has_alpha {
-                    &self.0.variants[0]
-                } else {
-                    &self.0.variants[1]
-                }
-            }
-            None => &self.0.variants[2],
-            _ => panic!("Unknown texture type"),
-        }
-    }
-}
-
-impl Drop for GlesTexProgramInner {
+struct RendererId(usize);
+impl Drop for RendererId {
     fn drop(&mut self) {
-        for variant in &self.variants {
-            let _ = self
-                .destruction_callback_sender
-                .send(CleanupResource::Program(variant.normal.program));
-            let _ = self
-                .destruction_callback_sender
-                .send(CleanupResource::Program(variant.debug.program));
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct GlesSolidProgram {
-    program: ffi::types::GLuint,
-    uniform_matrix: ffi::types::GLint,
-    uniform_color: ffi::types::GLint,
-    attrib_vert: ffi::types::GLint,
-    attrib_position: ffi::types::GLint,
-}
-
-/// Gles pixel shader
-#[derive(Debug, Clone)]
-pub struct GlesPixelProgram(Rc<GlesPixelProgramInner>);
-
-#[derive(Debug)]
-struct GlesPixelProgramInner {
-    normal: GlesPixelProgramInternal,
-    debug: GlesPixelProgramInternal,
-    destruction_callback_sender: Sender<CleanupResource>,
-
-    // debug flags
-    uniform_tint: ffi::types::GLint,
-}
-
-#[derive(Debug)]
-struct GlesPixelProgramInternal {
-    program: ffi::types::GLuint,
-    uniform_matrix: ffi::types::GLint,
-    uniform_tex_matrix: ffi::types::GLint,
-    uniform_size: ffi::types::GLint,
-    uniform_alpha: ffi::types::GLint,
-    attrib_vert: ffi::types::GLint,
-    attrib_position: ffi::types::GLint,
-    additional_uniforms: HashMap<String, UniformDesc>,
-}
-
-impl Drop for GlesPixelProgramInner {
-    fn drop(&mut self) {
-        let _ = self
-            .destruction_callback_sender
-            .send(CleanupResource::Program(self.normal.program));
-        let _ = self
-            .destruction_callback_sender
-            .send(CleanupResource::Program(self.debug.program));
-    }
-}
-
-/// A handle to a GLES texture
-#[derive(Debug, Clone)]
-pub struct GlesTexture(Rc<GlesTextureInternal>);
-
-impl GlesTexture {
-    /// Create a GlesTexture from a raw gl texture id.
-    ///
-    /// This expects the texture to be in RGBA format to be rendered
-    /// correctly by the `render_texture*`-functions of [`Frame`](super::Frame).
-    /// It is also expected to not be external or y_inverted.
-    ///
-    /// Ownership over the texture is taken by the renderer, you should not free the texture yourself.
-    ///
-    /// # Safety
-    ///
-    /// The renderer cannot make sure `tex` is a valid texture id.
-    pub unsafe fn from_raw(
-        renderer: &GlesRenderer,
-        internal_format: Option<ffi::types::GLenum>,
-        opaque: bool,
-        tex: ffi::types::GLuint,
-        size: Size<i32, BufferCoord>,
-    ) -> GlesTexture {
-        GlesTexture(Rc::new(GlesTextureInternal {
-            texture: tex,
-            format: internal_format,
-            has_alpha: !opaque,
-            is_external: false,
-            y_inverted: false,
-            size,
-            egl_images: None,
-            destruction_callback_sender: renderer.destruction_callback_sender.clone(),
-        }))
-    }
-
-    /// OpenGL texture id of this texture
-    ///
-    /// This id will become invalid, when the GlesTexture is dropped and does not transfer ownership.
-    pub fn tex_id(&self) -> ffi::types::GLuint {
-        self.0.texture
-    }
-}
-
-#[derive(Debug)]
-struct GlesTextureInternal {
-    texture: ffi::types::GLuint,
-    format: Option<ffi::types::GLenum>,
-    has_alpha: bool,
-    is_external: bool,
-    y_inverted: bool,
-    size: Size<i32, BufferCoord>,
-    egl_images: Option<Vec<EGLImage>>,
-    destruction_callback_sender: Sender<CleanupResource>,
-}
-
-impl Drop for GlesTextureInternal {
-    fn drop(&mut self) {
-        let _ = self
-            .destruction_callback_sender
-            .send(CleanupResource::Texture(self.texture));
-        if let Some(images) = self.egl_images.take() {
-            for image in images {
-                let _ = self
-                    .destruction_callback_sender
-                    .send(CleanupResource::EGLImage(image));
-            }
-        }
+        RENDERER_IDS.lock().unwrap().remove(&self.0);
     }
 }
 
@@ -248,72 +85,25 @@ enum CleanupResource {
     Program(ffi::types::GLuint),
 }
 
-impl Texture for GlesTexture {
-    fn width(&self) -> u32 {
-        self.0.size.w as u32
-    }
-    fn height(&self) -> u32 {
-        self.0.size.h as u32
-    }
-    fn size(&self) -> Size<i32, BufferCoord> {
-        self.0.size
-    }
-    fn format(&self) -> Option<Fourcc> {
-        let fmt = gl_internal_format_to_fourcc(self.0.format?);
-        if self.0.has_alpha {
-            fmt
-        } else {
-            fmt.and_then(get_opaque)
-        }
-    }
-}
-
-/// Texture mapping of a GLES texture
 #[derive(Debug)]
-pub struct GlesMapping {
-    pbo: ffi::types::GLuint,
-    format: ffi::types::GLenum,
-    layout: ffi::types::GLenum,
-    has_alpha: bool,
-    size: Size<i32, BufferCoord>,
-    mapping: AtomicPtr<nix::libc::c_void>,
+struct ShadowBuffer {
+    texture: ffi::types::GLuint,
+    fbo: ffi::types::GLuint,
+    stencil: ffi::types::GLuint,
     destruction_callback_sender: Sender<CleanupResource>,
 }
 
-impl Texture for GlesMapping {
-    fn width(&self) -> u32 {
-        self.size.w as u32
-    }
-    fn height(&self) -> u32 {
-        self.size.h as u32
-    }
-    fn size(&self) -> Size<i32, BufferCoord> {
-        self.size
-    }
-    fn format(&self) -> Option<Fourcc> {
-        let fmt = gl_read_format_to_fourcc(self.format, self.layout);
-        if self.has_alpha {
-            fmt
-        } else {
-            fmt.and_then(get_opaque)
-        }
-    }
-}
-impl TextureMapping for GlesMapping {
-    fn flipped(&self) -> bool {
-        true
-    }
-    fn format(&self) -> Fourcc {
-        Texture::format(self).expect("Should never happen")
-    }
-}
-
-impl Drop for GlesMapping {
+impl Drop for ShadowBuffer {
     fn drop(&mut self) {
-        let _ = self.destruction_callback_sender.send(CleanupResource::Mapping(
-            self.pbo,
-            self.mapping.load(Ordering::SeqCst),
-        ));
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::FramebufferObject(self.fbo));
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::Texture(self.texture));
+        let _ = self
+            .destruction_callback_sender
+            .send(CleanupResource::RenderbufferObject(self.stencil));
     }
 }
 
@@ -323,6 +113,7 @@ struct GlesBuffer {
     image: EGLImage,
     rbo: ffi::types::GLuint,
     fbo: ffi::types::GLuint,
+    shadow: Option<Rc<ShadowBuffer>>,
 }
 
 /// Offscreen render surface
@@ -337,7 +128,25 @@ struct GlesRenderbufferInternal {
     rbo: ffi::types::GLuint,
     format: ffi::types::GLenum,
     has_alpha: bool,
+    size: Size<i32, BufferCoord>,
     destruction_callback_sender: Sender<CleanupResource>,
+}
+
+impl GlesRenderbuffer {
+    /// Size of the renderbuffer
+    pub fn size(&self) -> Size<i32, BufferCoord> {
+        self.0.size
+    }
+
+    /// Internal format of the renderbuffer
+    pub fn format(&self) -> Option<Fourcc> {
+        let fmt = gl_internal_format_to_fourcc(self.0.format);
+        if self.0.has_alpha {
+            fmt
+        } else {
+            fmt.and_then(get_opaque)
+        }
+    }
 }
 
 impl Drop for GlesRenderbufferInternal {
@@ -357,15 +166,26 @@ enum GlesTarget {
         buf: GlesBuffer,
         dmabuf: Dmabuf,
     },
-    Surface(Rc<EGLSurface>),
+    Surface {
+        surface: Rc<EGLSurface>,
+        // TODO: Optimally we would cache this, but care needs to be taken. FBOs are context local, while Textures might be shared.
+        // So we can't just put it in user-data for an `EGLSurface`, as the same surface might be used with multiple shared Contexts.
+        shadow: Option<ShadowBuffer>,
+    },
     Texture {
         texture: GlesTexture,
         fbo: ffi::types::GLuint,
+        // TODO: Optimally we would cache this, but care needs to be taken. FBOs are context local, while Textures might be shared.
+        // So we can't just store it in the GlesTexture, but need a renderer-id HashMap for the FBOs.
+        shadow: Option<ShadowBuffer>,
         destruction_callback_sender: Sender<CleanupResource>,
     },
     Renderbuffer {
         buf: GlesRenderbuffer,
         fbo: ffi::types::GLuint,
+        // TODO: Optimally we would cache this, but care needs to be taken. FBOs are context local, while Renderbuffers might be shared.
+        // So we can't just store it in the GlesRenderbuffer, but need a renderer-id HashMap for the FBOs.
+        shadow: Option<ShadowBuffer>,
     },
 }
 
@@ -383,8 +203,8 @@ impl GlesTarget {
 
                 Some((format, has_alpha))
             }
-            GlesTarget::Surface(surf) => {
-                let format = surf.pixel_format();
+            GlesTarget::Surface { surface, .. } => {
+                let format = surface.pixel_format();
                 let format = match (format.color_bits, format.alpha_bits) {
                     (24, 8) => ffi::RGB8,
                     (30, 2) => ffi::RGB10_A2,
@@ -396,6 +216,123 @@ impl GlesTarget {
             }
             GlesTarget::Texture { texture, .. } => Some((texture.0.format?, texture.0.has_alpha)),
             GlesTarget::Renderbuffer { buf, .. } => Some((buf.0.format, buf.0.has_alpha)),
+        }
+    }
+
+    fn make_current(&self, gl: &ffi::Gles2, egl: &EGLContext) -> Result<(), MakeCurrentError> {
+        unsafe {
+            if let &GlesTarget::Surface {
+                ref surface,
+                ref shadow,
+                ..
+            } = self
+            {
+                egl.make_current_with_surface(surface)?;
+                if let Some(shadow) = shadow.as_ref() {
+                    gl.BindFramebuffer(ffi::FRAMEBUFFER, shadow.fbo);
+                } else {
+                    gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                }
+            } else {
+                egl.make_current()?;
+                match self {
+                    GlesTarget::Image { ref buf, .. } => {
+                        if let Some(shadow) = buf.shadow.as_ref() {
+                            gl.BindFramebuffer(ffi::FRAMEBUFFER, shadow.fbo);
+                        } else {
+                            gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo)
+                        }
+                    }
+                    GlesTarget::Texture {
+                        ref fbo, ref shadow, ..
+                    } => {
+                        if let Some(shadow) = shadow.as_ref() {
+                            gl.BindFramebuffer(ffi::FRAMEBUFFER, shadow.fbo);
+                        } else {
+                            gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
+                        }
+                    }
+                    GlesTarget::Renderbuffer {
+                        ref fbo, ref shadow, ..
+                    } => {
+                        if let Some(shadow) = shadow.as_ref() {
+                            gl.BindFramebuffer(ffi::FRAMEBUFFER, shadow.fbo);
+                        } else {
+                            gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            Ok(())
+        }
+    }
+
+    fn make_current_no_shadow(
+        &self,
+        gl: &ffi::Gles2,
+        egl: &EGLContext,
+        stencil: Option<(ffi::types::GLuint, ffi::types::GLuint)>,
+    ) -> Result<(), GlesError> {
+        unsafe {
+            if let &GlesTarget::Surface { ref surface, .. } = self {
+                egl.make_current_with_surface(surface)?;
+                let size = surface.get_size().ok_or(GlesError::UnexpectedSize)?;
+
+                if let Some((stencil_fbo, _)) = stencil {
+                    gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                    gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, stencil_fbo);
+                    gl.BlitFramebuffer(
+                        0,
+                        0,
+                        size.w,
+                        size.h,
+                        0,
+                        0,
+                        size.w,
+                        size.h,
+                        ffi::STENCIL_BUFFER_BIT,
+                        ffi::NEAREST,
+                    );
+                    gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, 0);
+                }
+            } else {
+                egl.make_current()?;
+                match self {
+                    GlesTarget::Image { ref buf, .. } => {
+                        gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo);
+                    }
+                    GlesTarget::Texture { ref fbo, .. } => {
+                        gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo);
+                    }
+                    GlesTarget::Renderbuffer { ref fbo, .. } => {
+                        gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo);
+                    }
+                    _ => unreachable!(),
+                }
+                if let Some((_, stencil_rbo)) = stencil {
+                    gl.FramebufferRenderbuffer(
+                        ffi::FRAMEBUFFER,
+                        ffi::STENCIL_ATTACHMENT,
+                        ffi::RENDERBUFFER,
+                        stencil_rbo,
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn has_shadow(&self) -> bool {
+        self.get_shadow().is_some()
+    }
+
+    fn get_shadow(&self) -> Option<&ShadowBuffer> {
+        match self {
+            GlesTarget::Surface { ref shadow, .. } => shadow.as_ref(),
+            GlesTarget::Image { ref buf, .. } => buf.shadow.as_deref(),
+            GlesTarget::Texture { ref shadow, .. } => shadow.as_ref(),
+            GlesTarget::Renderbuffer { ref shadow, .. } => shadow.as_ref(),
         }
     }
 }
@@ -421,40 +358,60 @@ impl Drop for GlesTarget {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// Capabilities of the [`GlesRenderer`]
+pub enum Capability {
+    /// GlesRenderer supports Instancing for render optimizations
+    Instancing,
+    /// GlesRenderer supports blitting between framebuffers
+    Blit,
+    /// GlesRenderer supports creating of Renderbuffers with usable formats
+    Renderbuffer,
+    /// GlesRenderer supports color transformations
+    ColorTransformations,
+}
+
 /// A renderer utilizing OpenGL ES
 pub struct GlesRenderer {
-    buffers: Vec<GlesBuffer>,
+    // state
     target: Option<GlesTarget>,
-    pub(crate) extensions: Vec<String>,
+    min_filter: TextureFilter,
+    max_filter: TextureFilter,
+    debug_flags: DebugFlags,
 
-    tex_program: GlesTexProgram,
-    solid_program: GlesSolidProgram,
-
-    dmabuf_cache: std::collections::HashMap<WeakDmabuf, GlesTexture>,
+    // internals
     egl: EGLContext,
     #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
     egl_reader: Option<EGLBufferReader>,
-
-    gl_version: version::GlVersion,
-    vbos: [ffi::types::GLuint; 2],
     gl: ffi::Gles2,
+
+    // optionals
+    gl_version: GlVersion,
+    pub(crate) extensions: Vec<String>,
+    capabilities: Vec<Capability>,
+
+    // shaders
+    tex_program: GlesTexProgram,
+    solid_program: GlesSolidProgram,
+    // color-transformation shaders
+    // TODO new tex/solid? shaders
+    output_program: Option<GlesColorOutputProgram>,
+
+    // caches
+    buffers: Vec<GlesBuffer>,
+    dmabuf_cache: std::collections::HashMap<WeakDmabuf, GlesTexture>,
+    vbos: [ffi::types::GLuint; 3],
+
+    // cleanup
     destruction_callback: Receiver<CleanupResource>,
     destruction_callback_sender: Sender<CleanupResource>,
 
-    min_filter: TextureFilter,
-    max_filter: TextureFilter,
-    supports_instancing: bool,
-    debug_flags: DebugFlags,
+    // markers
     _not_send: *mut (),
+
+    // debug
     span: tracing::Span,
     gl_debug_span: Option<*mut tracing::Span>,
-}
-
-struct RendererId(usize);
-impl Drop for RendererId {
-    fn drop(&mut self) {
-        RENDERER_IDS.lock().unwrap().remove(&self.0);
-    }
 }
 
 /// Handle to the currently rendered frame during [`GlesRenderer::render`](Renderer::render).
@@ -492,6 +449,7 @@ impl fmt::Debug for GlesRenderer {
             .field("buffers", &self.buffers)
             .field("target", &self.target)
             .field("extensions", &self.extensions)
+            .field("capabilities", &self.capabilities)
             .field("tex_program", &self.tex_program)
             .field("solid_program", &self.solid_program)
             .field("dmabuf_cache", &self.dmabuf_cache)
@@ -501,143 +459,7 @@ impl fmt::Debug for GlesRenderer {
             .field("vbos", &self.vbos)
             .field("min_filter", &self.min_filter)
             .field("max_filter", &self.max_filter)
-            .field("supports_instancing", &self.supports_instancing)
             .finish()
-    }
-}
-
-/// Error returned during rendering using GL ES
-#[derive(thiserror::Error, Debug)]
-pub enum GlesError {
-    /// A shader could not be compiled
-    #[error("Failed to compile Shader")]
-    ShaderCompileError,
-    /// A program could not be linked
-    #[error("Failed to link Program")]
-    ProgramLinkError,
-    /// A framebuffer could not be bound
-    #[error("Failed to bind Framebuffer")]
-    FramebufferBindingError,
-    /// Required GL functions could not be loaded
-    #[error("Failed to load GL functions from EGL")]
-    GLFunctionLoaderError,
-    /// Required GL extension are not supported by the underlying implementation
-    #[error("None of the following GL extensions is supported by the underlying GL implementation, at least one is required: {0:?}")]
-    GLExtensionNotSupported(&'static [&'static str]),
-    /// Required EGL extension are not supported by the underlying implementation
-    #[error("None of the following EGL extensions is supported by the underlying implementation, at least one is required: {0:?}")]
-    EGLExtensionNotSupported(&'static [&'static str]),
-    /// Required GL version is not available by the underlying implementation
-    #[error(
-        "The OpenGL ES version of the underlying GL implementation is too low, at least required: {0:?}"
-    )]
-    GLVersionNotSupported(version::GlVersion),
-    /// The underlying egl context could not be activated
-    #[error("Failed to active egl context")]
-    ContextActivationError(#[from] crate::backend::egl::MakeCurrentError),
-    ///The given dmabuf could not be converted to an EGLImage for framebuffer use
-    #[error("Failed to convert between dmabuf and EGLImage")]
-    BindBufferEGLError(#[source] crate::backend::egl::Error),
-    /// The given buffer has an unknown pixel format
-    #[error("Unknown pixel format")]
-    UnknownPixelFormat,
-    /// The given buffer has an unsupported pixel format
-    #[error("Unsupported pixel format: {0:?}")]
-    UnsupportedPixelFormat(Fourcc),
-    /// The given buffer has an unknown pixel layout
-    #[error("Unsupported pixel layout")]
-    UnsupportedPixelLayout,
-    /// The given wl buffer has an unsupported pixel format
-    #[error("Unsupported wl_shm format: {0:?}")]
-    #[cfg(feature = "wayland_frontend")]
-    UnsupportedWlPixelFormat(wl_shm::Format),
-    /// The given buffer was not accessible
-    #[error("Error accessing the buffer ({0:?})")]
-    #[cfg(feature = "wayland_frontend")]
-    BufferAccessError(crate::wayland::shm::BufferAccessError),
-    /// The given egl buffer was not accessible
-    #[error("Error accessing the buffer ({0:?})")]
-    #[cfg(feature = "wayland_frontend")]
-    EGLBufferAccessError(crate::backend::egl::BufferAccessError),
-    /// This rendering operation was called without a previous `begin`-call
-    #[error("Call begin before doing any rendering operations")]
-    UnconstraintRenderingOperation,
-    /// There was an error mapping the buffer
-    #[error("Error mapping the buffer")]
-    MappingError,
-    /// The provided buffer's size did not match the requested one.
-    #[error("Error reading buffer, size is too small for the given dimensions")]
-    UnexpectedSize,
-    /// The blitting operation was unsuccessful
-    #[error("Error blitting between framebuffers")]
-    BlitError,
-    /// An error occured while creating the shader object.
-    #[error("An error occured while creating the shader object.")]
-    CreateShaderObject,
-    /// Uniform was not declared when compiling shader
-    #[error("Uniform {0:?} was not declared when compiling the provided shader")]
-    UnknownUniform(String),
-    /// The provided uniform has a different type then was provided when compiling the shader
-    #[error("Uniform with different type (got {provided:?}, expected: {declared:?})")]
-    UniformTypeMismatch {
-        /// Uniform type that was provided during the call
-        provided: UniformType,
-        /// Uniform type that was declared when compiling
-        declared: UniformType,
-    },
-}
-
-impl From<GlesError> for SwapBuffersError {
-    #[cfg(feature = "wayland_frontend")]
-    fn from(err: GlesError) -> SwapBuffersError {
-        match err {
-            x @ GlesError::ShaderCompileError
-            | x @ GlesError::ProgramLinkError
-            | x @ GlesError::GLFunctionLoaderError
-            | x @ GlesError::GLExtensionNotSupported(_)
-            | x @ GlesError::EGLExtensionNotSupported(_)
-            | x @ GlesError::GLVersionNotSupported(_)
-            | x @ GlesError::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
-            GlesError::ContextActivationError(err) => err.into(),
-            x @ GlesError::FramebufferBindingError
-            | x @ GlesError::BindBufferEGLError(_)
-            | x @ GlesError::UnknownPixelFormat
-            | x @ GlesError::UnsupportedPixelFormat(_)
-            | x @ GlesError::UnsupportedWlPixelFormat(_)
-            | x @ GlesError::UnsupportedPixelLayout
-            | x @ GlesError::BufferAccessError(_)
-            | x @ GlesError::MappingError
-            | x @ GlesError::UnexpectedSize
-            | x @ GlesError::BlitError
-            | x @ GlesError::CreateShaderObject
-            | x @ GlesError::UniformTypeMismatch { .. }
-            | x @ GlesError::UnknownUniform(_)
-            | x @ GlesError::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
-        }
-    }
-    #[cfg(not(feature = "wayland_frontend"))]
-    fn from(err: GlesError) -> SwapBuffersError {
-        match err {
-            x @ GlesError::ShaderCompileError
-            | x @ GlesError::ProgramLinkError
-            | x @ GlesError::GLFunctionLoaderError
-            | x @ GlesError::GLExtensionNotSupported(_)
-            | x @ GlesError::EGLExtensionNotSupported(_)
-            | x @ GlesError::GLVersionNotSupported(_)
-            | x @ GlesError::UnconstraintRenderingOperation => SwapBuffersError::ContextLost(Box::new(x)),
-            GlesError::ContextActivationError(err) => err.into(),
-            x @ GlesError::FramebufferBindingError
-            | x @ GlesError::MappingError
-            | x @ GlesError::UnknownPixelFormat
-            | x @ GlesError::UnsupportedPixelFormat(_)
-            | x @ GlesError::UnsupportedPixelLayout
-            | x @ GlesError::UnexpectedSize
-            | x @ GlesError::BlitError
-            | x @ GlesError::CreateShaderObject
-            | x @ GlesError::UniformTypeMismatch { .. }
-            | x @ GlesError::UnknownUniform(_)
-            | x @ GlesError::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
-        }
     }
 }
 
@@ -665,210 +487,8 @@ extern "system" fn gl_debug_log(
     });
 }
 
-unsafe fn compile_shader(
-    gl: &ffi::Gles2,
-    variant: ffi::types::GLuint,
-    src: &str,
-) -> Result<ffi::types::GLuint, GlesError> {
-    let shader = gl.CreateShader(variant);
-    if shader == 0 {
-        return Err(GlesError::CreateShaderObject);
-    }
-
-    gl.ShaderSource(
-        shader,
-        1,
-        &src.as_ptr() as *const *const u8 as *const *const ffi::types::GLchar,
-        &(src.len() as i32) as *const _,
-    );
-    gl.CompileShader(shader);
-
-    let mut status = ffi::FALSE as i32;
-    gl.GetShaderiv(shader, ffi::COMPILE_STATUS, &mut status as *mut _);
-    if status == ffi::FALSE as i32 {
-        let mut max_len = 0;
-        gl.GetShaderiv(shader, ffi::INFO_LOG_LENGTH, &mut max_len as *mut _);
-
-        let mut error = Vec::with_capacity(max_len as usize);
-        let mut len = 0;
-        gl.GetShaderInfoLog(
-            shader,
-            max_len as _,
-            &mut len as *mut _,
-            error.as_mut_ptr() as *mut _,
-        );
-        error.set_len(len as usize);
-
-        error!(
-            "[GL] {}",
-            std::str::from_utf8(&error).unwrap_or("<Error Message no utf8>")
-        );
-
-        gl.DeleteShader(shader);
-        return Err(GlesError::ShaderCompileError);
-    }
-
-    Ok(shader)
-}
-
-unsafe fn link_program(
-    gl: &ffi::Gles2,
-    vert_src: &str,
-    frag_src: &str,
-) -> Result<ffi::types::GLuint, GlesError> {
-    let vert = compile_shader(gl, ffi::VERTEX_SHADER, vert_src)?;
-    let frag = compile_shader(gl, ffi::FRAGMENT_SHADER, frag_src)?;
-    let program = gl.CreateProgram();
-    gl.AttachShader(program, vert);
-    gl.AttachShader(program, frag);
-    gl.LinkProgram(program);
-    gl.DetachShader(program, vert);
-    gl.DetachShader(program, frag);
-    gl.DeleteShader(vert);
-    gl.DeleteShader(frag);
-
-    let mut status = ffi::FALSE as i32;
-    gl.GetProgramiv(program, ffi::LINK_STATUS, &mut status as *mut _);
-    if status == ffi::FALSE as i32 {
-        let mut max_len = 0;
-        gl.GetProgramiv(program, ffi::INFO_LOG_LENGTH, &mut max_len as *mut _);
-
-        let mut error = Vec::with_capacity(max_len as usize);
-        let mut len = 0;
-        gl.GetProgramInfoLog(
-            program,
-            max_len as _,
-            &mut len as *mut _,
-            error.as_mut_ptr() as *mut _,
-        );
-        error.set_len(len as usize);
-
-        error!(
-            "[GL] {}",
-            std::str::from_utf8(&error).unwrap_or("<Error Message no utf8>")
-        );
-
-        gl.DeleteProgram(program);
-        return Err(GlesError::ProgramLinkError);
-    }
-
-    Ok(program)
-}
-
-unsafe fn texture_program(
-    gl: &ffi::Gles2,
-    frag: &str,
-    additional_uniforms: &[UniformName<'_>],
-    destruction_callback_sender: Sender<CleanupResource>,
-) -> Result<GlesTexProgram, GlesError> {
-    let create_variant = |defines: &[&str]| -> Result<GlesTexProgramVariant, GlesError> {
-        let mut src = String::from(frag);
-        for define in defines {
-            src = format!("#define {}\n{}", define, frag);
-        }
-        let shader = format!("#version 100\n{}", src);
-        let program = unsafe { link_program(gl, shaders::VERTEX_SHADER, &shader)? };
-
-        let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src);
-        let debug_program = unsafe { link_program(gl, shaders::VERTEX_SHADER, debug_shader.as_ref())? };
-
-        let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-        let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
-        let tex = CStr::from_bytes_with_nul(b"tex\0").expect("NULL terminated");
-        let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-        let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
-        let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
-        let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
-
-        Ok(GlesTexProgramVariant {
-            normal: GlesTexProgramInternal {
-                program,
-                uniform_tex: gl.GetUniformLocation(program, tex.as_ptr() as *const ffi::types::GLchar),
-                uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
-                uniform_tex_matrix: gl
-                    .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-                uniform_alpha: gl.GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
-                attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
-                attrib_vert_position: gl
-                    .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
-                additional_uniforms: additional_uniforms
-                    .iter()
-                    .map(|uniform| {
-                        let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
-                        let location =
-                            gl.GetUniformLocation(program, name.as_ptr() as *const ffi::types::GLchar);
-                        (
-                            uniform.name.clone().into_owned(),
-                            UniformDesc {
-                                location,
-                                type_: uniform.type_,
-                            },
-                        )
-                    })
-                    .collect(),
-            },
-            debug: GlesTexProgramInternal {
-                program: debug_program,
-                uniform_tex: gl.GetUniformLocation(debug_program, tex.as_ptr() as *const ffi::types::GLchar),
-                uniform_matrix: gl
-                    .GetUniformLocation(debug_program, matrix.as_ptr() as *const ffi::types::GLchar),
-                uniform_tex_matrix: gl
-                    .GetUniformLocation(debug_program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-                uniform_alpha: gl
-                    .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
-                attrib_vert: gl.GetAttribLocation(debug_program, vert.as_ptr() as *const ffi::types::GLchar),
-                attrib_vert_position: gl
-                    .GetAttribLocation(debug_program, vert_position.as_ptr() as *const ffi::types::GLchar),
-                additional_uniforms: additional_uniforms
-                    .iter()
-                    .map(|uniform| {
-                        let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
-                        let location =
-                            gl.GetUniformLocation(debug_program, name.as_ptr() as *const ffi::types::GLchar);
-                        (
-                            uniform.name.clone().into_owned(),
-                            UniformDesc {
-                                location,
-                                type_: uniform.type_,
-                            },
-                        )
-                    })
-                    .collect(),
-            },
-            // debug flags
-            uniform_tint: gl.GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
-        })
-    };
-
-    Ok(GlesTexProgram(Rc::new(GlesTexProgramInner {
-        variants: [
-            create_variant(&[])?,
-            create_variant(&[shaders::NO_ALPHA])?,
-            create_variant(&[shaders::EXTERNAL])?,
-        ],
-        destruction_callback_sender,
-    })))
-}
-
-unsafe fn solid_program(gl: &ffi::Gles2) -> Result<GlesSolidProgram, GlesError> {
-    let program = link_program(gl, shaders::VERTEX_SHADER_SOLID, shaders::FRAGMENT_SHADER_SOLID)?;
-
-    let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-    let color = CStr::from_bytes_with_nul(b"color\0").expect("NULL terminated");
-    let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-    let position = CStr::from_bytes_with_nul(b"position\0").expect("NULL terminated");
-
-    Ok(GlesSolidProgram {
-        program,
-        uniform_matrix: gl.GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
-        uniform_color: gl.GetUniformLocation(program, color.as_ptr() as *const ffi::types::GLchar),
-        attrib_vert: gl.GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
-        attrib_position: gl.GetAttribLocation(program, position.as_ptr() as *const ffi::types::GLchar),
-    })
-}
-
 impl GlesRenderer {
-    /// Creates a new OpenGL ES renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
+    /// Creates a new OpenGL ES 2 renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
     ///
     /// # Safety
     ///
@@ -882,14 +502,17 @@ impl GlesRenderer {
     /// - This renderer has no default framebuffer, use `Bind::bind` before rendering.
     /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
-    /// - Texture filtering starts with Linear-downscaling and Linear-upscaling
+    /// - Texture filtering starts with Linear-downscaling and Linear-upscaling.
+    /// - The renderer might use two-pass rendering internally to facilitate color space transformations.
+    ///   As such it reserves any stencil buffer for internal use and makes no guarantee about previous framebuffer
+    ///   contents being accessible during the lifetime of a `GlesFrame`.
     pub unsafe fn new(context: EGLContext) -> Result<GlesRenderer, GlesError> {
         let span = info_span!(parent: &context.span, "renderer_gles2");
         let _guard = span.enter();
 
         context.make_current()?;
 
-        let (gl, gl_version, exts, supports_instancing, gl_debug_span) = {
+        let (gl, gl_version, exts, capabilities, gl_debug_span) = {
             let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
             let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const c_char;
             if ext_ptr.is_null() {
@@ -928,14 +551,43 @@ impl GlesRenderer {
                     "GL_EXT_texture_format_BGRA8888",
                 ]));
             }
+
             // required for buffers without linear memory layout
             if gl_version < version::GLES_3_0 && !exts.iter().any(|ext| ext == "GL_EXT_unpack_subimage") {
                 return Err(GlesError::GLExtensionNotSupported(&["GL_EXT_unpack_subimage"]));
             }
-            // Check if GPU supports instanced rendering.
-            let supports_instancing = gl_version >= version::GLES_3_0
+
+            let mut capabilities = Vec::new();
+            // required for more optimized rendering, otherwise we render in batches
+            if gl_version >= version::GLES_3_0
                 || (exts.iter().any(|ext| ext == "GL_EXT_instanced_arrays")
-                    && exts.iter().any(|ext| ext == "GL_EXT_draw_instanced"));
+                    && exts.iter().any(|ext| ext == "GL_EXT_draw_instanced"))
+            {
+                capabilities.push(Capability::Instancing);
+                debug!("Instancing is supported");
+            }
+            // required to use 8-bit color formats in renderbuffers, we don't deal with anything lower as a render target
+            if gl_version >= version::GLES_3_0 || exts.iter().any(|ext| ext == "GL_OES_rgb8_rgba8") {
+                capabilities.push(Capability::Renderbuffer);
+                debug!("Rgba8 Renderbuffers are supported");
+            }
+            // required for blit operations
+            if gl_version >= version::GLES_3_0 {
+                capabilities.push(Capability::Blit);
+                debug!("Blitting is supported");
+                // required to bind the 16F-buffer we want to use for blending.
+                //
+                // Note: We could technically also have a 16F shadow buffer on 2.0 with GL_OES_texture_half_float.
+                // The problem is, that the main output format we are interested in for this `ABGR2101010` is not renderable on 2.0,
+                // and as far as I know there is no extension to change that. So we could pradoxically not copy the shadow buffer
+                // to our output buffer, *except* if we scanout 16F directly...
+                //
+                // So lets not go down that route and attempt to support color-transformations and HDR stuff with ES 2.0.
+                if exts.iter().any(|ext| ext == "GL_EXT_color_buffer_half_float") {
+                    capabilities.push(Capability::ColorTransformations);
+                    debug!("Color Transformations are supported");
+                }
+            }
 
             let gl_debug_span = if exts.iter().any(|ext| ext == "GL_KHR_debug") {
                 gl.Enable(ffi::DEBUG_OUTPUT);
@@ -947,27 +599,38 @@ impl GlesRenderer {
                 None
             };
 
-            (gl, gl_version, exts, supports_instancing, gl_debug_span)
+            (gl, gl_version, exts, capabilities, gl_debug_span)
         };
 
         let (tx, rx) = channel();
         let tex_program = texture_program(&gl, shaders::FRAGMENT_SHADER, &[], tx.clone())?;
         let solid_program = solid_program(&gl)?;
+        let output_program = capabilities
+            .contains(&Capability::ColorTransformations)
+            .then(|| color_output_program(&gl, tx.clone()))
+            .transpose()?;
 
         // Initialize vertices based on drawing methodology.
-        let vertices: &[ffi::types::GLfloat] = if supports_instancing {
+        let vertices: &[ffi::types::GLfloat] = if capabilities.contains(&Capability::Instancing) {
             &INSTANCED_VERTS
         } else {
             &TRIANGLE_VERTS
         };
 
-        let mut vbos = [0; 2];
+        let mut vbos = [0; 3];
         gl.GenBuffers(vbos.len() as i32, vbos.as_mut_ptr());
         gl.BindBuffer(ffi::ARRAY_BUFFER, vbos[0]);
         gl.BufferData(
             ffi::ARRAY_BUFFER,
             (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
             vertices.as_ptr() as *const _,
+            ffi::STATIC_DRAW,
+        );
+        gl.BindBuffer(ffi::ARRAY_BUFFER, vbos[2]);
+        gl.BufferData(
+            ffi::ARRAY_BUFFER,
+            (std::mem::size_of::<ffi::types::GLfloat>() * OUTPUT_VERTS.len()) as isize,
+            OUTPUT_VERTS.as_ptr() as *const _,
             ffi::STATIC_DRAW,
         );
         gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
@@ -982,19 +645,25 @@ impl GlesRenderer {
             egl: context,
             #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
             egl_reader: None,
+
             extensions: exts,
             gl_version,
+            capabilities,
+
             tex_program,
             solid_program,
-            target: None,
-            buffers: Vec::new(),
-            dmabuf_cache: std::collections::HashMap::new(),
-            destruction_callback: rx,
-            destruction_callback_sender: tx,
+            output_program,
             vbos,
             min_filter: TextureFilter::Linear,
             max_filter: TextureFilter::Linear,
-            supports_instancing,
+
+            target: None,
+            buffers: Vec::new(),
+            dmabuf_cache: std::collections::HashMap::new(),
+
+            destruction_callback: rx,
+            destruction_callback_sender: tx,
+
             debug_flags: DebugFlags::empty(),
             _not_send: std::ptr::null_mut(),
             span,
@@ -1005,24 +674,10 @@ impl GlesRenderer {
     }
 
     pub(crate) fn make_current(&mut self) -> Result<(), MakeCurrentError> {
-        unsafe {
-            if let Some(&GlesTarget::Surface(ref surface)) = self.target.as_ref() {
-                self.egl.make_current_with_surface(surface)?;
-            } else {
-                self.egl.make_current()?;
-                match self.target.as_ref() {
-                    Some(&GlesTarget::Image { ref buf, .. }) => {
-                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, buf.fbo)
-                    }
-                    Some(&GlesTarget::Texture { ref fbo, .. }) => {
-                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
-                    }
-                    Some(&GlesTarget::Renderbuffer { ref fbo, .. }) => {
-                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, *fbo)
-                    }
-                    _ => {}
-                }
-            }
+        if let Some(target) = self.target.as_ref() {
+            target.make_current(&self.gl, &self.egl)?;
+        } else {
+            unsafe { self.egl.make_current()? };
         }
         // delayed destruction until the next frame rendering.
         self.cleanup();
@@ -1075,6 +730,11 @@ impl GlesRenderer {
             }
         }
     }
+
+    /// Returns the supported [`Capabilities`](Capability) of this renderer.
+    pub fn capabilities(&self) -> &[Capability] {
+        &self.capabilities
+    }
 }
 
 #[cfg(feature = "wayland_frontend")]
@@ -1102,8 +762,12 @@ impl ImportMemWl for GlesRenderer {
             let fourcc =
                 shm_format_to_fourcc(data.format).ok_or(GlesError::UnsupportedWlPixelFormat(data.format))?;
 
-            if !SUPPORTED_MEM_FORMATS_2.contains(&fourcc) {
-                return Err(Gles2Error::UnsupportedWlPixelFormat(data.format));
+            if self.gl_version.major >= 3 {
+                if !SUPPORTED_MEM_FORMATS_3.contains(&fourcc) {
+                    return Err(GlesError::UnsupportedWlPixelFormat(data.format));
+                }
+            } else if !SUPPORTED_MEM_FORMATS_2.contains(&fourcc) {
+                return Err(GlesError::UnsupportedWlPixelFormat(data.format));
             }
 
             let has_alpha = has_alpha(fourcc);
@@ -1226,11 +890,21 @@ impl ImportMemWl for GlesRenderer {
     }
 }
 
-const SUPPORTED_MEM_FORMATS: &[Fourcc] = &[
+const SUPPORTED_MEM_FORMATS_2: &[Fourcc] = &[
     Fourcc::Abgr8888,
     Fourcc::Xbgr8888,
     Fourcc::Argb8888,
     Fourcc::Xrgb8888,
+];
+const SUPPORTED_MEM_FORMATS_3: &[Fourcc] = &[
+    Fourcc::Abgr8888,
+    Fourcc::Xbgr8888,
+    Fourcc::Argb8888,
+    Fourcc::Xrgb8888,
+    Fourcc::Abgr2101010,
+    Fourcc::Xbgr2101010,
+    Fourcc::Abgr16161616f,
+    Fourcc::Xbgr16161616f,
 ];
 
 impl ImportMem for GlesRenderer {
@@ -1251,8 +925,12 @@ impl ImportMem for GlesRenderer {
             return Err(GlesError::UnexpectedSize);
         }
 
-        if !SUPPORTED_MEM_FORMATS.contains(&format) {
-            return Err(Gles2Error::UnsupportedPixelFormat(format));
+        if self.gl_version.major >= 3 {
+            if !SUPPORTED_MEM_FORMATS_3.contains(&format) {
+                return Err(GlesError::UnsupportedPixelFormat(format));
+            }
+        } else if !SUPPORTED_MEM_FORMATS_2.contains(&format) {
+            return Err(GlesError::UnsupportedPixelFormat(format));
         }
 
         let has_alpha = has_alpha(format);
@@ -1364,7 +1042,11 @@ impl ImportMem for GlesRenderer {
     }
 
     fn mem_formats(&self) -> Box<dyn Iterator<Item = Fourcc>> {
-        Box::new(SUPPORTED_MEM_FORMATS.iter().copied())
+        if self.gl_version.major >= 3 {
+            Box::new(SUPPORTED_MEM_FORMATS_3.iter().copied())
+        } else {
+            Box::new(SUPPORTED_MEM_FORMATS_2.iter().copied())
+        }
     }
 }
 
@@ -1552,7 +1234,13 @@ impl ExportMem for GlesRenderer {
         &mut self,
         region: Rectangle<i32, BufferCoord>,
     ) -> Result<Self::TextureMapping, Self::Error> {
-        self.make_current()?;
+        if let Some(target) = self.target.as_ref() {
+            target.make_current_no_shadow(&self.gl, &self.egl, None)?;
+        } else {
+            unsafe {
+                self.egl.make_current()?;
+            }
+        }
 
         let (internal, has_alpha) = self
             .target
@@ -1684,13 +1372,108 @@ impl ExportMem for GlesRenderer {
     }
 }
 
+impl GlesRenderer {
+    fn create_shadow_buffer(&self, size: Size<i32, BufferCoord>) -> Result<Option<ShadowBuffer>, GlesError> {
+        trace!(?size, "Creating shadow framebuffer");
+
+        self.capabilities
+            .contains(&Capability::ColorTransformations)
+            .then(|| {
+                let mut tex = unsafe {
+                    let mut tex = 0;
+                    self.gl.GenTextures(1, &mut tex);
+                    self.gl.BindTexture(ffi::TEXTURE_2D, tex);
+                    self.gl.TexImage2D(
+                        ffi::TEXTURE_2D,
+                        0,
+                        ffi::RGBA16F as i32,
+                        size.w,
+                        size.h,
+                        0,
+                        ffi::RGBA,
+                        ffi::HALF_FLOAT,
+                        std::ptr::null(),
+                    );
+                    tex
+                };
+
+                let mut fbo = unsafe {
+                    let mut fbo = 0;
+                    self.gl.GenFramebuffers(1, &mut fbo as *mut _);
+                    self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                    self.gl.FramebufferTexture2D(
+                        ffi::FRAMEBUFFER,
+                        ffi::COLOR_ATTACHMENT0,
+                        ffi::TEXTURE_2D,
+                        tex,
+                        0,
+                    );
+                    fbo
+                };
+
+                let stencil = unsafe {
+                    let mut rbo = 0;
+
+                    self.gl.GenRenderbuffers(1, &mut rbo);
+                    self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
+                    self.gl
+                        .RenderbufferStorage(ffi::RENDERBUFFER, ffi::STENCIL_INDEX8, size.w, size.h);
+
+                    self.gl.FramebufferRenderbuffer(
+                        ffi::FRAMEBUFFER,
+                        ffi::STENCIL_ATTACHMENT,
+                        ffi::RENDERBUFFER,
+                        rbo,
+                    );
+
+                    let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                    self.gl.BindTexture(ffi::TEXTURE_2D, 0);
+                    self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+                    self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+
+                    if status != ffi::FRAMEBUFFER_COMPLETE {
+                        self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                        self.gl.DeleteTextures(1, &mut tex as *mut _);
+                        self.gl.DeleteRenderbuffers(1, &mut rbo as *mut _);
+                        return Err(GlesError::FramebufferBindingError);
+                    }
+
+                    rbo
+                };
+
+                Ok(ShadowBuffer {
+                    texture: tex,
+                    fbo,
+                    stencil,
+                    destruction_callback_sender: self.destruction_callback_sender.clone(),
+                })
+            })
+            .transpose()
+    }
+}
 
 impl Bind<Rc<EGLSurface>> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), GlesError> {
         self.unbind()?;
-        self.target = Some(GlesTarget::Surface(surface));
+        self.target = Some(GlesTarget::Surface {
+            surface: surface.clone(),
+            shadow: None,
+        });
         self.make_current()?;
+
+        let size = surface
+            .get_size()
+            .ok_or(GlesError::UnknownSize)?
+            .to_logical(1)
+            .to_buffer(1, Transform::Normal);
+        if let Some(shadow) = self.create_shadow_buffer(size)? {
+            self.target = Some(GlesTarget::Surface {
+                surface,
+                shadow: Some(shadow),
+            });
+            self.make_current()?;
+        }
         Ok(())
     }
 }
@@ -1703,7 +1486,7 @@ impl Bind<Dmabuf> for GlesRenderer {
 
         let (buf, dmabuf) = self
             .buffers
-            .iter()
+            .iter_mut()
             .find(|buffer| {
                 if let Some(dma) = buffer.dmabuf.upgrade() {
                     dma == dmabuf
@@ -1744,12 +1527,14 @@ impl Bind<Dmabuf> for GlesRenderer {
                         //TODO wrap image and drop here
                         return Err(GlesError::FramebufferBindingError);
                     }
+                    let shadow = self.create_shadow_buffer(dmabuf.0.size)?;
 
                     let buf = GlesBuffer {
                         dmabuf: dmabuf.weak(),
                         image,
                         rbo,
                         fbo,
+                        shadow: shadow.map(Rc::new),
                     };
 
                     self.buffers.push(buf.clone());
@@ -1794,8 +1579,10 @@ impl Bind<GlesTexture> for GlesRenderer {
             }
         }
 
+        let shadow = self.create_shadow_buffer(texture.size())?;
         self.target = Some(GlesTarget::Texture {
             texture,
+            shadow,
             destruction_callback_sender: self.destruction_callback_sender.clone(),
             fbo,
         });
@@ -1821,6 +1608,9 @@ impl Offscreen<GlesTexture> for GlesRenderer {
             get_transparent(format).ok_or(GlesError::UnsupportedPixelFormat(format))?
         })
         .ok_or(GlesError::UnsupportedPixelFormat(format))?;
+        if internal != ffi::RGBA8 && !self.capabilities.contains(&Capability::ColorTransformations) {
+            return Err(GlesError::UnsupportedPixelLayout);
+        }
 
         let tex = unsafe {
             let mut tex = 0;
@@ -1871,8 +1661,10 @@ impl Bind<GlesRenderbuffer> for GlesRenderer {
             }
         }
 
+        let shadow = self.create_shadow_buffer(renderbuffer.size())?;
         self.target = Some(GlesTarget::Renderbuffer {
             buf: renderbuffer,
+            shadow,
             fbo,
         });
         self.make_current()?;
@@ -1888,6 +1680,9 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
         format: Fourcc,
         size: Size<i32, BufferCoord>,
     ) -> Result<GlesRenderbuffer, GlesError> {
+        if !self.capabilities.contains(&Capability::Renderbuffer) {
+            return Err(GlesError::UnsupportedPixelFormat(format));
+        }
         self.make_current()?;
 
         let has_alpha = has_alpha(format);
@@ -1897,6 +1692,10 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
             get_transparent(format).ok_or(GlesError::UnsupportedPixelFormat(format))?
         })
         .ok_or(GlesError::UnsupportedPixelFormat(format))?;
+
+        if internal != ffi::RGBA8 && !self.capabilities.contains(&Capability::ColorTransformations) {
+            return Err(GlesError::UnsupportedPixelLayout);
+        }
 
         unsafe {
             let mut rbo = 0;
@@ -1910,6 +1709,7 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
                 rbo,
                 format: internal,
                 has_alpha,
+                size,
                 destruction_callback_sender: self.destruction_callback_sender.clone(),
             })))
         }
@@ -1979,13 +1779,16 @@ impl GlesRenderer {
         }
 
         match (src_target, dst_target) {
-            (&GlesTarget::Surface(ref src), &GlesTarget::Surface(ref dst)) => unsafe {
+            (
+                &GlesTarget::Surface { surface: ref src, .. },
+                &GlesTarget::Surface { surface: ref dst, .. },
+            ) => unsafe {
                 self.egl.make_current_with_draw_and_read_surface(dst, src)?;
             },
-            (&GlesTarget::Surface(ref src), _) => unsafe {
+            (&GlesTarget::Surface { surface: ref src, .. }, _) => unsafe {
                 self.egl.make_current_with_surface(src)?;
             },
-            (_, &GlesTarget::Surface(ref dst)) => unsafe {
+            (_, &GlesTarget::Surface { surface: ref dst, .. }) => unsafe {
                 self.egl.make_current_with_surface(dst)?;
             },
             (_, _) => unsafe {
@@ -2115,7 +1918,12 @@ impl GlesRenderer {
     where
         F: FnOnce(&ffi::Gles2) -> R,
     {
-        self.make_current()?;
+        // Don't expose the shadow buffer outside of a frame
+        if let Some(target) = self.target.as_ref() {
+            target.make_current_no_shadow(&self.gl, &self.egl, None)?;
+        } else {
+            unsafe { self.egl.make_current()? };
+        }
         Ok(func(&self.gl))
     }
 
@@ -2250,7 +2058,7 @@ impl GlesRenderer {
     ///
     /// They need to handle the following #define variants:
     /// - `EXTERNAL` uses samplerExternalOES instead of sampler2D, requires the GL_OES_EGL_image_external extension
-    /// - `XBGR` needs to ignore the alpha channel of the texture and replace it with 1.0
+    /// - `NO_ALPHA` needs to ignore the alpha channel of the texture and replace it with 1.0
     /// - `DEBUG_FLAGS` see below
     ///
     /// They receive the following variables:
@@ -2262,7 +2070,7 @@ impl GlesRenderer {
     /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
     /// and can then be set in functions utilizing `GlesTexProgram` (like [`Gles2Renderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`]).
     ///
-    /// The shader must **not** contain a `#version` directive. It will be interpreted as version 100.
+    /// The shader must contain a line only containing `//_DEFINES`. It will be replaced by the renderer with corresponding `#define` directives.
     ///
     /// ## Panics
     ///
@@ -2336,6 +2144,20 @@ impl Renderer for GlesRenderer {
 
             self.gl.Enable(ffi::BLEND);
             self.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+
+            if self
+                .target
+                .as_ref()
+                .map(|target| target.has_shadow())
+                .unwrap_or(false)
+            {
+                // Enable stencil testing and clear the shadow buffer for blending onto the actual framebuffer in finish
+                self.gl.Enable(ffi::STENCIL_TEST);
+                self.gl.StencilFunc(ffi::ALWAYS, 1, ffi::types::GLuint::MAX);
+                self.gl.StencilOp(ffi::REPLACE, ffi::REPLACE, ffi::REPLACE);
+                self.gl.StencilMask(ffi::types::GLuint::MAX);
+                self.gl.Clear(ffi::COLOR_BUFFER_BIT | ffi::STENCIL_BUFFER_BIT);
+            }
         }
 
         // Handle the width/height swap when the output is rotated by 90°/270°.
@@ -2434,6 +2256,14 @@ const fn triangle_verts() -> [ffi::types::GLfloat; 12 * MAX_RECTS_PER_DRAW] {
     verts
 }
 
+/// Vertices for output rendering.
+static OUTPUT_VERTS: [ffi::types::GLfloat; 8] = [
+    -1.0, 1.0, // top right
+    -1.0, -1.0, // top left
+    1.0, 1.0, // bottom right
+    1.0, -1.0, // bottom left
+];
+
 impl<'frame> Frame for GlesFrame<'frame> {
     type TextureId = GlesTexture;
     type Error = GlesError;
@@ -2523,7 +2353,70 @@ impl<'frame> GlesFrame<'frame> {
         }
 
         unsafe {
+            self.renderer.gl.Disable(ffi::SCISSOR_TEST);
+            self.renderer.gl.Disable(ffi::BLEND);
             self.renderer.gl.Flush();
+        }
+
+        if let Some(target) = self.renderer.target.as_ref() {
+            if let Some(shadow) = target.get_shadow() {
+                target.make_current_no_shadow(
+                    &self.renderer.gl,
+                    &self.renderer.egl,
+                    Some((shadow.fbo, shadow.stencil)),
+                )?;
+                unsafe {
+                    self.renderer
+                        .gl
+                        .StencilFunc(ffi::NOTEQUAL, 0, ffi::types::GLuint::MAX);
+                    self.renderer.gl.StencilMask(0);
+
+                    self.renderer.gl.ActiveTexture(ffi::TEXTURE0);
+                    self.renderer.gl.BindTexture(ffi::TEXTURE_2D, shadow.texture);
+                    self.renderer.gl.TexParameteri(
+                        ffi::TEXTURE_2D,
+                        ffi::TEXTURE_MIN_FILTER,
+                        ffi::NEAREST as i32,
+                    );
+                    self.renderer.gl.TexParameteri(
+                        ffi::TEXTURE_2D,
+                        ffi::TEXTURE_MAG_FILTER,
+                        ffi::NEAREST as i32,
+                    );
+
+                    let program = self
+                        .renderer
+                        .output_program
+                        .as_ref()
+                        .expect("If we have a shadow buffer we have an output shader");
+                    self.renderer.gl.UseProgram(program.program);
+                    self.renderer.gl.Uniform1i(program.uniform_tex, 0);
+
+                    self.renderer
+                        .gl
+                        .EnableVertexAttribArray(program.attrib_vert as u32);
+                    self.renderer
+                        .gl
+                        .BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[2]);
+                    self.renderer.gl.VertexAttribPointer(
+                        program.attrib_vert as u32,
+                        2,
+                        ffi::FLOAT,
+                        ffi::FALSE,
+                        0,
+                        std::ptr::null(),
+                    );
+
+                    self.renderer.gl.DrawArrays(ffi::TRIANGLE_STRIP, 0, 4);
+
+                    self.renderer.gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
+                    self.renderer.gl.DisableVertexAttribArray(0);
+                    self.renderer.gl.Disable(ffi::STENCIL_TEST);
+                }
+            }
+        }
+
+        unsafe {
             // We need to wait for the previously submitted GL commands to complete
             // or otherwise the buffer could be submitted to the drm surface while
             // still writing to the buffer which results in flickering on the screen.
@@ -2539,7 +2432,6 @@ impl<'frame> GlesFrame<'frame> {
             // and here
             // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L235
             self.renderer.gl.Finish();
-            self.renderer.gl.Disable(ffi::BLEND);
         }
         Ok(())
     }
@@ -2629,7 +2521,7 @@ impl<'frame> GlesFrame<'frame> {
             );
 
             // Damage vertices.
-            let vertices = if self.renderer.supports_instancing {
+            let vertices = if self.renderer.capabilities.contains(&Capability::Instancing) {
                 instances
             } else {
                 // Add the 4 f32s per damage rectangle for each of the 6 vertices.
@@ -2661,7 +2553,7 @@ impl<'frame> GlesFrame<'frame> {
             );
 
             let damage_len = damage.len() as i32;
-            if self.renderer.supports_instancing {
+            if self.renderer.capabilities.contains(&Capability::Instancing) {
                 gl.VertexAttribDivisor(self.renderer.solid_program.attrib_vert as u32, 0);
 
                 gl.VertexAttribDivisor(self.renderer.solid_program.attrib_position as u32, 1);
@@ -2909,7 +2801,7 @@ impl<'frame> GlesFrame<'frame> {
             );
 
             // Damage vertices.
-            let vertices = if self.renderer.supports_instancing {
+            let vertices = if self.renderer.capabilities.contains(&Capability::Instancing) {
                 Cow::Borrowed(damage)
             } else {
                 let mut vertices = Vec::with_capacity(damage.len() * 6);
@@ -2942,7 +2834,7 @@ impl<'frame> GlesFrame<'frame> {
             );
 
             let damage_len = (damage.len() / 4) as i32;
-            if self.renderer.supports_instancing {
+            if self.renderer.capabilities.contains(&Capability::Instancing) {
                 gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
                 gl.VertexAttribDivisor(program.attrib_vert_position as u32, 1);
 
@@ -3076,7 +2968,7 @@ impl<'frame> GlesFrame<'frame> {
             );
 
             // Damage vertices.
-            let vertices = if self.renderer.supports_instancing {
+            let vertices = if self.renderer.capabilities.contains(&Capability::Instancing) {
                 Cow::Borrowed(&damage)
             } else {
                 let mut vertices = Vec::with_capacity(damage.len() * 6);
@@ -3109,7 +3001,7 @@ impl<'frame> GlesFrame<'frame> {
             );
 
             let damage_len = (damage.len() / 4) as i32;
-            if self.renderer.supports_instancing {
+            if self.renderer.capabilities.contains(&Capability::Instancing) {
                 gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
                 gl.VertexAttribDivisor(program.attrib_position as u32, 1);
 
