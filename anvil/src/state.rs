@@ -283,61 +283,43 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
     }
     fn request_mode(&mut self, toplevel: ToplevelSurface, mode: DecorationMode) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
-        if let Some(w) = self
-            .space
-            .elements()
-            .find(|window| matches!(window, WindowElement::Wayland(w) if w.toplevel() == &toplevel))
-        {
-            toplevel.with_pending_state(|state| {
-                state.decoration_mode = Some(match mode {
-                    DecorationMode::ServerSide => {
-                        w.set_ssd(true);
-                        Mode::ServerSide
-                    }
-                    _ => {
-                        w.set_ssd(false);
-                        Mode::ClientSide
-                    }
-                });
-            });
 
-            let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
-                states
-                    .data_map
-                    .get::<XdgToplevelSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .initial_configure_sent
+        toplevel.with_pending_state(|state| {
+            state.decoration_mode = Some(match mode {
+                DecorationMode::ServerSide => Mode::ServerSide,
+                _ => Mode::ClientSide,
             });
-            if initial_configure_sent {
-                toplevel.send_configure();
-            }
+        });
+
+        let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
+            states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .initial_configure_sent
+        });
+        if initial_configure_sent {
+            toplevel.send_configure();
         }
     }
     fn unset_mode(&mut self, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
-        if let Some(w) = self
-            .space
-            .elements()
-            .find(|window| matches!(window, WindowElement::Wayland(w) if w.toplevel() == &toplevel))
-        {
-            w.set_ssd(false);
-            toplevel.with_pending_state(|state| {
-                state.decoration_mode = Some(Mode::ClientSide);
-            });
-            let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
-                states
-                    .data_map
-                    .get::<XdgToplevelSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .initial_configure_sent
-            });
-            if initial_configure_sent {
-                toplevel.send_configure();
-            }
+        toplevel.with_pending_state(|state| {
+            state.decoration_mode = Some(Mode::ClientSide);
+        });
+        let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
+            states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .initial_configure_sent
+        });
+        if initial_configure_sent {
+            toplevel.send_configure();
         }
     }
 }
