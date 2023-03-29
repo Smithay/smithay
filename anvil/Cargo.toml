@@ -1,6 +1,6 @@
 [package]
 authors = ["Victor Berger <victor.berger@m4x.org>", "Drakulix (Victoria Brekenfeld)"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 name = "anvil"
 publish = false
@@ -17,6 +17,7 @@ thiserror = "1"
 xcursor = {version = "0.3.3", optional = true}
 xkbcommon = "0.5.0"
 renderdoc = {version = "0.10.1", optional = true}
+smithay-drm-extras = {path = "../smithay-drm-extras", optional = true}
 
 [dependencies.smithay]
 default-features = false
@@ -38,6 +39,7 @@ default = ["egl", "winit", "x11", "udev", "xwayland"]
 egl = ["smithay/use_system_lib", "smithay/backend_egl"]
 test_all_features = ["default", "debug"]
 udev = [
+  "smithay-drm-extras",
   "smithay/backend_libinput",
   "smithay/backend_udev",
   "smithay/backend_drm",
