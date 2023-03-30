@@ -18,6 +18,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [workspace]
 members = [
+    "smithay-drm-extras",
     "smallvil",
     "anvil",
     "wlcs_anvil"
@@ -32,9 +33,10 @@ calloop = "0.10.1"
 cgmath = "0.18.0"
 downcast-rs = "1.2.0"
 drm-fourcc = "^2.2.0"
-drm = { version = "0.8.0", optional = true }
-drm-ffi = { version = "0.4.0", optional = true }
-gbm = { version = "0.11.0", optional = true, default-features = false, features = ["drm-support"] }
+drm = { version = "0.9.0", optional = true }
+drm-ffi = { version = "0.5.0", optional = true }
+
+gbm = { version = "0.12.0", optional = true, default-features = false, features = ["drm-support"] }
 glow = { version = "0.11.2", optional = true }
 input = { version = "0.8.2", default-features = false, features=["libinput_1_14"], optional = true }
 indexmap = "1.9"
