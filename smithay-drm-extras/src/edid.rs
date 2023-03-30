@@ -42,34 +42,22 @@ impl EdidInfo {
     }
 }
 
-// TODO: Remove once supported in drm-rs
-fn iter(props: &PropertyValueSet) -> impl Iterator<Item = (&property::Handle, &property::RawValue)> {
-    let (ids, values) = props.as_props_and_values();
-    ids.iter().zip(values.iter())
-}
-
 fn get_edid(device: &impl ControlDevice, props: &PropertyValueSet) -> Option<edid_rs::EDID> {
-    iter(props)
-        .filter_map(|(&handle, value)| {
-            let info = device.get_property(handle).ok()?;
+    let (info, value) = props
+        .into_iter()
+        .filter_map(|(handle, value)| {
+            let info = device.get_property(*handle).ok()?;
 
             Some((info, value))
         })
-        .find(|(info, _)| info.name().to_str() == Ok("EDID"))
-        .and_then(|(info, &value)| {
-            // TODO: Remove once supported in drm-rs
-            if let property::Value::Blob(edid_blob) = info.value_type().convert_value(value) {
-                Some(edid_blob)
-            } else {
-                None
-            }
-        })
-        .and_then(|blob| {
-            let data = device.get_property_blob(blob).ok()?;
-            let mut reader = std::io::Cursor::new(data);
+        .find(|(info, _)| info.name().to_str() == Ok("EDID"))?;
 
-            edid_rs::parse(&mut reader).ok()
-        })
+    let blob = info.value_type().convert_value(*value).as_blob()?;
+    let data = device.get_property_blob(blob).ok()?;
+
+    let mut reader = std::io::Cursor::new(data);
+
+    edid_rs::parse(&mut reader).ok()
 }
 
 fn get_manufacturer_name(edid: &edid_rs::EDID) -> String {

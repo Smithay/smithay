@@ -816,7 +816,7 @@ impl AnvilState<UdevData> {
             }
         };
 
-        let output_name = smithay_drm_extras::format_connector_name(&connector);
+        let output_name = format!("{}-{}", connector.interface().as_str(), connector.interface_id());
 
         let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
             .map(|info| (info.manufacturer, info.model))

@@ -133,7 +133,7 @@ impl State {
 
     fn connector_connected(&mut self, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
         if let Some(device) = self.devices.get_mut(&node) {
-            let name = smithay_drm_extras::format_connector_name(&connector);
+            let name = format!("{}-{}", connector.interface().as_str(), connector.interface_id());
 
             let (manufacturer, model) = EdidInfo::for_connector(&device.drm, connector.handle())
                 .map(|info| (info.manufacturer, info.model))
@@ -149,7 +149,7 @@ impl State {
     }
 
     fn connector_disconnected(&mut self, node: DrmNode, connector: connector::Info, crtc: crtc::Handle) {
-        let name = smithay_drm_extras::format_connector_name(&connector);
+        let name = format!("{}-{}", connector.interface().as_str(), connector.interface_id());
 
         println!("Disconnected:");
         dbg!(name);
