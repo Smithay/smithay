@@ -44,6 +44,8 @@
 //! ### Logging
 //!
 //! TODO: docs about tracing
+//!
+//! [`calloop`]: https://crates.io/crates/calloop
 
 pub mod backend;
 #[cfg(feature = "desktop")]
