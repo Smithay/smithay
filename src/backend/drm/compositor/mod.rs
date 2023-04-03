@@ -1079,6 +1079,56 @@ impl From<ExportBufferError> for Option<RenderingReason> {
     }
 }
 
+#[derive(Debug)]
+struct OverlayPlaneElementIds {
+    plane_plane_ids: IndexMap<plane::Handle, Id>,
+    plane_id_element_ids: IndexMap<Id, Id>,
+}
+
+impl OverlayPlaneElementIds {
+    fn from_planes(planes: &Planes) -> Self {
+        let overlay_plane_count = planes.overlay.len();
+
+        Self {
+            plane_plane_ids: IndexMap::with_capacity(overlay_plane_count),
+            plane_id_element_ids: IndexMap::with_capacity(overlay_plane_count),
+        }
+    }
+
+    fn plane_id_for_element_id(&mut self, plane: &plane::Handle, element_id: &Id) -> Id {
+        // Either get the existing plane id for the plane when the stored element id
+        // matches or generate a new Id (and update the element id)
+        self.plane_plane_ids
+            .entry(*plane)
+            .and_modify(|plane_id| {
+                let current_element_id = self.plane_id_element_ids.get(plane_id).unwrap();
+
+                if current_element_id != element_id {
+                    *plane_id = Id::new();
+                    self.plane_id_element_ids
+                        .insert(plane_id.clone(), element_id.clone());
+                }
+            })
+            .or_insert_with(|| {
+                let plane_id = Id::new();
+                self.plane_id_element_ids
+                    .insert(plane_id.clone(), element_id.clone());
+                plane_id
+            })
+            .clone()
+    }
+
+    fn contains_plane_id(&self, plane_id: &Id) -> bool {
+        self.plane_id_element_ids.contains_key(plane_id)
+    }
+
+    fn remove_plane(&mut self, plane: &plane::Handle) {
+        if let Some(plane_id) = self.plane_plane_ids.remove(plane) {
+            self.plane_id_element_ids.remove(&plane_id);
+        }
+    }
+}
+
 /// Composite an output using a combination of planes and rendering
 ///
 /// see the [`module docs`](crate::backend::drm::compositor) for more information
@@ -1093,6 +1143,7 @@ where
     output: Output,
     surface: Arc<DrmSurface>,
     planes: Planes,
+    overlay_plane_element_ids: OverlayPlaneElementIds,
     damage_tracker: OutputDamageTracker,
     primary_plane_element_id: Id,
     primary_plane_damage_bag: DamageBag<i32, BufferCoords>,
@@ -1203,6 +1254,8 @@ where
                         }
                     });
 
+                    let overlay_plane_element_ids = OverlayPlaneElementIds::from_planes(&planes);
+
                     let drm_renderer = DrmCompositor {
                         primary_plane_element_id: Id::new(),
                         primary_plane_damage_bag: DamageBag::new(4),
@@ -1218,6 +1271,7 @@ where
                         damage_tracker,
                         output: output.clone(),
                         planes,
+                        overlay_plane_element_ids,
                         element_states: IndexMap::new(),
                         debug_flags: DebugFlags::empty(),
                         span,
@@ -1719,6 +1773,10 @@ where
                     .as_ref()
                     .and_then(|state| state.config.as_ref());
 
+                // plane has been removed, so remove the plane from the plane id cache
+                if next_state.is_none() {
+                    self.overlay_plane_element_ids.remove_plane(handle);
+                }
                 if next_state
                     .map(|next_config| next_config.dst != previous_config.dst)
                     .unwrap_or(true)
@@ -1777,16 +1835,28 @@ where
             // First we collect all our fake elements for overlay and underlays
             // This is used to transport the opaque regions for elements that
             // have been assigned to planes and to realize hole punching for
-            // underlays
+            // underlays. We use an Id per plane/element combination to not
+            // interfer with the element damage state in the output damage tracker.
+            // Using the original element id would store the commit in the
+            // OutputDamageTracker without actual rendering anything -> bad
+            // Using a id per plane could result in an issue when a different
+            // element with the same geometry gets assigned and has the same
+            // commit -> unlikely but possible
+            // So we use an Id per plane for as long as we have the same element
+            // on that plane.
             let mut elements = overlay_plane_elements
                 .iter()
                 .map(|(p, element)| {
+                    let id = self
+                        .overlay_plane_element_ids
+                        .plane_id_for_element_id(p, element.id());
+
                     let is_underlay = overlay_plane_lookup.get(p).unwrap().zpos.unwrap_or_default()
                         < self.planes.primary.zpos.unwrap_or_default();
                     if is_underlay {
-                        HolepunchRenderElement::from_render_element(element, output_scale).into()
+                        HolepunchRenderElement::from_render_element(id, element, output_scale).into()
                     } else {
-                        OverlayPlaneElement::from_render_element(*element).into()
+                        OverlayPlaneElement::from_render_element(id, *element).into()
                     }
                 })
                 .collect::<Vec<_>>();
@@ -1807,14 +1877,13 @@ where
 
             match render_res {
                 Ok((render_damage, states)) => {
-                    for (id, mut state) in states.states.into_iter() {
-                        if let Some(existing_state) = render_element_states.states.get_mut(&id) {
-                            // Our overlay plane element and the holepunch element would result in double accounting of
-                            // the visible area, so we just reduce the renderer visible area by the visible are of the
-                            // overlay plane/holepunch element
-                            state.visible_area =
-                                state.visible_area.saturating_sub(existing_state.visible_area);
+                    for (id, state) in states.states.into_iter() {
+                        // Skip the state for our fake elements
+                        if self.overlay_plane_element_ids.contains_plane_id(&id) {
+                            continue;
+                        }
 
+                        if let Some(existing_state) = render_element_states.states.get_mut(&id) {
                             if matches!(
                                 existing_state.presentation_state,
                                 RenderElementPresentationState::Skipped
