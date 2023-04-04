@@ -374,15 +374,17 @@ where
             let source_actions =
                 with_source_metadata(source, |meta| meta.dnd_action).unwrap_or_else(|_| DndAction::empty());
             let possible_actions = source_actions & dnd_actions;
-            data.chosen_action = handler.action_choice(possible_actions, preferred_action);
+            let chosen_action = handler.action_choice(possible_actions, preferred_action);
             // check that the user provided callback respects that one precise action should be chosen
             debug_assert!(
-                [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask]
-                    .contains(&data.chosen_action),
+                [DndAction::None, DndAction::Move, DndAction::Copy, DndAction::Ask].contains(&chosen_action),
                 "Only one precise action should be chosen"
             );
-            offer.action(data.chosen_action);
-            source.action(data.chosen_action);
+            if chosen_action != data.chosen_action {
+                data.chosen_action = chosen_action;
+                offer.action(chosen_action);
+                source.action(chosen_action);
+            }
         }
         _ => unreachable!(),
     }
