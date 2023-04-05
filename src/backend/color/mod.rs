@@ -1,11 +1,14 @@
 #![allow(missing_docs)]
 
+#[cfg(feature = "color_lcms")]
+pub mod lcms;
+
 pub trait Curve {
     fn fill_in(&self, lut: &mut [f32]);
 }
 
 pub trait MappingLUT {
-    fn fill_in(&self, lut: &mut [f32]);
+    fn fill_in(&self, lut: &mut [f32], len: usize);
 }
 
 #[derive(Debug, Clone)]
