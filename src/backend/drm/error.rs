@@ -2,6 +2,8 @@ use crate::backend::SwapBuffersError;
 use drm::control::{connector, crtc, plane, Mode, RawResourceHandle};
 use std::path::PathBuf;
 
+use super::CreateDrmNodeError;
+
 /// Errors thrown by the [`DrmDevice`](crate::backend::drm::DrmDevice)
 /// and the [`DrmSurface`](crate::backend::drm::DrmSurface).
 #[derive(thiserror::Error, Debug)]
@@ -68,6 +70,10 @@ pub enum Error {
     /// Atomic Test failed for new properties
     #[error("Atomic Test failed for new properties on crtc ({0:?})")]
     TestFailed(crtc::Handle),
+
+    /// Creating a DrmNode failed.
+    #[error(transparent)]
+    CreateDrmNodeError(#[from] CreateDrmNodeError),
 }
 
 impl From<Error> for SwapBuffersError {
