@@ -80,6 +80,7 @@
 //!
 
 pub mod allocator;
+pub mod color;
 pub mod input;
 pub mod renderer;
 
