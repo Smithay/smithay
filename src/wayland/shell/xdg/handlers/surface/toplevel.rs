@@ -134,7 +134,18 @@ where
         {
             let toplevel = shell_data.known_toplevels.remove(index);
             drop(shell_data);
+            let surface = toplevel.wl_surface().clone();
             XdgShellHandler::toplevel_destroyed(state, toplevel);
+            compositor::with_states(&surface, |states| {
+                *states
+                    .data_map
+                    .get::<XdgToplevelSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap() = Default::default();
+                *states.cached_state.pending::<SurfaceCachedState>() = Default::default();
+                *states.cached_state.current::<SurfaceCachedState>() = Default::default();
+            })
         }
     }
 }
