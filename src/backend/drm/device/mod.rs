@@ -15,8 +15,8 @@ pub use self::fd::DrmDeviceFd;
 pub(super) mod legacy;
 use crate::utils::{Buffer, DevPath, Size};
 
-use super::DrmNode;
 use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurface, DrmSurfaceInternal};
+use super::DrmNode;
 use super::{error::Error, planes, Planes};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
