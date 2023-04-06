@@ -109,7 +109,7 @@ impl PlaneClaimStorage {
 /// An open drm device
 #[derive(Debug)]
 pub struct DrmDevice {
-    pub(super) dev_id: DrmNode,
+    pub(super) dev_node: DrmNode,
     pub(crate) internal: Arc<DrmDeviceInternal>,
     has_universal_planes: bool,
     cursor_size: Size<u32, Buffer>,
@@ -190,7 +190,7 @@ impl DrmDevice {
 
         info!("DrmDevice initializing");
 
-        let dev_id = {
+        let dev_node = {
             let dev_id = fd.dev_id().map_err(Error::UnableToGetDeviceId)?;
             DrmNode::from_dev_id(dev_id)?
         };
@@ -220,7 +220,7 @@ impl DrmDevice {
 
         Ok((
             DrmDevice {
-                dev_id,
+                dev_node,
                 internal: internal.clone(),
                 has_universal_planes,
                 cursor_size,
@@ -365,7 +365,7 @@ impl DrmDevice {
         };
 
         Ok(DrmSurface {
-            dev_id: self.dev_id,
+            dev_node: self.dev_node,
             crtc,
             primary: plane.handle,
             internal: Arc::new(internal),
@@ -374,9 +374,9 @@ impl DrmDevice {
         })
     }
 
-    /// Returns the device_id of the underlying drm node
-    pub fn device_id(&self) -> DrmNode {
-        self.dev_id
+    /// Returns the drm node of the device.
+    pub fn device_node(&self) -> DrmNode {
+        self.dev_node
     }
 
     /// Returns the underlying file descriptor

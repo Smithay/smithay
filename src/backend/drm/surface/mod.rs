@@ -29,7 +29,7 @@ use tracing::trace;
 pub struct DrmSurface {
     // This field is only read when 'backend_session' is enabled
     #[allow(dead_code)]
-    pub(super) dev_id: DrmNode,
+    pub(super) dev_node: DrmNode,
     pub(super) crtc: crtc::Handle,
     pub(super) primary: plane::Handle,
     pub(super) internal: Arc<DrmSurfaceInternal>,
