@@ -248,7 +248,7 @@ pub fn run_x11() {
     let mut state = AnvilState::init(&mut display, event_loop.handle(), data, true);
     state
         .shm_state
-        .add_formats(state.backend_data.renderer.shm_formats());
+        .update_formats(state.backend_data.renderer.shm_formats());
     state.space.map_output(&output, (0, 0));
 
     let output_clone = output.clone();

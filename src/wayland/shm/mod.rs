@@ -160,8 +160,16 @@ impl ShmState {
     /// Updates the list of formats advertised by the global.
     ///
     /// This will only affect new binds to the wl_shm global.
-    pub fn add_formats(&mut self, formats: impl IntoIterator<Item = wl_shm::Format>) {
-        self.formats.extend(formats.into_iter());
+    ///
+    /// Removing formats will cause old clients trying to create
+    /// a buffer of a now unsupported format to be killed.
+    ///
+    /// This function will never remove the mandatory formats `ARGB8888` and `XRGB8888`.
+    pub fn update_formats(&mut self, formats: impl IntoIterator<Item = wl_shm::Format>) {
+        self.formats = formats.into_iter().collect::<HashSet<_>>();
+        // Mandatory formats
+        self.formats.insert(wl_shm::Format::Argb8888);
+        self.formats.insert(wl_shm::Format::Xrgb8888);
     }
 }
 

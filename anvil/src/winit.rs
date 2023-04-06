@@ -192,7 +192,7 @@ pub fn run_winit() {
     let mut state = AnvilState::init(&mut display, event_loop.handle(), data, true);
     state
         .shm_state
-        .add_formats(state.backend_data.backend.renderer().shm_formats());
+        .update_formats(state.backend_data.backend.renderer().shm_formats());
     state.space.map_output(&output, (0, 0));
 
     #[cfg(feature = "xwayland")]

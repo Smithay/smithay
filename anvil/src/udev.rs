@@ -324,7 +324,7 @@ pub fn run_udev() {
             error!("Skipping device {device_id}: {err}");
         }
     }
-    state.shm_state.add_formats(
+    state.shm_state.update_formats(
         state
             .backend_data
             .gpus
