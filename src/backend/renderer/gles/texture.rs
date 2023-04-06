@@ -7,9 +7,7 @@ pub struct GlesTexture(pub(super) Rc<GlesTextureInternal>);
 impl GlesTexture {
     /// Create a GlesTexture from a raw gl texture id.
     ///
-    /// This expects the texture to be in RGBA format to be rendered
-    /// correctly by the `render_texture*`-functions of [`Frame`](super::Frame).
-    /// It is also expected to not be external or y_inverted.
+    /// It is expected to not be external or y_inverted.
     ///
     /// Ownership over the texture is taken by the renderer, you should not free the texture yourself.
     ///

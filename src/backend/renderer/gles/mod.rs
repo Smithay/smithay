@@ -488,7 +488,7 @@ extern "system" fn gl_debug_log(
 }
 
 impl GlesRenderer {
-    /// Creates a new OpenGL ES 2 renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
+    /// Creates a new OpenGL ES renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
     ///
     /// # Safety
     ///
@@ -1254,10 +1254,8 @@ impl ExportMem for GlesRenderer {
         unsafe {
             self.gl.GenBuffers(1, &mut pbo);
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
-            let size = (region.size.w
-                * region.size.h
-                * (gl_bpp(format, layout).ok_or(GlesError::UnsupportedPixelLayout)? / 8) as i32)
-                as isize;
+            let bpp = gl_bpp(format, layout).ok_or(GlesError::UnsupportedPixelLayout)? / 8;
+            let size = (region.size.w * region.size.h * bpp as i32) as isize;
             self.gl
                 .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_READ);
             self.gl.ReadBuffer(ffi::COLOR_ATTACHMENT0);
@@ -1296,16 +1294,14 @@ impl ExportMem for GlesRenderer {
 
         let (format, layout) = gl_read_for_internal(texture.0.format.ok_or(GlesError::UnknownPixelFormat)?)
             .ok_or(GlesError::UnknownPixelFormat)?;
+        let bpp = gl_bpp(format, layout).expect("We check the format before") / 8;
 
         unsafe {
             self.gl.GenBuffers(1, &mut pbo);
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
             self.gl.BufferData(
                 ffi::PIXEL_PACK_BUFFER,
-                (region.size.w
-                    * region.size.h
-                    * (gl_bpp(format, layout).expect("We check the format before") / 8) as i32)
-                    as isize,
+                (region.size.w * region.size.h * bpp as i32) as isize,
                 ptr::null(),
                 ffi::STREAM_READ,
             );
