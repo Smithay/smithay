@@ -1146,10 +1146,13 @@ impl ImportDma for GlesRenderer {
                 .map_err(GlesError::BindBufferEGLError)?;
 
             let tex = self.import_egl_image(image, is_external, None)?;
+            let format = fourcc_to_gl_formats(buffer.format().code)
+                .map(|(internal, _, _)| internal)
+                .unwrap_or(ffi::RGBA8);
             let has_alpha = has_alpha(buffer.format().code);
             let texture = GlesTexture(Rc::new(GlesTextureInternal {
                 texture: tex,
-                format: Some(ffi::RGBA8),
+                format: Some(format),
                 has_alpha,
                 is_external,
                 y_inverted: buffer.y_inverted(),
@@ -1233,6 +1236,7 @@ impl ExportMem for GlesRenderer {
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, BufferCoord>,
+        fourcc: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
         if let Some(target) = self.target.as_ref() {
             target.make_current_no_shadow(&self.gl, &self.egl, None)?;
@@ -1242,16 +1246,17 @@ impl ExportMem for GlesRenderer {
             }
         }
 
-        let (internal, has_alpha) = self
+        let (_, has_alpha) = self
             .target
             .as_ref()
             .ok_or(GlesError::UnknownPixelFormat)?
             .format()
             .ok_or(GlesError::UnknownPixelFormat)?;
-        let (format, layout) = gl_read_for_internal(internal).ok_or(GlesError::UnknownPixelFormat)?;
+        let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
 
         let mut pbo = 0;
-        unsafe {
+        let err = unsafe {
+            self.gl.GetError(); // clear errors
             self.gl.GenBuffers(1, &mut pbo);
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
             let bpp = gl_bpp(format, layout).ok_or(GlesError::UnsupportedPixelLayout)? / 8;
@@ -1270,16 +1275,22 @@ impl ExportMem for GlesRenderer {
             );
             self.gl.ReadBuffer(ffi::NONE);
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
+            self.gl.GetError()
+        };
+
+        match err {
+            ffi::NO_ERROR => Ok(GlesMapping {
+                pbo,
+                format,
+                layout,
+                has_alpha,
+                size: region.size,
+                mapping: AtomicPtr::new(ptr::null_mut()),
+                destruction_callback_sender: self.destruction_callback_sender.clone(),
+            }),
+            ffi::INVALID_ENUM | ffi::INVALID_OPERATION => Err(GlesError::UnsupportedPixelFormat(fourcc)),
+            _ => Err(GlesError::UnknownPixelFormat),
         }
-        Ok(GlesMapping {
-            pbo,
-            format,
-            layout,
-            has_alpha,
-            size: region.size,
-            mapping: AtomicPtr::new(ptr::null_mut()),
-            destruction_callback_sender: self.destruction_callback_sender.clone(),
-        })
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
@@ -1287,16 +1298,17 @@ impl ExportMem for GlesRenderer {
         &mut self,
         texture: &Self::TextureId,
         region: Rectangle<i32, BufferCoord>,
+        fourcc: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
         let mut pbo = 0;
         let old_target = self.target.take();
         self.bind(texture.clone())?;
 
-        let (format, layout) = gl_read_for_internal(texture.0.format.ok_or(GlesError::UnknownPixelFormat)?)
-            .ok_or(GlesError::UnknownPixelFormat)?;
+        let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
         let bpp = gl_bpp(format, layout).expect("We check the format before") / 8;
 
-        unsafe {
+        let err = unsafe {
+            self.gl.GetError(); // clear errors
             self.gl.GenBuffers(1, &mut pbo);
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
             self.gl.BufferData(
@@ -1317,22 +1329,27 @@ impl ExportMem for GlesRenderer {
             );
             self.gl.ReadBuffer(ffi::NONE);
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
-        }
+            self.gl.GetError()
+        };
 
         // restore old framebuffer
         self.unbind()?;
         self.target = old_target;
         self.make_current()?;
 
-        Ok(GlesMapping {
-            pbo,
-            format,
-            layout,
-            has_alpha: texture.0.has_alpha,
-            size: region.size,
-            mapping: AtomicPtr::new(ptr::null_mut()),
-            destruction_callback_sender: self.destruction_callback_sender.clone(),
-        })
+        match err {
+            ffi::NO_ERROR => Ok(GlesMapping {
+                pbo,
+                format,
+                layout,
+                has_alpha: texture.0.has_alpha,
+                size: region.size,
+                mapping: AtomicPtr::new(ptr::null_mut()),
+                destruction_callback_sender: self.destruction_callback_sender.clone(),
+            }),
+            ffi::INVALID_ENUM | ffi::INVALID_OPERATION => Err(GlesError::UnsupportedPixelFormat(fourcc)),
+            _ => Err(GlesError::UnknownPixelFormat),
+        }
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]

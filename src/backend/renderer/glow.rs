@@ -387,16 +387,18 @@ impl ExportMem for GlowRenderer {
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, BufferCoord>,
+        format: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
-        self.gl.copy_framebuffer(region)
+        self.gl.copy_framebuffer(region, format)
     }
 
     fn copy_texture(
         &mut self,
         texture: &Self::TextureId,
         region: Rectangle<i32, BufferCoord>,
+        format: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
-        self.gl.copy_texture(texture, region)
+        self.gl.copy_texture(texture, region, format)
     }
 
     fn map_texture<'a>(

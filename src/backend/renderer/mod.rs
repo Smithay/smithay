@@ -571,23 +571,28 @@ pub trait ExportMem: Renderer {
     /// - The framebuffer is not readable
     /// - The region is out of bounds of the framebuffer
     /// - There is not enough space to create the mapping
+    /// - It is not possible to convert the framebuffer into the provided format.
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, BufferCoord>,
+        format: Fourcc,
     ) -> Result<Self::TextureMapping, <Self as Renderer>::Error>;
 
     /// Copies the contents of the passed texture.
     /// *Note*: This function may change or invalidate the current bind.
     ///
+    /// Renderers are not required to support any format other than what was returned by `Texture::format`.
     /// This operation is not destructive, the contents of the texture keep being valid.
     ///
     /// This function *may* fail, if:
     /// - There is not enough space to create the mapping
     /// - The texture does no allow copying for implementation-specfic reasons
+    /// - It is not possible to convert the texture into the provided format.
     fn copy_texture(
         &mut self,
         texture: &Self::TextureId,
         region: Rectangle<i32, BufferCoord>,
+        format: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error>;
 
     /// Returns a read-only pointer to a previously created texture mapping.
