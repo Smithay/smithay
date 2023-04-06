@@ -625,9 +625,15 @@ unsafe fn link_program(
     frag_src: &str,
 ) -> Result<ffi::types::GLuint, Gles2Error> {
     let vert = compile_shader(gl, ffi::VERTEX_SHADER, vert_src)?;
-    let frag = compile_shader(gl, ffi::FRAGMENT_SHADER, frag_src)?;
+    let frag = compile_shader(gl, ffi::FRAGMENT_SHADER, frag_src).map_err(|err| {
+        gl.DeleteShader(vert);
+        err
+    })?;
+
     let program = gl.CreateProgram();
     if program == 0 {
+        gl.DeleteShader(vert);
+        gl.DeleteShader(frag);
         return Err(Gles2Error::CreateProgram);
     }
 
