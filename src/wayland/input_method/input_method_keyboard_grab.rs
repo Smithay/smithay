@@ -13,7 +13,7 @@ use crate::backend::input::KeyState;
 use crate::input::{
     keyboard::{
         GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
-        KeymapFile, ModifiersState,
+        ModifiersState,
     },
     SeatHandler,
 };
@@ -25,9 +25,6 @@ use super::InputMethodManagerState;
 #[derive(Default, Debug)]
 pub(crate) struct InputMethodKeyboard {
     pub grab: Option<ZwpInputMethodKeyboardGrabV2>,
-    pub repeat_delay: i32,
-    pub repeat_rate: i32,
-    pub keymap_file: Option<KeymapFile>,
     pub text_input_handle: TextInputHandle,
     pub popup_handle: InputMethodPopupSurfaceHandle,
 }
