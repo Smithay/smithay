@@ -19,13 +19,20 @@
 //! if the [`GraphicsApi`] allows it.
 //!
 //! Any rendering operations will take place on the render-gpu transparently.
-//! Output will be redirected the target gpu and such any [`Bind`]- and [`Offscreen`]-implementations
+//! Output will be redirected the target gpu, as such any [`Bind`]- and [`Offscreen`]-implementations
 //! will be allocated on the target-gpu.
 //!
-//! Any `Import*`-implementations will also transparently create copies of client buffers,
-//! if necessary, always striving for the best possible performance for a given setup.
+//! The `ImportMem`-implementation will upload the texture on the render-gpu, failing *if*
+//! the render-gpu does not support the format as normal. Be careful when mixing gpu's
+//! with different memory-formats supported, what formats you annouce.
 //!
-//! Any `Export*`-implementations will reside on the render-gpu, if applicable.
+//! In contrast the `ImportDma`-implementations will transparently create copies
+//! of client buffers, if necessary, given it is unclear if a dmabuf can be imported on any given gpu.
+//! The implementation strives for the best possible performance for a given setup,
+//! when choosing a copy-path.
+//!
+//! Any `ExportMem`-implementations will originate from the render-gpu, which again
+//! needs to support the requested format directly. No paths across other gpus are tested.
 //!
 //! *Note*: This module will not keep you from selecting sub-optimal configurations.
 //! Any heuristics for which render-gpu to use for a given set of client buffers
@@ -526,6 +533,13 @@ impl<A: GraphicsApi> GpuManager<A> {
                             .import_dma_buffer(buffer, Some(surface), damage)
                     {
                         let mut gpu_texture = MultiTexture::from_surface(Some(surface), texture.size());
+                        let format = texture
+                            .format()
+                            // Check the target device supports the format, if not use 8-bit format
+                            .filter(|format| target_device.renderer().mem_formats().any(|fmt| fmt == *format))
+                            // The GL spec *always* supports this format.
+                            // TODO: Re-evaluate this, once we support vulkan
+                            .unwrap_or(Fourcc::Abgr8888);
                         let mappings = if gpu_texture.get::<A>(&target).is_none() {
                             // force full copy
                             let damage = Rectangle::from_loc_and_size((0, 0), texture.size());
@@ -533,7 +547,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                                 damage,
                                 import_renderer
                                     .renderer_mut()
-                                    .copy_texture(&texture, damage)
+                                    .copy_texture(&texture, damage, format)
                                     .map_err(Error::Target)?,
                             )]
                         } else {
@@ -561,7 +575,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                                 .map(|damage| {
                                     let mapping = import_renderer
                                         .renderer_mut()
-                                        .copy_texture(&texture, damage)
+                                        .copy_texture(&texture, damage, format)
                                         .map_err(Error::Target)?;
                                     Ok((damage, mapping))
                                 })
@@ -1133,6 +1147,18 @@ where
                     return Ok(());
                 }
 
+                let format = if target
+                    .device
+                    .renderer()
+                    .mem_formats()
+                    .any(|fmt| fmt == target.format)
+                {
+                    target.format
+                } else {
+                    // GL mandates this to be supported for downloading, this will truncate 10-bit data
+                    Fourcc::Abgr8888
+                };
+
                 // cpu copy
                 damage.dedup();
                 damage.retain(|rect| {
@@ -1160,7 +1186,8 @@ where
                 let mut mappings = Vec::new();
                 for rect in copy_rects {
                     let mapping = (
-                        ExportMem::copy_framebuffer(render.renderer_mut(), rect).map_err(Error::Render)?,
+                        ExportMem::copy_framebuffer(render.renderer_mut(), rect, format)
+                            .map_err(Error::Render)?,
                         rect,
                     );
                     mappings.push(mapping);
@@ -1682,13 +1709,21 @@ where
                 .renderer_mut()
                 .import_dmabuf(dmabuf, Some(&*new_damage))
             {
+                let format = dma_texture
+                    .format()
+                    // Check the target device supports the format, if not use 8-bit format
+                    .filter(|format| self.render.renderer().mem_formats().any(|fmt| fmt == *format))
+                    // The GL spec *always* supports this format.
+                    // TODO: Re-evaluate this, once we support vulkan
+                    .unwrap_or(Fourcc::Abgr8888);
+
                 let mappings = new_damage
                     .into_iter()
                     .map(|damage| {
                         let mapping = import_renderer
                             .device
                             .renderer_mut()
-                            .copy_texture(&dma_texture, damage)
+                            .copy_texture(&dma_texture, damage, format)
                             .map_err(Error::Target)?;
                         debug!("Creating mapping for: {:?}", damage);
                         Ok((damage, mapping))
@@ -1715,12 +1750,24 @@ where
             if let Ok(dma_texture) =
                 ImportDma::import_dmabuf(import_renderer.renderer_mut(), dmabuf, Some(&*new_damage))
             {
+                let format = dma_texture
+                    .format()
+                    // Check the target device supports the format, if not use 8-bit format
+                    .filter(|format| self.render.renderer().mem_formats().any(|fmt| fmt == *format))
+                    // The GL spec *always* supports this format.
+                    // TODO: Re-evaluate this, once we support vulkan
+                    .unwrap_or(Fourcc::Abgr8888);
+
                 let mappings = new_damage
                     .into_iter()
                     .map(|damage| {
-                        let mapping =
-                            ExportMem::copy_texture(import_renderer.renderer_mut(), &dma_texture, damage)
-                                .map_err(Error::Render)?;
+                        let mapping = ExportMem::copy_texture(
+                            import_renderer.renderer_mut(),
+                            &dma_texture,
+                            damage,
+                            format,
+                        )
+                        .map_err(Error::Render)?;
                         Ok((damage, mapping))
                     })
                     .collect::<Result<Vec<_>, Error<R, T>>>()?;
@@ -2050,18 +2097,19 @@ where
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, BufferCoords>,
+        format: Fourcc,
     ) -> Result<Self::TextureMapping, <Self as Renderer>::Error> {
         if let Some(target) = self.target.as_mut() {
             target
                 .device
                 .renderer_mut()
-                .copy_framebuffer(region)
+                .copy_framebuffer(region, format)
                 .map(|mapping| MultiTextureMapping(TextureMappingInternal::Either(mapping)))
                 .map_err(Error::Target)
         } else {
             self.render
                 .renderer_mut()
-                .copy_framebuffer(region)
+                .copy_framebuffer(region, format)
                 .map(|mapping| MultiTextureMapping(TextureMappingInternal::Or(mapping)))
                 .map_err(Error::Render)
         }
@@ -2072,13 +2120,14 @@ where
         &mut self,
         texture: &Self::TextureId,
         region: Rectangle<i32, BufferCoords>,
+        format: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error> {
         let tex = texture
             .get::<R>(self.render.node())
             .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
         self.render
             .renderer_mut()
-            .copy_texture(&tex, region)
+            .copy_texture(&tex, region, format)
             .map(|mapping| MultiTextureMapping(TextureMappingInternal::Or(mapping)))
             .map_err(Error::Render)
     }
