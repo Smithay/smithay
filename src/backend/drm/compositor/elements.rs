@@ -23,13 +23,13 @@ pub struct HolepunchRenderElement {
 }
 
 impl HolepunchRenderElement {
-    pub fn from_render_element<R, E>(element: &E, scale: impl Into<Scale<f64>>) -> Self
+    pub fn from_render_element<R, E>(id: Id, element: &E, scale: impl Into<Scale<f64>>) -> Self
     where
         R: Renderer,
         E: RenderElement<R>,
     {
         HolepunchRenderElement {
-            id: element.id().clone(),
+            id,
             geometry: element.geometry(scale.into()),
         }
     }
@@ -87,16 +87,17 @@ impl Element for HolepunchRenderElement {
 }
 
 pub struct OverlayPlaneElement<'a, E> {
+    id: Id,
     element: &'a E,
 }
 
 impl<'a, E> OverlayPlaneElement<'a, E> {
-    pub fn from_render_element<R>(element: &'a E) -> Self
+    pub fn from_render_element<R>(id: Id, element: &'a E) -> Self
     where
         R: Renderer,
         E: RenderElement<R>,
     {
-        OverlayPlaneElement { element }
+        OverlayPlaneElement { id, element }
     }
 }
 
@@ -105,7 +106,7 @@ where
     E: Element,
 {
     fn id(&self) -> &Id {
-        self.element.id()
+        &self.id
     }
 
     fn current_commit(&self) -> CommitCounter {
@@ -126,11 +127,10 @@ where
 
     fn damage_since(
         &self,
-        _scale: Scale<f64>,
-        _commit: Option<CommitCounter>,
+        scale: Scale<f64>,
+        commit: Option<CommitCounter>,
     ) -> Vec<Rectangle<i32, Physical>> {
-        // We do not report damage
-        vec![]
+        self.element.damage_since(scale, commit)
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
