@@ -365,16 +365,6 @@ impl SurfaceView {
         SurfaceView { src, dst, offset }
     }
 
-    pub(crate) fn rect_to_global<N>(&self, rect: Rectangle<N, Logical>) -> Rectangle<f64, Logical>
-    where
-        N: Coordinate,
-    {
-        let scale = self.scale();
-        let mut rect = rect.to_f64();
-        rect.loc -= self.src.loc;
-        rect.upscale(scale)
-    }
-
     pub(crate) fn rect_to_local<N>(&self, rect: Rectangle<N, Logical>) -> Rectangle<f64, Logical>
     where
         N: Coordinate,

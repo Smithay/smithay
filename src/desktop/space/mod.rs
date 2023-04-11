@@ -420,7 +420,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         output: &Output,
     ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputError>
     where
-        <R as Renderer>::TextureId: Texture + 'static,
+        <R as Renderer>::TextureId: Clone + 'static,
         E: AsRenderElements<R>,
         <E as AsRenderElements<R>>::RenderElement: 'a,
         SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
@@ -532,6 +532,8 @@ impl<
         #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
         E: RenderElement<R> + std::fmt::Debug,
     > std::fmt::Debug for SpaceRenderElements<R, E>
+where
+    <R as Renderer>::TextureId: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -578,7 +580,7 @@ pub fn space_render_elements<
     output: &Output,
 ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
 where
-    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::TextureId: Clone + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
@@ -668,7 +670,7 @@ pub fn render_output<
     clear_color: [f32; 4],
 ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputDamageTrackerError<R>>
 where
-    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::TextureId: Clone + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,

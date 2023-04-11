@@ -95,7 +95,7 @@ impl SpaceElement for X11Surface {
 impl<R> crate::backend::renderer::element::AsRenderElements<R> for X11Surface
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
+    <R as Renderer>::TextureId: Clone + 'static,
 {
     type RenderElement = WaylandSurfaceRenderElement<R>;
 

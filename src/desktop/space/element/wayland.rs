@@ -29,7 +29,7 @@ impl IsAlive for SurfaceTree {
 impl<R> AsRenderElements<R> for SurfaceTree
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
+    <R as Renderer>::TextureId: Clone + 'static,
 {
     type RenderElement = WaylandSurfaceRenderElement<R>;
 

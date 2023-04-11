@@ -13,7 +13,7 @@ use crate::{
 impl<R> AsRenderElements<R> for LayerSurface
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
+    <R as Renderer>::TextureId: Clone + 'static,
 {
     type RenderElement = WaylandSurfaceRenderElement<R>;
 

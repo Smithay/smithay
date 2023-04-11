@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use smithay::{
     backend::{
@@ -7,7 +7,7 @@ use smithay::{
             element::{
                 solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement, AsRenderElements,
             },
-            ImportAll, ImportMem, Renderer, Texture,
+            ImportAll, ImportMem, Renderer,
         },
     },
     desktop::{space::SpaceElement, utils::OutputPresentationFeedback, Window, WindowSurfaceType},
@@ -467,7 +467,10 @@ render_elements!(
     Decoration=SolidColorRenderElement,
 );
 
-impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for WindowRenderElement<R> {
+impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for WindowRenderElement<R>
+where
+    <R as Renderer>::TextureId: fmt::Debug,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Window(arg0) => f.debug_tuple("Window").field(arg0).finish(),
@@ -480,7 +483,7 @@ impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for WindowRenderElement<R> {
 impl<R> AsRenderElements<R> for WindowElement
 where
     R: Renderer + ImportAll + ImportMem,
-    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::TextureId: Clone + 'static,
 {
     type RenderElement = WindowRenderElement<R>;
 
