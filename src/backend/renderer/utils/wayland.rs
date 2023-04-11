@@ -19,7 +19,7 @@ use tracing::{error, instrument, warn};
 
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
-use super::{CommitCounter, DamageBag, SurfaceView};
+use super::{CommitCounter, DamageBag, DamageSnapshot, SurfaceView};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -237,9 +237,9 @@ impl RendererSurfaceState {
         })
     }
 
-    /// Gets the raw damage of this surface
-    pub fn damage(&self) -> impl Iterator<Item = &Vec<Rectangle<i32, BufferCoord>>> {
-        self.damage.damage()
+    /// Gets the damage of this surface
+    pub fn damage(&self) -> DamageSnapshot<i32, BufferCoord> {
+        self.damage.snapshot()
     }
 
     /// Returns the logical size of the current attached buffer
@@ -261,6 +261,16 @@ impl RendererSurfaceState {
     /// Can be used to check if surface is mapped
     pub fn buffer(&self) -> Option<&Buffer> {
         self.buffer.as_ref()
+    }
+
+    /// Returns the current buffer scale
+    pub fn buffer_scale(&self) -> i32 {
+        self.buffer_scale
+    }
+
+    /// Returns the current buffer transform
+    pub fn buffer_transform(&self) -> Transform {
+        self.buffer_transform
     }
 
     /// Gets a reference to the texture for the specified renderer
