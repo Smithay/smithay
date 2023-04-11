@@ -2,6 +2,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use indexmap::IndexSet;
+
 use crate::utils::alive_tracker::{AliveTracker, IsAlive};
 use crate::wayland::shell::xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use crate::{
@@ -19,7 +21,7 @@ use wayland_protocols::{
     },
 };
 
-use wayland_server::{protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource};
+use wayland_server::{protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource, Weak};
 
 use super::{
     InnerState, PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
@@ -36,6 +38,7 @@ pub use popup::{make_popup_handle, send_popup_configure};
 /// User data of XdgSurface
 #[derive(Debug)]
 pub struct XdgSurfaceUserData {
+    pub(crate) known_surfaces: Arc<Mutex<IndexSet<Weak<xdg_surface::XdgSurface>>>>,
     pub(crate) wl_surface: wl_surface::WlSurface,
     pub(crate) wm_base: xdg_wm_base::XdgWmBase,
     pub(crate) has_active_role: AtomicBool,
@@ -60,6 +63,11 @@ where
     ) {
         match request {
             xdg_surface::Request::Destroy => {
+                data.known_surfaces
+                    .lock()
+                    .unwrap()
+                    .remove(&xdg_surface.downgrade());
+
                 if !data.wl_surface.alive() {
                     // the wl_surface is destroyed, this means the client is not
                     // trying to change the role but it's a cleanup (possibly a
