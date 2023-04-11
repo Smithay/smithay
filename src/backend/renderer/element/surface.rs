@@ -220,17 +220,19 @@ use wayland_server::protocol::wl_surface;
 use crate::{
     backend::renderer::{utils::RendererSurfaceStateUserData, ImportAll, Renderer},
     render_elements,
-    utils::{Physical, Point, Scale},
+    utils::{Physical, Point, Rectangle, Scale},
     wayland::compositor::{self, SurfaceData, TraversalAction},
 };
 
-use super::{texture::TextureRenderElement, Id, UnderlyingStorage};
+use super::{solid::SolidColorRenderElement, texture::TextureRenderElement, Id, UnderlyingStorage};
 
 render_elements! {
     /// A single surface render element
     pub WaylandSurfaceRenderElement<R> where R: ImportAll;
     /// The texture representing the current surface buffer
     Texture=TextureRenderElement<<R as Renderer>::TextureId>,
+    /// The single color representing the current surface buffer
+    Solid=SolidColorRenderElement,
 }
 
 impl<R> fmt::Debug for WaylandSurfaceRenderElement<R>
@@ -241,6 +243,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Texture(arg0) => f.debug_tuple("Texture").field(arg0).finish(),
+            Self::Solid(arg0) => f.debug_tuple("Solid").field(arg0).finish(),
             Self::_GenericCatcher(arg0) => f.debug_tuple("_GenericCatcher").field(arg0).finish(),
         }
     }
@@ -257,11 +260,12 @@ where
         surface: &wl_surface::WlSurface,
         states: &SurfaceData,
         location: Point<f64, Physical>,
+        scale: impl Into<Scale<f64>>,
     ) -> Result<Option<Self>, <R as Renderer>::Error> {
         if let Some(state) = states.data_map.get::<RendererSurfaceStateUserData>() {
             crate::backend::renderer::utils::import_surface(renderer, states)?;
             Ok(Self::from_renderer_surface_state(
-                renderer, surface, state, location,
+                renderer, surface, state, location, scale,
             ))
         } else {
             Ok(None)
@@ -273,33 +277,45 @@ where
         surface: &wl_surface::WlSurface,
         state: &RendererSurfaceStateUserData,
         location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
     ) -> Option<Self> {
         let location = location.into();
         let state = state.borrow();
 
         let view = state.view()?;
         let buffer = state.buffer()?;
+        let buffer_type = crate::backend::renderer::buffer_type(buffer)?;
         let id = Id::from_wayland_resource(surface);
 
-        let texture = state.texture::<R>(renderer.id())?;
+        if matches!(buffer_type, crate::backend::renderer::BufferType::SinglePixel) {
+            let spb = crate::wayland::single_pixel_buffer::get_single_pixel_buffer(buffer).ok()?;
+            let color = spb.rgba32f();
+            let geometry = Rectangle::from_loc_and_size(
+                location.to_i32_round(),
+                view.dst.to_physical_precise_round(scale),
+            );
+            Some(SolidColorRenderElement::new(id, geometry, state.current_commit(), color).into())
+        } else {
+            let texture = state.texture::<R>(renderer.id())?;
 
-        Some(
-            TextureRenderElement::from_texture_with_damage(
-                id,
-                renderer.id(),
-                location,
-                texture.clone(),
-                state.buffer_scale(),
-                state.buffer_transform(),
-                None,
-                Some(view.src),
-                Some(view.dst),
-                state.opaque_regions().map(|r| r.to_vec()), // TODO: maybe make the opaque regions cow
-                state.damage(),
-                Some(UnderlyingStorage::Wayland(buffer.clone())),
+            Some(
+                TextureRenderElement::from_texture_with_damage(
+                    id,
+                    renderer.id(),
+                    location,
+                    texture.clone(),
+                    state.buffer_scale(),
+                    state.buffer_transform(),
+                    None,
+                    Some(view.src),
+                    Some(view.dst),
+                    state.opaque_regions().map(|r| r.to_vec()), // TODO: maybe make the opaque regions cow
+                    state.damage(),
+                    Some(UnderlyingStorage::Wayland(buffer.clone())),
+                )
+                .into(),
             )
-            .into(),
-        )
+        }
     }
 }
 
@@ -353,7 +369,9 @@ where
                 };
 
                 if has_view {
-                    match WaylandSurfaceRenderElement::from_surface(renderer, surface, states, location) {
+                    match WaylandSurfaceRenderElement::from_surface(
+                        renderer, surface, states, location, scale,
+                    ) {
                         Ok(Some(surface)) => surfaces.push(surface.into()),
                         Ok(None) => (),
                         Err(err) => {
