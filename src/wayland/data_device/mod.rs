@@ -108,7 +108,7 @@ pub trait DataDeviceHandler: Sized + ClientDndGrabHandler + ServerDndGrabHandler
     }
 
     /// A client has set the selection
-    fn new_selection(&mut self, source: Option<WlDataSource>) {}
+    fn new_selection(&mut self, source: Option<WlDataSource>, seat: Seat<Self>) {}
 
     /// A client requested to read the server-set selection
     ///
