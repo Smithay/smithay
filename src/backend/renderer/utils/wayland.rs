@@ -422,6 +422,14 @@ where
         let buffer_damage = data.damage_since(last_commit.copied());
         if let Entry::Vacant(e) = data.textures.entry(texture_id) {
             if let Some(buffer) = data.buffer.as_ref() {
+                // There is no point in importing a single pixel buffer
+                if matches!(
+                    crate::backend::renderer::buffer_type(buffer),
+                    Some(crate::backend::renderer::BufferType::SinglePixel)
+                ) {
+                    return Ok(());
+                }
+
                 match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
                     Some(Ok(m)) => {
                         e.insert(Box::new(m));

@@ -610,6 +610,10 @@ impl<A: GraphicsApi> GpuManager<A> {
                 // we just need to upload in import_shm_buffer
                 Ok(())
             }
+            Some(BufferType::SinglePixel) => {
+                // no need to do anything
+                Ok(())
+            }
             None => {
                 // welp, nothing we can do
                 Ok(())
