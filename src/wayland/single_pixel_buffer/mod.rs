@@ -1,3 +1,52 @@
+//! Utilities for handling the `wp_single_pixel_buffer` protocol
+//!
+//! ## How to use it
+//!
+//! ### Initialization
+//!
+//! To initialize this implementation, create [`SinglePixelBufferState`], store it in your `State` struct and
+//! implement the required traits, as shown in this example:
+//!
+//! ```
+//! use smithay::wayland::{
+//!     buffer::BufferHandler,
+//!     single_pixel_buffer::SinglePixelBufferState
+//! };
+//! use smithay::delegate_single_pixel_buffer;
+//!
+//! # struct State;
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//!
+//! // Create the single pixel buffer state:
+//! let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(
+//!     &display.handle(), // the display
+//! );
+//!
+//! // Smithay's "SinglePixelBufferState" also requires the buffer management utilities, you need to implement
+//! // "BufferHandler".
+//! impl BufferHandler for State {
+//!     fn buffer_destroyed(&mut self, buffer: &wayland_server::protocol::wl_buffer::WlBuffer) {
+//!         // All renderers can handle buffer destruction at this point. Some parts of window management may
+//!         // also use this function.
+//!     }
+//! }
+//!
+//! // implement Dispatch for the SinglePixelBuffer types
+//! delegate_single_pixel_buffer!(State);
+//!
+//! // You're now ready to go!
+//! ```
+//!
+//! ### Access the single pixel buffer data
+//!
+//! The buffer data stores the color as RGBA values which can be retrieved by calling [`get_single_pixel_buffer`].
+//!
+//! ```no_run
+//! use smithay::wayland::single_pixel_buffer;
+//! # let buffer: smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer = { todo!() };
+//! let single_pixel_buffer_data = single_pixel_buffer::get_single_pixel_buffer(&buffer).unwrap();
+//! ```
+
 use wayland_protocols::wp::single_pixel_buffer::v1::server::wp_single_pixel_buffer_manager_v1::WpSinglePixelBufferManagerV1;
 use wayland_server::{
     backend::GlobalId, protocol::wl_buffer::WlBuffer, Dispatch, DisplayHandle, GlobalDispatch, Resource,
