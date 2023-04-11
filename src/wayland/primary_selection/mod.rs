@@ -92,7 +92,7 @@ pub trait PrimarySelectionHandler: Sized + SeatHandler {
     /// * `mime_type` - the requested mime type
     /// * `fd` - the fd to write into
     #[allow(unused_variables)]
-    fn send_selection(&mut self, mime_type: String, fd: OwnedFd) {}
+    fn send_selection(&mut self, mime_type: String, fd: OwnedFd, seat: Seat<Self>) {}
 }
 
 /// State of data device

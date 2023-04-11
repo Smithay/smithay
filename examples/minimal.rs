@@ -69,7 +69,7 @@ impl DataDeviceHandler for App {
 
 impl ClientDndGrabHandler for App {}
 impl ServerDndGrabHandler for App {
-    fn send(&mut self, _mime_type: String, _fd: OwnedFd) {}
+    fn send(&mut self, _mime_type: String, _fd: OwnedFd, _seat: Seat<Self>) {}
 }
 
 impl CompositorHandler for App {
