@@ -554,7 +554,7 @@ pub trait ImportAll: Renderer {
     /// The `damage` argument provides a list of rectangle locating parts of the buffer that need to be updated. When provided
     /// with an empty list `&[]`, the renderer is allowed to not update the texture at all.
     ///
-    /// Returns `None`, if the buffer type cannot be determined.
+    /// Returns `None`, if the buffer type cannot be determined or does not correspond to a texture (e.g.: single pixel buffer).
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -731,6 +731,8 @@ pub enum BufferType {
     Egl,
     /// Buffer is managed by the [`crate::wayland::dmabuf`] global
     Dma,
+    /// Buffer represents a singe pixel
+    SinglePixel,
 }
 
 /// Returns the *type* of a wl_buffer
@@ -750,6 +752,10 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
         Err(BufferAccessError::NotManaged)
     ) {
         return Some(BufferType::Shm);
+    }
+
+    if crate::wayland::single_pixel_buffer::get_single_pixel_buffer(buffer).is_ok() {
+        return Some(BufferType::SinglePixel);
     }
 
     // Not managed, check if this is an EGLBuffer
@@ -790,6 +796,10 @@ pub fn buffer_has_alpha(buffer: &wl_buffer::WlBuffer) -> Option<bool> {
         return Some(has_alpha);
     }
 
+    if let Ok(spb) = crate::wayland::single_pixel_buffer::get_single_pixel_buffer(buffer) {
+        return Some(spb.has_alpha());
+    }
+
     // Not managed, check if this is an EGLBuffer
     #[cfg(all(feature = "backend_egl", feature = "use_system_lib"))]
     if let Some(format) = BUFFER_READER
@@ -818,6 +828,10 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffe
 
     if let Ok(buf) = crate::wayland::dmabuf::get_dmabuf(buffer) {
         return Some((buf.width() as i32, buf.height() as i32).into());
+    }
+
+    if crate::wayland::single_pixel_buffer::get_single_pixel_buffer(buffer).is_ok() {
+        return Some(Size::from((1, 1)));
     }
 
     match shm::with_buffer_contents(buffer, |_, _, data| (data.width, data.height).into()) {
