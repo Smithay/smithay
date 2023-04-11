@@ -404,7 +404,7 @@ use crate::{
     utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{CommitCounter, Element, Id, RenderElement};
+use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
 
 /// A single texture buffer
 #[derive(Debug, Clone)]
@@ -620,6 +620,7 @@ pub struct TextureRenderElement<T> {
     size: Option<Size<i32, Logical>>,
     opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
     snapshot: DamageSnapshot<i32, Buffer>,
+    underlying_storage: Option<UnderlyingStorage>,
 }
 
 impl<T: Texture> TextureRenderElement<T> {
@@ -652,8 +653,14 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
             alpha,
             src,
             size,
-            buffer.opaque_regions.clone(),
+            buffer.opaque_regions.as_ref().map(|regions| {
+                regions
+                    .into_iter()
+                    .map(|region| region.to_logical(buffer.scale, buffer.transform, &buffer.texture.size()))
+                    .collect::<Vec<_>>()
+            }),
             buffer.damage_tracker.lock().unwrap().snapshot(),
+            None,
         )
     }
 
@@ -675,7 +682,13 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
             alpha,
             src,
             size,
-            buffer.opaque_regions.clone(),
+            buffer.opaque_regions.as_ref().map(|regions| {
+                regions
+                    .into_iter()
+                    .map(|region| region.to_logical(buffer.scale, buffer.transform, &buffer.texture.size()))
+                    .collect::<Vec<_>>()
+            }),
+            None,
         )
     }
 }
@@ -694,15 +707,16 @@ impl<T: Texture> TextureRenderElement<T> {
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
-        opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+        opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
         snapshot: DamageSnapshot<i32, Buffer>,
+        underlying_storage: Option<UnderlyingStorage>,
     ) -> Self {
-        let opaque_regions = opaque_regions.map(|regions| {
-            regions
-                .into_iter()
-                .map(|region| region.to_logical(scale, transform, &texture.size()))
-                .collect::<Vec<_>>()
-        });
+        // let opaque_regions = opaque_regions.map(|regions| {
+        //     regions
+        //         .into_iter()
+        //         .map(|region| region.to_logical(scale, transform, &texture.size()))
+        //         .collect::<Vec<_>>()
+        // });
         TextureRenderElement {
             location: location.into(),
             id,
@@ -715,6 +729,7 @@ impl<T: Texture> TextureRenderElement<T> {
             size,
             opaque_regions,
             snapshot,
+            underlying_storage,
         }
     }
 
@@ -731,7 +746,8 @@ impl<T: Texture> TextureRenderElement<T> {
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
-        opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+        opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
+        underlying_storage: Option<UnderlyingStorage>,
     ) -> Self {
         TextureRenderElement::from_texture_with_damage(
             id,
@@ -745,6 +761,7 @@ impl<T: Texture> TextureRenderElement<T> {
             size,
             opaque_regions,
             DamageSnapshot::empty(),
+            underlying_storage,
         )
     }
 
@@ -883,5 +900,9 @@ where
         }
 
         frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, self.alpha)
+    }
+
+    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
+        self.underlying_storage.clone()
     }
 }
