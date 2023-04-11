@@ -1,6 +1,6 @@
 use crate::{
-    backend::renderer::{buffer_dimensions, buffer_has_alpha, element::RenderElement, ImportAll, Renderer},
-    utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    backend::renderer::{buffer_dimensions, buffer_has_alpha, ImportAll, Renderer},
+    utils::{Buffer as BufferCoord, Coordinate, Logical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
             self, is_sync_subsurface, with_surface_tree_downward, with_surface_tree_upward, BufferAssignment,
@@ -92,7 +92,10 @@ impl PartialEq<WlBuffer> for &Buffer {
 }
 
 impl RendererSurfaceState {
-    pub(crate) fn update_buffer(&mut self, states: &SurfaceData) {
+    pub(crate) fn update_buffer<F>(&mut self, states: &SurfaceData, buffer_info: &F)
+    where
+        F: Fn(&WlBuffer) -> Option<(Size<i32, BufferCoord>, bool)>,
+    {
         let mut attrs = states.cached_state.current::<SurfaceAttributes>();
         self.buffer_delta = attrs.buffer_delta.take();
 
@@ -102,14 +105,17 @@ impl RendererSurfaceState {
 
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer(buffer)) => {
+                let (buffer_dimensions, buffer_has_alpha) = match buffer_info(&buffer) {
+                    Some(info) => info,
+                    None => {
+                        warn!("failed to retrieve buffer info");
+                        self.reset();
+                        return;
+                    }
+                };
                 // new contents
-                self.buffer_dimensions = buffer_dimensions(&buffer);
-                if self.buffer_dimensions.is_none() {
-                    // This results in us rendering nothing (can happen e.g. for failed egl-buffer-calls),
-                    // but it is better than crashing the compositor for a bad buffer
-                    return;
-                }
-                self.buffer_has_alpha = buffer_has_alpha(&buffer);
+                self.buffer_dimensions = Some(buffer_dimensions);
+                self.buffer_has_alpha = Some(buffer_has_alpha);
                 self.buffer_scale = attrs.buffer_scale;
                 self.buffer_transform = attrs.buffer_transform.into();
 
@@ -204,13 +210,7 @@ impl RendererSurfaceState {
             }
             Some(BufferAssignment::Removed) => {
                 // remove the contents
-                self.buffer_dimensions = None;
-                self.buffer = None;
-                self.textures.clear();
-                self.damage.reset();
-                self.surface_view = None;
-                self.buffer_has_alpha = None;
-                self.opaque_regions.clear();
+                self.reset();
             }
             None => {}
         }
@@ -312,6 +312,16 @@ impl RendererSurfaceState {
     pub fn view(&self) -> Option<SurfaceView> {
         self.surface_view
     }
+
+    fn reset(&mut self) {
+        self.buffer_dimensions = None;
+        self.buffer = None;
+        self.textures.clear();
+        self.damage.reset();
+        self.surface_view = None;
+        self.buffer_has_alpha = None;
+        self.opaque_regions.clear();
+    }
 }
 
 /// Handler to let smithay take over buffer management.
@@ -323,7 +333,10 @@ impl RendererSurfaceState {
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
-pub fn on_commit_buffer_handler(surface: &WlSurface) {
+pub fn on_commit_custom_buffer_handler<F>(surface: &WlSurface, buffer_info: F)
+where
+    F: Fn(&WlBuffer) -> Option<(Size<i32, BufferCoord>, bool)>,
+{
     if !is_sync_subsurface(surface) {
         let mut new_surfaces = Vec::new();
         with_surface_tree_upward(
@@ -342,11 +355,29 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
                     .get::<RendererSurfaceStateUserData>()
                     .unwrap()
                     .borrow_mut();
-                data.update_buffer(states);
+                data.update_buffer(states, &buffer_info);
             },
             |_, _, _| true,
         );
     }
+}
+
+/// Retrieves the buffer info for a smithay handled buffer type
+pub fn buffer_info(buffer: &WlBuffer) -> Option<(Size<i32, BufferCoord>, bool)> {
+    buffer_dimensions(buffer).map(|d| (d, buffer_has_alpha(buffer).unwrap_or(true)))
+}
+
+/// Handler to let smithay take over buffer management for smithay handled buffer types.
+///
+/// Needs to be called first on the commit-callback of
+/// [`crate::wayland::compositor::CompositorHandler::commit`].
+///
+/// Consumes the buffer of [`SurfaceAttributes`], the buffer will
+/// not be accessible anymore, but [`draw_surface_tree`] and other
+/// `draw_*` helpers of the [desktop module](`crate::desktop`) will
+/// become usable for surfaces handled this way.
+pub fn on_commit_buffer_handler(surface: &WlSurface) {
+    on_commit_custom_buffer_handler(surface, buffer_info)
 }
 
 impl SurfaceView {
@@ -400,7 +431,108 @@ where
     })
 }
 
-/// Imports buffers of a surface using a given [`Renderer`]
+/// Imports buffers of a surface using a given [`Renderer`] and import function.
+///
+/// Same as [`import_custom_surface`], but without implicitely borrowing the
+/// [`RendererSurfaceState`]. This can be usefull in case the [`RendererSurfaceState`]
+/// is already borrowed.
+pub fn import_custom_renderer_surface<R, F>(
+    renderer: &mut R,
+    states: &SurfaceData,
+    data: &mut RendererSurfaceState,
+    import: F,
+) -> Result<(), <R as Renderer>::Error>
+where
+    R: Renderer,
+    <R as Renderer>::TextureId: 'static,
+    F: Fn(
+        &mut R,
+        &WlBuffer,
+        &SurfaceData,
+        &[Rectangle<i32, BufferCoord>],
+    ) -> Option<Result<<R as Renderer>::TextureId, <R as Renderer>::Error>>,
+{
+    let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
+    let last_commit = data.renderer_seen.get(&texture_id);
+    let buffer_damage = data.damage_since(last_commit.copied());
+    if let Entry::Vacant(e) = data.textures.entry(texture_id) {
+        if let Some(buffer) = data.buffer.as_ref() {
+            // There is no point in importing a single pixel buffer
+            if matches!(
+                crate::backend::renderer::buffer_type(buffer),
+                Some(crate::backend::renderer::BufferType::SinglePixel)
+            ) {
+                return Ok(());
+            }
+
+            match import(renderer, buffer, states, &buffer_damage) {
+                Some(Ok(m)) => {
+                    e.insert(Box::new(m));
+                    data.renderer_seen.insert(texture_id, data.current_commit());
+                }
+                Some(Err(err)) => {
+                    warn!("Error loading buffer: {}", err);
+                    return Err(err);
+                }
+                None => {
+                    error!("Unknown buffer format for: {:?}", buffer);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Imports buffers handled by smithay of a surface using a given [`Renderer`]
+///
+/// Same as [`import_surface`], but without implicitely borrowing the
+/// [`RendererSurfaceState`]. This can be usefull in case the [`RendererSurfaceState`]
+/// is already borrowed.
+pub fn import_renderer_surface<R>(
+    renderer: &mut R,
+    states: &SurfaceData,
+    data: &mut RendererSurfaceState,
+) -> Result<(), <R as Renderer>::Error>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: 'static,
+{
+    import_custom_renderer_surface(renderer, states, data, |renderer, buffer, states, damage| {
+        renderer.import_buffer(buffer, Some(states), damage)
+    })
+}
+
+/// Imports buffers of a surface using a given [`Renderer`] and import function.
+///
+/// This (or `import_surface_tree`) need to be called before`draw_surface_tree`, if used later.
+///
+/// Note: This will do nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
+pub fn import_custom_surface<R, F>(
+    renderer: &mut R,
+    states: &SurfaceData,
+    import: F,
+) -> Result<(), <R as Renderer>::Error>
+where
+    R: Renderer,
+    <R as Renderer>::TextureId: 'static,
+    F: Fn(
+        &mut R,
+        &WlBuffer,
+        &SurfaceData,
+        &[Rectangle<i32, BufferCoord>],
+    ) -> Option<Result<<R as Renderer>::TextureId, <R as Renderer>::Error>>,
+{
+    if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
+        import_custom_renderer_surface(renderer, states, &mut data.borrow_mut(), import)?;
+    }
+
+    Ok(())
+}
+
+/// Imports buffers handled by smithay of a surface using a given [`Renderer`]
 ///
 /// This (or `import_surface_tree`) need to be called before`draw_surface_tree`, if used later.
 ///
@@ -414,43 +546,13 @@ where
     <R as Renderer>::TextureId: 'static,
 {
     if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
-        let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
-        let mut data_ref = data.borrow_mut();
-        let data = &mut *data_ref;
-
-        let last_commit = data.renderer_seen.get(&texture_id);
-        let buffer_damage = data.damage_since(last_commit.copied());
-        if let Entry::Vacant(e) = data.textures.entry(texture_id) {
-            if let Some(buffer) = data.buffer.as_ref() {
-                // There is no point in importing a single pixel buffer
-                if matches!(
-                    crate::backend::renderer::buffer_type(buffer),
-                    Some(crate::backend::renderer::BufferType::SinglePixel)
-                ) {
-                    return Ok(());
-                }
-
-                match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
-                    Some(Ok(m)) => {
-                        e.insert(Box::new(m));
-                        data.renderer_seen.insert(texture_id, data.current_commit());
-                    }
-                    Some(Err(err)) => {
-                        warn!("Error loading buffer: {}", err);
-                        return Err(err);
-                    }
-                    None => {
-                        error!("Unknown buffer format for: {:?}", buffer);
-                    }
-                }
-            }
-        }
+        import_renderer_surface(renderer, states, &mut data.borrow_mut())?;
     }
 
     Ok(())
 }
 
-/// Imports buffers of a surface and its subsurfaces using a given [`Renderer`].
+/// Imports buffers of a surface and its subsurfaces using a given [`Renderer`] and import function.
 ///
 /// This (or `import_surface`) need to be called before`draw_surface_tree`, if used later.
 ///
@@ -458,35 +560,33 @@ where
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 #[instrument(level = "trace", skip_all)]
-pub fn import_surface_tree<R>(renderer: &mut R, surface: &WlSurface) -> Result<(), <R as Renderer>::Error>
+pub fn import_custom_surface_tree<R, F>(
+    renderer: &mut R,
+    surface: &WlSurface,
+    import: F,
+) -> Result<(), <R as Renderer>::Error>
 where
-    R: Renderer + ImportAll,
+    R: Renderer,
     <R as Renderer>::TextureId: 'static,
+    F: Fn(&mut R, &SurfaceData, &mut RendererSurfaceState) -> Result<(), <R as Renderer>::Error> + Copy,
 {
-    let scale = 1.0;
-    let location: Point<f64, Physical> = (0.0, 0.0).into();
-
-    let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
     let mut result = Ok(());
     with_surface_tree_downward(
         surface,
-        location,
-        |_surface, states, location| {
-            let mut location = *location;
-            // Import a new buffer if necessary
-            if let Err(err) = import_surface(renderer, states) {
-                result = Err(err);
-            }
-
+        (),
+        |_surface, states, _| {
             if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
                 let mut data_ref = data.borrow_mut();
                 let data = &mut *data_ref;
+
+                if let Err(err) = import(renderer, states, data) {
+                    result = Err(err);
+                }
+
                 // Now, should we be drawn ?
-                if data.textures.contains_key(&texture_id) {
+                if data.view().is_some() {
                     // if yes, also process the children
-                    let surface_view = data.surface_view.unwrap();
-                    location += surface_view.offset.to_f64().to_physical(scale);
-                    TraversalAction::DoChildren(location)
+                    TraversalAction::DoChildren(())
                 } else {
                     // we are not displayed, so our children are neither
                     TraversalAction::SkipChildren
@@ -502,112 +602,18 @@ where
     result
 }
 
-/// Draws the render elements using a given [`Renderer`] and [`Frame`](crate::backend::renderer::Frame)
+/// Imports buffers handled by smithay of a surface and its subsurfaces using a given [`Renderer`].
 ///
-/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
-/// - `location` is the position the surface should be drawn at.
-/// - `damage` is the set of regions that should be drawn relative to the same origin as the location.
+/// This (or `import_surface`) need to be called before`draw_surface_tree`, if used later.
 ///
-/// Note: This element will render nothing, if you are not using
+/// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-#[instrument(level = "trace", skip(frame, scale, elements))]
-pub fn draw_render_elements<'a, R, S, E>(
-    frame: &mut <R as Renderer>::Frame<'a>,
-    scale: S,
-    elements: &[E],
-    damage: &[Rectangle<i32, Physical>],
-) -> Result<Option<Vec<Rectangle<i32, Physical>>>, <R as Renderer>::Error>
+#[instrument(level = "trace", skip_all)]
+pub fn import_surface_tree<R>(renderer: &mut R, surface: &WlSurface) -> Result<(), <R as Renderer>::Error>
 where
-    R: Renderer,
+    R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
-    S: Into<Scale<f64>>,
-    E: RenderElement<R>,
 {
-    let scale = scale.into();
-
-    let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
-    let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
-    let mut render_damage: Vec<Rectangle<i32, Physical>> = Vec::with_capacity(damage.len());
-
-    for element in elements {
-        let element_geometry = element.geometry(scale);
-
-        // Then test if the element is completely hidden behind opaque regions
-        let is_hidden = opaque_regions
-            .iter()
-            .fold([element_geometry].to_vec(), |geometry, opaque_region| {
-                geometry
-                    .into_iter()
-                    .flat_map(|g| g.subtract_rect(*opaque_region))
-                    .collect::<Vec<_>>()
-            })
-            .is_empty();
-
-        if is_hidden {
-            // No need to draw a completely hidden element
-            continue;
-        }
-
-        let damage = opaque_regions
-            .iter()
-            .fold(damage.to_vec(), |damage, opaque_region| {
-                damage
-                    .into_iter()
-                    .flat_map(|damage| damage.subtract_rect(*opaque_region))
-                    .collect::<Vec<_>>()
-            });
-
-        render_damage.extend(damage);
-
-        opaque_regions.extend(element.opaque_regions(scale).into_iter().map(|mut region| {
-            region.loc += element_geometry.loc;
-            region
-        }));
-        render_elements.insert(0, element);
-    }
-
-    // Optimize the damage for rendering
-    render_damage.dedup();
-    render_damage.retain(|rect| !rect.is_empty());
-    // filter damage outside of the output gep and merge overlapping rectangles
-    render_damage = render_damage
-        .into_iter()
-        .fold(Vec::new(), |new_damage, mut rect| {
-            // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
-                .into_iter()
-                .partition(|other| other.overlaps_or_touches(rect));
-
-            for overlap in overlapping {
-                rect = rect.merge(overlap);
-            }
-            new_damage.push(rect);
-            new_damage
-        });
-
-    if render_damage.is_empty() {
-        return Ok(None);
-    }
-
-    for element in render_elements.iter() {
-        let element_geometry = element.geometry(scale);
-
-        let element_damage = damage
-            .iter()
-            .filter_map(|d| d.intersection(element_geometry))
-            .map(|mut d| {
-                d.loc -= element_geometry.loc;
-                d
-            })
-            .collect::<Vec<_>>();
-
-        if element_damage.is_empty() {
-            continue;
-        }
-
-        element.draw(frame, element.src(), element_geometry, &element_damage)?;
-    }
-
-    Ok(Some(render_damage))
+    import_custom_surface_tree(renderer, surface, import_renderer_surface)
 }

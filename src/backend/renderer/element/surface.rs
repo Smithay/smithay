@@ -218,7 +218,10 @@ use tracing::{instrument, warn};
 use wayland_server::protocol::wl_surface;
 
 use crate::{
-    backend::renderer::{utils::RendererSurfaceStateUserData, ImportAll, Renderer},
+    backend::renderer::{
+        utils::{RendererSurfaceState, RendererSurfaceStateUserData},
+        ImportAll, Renderer,
+    },
     render_elements,
     utils::{Physical, Point, Rectangle, Scale},
     wayland::compositor::{self, SurfaceData, TraversalAction},
@@ -259,28 +262,46 @@ where
         renderer: &mut R,
         surface: &wl_surface::WlSurface,
         states: &SurfaceData,
-        location: Point<f64, Physical>,
+        location: impl Into<Point<f64, Physical>>,
         scale: impl Into<Scale<f64>>,
     ) -> Result<Option<Self>, <R as Renderer>::Error> {
         if let Some(state) = states.data_map.get::<RendererSurfaceStateUserData>() {
-            crate::backend::renderer::utils::import_surface(renderer, states)?;
-            Ok(Self::from_renderer_surface_state(
-                renderer, surface, state, location, scale,
-            ))
+            Self::from_surface_renderer_state(
+                renderer,
+                surface,
+                states,
+                &mut state.borrow_mut(),
+                location,
+                scale,
+            )
         } else {
             Ok(None)
         }
     }
 
-    fn from_renderer_surface_state(
+    /// Create a render element from a surface renderer state
+    pub fn from_surface_renderer_state(
         renderer: &mut R,
         surface: &wl_surface::WlSurface,
-        state: &RendererSurfaceStateUserData,
+        states: &SurfaceData,
+        state: &mut RendererSurfaceState,
+        location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
+    ) -> Result<Option<Self>, <R as Renderer>::Error> {
+        crate::backend::renderer::utils::import_renderer_surface(renderer, states, state)?;
+        Ok(Self::from_renderer_surface_state_internal(
+            renderer, surface, state, location, scale,
+        ))
+    }
+
+    fn from_renderer_surface_state_internal(
+        renderer: &mut R,
+        surface: &wl_surface::WlSurface,
+        state: &mut RendererSurfaceState,
         location: impl Into<Point<f64, Physical>>,
         scale: impl Into<Scale<f64>>,
     ) -> Option<Self> {
         let location = location.into();
-        let state = state.borrow();
 
         let view = state.view()?;
         let buffer = state.buffer()?;
@@ -319,18 +340,53 @@ where
     }
 }
 
-/// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
-#[instrument(level = "trace", skip(renderer, location, scale))]
-pub fn render_elements_from_surface_tree<R, E>(
+/// Get a [`WaylandSurfaceRenderElement`] from a [`wl_surface::WlSurface`]
+///
+/// Note: If the buffer type is not managed by smithay,
+/// the surface is not mapped or the import failed `None` is returned
+pub fn wayland_surface_render_element<R, E>(
     renderer: &mut R,
     surface: &wl_surface::WlSurface,
-    location: impl Into<Point<i32, Physical>>,
+    states: &SurfaceData,
+    state: &mut RendererSurfaceState,
+    location: impl Into<Point<f64, Physical>>,
     scale: impl Into<Scale<f64>>,
-) -> Vec<E>
+) -> Option<E>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Clone + 'static,
     E: From<WaylandSurfaceRenderElement<R>>,
+{
+    match WaylandSurfaceRenderElement::from_surface_renderer_state(
+        renderer, surface, states, state, location, scale,
+    ) {
+        Ok(element) => element.map(E::from),
+        Err(err) => {
+            warn!("Failed to import surface: {}", err);
+            None
+        }
+    }
+}
+
+/// Retrieve the render elements for this surface tree by using
+/// the provided element factory
+pub fn custom_render_elements_from_surface_tree<R, E, F>(
+    renderer: &mut R,
+    surface: &wl_surface::WlSurface,
+    location: impl Into<Point<i32, Physical>>,
+    scale: impl Into<Scale<f64>>,
+    factory: F,
+) -> Vec<E>
+where
+    R: Renderer,
+    F: Fn(
+        &mut R,
+        &wl_surface::WlSurface,
+        &SurfaceData,
+        &mut RendererSurfaceState,
+        Point<f64, Physical>,
+        Scale<f64>,
+    ) -> Option<E>,
 {
     let location = location.into().to_f64();
     let scale = scale.into();
@@ -369,15 +425,11 @@ where
                 };
 
                 if has_view {
-                    match WaylandSurfaceRenderElement::from_surface(
-                        renderer, surface, states, location, scale,
-                    ) {
-                        Ok(Some(surface)) => surfaces.push(surface.into()),
-                        Ok(None) => (),
-                        Err(err) => {
-                            warn!("Failed to import surface: {}", err);
-                        }
-                    };
+                    if let Some(element) =
+                        factory(renderer, surface, states, &mut data.borrow_mut(), location, scale)
+                    {
+                        surfaces.push(element);
+                    }
                 }
             }
         },
@@ -385,4 +437,26 @@ where
     );
 
     surfaces
+}
+
+/// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
+#[instrument(level = "trace", skip(renderer, location, scale))]
+pub fn render_elements_from_surface_tree<R, E>(
+    renderer: &mut R,
+    surface: &wl_surface::WlSurface,
+    location: impl Into<Point<i32, Physical>>,
+    scale: impl Into<Scale<f64>>,
+) -> Vec<E>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: Clone + 'static,
+    E: From<WaylandSurfaceRenderElement<R>>,
+{
+    custom_render_elements_from_surface_tree(
+        renderer,
+        surface,
+        location,
+        scale,
+        wayland_surface_render_element,
+    )
 }

@@ -1,13 +1,17 @@
 //! Utility module for helpers around drawing [`WlSurface`](wayland_server::protocol::wl_surface::WlSurface)s
 //! and [`RenderElement`](super::element::RenderElement)s with [`Renderer`](super::Renderer)s.
 
-use crate::utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Size};
+use tracing::instrument;
+
+use crate::utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size};
 use std::{collections::VecDeque, fmt, sync::Arc};
 
 #[cfg(feature = "wayland_frontend")]
 mod wayland;
 #[cfg(feature = "wayland_frontend")]
 pub use self::wayland::*;
+
+use super::{element::RenderElement, Renderer};
 
 /// A simple wrapper for counting commits
 ///
@@ -302,4 +306,114 @@ pub struct SurfaceView {
     pub dst: Size<i32, Logical>,
     /// The logical offset for a sub-surface
     pub offset: Point<i32, Logical>,
+}
+
+/// Draws the render elements using a given [`Renderer`] and [`Frame`](crate::backend::renderer::Frame)
+///
+/// - `scale` needs to be equivalent to the fractional scale the rendered result should have.
+/// - `location` is the position the surface should be drawn at.
+/// - `damage` is the set of regions that should be drawn relative to the same origin as the location.
+///
+/// Note: This element will render nothing, if you are not using
+/// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
+/// to let smithay handle buffer management.
+#[instrument(level = "trace", skip(frame, scale, elements))]
+pub fn draw_render_elements<'a, R, S, E>(
+    frame: &mut <R as Renderer>::Frame<'a>,
+    scale: S,
+    elements: &[E],
+    damage: &[Rectangle<i32, Physical>],
+) -> Result<Option<Vec<Rectangle<i32, Physical>>>, <R as Renderer>::Error>
+where
+    R: Renderer,
+    <R as Renderer>::TextureId: 'static,
+    S: Into<Scale<f64>>,
+    E: RenderElement<R>,
+{
+    let scale = scale.into();
+
+    let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
+    let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
+    let mut render_damage: Vec<Rectangle<i32, Physical>> = Vec::with_capacity(damage.len());
+
+    for element in elements {
+        let element_geometry = element.geometry(scale);
+
+        // Then test if the element is completely hidden behind opaque regions
+        let is_hidden = opaque_regions
+            .iter()
+            .fold([element_geometry].to_vec(), |geometry, opaque_region| {
+                geometry
+                    .into_iter()
+                    .flat_map(|g| g.subtract_rect(*opaque_region))
+                    .collect::<Vec<_>>()
+            })
+            .is_empty();
+
+        if is_hidden {
+            // No need to draw a completely hidden element
+            continue;
+        }
+
+        let damage = opaque_regions
+            .iter()
+            .fold(damage.to_vec(), |damage, opaque_region| {
+                damage
+                    .into_iter()
+                    .flat_map(|damage| damage.subtract_rect(*opaque_region))
+                    .collect::<Vec<_>>()
+            });
+
+        render_damage.extend(damage);
+
+        opaque_regions.extend(element.opaque_regions(scale).into_iter().map(|mut region| {
+            region.loc += element_geometry.loc;
+            region
+        }));
+        render_elements.insert(0, element);
+    }
+
+    // Optimize the damage for rendering
+    render_damage.dedup();
+    render_damage.retain(|rect| !rect.is_empty());
+    // filter damage outside of the output gep and merge overlapping rectangles
+    render_damage = render_damage
+        .into_iter()
+        .fold(Vec::new(), |new_damage, mut rect| {
+            // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
+            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
+                .into_iter()
+                .partition(|other| other.overlaps_or_touches(rect));
+
+            for overlap in overlapping {
+                rect = rect.merge(overlap);
+            }
+            new_damage.push(rect);
+            new_damage
+        });
+
+    if render_damage.is_empty() {
+        return Ok(None);
+    }
+
+    for element in render_elements.iter() {
+        let element_geometry = element.geometry(scale);
+
+        let element_damage = damage
+            .iter()
+            .filter_map(|d| d.intersection(element_geometry))
+            .map(|mut d| {
+                d.loc -= element_geometry.loc;
+                d
+            })
+            .collect::<Vec<_>>();
+
+        if element_damage.is_empty() {
+            continue;
+        }
+
+        element.draw(frame, element.src(), element_geometry, &element_damage)?;
+    }
+
+    Ok(Some(render_damage))
 }
