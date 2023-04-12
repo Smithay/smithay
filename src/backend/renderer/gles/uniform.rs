@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::Gles2Error;
+use super::GlesError;
 
 /// Different value types of a shader uniform variable for the [`Gles2Renderer`](super::Gles2Renderer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -259,9 +259,9 @@ impl UniformValue {
         }
     }
 
-    pub(super) fn set(&self, gl: &super::ffi::Gles2, desc: &UniformDesc) -> Result<(), Gles2Error> {
+    pub(super) fn set(&self, gl: &super::ffi::Gles2, desc: &UniformDesc) -> Result<(), GlesError> {
         if !self.matches(&desc.type_) {
-            return Err(Gles2Error::UniformTypeMismatch {
+            return Err(GlesError::UniformTypeMismatch {
                 provided: self.type_(),
                 declared: desc.type_,
             });

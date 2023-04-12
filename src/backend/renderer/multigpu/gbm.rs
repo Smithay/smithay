@@ -9,7 +9,7 @@ use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode},
     egl::{EGLContext, EGLDisplay, Error as EGLError},
     renderer::{
-        gles2::{Gles2Error, Gles2Renderer},
+        gles::{GlesError, GlesRenderer},
         multigpu::{ApiDevice, Error as MultiError, GraphicsApi},
         Renderer,
     },
@@ -40,7 +40,7 @@ pub enum Error {
     Egl(#[from] EGLError),
     /// OpenGL error
     #[error(transparent)]
-    Gl(#[from] Gles2Error),
+    Gl(#[from] GlesError),
     /// Error creating a drm node
     #[error(transparent)]
     DrmNode(#[from] CreateDrmNodeError),
@@ -88,7 +88,7 @@ impl<R> GbmGlesBackend<R> {
     }
 }
 
-impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for GbmGlesBackend<R> {
+impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for GbmGlesBackend<R> {
     type Device = GbmGlesDevice<R>;
     type Error = Error;
 
@@ -111,7 +111,7 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for GbmG
             })
             .map(|(node, display)| {
                 let context = EGLContext::new(display).map_err(Error::Egl)?;
-                let renderer = unsafe { Gles2Renderer::new(context).map_err(Error::Gl)? }.into();
+                let renderer = unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into();
 
                 Ok(GbmGlesDevice {
                     node: *node,
@@ -140,13 +140,13 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for GbmG
 }
 
 // TODO: Replace with specialization impl in multigpu/mod once possible
-impl<T: GraphicsApi, R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> std::convert::From<Gles2Error>
+impl<T: GraphicsApi, R: From<GlesRenderer> + Renderer<Error = GlesError>> std::convert::From<GlesError>
     for MultiError<GbmGlesBackend<R>, T>
 where
     T::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn from(err: Gles2Error) -> MultiError<GbmGlesBackend<R>, T> {
+    fn from(err: GlesError) -> MultiError<GbmGlesBackend<R>, T> {
         MultiError::Render(err)
     }
 }
@@ -176,9 +176,9 @@ impl<R: Renderer> ApiDevice for GbmGlesDevice<R> {
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl<'a, 'b, 'c, R> ImportEgl for MultiRenderer<'a, 'b, 'c, GbmGlesBackend<R>, GbmGlesBackend<R>>
 where
-    R: From<Gles2Renderer>
-        + BorrowMut<Gles2Renderer>
-        + Renderer<Error = Gles2Error>
+    R: From<GlesRenderer>
+        + BorrowMut<GlesRenderer>
+        + Renderer<Error = GlesError>
         + Bind<Dmabuf>
         + ImportDma
         + ImportMem
@@ -237,9 +237,9 @@ where
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl<'a, 'b, 'c, R> MultiRenderer<'a, 'b, 'c, GbmGlesBackend<R>, GbmGlesBackend<R>>
 where
-    R: From<Gles2Renderer>
-        + BorrowMut<Gles2Renderer>
-        + Renderer<Error = Gles2Error>
+    R: From<GlesRenderer>
+        + BorrowMut<GlesRenderer>
+        + Renderer<Error = GlesError>
         + ImportDma
         + ImportMem
         + ImportEgl
@@ -256,13 +256,13 @@ where
             .iter()
             .any(|ext| ext == "GL_OES_EGL_image")
         {
-            return Err(MultigpuError::Render(Gles2Error::GLExtensionNotSupported(&[
+            return Err(MultigpuError::Render(GlesError::GLExtensionNotSupported(&[
                 "GL_OES_EGL_image",
             ])));
         }
 
         if renderer.egl_reader().is_none() {
-            return Err(MultigpuError::Render(Gles2Error::EGLBufferAccessError(
+            return Err(MultigpuError::Render(GlesError::EGLBufferAccessError(
                 crate::backend::egl::BufferAccessError::NotManaged(crate::backend::egl::EGLError::BadDisplay),
             )));
         }
@@ -270,7 +270,7 @@ where
         renderer
             .borrow_mut()
             .make_current()
-            .map_err(Gles2Error::from)
+            .map_err(GlesError::from)
             .map_err(MultigpuError::Render)?;
 
         let egl = renderer
@@ -278,14 +278,14 @@ where
             .as_ref()
             .unwrap()
             .egl_buffer_contents(buffer)
-            .map_err(Gles2Error::EGLBufferAccessError)
+            .map_err(GlesError::EGLBufferAccessError)
             .map_err(MultigpuError::Render)?;
         renderer
             .borrow_mut()
             .egl_context()
             .display()
             .create_dmabuf_from_image(egl.image(0).unwrap(), egl.size, egl.y_inverted)
-            .map_err(Gles2Error::BindBufferEGLError)
+            .map_err(GlesError::BindBufferEGLError)
             .map_err(MultigpuError::Render)
     }
 }

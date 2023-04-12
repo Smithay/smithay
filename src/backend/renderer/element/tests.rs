@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::{
-    backend::renderer::{gles2::Gles2Renderer, ImportDma, ImportMem, Renderer, Texture},
+    backend::renderer::{gles::GlesRenderer, ImportDma, ImportMem, Renderer, Texture},
     utils::{Buffer, Physical, Point, Rectangle, Scale},
 };
 
@@ -13,7 +13,7 @@ render_elements! {
 }
 
 render_elements! {
-    ImportMemTest2<=Gles2Renderer>;
+    ImportMemTest2<=GlesRenderer>;
     Memory=ImportMemRenderElement,
 }
 
@@ -57,24 +57,24 @@ render_elements! {
 }
 
 render_elements! {
-    Test<='a, Gles2Renderer>;
-    Surface=TestRenderElement<'a, Gles2Renderer>
+    Test<='a, GlesRenderer>;
+    Surface=TestRenderElement<'a, GlesRenderer>
 }
 
 render_elements! {
-    Test2<=Gles2Renderer>;
-    Surface=TestRenderElement2<Gles2Renderer>
+    Test2<=GlesRenderer>;
+    Surface=TestRenderElement2<GlesRenderer>
 }
 
 render_elements! {
-    Test3<='a, Gles2Renderer, C>;
-    Surface=TestRenderElement<'a, Gles2Renderer>,
+    Test3<='a, GlesRenderer, C>;
+    Surface=TestRenderElement<'a, GlesRenderer>,
     Custom=&'a C,
 }
 
 render_elements! {
-    Test4<=Gles2Renderer, C>;
-    Surface=TestRenderElement2<Gles2Renderer>,
+    Test4<=GlesRenderer, C>;
+    Surface=TestRenderElement2<GlesRenderer>,
     Custom=C
 }
 

@@ -52,7 +52,7 @@
 //! #     drm::{DrmDevice, DrmDeviceFd},
 //! #     renderer::{
 //! #       element::surface::WaylandSurfaceRenderElement,
-//! #       gles2::{Gles2Renderbuffer, Gles2Renderer},
+//! #       gles::{GlesRenderbuffer, GlesRenderer},
 //! #     },
 //! # };
 //! # use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
@@ -88,7 +88,7 @@
 //! #     modifier: DrmModifier::Linear,
 //! # }]);
 //! # let gbm: GbmDevice<DrmDeviceFd> = todo!();
-//! # let mut renderer: Gles2Renderer = todo!();
+//! # let mut renderer: GlesRenderer = todo!();
 //! #
 //! let mut compositor: DrmCompositor<_, _, (), _> = DrmCompositor::new(
 //!     &output,
@@ -103,9 +103,9 @@
 //! )
 //! .expect("failed to initialize drm compositor");
 //!
-//! # let elements: Vec<WaylandSurfaceRenderElement<Gles2Renderer>> = Vec::new();
+//! # let elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 //! let render_frame_result = compositor
-//!     .render_frame::<_, _, Gles2Renderbuffer>(&mut renderer, &elements, CLEAR_COLOR)
+//!     .render_frame::<_, _, GlesRenderbuffer>(&mut renderer, &elements, CLEAR_COLOR)
 //!     .expect("failed to render frame");
 //!
 //! compositor.queue_frame(()).expect("failed to queue frame");
@@ -2467,7 +2467,7 @@ where
         };
 
         let cursor_buffer_size = self.cursor_size.to_logical(1).to_buffer(1, Transform::Normal);
-        let offscreen_buffer = match renderer.create_buffer(cursor_buffer_size) {
+        let offscreen_buffer = match renderer.create_buffer(DrmFourcc::Argb8888, cursor_buffer_size) {
             Ok(buffer) => buffer,
             Err(err) => {
                 debug!(
@@ -2527,7 +2527,7 @@ where
         }
 
         let copy_rect = Rectangle::from_loc_and_size((0, 0), cursor_buffer_size);
-        let mapping = match renderer.copy_framebuffer(copy_rect) {
+        let mapping = match renderer.copy_framebuffer(copy_rect, DrmFourcc::Abgr8888) {
             Ok(mapping) => mapping,
             Err(err) => {
                 info!("failed to export cursor offscreen buffer: {}", err);

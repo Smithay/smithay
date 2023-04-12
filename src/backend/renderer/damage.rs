@@ -41,6 +41,9 @@
 //! #     fn height(&self) -> u32 {
 //! #         unimplemented!()
 //! #     }
+//! #     fn format(&self) -> Option<Fourcc> {
+//! #         unimplemented!()
+//! #     }
 //! # }
 //! #
 //! # struct FakeFrame;
@@ -110,6 +113,7 @@
 //! #     fn import_memory(
 //! #         &mut self,
 //! #         _: &[u8],
+//! #         _: Fourcc,
 //! #         _: Size<i32, Buffer>,
 //! #         _: bool,
 //! #     ) -> Result<Self::TextureId, Self::Error> {
@@ -123,11 +127,17 @@
 //! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
+//! #     fn mem_formats(&self) -> Box<dyn Iterator<Item=Fourcc>> {
+//! #         unimplemented!()
+//! #     }
 //! # }
 //! use smithay::{
-//!     backend::renderer::{
-//!         damage::OutputDamageTracker,
-//!         element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement}
+//!     backend::{
+//!         allocator::Fourcc,
+//!         renderer::{
+//!             damage::OutputDamageTracker,
+//!             element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement}
+//!         },
 //!     },
 //!     utils::{Point, Transform},
 //! };
@@ -142,7 +152,7 @@
 //! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
 //!
 //! // Initialize a buffer to render
-//! let mut memory_buffer = MemoryRenderBuffer::new((WIDTH, HEIGHT), 1, Transform::Normal, None);
+//! let mut memory_buffer = MemoryRenderBuffer::new(Fourcc::Argb8888, (WIDTH, HEIGHT), 1, Transform::Normal, None);
 //!
 //! let mut last_update = Instant::now();
 //!

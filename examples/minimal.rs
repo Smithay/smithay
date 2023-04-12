@@ -5,7 +5,7 @@ use smithay::{
         input::{InputEvent, KeyboardKeyEvent},
         renderer::{
             element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-            gles2::Gles2Renderer,
+            gles::GlesRenderer,
             utils::{draw_render_elements, on_commit_buffer_handler},
             Frame, Renderer,
         },
@@ -143,7 +143,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let listener = ListeningSocket::bind("wayland-5").unwrap();
     let mut clients = Vec::new();
 
-    let (mut backend, mut winit) = winit::init::<Gles2Renderer>()?;
+    let (mut backend, mut winit) = winit::init::<GlesRenderer>()?;
 
     let start_time = std::time::Instant::now();
 
@@ -194,7 +194,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                 .flat_map(|surface| {
                     render_elements_from_surface_tree(backend.renderer(), surface.wl_surface(), (0, 0), 1.0)
                 })
-                .collect::<Vec<WaylandSurfaceRenderElement<Gles2Renderer>>>()
+                .collect::<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>()
         });
 
         let mut frame = backend.renderer().render(size, Transform::Flipped180).unwrap();

@@ -4,7 +4,10 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #     backend::{
+//! #         allocator::Fourcc,
+//! #         renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #     },
 //! #     utils::{Buffer, Physical, Rectangle, Transform},
 //! # };
 //! # #[derive(Clone)]
@@ -15,6 +18,9 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn height(&self) -> u32 {
+//! #         unimplemented!()
+//! #     }
+//! #     fn format(&self) -> Option<Fourcc> {
 //! #         unimplemented!()
 //! #     }
 //! # }
@@ -89,6 +95,7 @@
 //! #     fn import_memory(
 //! #         &mut self,
 //! #         _: &[u8],
+//! #         _: Fourcc,
 //! #         _: Size<i32, Buffer>,
 //! #         _: bool,
 //! #     ) -> Result<Self::TextureId, Self::Error> {
@@ -102,6 +109,7 @@
 //! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
+//! #     fn mem_formats(&self) -> Box<(dyn Iterator<Item=Fourcc> + 'static)> { unimplemented!() }
 //! # }
 //! use smithay::{
 //!     backend::renderer::{
