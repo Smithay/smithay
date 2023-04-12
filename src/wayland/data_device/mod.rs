@@ -260,7 +260,7 @@ where
 /// drag'n'drop in the provided callback. See [`ServerDndGrabHandler`] for details about
 /// which events can be generated and what response is expected from you to them.
 #[instrument(name = "wayland_data_device", level = "debug", skip(dh, seat, data), fields(seat = seat.name()))]
-pub fn start_dnd<D, C>(
+pub fn start_dnd<D>(
     dh: &DisplayHandle,
     seat: &Seat<D>,
     data: &mut D,
