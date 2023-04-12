@@ -9,6 +9,7 @@ use wayland_server::{
     protocol::{
         wl_data_device_manager::DndAction,
         wl_data_offer::{self, WlDataOffer},
+        wl_seat::WlSeat,
         wl_surface::WlSurface,
     },
     DisplayHandle, Resource,
@@ -24,7 +25,7 @@ use crate::input::{
 use crate::utils::{Logical, Point};
 use crate::wayland::seat::WaylandFocus;
 
-use super::{DataDeviceHandler, SeatData, ServerDndGrabHandler, SourceMetadata};
+use super::{DataDeviceHandler, DataDeviceUserData, SeatData, ServerDndGrabHandler, SourceMetadata};
 
 pub(crate) struct ServerDnDGrab<D: SeatHandler> {
     dh: DisplayHandle,
@@ -121,6 +122,10 @@ where
                     .filter(|d| d.id().same_client_as(&surface.id()))
                 {
                     let handle = self.dh.backend_handle();
+                    let wl_seat = match device.data::<DataDeviceUserData>() {
+                        Some(data) => data.wl_seat.clone(),
+                        None => continue,
+                    };
                     // create a data offer
                     let offer = handle
                         .create_object::<D>(
@@ -130,6 +135,7 @@ where
                             Arc::new(ServerDndData {
                                 metadata: self.metadata.clone(),
                                 ofer_data: offer_data.clone(),
+                                wl_seat,
                             }),
                         )
                         .unwrap();
@@ -201,9 +207,9 @@ where
                 }
             }
 
-            ServerDndGrabHandler::dropped(data);
+            ServerDndGrabHandler::dropped(data, self.seat.clone());
             if !validated {
-                data.cancelled();
+                data.cancelled(self.seat.clone());
             }
             // in all cases abandon the drop
             // no more buttons are pressed, release the grab
@@ -239,11 +245,12 @@ struct ServerDndOfferData {
 struct ServerDndData {
     metadata: SourceMetadata,
     ofer_data: Arc<Mutex<ServerDndOfferData>>,
+    wl_seat: WlSeat,
 }
 
 impl<D> ObjectData<D> for ServerDndData
 where
-    D: DataDeviceHandler,
+    D: DataDeviceHandler + SeatHandler + 'static,
 {
     fn request(
         self: Arc<Self>,
@@ -269,12 +276,21 @@ fn handle_server_dnd<D>(
     request: wl_data_offer::Request,
     data: &ServerDndData,
 ) where
-    D: DataDeviceHandler,
+    D: DataDeviceHandler + SeatHandler + 'static,
 {
     use self::wl_data_offer::Request;
 
     let metadata = &data.metadata;
     let offer_data = &data.ofer_data;
+    let wl_seat = &data.wl_seat;
+
+    if !wl_seat.is_alive() {
+        return;
+    }
+    let seat = match Seat::<D>::from_resource(wl_seat) {
+        Some(s) => s,
+        None => return,
+    };
 
     let mut data = offer_data.lock().unwrap();
     match request {
@@ -288,7 +304,7 @@ fn handle_server_dnd<D>(
         Request::Receive { mime_type, fd } => {
             // check if the source and associated mime type is still valid
             if metadata.mime_types.contains(&mime_type) && data.active {
-                handler.send(mime_type, fd);
+                handler.send(mime_type, fd, seat);
             }
         }
         Request::Destroy => {}
@@ -322,7 +338,7 @@ fn handle_server_dnd<D>(
                 return;
             }
 
-            handler.finished();
+            handler.finished(seat);
             data.active = false;
         }
         Request::SetActions {
@@ -349,7 +365,7 @@ fn handle_server_dnd<D>(
             if chosen_action != data.chosen_action {
                 data.chosen_action = chosen_action;
                 offer.action(chosen_action);
-                handler.action(chosen_action);
+                handler.action(chosen_action, seat);
             }
         }
         _ => unreachable!(),
