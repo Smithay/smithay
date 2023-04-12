@@ -63,6 +63,20 @@ impl SinglePixelBufferUserData {
             (self.a / divisor) as u8,
         ]
     }
+
+    /// Color represented as rgba32f
+    ///
+    /// Ranges from `0f32` to `1f32`
+    pub fn rgba32f(&self) -> [f32; 4] {
+        let divisor = u32::MAX as f32;
+
+        [
+            self.r as f32 / divisor,
+            self.g as f32 / divisor,
+            self.b as f32 / divisor,
+            self.a as f32 / divisor,
+        ]
+    }
 }
 
 /// Error that can occur when accessing an SinglePixelBuffer
