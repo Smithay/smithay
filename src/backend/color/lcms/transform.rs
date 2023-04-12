@@ -9,6 +9,7 @@ pub(super) struct LcmsColorTransformInternal {
     pub(super) pre_curve: Option<[lcms2::ToneCurve; 3]>,
     pub(super) post_curve: Option<[lcms2::ToneCurve; 3]>,
     pub(super) mapping: Option<Mapping<LcmsMappingLUT>>,
+    user_data: UserDataMap,
 }
 
 impl fmt::Debug for LcmsColorTransform {
@@ -107,6 +108,7 @@ pub(super) fn realize_chain(
         pre_curve: None,
         mapping: Some(Mapping::LUT(LcmsMappingLUT(lut))),
         post_curve: None,
+        user_data: UserDataMap::new(),
     })
 }
 
@@ -122,6 +124,10 @@ impl super::Transformation for LcmsColorTransform {
     }
     fn post_curve(&self) -> Option<&[Self::Curve; 3]> {
         self.0.post_curve.as_ref()
+    }
+
+    fn user_data(&self) -> &UserDataMap {
+        &self.0.user_data
     }
 }
 

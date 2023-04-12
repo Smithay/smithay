@@ -1,44 +1,52 @@
 //! RenderElements specific to using a `Gles2Renderer`
 
 use crate::{
-    backend::renderer::{
-        element::{Element, Id, RenderElement, UnderlyingStorage},
-        utils::CommitCounter,
+    backend::{
+        color::CMS,
+        renderer::{
+            element::{Element, Id, RenderElement, UnderlyingStorage},
+            utils::CommitCounter,
+        },
     },
     utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform},
 };
 
-use super::{GlesError, GlesFrame, GlesPixelProgram, GlesRenderer, Uniform};
+use super::{GlesError, GlesFrame, GlesRenderer, ShaderFactory, Uniform};
+
+use std::cell::RefCell;
 
 /// Render element for drawing with a gles2 pixel shader
-#[derive(Debug, Clone)]
-pub struct PixelShaderElement {
-    shader: GlesPixelProgram,
+#[derive(Debug)]
+pub struct PixelShaderElement<C: CMS> {
+    shader: RefCell<ShaderFactory>,
     id: Id,
     commit_counter: CommitCounter,
     area: Rectangle<i32, Logical>,
     opaque_regions: Vec<Rectangle<i32, Logical>>,
     alpha: f32,
+    input_profile: C::ColorProfile,
     additional_uniforms: Vec<Uniform<'static>>,
 }
 
-impl PixelShaderElement {
-    /// Create a new [`PixelShaderElement`] from a [`Gles2PixelProgram`],
-    /// which can be constructed using [`Gles2Renderer::compile_custom_pixel_shader`]
+impl<C: CMS> PixelShaderElement<C> {
+    /// Create a new [`PixelShaderElement`] from a [`ShaderFactory`],
+    /// which can be constructed using [`GlesRenderer::compile_custom_shader`]
     pub fn new(
-        shader: GlesPixelProgram,
+        shader: ShaderFactory,
         area: Rectangle<i32, Logical>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
         alpha: f32,
+        input_profile: C::ColorProfile,
         additional_uniforms: Vec<Uniform<'_>>,
     ) -> Self {
         PixelShaderElement {
-            shader,
+            shader: RefCell::new(shader),
             id: Id::new(),
             commit_counter: CommitCounter::default(),
             area,
             opaque_regions: opaque_regions.unwrap_or_default(),
             alpha,
+            input_profile,
             additional_uniforms: additional_uniforms.into_iter().map(|u| u.into_owned()).collect(),
         }
     }
@@ -67,7 +75,7 @@ impl PixelShaderElement {
     }
 }
 
-impl Element for PixelShaderElement {
+impl<C: CMS> Element for PixelShaderElement<C> {
     fn id(&self) -> &Id {
         &self.id
     }
@@ -94,24 +102,33 @@ impl Element for PixelShaderElement {
     }
 }
 
-impl RenderElement<GlesRenderer> for PixelShaderElement {
-    fn draw<'a>(
+impl<C> RenderElement<GlesRenderer, C> for PixelShaderElement<C>
+where
+    C: CMS,
+    C::Error: Send + Sync + 'static,
+{
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut GlesFrame<'a>,
+        frame: &mut GlesFrame<'a, 'b, C>,
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         frame.render_pixel_shader_to(
-            &self.shader,
+            &mut *self.shader.borrow_mut(),
             dst,
             Some(damage),
             self.alpha,
             &self.additional_uniforms,
+            &self.input_profile,
         )
     }
 
     fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
         None
+    }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
+        self.input_profile.clone()
     }
 }

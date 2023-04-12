@@ -6,7 +6,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     convert::TryFrom,
-    ffi::{CStr, CString},
+    ffi::CStr,
     fmt, mem,
     os::raw::c_char,
     ptr,
@@ -14,6 +14,7 @@ use std::{
     sync::{
         atomic::{AtomicBool, AtomicPtr, Ordering},
         mpsc::{channel, Receiver, Sender},
+        Arc, Weak,
     },
 };
 use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan, trace, warn, Level};
@@ -21,19 +22,19 @@ use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan
 #[cfg(feature = "wayland_frontend")]
 use std::cell::RefCell;
 
+mod color;
 pub mod element;
 mod error;
 pub mod format;
 mod shaders;
 mod texture;
-mod uniform;
 mod version;
 
+use color::*;
 pub use error::*;
 use format::*;
 pub use shaders::*;
 pub use texture::*;
-pub use uniform::*;
 
 use self::version::GlVersion;
 
@@ -41,14 +42,20 @@ use super::{
     Bind, Blit, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer, Texture,
     TextureFilter, TextureMapping, Unbind,
 };
-use crate::backend::allocator::{
-    dmabuf::{Dmabuf, WeakDmabuf},
-    format::{get_bpp, get_opaque, get_transparent, has_alpha},
-    Format, Fourcc,
+use crate::backend::{
+    allocator::{
+        dmabuf::{Dmabuf, WeakDmabuf},
+        format::{get_bpp, get_opaque, get_transparent, has_alpha},
+        Format, Fourcc,
+    },
+    color::CMS,
 };
-use crate::backend::egl::{
-    ffi::egl::{self as ffi_egl, types::EGLImage},
-    EGLContext, EGLSurface, MakeCurrentError,
+use crate::backend::{
+    color::Mapping,
+    egl::{
+        ffi::egl::{self as ffi_egl, types::EGLImage},
+        EGLContext, EGLSurface, MakeCurrentError,
+    },
 };
 use crate::utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform};
 
@@ -87,7 +94,7 @@ enum CleanupResource {
 
 #[derive(Debug)]
 struct ShadowBuffer {
-    texture: ffi::types::GLuint,
+    texture: GlesTexture,
     fbo: ffi::types::GLuint,
     stencil: ffi::types::GLuint,
     destruction_callback_sender: Sender<CleanupResource>,
@@ -98,9 +105,6 @@ impl Drop for ShadowBuffer {
         let _ = self
             .destruction_callback_sender
             .send(CleanupResource::FramebufferObject(self.fbo));
-        let _ = self
-            .destruction_callback_sender
-            .send(CleanupResource::Texture(self.texture));
         let _ = self
             .destruction_callback_sender
             .send(CleanupResource::RenderbufferObject(self.stencil));
@@ -391,16 +395,12 @@ pub struct GlesRenderer {
     capabilities: Vec<Capability>,
 
     // shaders
-    tex_program: GlesTexProgram,
-    solid_program: GlesSolidProgram,
-    // color-transformation shaders
-    // TODO new tex/solid? shaders
-    output_program: Option<GlesColorOutputProgram>,
+    buildin_shader: ShaderFactory,
 
     // caches
     buffers: Vec<GlesBuffer>,
     dmabuf_cache: std::collections::HashMap<WeakDmabuf, GlesTexture>,
-    vbos: [ffi::types::GLuint; 3],
+    vbos: [ffi::types::GLuint; 2],
 
     // cleanup
     destruction_callback: Receiver<CleanupResource>,
@@ -420,17 +420,27 @@ pub struct GlesRenderer {
 /// which might cause glitches. Additionally parts of the GL state might not be reset correctly,
 /// causing unexpected results for later render commands.
 /// The internal GL context and framebuffer will remain valid, no re-creation will be necessary.
-pub struct GlesFrame<'frame> {
+pub struct GlesFrame<'frame, 'color, C>
+where
+    C: CMS,
+    C::Error: Send + Sync + 'static,
+{
     renderer: &'frame mut GlesRenderer,
     current_projection: Matrix3<f32>,
     transform: Transform,
     size: Size<i32, Physical>,
-    tex_program_override: Option<(GlesTexProgram, Vec<Uniform<'static>>)>,
+    tex_program_override: Option<(GlesProgram, Vec<Uniform<'static>>)>,
+    cms: &'color mut C,
+    output_profile: &'color <C as CMS>::ColorProfile,
     finished: AtomicBool,
     span: EnteredSpan,
 }
 
-impl<'frame> fmt::Debug for GlesFrame<'frame> {
+impl<'frame, 'color, C> fmt::Debug for GlesFrame<'frame, 'color, C>
+where
+    C: CMS,
+    C::Error: Send + Sync + 'static,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GlesFrame")
             .field("renderer", &self.renderer)
@@ -450,8 +460,6 @@ impl fmt::Debug for GlesRenderer {
             .field("target", &self.target)
             .field("extensions", &self.extensions)
             .field("capabilities", &self.capabilities)
-            .field("tex_program", &self.tex_program)
-            .field("solid_program", &self.solid_program)
             .field("dmabuf_cache", &self.dmabuf_cache)
             .field("egl", &self.egl)
             .field("gl_version", &self.gl_version)
@@ -603,13 +611,6 @@ impl GlesRenderer {
         };
 
         let (tx, rx) = channel();
-        let tex_program = texture_program(&gl, shaders::FRAGMENT_SHADER, &[], tx.clone())?;
-        let solid_program = solid_program(&gl)?;
-        let output_program = capabilities
-            .contains(&Capability::ColorTransformations)
-            .then(|| color_output_program(&gl, tx.clone()))
-            .transpose()?;
-
         // Initialize vertices based on drawing methodology.
         let vertices: &[ffi::types::GLfloat] = if capabilities.contains(&Capability::Instancing) {
             &INSTANCED_VERTS
@@ -617,7 +618,7 @@ impl GlesRenderer {
             &TRIANGLE_VERTS
         };
 
-        let mut vbos = [0; 3];
+        let mut vbos = [0; 2];
         gl.GenBuffers(vbos.len() as i32, vbos.as_mut_ptr());
         gl.BindBuffer(ffi::ARRAY_BUFFER, vbos[0]);
         gl.BufferData(
@@ -626,18 +627,9 @@ impl GlesRenderer {
             vertices.as_ptr() as *const _,
             ffi::STATIC_DRAW,
         );
-        gl.BindBuffer(ffi::ARRAY_BUFFER, vbos[2]);
-        gl.BufferData(
-            ffi::ARRAY_BUFFER,
-            (std::mem::size_of::<ffi::types::GLfloat>() * OUTPUT_VERTS.len()) as isize,
-            OUTPUT_VERTS.as_ptr() as *const _,
-            ffi::STATIC_DRAW,
-        );
-        gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
 
-        context
-            .user_data()
-            .insert_if_missing(|| RendererId(next_renderer_id()));
+        let renderer_id = next_renderer_id();
+        context.user_data().insert_if_missing(|| RendererId(renderer_id));
 
         drop(_guard);
         let renderer = GlesRenderer {
@@ -650,9 +642,7 @@ impl GlesRenderer {
             gl_version,
             capabilities,
 
-            tex_program,
-            solid_program,
-            output_program,
+            buildin_shader: ShaderFactory::new(renderer_id, BuildinShader, None, tx.clone()),
             vbos,
             min_filter: TextureFilter::Linear,
             max_filter: TextureFilter::Linear,
@@ -1410,6 +1400,7 @@ impl GlesRenderer {
                     );
                     tex
                 };
+                let texture = unsafe { GlesTexture::from_raw(self, Some(ffi::RGBA16F), false, tex, size) };
 
                 let mut fbo = unsafe {
                     let mut fbo = 0;
@@ -1456,7 +1447,7 @@ impl GlesRenderer {
                 };
 
                 Ok(ShadowBuffer {
-                    texture: tex,
+                    texture,
                     fbo,
                     stencil,
                     destruction_callback_sender: self.destruction_callback_sender.clone(),
@@ -1887,7 +1878,6 @@ impl Drop for GlesRenderer {
         unsafe {
             if self.egl.make_current().is_ok() {
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-                self.gl.DeleteProgram(self.solid_program.program);
                 self.gl.DeleteBuffers(self.vbos.len() as i32, self.vbos.as_ptr());
 
                 if self.extensions.iter().any(|ext| ext == "GL_KHR_debug") {
@@ -1962,152 +1952,53 @@ impl GlesRenderer {
     /// ## Panics
     ///
     /// Panics if any of the names of the passed additional uniforms contains a `\0`/NUL-byte.
-    pub fn compile_custom_pixel_shader(
+    pub fn compile_custom_shader(
         &mut self,
-        src: impl AsRef<str>,
-        additional_uniforms: &[UniformName<'_>],
-    ) -> Result<GlesPixelProgram, GlesError> {
+        source: impl GlesShaderSource + 'static,
+        additional_uniforms: impl IntoIterator<Item = UniformName<'static>>,
+    ) -> Result<ShaderFactory, GlesError> {
         self.make_current()?;
-
-        let shader = format!("#version 100\n{}", src.as_ref());
-        let program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &shader)? };
-        let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src.as_ref());
-        let debug_program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &debug_shader)? };
-
-        let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
-        let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
-        let matrix = CStr::from_bytes_with_nul(b"matrix\0").expect("NULL terminated");
-        let tex_matrix = CStr::from_bytes_with_nul(b"tex_matrix\0").expect("NULL terminated");
-        let size = CStr::from_bytes_with_nul(b"size\0").expect("NULL terminated");
-        let alpha = CStr::from_bytes_with_nul(b"alpha\0").expect("NULL terminated");
-        let tint = CStr::from_bytes_with_nul(b"tint\0").expect("NULL terminated");
-
-        unsafe {
-            Ok(GlesPixelProgram(Rc::new(GlesPixelProgramInner {
-                normal: GlesPixelProgramInternal {
-                    program,
-                    uniform_matrix: self
-                        .gl
-                        .GetUniformLocation(program, matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_tex_matrix: self
-                        .gl
-                        .GetUniformLocation(program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_alpha: self
-                        .gl
-                        .GetUniformLocation(program, alpha.as_ptr() as *const ffi::types::GLchar),
-                    uniform_size: self
-                        .gl
-                        .GetUniformLocation(program, size.as_ptr() as *const ffi::types::GLchar),
-                    attrib_vert: self
-                        .gl
-                        .GetAttribLocation(program, vert.as_ptr() as *const ffi::types::GLchar),
-                    attrib_position: self
-                        .gl
-                        .GetAttribLocation(program, vert_position.as_ptr() as *const ffi::types::GLchar),
-                    additional_uniforms: additional_uniforms
-                        .iter()
-                        .map(|uniform| {
-                            let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
-                            let location = self
-                                .gl
-                                .GetUniformLocation(program, name.as_ptr() as *const ffi::types::GLchar);
-                            (
-                                uniform.name.clone().into_owned(),
-                                UniformDesc {
-                                    location,
-                                    type_: uniform.type_,
-                                },
-                            )
-                        })
-                        .collect(),
-                },
-                debug: GlesPixelProgramInternal {
-                    program: debug_program,
-                    uniform_matrix: self
-                        .gl
-                        .GetUniformLocation(debug_program, matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_tex_matrix: self
-                        .gl
-                        .GetUniformLocation(debug_program, tex_matrix.as_ptr() as *const ffi::types::GLchar),
-                    uniform_alpha: self
-                        .gl
-                        .GetUniformLocation(debug_program, alpha.as_ptr() as *const ffi::types::GLchar),
-                    uniform_size: self
-                        .gl
-                        .GetUniformLocation(debug_program, size.as_ptr() as *const ffi::types::GLchar),
-                    attrib_vert: self
-                        .gl
-                        .GetAttribLocation(debug_program, vert.as_ptr() as *const ffi::types::GLchar),
-                    attrib_position: self.gl.GetAttribLocation(
-                        debug_program,
-                        vert_position.as_ptr() as *const ffi::types::GLchar,
-                    ),
-                    additional_uniforms: additional_uniforms
-                        .iter()
-                        .map(|uniform| {
-                            let name = CString::new(uniform.name.as_bytes()).expect("Interior null in name");
-                            let location = self.gl.GetUniformLocation(
-                                debug_program,
-                                name.as_ptr() as *const ffi::types::GLchar,
-                            );
-                            (
-                                uniform.name.clone().into_owned(),
-                                UniformDesc {
-                                    location,
-                                    type_: uniform.type_,
-                                },
-                            )
-                        })
-                        .collect(),
-                },
-                destruction_callback_sender: self.destruction_callback_sender.clone(),
-                uniform_tint: self
-                    .gl
-                    .GetUniformLocation(debug_program, tint.as_ptr() as *const ffi::types::GLchar),
-            })))
-        }
+        let additional_uniforms = additional_uniforms.into_iter().collect::<Vec<_>>();
+        Ok(ShaderFactory::new(
+            self.buildin_shader.renderer_id,
+            source,
+            if additional_uniforms.is_empty() {
+                None
+            } else {
+                Some(additional_uniforms)
+            },
+            self.destruction_callback_sender.clone(),
+        ))
     }
 
-    /// Compile a custom texture shader for rendering with [`GlesRenderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`].
-    ///
-    /// They need to handle the following #define variants:
-    /// - `EXTERNAL` uses samplerExternalOES instead of sampler2D, requires the GL_OES_EGL_image_external extension
-    /// - `NO_ALPHA` needs to ignore the alpha channel of the texture and replace it with 1.0
-    /// - `DEBUG_FLAGS` see below
-    ///
-    /// They receive the following variables:
-    /// - *varying* v_coords `vec2` - contains the position from the vertex shader
-    /// - *uniform* tex `sample2d` - texture sampler
-    /// - *uniform* alpha `float` - for the alpha value passed by the renderer
-    /// - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0) - only if `DEBUG_FLAGS` was defined
-    ///
-    /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
-    /// and can then be set in functions utilizing `GlesTexProgram` (like [`Gles2Renderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`]).
-    ///
-    /// The shader must contain a line only containing `//_DEFINES`. It will be replaced by the renderer with corresponding `#define` directives.
-    ///
-    /// ## Panics
-    ///
-    /// Panics if any of the names of the passed additional uniforms contains a `\0`/NUL-byte.
-    pub fn compile_custom_texture_shader(
-        &mut self,
-        shader: impl AsRef<str>,
-        additional_uniforms: &[UniformName<'_>],
-    ) -> Result<GlesTexProgram, GlesError> {
-        self.make_current()?;
-
-        unsafe {
-            texture_program(
-                &self.gl,
-                shader.as_ref(),
-                additional_uniforms,
-                self.destruction_callback_sender.clone(),
-            )
-        }
-    }
+    // Compile a custom texture shader for rendering with [`GlesRenderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`].
+    //
+    // They need to handle the following #define variants:
+    // - `EXTERNAL` uses samplerExternalOES instead of sampler2D, requires the GL_OES_EGL_image_external extension
+    // - `NO_ALPHA` needs to ignore the alpha channel of the texture and replace it with 1.0
+    // - `DEBUG_FLAGS` see below
+    //
+    // They receive the following variables:
+    // - *varying* v_coords `vec2` - contains the position from the vertex shader
+    // - *uniform* tex `sample2d` - texture sampler
+    // - *uniform* alpha `float` - for the alpha value passed by the renderer
+    // - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0) - only if `DEBUG_FLAGS` was defined
+    //
+    // Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
+    // and can then be set in functions utilizing `GlesTexProgram` (like [`Gles2Renderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`]).
+    //
+    // The shader must contain a line only containing `//_DEFINES`. It will be replaced by the renderer with corresponding `#define` directives.
+    //
+    // ## Panics
+    //
+    // Panics if any of the names of the passed additional uniforms contains a `\0`/NUL-byte.
 }
 
-impl<'frame> GlesFrame<'frame> {
+impl<'frame, 'color, C> GlesFrame<'frame, 'color, C>
+where
+    C: CMS,
+    C::Error: Send + Sync + 'static,
+{
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -2128,7 +2019,9 @@ impl<'frame> GlesFrame<'frame> {
 impl Renderer for GlesRenderer {
     type Error = GlesError;
     type TextureId = GlesTexture;
-    type Frame<'frame> = GlesFrame<'frame>;
+    type Frame<'frame, 'color, C> = GlesFrame<'frame, 'color, C>
+    where
+        C: CMS + 'static;
 
     fn id(&self) -> usize {
         self.egl.user_data().get::<RendererId>().unwrap().0
@@ -2143,11 +2036,16 @@ impl Renderer for GlesRenderer {
         Ok(())
     }
 
-    fn render(
-        &mut self,
+    fn render<'color, 'frame, C>(
+        &'frame mut self,
         mut output_size: Size<i32, Physical>,
         transform: Transform,
-    ) -> Result<GlesFrame<'_>, Self::Error> {
+        cms: &'color mut C,
+        output_profile: &'color <C as CMS>::ColorProfile,
+    ) -> Result<GlesFrame<'frame, 'color, C>, Self::Error>
+    where
+        C: CMS + 'static,
+    {
         self.make_current()?;
 
         unsafe {
@@ -2209,6 +2107,10 @@ impl Renderer for GlesRenderer {
             transform,
             size: output_size,
             tex_program_override: None,
+
+            cms,
+            output_profile,
+
             finished: AtomicBool::new(false),
             span,
         })
@@ -2270,15 +2172,11 @@ const fn triangle_verts() -> [ffi::types::GLfloat; 12 * MAX_RECTS_PER_DRAW] {
     verts
 }
 
-/// Vertices for output rendering.
-static OUTPUT_VERTS: [ffi::types::GLfloat; 8] = [
-    -1.0, 1.0, // top right
-    -1.0, -1.0, // top left
-    1.0, 1.0, // bottom right
-    1.0, -1.0, // bottom left
-];
-
-impl<'frame> Frame for GlesFrame<'frame> {
+impl<'frame, 'color, C> Frame<C> for GlesFrame<'frame, 'color, C>
+where
+    C: CMS,
+    C::Error: Send + Sync + 'static,
+{
     type TextureId = GlesTexture;
     type Error = GlesError;
 
@@ -2286,8 +2184,13 @@ impl<'frame> Frame for GlesFrame<'frame> {
         self.renderer.id()
     }
 
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), GlesError> {
+    #[instrument(level = "trace", parent = &self.span, skip(self, input_profile))]
+    fn clear(
+        &mut self,
+        color: [f32; 4],
+        at: &[Rectangle<i32, Physical>],
+        input_profile: &<C as CMS>::ColorProfile,
+    ) -> Result<(), GlesError> {
         if at.is_empty() {
             return Ok(());
         }
@@ -2296,7 +2199,12 @@ impl<'frame> Frame for GlesFrame<'frame> {
             self.renderer.gl.Disable(ffi::BLEND);
         }
 
-        let res = self.draw_solid(Rectangle::from_loc_and_size((0, 0), self.size), at, color);
+        let res = self.draw_solid(
+            Rectangle::from_loc_and_size((0, 0), self.size),
+            at,
+            color,
+            input_profile,
+        );
 
         unsafe {
             self.renderer.gl.Enable(ffi::BLEND);
@@ -2305,12 +2213,13 @@ impl<'frame> Frame for GlesFrame<'frame> {
         res
     }
 
-    #[instrument(level = "trace", skip(self), parent = &self.span)]
+    #[instrument(level = "trace", skip(self, input_profile), parent = &self.span)]
     fn draw_solid(
         &mut self,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         color: [f32; 4],
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), Self::Error> {
         if damage.is_empty() {
             return Ok(());
@@ -2324,7 +2233,7 @@ impl<'frame> Frame for GlesFrame<'frame> {
             }
         }
 
-        let res = self.draw_solid(dst, damage, color);
+        let res = self.draw_solid(dst, damage, color, input_profile);
 
         if is_opaque {
             unsafe {
@@ -2336,7 +2245,7 @@ impl<'frame> Frame for GlesFrame<'frame> {
         res
     }
 
-    #[instrument(level = "trace", skip(self), parent = &self.span)]
+    #[instrument(level = "trace", skip(self, input_profile), parent = &self.span)]
     fn render_texture_from_to(
         &mut self,
         texture: &GlesTexture,
@@ -2345,8 +2254,19 @@ impl<'frame> Frame for GlesFrame<'frame> {
         damage: &[Rectangle<i32, Physical>],
         transform: Transform,
         alpha: f32,
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), GlesError> {
-        self.render_texture_from_to(texture, src, dest, damage, transform, alpha, None, &[])
+        self.render_texture_from_to(
+            texture,
+            src,
+            dest,
+            damage,
+            transform,
+            alpha,
+            None,
+            &[],
+            input_profile,
+        )
     }
 
     fn transformation(&self) -> Transform {
@@ -2358,10 +2278,12 @@ impl<'frame> Frame for GlesFrame<'frame> {
     }
 }
 
-impl<'frame> GlesFrame<'frame> {
+impl<'frame, 'color, C> GlesFrame<'frame, 'color, C>
+where
+    C: CMS,
+    C::Error: Send + Sync + 'static,
+{
     fn finish_internal(&mut self) -> Result<(), GlesError> {
-        let _guard = self.span.enter();
-
         if self.finished.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
@@ -2379,52 +2301,33 @@ impl<'frame> GlesFrame<'frame> {
                     &self.renderer.egl,
                     Some((shadow.fbo, shadow.stencil)),
                 )?;
+                let texture = shadow.texture.clone();
                 unsafe {
+                    let transform = self
+                        .cms
+                        .output_transformation(self.output_profile)
+                        .map_err(|err| GlesError::ColorTransformationError(Box::new(err)))?;
+
                     self.renderer
                         .gl
                         .StencilFunc(ffi::NOTEQUAL, 0, ffi::types::GLuint::MAX);
                     self.renderer.gl.StencilMask(0);
 
-                    self.renderer.gl.ActiveTexture(ffi::TEXTURE0);
-                    self.renderer.gl.BindTexture(ffi::TEXTURE_2D, shadow.texture);
-                    self.renderer.gl.TexParameteri(
-                        ffi::TEXTURE_2D,
-                        ffi::TEXTURE_MIN_FILTER,
+                    self.render_texture_with_color_transform(
+                        &texture,
+                        Matrix3::identity(),
+                        Matrix3::identity()
+                            * Matrix3::from_nonuniform_scale(2.0, 2.0)
+                            * Matrix3::from_translation(Vector2::new(-0.5, -0.5)),
+                        None,
+                        1.0,
+                        None,
+                        &[],
+                        transform,
                         ffi::NEAREST as i32,
-                    );
-                    self.renderer.gl.TexParameteri(
-                        ffi::TEXTURE_2D,
-                        ffi::TEXTURE_MAG_FILTER,
                         ffi::NEAREST as i32,
-                    );
+                    )?;
 
-                    let program = self
-                        .renderer
-                        .output_program
-                        .as_ref()
-                        .expect("If we have a shadow buffer we have an output shader");
-                    self.renderer.gl.UseProgram(program.program);
-                    self.renderer.gl.Uniform1i(program.uniform_tex, 0);
-
-                    self.renderer
-                        .gl
-                        .EnableVertexAttribArray(program.attrib_vert as u32);
-                    self.renderer
-                        .gl
-                        .BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[2]);
-                    self.renderer.gl.VertexAttribPointer(
-                        program.attrib_vert as u32,
-                        2,
-                        ffi::FLOAT,
-                        ffi::FALSE,
-                        0,
-                        std::ptr::null(),
-                    );
-
-                    self.renderer.gl.DrawArrays(ffi::TRIANGLE_STRIP, 0, 4);
-
-                    self.renderer.gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
-                    self.renderer.gl.DisableVertexAttribArray(0);
                     self.renderer.gl.Disable(ffi::STENCIL_TEST);
                 }
             }
@@ -2450,6 +2353,7 @@ impl<'frame> GlesFrame<'frame> {
         Ok(())
     }
 
+    /*
     /// Overrides the default texture shader used, if none is specified.
     ///
     /// This affects calls to [`Frame::render_texture_at`] or [`Frame::render_texture_from_to`] as well as
@@ -2468,14 +2372,16 @@ impl<'frame> GlesFrame<'frame> {
     pub fn clear_tex_program_override(&mut self) {
         self.tex_program_override = None;
     }
+    */
 
     /// Draw a solid color to the current target at the specified destination with the specified color.
-    #[instrument(skip(self), parent = &self.span)]
+    #[instrument(skip(self, input_profile), parent = &self.span)]
     pub fn draw_solid(
         &mut self,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         color: [f32; 4],
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), GlesError> {
         if damage.is_empty() {
             return Ok(());
@@ -2506,27 +2412,30 @@ impl<'frame> GlesFrame<'frame> {
             })
             .collect::<Vec<_>>();
 
+        let transform = self
+            .cms
+            .input_transformation(
+                input_profile,
+                self.output_profile,
+                crate::backend::color::TransformType::InputToBlend,
+            )
+            .map_err(|err| GlesError::ColorTransformationError(Box::new(err)))?;
+        let state = gl_state_from_transform(&mut self.renderer, ShaderVariant::Solid, None, &transform)?;
+        let shader = &state.program;
+
         let gl = &self.renderer.gl;
         unsafe {
-            gl.UseProgram(self.renderer.solid_program.program);
-            gl.Uniform4f(
-                self.renderer.solid_program.uniform_color,
-                color[0],
-                color[1],
-                color[2],
-                color[3],
-            );
-            gl.UniformMatrix3fv(
-                self.renderer.solid_program.uniform_matrix,
-                1,
-                ffi::FALSE,
-                mat.as_ptr(),
-            );
+            gl.UseProgram(shader.program);
+            state.set_uniforms::<C::ColorTransformation>(&self.renderer);
 
-            gl.EnableVertexAttribArray(self.renderer.solid_program.attrib_vert as u32);
+            gl.Uniform3f(shader.uniform_locations.color, color[0], color[1], color[2]);
+            gl.Uniform1f(shader.uniform_locations.alpha, color[3]);
+            gl.UniformMatrix3fv(shader.uniform_locations.matrix, 1, ffi::FALSE, mat.as_ptr());
+
+            gl.EnableVertexAttribArray(shader.attrib_locations.vert as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[0]);
             gl.VertexAttribPointer(
-                self.renderer.solid_program.attrib_vert as u32,
+                shader.attrib_locations.vert as u32,
                 2,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -2548,7 +2457,7 @@ impl<'frame> GlesFrame<'frame> {
                 vertices
             };
 
-            gl.EnableVertexAttribArray(self.renderer.solid_program.attrib_position as u32);
+            gl.EnableVertexAttribArray(shader.attrib_locations.vert_position as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[1]);
             gl.BufferData(
                 ffi::ARRAY_BUFFER,
@@ -2558,7 +2467,7 @@ impl<'frame> GlesFrame<'frame> {
             );
 
             gl.VertexAttribPointer(
-                self.renderer.solid_program.attrib_position as u32,
+                shader.attrib_locations.vert_position as u32,
                 4,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -2568,9 +2477,9 @@ impl<'frame> GlesFrame<'frame> {
 
             let damage_len = damage.len() as i32;
             if self.renderer.capabilities.contains(&Capability::Instancing) {
-                gl.VertexAttribDivisor(self.renderer.solid_program.attrib_vert as u32, 0);
+                gl.VertexAttribDivisor(shader.attrib_locations.vert as u32, 0);
 
-                gl.VertexAttribDivisor(self.renderer.solid_program.attrib_position as u32, 1);
+                gl.VertexAttribDivisor(shader.attrib_locations.vert_position as u32, 1);
 
                 gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
             } else {
@@ -2581,7 +2490,7 @@ impl<'frame> GlesFrame<'frame> {
                     // Set damage pointer to the next 10 rectangles.
                     let offset = (i + 1) as usize * 60 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
                     gl.VertexAttribPointer(
-                        self.renderer.solid_program.attrib_position as u32,
+                        shader.attrib_locations.vert_position as u32,
                         4,
                         ffi::FLOAT,
                         ffi::FALSE,
@@ -2595,9 +2504,10 @@ impl<'frame> GlesFrame<'frame> {
                 gl.DrawArrays(ffi::TRIANGLES, 0, count);
             }
 
+            state.clear_uniforms(&self.renderer);
             gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
-            gl.DisableVertexAttribArray(self.renderer.solid_program.attrib_vert as u32);
-            gl.DisableVertexAttribArray(self.renderer.solid_program.attrib_position as u32);
+            gl.DisableVertexAttribArray(shader.attrib_locations.vert as u32);
+            gl.DisableVertexAttribArray(shader.attrib_locations.vert_position as u32);
         }
 
         Ok(())
@@ -2608,7 +2518,7 @@ impl<'frame> GlesFrame<'frame> {
     /// (Meaning `src_transform` should match the orientation of surface being rendered).
     ///
     /// Optionally allows a custom texture program and matching additional uniforms to be passed in.
-    #[instrument(skip(self), parent = &self.span)]
+    #[instrument(skip(self, input_profile), parent = &self.span)]
     #[allow(clippy::too_many_arguments)]
     pub fn render_texture_from_to(
         &mut self,
@@ -2618,8 +2528,9 @@ impl<'frame> GlesFrame<'frame> {
         damage: &[Rectangle<i32, Physical>],
         transform: Transform,
         alpha: f32,
-        program: Option<&GlesTexProgram>,
+        program: Option<&mut ShaderFactory>,
         additional_uniforms: &[Uniform<'_>],
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), GlesError> {
         let mut mat = Matrix3::<f32>::identity();
 
@@ -2702,6 +2613,7 @@ impl<'frame> GlesFrame<'frame> {
             alpha,
             program,
             additional_uniforms,
+            input_profile,
         )
     }
 
@@ -2719,8 +2631,6 @@ impl<'frame> GlesFrame<'frame> {
     /// Additionally the matrix can be used to crop the texture.
     ///
     /// Optionally allows a custom texture program and matching additional uniforms to be passed in.
-    #[instrument(level = "trace", skip(self), parent = &self.span)]
-    #[allow(clippy::too_many_arguments)]
     pub fn render_texture(
         &mut self,
         tex: &GlesTexture,
@@ -2728,63 +2638,95 @@ impl<'frame> GlesFrame<'frame> {
         mut matrix: Matrix3<f32>,
         instances: Option<&[ffi::types::GLfloat]>,
         alpha: f32,
-        program: Option<&GlesTexProgram>,
+        program: Option<&mut ShaderFactory>,
         additional_uniforms: &[Uniform<'_>],
+        input_profile: &<C as CMS>::ColorProfile,
+    ) -> Result<(), GlesError> {
+        let transform = self
+            .cms
+            .input_transformation(
+                input_profile,
+                self.output_profile,
+                crate::backend::color::TransformType::InputToBlend,
+            )
+            .map_err(|err| GlesError::ColorTransformationError(Box::new(err)))?;
+
+        let min_filter = match self.renderer.min_filter {
+            TextureFilter::Linear => ffi::LINEAR as i32,
+            TextureFilter::Nearest => ffi::NEAREST as i32,
+        };
+        let max_filter = match self.renderer.max_filter {
+            TextureFilter::Linear => ffi::LINEAR as i32,
+            TextureFilter::Nearest => ffi::NEAREST as i32,
+        };
+
+        //apply output transformation
+        matrix = self.current_projection * matrix;
+
+        self.render_texture_with_color_transform(
+            tex,
+            tex_matrix,
+            matrix,
+            instances,
+            alpha,
+            program,
+            additional_uniforms,
+            transform,
+            min_filter,
+            max_filter,
+        )
+    }
+
+    #[instrument(level = "trace", skip(self, transform), parent = &self.span)]
+    #[allow(clippy::too_many_arguments)]
+    fn render_texture_with_color_transform(
+        &mut self,
+        tex: &GlesTexture,
+        tex_matrix: Matrix3<f32>,
+        matrix: Matrix3<f32>,
+        instances: Option<&[ffi::types::GLfloat]>,
+        alpha: f32,
+        program: Option<&mut ShaderFactory>,
+        additional_uniforms: &[Uniform<'_>],
+        transform: <C as CMS>::ColorTransformation,
+        min_filter: i32,
+        max_filter: i32,
     ) -> Result<(), GlesError> {
         let damage = instances.unwrap_or(&[0.0, 0.0, 1.0, 1.0]);
         if damage.is_empty() {
             return Ok(());
         }
 
-        //apply output transformation
-        matrix = self.current_projection * matrix;
-
         let target = if tex.0.is_external {
             ffi::TEXTURE_EXTERNAL_OES
         } else {
             ffi::TEXTURE_2D
         };
-        let (tex_program, additional_uniforms) = program
-            .map(|p| (p, additional_uniforms))
-            .or_else(|| self.tex_program_override.as_ref().map(|(p, a)| (p, &**a)))
-            .unwrap_or((&self.renderer.tex_program, &[]));
-        let program_variant = tex_program.variant_for_format(
-            if !tex.0.is_external { tex.0.format } else { None },
-            tex.0.has_alpha,
-        );
-        let program = if self.renderer.debug_flags.is_empty() {
-            &program_variant.normal
-        } else {
-            &program_variant.debug
-        };
+
+        let variant = ShaderVariant::from_texture(&tex);
+        let state = gl_state_from_transform(&mut self.renderer, variant, program, &transform)?;
+        let shader = &state.program;
 
         // render
         let gl = &self.renderer.gl;
         unsafe {
+            gl.UseProgram(shader.program);
+            state.set_uniforms::<C::ColorTransformation>(&self.renderer);
+
             gl.ActiveTexture(ffi::TEXTURE0);
             gl.BindTexture(target, tex.0.texture);
-            gl.TexParameteri(
-                target,
-                ffi::TEXTURE_MIN_FILTER,
-                match self.renderer.min_filter {
-                    TextureFilter::Nearest => ffi::NEAREST as i32,
-                    TextureFilter::Linear => ffi::LINEAR as i32,
-                },
-            );
-            gl.TexParameteri(
-                target,
-                ffi::TEXTURE_MAG_FILTER,
-                match self.renderer.max_filter {
-                    TextureFilter::Nearest => ffi::NEAREST as i32,
-                    TextureFilter::Linear => ffi::LINEAR as i32,
-                },
-            );
-            gl.UseProgram(program.program);
+            gl.TexParameteri(target, ffi::TEXTURE_MIN_FILTER, min_filter);
+            gl.TexParameteri(target, ffi::TEXTURE_MAG_FILTER, max_filter);
 
-            gl.Uniform1i(program.uniform_tex, 0);
-            gl.UniformMatrix3fv(program.uniform_matrix, 1, ffi::FALSE, matrix.as_ptr());
-            gl.UniformMatrix3fv(program.uniform_tex_matrix, 1, ffi::FALSE, tex_matrix.as_ptr());
-            gl.Uniform1f(program.uniform_alpha, alpha);
+            gl.Uniform1i(shader.uniform_locations.tex, 0);
+            gl.UniformMatrix3fv(shader.uniform_locations.matrix, 1, ffi::FALSE, matrix.as_ptr());
+            gl.UniformMatrix3fv(
+                shader.uniform_locations.tex_matrix,
+                1,
+                ffi::FALSE,
+                tex_matrix.as_ptr(),
+            );
+            gl.Uniform1f(shader.uniform_locations.alpha, alpha);
 
             if !self.renderer.debug_flags.is_empty() {
                 let tint = if self.renderer.debug_flags.contains(DebugFlags::TINT) {
@@ -2792,21 +2734,22 @@ impl<'frame> GlesFrame<'frame> {
                 } else {
                     0.0f32
                 };
-                gl.Uniform1f(program_variant.uniform_tint, tint);
+                gl.Uniform1f(shader.uniform_locations.tint, tint);
             }
 
             for uniform in additional_uniforms {
-                let desc = program
+                let desc = shader
                     .additional_uniforms
-                    .get(&*uniform.name)
+                    .as_ref()
+                    .and_then(|uniforms| uniforms.get(&*uniform.name))
                     .ok_or_else(|| GlesError::UnknownUniform(uniform.name.clone().into_owned()))?;
                 uniform.value.set(gl, desc)?;
             }
 
-            gl.EnableVertexAttribArray(program.attrib_vert as u32);
+            gl.EnableVertexAttribArray(shader.attrib_locations.vert as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[0]);
             gl.VertexAttribPointer(
-                program.attrib_vert as u32,
+                shader.attrib_locations.vert as u32,
                 2,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -2829,7 +2772,7 @@ impl<'frame> GlesFrame<'frame> {
             };
 
             // vert_position
-            gl.EnableVertexAttribArray(program.attrib_vert_position as u32);
+            gl.EnableVertexAttribArray(shader.attrib_locations.vert_position as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[1]);
             gl.BufferData(
                 ffi::ARRAY_BUFFER,
@@ -2839,7 +2782,7 @@ impl<'frame> GlesFrame<'frame> {
             );
 
             gl.VertexAttribPointer(
-                program.attrib_vert_position as u32,
+                shader.attrib_locations.vert_position as u32,
                 4,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -2849,8 +2792,8 @@ impl<'frame> GlesFrame<'frame> {
 
             let damage_len = (damage.len() / 4) as i32;
             if self.renderer.capabilities.contains(&Capability::Instancing) {
-                gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
-                gl.VertexAttribDivisor(program.attrib_vert_position as u32, 1);
+                gl.VertexAttribDivisor(shader.attrib_locations.vert as u32, 0);
+                gl.VertexAttribDivisor(shader.attrib_locations.vert_position as u32, 1);
 
                 gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
             } else {
@@ -2861,7 +2804,7 @@ impl<'frame> GlesFrame<'frame> {
                     // Set damage pointer to the next 10 rectangles.
                     let offset = (i + 1) as usize * 6 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
                     gl.VertexAttribPointer(
-                        program.attrib_vert_position as u32,
+                        shader.attrib_locations.vert_position as u32,
                         4,
                         ffi::FLOAT,
                         ffi::FALSE,
@@ -2875,10 +2818,11 @@ impl<'frame> GlesFrame<'frame> {
                 gl.DrawArrays(ffi::TRIANGLES, 0, count);
             }
 
+            state.clear_uniforms(&self.renderer);
             gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
             gl.BindTexture(target, 0);
-            gl.DisableVertexAttribArray(program.attrib_vert as u32);
-            gl.DisableVertexAttribArray(program.attrib_vert_position as u32);
+            gl.DisableVertexAttribArray(shader.attrib_locations.vert as u32);
+            gl.DisableVertexAttribArray(shader.attrib_locations.vert_position as u32);
         }
 
         Ok(())
@@ -2887,11 +2831,12 @@ impl<'frame> GlesFrame<'frame> {
     /// Render a pixel shader into the current target at a given `dest`-region.
     pub fn render_pixel_shader_to(
         &mut self,
-        pixel_shader: &GlesPixelProgram,
+        pixel_shader: &mut ShaderFactory,
         dest: Rectangle<i32, Physical>,
         damage: Option<&[Rectangle<i32, Physical>]>,
         alpha: f32,
         additional_uniforms: &[Uniform<'_>],
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), GlesError> {
         let damage = damage
             .map(|damage| {
@@ -2937,21 +2882,43 @@ impl<'frame> GlesFrame<'frame> {
         //apply output transformation
         matrix = self.current_projection * matrix;
 
-        let program = if self.renderer.debug_flags.is_empty() {
-            &pixel_shader.0.normal
-        } else {
-            &pixel_shader.0.debug
-        };
+        let transform = self
+            .cms
+            .input_transformation(
+                input_profile,
+                self.output_profile,
+                crate::backend::color::TransformType::InputToBlend,
+            )
+            .map_err(|err| GlesError::ColorTransformationError(Box::new(err)))?;
+        let state = gl_state_from_transform(
+            &mut self.renderer,
+            ShaderVariant::Custom,
+            Some(pixel_shader),
+            &transform,
+        )?;
+        let shader = &state.program;
 
         // render
         let gl = &self.renderer.gl;
         unsafe {
-            gl.UseProgram(program.program);
+            gl.UseProgram(shader.program);
+            state.set_uniforms::<C::ColorTransformation>(&self.renderer);
 
-            gl.UniformMatrix3fv(program.uniform_matrix, 1, ffi::FALSE, matrix.as_ptr());
-            gl.UniformMatrix3fv(program.uniform_tex_matrix, 1, ffi::FALSE, tex_matrix.as_ptr());
-            gl.Uniform2f(program.uniform_size, dest.size.w as f32, dest.size.h as f32);
-            gl.Uniform1f(program.uniform_alpha, alpha);
+            gl.UniformMatrix3fv(shader.uniform_locations.matrix, 1, ffi::FALSE, matrix.as_ptr());
+            gl.UniformMatrix3fv(
+                shader.uniform_locations.tex_matrix,
+                1,
+                ffi::FALSE,
+                tex_matrix.as_ptr(),
+            );
+            /* TODO
+            gl.Uniform2f(
+                shader.uniform_locations.size,
+                dest.size.w as f32,
+                dest.size.h as f32,
+            );
+            */
+            gl.Uniform1f(shader.uniform_locations.alpha, alpha);
             let tint = if self.renderer.debug_flags.contains(DebugFlags::TINT) {
                 1.0f32
             } else {
@@ -2959,21 +2926,22 @@ impl<'frame> GlesFrame<'frame> {
             };
 
             if !self.renderer.debug_flags.is_empty() {
-                gl.Uniform1f(pixel_shader.0.uniform_tint, tint);
+                gl.Uniform1f(shader.uniform_locations.tint, tint);
             }
 
             for uniform in additional_uniforms {
-                let desc = program
+                let desc = shader
                     .additional_uniforms
-                    .get(&*uniform.name)
+                    .as_ref()
+                    .and_then(|uniforms| uniforms.get(&*uniform.name))
                     .ok_or_else(|| GlesError::UnknownUniform(uniform.name.clone().into_owned()))?;
                 uniform.value.set(gl, desc)?;
             }
 
-            gl.EnableVertexAttribArray(program.attrib_vert as u32);
+            gl.EnableVertexAttribArray(shader.attrib_locations.vert as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[0]);
             gl.VertexAttribPointer(
-                program.attrib_vert as u32,
+                shader.attrib_locations.vert as u32,
                 2,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -2996,7 +2964,7 @@ impl<'frame> GlesFrame<'frame> {
             };
 
             // vert_position
-            gl.EnableVertexAttribArray(program.attrib_position as u32);
+            gl.EnableVertexAttribArray(shader.attrib_locations.vert_position as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[1]);
             gl.BufferData(
                 ffi::ARRAY_BUFFER,
@@ -3006,7 +2974,7 @@ impl<'frame> GlesFrame<'frame> {
             );
 
             gl.VertexAttribPointer(
-                program.attrib_position as u32,
+                shader.attrib_locations.vert_position as u32,
                 4,
                 ffi::FLOAT,
                 ffi::FALSE,
@@ -3016,8 +2984,8 @@ impl<'frame> GlesFrame<'frame> {
 
             let damage_len = (damage.len() / 4) as i32;
             if self.renderer.capabilities.contains(&Capability::Instancing) {
-                gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
-                gl.VertexAttribDivisor(program.attrib_position as u32, 1);
+                gl.VertexAttribDivisor(shader.attrib_locations.vert as u32, 0);
+                gl.VertexAttribDivisor(shader.attrib_locations.vert_position as u32, 1);
 
                 gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
             } else {
@@ -3028,7 +2996,7 @@ impl<'frame> GlesFrame<'frame> {
                     // Set damage pointer to the next 10 rectangles.
                     let offset = (i + 1) as usize * 6 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
                     gl.VertexAttribPointer(
-                        program.attrib_position as u32,
+                        shader.attrib_locations.vert_position as u32,
                         4,
                         ffi::FLOAT,
                         ffi::FALSE,
@@ -3042,9 +3010,10 @@ impl<'frame> GlesFrame<'frame> {
                 gl.DrawArrays(ffi::TRIANGLES, 0, count);
             }
 
+            state.clear_uniforms(&self.renderer);
             gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
-            gl.DisableVertexAttribArray(program.attrib_vert as u32);
-            gl.DisableVertexAttribArray(program.attrib_position as u32);
+            gl.DisableVertexAttribArray(shader.attrib_locations.vert as u32);
+            gl.DisableVertexAttribArray(shader.attrib_locations.vert_position as u32);
         }
 
         Ok(())
@@ -3056,10 +3025,14 @@ impl<'frame> GlesFrame<'frame> {
     }
 }
 
-impl<'frame> Drop for GlesFrame<'frame> {
+impl<'frame, 'color, C> Drop for GlesFrame<'frame, 'color, C>
+where
+    C: CMS,
+    C::Error: Send + Sync + 'static,
+{
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
-            warn!("Ignored error finishing GlesFrame on drop: {}", err);
+            warn!("Ignored error finishing GlesFrame on drop: {:?}", err);
         }
     }
 }

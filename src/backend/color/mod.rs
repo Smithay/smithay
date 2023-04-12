@@ -1,7 +1,13 @@
 #![allow(missing_docs)]
 
+use crate::utils::user_data::UserDataMap;
+
 #[cfg(feature = "color_lcms")]
 pub mod lcms;
+
+// TODO, find a better spot for this?
+pub const _1D_POINTS: usize = 1024;
+pub const _3D_POINTS: usize = 33;
 
 pub trait Curve {
     fn fill_in(&self, lut: &mut [f32]);
@@ -24,6 +30,8 @@ pub trait Transformation {
     fn pre_curve(&self) -> Option<&[Self::Curve; 3]>;
     fn mapping(&self) -> Option<&Mapping<Self::MappingLUT>>;
     fn post_curve(&self) -> Option<&[Self::Curve; 3]>;
+
+    fn user_data(&self) -> &UserDataMap;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -14,9 +14,6 @@ pub use self::transform::*;
 
 use super::*;
 
-const _1D_POINTS: usize = 1024;
-const _3D_POINTS: usize = 33;
-
 #[derive(Debug)]
 pub struct LcmsContext {
     ctx: lcms2::ThreadContext,
@@ -126,6 +123,7 @@ impl CMS for LcmsContext {
                     ),
                     mapping: None,
                     post_curve: None,
+                    user_data: UserDataMap::new(),
                 },
             });
             self.transform_cache
