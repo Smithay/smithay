@@ -4,6 +4,7 @@ use crate::utils::user_data::UserDataMap;
 
 #[cfg(feature = "color_lcms")]
 pub mod lcms;
+pub mod null;
 
 // TODO, find a better spot for this?
 pub const _1D_POINTS: usize = 1024;
