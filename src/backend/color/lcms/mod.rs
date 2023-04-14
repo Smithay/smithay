@@ -92,39 +92,57 @@ impl CMS for LcmsContext {
         Ok(LcmsColorProfile(profile_ref.upgrade().unwrap()))
     }
 
-    fn transformation(
+    fn input_transformation(
         &mut self,
         input: &Self::ColorProfile,
         output: &Self::ColorProfile,
         type_: TransformType,
     ) -> Result<Self::ColorTransformation, Self::Error> {
         let search_params = SearchParams {
-            input: input.0.profile.profile_id(),
+            input: Some(input.0.profile.profile_id()),
             output: output.0.profile.profile_id(),
-            type_,
+            type_: type_.into(),
         };
 
         self.transform_cache.retain(|_, value| value.upgrade().is_some());
         let transform = if let Some(weak_transform) = self.transform_cache.get(&search_params) {
             weak_transform.upgrade().unwrap()
         } else {
-            let transform = Arc::new(match type_ {
-                TransformType::InputToBlend | TransformType::InputToOutput => {
-                    realize_chain(&self.ctx, input, output, type_)?
-                }
-                TransformType::BlendToOutput => LcmsColorTransformInternal {
-                    pre_curve: Some(
-                        output
-                            .0
-                            .output_curves(&self.ctx)
-                            .ok_or(Error::BadOutputProfile)?
-                            .output_inv_eotf_vcgt
-                            .clone(),
-                    ),
-                    mapping: None,
-                    post_curve: None,
-                    user_data: UserDataMap::new(),
-                },
+            let transform = Arc::new(realize_chain(&self.ctx, input, output, type_)?);
+            self.transform_cache
+                .insert(search_params, Arc::downgrade(&transform));
+            transform
+        };
+
+        Ok(LcmsColorTransform(transform))
+    }
+
+    fn output_transformation(
+        &mut self,
+        output: &Self::ColorProfile,
+    ) -> Result<Self::ColorTransformation, Self::Error> {
+        let search_params = SearchParams {
+            input: None,
+            output: output.0.profile.profile_id(),
+            type_: InternalTransformType::BlendToOutput,
+        };
+
+        self.transform_cache.retain(|_, value| value.upgrade().is_some());
+        let transform = if let Some(weak_transform) = self.transform_cache.get(&search_params) {
+            weak_transform.upgrade().unwrap()
+        } else {
+            let transform = Arc::new(LcmsColorTransformInternal {
+                pre_curve: Some(
+                    output
+                        .0
+                        .output_curves(&self.ctx)
+                        .ok_or(Error::BadOutputProfile)?
+                        .output_inv_eotf_vcgt
+                        .clone(),
+                ),
+                mapping: None,
+                post_curve: None,
+                user_data: UserDataMap::new(),
             });
             self.transform_cache
                 .insert(search_params, Arc::downgrade(&transform));
@@ -135,11 +153,27 @@ impl CMS for LcmsContext {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum InternalTransformType {
+    InputToBlend,
+    InputToOutput,
+    BlendToOutput,
+}
+
+impl From<TransformType> for InternalTransformType {
+    fn from(type_: TransformType) -> Self {
+        match type_ {
+            TransformType::InputToBlend => InternalTransformType::InputToBlend,
+            TransformType::InputToOutput => InternalTransformType::InputToOutput,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct SearchParams {
-    input: lcms2_sys::ProfileID,
+    input: Option<lcms2_sys::ProfileID>,
     output: lcms2_sys::ProfileID,
-    type_: TransformType,
+    type_: InternalTransformType,
 }
 
 impl Curve for lcms2::ToneCurve {

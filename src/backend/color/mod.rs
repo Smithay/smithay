@@ -31,27 +31,34 @@ pub trait Transformation {
     fn mapping(&self) -> Option<&Mapping<Self::MappingLUT>>;
     fn post_curve(&self) -> Option<&[Self::Curve; 3]>;
 
+    fn is_identity(&self) -> bool {
+        self.pre_curve().is_none() && self.mapping().is_none() && self.post_curve().is_none()
+    }
+
     fn user_data(&self) -> &UserDataMap;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TransformType {
     InputToBlend,
-    BlendToOutput,
     InputToOutput,
 }
 
 pub trait CMS {
-    type Error: std::error::Error;
-    type ColorProfile: std::hash::Hash;
+    type Error: std::error::Error + Send + Sync + 'static;
+    type ColorProfile: std::clone::Clone + std::cmp::PartialEq + std::hash::Hash;
     type ColorTransformation: Transformation;
 
     fn profile_srgb(&self) -> Self::ColorProfile;
     fn profile_from_icc(&mut self, icc: &[u8]) -> Result<Self::ColorProfile, Self::Error>;
-    fn transformation(
+    fn input_transformation(
         &mut self,
         input: &Self::ColorProfile,
         output: &Self::ColorProfile,
         type_: TransformType,
+    ) -> Result<Self::ColorTransformation, Self::Error>;
+    fn output_transformation(
+        &mut self,
+        output: &Self::ColorProfile,
     ) -> Result<Self::ColorTransformation, Self::Error>;
 }

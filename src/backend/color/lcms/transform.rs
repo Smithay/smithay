@@ -9,7 +9,7 @@ pub(super) struct LcmsColorTransformInternal {
     pub(super) pre_curve: Option<[lcms2::ToneCurve; 3]>,
     pub(super) post_curve: Option<[lcms2::ToneCurve; 3]>,
     pub(super) mapping: Option<Mapping<LcmsMappingLUT>>,
-    user_data: UserDataMap,
+    pub(super) user_data: UserDataMap,
 }
 
 impl fmt::Debug for LcmsColorTransform {
@@ -83,10 +83,6 @@ pub(super) fn realize_chain(
             } else {
                 None
             }
-        }
-        TransformType::BlendToOutput => {
-            // Handled by caller
-            None
         }
     };
     if let Some(profile) = linearization_profile.as_ref() {
