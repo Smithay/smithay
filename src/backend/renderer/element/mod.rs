@@ -25,6 +25,7 @@ use std::{collections::HashMap, sync::Arc};
 use wayland_server::{backend::ObjectId, Resource};
 
 use crate::{
+    backend::color::CMS,
     output::{Output, WeakOutput},
     utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform},
 };
@@ -108,6 +109,8 @@ pub enum UnderlyingStorage {
 pub enum RenderingReason {
     /// Element was selected for direct scan-out but failed
     ScanoutFailed,
+    /// Element was selected for direct scan-out but color transformation couldn't be offloaded
+    ColorTransformFailed,
 }
 
 /// Defines the presentation state of an element after rendering
@@ -352,15 +355,18 @@ pub trait Element {
 }
 
 /// A single render element
-pub trait RenderElement<R: Renderer>: Element {
+pub trait RenderElement<R: Renderer, C: CMS>: Element {
     /// Draw this element
-    fn draw<'a>(
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error>;
+
+    /// Get the color profile of this element
+    fn color_profile(&self) -> C::ColorProfile; // some elements might have the profile behind a mutex, so lets clone it
 
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
@@ -370,19 +376,21 @@ pub trait RenderElement<R: Renderer>: Element {
 }
 
 /// Types that can be converted into [`RenderElement`]s
-pub trait AsRenderElements<R>
+pub trait AsRenderElements<R, C>
 where
     R: Renderer,
+    C: CMS,
 {
     /// Type of the render element
-    type RenderElement: RenderElement<R>;
+    type RenderElement: RenderElement<R, C>;
     /// Returns render elements for a given position and scale
-    fn render_elements<C: From<Self::RenderElement>>(
+    fn render_elements<E: From<Self::RenderElement>>(
         &self,
         renderer: &mut R,
+        cms: &mut C,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
-    ) -> Vec<C>;
+    ) -> Vec<E>;
 }
 
 impl<E> Element for &E
@@ -426,18 +434,23 @@ where
     }
 }
 
-impl<R, E> RenderElement<R> for &E
+impl<R, E, C> RenderElement<R, C> for &E
 where
     R: Renderer,
-    E: RenderElement<R> + Element,
+    E: RenderElement<R, C> + Element,
+    C: CMS,
 {
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         (*self).underlying_storage(renderer)
     }
 
-    fn draw<'a>(
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
+        (*self).color_profile()
+    }
+
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -451,7 +464,7 @@ where
 macro_rules! render_elements_internal {
     (@enum $(#[$attr:meta])* $vis:vis $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
-        $vis enum $name {
+        $vis enum $name<CMS: $crate::backend::color::CMS> {
             $(
                 $(
                     #[$meta]
@@ -459,12 +472,12 @@ macro_rules! render_elements_internal {
                 $body($field)
             ),*,
             #[doc(hidden)]
-            _GenericCatcher(std::convert::Infallible),
+            _GenericCatcher((std::marker::PhantomData<CMS>, std::convert::Infallible)),
         }
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident $($custom:ident)+; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
-        $vis enum $name<$($custom),+> {
+        $vis enum $name<CMS: $crate::backend::color::CMS, $($custom),+> {
             $(
                 $(
                     #[$meta]
@@ -472,12 +485,12 @@ macro_rules! render_elements_internal {
                 $body($field)
             ),*,
             #[doc(hidden)]
-            _GenericCatcher(std::convert::Infallible),
+            _GenericCatcher((std::marker::PhantomData<CMS>, std::convert::Infallible)),
         }
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident $lt:lifetime; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
-        $vis enum $name<$lt> {
+        $vis enum $name<$lt, CMS: $crate::backend::color::CMS> {
             $(
                 $(
                     #[$meta]
@@ -485,12 +498,12 @@ macro_rules! render_elements_internal {
                 $body($field)
             ),*,
             #[doc(hidden)]
-            _GenericCatcher(std::convert::Infallible),
+            _GenericCatcher((std::marker::PhantomData<CMS>, std::convert::Infallible)),
         }
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident $lt:lifetime $($custom:ident)+; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
-        $vis enum $name<$lt, $($custom),+> {
+        $vis enum $name<$lt, CMS: $crate::backend::color::CMS, $($custom),+> {
             $(
                 $(
                     #[$meta]
@@ -498,13 +511,13 @@ macro_rules! render_elements_internal {
                 $body($field)
             ),*,
             #[doc(hidden)]
-            _GenericCatcher(std::convert::Infallible),
+            _GenericCatcher((std::marker::PhantomData<CMS>, std::convert::Infallible)),
         }
     };
 
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
-        $vis enum $name<$renderer>
+        $vis enum $name<$renderer, CMS: $crate::backend::color::CMS>
         where
             $renderer: $crate::backend::renderer::Renderer,
         {
@@ -515,16 +528,16 @@ macro_rules! render_elements_internal {
                 $body($field)
             ),*,
             #[doc(hidden)]
-            _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
+            _GenericCatcher((std::marker::PhantomData<($renderer, CMS)>, std::convert::Infallible)),
         }
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident, $($custom:ident),+>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
-        $vis enum $name<$renderer, $($custom),+>
+        $vis enum $name<$renderer, CMS: $crate::backend::color::CMS, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
             $(
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer, CMS>,
             )+
         {
             $(
@@ -534,12 +547,12 @@ macro_rules! render_elements_internal {
                 $body($field)
             ),*,
             #[doc(hidden)]
-            _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
+            _GenericCatcher((std::marker::PhantomData<($renderer, CMS)>, std::convert::Infallible)),
         }
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
-        $vis enum $name<$lt, $renderer>
+        $vis enum $name<$lt, $renderer, CMS: $crate::backend::color::CMS>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
@@ -551,17 +564,17 @@ macro_rules! render_elements_internal {
                 $body($field)
             ),*,
             #[doc(hidden)]
-            _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
+            _GenericCatcher((std::marker::PhantomData<($renderer, CMS)>, std::convert::Infallible)),
         }
     };
     (@enum $(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $($custom:ident),+>; $($(#[$meta:meta])* $body:ident=$field:ty$( as <$other_renderer:ty>)?),* $(,)?) => {
         $(#[$attr])*
-        $vis enum $name<$lt, $renderer, $($custom),+>
+        $vis enum $name<$lt, $renderer, CMS: $crate::backend::color::CMS, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $(
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer>,
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer, CMS>,
             )+
         {
             $(
@@ -571,20 +584,20 @@ macro_rules! render_elements_internal {
                 $body($field)
             ),*,
             #[doc(hidden)]
-            _GenericCatcher((std::marker::PhantomData<$renderer>, std::convert::Infallible)),
+            _GenericCatcher((std::marker::PhantomData<($renderer, CMS)>, std::convert::Infallible)),
         }
     };
     (@call $name:ident; $($x:ident),*) => {
         $crate::backend::renderer::element::Element::$name($($x),*)
     };
     (@call $renderer:ty; $name:ident; $($x:ident),*) => {
-        $crate::backend::renderer::element::RenderElement::<$renderer>::$name($($x),*)
+        $crate::backend::renderer::element::RenderElement::<$renderer, CMS>::$name($($x),*)
     };
     (@call $renderer:ty as $other:ty; draw; $x:ident, $renderer_ref:ident, $frame:ident, $($tail:ident),*) => {
-        $crate::backend::renderer::element::RenderElement::<$other>::draw($x, $renderer_ref.as_mut(), $frame.as_mut(), $($tail),*).map_err(Into::into)
+        $crate::backend::renderer::element::RenderElement::<$other, CMS>::draw($x, $renderer_ref.as_mut(), $frame.as_mut(), $($tail),*).map_err(Into::into)
     };
     (@call $renderer:ty as $other:ty; $name:ident; $($x:ident),*) => {
-        $crate::backend::renderer::element::RenderElement::<$other>::$name($($x),*)
+        $crate::backend::renderer::element::RenderElement::<$other, CMS>::$name($($x),*)
     };
     (@body $($(#[$meta:meta])* $body:ident=$field:ty),* $(,)?) => {
         fn id(&self) -> &$crate::backend::renderer::element::Id {
@@ -692,9 +705,9 @@ macro_rules! render_elements_internal {
         }
     };
     (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        fn draw<'frame>(
+        fn draw<'frame, 'color>(
             &self,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'frame>,
+            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'frame, 'color, CMS>,
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
@@ -733,11 +746,24 @@ macro_rules! render_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
+
+        fn color_profile(&self) -> CMS::ColorProfile {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; color_profile; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
     };
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        fn draw<'frame>(
+        fn draw<'frame, 'color>(
             &self,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'frame>,
+            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'frame, 'color, CMS>,
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
@@ -768,10 +794,24 @@ macro_rules! render_elements_internal {
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
+
+        fn color_profile(&self) -> CMS::ColorProfile
+        {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; color_profile; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
     };
     // Generic renderer
     (@impl $name:ident<$renderer:ident> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
-        impl<$renderer> $crate::backend::renderer::element::Element for $name<$renderer>
+        impl<$renderer, CMS: $crate::backend::color::CMS> $crate::backend::renderer::element::Element for $name<$renderer, CMS>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
@@ -779,17 +819,19 @@ macro_rules! render_elements_internal {
         {
             $crate::render_elements_internal!(@body $($tail)*);
         }
-        impl<$renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$renderer>
+        impl<$renderer, CMS: $crate::backend::color::CMS> $crate::backend::renderer::element::RenderElement<$renderer, CMS> for $name<$renderer, CMS>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            CMS: 'static,
+            CMS::ColorProfile: 'static,
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
     (@impl $name:ident<$lt:lifetime, $renderer:ident> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
-        impl<$lt, $renderer> $crate::backend::renderer::element::Element for $name<$lt, $renderer>
+        impl<$lt, $renderer, CMS: $crate::backend::color::CMS> $crate::backend::renderer::element::Element for $name<$lt, $renderer, CMS>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
@@ -797,33 +839,37 @@ macro_rules! render_elements_internal {
         {
             $crate::render_elements_internal!(@body $($tail)*);
         }
-        impl<$lt, $renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $renderer>
+        impl<$lt, $renderer, CMS: $crate::backend::color::CMS> $crate::backend::renderer::element::RenderElement<$renderer, CMS> for $name<$lt, $renderer, CMS>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            CMS: 'static,
+            CMS::ColorProfile: 'static,
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
     };
     (@impl $name:ident<$renderer:ident, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
-        impl<$renderer, $($custom),+> $crate::backend::renderer::element::Element for $name<$renderer, $($custom),+>
+        impl<$renderer, CMS: $crate::backend::color::CMS, $($custom),+> $crate::backend::renderer::element::Element for $name<$renderer, CMS, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $(
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer, CMS> + $crate::backend::renderer::element::Element,
             )+
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@body $($tail)*);
         }
-        impl<$renderer, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$renderer, $($custom),+>
+        impl<$renderer, CMS: $crate::backend::color::CMS, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer, CMS> for $name<$renderer, CMS, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            CMS: 'static,
+            CMS::ColorProfile: 'static,
             $(
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer, CMS> + $crate::backend::renderer::element::Element,
             )+
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
@@ -831,23 +877,25 @@ macro_rules! render_elements_internal {
         }
     };
     (@impl $name:ident<$lt:lifetime, $renderer:ident, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
-        impl<$lt, $renderer, $($custom),+> $crate::backend::renderer::element::Element for $name<$lt, $renderer, $($custom),+>
+        impl<$lt, $renderer, CMS: $crate::backend::color::CMS, $($custom),+> $crate::backend::renderer::element::Element for $name<$lt, $renderer, CMS, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
             $(
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer, CMS> + $crate::backend::renderer::element::Element,
             )+
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@body $($tail)*);
         }
-        impl<$lt, $renderer, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $renderer, $($custom),+>
+        impl<$lt, $renderer, CMS: $crate::backend::color::CMS, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer, CMS> for $name<$lt, $renderer, CMS, $($custom),+>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            CMS: 'static,
+            CMS::ColorProfile: 'static,
             $(
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
+                $custom: $crate::backend::renderer::element::RenderElement<$renderer, CMS> + $crate::backend::renderer::element::Element,
             )+
             $($($target: $bound $(+ $additional_bound)*),+)?
         {
@@ -855,14 +903,16 @@ macro_rules! render_elements_internal {
         }
     };
     (@impl $name:ident; $renderer:ident; $($tail:tt)*) => {
-        impl $crate::backend::renderer::element::Element for $name
+        impl<CMS: $crate::backend::color::CMS> $crate::backend::renderer::element::Element for $name<CMS>
         {
             $crate::render_elements_internal!(@body $($tail)*);
         }
-        impl<$renderer> $crate::backend::renderer::element::RenderElement<$renderer> for $name
+        impl<$renderer, CMS: $crate::backend::color::CMS> $crate::backend::renderer::element::RenderElement<$renderer, CMS> for $name<CMS>
         where
             $renderer: $crate::backend::renderer::Renderer,
             <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            CMS: 'static,
+            CMS::ColorProfile: 'static,
         {
             $crate::render_elements_internal!(@draw <$renderer>; $($tail)*);
         }
@@ -870,17 +920,20 @@ macro_rules! render_elements_internal {
 
     // Specific renderer
     (@impl $name:ident<=$renderer:ty>; $($tail:tt)*) => {
-        impl $crate::backend::renderer::element::Element for $name
+        impl<CMS: $crate::backend::color::CMS> $crate::backend::renderer::element::Element for $name<CMS>
         {
             $crate::render_elements_internal!(@body $($tail)*);
         }
-        impl $crate::backend::renderer::element::RenderElement<$renderer> for $name
+        impl<CMS: $crate::backend::color::CMS> $crate::backend::renderer::element::RenderElement<$renderer, CMS> for $name<CMS>
+        where
+            CMS: 'static,
+            CMS::ColorProfile: 'static,
         {
             $crate::render_elements_internal!(@draw $renderer; $($tail)*);
         }
     };
     (@impl $name:ident<=$renderer:ty, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
-        impl<$($custom),+> $crate::backend::renderer::element::Element for $name<$($custom),+>
+        impl<CMS: $crate::backend::color::CMS, $($custom),+> $crate::backend::renderer::element::Element for $name<CMS, $($custom),+>
         where
         $(
             $custom: $crate::backend::renderer::element::Element,
@@ -889,10 +942,12 @@ macro_rules! render_elements_internal {
         {
             $crate::render_elements_internal!(@body $($tail)*);
         }
-        impl<$($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$($custom),+>
+        impl<CMS: $crate::backend::color::CMS, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer, CMS> for $name<CMS, $($custom),+>
         where
+            CMS: 'static,
+            CMS::ColorProfile: 'static,
         $(
-            $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
+            $custom: $crate::backend::renderer::element::RenderElement<$renderer, CMS> + $crate::backend::renderer::element::Element,
         )+
         $($($target: $bound $(+ $additional_bound)*),+)?
         {
@@ -901,18 +956,21 @@ macro_rules! render_elements_internal {
     };
 
     (@impl $name:ident<=$renderer:ty, $lt:lifetime>; $($tail:tt)*) => {
-        impl<$lt> $crate::backend::renderer::element::Element for $name<$lt>
+        impl<$lt, CMS: $crate::backend::color::CMS> $crate::backend::renderer::element::Element for $name<$lt, CMS>
         {
             $crate::render_elements_internal!(@body $($tail)*);
         }
-        impl<$lt> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt>
+        impl<$lt, CMS: $crate::backend::color::CMS> $crate::backend::renderer::element::RenderElement<$renderer, CMS> for $name<$lt, CMS>
+        where
+            CMS: 'static,
+            CMS::ColorProfile: 'static,
         {
             $crate::render_elements_internal!(@draw $renderer; $($tail)*);
         }
     };
 
     (@impl $name:ident<=$renderer:ty, $lt:lifetime, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
-        impl<$lt, $($custom),+> $crate::backend::renderer::element::Element for $name<$lt, $($custom),+>
+        impl<$lt, CMS: $crate::backend::color::CMS, $($custom),+> $crate::backend::renderer::element::Element for $name<$lt, CMS, $($custom),+>
         where
         $(
             $custom: $crate::backend::renderer::element::Element,
@@ -921,99 +979,41 @@ macro_rules! render_elements_internal {
         {
             $crate::render_elements_internal!(@body $($tail)*);
         }
-        impl<$lt, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer> for $name<$lt, $($custom),+>
+        impl<$lt, CMS: $crate::backend::color::CMS, $($custom),+> $crate::backend::renderer::element::RenderElement<$renderer, CMS> for $name<$lt, CMS, $($custom),+>
         where
+            CMS: 'static,
+            CMS::ColorProfile: 'static,
         $(
-            $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
+            $custom: $crate::backend::renderer::element::RenderElement<$renderer, CMS> + $crate::backend::renderer::element::Element,
         )+
         $($($target: $bound $(+ $additional_bound)*),+)?
         {
             $crate::render_elements_internal!(@draw $renderer; $($tail)*);
         }
     };
-
-
-    (@from $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        $(
-            $(
-                #[$meta]
-            )*
-            impl<$renderer> From<$field> for $name<$renderer>
-            where
-                $renderer: $crate::backend::renderer::Renderer,
-                $(
-                    $($renderer: std::convert::AsMut<$other_renderer>,)?
-                )*
-            {
-                fn from(field: $field) -> $name<$renderer> {
-                    $name::$body(field)
-                }
-            }
-        )*
-    };
-    (@from $name:ident<$renderer:ident, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        $(
-            $(
-                #[$meta]
-            )*
-            impl<$renderer, $custom> From<$field> for $name<$renderer, $custom>
-            where
-                $renderer: $crate::backend::renderer::Renderer,
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
-                $(
-                    $($renderer: std::convert::AsMut<$other_renderer>,)?
-                )*
-            {
-                fn from(field: $field) -> $name<$renderer, $custom> {
-                    $name::$body(field)
-                }
-            }
-        )*
-    };
-    (@from $name:ident<$lt:lifetime, $renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        $(
-            $(
-                #[$meta]
-            )*
-            impl<$lt, $renderer> From<$field> for $name<$lt, $renderer>
-            where
-                $renderer: $crate::backend::renderer::Renderer,
-                $(
-                    $($renderer: std::convert::AsMut<$other_renderer>,)?
-                )*
-            {
-                fn from(field: $field) -> $name<$lt, $renderer> {
-                    $name::$body(field)
-                }
-            }
-        )*
-    };
-    (@from $name:ident<$lt:lifetime, $renderer:ident, $custom:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        $(
-            $(
-                #[$meta]
-            )*
-            impl<$lt, $renderer, $custom> From<$field> for $name<$lt, $renderer, $custom>
-            where
-                $renderer: $crate::backend::renderer::Renderer,
-                $custom: $crate::backend::renderer::element::RenderElement<$renderer> + $crate::backend::renderer::element::Element,
-                $(
-                    $($renderer: std::convert::AsMut<$other_renderer>,)?
-                )*
-            {
-                fn from(field: $field) -> $name<$lt, $renderer, $custom> {
-                    $name::$body(field)
-                }
-            }
-        )*
-    };
     (@from $name:ident; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
         $(
             $(
                 #[$meta]
             )*
-            impl From<$field> for $name {
-                fn from(field: $field) -> $name {
+            impl<CMS: $crate::backend::color::CMS> From<$field> for $name<CMS> {
+                fn from(field: $field) -> $name<CMS> {
+                    $name::$body(field)
+                }
+            }
+        )*
+    };
+    (@from $name:ident<$renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+        $(
+            $(
+                #[$meta]
+            )*
+            impl<$renderer, CMS: $crate::backend::color::CMS> From<$field> for $name<$renderer, CMS>
+            where
+                $renderer: $crate::backend::renderer::Renderer,
+                <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            {
+                fn from(field: $field) -> $name<$renderer, CMS> {
                     $name::$body(field)
                 }
             }
@@ -1024,8 +1024,24 @@ macro_rules! render_elements_internal {
             $(
                 #[$meta]
             )*
-            impl<$lt> From<$field> for $name<$lt> {
-                fn from(field: $field) -> $name<$lt> {
+            impl<$lt, CMS: $crate::backend::color::CMS> From<$field> for $name<$lt, CMS> {
+                fn from(field: $field) -> $name<$lt, CMS> {
+                    $name::$body(field)
+                }
+            }
+        )*
+    };
+    (@from $name:ident<$lt:lifetime, $renderer:ident>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
+        $(
+            $(
+                #[$meta]
+            )*
+            impl<$lt, $renderer, CMS: $crate::backend::color::CMS> From<$field> for $name<$lt, $renderer, CMS>
+            where
+                $renderer: $crate::backend::renderer::Renderer,
+                <$renderer as $crate::backend::renderer::Renderer>::TextureId: 'static,
+            {
+                fn from(field: $field) -> $name<$lt, $renderer, CMS> {
                     $name::$body(field)
                 }
             }
@@ -1269,7 +1285,6 @@ macro_rules! render_elements {
     ($(#[$attr:meta])* $vis:vis $name:ident<=$lt:lifetime, $renderer:ty, $custom:ident> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name $lt $custom; $($tail)*);
         $crate::render_elements_internal!(@impl $name<=$renderer, $lt, $custom> $(where $($target: $bound $(+ $additional_bound)*),+)?; $($tail)*);
-        $crate::render_elements_internal!(@from $name<$lt, $custom>; $($tail)*);
     };
     ($(#[$attr:meta])* $vis:vis $name:ident<=$lt:lifetime, $renderer:ty, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name $lt $($custom)+; $($tail)*);
@@ -1283,7 +1298,6 @@ macro_rules! render_elements {
     ($(#[$attr:meta])* $vis:vis $name:ident<=$renderer:ty, $custom:ident> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name $custom; $($tail)*);
         $crate::render_elements_internal!(@impl $name<=$renderer, $custom> $(where $($target: $bound $(+ $additional_bound)*),+)?; $($tail)*);
-        $crate::render_elements_internal!(@from $name<$custom>; $($tail)*);
     };
     ($(#[$attr:meta])* $vis:vis $name:ident<=$renderer:ty, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name $custom1 $custom2; $($tail)*);
@@ -1298,7 +1312,6 @@ macro_rules! render_elements {
     ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $custom:ident> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $renderer, $custom>; $($tail)*);
         $crate::render_elements_internal!(@impl $name<$lt, $renderer, $custom> $(where $($target: $bound $(+ $additional_bound)*),+)?; $($tail)*);
-        $crate::render_elements_internal!(@from $name<$lt, $renderer, $custom>; $($tail)*);
     };
     ($(#[$attr:meta])* $vis:vis $name:ident<$lt:lifetime, $renderer:ident, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$lt, $renderer, $($custom),+>; $($tail)*);
@@ -1312,7 +1325,6 @@ macro_rules! render_elements {
     ($(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident, $custom:ident> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$renderer, $custom>; $($tail)*);
         $crate::render_elements_internal!(@impl $name<$renderer, $custom> $(where $($target: $bound $(+ $additional_bound)*),+)?; $($tail)*);
-        $crate::render_elements_internal!(@from $name<$renderer, $custom>; $($tail)*);
     };
     ($(#[$attr:meta])* $vis:vis $name:ident<$renderer:ident, $($custom:ident),+> $(where $($target:ty: $bound:tt $(+ $additional_bound:tt)*),+)?; $($tail:tt)*) => {
         $crate::render_elements_internal!(@enum $(#[$attr])* $vis $name<$renderer, $($custom),+>; $($tail)*);
@@ -1335,17 +1347,17 @@ pub use render_elements;
 /// New-type wrapper for wrapping owned elements
 /// in render_elements!
 #[derive(Debug)]
-pub struct Wrap<C>(C);
+pub struct Wrap<E>(E);
 
-impl<C> From<C> for Wrap<C> {
-    fn from(from: C) -> Self {
+impl<E> From<E> for Wrap<E> {
+    fn from(from: E) -> Self {
         Self(from)
     }
 }
 
-impl<C> Element for Wrap<C>
+impl<E> Element for Wrap<E>
 where
-    C: Element,
+    E: Element,
 {
     fn id(&self) -> &Id {
         self.0.id()
@@ -1384,14 +1396,15 @@ where
     }
 }
 
-impl<R, C> RenderElement<R> for Wrap<C>
+impl<R, E, C> RenderElement<R, C> for Wrap<E>
 where
     R: Renderer,
-    C: RenderElement<R>,
+    E: RenderElement<R, C>,
+    C: CMS,
 {
-    fn draw<'a>(
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -1401,6 +1414,10 @@ where
 
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.0.underlying_storage(renderer)
+    }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
+        self.0.color_profile()
     }
 }
 

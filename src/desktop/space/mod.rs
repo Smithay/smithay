@@ -1,22 +1,25 @@
 //! This module contains the [`Space`] helper class as well has related
 //! rendering helpers to add custom elements or different clients to a space.
 
-use crate::{
-    backend::renderer::{
-        damage::{
-            Error as OutputDamageTrackerError, OutputDamageTracker, OutputDamageTrackerMode, OutputNoMode,
-        },
-        element::{AsRenderElements, RenderElement, RenderElementStates, Wrap},
-        Renderer, Texture,
-    },
-    output::Output,
-    utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform},
-};
 #[cfg(feature = "wayland_frontend")]
 use crate::{
     backend::renderer::{element::surface::WaylandSurfaceRenderElement, ImportAll},
     desktop::{layer_map_for_output, LayerSurface, WindowSurfaceType},
     wayland::shell::wlr_layer::Layer,
+};
+use crate::{
+    backend::{
+        color::CMS,
+        renderer::{
+            damage::{
+                Error as OutputDamageTrackerError, OutputDamageTracker, OutputDamageTrackerMode, OutputNoMode,
+            },
+            element::{AsRenderElements, RenderElement, RenderElementStates, Wrap},
+            Renderer, Texture,
+        },
+    },
+    output::Output,
+    utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform},
 };
 use std::{collections::HashMap, fmt};
 use tracing::{debug, debug_span, instrument};
@@ -375,17 +378,18 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// *Note:* Because this is not rendering a specific output,
     /// this will not contain layer surfaces.
     /// Use [`Space::render_elements_for_output`], if you care about this.
-    #[instrument(level = "trace", skip(self, renderer, scale), parent = &self.span)]
-    pub fn render_elements_for_region<'a, R: Renderer, S: Into<Scale<f64>>>(
+    #[instrument(level = "trace", skip(self, renderer, cms, scale), parent = &self.span)]
+    pub fn render_elements_for_region<'a, R: Renderer, C: CMS, S: Into<Scale<f64>>>(
         &'a self,
         renderer: &mut R,
+        cms: &mut C,
         region: &Rectangle<i32, Logical>,
         scale: S,
-    ) -> Vec<<E as AsRenderElements<R>>::RenderElement>
+    ) -> Vec<<E as AsRenderElements<R, C>>::RenderElement>
     where
         <R as Renderer>::TextureId: Texture + 'static,
-        E: AsRenderElements<R>,
-        <E as AsRenderElements<R>>::RenderElement: 'a,
+        E: AsRenderElements<R, C>,
+        <E as AsRenderElements<R, C>>::RenderElement: 'a,
     {
         let scale = scale.into();
 
@@ -399,8 +403,9 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .flat_map(|e| {
                 let location = e.render_location() - region.loc;
                 e.element
-                    .render_elements::<<E as AsRenderElements<R>>::RenderElement>(
+                    .render_elements::<<E as AsRenderElements<R, C>>::RenderElement>(
                         renderer,
+                        cms,
                         location.to_physical_precise_round(scale),
                         scale,
                     )
@@ -409,22 +414,25 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     }
 
     /// Retrieve the render elements for an output
-    #[instrument(level = "trace", skip(self, renderer), parent = &self.span)]
+    #[instrument(level = "trace", skip(self, renderer, cms), parent = &self.span)]
     pub fn render_elements_for_output<
         'a,
         #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
         #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
+        C: CMS + 'static,
     >(
         &'a self,
         renderer: &mut R,
+        cms: &mut C,
         output: &Output,
-    ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputError>
+    ) -> Result<Vec<SpaceRenderElements<R, C, <E as AsRenderElements<R, C>>::RenderElement>>, OutputError>
     where
         <R as Renderer>::TextureId: Texture + 'static,
-        E: AsRenderElements<R>,
-        <E as AsRenderElements<R>>::RenderElement: 'a,
-        SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
-            From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
+        <C as CMS>::ColorProfile: 'static,
+        E: AsRenderElements<R, C>,
+        <E as AsRenderElements<R, C>>::RenderElement: 'a,
+        SpaceRenderElements<R, C, <E as AsRenderElements<R, C>>::RenderElement>:
+            From<Wrap<<E as AsRenderElements<R, C>>::RenderElement>>,
     {
         if !self.outputs.contains(output) {
             return Err(OutputError::Unmapped);
@@ -456,8 +464,9 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             })
             .flat_map(|e| {
                 let location = e.render_location() - output_geo.loc;
-                e.render_elements::<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>(
+                e.render_elements::<SpaceRenderElements<R, C, <E as AsRenderElements<R, C>>::RenderElement>>(
                     renderer,
+                    cms,
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
                 )
@@ -527,11 +536,35 @@ crate::backend::renderer::element::render_elements! {
     Element=Wrap<E>,
 }
 
+#[cfg(feature = "wayland_frontend")]
+impl<R, C, E> From<WaylandSurfaceRenderElement<R>> for SpaceRenderElements<R, C, E>
+where
+    R: Renderer,
+    C: CMS,
+    E: RenderElement<R, C>,
+{
+    fn from(elem: WaylandSurfaceRenderElement<R>) -> Self {
+        SpaceRenderElements::Surface(elem)
+    }
+}
+
+impl<R, C, E> From<Wrap<E>> for SpaceRenderElements<R, C, E>
+where
+    R: Renderer,
+    C: CMS,
+    E: RenderElement<R, C>,
+{
+    fn from(elem: Wrap<E>) -> Self {
+        SpaceRenderElements::Element(elem)
+    }
+}
+
 impl<
         #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
         #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
-        E: RenderElement<R> + std::fmt::Debug,
-    > std::fmt::Debug for SpaceRenderElements<R, E>
+        C: CMS,
+        E: RenderElement<R, C> + std::fmt::Debug,
+    > std::fmt::Debug for SpaceRenderElements<R, C, E>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -547,13 +580,13 @@ impl<
 crate::backend::renderer::element::render_elements! {
     OutputRenderElements<'a, R, E, C> where
         R: ImportAll;
-    Space=SpaceRenderElements<R, E>,
+    Space=SpaceRenderElements<R, CMS, E>,
     Custom=&'a C,
 }
 #[cfg(not(feature = "wayland_frontend"))]
 crate::backend::renderer::element::render_elements! {
     OutputRenderElements<'a, R, E, C>;
-    Space=SpaceRenderElements<R, E>,
+    Space=SpaceRenderElements<R, CMS, E>,
     Custom=&'a C,
 }
 
@@ -565,23 +598,26 @@ crate::backend::renderer::element::render_elements! {
 /// *Note*: If the `wayland_frontend`-feature is enabled
 /// this will include layer-shell surfaces added to this
 /// outputs [`LayerMap`].
-#[instrument(level = "trace", skip(spaces, renderer))]
+#[instrument(level = "trace", skip(spaces, renderer, cms))]
 pub fn space_render_elements<
     'a,
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
     #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
-    E: SpaceElement + PartialEq + AsRenderElements<R> + 'a,
+    C: CMS,
+    E: SpaceElement + PartialEq + AsRenderElements<R, C> + 'a,
     S: IntoIterator<Item = &'a Space<E>>,
 >(
     renderer: &mut R,
+    cms: &mut C,
     spaces: S,
     output: &Output,
-) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
+) -> Result<Vec<SpaceRenderElements<R, C, <E as AsRenderElements<R, C>>::RenderElement>>, OutputNoMode>
 where
     <R as Renderer>::TextureId: Texture + 'static,
-    <E as AsRenderElements<R>>::RenderElement: 'a,
-    SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
-        From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
+    <E as AsRenderElements<R, C>>::RenderElement: 'a,
+    <C as CMS>::ColorProfile: 'static,
+    SpaceRenderElements<R, C, <E as AsRenderElements<R, C>>::RenderElement>:
+        From<Wrap<<E as AsRenderElements<R, C>>::RenderElement>>,
 {
     let mut render_elements = Vec::new();
     let output_scale = output.current_scale().fractional_scale();
@@ -600,9 +636,10 @@ where
                 .into_iter()
                 .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.loc, surface)))
                 .flat_map(|(loc, surface)| {
-                    AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
+                    AsRenderElements::<R, C>::render_elements::<WaylandSurfaceRenderElement<R>>(
                         surface,
                         renderer,
+                        cms,
                         loc.to_physical_precise_round(output_scale),
                         Scale::from(output_scale),
                     )
@@ -619,7 +656,7 @@ where
         if let Some(output_geo) = space.output_geometry(output) {
             render_elements.extend(
                 space
-                    .render_elements_for_region(renderer, &output_geo, output_scale)
+                    .render_elements_for_region(renderer, cms, &output_geo, output_scale)
                     .into_iter()
                     .map(|e| SpaceRenderElements::Element(Wrap::from(e))),
             );
@@ -632,9 +669,10 @@ where
             .into_iter()
             .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.loc, surface)))
             .flat_map(|(loc, surface)| {
-                AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
+                AsRenderElements::<R, C>::render_elements::<WaylandSurfaceRenderElement<R>>(
                     surface,
                     renderer,
+                    cms,
                     loc.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
                 )
@@ -655,35 +693,49 @@ pub fn render_output<
     'a,
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
     #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
-    C: RenderElement<R>,
-    E: SpaceElement + PartialEq + AsRenderElements<R> + 'a,
+    C: CMS + 'static,
+    U: RenderElement<R, C>,
+    E: SpaceElement + PartialEq + AsRenderElements<R, C> + 'a,
     S: IntoIterator<Item = &'a Space<E>>,
 >(
     output: &Output,
     renderer: &mut R,
+    cms: &mut C,
     age: usize,
     spaces: S,
-    custom_elements: &'a [C],
+    custom_elements: &'a [U],
     damage_tracker: &mut OutputDamageTracker,
     clear_color: [f32; 4],
+    clear_profile: &C::ColorProfile,
+    output_profile: &C::ColorProfile,
 ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputDamageTrackerError<R>>
 where
     <R as Renderer>::TextureId: Texture + 'static,
-    <E as AsRenderElements<R>>::RenderElement: 'a,
-    SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
-        From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
+    <C as CMS>::ColorProfile: 'static,
+    <E as AsRenderElements<R, C>>::RenderElement: 'a,
+    SpaceRenderElements<R, C, <E as AsRenderElements<R, C>>::RenderElement>:
+        From<Wrap<<E as AsRenderElements<R, C>>::RenderElement>>,
 {
     if let OutputDamageTrackerMode::Auto(renderer_output) = damage_tracker.mode() {
         assert!(renderer_output == output);
     }
 
-    let space_render_elements = space_render_elements(renderer, spaces, output)?;
+    let space_render_elements = space_render_elements(renderer, cms, spaces, output)?;
 
-    let mut render_elements: Vec<OutputRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement, C>> =
-        Vec::with_capacity(custom_elements.len() + space_render_elements.len());
+    let mut render_elements: Vec<
+        OutputRenderElements<'a, R, C, <E as AsRenderElements<R, C>>::RenderElement, U>,
+    > = Vec::with_capacity(custom_elements.len() + space_render_elements.len());
 
     render_elements.extend(custom_elements.iter().map(OutputRenderElements::Custom));
     render_elements.extend(space_render_elements.into_iter().map(OutputRenderElements::Space));
 
-    damage_tracker.render_output(renderer, age, &render_elements, clear_color)
+    damage_tracker.render_output(
+        renderer,
+        cms,
+        age,
+        &render_elements,
+        clear_color,
+        clear_profile,
+        output_profile,
+    )
 }

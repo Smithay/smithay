@@ -1,9 +1,12 @@
 //! Utilities and helpers around the `Element` trait.
 
 use crate::{
-    backend::renderer::{
-        element::{AsRenderElements, Element, Id, RenderElement, UnderlyingStorage},
-        Renderer,
+    backend::{
+        color::CMS,
+        renderer::{
+            element::{AsRenderElements, Element, Id, RenderElement, UnderlyingStorage},
+            Renderer,
+        },
     },
     utils::{Buffer, Physical, Point, Rectangle, Scale},
 };
@@ -86,10 +89,10 @@ impl<E: Element> Element for RescaleRenderElement<E> {
     }
 }
 
-impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement<E> {
-    fn draw<'a>(
+impl<R: Renderer, C: CMS, E: RenderElement<R, C>> RenderElement<R, C> for RescaleRenderElement<E> {
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
@@ -99,6 +102,10 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement
 
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.element.underlying_storage(renderer)
+    }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
+        self.element.color_profile()
     }
 }
 
@@ -260,10 +267,10 @@ impl<E: Element> Element for CropRenderElement<E> {
     }
 }
 
-impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E> {
-    fn draw<'a>(
+impl<R: Renderer, C: CMS, E: RenderElement<R, C>> RenderElement<R, C> for CropRenderElement<E> {
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
@@ -273,6 +280,10 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E>
 
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.element.underlying_storage(renderer)
+    }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
+        self.element.color_profile()
     }
 }
 
@@ -352,10 +363,10 @@ impl<E: Element> Element for RelocateRenderElement<E> {
     }
 }
 
-impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElement<E> {
-    fn draw<'a>(
+impl<R: Renderer, C: CMS, E: RenderElement<R, C>> RenderElement<R, C> for RelocateRenderElement<E> {
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
@@ -365,6 +376,10 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElemen
 
     fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.element.underlying_storage(renderer)
+    }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
+        self.element.color_profile()
     }
 }
 
@@ -421,29 +436,31 @@ bitflags::bitflags! {
 ///
 /// See [`constrain_render_elements`] for more information
 #[allow(clippy::too_many_arguments)]
-pub fn constrain_as_render_elements<R, E, C>(
+pub fn constrain_as_render_elements<R, C, E, I>(
     element: &E,
     renderer: &mut R,
+    cms: &mut C,
     location: impl Into<Point<i32, Physical>>,
     constrain: Rectangle<i32, Physical>,
     reference: Rectangle<i32, Physical>,
     behavior: ConstrainScaleBehavior,
     align: ConstrainAlign,
     output_scale: impl Into<Scale<f64>>,
-) -> impl Iterator<Item = C>
+) -> impl Iterator<Item = I>
 where
     R: Renderer,
-    E: AsRenderElements<R>,
-    C: From<
+    C: CMS,
+    E: AsRenderElements<R, C>,
+    I: From<
         CropRenderElement<
-            RelocateRenderElement<RescaleRenderElement<<E as AsRenderElements<R>>::RenderElement>>,
+            RelocateRenderElement<RescaleRenderElement<<E as AsRenderElements<R, C>>::RenderElement>>,
         >,
     >,
 {
     let location = location.into();
     let output_scale = output_scale.into();
-    let elements: Vec<<E as AsRenderElements<R>>::RenderElement> =
-        AsRenderElements::<R>::render_elements(element, renderer, location, output_scale);
+    let elements: Vec<<E as AsRenderElements<R, C>>::RenderElement> =
+        AsRenderElements::<R, C>::render_elements(element, renderer, cms, location, output_scale);
     constrain_render_elements(
         elements,
         location,
@@ -453,7 +470,7 @@ where
         align,
         output_scale,
     )
-    .map(C::from)
+    .map(I::from)
 }
 
 /// Constrain render elements on a specific location with a specific size

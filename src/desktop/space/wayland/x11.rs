@@ -2,9 +2,12 @@ use wayland_server::protocol::wl_surface::WlSurface;
 
 use super::*;
 use crate::{
-    backend::renderer::{
-        element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-        ImportAll, Renderer,
+    backend::{
+        color::CMS,
+        renderer::{
+            element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+            ImportAll, Renderer,
+        },
     },
     desktop::{space::SpaceElement, utils::under_from_surface_tree, WindowSurfaceType},
     utils::{Logical, Physical, Point, Rectangle, Scale},
@@ -92,21 +95,24 @@ impl SpaceElement for X11Surface {
     }
 }
 
-impl<R> crate::backend::renderer::element::AsRenderElements<R> for X11Surface
+impl<R, C> crate::backend::renderer::element::AsRenderElements<R, C> for X11Surface
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
+    C: CMS,
+    C::ColorProfile: 'static,
 {
     type RenderElement = WaylandSurfaceRenderElement<R>;
 
-    fn render_elements<C: From<WaylandSurfaceRenderElement<R>>>(
+    fn render_elements<I: From<WaylandSurfaceRenderElement<R>>>(
         &self,
         renderer: &mut R,
+        cms: &mut C,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
-    ) -> Vec<C> {
+    ) -> Vec<I> {
         let state = self.state.lock().unwrap();
         let Some(surface) = state.wl_surface.as_ref() else { return Vec::new() };
-        render_elements_from_surface_tree(renderer, surface, location, scale)
+        render_elements_from_surface_tree(renderer, cms, surface, location, scale)
     }
 }

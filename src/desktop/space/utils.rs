@@ -1,13 +1,16 @@
 use crate::{
-    backend::renderer::{
-        element::{
-            utils::{
-                constrain_as_render_elements, ConstrainAlign, ConstrainScaleBehavior, CropRenderElement,
-                RelocateRenderElement, RescaleRenderElement,
+    backend::{
+        color::CMS,
+        renderer::{
+            element::{
+                utils::{
+                    constrain_as_render_elements, ConstrainAlign, ConstrainScaleBehavior, CropRenderElement,
+                    RelocateRenderElement, RescaleRenderElement,
+                },
+                AsRenderElements,
             },
-            AsRenderElements,
+            Renderer,
         },
-        Renderer,
     },
     utils::{Logical, Point, Rectangle, Scale},
 };
@@ -37,20 +40,22 @@ pub struct ConstrainBehavior {
 /// Constrain the render elements of a [`SpaceElement`]
 ///
 /// see [`constrain_as_render_elements`]
-pub fn constrain_space_element<R, E, C>(
+pub fn constrain_space_element<R, C, E, I>(
     renderer: &mut R,
+    cms: &mut C,
     element: &E,
     location: impl Into<Point<i32, Logical>>,
     scale: impl Into<Scale<f64>>,
     constrain: Rectangle<i32, Logical>,
     behavior: ConstrainBehavior,
-) -> impl Iterator<Item = C>
+) -> impl Iterator<Item = I>
 where
     R: Renderer,
-    E: SpaceElement + AsRenderElements<R>,
-    C: From<
+    E: SpaceElement + AsRenderElements<R, C>,
+    C: CMS,
+    I: From<
         CropRenderElement<
-            RelocateRenderElement<RescaleRenderElement<<E as AsRenderElements<R>>::RenderElement>>,
+            RelocateRenderElement<RescaleRenderElement<<E as AsRenderElements<R, C>>::RenderElement>>,
         >,
     >,
 {
@@ -65,6 +70,7 @@ where
     constrain_as_render_elements(
         element,
         renderer,
+        cms,
         (location - scale_reference.loc).to_physical_precise_round(scale),
         constrain.to_physical_precise_round(scale),
         scale_reference.to_physical_precise_round(scale),

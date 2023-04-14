@@ -155,37 +155,43 @@ impl<
         'a,
         #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
         #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
-        E: AsRenderElements<R>,
-    > AsRenderElements<R> for SpaceElements<'a, E>
+        C: CMS,
+        E: AsRenderElements<R, C>,
+    > AsRenderElements<R, C> for SpaceElements<'a, E>
 where
     <R as Renderer>::TextureId: Texture + 'static,
-    <E as AsRenderElements<R>>::RenderElement: 'a,
-    SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
-        From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
+    C: 'static,
+    <C as CMS>::ColorProfile: 'static,
+    <E as AsRenderElements<R, C>>::RenderElement: 'a,
+    SpaceRenderElements<R, C, <E as AsRenderElements<R, C>>::RenderElement>:
+        From<Wrap<<E as AsRenderElements<R, C>>::RenderElement>>,
 {
-    type RenderElement = SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>;
+    type RenderElement = SpaceRenderElements<R, C, <E as AsRenderElements<R, C>>::RenderElement>;
 
-    fn render_elements<C: From<Self::RenderElement>>(
+    fn render_elements<I: From<Self::RenderElement>>(
         &self,
         renderer: &mut R,
+        cms: &mut C,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
-    ) -> Vec<C> {
+    ) -> Vec<I> {
         match &self {
             #[cfg(feature = "wayland_frontend")]
-            SpaceElements::Layer { surface, .. } => AsRenderElements::<R>::render_elements::<
+            SpaceElements::Layer { surface, .. } => AsRenderElements::<R, C>::render_elements::<
                 WaylandSurfaceRenderElement<R>,
-            >(surface, renderer, location, scale)
+            >(surface, renderer, cms, location, scale)
             .into_iter()
             .map(SpaceRenderElements::Surface)
-            .map(C::from)
+            .map(I::from)
             .collect(),
             SpaceElements::Element(element) => element
                 .element
-                .render_elements::<Wrap<<E as AsRenderElements<R>>::RenderElement>>(renderer, location, scale)
+                .render_elements::<Wrap<<E as AsRenderElements<R, C>>::RenderElement>>(
+                    renderer, cms, location, scale,
+                )
                 .into_iter()
                 .map(SpaceRenderElements::Element)
-                .map(C::from)
+                .map(I::from)
                 .collect(),
         }
     }

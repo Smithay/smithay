@@ -142,7 +142,10 @@
 //! }
 //! ```
 use crate::{
-    backend::renderer::{utils::CommitCounter, Frame, Renderer},
+    backend::{
+        color::CMS,
+        renderer::{utils::CommitCounter, Frame, Renderer},
+    },
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
@@ -150,32 +153,23 @@ use super::{AsRenderElements, Element, Id, RenderElement};
 
 /// A single color buffer
 #[derive(Debug, Clone)]
-pub struct SolidColorBuffer {
+pub struct SolidColorBuffer<C: CMS> {
     id: Id,
     size: Size<i32, Logical>,
     commit: CommitCounter,
     color: [f32; 4],
+    input_profile: C::ColorProfile,
 }
 
-impl Default for SolidColorBuffer {
-    fn default() -> Self {
-        Self {
-            id: Id::new(),
-            size: Default::default(),
-            commit: Default::default(),
-            color: Default::default(),
-        }
-    }
-}
-
-impl SolidColorBuffer {
+impl<C: CMS> SolidColorBuffer<C> {
     /// Initialize a new solid color buffer with the specified size and color
-    pub fn new(size: impl Into<Size<i32, Logical>>, color: [f32; 4]) -> Self {
+    pub fn new(size: impl Into<Size<i32, Logical>>, color: [f32; 4], input_profile: C::ColorProfile) -> Self {
         SolidColorBuffer {
             id: Id::new(),
             color,
             commit: CommitCounter::default(),
             size: size.into(),
+            input_profile,
         }
     }
 
@@ -215,24 +209,31 @@ impl SolidColorBuffer {
 
 /// [`Element`] to render a solid color
 #[derive(Debug, Clone)]
-pub struct SolidColorRenderElement {
+pub struct SolidColorRenderElement<C: CMS> {
     id: Id,
     geometry: Rectangle<i32, Physical>,
     src: Rectangle<f64, Buffer>,
     opaque_regions: Vec<Rectangle<i32, Physical>>,
     commit: CommitCounter,
     color: [f32; 4],
+    input_profile: C::ColorProfile,
 }
 
-impl SolidColorRenderElement {
+impl<C: CMS> SolidColorRenderElement<C> {
     /// Create a render element from a [`SolidColorBuffer`]
     pub fn from_buffer(
-        buffer: &SolidColorBuffer,
+        buffer: &SolidColorBuffer<C>,
         location: impl Into<Point<i32, Physical>>,
         scale: impl Into<Scale<f64>>,
     ) -> Self {
         let geo = Rectangle::from_loc_and_size(location, buffer.size.to_physical_precise_round(scale));
-        Self::new(buffer.id.clone(), geo, buffer.commit, buffer.color)
+        Self::new(
+            buffer.id.clone(),
+            geo,
+            buffer.commit,
+            buffer.color,
+            buffer.input_profile.clone(),
+        )
     }
 
     /// Create a new solid color render element with the specified geometry and color
@@ -241,6 +242,7 @@ impl SolidColorRenderElement {
         geometry: Rectangle<i32, Physical>,
         commit: impl Into<CommitCounter>,
         color: [f32; 4],
+        input_profile: C::ColorProfile,
     ) -> Self {
         let src = Rectangle::from_loc_and_size((0, 0), geometry.size)
             .to_f64()
@@ -258,11 +260,12 @@ impl SolidColorRenderElement {
             opaque_regions,
             commit: commit.into(),
             color,
+            input_profile,
         }
     }
 }
 
-impl Element for SolidColorRenderElement {
+impl<C: CMS> Element for SolidColorRenderElement<C> {
     fn id(&self) -> &Id {
         &self.id
     }
@@ -284,34 +287,40 @@ impl Element for SolidColorRenderElement {
     }
 }
 
-impl<R: Renderer> RenderElement<R> for SolidColorRenderElement {
-    fn draw<'a>(
+impl<R: Renderer, C: CMS> RenderElement<R, C> for SolidColorRenderElement<C> {
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
-        frame.draw_solid(dst, damage, self.color)
+        frame.draw_solid(dst, damage, self.color, &self.input_profile)
     }
 
     fn underlying_storage(&self, _renderer: &mut R) -> Option<super::UnderlyingStorage> {
         None
     }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
+        self.input_profile.clone()
+    }
 }
 
-impl<R> AsRenderElements<R> for SolidColorBuffer
+impl<R, C> AsRenderElements<R, C> for SolidColorBuffer<C>
 where
     R: Renderer,
+    C: CMS,
 {
-    type RenderElement = SolidColorRenderElement;
+    type RenderElement = SolidColorRenderElement<C>;
 
-    fn render_elements<C: From<Self::RenderElement>>(
+    fn render_elements<E: From<Self::RenderElement>>(
         &self,
         _renderer: &mut R,
+        _cms: &mut C,
         location: crate::utils::Point<i32, crate::utils::Physical>,
         scale: crate::utils::Scale<f64>,
-    ) -> Vec<C> {
+    ) -> Vec<E> {
         vec![SolidColorRenderElement::from_buffer(self, location, scale).into()]
     }
 }
