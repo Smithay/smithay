@@ -143,6 +143,7 @@ use crate::{
             gbm::{GbmAllocator, GbmDevice},
             Allocator, Buffer, Slot, Swapchain,
         },
+        color::{TransformType, Transformation, CMS},
         drm::{DrmError, PlaneDamageClips},
         renderer::{
             buffer_y_inverted,
@@ -700,7 +701,7 @@ pub enum PrimaryPlaneElement<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
 /// on rendering until buffers are freed again. The exact amount of images in a
 /// swapchain is an implementation detail, but should generally be expect to be
 /// large enough to hold onto at least one `RenderFrameResult`.
-pub struct RenderFrameResult<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
+pub struct RenderFrameResult<'a, B: Buffer, F: AsRef<framebuffer::Handle>, C: CMS, E> {
     /// Damage of this frame
     pub damage: Option<Vec<Rectangle<i32, Physical>>>,
     /// The render element states of this frame
@@ -713,6 +714,8 @@ pub struct RenderFrameResult<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
     ///
     /// If set always above all other elements
     pub cursor_element: Option<&'a E>,
+
+    pub output_profile: C::ColorProfile,
 
     primary_plane_element_id: Id,
 }
@@ -850,9 +853,10 @@ pub enum BlitFrameResultError<R: std::error::Error, E: std::error::Error> {
     Export(E),
 }
 
-impl<'a, B, F, E> RenderFrameResult<'a, B, F, E>
+impl<'a, B, F, C, E> RenderFrameResult<'a, B, F, C, E>
 where
     B: Buffer,
+    C: CMS,
     F: AsRef<framebuffer::Handle>,
 {
     /// Get the damage of this frame for the specified dtr and age
@@ -905,16 +909,18 @@ where
     }
 }
 
-impl<'a, B, F, E> RenderFrameResult<'a, B, F, E>
+impl<'a, B, F, C, E> RenderFrameResult<'a, B, F, C, E>
 where
     B: Buffer + AsDmabuf,
     <B as AsDmabuf>::Error: std::fmt::Debug,
+    C: CMS + 'static,
     F: AsRef<framebuffer::Handle>,
 {
     /// Blit the frame result into a currently bound buffer
     #[allow(clippy::too_many_arguments)]
     pub fn blit_frame_result<R>(
         &self,
+        cms: &mut C,
         size: impl Into<Size<i32, Physical>>,
         transform: Transform,
         scale: impl Into<Scale<f64>>,
@@ -925,7 +931,7 @@ where
     where
         R: Renderer + Blit<Dmabuf>,
         <R as Renderer>::TextureId: 'static,
-        E: Element + RenderElement<R>,
+        E: Element + RenderElement<R, C>,
     {
         let size = size.into();
         let scale = scale.into();
@@ -990,11 +996,11 @@ where
             trace!("clearing frame damage {:#?}", clear_damage);
 
             let mut frame = renderer
-                .render(size, transform)
+                .render(size, transform, cms, &self.output_profile)
                 .map_err(BlitFrameResultError::Rendering)?;
 
             frame
-                .clear([0f32, 0f32, 0f32, 1f32], &clear_damage)
+                .clear([0f32, 0f32, 0f32, 1f32], &clear_damage, &self.output_profile) // Full alpha, profile doesn't matter
                 .map_err(BlitFrameResultError::Rendering)?;
 
             frame.finish().map_err(BlitFrameResultError::Rendering)?;
@@ -1026,7 +1032,7 @@ where
             trace!("drawing {} frame element(s)", elements_to_render.len());
 
             let mut frame = renderer
-                .render(size, transform)
+                .render(size, transform, cms, &self.output_profile)
                 .map_err(BlitFrameResultError::Rendering)?;
 
             for element in elements_to_render.iter().rev() {
@@ -1064,9 +1070,10 @@ where
 impl<
         'a,
         B: Buffer + std::fmt::Debug,
+        C: CMS,
         F: AsRef<framebuffer::Handle> + std::fmt::Debug,
         E: std::fmt::Debug,
-    > std::fmt::Debug for RenderFrameResult<'a, B, F, E>
+    > std::fmt::Debug for RenderFrameResult<'a, B, F, C, E>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RenderFrameResult")
@@ -1495,16 +1502,20 @@ where
     ///
     /// - `elements` for this frame in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip_all)]
-    pub fn render_frame<'a, R, E, Target>(
+    pub fn render_frame<'a, R, C, E, Target>(
         &'a mut self,
         renderer: &mut R,
+        cms: &mut C,
         elements: &'a [E],
         clear_color: [f32; 4],
-    ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
+        clear_profile: &C::ColorProfile,
+        output_profile: &C::ColorProfile,
+    ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, C, E>, RenderFrameErrorType<A, F, R>>
     where
-        E: RenderElement<R>,
+        E: RenderElement<R, C>,
         R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
         <R as Renderer>::TextureId: Texture + 'static,
+        C: CMS + 'static,
     {
         // Just reset any next state, this will put
         // any already acquired slot back to the swapchain
@@ -1746,6 +1757,7 @@ where
 
             match self.try_assign_element(
                 renderer,
+                cms,
                 element,
                 &mut element_states,
                 &primary_plane_elements,
@@ -1754,6 +1766,7 @@ where
                 &mut output_damage,
                 output_transform,
                 output_geometry,
+                output_profile,
                 try_assign_primary_plane,
             ) {
                 Ok(direct_scan_out_plane) => {
@@ -1905,9 +1918,15 @@ where
                     .map(|e| DrmRenderElements::Other(*e)),
             );
 
-            let render_res = self
-                .damage_tracker
-                .render_output(renderer, age, &elements, clear_color);
+            let render_res = self.damage_tracker.render_output(
+                renderer,
+                cms,
+                age,
+                &elements,
+                clear_color,
+                clear_profile,
+                output_profile,
+            );
 
             // restore the renderer debug flags
             renderer.set_debug_flags(renderer_debug_flags);
@@ -2025,12 +2044,13 @@ where
         } else {
             Some(output_damage)
         };
-        let frame_reference: RenderFrameResult<'a, A::Buffer, F::Framebuffer, E> = RenderFrameResult {
+        let frame_reference: RenderFrameResult<'a, A::Buffer, F::Framebuffer, C, E> = RenderFrameResult {
             primary_element: primary_plane_element,
             damage,
             overlay_elements: overlay_plane_elements.into_values().collect(),
             cursor_element: cursor_plane_element,
             states: render_element_states,
+            output_profile: output_profile.clone(),
             primary_plane_element_id: self.primary_plane_element_id.clone(),
         };
 
@@ -2226,9 +2246,10 @@ where
 
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "trace", skip_all)]
-    fn try_assign_element<'a, R, E, Target>(
+    fn try_assign_element<'a, R, C, E, Target>(
         &mut self,
         renderer: &mut R,
+        cms: &mut C,
         element: &'a E,
         element_states: &mut IndexMap<
             Id,
@@ -2240,15 +2261,29 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
+        output_profile: &C::ColorProfile,
         try_assign_primary_plane: bool,
     ) -> Result<PlaneInfo, Option<RenderingReason>>
     where
         R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
-        E: RenderElement<R>,
+        C: CMS + 'static,
+        E: RenderElement<R, C>,
     {
         let mut rendering_reason: Option<RenderingReason> = None;
 
-        if try_assign_primary_plane {
+        if !cms
+            .input_transformation(
+                &element.color_profile(),
+                output_profile,
+                TransformType::InputToOutput,
+            )
+            .map_err(|_| None)?
+            .is_identity()
+        {
+            rendering_reason = Some(RenderingReason::ColorTransformFailed);
+        }
+
+        if try_assign_primary_plane && !rendering_reason.is_some() {
             match self.try_assign_primary_plane(
                 renderer,
                 element,
@@ -2273,6 +2308,7 @@ where
 
         if let Some(plane) = self.try_assign_cursor_plane(
             renderer,
+            cms,
             element,
             element_states,
             scale,
@@ -2280,6 +2316,7 @@ where
             output_damage,
             output_transform,
             output_geometry,
+            output_profile,
         ) {
             trace!(
                 "assigned element {:?} to cursor plane {:?}",
@@ -2287,6 +2324,10 @@ where
                 self.planes.cursor.as_ref().map(|p| p.handle)
             );
             return Ok(plane);
+        }
+
+        if rendering_reason.is_some() {
+            return Err(rendering_reason);
         }
 
         match self.try_assign_overlay_plane(
@@ -2312,9 +2353,10 @@ where
 
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "trace", skip_all)]
-    fn try_assign_cursor_plane<R, E, Target>(
+    fn try_assign_cursor_plane<R, C, E, Target>(
         &mut self,
         renderer: &mut R,
+        cms: &mut C,
         element: &E,
         element_states: &mut IndexMap<
             Id,
@@ -2325,10 +2367,12 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
+        output_profile: &C::ColorProfile,
     ) -> Option<PlaneInfo>
     where
         R: Renderer + Offscreen<Target> + ExportMem,
-        E: RenderElement<R>,
+        C: CMS + 'static,
+        E: RenderElement<R, C>,
     {
         // if we have no cursor plane we can exit early
         let Some(plane_info) = self.planes.cursor.as_ref() else {
@@ -2544,11 +2588,12 @@ where
         renderer.set_debug_flags(DebugFlags::empty());
 
         let mut render = || {
-            let mut frame = renderer.render(self.cursor_size, output_transform)?;
+            let mut frame = renderer.render(self.cursor_size, output_transform, cms, output_profile)?;
 
             frame.clear(
                 [0f32, 0f32, 0f32, 0f32],
                 &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
+                output_profile, // doesn't matter, fully transparent
             )?;
 
             let src = element.src();
@@ -2627,7 +2672,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "trace", skip_all)]
-    fn try_assign_overlay_plane<'a, R, E>(
+    fn try_assign_overlay_plane<'a, R, C, E>(
         &self,
         renderer: &mut R,
         element: &'a E,
@@ -2644,7 +2689,8 @@ where
     ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
-        E: RenderElement<R>,
+        C: CMS,
+        E: RenderElement<R, C>,
     {
         let element_id = element.id();
 
@@ -2754,7 +2800,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "trace", skip_all)]
-    fn try_assign_primary_plane<R, E>(
+    fn try_assign_primary_plane<R, C, E>(
         &self,
         renderer: &mut R,
         element: &E,
@@ -2770,7 +2816,8 @@ where
     ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
-        E: RenderElement<R>,
+        C: CMS,
+        E: RenderElement<R, C>,
     {
         // We can only try to do direct scan-out for element that provide a underlying storage
         let underlying_storage = element
@@ -2803,7 +2850,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "trace", skip_all)]
-    fn try_assign_plane<R, E>(
+    fn try_assign_plane<R, C, E>(
         &self,
         element: &E,
         element_geometry: Rectangle<i32, Physical>,
@@ -2821,7 +2868,8 @@ where
     ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
-        E: RenderElement<R>,
+        C: CMS,
+        E: RenderElement<R, C>,
     {
         let element_id = element.id();
 
