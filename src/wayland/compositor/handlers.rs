@@ -423,6 +423,13 @@ where
 pub struct SubsurfaceUserData {
     surface: WlSurface,
 }
+
+impl SubsurfaceUserData {
+    /// Returns the surface for this subsurface (not to be confused with the parent surface).
+    pub fn surface(&self) -> &WlSurface {
+        &self.surface
+    }
+}
 /// The cached state associated with a subsurface
 #[derive(Debug)]
 pub struct SubsurfaceCachedState {
