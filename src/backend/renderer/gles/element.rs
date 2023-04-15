@@ -8,12 +8,12 @@ use crate::{
     utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform},
 };
 
-use super::{Gles2Error, Gles2Frame, Gles2PixelProgram, Gles2Renderer, Uniform};
+use super::{GlesError, GlesFrame, GlesPixelProgram, GlesRenderer, Uniform};
 
 /// Render element for drawing with a gles2 pixel shader
 #[derive(Debug, Clone)]
 pub struct PixelShaderElement {
-    shader: Gles2PixelProgram,
+    shader: GlesPixelProgram,
     id: Id,
     commit_counter: CommitCounter,
     area: Rectangle<i32, Logical>,
@@ -26,7 +26,7 @@ impl PixelShaderElement {
     /// Create a new [`PixelShaderElement`] from a [`Gles2PixelProgram`],
     /// which can be constructed using [`Gles2Renderer::compile_custom_pixel_shader`]
     pub fn new(
-        shader: Gles2PixelProgram,
+        shader: GlesPixelProgram,
         area: Rectangle<i32, Logical>,
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
         alpha: f32,
@@ -94,14 +94,14 @@ impl Element for PixelShaderElement {
     }
 }
 
-impl RenderElement<Gles2Renderer> for PixelShaderElement {
+impl RenderElement<GlesRenderer> for PixelShaderElement {
     fn draw<'a>(
         &self,
-        frame: &mut Gles2Frame<'a>,
+        frame: &mut GlesFrame<'a>,
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-    ) -> Result<(), Gles2Error> {
+    ) -> Result<(), GlesError> {
         frame.render_pixel_shader_to(
             &self.shader,
             dst,
@@ -111,7 +111,7 @@ impl RenderElement<Gles2Renderer> for PixelShaderElement {
         )
     }
 
-    fn underlying_storage(&self, _renderer: &mut Gles2Renderer) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
         None
     }
 }

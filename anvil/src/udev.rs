@@ -37,9 +37,9 @@ use smithay::{
         renderer::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::{texture::TextureBuffer, AsRenderElements, RenderElement, RenderElementStates},
-            gles2::{Gles2Renderbuffer, Gles2Renderer},
+            gles::{GlesRenderbuffer, GlesRenderer},
             multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer, MultiTexture},
-            Bind, DebugFlags, ExportMem, ImportDma, Offscreen, Renderer,
+            Bind, DebugFlags, ExportMem, ImportDma, ImportMemWl, Offscreen, Renderer,
         },
         session::{
             libseat::{self, LibSeatSession},
@@ -91,16 +91,21 @@ use smithay_drm_extras::{
 use tracing::{debug, error, info, trace, warn};
 
 // we cannot simply pick the first supported format of the intersection of *all* formats, because:
-// - we do not want something like Abgr4444, which looses color information, if something better is available.
-// - some formats might perform terribly.
-// - we might need some work-arounds, if one supports modifiers, but the other does not.
-// - we can't handle formats with small alpha channels yet in the renderer like `Abgr2101010`.
+// - we do not want something like Abgr4444, which looses color information, if something better is available
+// - some formats might perform terribly
+// - we might need some work-arounds, if one supports modifiers, but the other does not
 //
-// So lets just pick `ARGB8888`/`ABGR8888` for now, they are widely supported.
-const SUPPORTED_FORMATS: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8888];
+// So lets just pick `ARGB2101010` (10-bit) or `ARGB8888` (8-bit) for now, they are widely supported.
+const SUPPORTED_FORMATS: &[Fourcc] = &[
+    Fourcc::Abgr2101010,
+    Fourcc::Argb2101010,
+    Fourcc::Abgr8888,
+    Fourcc::Argb8888,
+];
+const SUPPORTED_FORMATS_8BIT_ONLY: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8888];
 
 type UdevRenderer<'a, 'b> =
-    MultiRenderer<'a, 'a, 'b, GbmGlesBackend<Gles2Renderer>, GbmGlesBackend<Gles2Renderer>>;
+    MultiRenderer<'a, 'a, 'b, GbmGlesBackend<GlesRenderer>, GbmGlesBackend<GlesRenderer>>;
 
 #[derive(Debug, PartialEq)]
 struct UdevOutputId {
@@ -114,7 +119,7 @@ pub struct UdevData {
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     primary_gpu: DrmNode,
     allocator: Option<Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>>,
-    gpus: GpuManager<GbmGlesBackend<Gles2Renderer>>,
+    gpus: GpuManager<GbmGlesBackend<GlesRenderer>>,
     backends: HashMap<DrmNode, BackendData>,
     pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<MultiTexture>)>,
     pointer_element: PointerElement<MultiTexture>,
@@ -319,6 +324,14 @@ pub fn run_udev() {
             error!("Skipping device {device_id}: {err}");
         }
     }
+    state.shm_state.update_formats(
+        state
+            .backend_data
+            .gpus
+            .single_renderer(&primary_gpu)
+            .unwrap()
+            .shm_formats(),
+    );
 
     let skip_vulkan = std::env::var("ANVIL_NO_VULKAN")
         .map(|x| {
@@ -379,6 +392,7 @@ pub fn run_udev() {
         let fps_texture = renderer
             .import_memory(
                 &fps_image.to_rgba8(),
+                Fourcc::Abgr8888,
                 (fps_image.width() as i32, fps_image.height() as i32).into(),
                 false,
             )
@@ -402,7 +416,7 @@ pub fn run_udev() {
     }
 
     // init dmabuf support with format list from our primary gpu
-    let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+    let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
     let default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
         .build()
         .unwrap();
@@ -652,27 +666,25 @@ enum DeviceAddError {
 fn get_surface_dmabuf_feedback(
     primary_gpu: DrmNode,
     render_node: DrmNode,
-    gpus: &mut GpuManager<GbmGlesBackend<Gles2Renderer>>,
+    gpus: &mut GpuManager<GbmGlesBackend<GlesRenderer>>,
     composition: &SurfaceComposition,
 ) -> Option<DrmSurfaceDmabufFeedback> {
     let primary_formats = gpus
         .single_renderer(&primary_gpu)
         .ok()?
         .dmabuf_formats()
-        .copied()
         .collect::<HashSet<_>>();
 
     let render_formats = gpus
         .single_renderer(&render_node)
         .ok()?
         .dmabuf_formats()
-        .copied()
         .collect::<HashSet<_>>();
 
     let all_render_formats = primary_formats
         .iter()
+        .chain(render_formats.iter())
         .copied()
-        .chain(render_formats.iter().copied())
         .collect::<HashSet<_>>();
 
     let surface = composition.surface();
@@ -857,15 +869,21 @@ impl AnvilState<UdevData> {
             GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT,
         );
 
+        let color_formats = if std::env::var("ANVIL_DISABLE_10BIT").is_ok() {
+            SUPPORTED_FORMATS_8BIT_ONLY
+        } else {
+            SUPPORTED_FORMATS
+        };
+
         let compositor = if std::env::var("ANVIL_DISABLE_DRM_COMPOSITOR").is_ok() {
-            let gbm_surface =
-                match GbmBufferedSurface::new(surface, allocator, SUPPORTED_FORMATS, render_formats) {
-                    Ok(renderer) => renderer,
-                    Err(err) => {
-                        warn!("Failed to create rendering surface: {}", err);
-                        return;
-                    }
-                };
+            let gbm_surface = match GbmBufferedSurface::new(surface, allocator, color_formats, render_formats)
+            {
+                Ok(renderer) => renderer,
+                Err(err) => {
+                    warn!("Failed to create rendering surface: {}", err);
+                    return;
+                }
+            };
             SurfaceComposition::Surface {
                 surface: gbm_surface,
                 damage_tracker: OutputDamageTracker::from_output(&output),
@@ -905,7 +923,7 @@ impl AnvilState<UdevData> {
                 Some(planes),
                 allocator,
                 device.gbm.clone(),
-                SUPPORTED_FORMATS,
+                color_formats,
                 render_formats,
                 device.drm.cursor_size(),
                 Some(device.gbm.clone()),
@@ -1257,6 +1275,7 @@ impl AnvilState<UdevData> {
                 let texture = TextureBuffer::from_memory(
                     &mut renderer,
                     &frame.pixels_rgba,
+                    Fourcc::Abgr8888,
                     (frame.width as i32, frame.height as i32),
                     false,
                     1,
@@ -1475,7 +1494,7 @@ fn render_surface<'a, 'b>(
     let (rendered, states) =
         surface
             .compositor
-            .render_frame::<_, _, Gles2Renderbuffer>(renderer, &elements, clear_color)?;
+            .render_frame::<_, _, GlesRenderbuffer>(renderer, &elements, clear_color)?;
 
     post_repaint(
         output,
@@ -1508,7 +1527,7 @@ fn initial_render(
 ) -> Result<(), SwapBuffersError> {
     surface
         .compositor
-        .render_frame::<_, CustomRenderElements<_>, Gles2Renderbuffer>(renderer, &[], CLEAR_COLOR)?;
+        .render_frame::<_, CustomRenderElements<_>, GlesRenderbuffer>(renderer, &[], CLEAR_COLOR)?;
     surface.compositor.queue_frame(None)?;
     surface.compositor.reset_buffers();
 

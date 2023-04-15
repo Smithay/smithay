@@ -21,7 +21,7 @@
 //! #     renderer::ImportEgl,
 //! # };
 //! # use smithay::{
-//! #     backend::allocator::dmabuf::Dmabuf,
+//! #     backend::allocator::{Fourcc, dmabuf::Dmabuf},
 //! #     backend::renderer::{
 //! #         DebugFlags, Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
 //! #         TextureFilter,
@@ -38,6 +38,9 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn height(&self) -> u32 {
+//! #         unimplemented!()
+//! #     }
+//! #     fn format(&self) -> Option<Fourcc> {
 //! #         unimplemented!()
 //! #     }
 //! # }
@@ -109,6 +112,7 @@
 //! #     fn import_memory(
 //! #         &mut self,
 //! #         _: &[u8],
+//! #         _: Fourcc,
 //! #         _: Size<i32, Buffer>,
 //! #         _: bool,
 //! #     ) -> Result<Self::TextureId, Self::Error> {
@@ -120,6 +124,9 @@
 //! #         _: &[u8],
 //! #         _: Rectangle<i32, Buffer>,
 //! #     ) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn mem_formats(&self) -> Box<dyn Iterator<Item=Fourcc>> {
 //! #         unimplemented!()
 //! #     }
 //! # }
