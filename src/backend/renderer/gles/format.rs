@@ -7,7 +7,7 @@ use crate::backend::allocator::Fourcc;
 pub const fn fourcc_to_gl_formats(value: Fourcc) -> Option<(GLenum, GLenum, GLenum)> {
     match value {
         Fourcc::Abgr8888 => Some((ffi::RGBA8, ffi::RGBA, ffi::UNSIGNED_BYTE)),
-        Fourcc::Argb8888 => Some((ffi::RGBA8, ffi::BGRA_EXT, ffi::UNSIGNED_BYTE)),
+        Fourcc::Argb8888 => Some((ffi::BGRA_EXT, ffi::BGRA_EXT, ffi::UNSIGNED_BYTE)),
         Fourcc::Abgr2101010 => Some((ffi::RGB10_A2, ffi::RGBA, ffi::UNSIGNED_INT_2_10_10_10_REV)),
         Fourcc::Abgr16161616f => Some((ffi::RGBA16F, ffi::RGBA, ffi::HALF_FLOAT)),
         _ => None,
