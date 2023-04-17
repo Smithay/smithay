@@ -77,6 +77,7 @@ use ash::{
     vk::{self, PhysicalDeviceDriverProperties, PhysicalDeviceDrmPropertiesEXT},
     Entry,
 };
+use drm_fourcc::DrmFourcc;
 use libc::c_void;
 use once_cell::sync::Lazy;
 use scopeguard::ScopeGuard;
@@ -86,6 +87,7 @@ use crate::backend::vulkan::inner::DebugState;
 
 use self::{inner::InstanceInner, version::Version};
 
+use super::allocator::vulkan::format::get_vk_format;
 #[cfg(feature = "backend_drm")]
 use super::drm::DrmNode;
 #[cfg(feature = "backend_drm")]
@@ -547,6 +549,92 @@ impl PhysicalDevice {
         // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceFormatProperties2
         // are satisfied.
         unsafe { instance.get_physical_device_format_properties2(self.handle(), format, props) }
+    }
+
+    /// Get a list of supported formats.
+    ///
+    /// Checks a list of formats (currently hardcoded to be Argb8888 and Argb2101010 from DrmFourcc) to see if they are compatible with
+    /// the current device.
+    ///
+    /// Returns a vec of [`vk::Format`], with a length of 0 if none are found.
+    ///
+    /// ```
+    /// use smithay::{
+    ///     backend::vulkan::{version::Version, Instance, PhysicalDevice},
+    ///     reexports::ash::vk,
+    /// };
+    ///
+    /// let instance = Instance::new(Version::VERSION_1_3, None).unwrap();
+    ///
+    /// let physical_device = PhysicalDevice::enumerate(&instance)
+    ///     .unwrap()
+    ///     .next()
+    ///     .expect("No physical devices");
+    ///
+    /// let formats = physical_device.get_supported_formats();
+    ///
+    /// assert_eq!(
+    ///     formats,
+    ///     vec![
+    ///         vk::Format::B8G8R8A8_SRGB,
+    ///         vk::Format::A8B8G8R8_SRGB_PACK32,
+    ///         vk::Format::R8G8B8A8_SRGB,
+    ///         vk::Format::A2R10G10B10_UNORM_PACK32
+    ///     ]
+    /// );
+    /// ```
+    pub fn get_supported_formats(&self) -> Vec<vk::Format> {
+        let instance = self.instance().handle();
+        // TODO: maybe not use hardcoded formats?
+        let formats = vec![
+            DrmFourcc::Argb8888,
+            DrmFourcc::Bgra8888,
+            DrmFourcc::Rgba8888,
+            DrmFourcc::Xbgr8888,
+            DrmFourcc::Argb2101010,
+            DrmFourcc::Bgra1010102,
+            DrmFourcc::Rgba1010102,
+            DrmFourcc::Xrgb2101010,
+        ];
+        let mut supported = vec![];
+
+        for format in formats {
+            let vk_format = get_vk_format(format);
+
+            if vk_format.is_none() {
+                continue;
+            }
+
+            let format_info = vk::PhysicalDeviceImageFormatInfo2::builder()
+                .usage(
+                    vk::ImageUsageFlags::TRANSFER_SRC
+                        | vk::ImageUsageFlags::TRANSFER_DST
+                        | vk::ImageUsageFlags::SAMPLED,
+                )
+                .format(vk_format.expect("vk_format to exist"))
+                .ty(vk::ImageType::TYPE_2D);
+
+            let mut image_format_prop = vk::ImageFormatProperties2::default();
+            let res = unsafe {
+                instance.get_physical_device_image_format_properties2(
+                    self.handle(),
+                    &format_info,
+                    &mut image_format_prop,
+                )
+            };
+
+            match res {
+                Ok(_) => {
+                    if image_format_prop.image_format_properties.max_extent.depth == 1 {
+                        supported.push(vk_format.expect("vk_format to exist"));
+                    };
+                }
+                Err(_) => {}
+            };
+        }
+
+        supported.dedup();
+        supported
     }
 
     /// Returns properties for each supported DRM modifier for the specified format.
