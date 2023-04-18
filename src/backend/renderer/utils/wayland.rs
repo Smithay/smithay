@@ -3,8 +3,9 @@ use crate::{
     utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
-            self, is_sync_subsurface, with_surface_tree_downward, with_surface_tree_upward, BufferAssignment,
-            Damage, RectangleKind, SubsurfaceCachedState, SurfaceAttributes, SurfaceData, TraversalAction,
+            self, add_destruction_hook, is_sync_subsurface, with_surface_tree_downward,
+            with_surface_tree_upward, BufferAssignment, Damage, RectangleKind, SubsurfaceCachedState,
+            SurfaceAttributes, SurfaceData, TraversalAction,
         },
         viewporter,
     },
@@ -336,6 +337,15 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
             },
             |_, _, _| true,
         );
+        for surf in &new_surfaces {
+            add_destruction_hook(surf, |data| {
+                // Remove the current buffer if any here as this would deadlock
+                // later on surface destruction when the user_data is dropped
+                data.data_map
+                    .get::<RendererSurfaceStateUserData>()
+                    .and_then(|s| s.borrow_mut().buffer.take());
+            });
+        }
     }
 }
 
