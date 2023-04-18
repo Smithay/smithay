@@ -2,6 +2,10 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
+        color::{
+            lcms::{LcmsColorProfile, LcmsContext},
+            CMS,
+        },
         renderer::{
             damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, gles::GlesRenderer,
         },
@@ -52,11 +56,16 @@ pub fn init_winit(
 
     let mut full_redraw = 0u8;
 
+    let mut cms = LcmsContext::new();
+    let profile = cms.profile_srgb();
+
     let timer = Timer::immediate();
     event_loop.handle().insert_source(timer, move |_, _, data| {
         winit_dispatch(
             &mut backend,
             &mut winit,
+            &mut cms,
+            &profile,
             data,
             &output,
             &mut damage_tracker,
@@ -72,6 +81,8 @@ pub fn init_winit(
 pub fn winit_dispatch(
     backend: &mut WinitGraphicsBackend<GlesRenderer>,
     winit: &mut WinitEventLoop,
+    cms: &mut LcmsContext,
+    profile: &LcmsColorProfile,
     data: &mut CalloopData,
     output: &Output,
     damage_tracker: &mut OutputDamageTracker,
@@ -111,14 +122,17 @@ pub fn winit_dispatch(
     let damage = Rectangle::from_loc_and_size((0, 0), size);
 
     backend.bind()?;
-    smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
+    smithay::desktop::space::render_output::<_, _, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
         output,
         backend.renderer(),
+        cms,
         0,
         [&state.space],
         &[],
         damage_tracker,
         [0.1, 0.1, 0.1, 1.0],
+        profile,
+        profile,
     )?;
     backend.submit(Some(&[damage]))?;
 

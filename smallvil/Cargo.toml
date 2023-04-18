@@ -12,6 +12,7 @@ path = "../"
 default-features = false
 features = [
     "backend_winit",
+    "color_lcms",
     "wayland_frontend",
     "desktop",
 ]
