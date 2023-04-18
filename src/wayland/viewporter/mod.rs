@@ -48,10 +48,10 @@ use std::cell::RefCell;
 use tracing::trace;
 use wayland_protocols::wp::viewporter::server::{wp_viewport, wp_viewporter};
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource,
+    backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak,
 };
 
-use crate::utils::{IsAlive, Logical, Rectangle, Size};
+use crate::utils::{Logical, Rectangle, Size};
 
 use super::compositor::{self, with_states, Cacheable, SurfaceData};
 
@@ -140,13 +140,13 @@ where
                 let viewport = data_init.init(
                     id,
                     ViewportState {
-                        surface: surface.clone(),
+                        surface: surface.downgrade(),
                     },
                 );
                 with_states(&surface, |states| {
                     states
                         .data_map
-                        .insert_if_missing(|| RefCell::new(Some(ViewportMarker(viewport))));
+                        .insert_if_missing(|| RefCell::new(Some(ViewportMarker(viewport.downgrade()))));
                 })
             }
             wp_viewporter::Request::Destroy => {
@@ -174,15 +174,18 @@ where
     ) {
         match request {
             wp_viewport::Request::Destroy => {
-                with_states(&data.surface, |states| {
-                    states
-                        .data_map
-                        .get::<RefCell<Option<ViewportMarker>>>()
-                        .unwrap()
-                        .borrow_mut()
-                        .take();
-                    *states.cached_state.pending::<ViewportCachedState>() = ViewportCachedState::default();
-                });
+                if let Ok(surface) = data.surface.upgrade() {
+                    with_states(&surface, |states| {
+                        states
+                            .data_map
+                            .get::<RefCell<Option<ViewportMarker>>>()
+                            .unwrap()
+                            .borrow_mut()
+                            .take();
+                        *states.cached_state.pending::<ViewportCachedState>() =
+                            ViewportCachedState::default();
+                    });
+                }
             }
             wp_viewport::Request::SetSource { x, y, width, height } => {
                 // If all of x, y, width and height are -1.0, the source rectangle is unset instead.
@@ -201,21 +204,21 @@ where
 
                 // If the wl_surface associated with the wp_viewport is destroyed,
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
-                if !data.surface.alive() {
+                let Ok(surface) = data.surface.upgrade() else {
                     resource.post_error(
                         wp_viewport::Error::NoSurface as u32,
                         "the wl_surface was destroyed".to_string(),
                     );
                     return;
-                }
+                };
 
-                with_states(&data.surface, |states| {
+                with_states(&surface, |states| {
                     let mut viewport_state = states.cached_state.pending::<ViewportCachedState>();
                     let src = if is_unset {
                         None
                     } else {
                         let src = Rectangle::from_loc_and_size((x, y), (width, height));
-                        trace!(surface = ?data.surface, src = ?src, "setting surface viewport src");
+                        trace!(surface = ?surface, src = ?src, "setting surface viewport src");
                         Some(src)
                     };
                     viewport_state.src = src;
@@ -238,20 +241,21 @@ where
 
                 // If the wl_surface associated with the wp_viewport is destroyed,
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
-                if !data.surface.alive() {
+                let Ok(surface) = data.surface.upgrade() else {
                     resource.post_error(
                         wp_viewport::Error::NoSurface as u32,
                         "the wl_surface was destroyed".to_string(),
                     );
-                }
+                    return;
+                };
 
-                with_states(&data.surface, |states| {
+                with_states(&surface, |states| {
                     let mut viewport_state = states.cached_state.pending::<ViewportCachedState>();
                     let size = if is_unset {
                         None
                     } else {
                         let dst = Size::from((width, height));
-                        trace!(surface = ?data.surface, size = ?dst, "setting surface viewport destination size");
+                        trace!(surface = ?surface, size = ?dst, "setting surface viewport destination size");
                         Some(dst)
                     };
                     viewport_state.dst = size;
@@ -265,10 +269,10 @@ where
 /// State of a single viewport attached to a surface
 #[derive(Debug)]
 pub struct ViewportState {
-    surface: wl_surface::WlSurface,
+    surface: Weak<wl_surface::WlSurface>,
 }
 
-struct ViewportMarker(wp_viewport::WpViewport);
+struct ViewportMarker(Weak<wp_viewport::WpViewport>);
 
 fn viewport_commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
     with_states(surface, |states| {
@@ -289,10 +293,12 @@ fn viewport_commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
             if viewport_state.dst.is_none()
                 && src_size != src_size.map(|s| Size::from((s.w as i32, s.h as i32)).to_f64())
             {
-                viewport.0.post_error(
-                    wp_viewport::Error::BadSize as u32,
-                    "destination size is not integer".to_string(),
-                );
+                if let Ok(viewport) = viewport.0.upgrade() {
+                    viewport.post_error(
+                        wp_viewport::Error::BadSize as u32,
+                        "destination size is not integer".to_string(),
+                    );
+                }
             }
         }
     });
@@ -319,10 +325,12 @@ pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logica
         let src = state.src.unwrap_or(buffer_rect);
         let valid = buffer_rect.contains_rect(src);
         if !valid {
-            viewport.0.post_error(
-                wp_viewport::Error::OutOfBuffer as u32,
-                "source rectangle extends outside of the content area".to_string(),
-            );
+            if let Ok(viewport) = viewport.0.upgrade() {
+                viewport.post_error(
+                    wp_viewport::Error::OutOfBuffer as u32,
+                    "source rectangle extends outside of the content area".to_string(),
+                );
+            }
         }
         valid
     } else {
