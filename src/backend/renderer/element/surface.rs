@@ -212,31 +212,181 @@
 //! }
 //! ```
 
-use std::{fmt, marker::PhantomData};
+use std::fmt;
 
 use tracing::{instrument, warn};
 use wayland_server::protocol::wl_surface;
 
 use crate::{
-    backend::renderer::{utils::RendererSurfaceStateUserData, Frame, ImportAll, Renderer, Texture},
-    utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform},
+    backend::renderer::{
+        utils::{RendererSurfaceState, RendererSurfaceStateUserData},
+        ImportAll, Renderer,
+    },
+    render_elements,
+    utils::{Physical, Point, Rectangle, Scale},
     wayland::compositor::{self, SurfaceData, TraversalAction},
 };
 
-use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
+use super::{solid::SolidColorRenderElement, texture::TextureRenderElement, Id, UnderlyingStorage};
 
-/// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
-#[instrument(level = "trace", skip(renderer, location, scale))]
-pub fn render_elements_from_surface_tree<R, E>(
+render_elements! {
+    /// A single surface render element
+    pub WaylandSurfaceRenderElement<R> where R: ImportAll;
+    /// The texture representing the current surface buffer
+    Texture=TextureRenderElement<<R as Renderer>::TextureId>,
+    /// The single color representing the current surface buffer
+    Solid=SolidColorRenderElement,
+}
+
+impl<R> fmt::Debug for WaylandSurfaceRenderElement<R>
+where
+    R: Renderer,
+    <R as Renderer>::TextureId: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Texture(arg0) => f.debug_tuple("Texture").field(arg0).finish(),
+            Self::Solid(arg0) => f.debug_tuple("Solid").field(arg0).finish(),
+            Self::_GenericCatcher(arg0) => f.debug_tuple("_GenericCatcher").field(arg0).finish(),
+        }
+    }
+}
+
+impl<R> WaylandSurfaceRenderElement<R>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: Clone + 'static,
+{
+    /// Create a render element from a surface
+    pub fn from_surface(
+        renderer: &mut R,
+        surface: &wl_surface::WlSurface,
+        states: &SurfaceData,
+        location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
+    ) -> Result<Option<Self>, <R as Renderer>::Error> {
+        if let Some(state) = states.data_map.get::<RendererSurfaceStateUserData>() {
+            Self::from_surface_renderer_state(
+                renderer,
+                surface,
+                states,
+                &mut state.borrow_mut(),
+                location,
+                scale,
+            )
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Create a render element from a surface renderer state
+    pub fn from_surface_renderer_state(
+        renderer: &mut R,
+        surface: &wl_surface::WlSurface,
+        states: &SurfaceData,
+        state: &mut RendererSurfaceState,
+        location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
+    ) -> Result<Option<Self>, <R as Renderer>::Error> {
+        crate::backend::renderer::utils::import_renderer_surface(renderer, states, state)?;
+        Ok(Self::from_renderer_surface_state_internal(
+            renderer, surface, state, location, scale,
+        ))
+    }
+
+    fn from_renderer_surface_state_internal(
+        renderer: &mut R,
+        surface: &wl_surface::WlSurface,
+        state: &mut RendererSurfaceState,
+        location: impl Into<Point<f64, Physical>>,
+        scale: impl Into<Scale<f64>>,
+    ) -> Option<Self> {
+        let location = location.into();
+
+        let view = state.view()?;
+        let buffer = state.buffer()?;
+        let buffer_type = crate::backend::renderer::buffer_type(buffer)?;
+        let id = Id::from_wayland_resource(surface);
+
+        if matches!(buffer_type, crate::backend::renderer::BufferType::SinglePixel) {
+            let spb = crate::wayland::single_pixel_buffer::get_single_pixel_buffer(buffer).ok()?;
+            let color = spb.rgba32f();
+            let geometry = Rectangle::from_loc_and_size(
+                location.to_i32_round(),
+                view.dst.to_physical_precise_round(scale),
+            );
+            Some(SolidColorRenderElement::new(id, geometry, state.current_commit(), color).into())
+        } else {
+            let texture = state.texture::<R>(renderer.id())?;
+
+            Some(
+                TextureRenderElement::from_texture_with_damage(
+                    id,
+                    renderer.id(),
+                    location,
+                    texture.clone(),
+                    state.buffer_scale(),
+                    state.buffer_transform(),
+                    None,
+                    Some(view.src),
+                    Some(view.dst),
+                    state.opaque_regions().map(|r| r.to_vec()), // TODO: maybe make the opaque regions cow
+                    state.damage(),
+                    Some(UnderlyingStorage::Wayland(buffer.clone())),
+                )
+                .into(),
+            )
+        }
+    }
+}
+
+/// Get a [`WaylandSurfaceRenderElement`] from a [`wl_surface::WlSurface`]
+///
+/// Note: If the buffer type is not managed by smithay,
+/// the surface is not mapped or the import failed `None` is returned
+pub fn wayland_surface_render_element<R, E>(
+    renderer: &mut R,
+    surface: &wl_surface::WlSurface,
+    states: &SurfaceData,
+    state: &mut RendererSurfaceState,
+    location: impl Into<Point<f64, Physical>>,
+    scale: impl Into<Scale<f64>>,
+) -> Option<E>
+where
+    R: Renderer + ImportAll,
+    <R as Renderer>::TextureId: Clone + 'static,
+    E: From<WaylandSurfaceRenderElement<R>>,
+{
+    match WaylandSurfaceRenderElement::from_surface_renderer_state(
+        renderer, surface, states, state, location, scale,
+    ) {
+        Ok(element) => element.map(E::from),
+        Err(err) => {
+            warn!("Failed to import surface: {}", err);
+            None
+        }
+    }
+}
+
+/// Retrieve the render elements for this surface tree by using
+/// the provided element factory
+pub fn custom_render_elements_from_surface_tree<R, E, F>(
     renderer: &mut R,
     surface: &wl_surface::WlSurface,
     location: impl Into<Point<i32, Physical>>,
     scale: impl Into<Scale<f64>>,
+    factory: F,
 ) -> Vec<E>
 where
-    R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: 'static,
-    E: From<WaylandSurfaceRenderElement<R>>,
+    R: Renderer,
+    F: Fn(
+        &mut R,
+        &wl_surface::WlSurface,
+        &SurfaceData,
+        &mut RendererSurfaceState,
+        Point<f64, Physical>,
+        Scale<f64>,
+    ) -> Option<E>,
 {
     let location = location.into().to_f64();
     let scale = scale.into();
@@ -275,12 +425,11 @@ where
                 };
 
                 if has_view {
-                    match WaylandSurfaceRenderElement::from_surface(renderer, surface, states, location) {
-                        Ok(surface) => surfaces.push(surface.into()),
-                        Err(err) => {
-                            warn!("Failed to import surface: {}", err);
-                        }
-                    };
+                    if let Some(element) =
+                        factory(renderer, surface, states, &mut data.borrow_mut(), location, scale)
+                    {
+                        surfaces.push(element);
+                    }
                 }
             }
         },
@@ -290,218 +439,24 @@ where
     surfaces
 }
 
-/// A single surface render element
-pub struct WaylandSurfaceRenderElement<R> {
-    id: Id,
-    location: Point<f64, Physical>,
-    surface: wl_surface::WlSurface,
-    renderer_type: PhantomData<R>,
-}
-
-impl<R> fmt::Debug for WaylandSurfaceRenderElement<R> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("WaylandSurfaceRenderElement")
-            .field("id", &self.id)
-            .field("location", &self.location)
-            .field("surface", &self.surface)
-            .finish()
-    }
-}
-
-impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
-    /// Create a render element from a surface
-    pub fn from_surface(
-        renderer: &mut R,
-        surface: &wl_surface::WlSurface,
-        states: &SurfaceData,
-        location: Point<f64, Physical>,
-    ) -> Result<Self, <R as Renderer>::Error>
-    where
-        <R as Renderer>::TextureId: 'static,
-    {
-        let id = Id::from_wayland_resource(surface);
-        crate::backend::renderer::utils::import_surface(renderer, states)?;
-
-        Ok(Self {
-            id,
-            location,
-            surface: surface.clone(),
-            renderer_type: PhantomData,
-        })
-    }
-
-    fn size(&self, scale: impl Into<Scale<f64>>) -> Size<i32, Physical> {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.and_then(|d| d.borrow().view()).map(|surface_view| {
-                ((surface_view.dst.to_f64().to_physical(scale).to_point() + self.location).to_i32_round()
-                    - self.location.to_i32_round())
-                .to_size()
-            })
-        })
-        .unwrap_or_default()
-    }
-}
-
-impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
-    fn id(&self) -> &Id {
-        &self.id
-    }
-
-    fn current_commit(&self) -> CommitCounter {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.map(|d| d.borrow().current_commit())
-        })
-        .unwrap_or_default()
-    }
-
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(self.location.to_i32_round(), self.size(scale))
-    }
-
-    fn src(&self) -> Rectangle<f64, Buffer> {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            if let Some(data) = data {
-                let data = data.borrow();
-
-                if let Some(view) = data.view() {
-                    Some(view.src.to_buffer(
-                        data.buffer_scale as f64,
-                        data.buffer_transform,
-                        &data.buffer_size().unwrap().to_f64(),
-                    ))
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default()
-    }
-
-    fn transform(&self) -> Transform {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.map(|d| d.borrow().buffer_transform)
-        })
-        .unwrap_or_default()
-    }
-
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
-        let dst_size = self.size(scale);
-
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.and_then(|d| {
-                let data = d.borrow();
-                if let Some(surface_view) = data.view() {
-                    let damage = data
-                        .damage_since(commit)
-                        .iter()
-                        .filter_map(|rect| {
-                            rect.to_f64()
-                                // first bring the damage into logical space
-                                // Note: We use f64 for this as the damage could
-                                // be not dividable by the buffer scale without
-                                // a rest
-                                .to_logical(
-                                    data.buffer_scale as f64,
-                                    data.buffer_transform,
-                                    &data.buffer_dimensions.unwrap().to_f64(),
-                                )
-                                // then crop by the surface view (viewporter for example could define a src rect)
-                                .intersection(surface_view.src)
-                                // move and scale the cropped rect (viewporter could define a dst size)
-                                .map(|rect| surface_view.rect_to_global(rect).to_i32_up::<i32>())
-                                // now bring the damage to physical space
-                                .map(|rect| {
-                                    // We calculate the scale between to rounded
-                                    // surface size and the scaled surface size
-                                    // and use it to scale the damage to the rounded
-                                    // surface size by multiplying the output scale
-                                    // with the result.
-                                    let surface_scale =
-                                        dst_size.to_f64() / surface_view.dst.to_f64().to_physical(scale);
-                                    rect.to_physical_precise_up(surface_scale * scale)
-                                })
-                        })
-                        .collect::<Vec<_>>();
-
-                    Some(damage)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default()
-        })
-    }
-
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.map(|d| {
-                let data = d.borrow();
-                data.opaque_regions()
-                    .map(|r| {
-                        r.iter()
-                            .map(|r| {
-                                let loc = r.loc.to_physical_precise_round(scale);
-                                let size = ((r.size.to_f64().to_physical(scale).to_point() + self.location)
-                                    .to_i32_round()
-                                    - self.location.to_i32_round())
-                                .to_size();
-                                Rectangle::from_loc_and_size(loc, size)
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default()
-        })
-    }
-}
-
-impl<R> RenderElement<R> for WaylandSurfaceRenderElement<R>
+/// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
+#[instrument(level = "trace", skip(renderer, location, scale))]
+pub fn render_elements_from_surface_tree<R, E>(
+    renderer: &mut R,
+    surface: &wl_surface::WlSurface,
+    location: impl Into<Point<i32, Physical>>,
+    scale: impl Into<Scale<f64>>,
+) -> Vec<E>
 where
     R: Renderer + ImportAll,
-    <R as Renderer>::TextureId: Texture + 'static,
+    <R as Renderer>::TextureId: Clone + 'static,
+    E: From<WaylandSurfaceRenderElement<R>>,
 {
-    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.and_then(|d| d.borrow().buffer().cloned())
-                .map(UnderlyingStorage::Wayland)
-        })
-    }
-
-    #[instrument(level = "trace", skip(frame))]
-    fn draw<'a>(
-        &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
-        src: Rectangle<f64, Buffer>,
-        dst: Rectangle<i32, Physical>,
-        damage: &[Rectangle<i32, Physical>],
-    ) -> Result<(), R::Error> {
-        compositor::with_states(&self.surface, |states| {
-            let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            if let Some(data) = data {
-                let data = data.borrow();
-
-                if let Some(texture) = data.texture::<R>(frame.id()) {
-                    frame.render_texture_from_to(texture, src, dst, damage, data.buffer_transform, 1.0f32)?;
-                } else {
-                    warn!("trying to render texture from different renderer");
-                }
-            }
-
-            Ok(())
-        })
-    }
+    custom_render_elements_from_surface_tree(
+        renderer,
+        surface,
+        location,
+        scale,
+        wayland_surface_render_element,
+    )
 }

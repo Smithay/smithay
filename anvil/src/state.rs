@@ -13,7 +13,7 @@ use smithay::{
     delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_input_method_manager,
     delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_presentation,
     delegate_primary_selection, delegate_relative_pointer, delegate_seat, delegate_shm,
-    delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
+    delegate_single_pixel_buffer, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
     delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{
         utils::{
@@ -61,6 +61,7 @@ use smithay::{
             },
         },
         shm::{ShmHandler, ShmState},
+        single_pixel_buffer::SinglePixelBufferState,
         socket::ListeningSocketSource,
         tablet_manager::TabletSeatTrait,
         text_input::TextInputManagerState,
@@ -122,6 +123,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub xdg_shell_state: XdgShellState,
     pub presentation_state: PresentationState,
     pub fractional_scale_manager_state: FractionalScaleManagerState,
+    pub single_pixel_buffer_state: SinglePixelBufferState,
 
     pub dnd_icon: Option<WlSurface>,
 
@@ -234,6 +236,8 @@ delegate_virtual_keyboard_manager!(@<BackendData: Backend + 'static> AnvilState<
 delegate_relative_pointer!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_viewporter!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+delegate_single_pixel_buffer!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
     fn activation_state(&mut self) -> &mut XdgActivationState {
@@ -435,6 +439,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
         let presentation_state = PresentationState::new::<Self>(&dh, clock.id() as u32);
         let fractional_scale_manager_state = FractionalScaleManagerState::new::<Self>(&dh);
+        let single_pixel_buffer_state = SinglePixelBufferState::new::<Self>(&dh);
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self>(&dh);
         VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
@@ -518,6 +523,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             xdg_shell_state,
             presentation_state,
             fractional_scale_manager_state,
+            single_pixel_buffer_state,
             dnd_icon: None,
             suppressed_keys: Vec::new(),
             pointer_location: (0.0, 0.0).into(),
