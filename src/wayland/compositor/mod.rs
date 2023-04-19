@@ -125,6 +125,8 @@ use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
 use wayland_server::{Client, DisplayHandle, GlobalDispatch, Resource};
 
+use super::module_registry;
+
 /// The role of a subsurface surface.
 pub const SUBSURFACE_ROLE: &str = "subsurface";
 
@@ -627,6 +629,52 @@ macro_rules! delegate_compositor {
             $crate::reexports::wayland_server::protocol::wl_subsurface::WlSubsurface: $crate::wayland::compositor::SubsurfaceUserData
         ] => $crate::wayland::compositor::CompositorState);
     };
+}
+
+pub(super) fn descriptor() -> module_registry::ModuleDescriptor {
+    use module_registry::{smithay, wayland_core, Global, ModuleDescriptor, Resource};
+    use quote::quote;
+
+    ModuleDescriptor {
+        name: quote!(Compositor),
+        dispatch_to: smithay!(wayland::compositor::CompositorState),
+        globals: vec![
+            Global {
+                interface: wayland_core!(wl_compositor::WlCompositor),
+                data: quote!(()),
+            },
+            Global {
+                interface: wayland_core!(wl_subcompositor::WlSubcompositor),
+                data: quote!(()),
+            },
+        ],
+        resources: vec![
+            Resource {
+                interface: wayland_core!(wl_compositor::WlCompositor),
+                data: quote!(()),
+            },
+            Resource {
+                interface: wayland_core!(wl_surface::WlSurface),
+                data: smithay!(wayland::compositor::SurfaceUserData),
+            },
+            Resource {
+                interface: wayland_core!(wl_region::WlRegion),
+                data: smithay!(wayland::compositor::RegionUserData),
+            },
+            Resource {
+                interface: wayland_core!(wl_callback::WlCallback),
+                data: quote!(()),
+            },
+            Resource {
+                interface: wayland_core!(wl_subcompositor::WlSubcompositor),
+                data: quote!(()),
+            },
+            Resource {
+                interface: wayland_core!(wl_subsurface::WlSubsurface),
+                data: quote!(()),
+            },
+        ],
+    }
 }
 
 #[cfg(test)]

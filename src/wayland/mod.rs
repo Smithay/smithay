@@ -45,6 +45,9 @@
 //! are not, for example).
 //!
 
+#[doc(hidden)]
+pub mod module_registry;
+
 pub mod buffer;
 pub mod compositor;
 pub mod content_type;

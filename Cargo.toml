@@ -19,12 +19,17 @@ rustdoc-args = ["--cfg", "docsrs"]
 [workspace]
 members = [
     "smithay-drm-extras",
+    "smithay-derive",
     "smallvil",
     "anvil",
     "wlcs_anvil"
 ]
 
 [dependencies]
+quote = "1.0.26"
+proc-macro-crate = "1.0"
+proc-macro2 = "1.0"
+
 appendlist = "1.4"
 # Intentionally pick a commit from "0.37-stable" branch since additions for 0.37.1 are used
 ash = { version = "0.37.1", optional = true }

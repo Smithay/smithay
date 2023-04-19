@@ -77,6 +77,8 @@ use crate::utils::{Logical, Point};
 
 pub use self::handlers::XdgOutputUserData;
 
+use super::module_registry;
+
 /// State of Smithay output manager
 #[derive(Debug, Default)]
 pub struct OutputManagerState {
@@ -311,4 +313,40 @@ macro_rules! delegate_output {
             $crate::reexports::wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_manager_v1::ZxdgOutputManagerV1: ()
         ] => $crate::wayland::output::OutputManagerState);
     };
+}
+
+pub(super) fn descriptor() -> module_registry::ModuleDescriptor {
+    use module_registry::{smithay, wayland_core, wayland_protocols, Global, ModuleDescriptor, Resource};
+    use quote::quote;
+
+    let xdg_output = wayland_protocols!(xdg::xdg_output::zv1::server);
+
+    ModuleDescriptor {
+        name: quote!(Output),
+        dispatch_to: smithay!(wayland::output::OutputManagerState),
+        globals: vec![
+            Global {
+                interface: wayland_core!(wl_output::WlOutput),
+                data: smithay!(wayland::output::WlOutputData),
+            },
+            Global {
+                interface: quote!(#xdg_output::zxdg_output_manager_v1::ZxdgOutputManagerV1),
+                data: quote!(()),
+            },
+        ],
+        resources: vec![
+            Resource {
+                interface: wayland_core!(wl_output::WlOutput),
+                data: smithay!(wayland::output::OutputUserData),
+            },
+            Resource {
+                interface: quote!(#xdg_output::zxdg_output_v1::ZxdgOutputV1),
+                data: smithay!(wayland::output::XdgOutputUserData),
+            },
+            Resource {
+                interface: quote!(#xdg_output::zxdg_output_manager_v1::ZxdgOutputManagerV1),
+                data: quote!(()),
+            },
+        ],
+    }
 }

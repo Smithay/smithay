@@ -114,7 +114,7 @@ use crate::{backend::allocator::format::get_bpp, utils::UnmanagedResource};
 
 use self::pool::Pool;
 
-use super::buffer::BufferHandler;
+use super::{buffer::BufferHandler, module_registry};
 
 /// State of SHM module
 #[derive(Debug)]
@@ -487,4 +487,32 @@ macro_rules! delegate_shm {
             $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer: $crate::wayland::shm::ShmBufferUserData
         ] => $crate::wayland::shm::ShmState);
     };
+}
+
+pub(super) fn descriptor() -> module_registry::ModuleDescriptor {
+    use module_registry::{smithay, wayland_core, Global, ModuleDescriptor, Resource};
+    use quote::quote;
+
+    ModuleDescriptor {
+        name: quote!(Shm),
+        dispatch_to: smithay!(wayland::shm::ShmState),
+        globals: vec![Global {
+            interface: wayland_core!(wl_shm::WlShm),
+            data: quote!(()),
+        }],
+        resources: vec![
+            Resource {
+                interface: wayland_core!(wl_shm::WlShm),
+                data: quote!(()),
+            },
+            Resource {
+                interface: wayland_core!(wl_shm_pool::WlShmPool),
+                data: smithay!(wayland::shm::ShmPoolUserData),
+            },
+            Resource {
+                interface: wayland_core!(wl_buffer::WlBuffer),
+                data: smithay!(wayland::shm::ShmBufferUserData),
+            },
+        ],
+    }
 }

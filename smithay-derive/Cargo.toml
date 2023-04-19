@@ -1,0 +1,23 @@
+[package]
+name = "smithay-derive"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro-crate = "1.0"
+proc-macro2 = "1.0"
+quote = "1.0.26"
+syn = { version = "2.0", default-features = false, features = [
+    "full",
+    "parsing",
+] }
+smithay = { path = "../" }
+
+[dev-dependencies]
+smithay = { path = "../" }
+
+[[example]]
+name = "simple"
