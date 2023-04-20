@@ -642,48 +642,60 @@ type RenderFrameErrorType<A, F, R> = RenderFrameError<
     R,
 >;
 
-/// Defines the element for the primary plane
-pub enum PrimaryPlaneElement<'a, B: Buffer, E> {
-    /// A slot from the swapchain was used for rendering
-    /// the primary plane
-    Swapchain {
-        /// The slot from the swapchain
-        slot: &'a Slot<B>,
-        /// The transform applied during rendering
-        transform: Transform,
-        /// The damage on the primary plane
-        damage: DamageSnapshot<i32, BufferCoords>,
-    },
-    /// An element has been assigned for direct scan-out
-    Element(&'a E),
+#[derive(Debug)]
+/// Defines the element for the primary plane in cases where a composited buffer as used.
+pub struct PrimarySwapchainElement<B: Buffer, F: AsRef<framebuffer::Handle>> {
+    /// The slot from the swapchain
+    slot: Owned<DrmScanoutBuffer<B, F>>,
+    /// The transform applied during rendering
+    pub transform: Transform,
+    /// The damage on the primary plane
+    pub damage: DamageSnapshot<i32, BufferCoords>,
 }
 
-impl<'a, B: Buffer + std::fmt::Debug, E: std::fmt::Debug> std::fmt::Debug for PrimaryPlaneElement<'a, B, E> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Swapchain {
-                slot,
-                transform,
-                damage,
-            } => f
-                .debug_struct("Swapchain")
-                .field("slot", slot)
-                .field("transform", transform)
-                .field("damage", damage)
-                .finish(),
-            Self::Element(arg0) => f.debug_tuple("Element").field(arg0).finish(),
+impl<B: Buffer, F: AsRef<framebuffer::Handle>> PrimarySwapchainElement<B, F> {
+    /// Access the underlying swapchain buffer
+    pub fn buffer(&self) -> &B {
+        match &self.slot.0.buffer {
+            ScanoutBuffer::Swapchain(slot) => slot,
+            _ => unreachable!(),
         }
     }
 }
 
+#[derive(Debug)]
+/// Defines the element for the primary plane
+pub enum PrimaryPlaneElement<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
+    /// A slot from the swapchain was used for rendering
+    /// the primary plane
+    Swapchain(PrimarySwapchainElement<B, F>),
+    /// An element has been assigned for direct scan-out
+    Element(&'a E),
+}
+
 /// Result for [`DrmCompositor::render_frame`]
-pub struct RenderFrameResult<'a, B: Buffer, E> {
+///
+/// **Note**: This struct may contain a reference to the composited buffer
+/// of the primary display plane. Dropping it will remove said reference and
+/// allows the buffer to be reused.
+///
+/// Keeping the buffer longer may cause the following issues:
+/// - **Too much damage** - until the buffer is marked free it is not considered
+/// submitted by the swapchain, causing the age value of newly queried buffers
+/// to be lower than necessary, potentially resulting in more rendering than necessary.
+/// To avoid this make sure the buffer is dropped before starting the next render.
+/// - **Exhaustion of swapchain images** - Continuing rendering while holding on
+/// to too many buffers may cause the swapchain to run out of images, returning errors
+/// on rendering until buffers are freed again. The exact amount of images in a
+/// swapchain is an implementation detail, but should generally be expect to be
+/// large enough to hold onto at least one `RenderFrameResult`.
+pub struct RenderFrameResult<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
     /// Damage of this frame
     pub damage: Option<Vec<Rectangle<i32, Physical>>>,
     /// The render element states of this frame
     pub states: RenderElementStates,
     /// Element for the primary plane
-    pub primary_element: PrimaryPlaneElement<'a, B, E>,
+    pub primary_element: PrimaryPlaneElement<'a, B, F, E>,
     /// Overlay elements in front to back order
     pub overlay_elements: Vec<&'a E>,
     /// Optional cursor plane element
@@ -694,14 +706,14 @@ pub struct RenderFrameResult<'a, B: Buffer, E> {
     primary_plane_element_id: Id,
 }
 
-struct SwapchainElement<'a, B: Buffer> {
+struct SwapchainElement<'a, 'b, B: Buffer> {
     id: Id,
     slot: &'a Slot<B>,
     transform: Transform,
-    damage: &'a DamageSnapshot<i32, BufferCoords>,
+    damage: &'b DamageSnapshot<i32, BufferCoords>,
 }
 
-impl<'a, B: Buffer> Element for SwapchainElement<'a, B> {
+impl<'a, 'b, B: Buffer> Element for SwapchainElement<'a, 'b, B> {
     fn id(&self) -> &Id {
         &self.id
     }
@@ -745,12 +757,12 @@ impl<'a, B: Buffer> Element for SwapchainElement<'a, B> {
     }
 }
 
-enum FrameResultDamageElement<'a, E, B: Buffer> {
+enum FrameResultDamageElement<'a, 'b, E, B: Buffer> {
     Element(&'a E),
-    Swapchain(SwapchainElement<'a, B>),
+    Swapchain(SwapchainElement<'a, 'b, B>),
 }
 
-impl<'a, E, B> Element for FrameResultDamageElement<'a, E, B>
+impl<'a, 'b, E, B> Element for FrameResultDamageElement<'a, 'b, E, B>
 where
     E: Element,
     B: Buffer,
@@ -827,9 +839,10 @@ pub enum BlitFrameResultError<R: std::error::Error, E: std::error::Error> {
     Export(E),
 }
 
-impl<'a, B, E> RenderFrameResult<'a, B, E>
+impl<'a, B, F, E> RenderFrameResult<'a, B, F, E>
 where
     B: Buffer,
+    F: AsRef<framebuffer::Handle>,
 {
     /// Get the damage of this frame for the specified dtr and age
     pub fn damage_from_age(
@@ -843,7 +856,7 @@ where
     {
         let filter_ids: HashSet<Id> = filter.into_iter().collect();
 
-        let mut elements: Vec<FrameResultDamageElement<'_, E, B>> =
+        let mut elements: Vec<FrameResultDamageElement<'_, '_, E, B>> =
             Vec::with_capacity(usize::from(self.cursor_element.is_some()) + self.overlay_elements.len() + 1);
         if let Some(cursor) = self.cursor_element {
             if !filter_ids.contains(cursor.id()) {
@@ -859,14 +872,17 @@ where
         );
 
         let primary_render_element = match &self.primary_element {
-            PrimaryPlaneElement::Swapchain {
+            PrimaryPlaneElement::Swapchain(PrimarySwapchainElement {
                 slot,
                 transform,
                 damage,
-            } => FrameResultDamageElement::Swapchain(SwapchainElement {
+            }) => FrameResultDamageElement::Swapchain(SwapchainElement {
                 id: self.primary_plane_element_id.clone(),
                 transform: *transform,
-                slot: *slot,
+                slot: match &slot.0.buffer {
+                    ScanoutBuffer::Swapchain(slot) => slot,
+                    _ => unreachable!(),
+                },
                 damage,
             }),
             PrimaryPlaneElement::Element(e) => FrameResultDamageElement::Element(*e),
@@ -878,10 +894,11 @@ where
     }
 }
 
-impl<'a, B, E> RenderFrameResult<'a, B, E>
+impl<'a, B, F, E> RenderFrameResult<'a, B, F, E>
 where
     B: Buffer + AsDmabuf,
     <B as AsDmabuf>::Error: std::fmt::Debug,
+    F: AsRef<framebuffer::Handle>,
 {
     /// Blit the frame result into a currently bound buffer
     #[allow(clippy::too_many_arguments)]
@@ -931,8 +948,11 @@ where
         }
 
         let primary_dmabuf = match &self.primary_element {
-            PrimaryPlaneElement::Swapchain { slot, .. } => {
-                let dmabuf = slot.export().map_err(BlitFrameResultError::Export)?;
+            PrimaryPlaneElement::Swapchain(PrimarySwapchainElement { slot, .. }) => {
+                let dmabuf = match &slot.0.buffer {
+                    ScanoutBuffer::Swapchain(slot) => slot.export().map_err(BlitFrameResultError::Export)?,
+                    _ => unreachable!(),
+                };
                 let size = dmabuf.size();
                 let geometry = Rectangle::from_loc_and_size(
                     (0, 0),
@@ -1030,7 +1050,13 @@ where
     }
 }
 
-impl<'a, B: Buffer + std::fmt::Debug, E: std::fmt::Debug> std::fmt::Debug for RenderFrameResult<'a, B, E> {
+impl<
+        'a,
+        B: Buffer + std::fmt::Debug,
+        F: AsRef<framebuffer::Handle> + std::fmt::Debug,
+        E: std::fmt::Debug,
+    > std::fmt::Debug for RenderFrameResult<'a, B, F, E>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RenderFrameResult")
             .field("damage", &self.damage)
@@ -1463,7 +1489,7 @@ where
         renderer: &mut R,
         elements: &'a [E],
         clear_color: [f32; 4],
-    ) -> Result<RenderFrameResult<'a, A::Buffer, E>, RenderFrameErrorType<A, F, R>>
+    ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
         R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
@@ -1972,16 +1998,13 @@ where
                     .plane_state(self.planes.primary.handle)
                     .unwrap();
                 let config = primary_plane_state.config.as_ref().unwrap();
-                match &config.buffer.buffer {
-                    ScanoutBuffer::Swapchain(slot) => slot,
-                    _ => unreachable!(),
-                }
+                config.buffer.clone()
             };
-            PrimaryPlaneElement::Swapchain {
+            PrimaryPlaneElement::Swapchain(PrimarySwapchainElement {
                 slot,
                 transform: output_transform,
                 damage: self.primary_plane_damage_bag.snapshot(),
-            }
+            })
         } else {
             PrimaryPlaneElement::Element(primary_plane_scanout_element.unwrap())
         };
@@ -1991,7 +2014,7 @@ where
         } else {
             Some(output_damage)
         };
-        let frame_reference: RenderFrameResult<'a, A::Buffer, E> = RenderFrameResult {
+        let frame_reference: RenderFrameResult<'a, A::Buffer, F::Framebuffer, E> = RenderFrameResult {
             primary_element: primary_plane_element,
             damage,
             overlay_elements: overlay_plane_elements.into_values().collect(),
