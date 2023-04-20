@@ -66,7 +66,12 @@ fn get_manufacturer_name(edid: &edid_rs::EDID) -> String {
 
     hwdata::pnp_id_to_name(&code)
         .map(|name| name.to_string())
-        .unwrap_or_else(|| code.into_iter().collect())
+        .unwrap_or_else(|| {
+            code.into_iter()
+                .map(|v| (v as u8).to_string())
+                .collect::<Vec<String>>()
+                .join("_")
+        })
 }
 
 fn get_monitor_name(edid: &edid_rs::EDID) -> String {
