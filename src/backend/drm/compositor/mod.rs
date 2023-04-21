@@ -643,7 +643,7 @@ type RenderFrameErrorType<A, F, R> = RenderFrameError<
 >;
 
 #[derive(Debug)]
-/// Defines the element for the primary plane in cases where a composited buffer as used.
+/// Defines the element for the primary plane in cases where a composited buffer was used.
 pub struct PrimarySwapchainElement<B: Buffer, F: AsRef<framebuffer::Handle>> {
     /// The slot from the swapchain
     slot: Owned<DrmScanoutBuffer<B, F>>,
