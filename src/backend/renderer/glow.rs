@@ -12,6 +12,7 @@ use crate::backend::{egl::display::EGLBufferReader, renderer::ImportEgl};
 use crate::{
     backend::{
         allocator::{dmabuf::Dmabuf, Format, Fourcc},
+        color::CMS,
         egl::EGLContext,
         renderer::{
             element::UnderlyingStorage,
@@ -46,8 +47,8 @@ pub struct GlowRenderer {
 /// [`Frame`](super::Frame) implementation of a [`GlowRenderer`].
 ///
 /// Leaking the frame will cause the same problems as leaking a [`GlesFrame`].
-pub struct GlowFrame<'a> {
-    frame: Option<GlesFrame<'a>>,
+pub struct GlowFrame<'frame, 'color, C: CMS> {
+    frame: Option<GlesFrame<'frame, 'color, C>>,
     glow: Arc<Context>,
 }
 
@@ -109,7 +110,7 @@ impl GlowRenderer {
     }
 }
 
-impl<'frame> GlowFrame<'frame> {
+impl<'frame, 'color, C: CMS> GlowFrame<'frame, 'color, C> {
     /// Run custom code in the GL context owned by this renderer.
     ///
     /// The OpenGL state of the renderer is considered an implementation detail
@@ -155,14 +156,14 @@ impl BorrowMut<GlesRenderer> for GlowRenderer {
     }
 }
 
-impl<'frame> Borrow<GlesFrame<'frame>> for GlowFrame<'frame> {
-    fn borrow(&self) -> &GlesFrame<'frame> {
+impl<'frame, 'color, C: CMS> Borrow<GlesFrame<'frame, 'color, C>> for GlowFrame<'frame, 'color, C> {
+    fn borrow(&self) -> &GlesFrame<'frame, 'color, C> {
         self.frame.as_ref().unwrap()
     }
 }
 
-impl<'frame> BorrowMut<GlesFrame<'frame>> for GlowFrame<'frame> {
-    fn borrow_mut(&mut self) -> &mut GlesFrame<'frame> {
+impl<'frame, 'color, C: CMS> BorrowMut<GlesFrame<'frame, 'color, C>> for GlowFrame<'frame, 'color, C> {
+    fn borrow_mut(&mut self) -> &mut GlesFrame<'frame, 'color, C> {
         self.frame.as_mut().unwrap()
     }
 }
@@ -170,7 +171,7 @@ impl<'frame> BorrowMut<GlesFrame<'frame>> for GlowFrame<'frame> {
 impl Renderer for GlowRenderer {
     type Error = GlesError;
     type TextureId = GlesTexture;
-    type Frame<'frame> = GlowFrame<'frame>;
+    type Frame<'frame, 'color, C: CMS + 'static> = GlowFrame<'frame, 'color, C>;
 
     fn id(&self) -> usize {
         self.gl.id()
@@ -190,13 +191,15 @@ impl Renderer for GlowRenderer {
         self.gl.debug_flags()
     }
 
-    fn render(
-        &mut self,
+    fn render<'frame, 'color, C: CMS + 'static>(
+        &'frame mut self,
         output_size: Size<i32, Physical>,
         transform: Transform,
-    ) -> Result<GlowFrame<'_>, Self::Error> {
+        cms: &'color mut C,
+        output_profile: &'color <C as CMS>::ColorProfile,
+    ) -> Result<GlowFrame<'frame, 'color, C>, Self::Error> {
         let glow = self.glow.clone();
-        let frame = self.gl.render(output_size, transform)?;
+        let frame = self.gl.render(output_size, transform, cms, output_profile)?;
         Ok(GlowFrame {
             frame: Some(frame),
             glow,
@@ -204,7 +207,7 @@ impl Renderer for GlowRenderer {
     }
 }
 
-impl<'frame> Frame for GlowFrame<'frame> {
+impl<'frame, 'color, C: CMS> Frame<C> for GlowFrame<'frame, 'color, C> {
     type TextureId = GlesTexture;
     type Error = GlesError;
 
@@ -212,8 +215,13 @@ impl<'frame> Frame for GlowFrame<'frame> {
         self.frame.as_ref().unwrap().id()
     }
 
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
-        self.frame.as_mut().unwrap().clear(color, at)
+    fn clear(
+        &mut self,
+        color: [f32; 4],
+        at: &[Rectangle<i32, Physical>],
+        input_profile: &<C as CMS>::ColorProfile,
+    ) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().clear(color, at, input_profile)
     }
 
     fn draw_solid(
@@ -221,8 +229,12 @@ impl<'frame> Frame for GlowFrame<'frame> {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         color: [f32; 4],
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), Self::Error> {
-        self.frame.as_mut().unwrap().draw_solid(dst, damage, color)
+        self.frame
+            .as_mut()
+            .unwrap()
+            .draw_solid(dst, damage, color, input_profile)
     }
 
     fn render_texture_from_to(
@@ -233,6 +245,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
         damage: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), Self::Error> {
         Frame::render_texture_from_to(
             self.frame.as_mut().unwrap(),
@@ -242,6 +255,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
             damage,
             src_transform,
             alpha,
+            input_profile,
         )
     }
 
@@ -258,6 +272,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
         src_transform: Transform,
         damage: &[Rectangle<i32, Physical>],
         alpha: f32,
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), Self::Error> {
         self.frame.as_mut().unwrap().render_texture_at(
             texture,
@@ -267,6 +282,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
             src_transform,
             damage,
             alpha,
+            input_profile,
         )
     }
 
@@ -275,7 +291,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
     }
 }
 
-impl<'frame> GlowFrame<'frame> {
+impl<'frame, 'color, C: CMS> GlowFrame<'frame, 'color, C> {
     fn finish_internal(&mut self) -> Result<(), GlesError> {
         if let Some(frame) = self.frame.take() {
             frame.finish()
@@ -285,7 +301,7 @@ impl<'frame> GlowFrame<'frame> {
     }
 }
 
-impl<'frame> Drop for GlowFrame<'frame> {
+impl<'frame, 'color, C: CMS> Drop for GlowFrame<'frame, 'color, C> {
     fn drop(&mut self) {
         if let Err(err) = self.finish_internal() {
             warn!("Ignored error finishing GlowFrame on drop: {}", err);
@@ -461,18 +477,22 @@ impl Unbind for GlowRenderer {
     }
 }
 
-impl RenderElement<GlowRenderer> for PixelShaderElement {
-    fn draw<'a>(
+impl<C: CMS + 'static> RenderElement<GlowRenderer, C> for PixelShaderElement<C> {
+    fn draw<'frame, 'color>(
         &self,
-        frame: &mut GlowFrame<'a>,
+        frame: &mut GlowFrame<'frame, 'color, C>,
         src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        RenderElement::<GlesRenderer>::draw(self, frame.borrow_mut(), src, dst, damage)
+        RenderElement::<GlesRenderer, C>::draw(self, frame.borrow_mut(), src, dst, damage)
     }
 
     fn underlying_storage(&self, renderer: &mut GlowRenderer) -> Option<UnderlyingStorage> {
-        RenderElement::<GlesRenderer>::underlying_storage(self, renderer.borrow_mut())
+        RenderElement::<GlesRenderer, C>::underlying_storage(self, renderer.borrow_mut())
+    }
+
+    fn color_profile(&self) -> C::ColorProfile {
+        RenderElement::<GlesRenderer, C>::color_profile(self)
     }
 }
