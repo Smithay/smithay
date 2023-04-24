@@ -780,6 +780,7 @@ impl ImportMemWl for GlesRenderer {
             if self.gl_version.major == 2 {
                 // es 2.0 doesn't define sized variants
                 internal_format = match internal_format {
+                    ffi::BGRA_EXT => ffi::BGRA_EXT,
                     ffi::RGBA8 => ffi::RGBA,
                     ffi::RGB8 => ffi::RGB,
                     _ => unreachable!(),
