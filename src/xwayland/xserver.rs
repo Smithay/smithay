@@ -130,6 +130,8 @@ impl XWayland {
     /// - `display` - if provided only the given display number will be tested.
     ///     If you wish smithay to choose a display for you, pass `None`.
     /// - `envs` - Allows additionally environment variables for the xwayland executable to be set
+    /// - `open_abstract_socket` - Open an abstract socket as well as filesystem sockets (only on
+    ///    Linux)
     /// - `user_data` - Allows mutating the `XWaylandClientData::user_data`-map before the client
     ///    is added to the wayland display. Useful for initializing state for global filters.
     ///
@@ -149,6 +151,7 @@ impl XWayland {
         loop_handle: LoopHandle<'_, D>,
         display: impl Into<Option<u32>>,
         envs: I,
+        open_abstract_socket: bool,
         user_data: F,
     ) -> io::Result<u32>
     where
@@ -158,7 +161,15 @@ impl XWayland {
         F: FnOnce(&UserDataMap),
     {
         let dh = self.inner.lock().unwrap().dh.clone();
-        launch(&self.inner, loop_handle, dh, display.into(), envs, user_data)
+        launch(
+            &self.inner,
+            loop_handle,
+            dh,
+            display.into(),
+            envs,
+            open_abstract_socket,
+            user_data,
+        )
     }
 
     /// Shutdown XWayland
@@ -228,6 +239,7 @@ fn launch<D, K, V, I, F>(
     mut dh: DisplayHandle,
     display: Option<u32>,
     envs: I,
+    open_abstract_socket: bool,
     user_data: F,
 ) -> io::Result<u32>
 where
@@ -246,7 +258,7 @@ where
     let (x_wm_x11, x_wm_me) = UnixStream::pair()?;
     let (wl_x11, wl_me) = UnixStream::pair()?;
 
-    let (lock, x_fds) = prepare_x11_sockets(display)?;
+    let (lock, x_fds) = prepare_x11_sockets(display, open_abstract_socket)?;
     let display = lock.display();
 
     // we have now created all the required sockets

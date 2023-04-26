@@ -472,6 +472,7 @@ pub fn run_udev() {
         state.handle.clone(),
         None,
         std::iter::empty::<(OsString, OsString)>(),
+        true,
         |_| {},
     ) {
         error!("Failed to start XWayland: {}", e);

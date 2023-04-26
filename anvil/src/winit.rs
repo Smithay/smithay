@@ -200,6 +200,7 @@ pub fn run_winit() {
         state.handle.clone(),
         None,
         std::iter::empty::<(OsString, OsString)>(),
+        true,
         |_| {},
     ) {
         error!("Failed to start XWayland: {}", e);

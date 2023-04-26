@@ -7,18 +7,16 @@ use tracing::{debug, info, warn};
 
 use nix::{errno::Errno, sys::socket};
 
-#[cfg(target_os = "linux")]
-type Sockets = [UnixStream; 2];
-#[cfg(not(target_os = "linux"))]
-type Sockets = [UnixStream; 1];
-
 /// Find a free X11 display slot and setup
-pub(crate) fn prepare_x11_sockets(display: Option<u32>) -> Result<(X11Lock, Sockets), std::io::Error> {
+pub(crate) fn prepare_x11_sockets(
+    display: Option<u32>,
+    open_abstract_socket: bool,
+) -> Result<(X11Lock, Vec<UnixStream>), std::io::Error> {
     match display {
         Some(d) => {
             if let Ok(lock) = X11Lock::grab(d) {
                 // we got a lockfile, try and create the socket
-                match open_x11_sockets_for_display(d) {
+                match open_x11_sockets_for_display(d, open_abstract_socket) {
                     Ok(sockets) => return Ok((lock, sockets)),
                     Err(err) => return Err(std::io::Error::from_raw_os_error(err as i32)),
                 };
@@ -29,7 +27,7 @@ pub(crate) fn prepare_x11_sockets(display: Option<u32>) -> Result<(X11Lock, Sock
                 // if fails, try the next one
                 if let Ok(lock) = X11Lock::grab(d) {
                     // we got a lockfile, try and create the socket
-                    match open_x11_sockets_for_display(d) {
+                    match open_x11_sockets_for_display(d, open_abstract_socket) {
                         Ok(sockets) => return Ok((lock, sockets)),
                         Err(err) => warn!(display = d, "Failed to create sockets: {}", err),
                     }
@@ -135,28 +133,29 @@ impl Drop for X11Lock {
 ///
 /// Should only be done after the associated lockfile is acquired!
 #[cfg(target_os = "linux")]
-fn open_x11_sockets_for_display(display: u32) -> nix::Result<Sockets> {
+fn open_x11_sockets_for_display(display: u32, open_abstract_socket: bool) -> nix::Result<Vec<UnixStream>> {
     let path = format!("/tmp/.X11-unix/X{}", display);
     let _ = ::std::fs::remove_file(&path);
     // We know this path is not too long, these unwrap cannot fail
     let fs_addr = socket::UnixAddr::new(path.as_bytes()).unwrap();
-    let abs_addr = socket::UnixAddr::new_abstract(path.as_bytes()).unwrap();
-    let fs_socket = open_socket(fs_addr)?;
-    let abstract_socket = open_socket(abs_addr)?;
-    Ok([fs_socket, abstract_socket])
+    let mut sockets = vec![open_socket(fs_addr)?];
+    if open_abstract_socket {
+        let abs_addr = socket::UnixAddr::new_abstract(path.as_bytes()).unwrap();
+        sockets.push(open_socket(abs_addr)?);
+    }
+    Ok(sockets)
 }
 
 /// Open the two unix sockets an X server listens on
 ///
 /// Should only be done after the associated lockfile is acquired!
 #[cfg(not(target_os = "linux"))]
-fn open_x11_sockets_for_display(display: u32) -> nix::Result<Sockets> {
+fn open_x11_sockets_for_display(display: u32, _open_abstract_socket: bool) -> nix::Result<Vec<UnixStream>> {
     let path = format!("/tmp/.X11-unix/X{}", display);
     let _ = ::std::fs::remove_file(&path);
     // We know this path is not too long, these unwrap cannot fail
     let fs_addr = socket::UnixAddr::new(path.as_bytes()).unwrap();
-    let fs_socket = open_socket(fs_addr)?;
-    Ok([fs_socket])
+    Ok(vec![open_socket(fs_addr)?])
 }
 
 /// Open an unix socket for listening and bind it to given path
