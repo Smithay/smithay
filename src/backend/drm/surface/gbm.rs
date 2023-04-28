@@ -253,6 +253,9 @@ where
 
     /// Queues the current buffer for rendering.
     ///
+    /// Returns [`Error::NoBuffer`] in case [`GbmBufferedSurface::next_buffer`] has not been called
+    /// prior to this function.
+    ///
     /// *Note*: This function needs to be followed up with [`GbmBufferedSurface::frame_submitted`]
     /// when a vblank event is received, that denotes successful scanout of the buffer.
     /// Otherwise the underlying swapchain will eventually run out of buffers.
@@ -263,11 +266,12 @@ where
         damage: Option<Vec<Rectangle<i32, Physical>>>,
         user_data: U,
     ) -> Result<(), Error<A::Error>> {
-        self.queued_fb = self.next_fb.take().map(|fb| {
-            self.swapchain.submitted(&fb);
-            (fb, damage, user_data)
-        });
-        if self.pending_fb.is_none() && self.queued_fb.is_some() {
+        let next_fb = self.next_fb.take().ok_or(Error::<A::Error>::NoBuffer)?;
+
+        self.swapchain.submitted(&next_fb);
+
+        self.queued_fb = Some((next_fb, damage, user_data));
+        if self.pending_fb.is_none() {
             self.submit()?;
         }
         Ok(())
@@ -453,6 +457,9 @@ pub enum Error<E: std::error::Error + Send + Sync + 'static> {
     /// Error exporting as Dmabuf
     #[error("The allocated buffer could not be exported as a dmabuf: {0}")]
     AsDmabufError(#[from] GbmConvertError),
+    /// No buffer to queue
+    #[error("No buffer has been acquired to get queued")]
+    NoBuffer,
 }
 
 impl<E: std::error::Error + Send + Sync + 'static> From<Error<E>> for SwapBuffersError {
@@ -462,7 +469,9 @@ impl<E: std::error::Error + Send + Sync + 'static> From<Error<E>> for SwapBuffer
             | x @ Error::NoSupportedRendererFormat
             | x @ Error::FormatsNotCompatible
             | x @ Error::InitialRenderingError => SwapBuffersError::ContextLost(Box::new(x)),
-            x @ Error::NoFreeSlotsError => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ Error::NoFreeSlotsError | x @ Error::NoBuffer => {
+                SwapBuffersError::TemporaryFailure(Box::new(x))
+            }
             Error::DrmError(err) => err.into(),
             Error::GbmError(err) => SwapBuffersError::ContextLost(Box::new(err)),
             Error::AsDmabufError(err) => SwapBuffersError::ContextLost(Box::new(err)),
