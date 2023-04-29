@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use smithay::{
     backend::{
-        allocator::dmabuf::Dmabuf,
+        allocator::{dmabuf::Dmabuf, Fourcc},
         renderer::{
             DebugFlags, Frame, ImportDma, ImportDmaWl, ImportEgl, ImportMem, ImportMemWl, Renderer, Texture,
             TextureFilter,
@@ -58,6 +58,7 @@ impl ImportMem for DummyRenderer {
     fn import_memory(
         &mut self,
         _data: &[u8],
+        _format: Fourcc,
         _size: Size<i32, Buffer>,
         _flipped: bool,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
@@ -71,6 +72,10 @@ impl ImportMem for DummyRenderer {
         _region: Rectangle<i32, Buffer>,
     ) -> Result<(), <Self as Renderer>::Error> {
         unimplemented!()
+    }
+
+    fn mem_formats(&self) -> Box<dyn Iterator<Item = Fourcc>> {
+        Box::new([Fourcc::Argb8888, Fourcc::Xrgb8888].iter().copied())
     }
 }
 
@@ -165,6 +170,15 @@ impl Frame for DummyFrame {
         Ok(())
     }
 
+    fn draw_solid(
+        &mut self,
+        _dst: Rectangle<i32, Physical>,
+        _damage: &[Rectangle<i32, Physical>],
+        _color: [f32; 4],
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     fn render_texture_from_to(
         &mut self,
         _texture: &Self::TextureId,
@@ -199,5 +213,9 @@ impl Texture for DummyTexture {
 
     fn height(&self) -> u32 {
         self.height
+    }
+
+    fn format(&self) -> Option<Fourcc> {
+        None
     }
 }

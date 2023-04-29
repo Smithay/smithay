@@ -66,6 +66,23 @@ macro_rules! format_tables {
             }
         }
 
+        /// Returns the transparent alternative of the specified format.
+        ///
+        /// If the format has an unused alpha channel, this may return the corresponding non-opaque format.
+        ///
+        /// Unknown formats will always return [`None`].
+        pub const fn get_transparent(
+            fourcc: $crate::backend::allocator::Fourcc,
+        ) -> Option<$crate::backend::allocator::Fourcc> {
+            match fourcc {
+                $($(
+                    $crate::backend::allocator::Fourcc::$opaque
+                        => Some($crate::backend::allocator::Fourcc::$fourcc),
+                )?)*
+                _ => None,
+            }
+        }
+
         /// Returns true if the format has an alpha channel.
         ///
         /// This function may be useful to know if the alpha channel may need to be swizzled when rendering
@@ -348,7 +365,7 @@ format_tables! {
 
 #[cfg(test)]
 mod tests {
-    use super::{_impl_formats, get_bpp, get_depth, get_opaque, has_alpha};
+    use super::{_impl_formats, get_bpp, get_depth, get_opaque, get_transparent, has_alpha};
 
     /// Tests that opaque alternatives are not the same as the variant with alpha.
     #[test]
@@ -359,6 +376,24 @@ mod tests {
                     format, opaque,
                     "{}'s opaque alternative is the same format",
                     format
+                );
+            }
+        }
+    }
+
+    /// Tests that opaque alternatives are cleanly converting back with get_transparent.
+    #[test]
+    fn opaque_inverse() {
+        for &format in _impl_formats() {
+            if let Some(opaque) = get_opaque(format) {
+                let transparent = get_transparent(opaque);
+                assert_eq!(
+                    Some(format),
+                    transparent,
+                    "{}'s opaque alternative {} doesn't cleanly convert back, got: {:?}",
+                    format,
+                    opaque,
+                    transparent
                 );
             }
         }

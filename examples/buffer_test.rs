@@ -12,7 +12,7 @@ use smithay::{
         drm::{DrmDevice, DrmDeviceFd, DrmNode},
         egl::{EGLContext, EGLDevice, EGLDisplay},
         renderer::{
-            gles2::{Gles2Renderbuffer, Gles2Renderer},
+            gles::{GlesRenderbuffer, GlesRenderer},
             Bind, ExportMem, Frame, ImportDma, Offscreen, Renderer,
         },
         vulkan::{version::Version, Instance, PhysicalDevice},
@@ -218,7 +218,7 @@ fn buffer_test(args: TestArgs) {
             let display = EGLDisplay::new(device).expect("Failed to create EGL display");
 
             let context = EGLContext::new(&display).expect("Failed to create EGL context");
-            let mut renderer = unsafe { Gles2Renderer::new(context).expect("Failed to init GL ES renderer") };
+            let mut renderer = unsafe { GlesRenderer::new(context).expect("Failed to init GL ES renderer") };
 
             render_into(
                 &mut renderer,
@@ -258,9 +258,9 @@ fn buffer_test(args: TestArgs) {
             let display = EGLDisplay::new(device).expect("Failed to create EGL display");
 
             let context = EGLContext::new(&display).expect("Failed to create EGL context");
-            let mut renderer = unsafe { Gles2Renderer::new(context).expect("Failed to init GL ES renderer") };
+            let mut renderer = unsafe { GlesRenderer::new(context).expect("Failed to init GL ES renderer") };
 
-            render_from::<_, Gles2Renderbuffer>(
+            render_from::<_, GlesRenderbuffer>(
                 &mut renderer,
                 buffer,
                 args.width as i32,
@@ -315,8 +315,8 @@ where
     let texture = renderer
         .import_dmabuf(&buffer, None)
         .expect("Failed to import dmabuf");
-    let offscreen =
-        Offscreen::<T>::create_buffer(renderer, (w, h).into()).expect("Failed to create offscreen buffer");
+    let offscreen = Offscreen::<T>::create_buffer(renderer, Fourcc::Abgr8888, (w, h).into())
+        .expect("Failed to create offscreen buffer");
     renderer.bind(offscreen).expect("Failed to bind offscreen buffer");
     let mut frame = renderer
         .render((w, h).into(), Transform::Normal)
@@ -336,7 +336,7 @@ where
 
     if let Some(path) = dump {
         let mapping = renderer
-            .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), (w, h)))
+            .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), (w, h)), Fourcc::Abgr8888)
             .expect("Failed to map framebuffer");
         let copy = renderer.map_texture(&mapping).expect("Failed to read mapping");
         image::save_buffer(path, copy, w as u32, h as u32, image::ColorType::Rgba8)

@@ -21,7 +21,7 @@
 //! #     renderer::ImportEgl,
 //! # };
 //! # use smithay::{
-//! #     backend::allocator::dmabuf::Dmabuf,
+//! #     backend::allocator::{Fourcc, dmabuf::Dmabuf},
 //! #     backend::renderer::{
 //! #         DebugFlags, Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
 //! #         TextureFilter,
@@ -40,6 +40,9 @@
 //! #     fn height(&self) -> u32 {
 //! #         unimplemented!()
 //! #     }
+//! #     fn format(&self) -> Option<Fourcc> {
+//! #         unimplemented!()
+//! #     }
 //! # }
 //! #
 //! # struct FakeFrame;
@@ -50,6 +53,14 @@
 //! #
 //! #     fn id(&self) -> usize { unimplemented!() }
 //! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn draw_solid(
+//! #         &mut self,
+//! #         _dst: Rectangle<i32, Physical>,
+//! #         _damage: &[Rectangle<i32, Physical>],
+//! #         _color: [f32; 4],
+//! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
 //! #     fn render_texture_from_to(
@@ -101,6 +112,7 @@
 //! #     fn import_memory(
 //! #         &mut self,
 //! #         _: &[u8],
+//! #         _: Fourcc,
 //! #         _: Size<i32, Buffer>,
 //! #         _: bool,
 //! #     ) -> Result<Self::TextureId, Self::Error> {
@@ -112,6 +124,9 @@
 //! #         _: &[u8],
 //! #         _: Rectangle<i32, Buffer>,
 //! #     ) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn mem_formats(&self) -> Box<dyn Iterator<Item=Fourcc>> {
 //! #         unimplemented!()
 //! #     }
 //! # }
@@ -170,7 +185,7 @@
 //! # impl ImportDmaWl for FakeRenderer {}
 //! use smithay::{
 //!     backend::renderer::{
-//!         damage::DamageTrackedRenderer,
+//!         damage::OutputDamageTracker,
 //!         element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
 //!     },
 //!     utils::{Point, Rectangle, Size, Transform},
@@ -181,7 +196,7 @@
 //! # let surface = WlSurface::from_id(&dh, ObjectId::null()).unwrap();
 //!
 //! // Initialize a static damage tracked renderer
-//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
 //! # let mut renderer = FakeRenderer;
 //!
 //! loop {
@@ -191,7 +206,7 @@
 //!         render_elements_from_surface_tree(&mut renderer, &surface, location, 1.0);
 //!
 //!     // Render the element(s)
-//!     damage_tracked_renderer
+//!     damage_tracker
 //!         .render_output(&mut renderer, 0, &*render_elements, [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }

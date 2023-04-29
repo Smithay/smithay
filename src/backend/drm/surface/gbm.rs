@@ -1,18 +1,17 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use drm::control::{connector, crtc, framebuffer, plane, Device, Mode};
+use drm::control::{connector, crtc, plane, Mode};
 use gbm::BufferObject;
 
 use crate::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
+use crate::backend::allocator::format::get_opaque;
 use crate::backend::allocator::gbm::GbmConvertError;
-use crate::backend::allocator::{
-    format::{get_bpp, get_depth},
-    Allocator, Format, Fourcc, Modifier, Slot, Swapchain,
-};
+use crate::backend::allocator::{Allocator, Format, Fourcc, Modifier, Slot, Swapchain};
+use crate::backend::drm::gbm::{framebuffer_from_bo, GbmFramebuffer};
 use crate::backend::drm::{DrmError, DrmSurface};
 use crate::backend::SwapBuffersError;
-use crate::utils::{DevPath, Physical, Point, Rectangle, Transform};
+use crate::utils::{Physical, Point, Rectangle, Transform};
 
 use tracing::{debug, error, info_span, instrument, trace, warn};
 
@@ -31,17 +30,6 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static,
     span: tracing::Span,
 }
 
-// we cannot simply pick the first supported format of the intersection of *all* formats, because:
-// - we do not want something like Abgr4444, which looses color information, if something better is available
-// - some formats might perform terribly
-// - we might need some work-arounds, if one supports modifiers, but the other does not
-//
-// So lets just pick `ARGB8888` or `XRGB8888` for now, they are widely supported.
-// Once we have proper color management and possibly HDR support,
-// we need to have a more sophisticated picker.
-// (Or maybe just select A/XRGB2101010, if available, we will see.)
-const SUPPORTED_FORMATS: &[Fourcc] = &[Fourcc::Argb8888, Fourcc::Xrgb8888];
-
 impl<A, U> GbmBufferedSurface<A, U>
 where
     A: Allocator<Buffer = BufferObject<()>>,
@@ -50,12 +38,15 @@ where
     /// Create a new `GbmBufferedSurface` from a given compatible combination
     /// of a surface, an allocator and renderer formats.
     ///
+    /// The provided color_formats are tested in order until a working configuration is found.
+    ///
     /// To successfully call this function, you need to have a renderer,
     /// which can render into a Dmabuf, and a gbm allocator that can produce
     /// buffers of a supported format for rendering.
     pub fn new(
         drm: DrmSurface,
         mut allocator: A,
+        color_formats: &[Fourcc],
         renderer_formats: HashSet<Format>,
     ) -> Result<GbmBufferedSurface<A, U>, Error<A::Error>> {
         let span = info_span!(parent: drm.span(), "drm_gbm");
@@ -64,7 +55,7 @@ where
         let mut error = None;
         let drm = Arc::new(drm);
 
-        for format in SUPPORTED_FORMATS {
+        for format in color_formats {
             debug!("Testing color format: {}", format);
             match Self::new_internal(drm.clone(), allocator, renderer_formats.clone(), *format) {
                 Ok((current_fb, swapchain)) => {
@@ -102,18 +93,31 @@ where
             Err(err) => return Err((allocator, err.into())),
         };
 
-        if !plane_formats.iter().any(|fmt| fmt.code == code) {
+        let opaque_code = get_opaque(code).unwrap_or(code);
+        if !plane_formats
+            .iter()
+            .any(|fmt| fmt.code == code || fmt.code == opaque_code)
+        {
             return Err((allocator, Error::NoSupportedPlaneFormat));
         }
-        plane_formats.retain(|fmt| fmt.code == code);
+        plane_formats.retain(|fmt| fmt.code == code || fmt.code == opaque_code);
         renderer_formats.retain(|fmt| fmt.code == code);
+
+        let plane_modifiers = plane_formats
+            .iter()
+            .map(|fmt| fmt.modifier)
+            .collect::<HashSet<_>>();
+        let renderer_modifiers = renderer_formats
+            .iter()
+            .map(|fmt| fmt.modifier)
+            .collect::<HashSet<_>>();
 
         trace!("Plane formats: {:?}", plane_formats);
         trace!("Renderer formats: {:?}", renderer_formats);
         debug!(
-            "Remaining intersected formats: {:?}",
-            plane_formats
-                .intersection(&renderer_formats)
+            "Remaining intersected modifiers: {:?}",
+            plane_modifiers
+                .intersection(&renderer_modifiers)
                 .collect::<HashSet<_>>()
         );
 
@@ -142,9 +146,10 @@ where
                     modifier: Modifier::Invalid,
                 }]
             } else {
-                plane_formats
-                    .intersection(&renderer_formats)
+                plane_modifiers
+                    .intersection(&renderer_modifiers)
                     .cloned()
+                    .map(|modifier| Format { code, modifier })
                     .collect::<Vec<_>>()
             }
         };
@@ -174,9 +179,9 @@ where
                                                   // It has no further use.
         };
 
-        let fb = match attach_framebuffer(&drm, &buffer) {
+        let fb = match framebuffer_from_bo(drm.device_fd(), &buffer, true) {
             Ok(fb) => fb,
-            Err(err) => return Err((swapchain.allocator, err)),
+            Err(err) => return Err((swapchain.allocator, Error::DrmError(err.into()))),
         };
         match buffer.export() {
             Ok(dmabuf) => dmabuf,
@@ -184,7 +189,7 @@ where
         };
         buffer.userdata().insert_if_missing(|| fb);
 
-        let handle = buffer.userdata().get::<FbHandle>().unwrap();
+        let handle = buffer.userdata().get::<GbmFramebuffer>().unwrap();
 
         let plane_state = PlaneState {
             handle: drm.plane(),
@@ -200,7 +205,7 @@ where
                 ),
                 transform: Transform::Normal,
                 damage_clips: None,
-                fb: handle.fb,
+                fb: *handle.as_ref(),
             }),
         };
 
@@ -232,10 +237,11 @@ where
                 .map_err(Error::GbmError)?
                 .ok_or(Error::NoFreeSlotsError)?;
 
-            let maybe_buffer = slot.userdata().get::<FbHandle>();
+            let maybe_buffer = slot.userdata().get::<GbmFramebuffer>();
             if maybe_buffer.is_none() {
-                let fb_handle = attach_framebuffer(&self.drm, &slot)?;
-                slot.userdata().insert_if_missing(|| fb_handle);
+                let fb = framebuffer_from_bo(self.drm.device_fd(), &slot, true)
+                    .map_err(|err| Error::DrmError(err.into()))?;
+                slot.userdata().insert_if_missing(|| fb);
             }
 
             self.next_fb = Some(slot);
@@ -290,7 +296,7 @@ where
     fn submit(&mut self) -> Result<(), Error<A::Error>> {
         // yes it does not look like it, but both of these lines should be safe in all cases.
         let (slot, damage, user_data) = self.queued_fb.take().unwrap();
-        let handle = slot.userdata().get::<FbHandle>().unwrap();
+        let handle = slot.userdata().get::<GbmFramebuffer>().unwrap();
         let mode = self.drm.pending_mode();
         let src =
             Rectangle::from_loc_and_size(Point::default(), (mode.size().0 as i32, mode.size().1 as i32))
@@ -311,7 +317,7 @@ where
                 dst,
                 transform: Transform::Normal,
                 damage_clips: damage_clips.as_ref().map(|d| d.blob()),
-                fb: handle.fb,
+                fb: *handle.as_ref(),
             }),
         };
 
@@ -418,77 +424,6 @@ where
     pub fn format(&self) -> Fourcc {
         self.swapchain.format()
     }
-}
-
-#[derive(Debug)]
-struct FbHandle {
-    drm: Arc<DrmSurface>,
-    fb: framebuffer::Handle,
-}
-
-impl AsRef<framebuffer::Handle> for FbHandle {
-    fn as_ref(&self) -> &framebuffer::Handle {
-        &self.fb
-    }
-}
-
-impl Drop for FbHandle {
-    fn drop(&mut self) {
-        let _ = self.drm.destroy_framebuffer(self.fb);
-    }
-}
-
-fn attach_framebuffer<E>(drm: &Arc<DrmSurface>, bo: &BufferObject<()>) -> Result<FbHandle, Error<E>>
-where
-    E: std::error::Error + Send + Sync,
-{
-    let modifier = match bo.modifier().unwrap() {
-        Modifier::Invalid => None,
-        x => Some(x),
-    };
-
-    let fb = match if modifier.is_some() {
-        let num = bo.plane_count().unwrap();
-        let modifiers = [
-            modifier,
-            if num > 1 { modifier } else { None },
-            if num > 2 { modifier } else { None },
-            if num > 3 { modifier } else { None },
-        ];
-        drm.add_planar_framebuffer(bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
-    } else {
-        drm.add_planar_framebuffer(bo, &[None, None, None, None], 0)
-    } {
-        Ok(fb) => fb,
-        Err(source) => {
-            // We only support this as a fallback of last resort like xf86-video-modesetting does.
-            if bo.plane_count().unwrap() > 1 {
-                return Err(Error::DrmError(DrmError::Access {
-                    errmsg: "Failed to add framebuffer",
-                    dev: drm.dev_path(),
-                    source,
-                }));
-            }
-            debug!("Failed to add framebuffer, trying legacy method");
-            let fourcc = bo.format().unwrap();
-            let (depth, bpp) = get_depth(fourcc)
-                .and_then(|d| get_bpp(fourcc).map(|b| (d, b)))
-                .ok_or_else(|| {
-                    Error::DrmError(DrmError::Access {
-                        errmsg: "Unknown format for legacy framebuffer",
-                        dev: drm.dev_path(),
-                        source,
-                    })
-                })?;
-            drm.add_framebuffer(bo, depth as u32, bpp as u32)
-                .map_err(|source| DrmError::Access {
-                    errmsg: "Failed to add framebuffer",
-                    dev: drm.dev_path(),
-                    source,
-                })?
-        }
-    };
-    Ok(FbHandle { drm: drm.clone(), fb })
 }
 
 /// Errors thrown by a [`GbmBufferedSurface`]

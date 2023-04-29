@@ -630,6 +630,12 @@ pub struct ToplevelState {
     /// The suggested size of the surface
     pub size: Option<Size<i32, Logical>>,
 
+    /// The bounds for this toplevel
+    ///
+    /// The bounds can for example correspond to the size of a monitor excluding any panels or
+    /// other shell components, so that a surface isn't created in a way that it cannot fit.
+    pub bounds: Option<Size<i32, Logical>>,
+
     /// The states for this surface
     pub states: ToplevelStateSet,
 
@@ -646,6 +652,7 @@ impl Clone for ToplevelState {
             fullscreen_output: self.fullscreen_output.clone(),
             states: self.states.clone(),
             size: self.size,
+            bounds: self.bounds,
             decoration_mode: self.decoration_mode,
         }
     }
@@ -903,7 +910,7 @@ impl XdgShellState {
     where
         D: GlobalDispatch<XdgWmBase, ()> + 'static,
     {
-        let global = display.create_global::<D, XdgWmBase, _>(3, ());
+        let global = display.create_global::<D, XdgWmBase, _>(4, ());
 
         XdgShellState {
             inner: Arc::new(Mutex::new(InnerState {
@@ -1109,12 +1116,18 @@ impl ToplevelSurface {
                 .lock()
                 .unwrap();
             if let Some(pending) = self.get_pending_state(&mut attributes) {
-                // Retrieve the last configured decoration mode and test
-                // if the mode has changed.
-                // We have to do this check before adding the pending state
-                // to the pending configures.
+                // retrieve the current state before adding it to the
+                // pending state so that we can compare what has changed
+                let current = attributes.current_server_state();
+
+                // test if we should send the decoration mode, either because it changed
+                // or we never sent it
                 let decoration_mode_changed = !attributes.initial_decoration_configure_sent
-                    || (pending.decoration_mode != attributes.current_server_state().decoration_mode);
+                    || (pending.decoration_mode != current.decoration_mode);
+
+                // test if we should send a bounds configure event, either because the
+                // bounds changed or we never sent one
+                let bounds_changed = !attributes.initial_configure_sent || (pending.bounds != current.bounds);
 
                 let configure = ToplevelConfigure {
                     serial: SERIAL_COUNTER.next_serial(),
@@ -1127,12 +1140,12 @@ impl ToplevelSurface {
                     attributes.initial_decoration_configure_sent = true;
                 }
 
-                Some((configure, decoration_mode_changed))
+                Some((configure, decoration_mode_changed, bounds_changed))
             } else {
                 None
             }
         });
-        if let Some((configure, decoration_mode_changed)) = configure {
+        if let Some((configure, decoration_mode_changed, bounds_changed)) = configure {
             if decoration_mode_changed {
                 if let Some(decoration) = &decoration {
                     self::decoration::send_decoration_configure(
@@ -1145,7 +1158,7 @@ impl ToplevelSurface {
                 }
             }
 
-            self::handlers::send_toplevel_configure(&self.shell_surface, configure)
+            self::handlers::send_toplevel_configure(&self.shell_surface, configure, bounds_changed)
         }
     }
 

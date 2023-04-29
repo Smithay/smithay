@@ -20,7 +20,7 @@ use tracing::{error, instrument, warn};
 
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
-use super::{CommitCounter, DamageTracker, SurfaceView};
+use super::{CommitCounter, DamageBag, SurfaceView};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -40,7 +40,7 @@ pub struct RendererSurfaceState {
     pub(crate) buffer_delta: Option<Point<i32, Logical>>,
     pub(crate) buffer_has_alpha: Option<bool>,
     pub(crate) buffer: Option<Buffer>,
-    pub(crate) damage: DamageTracker<i32, BufferCoord>,
+    pub(crate) damage: DamageBag<i32, BufferCoord>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
@@ -108,6 +108,7 @@ impl RendererSurfaceState {
                 if self.buffer_dimensions.is_none() {
                     // This results in us rendering nothing (can happen e.g. for failed egl-buffer-calls),
                     // but it is better than crashing the compositor for a bad buffer
+                    self.reset();
                     return;
                 }
                 self.buffer_has_alpha = buffer_has_alpha(&buffer);
@@ -205,13 +206,7 @@ impl RendererSurfaceState {
             }
             Some(BufferAssignment::Removed) => {
                 // remove the contents
-                self.buffer_dimensions = None;
-                self.buffer = None;
-                self.textures.clear();
-                self.damage.reset();
-                self.surface_view = None;
-                self.buffer_has_alpha = None;
-                self.opaque_regions.clear();
+                self.reset();
             }
             None => {}
         }
@@ -303,6 +298,16 @@ impl RendererSurfaceState {
     pub fn view(&self) -> Option<SurfaceView> {
         self.surface_view
     }
+
+    fn reset(&mut self) {
+        self.buffer_dimensions = None;
+        self.buffer = None;
+        self.textures.clear();
+        self.damage.reset();
+        self.surface_view = None;
+        self.buffer_has_alpha = None;
+        self.opaque_regions.clear();
+    }
 }
 
 /// Handler to let smithay take over buffer management.
@@ -339,12 +344,16 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
         );
         for surf in &new_surfaces {
             add_destruction_hook(surf, |data| {
-                if let Some(buffer) = data
+                // We reset the state on destruction before the user_data is dropped
+                // to prevent a deadlock which can happen if we try to send a buffer
+                // release during drop. This also enables us to free resources earlier
+                // like the stored textures
+                if let Some(mut state) = data
                     .data_map
                     .get::<RendererSurfaceStateUserData>()
-                    .and_then(|s| s.borrow_mut().buffer.take())
+                    .map(|s| s.borrow_mut())
                 {
-                    buffer.release();
+                    state.reset();
                 }
             });
         }

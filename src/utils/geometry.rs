@@ -1174,7 +1174,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     #[inline]
     pub fn intersection(self, other: impl Into<Rectangle<N, Kind>>) -> Option<Self> {
         let other = other.into();
-        if !self.overlaps_or_touches(other) {
+        if !self.overlaps(other) {
             return None;
         }
         Some(Rectangle::from_extemities(
@@ -1216,7 +1216,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     /// otherwise up to 4 rectangles will be returned.
     pub fn subtract_rect(self, other: Self) -> Vec<Self> {
         // If there is no overlap there is nothing to subtract
-        if !self.overlaps_or_touches(other) {
+        if !self.overlaps(other) {
             return vec![self];
         }
 

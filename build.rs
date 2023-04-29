@@ -17,6 +17,7 @@ fn gl_generate() {
                 "EGL_EXT_create_context_robustness",
                 "EGL_KHR_create_context_no_error",
                 "EGL_KHR_no_config_context",
+                "EGL_EXT_pixel_format_float",
                 "EGL_EXT_device_base",
                 "EGL_EXT_device_enumeration",
                 "EGL_EXT_device_query",

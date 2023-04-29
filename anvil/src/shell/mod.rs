@@ -245,14 +245,13 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
                 .initial_configure_sent
         });
 
+        let mut map = layer_map_for_output(output);
+
+        // arrange the layers before sending the initial configure
+        // to respect any size the client may have sent
+        map.arrange();
         // send the initial configure if relevant
         if !initial_configure_sent {
-            let mut map = layer_map_for_output(output);
-
-            // arrange the layers before sending the initial configure
-            // to respect any size the client may have sent
-            map.arrange();
-
             let layer = map
                 .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
                 .unwrap();
@@ -276,6 +275,14 @@ fn place_new_window(space: &mut Space<WindowElement>, window: &WindowElement, ac
             Some(Rectangle::from_loc_and_size(geo.loc + zone.loc, zone.size))
         })
         .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (800, 800)));
+
+    // set the initial toplevel bounds
+    #[allow(irrefutable_let_patterns)]
+    if let WindowElement::Wayland(window) = window {
+        window.toplevel().with_pending_state(|state| {
+            state.bounds = Some(output_geometry.size);
+        });
+    }
 
     let max_x = output_geometry.loc.x + (((output_geometry.size.w as f32) / 3.0) * 2.0) as i32;
     let max_y = output_geometry.loc.y + (((output_geometry.size.h as f32) / 3.0) * 2.0) as i32;

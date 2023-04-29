@@ -12,12 +12,17 @@
 //!
 //! ## Structure of the crate
 //!
-//! The provided helpers are split into two main modules. [`backend`] contains helpers for interacting with
-//! the operating system, such as session management, interactions with the graphic stack and input
-//! processing. On the other hand, [`wayland`] contains helpers for interacting with wayland clients
-//! according to the wayland protocol. In addition, the [`xwayland`] module contains helpers for managing
-//! an XWayland instance if you want to support it. See the documentation of these respective modules for
-//! information about their usage.
+//! The provided helpers are split into two main modules:
+//!
+//! - [`backend`] contains helpers for interacting with the operating
+//!     system, such as session management, interactions with the graphic stack
+//!     and input processing.
+//! - [`wayland`] contains helpers for interacting with wayland clients
+//!     according to the wayland protocol.
+//!
+//!     In addition, the [`xwayland`] module contains helpers for managing an
+//!     XWayland instance if you want to support it. See the documentation of
+//!     these respective modules for information about their usage.
 //!
 //! ## General principles for using Smithay
 //!

@@ -13,7 +13,8 @@ use crate::{
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::ImportMem;
+use smithay::backend::{allocator::Fourcc, renderer::ImportMem};
+
 use smithay::{
     backend::{
         allocator::{
@@ -23,7 +24,8 @@ use smithay::{
         },
         egl::{EGLContext, EGLDisplay},
         renderer::{
-            damage::DamageTrackedRenderer, element::AsRenderElements, gles2::Gles2Renderer, Bind, ImportDma,
+            damage::OutputDamageTracker, element::AsRenderElements, gles::GlesRenderer, Bind, ImportDma,
+            ImportMemWl,
         },
         vulkan::{version::Version, Instance, PhysicalDevice},
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
@@ -55,10 +57,10 @@ pub const OUTPUT_NAME: &str = "x11";
 pub struct X11Data {
     render: bool,
     mode: Mode,
-    // FIXME: If Gles2Renderer is dropped before X11Surface, then the MakeCurrent call inside Gles2Renderer will
+    // FIXME: If GlesRenderer is dropped before X11Surface, then the MakeCurrent call inside Gles2Renderer will
     // fail because the X11Surface is keeping gbm alive.
-    renderer: Gles2Renderer,
-    damage_tracked_renderer: DamageTrackedRenderer,
+    renderer: GlesRenderer,
+    damage_tracker: OutputDamageTracker,
     surface: X11Surface,
     dmabuf_state: DmabufState,
     _dmabuf_global: DmabufGlobal,
@@ -171,14 +173,14 @@ pub fn run_x11() {
     };
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let mut renderer = unsafe { Gles2Renderer::new(context) }.expect("Failed to initialize renderer");
+    let mut renderer = unsafe { GlesRenderer::new(context) }.expect("Failed to initialize renderer");
 
     #[cfg(feature = "egl")]
     if renderer.bind_wl_display(&display.handle()).is_ok() {
         info!("EGL hardware-acceleration enabled");
     }
 
-    let dmabuf_formats = renderer.dmabuf_formats().cloned().collect::<Vec<_>>();
+    let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
     let dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
         .build()
         .unwrap();
@@ -208,6 +210,7 @@ pub fn run_x11() {
     let fps_texture = renderer
         .import_memory(
             &fps_image.to_rgba8(),
+            Fourcc::Abgr8888,
             (fps_image.width() as i32, fps_image.height() as i32).into(),
             false,
         )
@@ -227,14 +230,14 @@ pub fn run_x11() {
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
 
-    let damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
+    let damage_tracker = OutputDamageTracker::from_output(&output);
 
     let data = X11Data {
         render: true,
         mode,
         surface,
         renderer,
-        damage_tracked_renderer,
+        damage_tracker,
         dmabuf_state,
         _dmabuf_global: dmabuf_global,
         _dmabuf_default_feedback: dmabuf_default_feedback,
@@ -243,7 +246,9 @@ pub fn run_x11() {
     };
 
     let mut state = AnvilState::init(&mut display, event_loop.handle(), data, true);
-
+    state
+        .shm_state
+        .update_formats(state.backend_data.renderer.shm_formats());
     state.space.map_output(&output, (0, 0));
 
     let output_clone = output.clone();
@@ -283,6 +288,7 @@ pub fn run_x11() {
         state.handle.clone(),
         None,
         std::iter::empty::<(OsString, OsString)>(),
+        true,
         |_| {},
     ) {
         error!("Failed to start XWayland: {}", e);
@@ -316,7 +322,7 @@ pub fn run_x11() {
             }
 
             let mut cursor_guard = cursor_status.lock().unwrap();
-            let mut elements: Vec<CustomRenderElements<Gles2Renderer>> = Vec::new();
+            let mut elements: Vec<CustomRenderElements<GlesRenderer>> = Vec::new();
 
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
@@ -361,7 +367,7 @@ pub fn run_x11() {
                 rectangle.loc.y + rectangle.size.h,
             ));
             input_method.with_surface(|surface| {
-                elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
                     &smithay::desktop::space::SurfaceTree::from_surface(surface),
                     &mut backend_data.renderer,
                     position.to_physical_precise_round(scale),
@@ -372,7 +378,7 @@ pub fn run_x11() {
             // draw the dnd icon if any
             if let Some(surface) = state.dnd_icon.as_ref() {
                 if surface.alive() {
-                    elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                    elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
                         &smithay::desktop::space::SurfaceTree::from_surface(surface),
                         &mut backend_data.renderer,
                         cursor_pos_scaled,
@@ -389,7 +395,7 @@ pub fn run_x11() {
                 &state.space,
                 elements,
                 &mut backend_data.renderer,
-                &mut backend_data.damage_tracked_renderer,
+                &mut backend_data.damage_tracker,
                 age.into(),
                 state.show_window_preview,
             );

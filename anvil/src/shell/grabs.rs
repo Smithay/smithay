@@ -104,8 +104,6 @@ impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
 impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
     #[inline]
     fn from(x: ResizeEdge) -> Self {
-        use std::convert::TryFrom;
-
         Self::try_from(x.bits()).unwrap()
     }
 }

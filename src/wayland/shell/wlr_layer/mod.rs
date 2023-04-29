@@ -146,6 +146,16 @@ impl LayerSurfaceAttributes {
         self.pending_configures.retain(|c| c.serial > serial);
         Some(configure)
     }
+
+    fn reset(&mut self) {
+        self.configured = false;
+        self.configure_serial = None;
+        self.initial_configure_sent = false;
+        self.pending_configures = Vec::new();
+        self.server_pending = None;
+        self.last_acked = None;
+        self.current = Default::default();
+    }
 }
 
 /// State of a layer surface

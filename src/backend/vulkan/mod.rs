@@ -88,8 +88,6 @@ use self::{inner::InstanceInner, version::Version};
 
 #[cfg(feature = "backend_drm")]
 use super::drm::DrmNode;
-#[cfg(feature = "backend_drm")]
-use nix::sys::stat;
 
 mod inner;
 mod phd;
@@ -491,7 +489,7 @@ impl PhysicalDevice {
         let node = Some(properties_drm)
             .filter(|props| props.has_primary == vk::TRUE)
             .and_then(|props| {
-                DrmNode::from_dev_id(stat::makedev(props.primary_major as _, props.primary_minor as _)).ok()
+                DrmNode::from_dev_id(libc::makedev(props.primary_major as _, props.primary_minor as _)).ok()
             });
 
         Ok(node)
@@ -509,7 +507,7 @@ impl PhysicalDevice {
         let node = Some(properties_drm)
             .filter(|props| props.has_render == vk::TRUE)
             .and_then(|props| {
-                DrmNode::from_dev_id(stat::makedev(props.render_major as _, props.render_minor as _)).ok()
+                DrmNode::from_dev_id(libc::makedev(props.render_major as _, props.render_minor as _)).ok()
             });
 
         Ok(node)

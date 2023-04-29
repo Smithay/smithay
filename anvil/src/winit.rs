@@ -8,16 +8,20 @@ use std::{
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::ImportMem;
+use smithay::{
+    backend::{allocator::Fourcc, renderer::ImportMem},
+    reexports::winit::platform::unix::WindowExtUnix,
+};
+
 use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
         egl::EGLDevice,
         renderer::{
-            damage::{DamageTrackedRenderer, DamageTrackedRendererError},
+            damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::AsRenderElements,
-            gles2::{Gles2Renderer, Gles2Texture},
-            ImportDma,
+            gles::{GlesRenderer, GlesTexture},
+            ImportDma, ImportMemWl,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
         SwapBuffersError,
@@ -47,8 +51,8 @@ use crate::{drawing::*, render::*};
 pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData {
-    backend: WinitGraphicsBackend<Gles2Renderer>,
-    damage_tracked_renderer: DamageTrackedRenderer,
+    backend: WinitGraphicsBackend<GlesRenderer>,
+    damage_tracker: OutputDamageTracker,
     dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
     full_redraw: u8,
     #[cfg(feature = "debug")]
@@ -86,7 +90,7 @@ pub fn run_winit() {
     let mut display = Display::new().unwrap();
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let (mut backend, mut winit) = match winit::init::<Gles2Renderer>() {
+    let (mut backend, mut winit) = match winit::init::<GlesRenderer>() {
         Ok(ret) => ret,
         Err(err) => {
             error!("Failed to initialize Winit backend: {}", err);
@@ -122,6 +126,7 @@ pub fn run_winit() {
         .renderer()
         .import_memory(
             &fps_image.to_rgba8(),
+            Fourcc::Abgr8888,
             (fps_image.width() as i32, fps_image.height() as i32).into(),
             false,
         )
@@ -134,7 +139,7 @@ pub fn run_winit() {
 
     let dmabuf_default_feedback = match render_node {
         Ok(Some(node)) => {
-            let dmabuf_formats = backend.renderer().dmabuf_formats().cloned().collect::<Vec<_>>();
+            let dmabuf_formats = backend.renderer().dmabuf_formats().collect::<Vec<_>>();
             let dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
                 .build()
                 .unwrap();
@@ -160,7 +165,7 @@ pub fn run_winit() {
         );
         (dmabuf_state, dmabuf_global, Some(default_feedback))
     } else {
-        let dmabuf_formats = backend.renderer().dmabuf_formats().cloned().collect::<Vec<_>>();
+        let dmabuf_formats = backend.renderer().dmabuf_formats().collect::<Vec<_>>();
         let mut dmabuf_state = DmabufState::new();
         let dmabuf_global =
             dmabuf_state.create_global::<AnvilState<WinitData>>(&display.handle(), dmabuf_formats);
@@ -173,11 +178,11 @@ pub fn run_winit() {
     };
 
     let data = {
-        let damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
+        let damage_tracker = OutputDamageTracker::from_output(&output);
 
         WinitData {
             backend,
-            damage_tracked_renderer,
+            damage_tracker,
             dmabuf_state,
             full_redraw: 0,
             #[cfg(feature = "debug")]
@@ -185,6 +190,9 @@ pub fn run_winit() {
         }
     };
     let mut state = AnvilState::init(&mut display, event_loop.handle(), data, true);
+    state
+        .shm_state
+        .update_formats(state.backend_data.backend.renderer().shm_formats());
     state.space.map_output(&output, (0, 0));
 
     #[cfg(feature = "xwayland")]
@@ -192,6 +200,7 @@ pub fn run_winit() {
         state.handle.clone(),
         None,
         std::iter::empty::<(OsString, OsString)>(),
+        true,
         |_| {},
     ) {
         error!("Failed to start XWayland: {}", e);
@@ -199,7 +208,7 @@ pub fn run_winit() {
 
     info!("Initialization completed, starting the main loop.");
 
-    let mut pointer_element = PointerElement::<Gles2Texture>::default();
+    let mut pointer_element = PointerElement::<GlesTexture>::default();
 
     while state.running.load(Ordering::SeqCst) {
         if winit
@@ -254,7 +263,7 @@ pub fn run_winit() {
             let full_redraw = &mut state.backend_data.full_redraw;
             *full_redraw = full_redraw.saturating_sub(1);
             let space = &mut state.space;
-            let damage_tracked_renderer = &mut state.backend_data.damage_tracked_renderer;
+            let damage_tracker = &mut state.backend_data.damage_tracker;
             let show_window_preview = state.show_window_preview;
 
             let input_method = state.seat.input_method().unwrap();
@@ -277,7 +286,19 @@ pub fn run_winit() {
             let cursor_pos = state.pointer_location - cursor_hotspot.to_f64();
             let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
+            #[cfg(feature = "debug")]
+            let mut renderdoc = state.renderdoc.as_mut();
             let render_res = backend.bind().and_then(|_| {
+                #[cfg(feature = "debug")]
+                if let Some(renderdoc) = renderdoc.as_mut() {
+                    renderdoc.start_frame_capture(
+                        backend.renderer().egl_context().get_context_handle(),
+                        backend
+                            .window()
+                            .wayland_surface()
+                            .unwrap_or_else(std::ptr::null_mut),
+                    );
+                }
                 let age = if *full_redraw > 0 {
                     0
                 } else {
@@ -286,7 +307,7 @@ pub fn run_winit() {
 
                 let renderer = backend.renderer();
 
-                let mut elements = Vec::<CustomRenderElements<Gles2Renderer>>::new();
+                let mut elements = Vec::<CustomRenderElements<GlesRenderer>>::new();
 
                 elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale));
 
@@ -297,7 +318,7 @@ pub fn run_winit() {
                     rectangle.loc.y + rectangle.size.h,
                 ));
                 input_method.with_surface(|surface| {
-                    elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                    elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
                         &smithay::desktop::space::SurfaceTree::from_surface(surface),
                         renderer,
                         position.to_physical_precise_round(scale),
@@ -308,7 +329,7 @@ pub fn run_winit() {
                 // draw the dnd icon if any
                 if let Some(surface) = dnd_icon {
                     if surface.alive() {
-                        elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                        elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
                             &smithay::desktop::space::SurfaceTree::from_surface(surface),
                             renderer,
                             cursor_pos_scaled,
@@ -325,12 +346,12 @@ pub fn run_winit() {
                     space,
                     elements,
                     renderer,
-                    damage_tracked_renderer,
+                    damage_tracker,
                     age,
                     show_window_preview,
                 )
                 .map_err(|err| match err {
-                    DamageTrackedRendererError::Rendering(err) => err.into(),
+                    OutputDamageTrackerError::Rendering(err) => err.into(),
                     _ => unreachable!(),
                 })
             });
@@ -343,6 +364,18 @@ pub fn run_winit() {
                             warn!("Failed to submit buffer: {}", err);
                         }
                     }
+
+                    #[cfg(feature = "debug")]
+                    if let Some(renderdoc) = renderdoc.as_mut() {
+                        renderdoc.end_frame_capture(
+                            backend.renderer().egl_context().get_context_handle(),
+                            backend
+                                .window()
+                                .wayland_surface()
+                                .unwrap_or_else(std::ptr::null_mut),
+                        );
+                    }
+
                     backend.window().set_cursor_visible(cursor_visible);
 
                     // Send frame events so that client start drawing their next frame
@@ -364,6 +397,17 @@ pub fn run_winit() {
                     }
                 }
                 Err(SwapBuffersError::ContextLost(err)) => {
+                    #[cfg(feature = "debug")]
+                    if let Some(renderdoc) = renderdoc.as_mut() {
+                        renderdoc.discard_frame_capture(
+                            backend.renderer().egl_context().get_context_handle(),
+                            backend
+                                .window()
+                                .wayland_surface()
+                                .unwrap_or_else(std::ptr::null_mut),
+                        );
+                    }
+
                     error!("Critical Rendering Error: {}", err);
                     state.running.store(false, Ordering::SeqCst);
                 }

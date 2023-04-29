@@ -11,12 +11,16 @@ use wayland_protocols::wp::primary_selection::zv1::server::{
 };
 use wayland_server::{
     backend::{protocol::Message, ClientId, Handle, ObjectData, ObjectId},
+    protocol::wl_seat::WlSeat,
     Client, DisplayHandle, Resource,
 };
 
-use crate::utils::IsAlive;
+use crate::{
+    input::{Seat, SeatHandler},
+    utils::IsAlive,
+};
 
-use super::{with_source_metadata, PrimarySelectionHandler, SourceMetadata};
+use super::{with_source_metadata, PrimaryDeviceUserData, PrimarySelectionHandler, SourceMetadata};
 
 pub enum Selection {
     Empty,
@@ -155,13 +159,17 @@ impl SeatData {
                     let offer_meta = meta.clone();
 
                     let handle = dh.backend_handle();
+                    let wl_seat = match pd.data::<PrimaryDeviceUserData>() {
+                        Some(data) => data.wl_seat.clone(),
+                        None => continue,
+                    };
                     // create a data offer
                     let offer = handle
                         .create_object::<D>(
                             client.id(),
                             PrimaryOffer::interface(),
                             pd.version(),
-                            Arc::new(ServerSelection { offer_meta }),
+                            Arc::new(ServerSelection { offer_meta, wl_seat }),
                         )
                         .unwrap();
                     let offer = PrimaryOffer::from_id(dh, offer).unwrap();
@@ -223,11 +231,12 @@ fn handle_client_selection(request: primary_offer::Request, source: &PrimarySour
 
 struct ServerSelection {
     offer_meta: SourceMetadata,
+    wl_seat: WlSeat,
 }
 
 impl<D> ObjectData<D> for ServerSelection
 where
-    D: PrimarySelectionHandler,
+    D: PrimarySelectionHandler + SeatHandler + 'static,
 {
     fn request(
         self: Arc<Self>,
@@ -238,7 +247,12 @@ where
     ) -> Option<Arc<dyn ObjectData<D>>> {
         let dh = DisplayHandle::from(dh.clone());
         if let Ok((_resource, request)) = PrimaryOffer::parse_request(&dh, msg) {
-            handle_server_selection(handler, request, &self.offer_meta);
+            if self.wl_seat.is_alive() {
+                return None;
+            }
+            if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {
+                handle_server_selection(handler, request, seat, &self.offer_meta);
+            }
         }
 
         None
@@ -250,9 +264,10 @@ where
 pub fn handle_server_selection<D>(
     handler: &mut D,
     request: primary_offer::Request,
+    seat: Seat<D>,
     offer_meta: &SourceMetadata,
 ) where
-    D: PrimarySelectionHandler,
+    D: PrimarySelectionHandler + SeatHandler + 'static,
 {
     // selection data offers only care about the `receive` event
     if let primary_offer::Request::Receive { fd, mime_type } = request {
@@ -261,7 +276,7 @@ pub fn handle_server_selection<D>(
             // deny the receive
             debug!("Denying a zwp_primary_selection_offer_v1.receive with invalid source.");
         } else {
-            handler.send_selection(mime_type, fd);
+            handler.send_selection(mime_type, fd, seat);
         }
     }
 }

@@ -197,13 +197,18 @@ where
         debug!("Could not read keymap: {err}");
         return;
     }
-    let new_keymap = match String::from_utf8(keymap_buffer) {
+    let mut new_keymap = match String::from_utf8(keymap_buffer) {
         Ok(keymap) => keymap,
         Err(err) => {
             debug!("Invalid utf8 keymap: {err}");
             return;
         }
     };
+
+    // Ignore everything after the first nul byte.
+    if let Some(nul_index) = new_keymap.find('\0') {
+        new_keymap.truncate(nul_index);
+    }
 
     // Attempt to parse the new keymap.
     let new_keymap = xkb::Keymap::new_from_string(

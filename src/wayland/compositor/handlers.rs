@@ -423,6 +423,13 @@ where
 pub struct SubsurfaceUserData {
     surface: WlSurface,
 }
+
+impl SubsurfaceUserData {
+    /// Returns the surface for this subsurface (not to be confused with the parent surface).
+    pub fn surface(&self) -> &WlSurface {
+        &self.surface
+    }
+}
 /// The cached state associated with a subsurface
 #[derive(Debug)]
 pub struct SubsurfaceCachedState {
@@ -548,10 +555,17 @@ where
         _object_id: wayland_server::backend::ObjectId,
         data: &SubsurfaceUserData,
     ) {
-        // TODO
-        // if surface.as_ref().is_alive() {
         PrivateSurfaceData::unset_parent(&data.surface);
-        // }
+        PrivateSurfaceData::with_states(&data.surface, |state| {
+            state
+                .data_map
+                .get::<SubsurfaceState>()
+                .unwrap()
+                .sync
+                .store(true, Ordering::Release);
+            *state.cached_state.pending::<SubsurfaceCachedState>() = Default::default();
+            *state.cached_state.current::<SubsurfaceCachedState>() = Default::default();
+        });
     }
 }
 

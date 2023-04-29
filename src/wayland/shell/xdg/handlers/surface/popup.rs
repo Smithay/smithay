@@ -1,6 +1,12 @@
 use std::sync::atomic::Ordering;
 
-use crate::{utils::Serial, wayland::shell::xdg::XdgPositionerUserData};
+use crate::{
+    utils::Serial,
+    wayland::{
+        compositor,
+        shell::xdg::{SurfaceCachedState, XdgPopupSurfaceData, XdgPositionerUserData},
+    },
+};
 
 use wayland_protocols::xdg::shell::server::xdg_popup::{self, XdgPopup};
 
@@ -73,7 +79,18 @@ where
         {
             let popup = shell_data.known_popups.remove(index);
             drop(shell_data);
+            let surface = popup.wl_surface().clone();
             XdgShellHandler::popup_destroyed(state, popup);
+            compositor::with_states(&surface, |states| {
+                *states
+                    .data_map
+                    .get::<XdgPopupSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap() = Default::default();
+                *states.cached_state.pending::<SurfaceCachedState>() = Default::default();
+                *states.cached_state.current::<SurfaceCachedState>() = Default::default();
+            })
         }
     }
 }
