@@ -31,6 +31,39 @@ impl LcmsContext {
             transform_cache: HashMap::new(),
         }
     }
+
+    pub fn profile_from_rgb(
+        &mut self,
+        white: lcms2::CIExyY,
+        red: lcms2::CIExyY,
+        green: lcms2::CIExyY,
+        blue: lcms2::CIExyY,
+        tf: &[&lcms2::ToneCurve],
+    ) -> Result<LcmsColorProfile, lcms2::Error> {
+        let mut profile = lcms2::Profile::new_rgb_context(
+            &self.ctx,
+            &white,
+            &lcms2::CIExyYTRIPLE {
+                Red: red,
+                Green: green,
+                Blue: blue,
+            },
+            tf,
+        )?;
+
+        profile.set_default_profile_id();
+        let id = profile.profile_id();
+
+        let profile = LcmsColorProfileInternal::new(profile);
+
+        self.profile_cache.retain(|_, value| value.upgrade().is_some());
+        let profile_ref = self
+            .profile_cache
+            .entry(id)
+            .or_insert_with(|| Arc::downgrade(&profile));
+
+        Ok(LcmsColorProfile(profile_ref.upgrade().unwrap()))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
