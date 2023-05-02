@@ -32,6 +32,8 @@ use tracing::{info_span, instrument};
 pub struct PointerHandle<D: SeatHandler> {
     pub(crate) inner: Arc<Mutex<PointerInternal<D>>>,
     #[cfg(feature = "wayland_frontend")]
+    pub(crate) last_enter: Arc<Mutex<Option<Serial>>>,
+    #[cfg(feature = "wayland_frontend")]
     pub(crate) known_pointers: Arc<Mutex<Vec<wayland_server::protocol::wl_pointer::WlPointer>>>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_relative_pointers: Arc<Mutex<Vec<wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1>>>,
@@ -58,6 +60,7 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerHandle")
             .field("inner", &self.inner)
+            .field("last_enter", &self.last_enter)
             .field("known_pointers", &self.known_pointers)
             .field("known_relative_pointers", &self.known_relative_pointers)
             .finish()
@@ -68,6 +71,8 @@ impl<D: SeatHandler> Clone for PointerHandle<D> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            #[cfg(feature = "wayland_frontend")]
+            last_enter: self.last_enter.clone(),
             #[cfg(feature = "wayland_frontend")]
             known_pointers: self.known_pointers.clone(),
             #[cfg(feature = "wayland_frontend")]
@@ -106,6 +111,8 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     pub(crate) fn new() -> PointerHandle<D> {
         PointerHandle {
             inner: Arc::new(Mutex::new(PointerInternal::new())),
+            #[cfg(feature = "wayland_frontend")]
+            last_enter: Arc::new(Mutex::new(None)),
             #[cfg(feature = "wayland_frontend")]
             known_pointers: Arc::new(Mutex::new(Vec::new())),
             #[cfg(feature = "wayland_frontend")]
