@@ -18,21 +18,22 @@ fn main() {
     }
 
     let arg = ::std::env::args().nth(1);
+    let backend_args = ::std::env::args().skip(2);
     match arg.as_ref().map(|s| &s[..]) {
         #[cfg(feature = "winit")]
         Some("--winit") => {
             tracing::info!("Starting anvil with winit backend");
-            anvil::winit::run_winit();
+            anvil::winit::run_winit(backend_args);
         }
         #[cfg(feature = "udev")]
         Some("--tty-udev") => {
             tracing::info!("Starting anvil on a tty using udev");
-            anvil::udev::run_udev();
+            anvil::udev::run_udev(backend_args);
         }
         #[cfg(feature = "x11")]
         Some("--x11") => {
             tracing::info!("Starting anvil with x11 backend");
-            anvil::x11::run_x11();
+            anvil::x11::run_x11(backend_args);
         }
         Some(other) => {
             tracing::error!("Unknown backend: {}", other);

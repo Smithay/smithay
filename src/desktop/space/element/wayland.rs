@@ -26,21 +26,25 @@ impl IsAlive for SurfaceTree {
     }
 }
 
-impl<R> AsRenderElements<R> for SurfaceTree
+impl<R, C> AsRenderElements<R, C> for SurfaceTree
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
+    C: CMS,
+    C::ColorProfile: 'static,
 {
     type RenderElement = WaylandSurfaceRenderElement<R>;
 
-    fn render_elements<C: From<WaylandSurfaceRenderElement<R>>>(
+    fn render_elements<I: From<WaylandSurfaceRenderElement<R>>>(
         &self,
         renderer: &mut R,
+        cms: &mut C,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
-    ) -> Vec<C> {
+    ) -> Vec<I> {
         crate::backend::renderer::element::surface::render_elements_from_surface_tree(
             renderer,
+            cms,
             &self.surface,
             location,
             scale,

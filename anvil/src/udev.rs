@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::{
     collections::{hash_map::HashMap, HashSet},
     convert::TryInto,
+    io::Read,
     os::unix::io::FromRawFd,
     path::Path,
     sync::{atomic::Ordering, Mutex},
@@ -27,6 +28,14 @@ use smithay::{
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
             vulkan::{ImageUsageFlags, VulkanAllocator},
             Allocator, Fourcc,
+        },
+        color::{
+            lcms::{
+                lcms2::{CIExyY, ToneCurve},
+                LcmsContext,
+            },
+            null::NullCMS,
+            CMS,
         },
         drm::{
             compositor::DrmCompositor, CreateDrmNodeError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent,
@@ -86,7 +95,7 @@ use smithay::{
 };
 use smithay_drm_extras::{
     drm_scanner::{DrmScanEvent, DrmScanner},
-    edid::EdidInfo,
+    edid::{ColorCharacteristics, EdidInfo},
 };
 use tracing::{debug, error, info, trace, warn};
 
@@ -113,14 +122,16 @@ struct UdevOutputId {
     crtc: crtc::Handle,
 }
 
-pub struct UdevData {
+pub struct UdevData<C: CMS + 'static> {
     pub session: LibSeatSession,
     dh: DisplayHandle,
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     primary_gpu: DrmNode,
     allocator: Option<Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>>,
     gpus: GpuManager<GbmGlesBackend<GlesRenderer>>,
-    backends: HashMap<DrmNode, BackendData>,
+    cms: C,
+    output_profile_generation: OutputProfileGen,
+    backends: HashMap<DrmNode, BackendData<C>>,
     pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<MultiTexture>)>,
     pointer_element: PointerElement<MultiTexture>,
     #[cfg(feature = "debug")]
@@ -129,7 +140,7 @@ pub struct UdevData {
     debug_flags: DebugFlags,
 }
 
-impl UdevData {
+impl<C: CMS + 'static> UdevData<C> {
     pub fn set_debug_flags(&mut self, flags: DebugFlags) {
         if self.debug_flags != flags {
             self.debug_flags = flags;
@@ -147,7 +158,7 @@ impl UdevData {
     }
 }
 
-impl DmabufHandler for AnvilState<UdevData> {
+impl<C: CMS + 'static> DmabufHandler for AnvilState<UdevData<C>> {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
         &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
     }
@@ -161,9 +172,9 @@ impl DmabufHandler for AnvilState<UdevData> {
             .map_err(|_| ImportError::Failed)
     }
 }
-delegate_dmabuf!(AnvilState<UdevData>);
+delegate_dmabuf!(@<C: CMS + 'static> AnvilState<UdevData<C>>);
 
-impl Backend for UdevData {
+impl<C: CMS + 'static> Backend for UdevData<C> {
     const HAS_RELATIVE_MOTION: bool = true;
 
     fn seat_name(&self) -> String {
@@ -190,7 +201,182 @@ impl Backend for UdevData {
     }
 }
 
-pub fn run_udev() {
+pub fn run_udev(mut backend_args: impl Iterator<Item = String>) {
+    let mut color = None;
+    let mut output_gen = OutputProfileGen::Srgb;
+
+    loop {
+        match (backend_args.next(), backend_args.next()) {
+            (Some(arg), Some(value)) => match &*arg {
+                "--color" => {
+                    color = Some(value);
+                }
+                "--profile" => match &*value {
+                    "srgb" => {
+                        output_gen = OutputProfileGen::Srgb;
+                    }
+                    "edid" => {
+                        output_gen = OutputProfileGen::Edid;
+                    }
+                    "icc" => {
+                        output_gen = OutputProfileGen::Icc(HashMap::new());
+                    }
+                    x => {
+                        error!("Unknown color profile generation value: {}", x);
+                        return;
+                    }
+                },
+                x if x.starts_with("--icc-file-") => {
+                    let identifier = x.strip_prefix("--icc-file-").unwrap().to_lowercase();
+                    let data = match std::fs::File::open(value.clone()) {
+                        Ok(mut file) => {
+                            let mut data = Vec::new();
+                            if let Err(err) = file.read_to_end(&mut data) {
+                                error!("Error reading icc file at {}: {:?}", value, err);
+                                return;
+                            }
+                            data
+                        }
+                        Err(err) => {
+                            error!("Error reading icc file at {}: {:?}", value, err);
+                            return;
+                        }
+                    };
+                    let map = match &mut output_gen {
+                        OutputProfileGen::Icc(map) => map,
+                        x => {
+                            *x = OutputProfileGen::Icc(HashMap::new());
+                            if let &mut OutputProfileGen::Icc(ref mut map) = x {
+                                map
+                            } else {
+                                unreachable!()
+                            }
+                        }
+                    };
+                    map.insert(identifier, data);
+                }
+                x => {
+                    error!("Unknown argument: {x}");
+                    return;
+                }
+            },
+            (Some(arg), None) => {
+                error!("Unmatched argument: {arg}");
+                return;
+            }
+            _ => break,
+        }
+    }
+
+    match color.as_deref().unwrap_or("lcms") {
+        "null" => run_udev_internal(NullCMS, output_gen),
+        "lcms" => run_udev_internal(LcmsContext::new(), output_gen),
+        x => error!("Unknown color argument value: {x}"),
+    }
+}
+
+#[derive(Debug)]
+pub enum OutputProfileGen {
+    Srgb,
+    Edid,
+    Icc(HashMap<String, Vec<u8>>),
+}
+
+pub trait ProfileGen: CMS {
+    fn profile_from_type(
+        &mut self,
+        type_: &OutputProfileGen,
+        output_name: impl AsRef<str>,
+        color: Option<ColorCharacteristics>,
+    ) -> <Self as CMS>::ColorProfile;
+}
+
+impl ProfileGen for NullCMS {
+    fn profile_from_type(
+        &mut self,
+        type_: &OutputProfileGen,
+        _output_name: impl AsRef<str>,
+        _color: Option<ColorCharacteristics>,
+    ) -> <Self as CMS>::ColorProfile {
+        match type_ {
+            OutputProfileGen::Srgb => self.profile_srgb(),
+            _ => {
+                warn!("Selected null-cms with non-srgb profile. This will do nothing and ignore the set profile.");
+                self.profile_srgb()
+            }
+        }
+    }
+}
+
+impl ProfileGen for LcmsContext {
+    fn profile_from_type(
+        &mut self,
+        type_: &OutputProfileGen,
+        output_name: impl AsRef<str>,
+        color: Option<ColorCharacteristics>,
+    ) -> <Self as CMS>::ColorProfile {
+        match type_ {
+            OutputProfileGen::Srgb => self.profile_srgb(),
+            OutputProfileGen::Icc(map) => {
+                if let Some(data) = map.get(output_name.as_ref()) {
+                    match self.profile_from_icc(data) {
+                        Ok(profile) => profile,
+                        Err(err) => {
+                            error!(
+                                "Failed to parse profile for output {}: {:?}. Falling back to srgb",
+                                output_name.as_ref(),
+                                err
+                            );
+                            self.profile_srgb()
+                        }
+                    }
+                } else {
+                    warn!(
+                        "Profile for output {} was not provided. Falling back to srgb",
+                        output_name.as_ref()
+                    );
+                    self.profile_srgb()
+                }
+            }
+            OutputProfileGen::Edid => {
+                if let Some(color) = color {
+                    let params = [2.4, 1. / 1.055, 0.055 / 1.055, 1. / 12.92, 0.04045];
+                    let srgb_tf = ToneCurve::new_parametric(4, &params)
+                        .expect("Failed to build sRGB transfer function");
+                    self.profile_from_rgb(
+                        CIExyY {
+                            x: color.white.0 as f64,
+                            y: color.white.1 as f64,
+                            Y: 1.0,
+                        },
+                        CIExyY {
+                            x: color.red.0 as f64,
+                            y: color.red.1 as f64,
+                            Y: 1.0,
+                        },
+                        CIExyY {
+                            x: color.green.0 as f64,
+                            y: color.green.1 as f64,
+                            Y: 1.0,
+                        },
+                        CIExyY {
+                            x: color.blue.0 as f64,
+                            y: color.blue.1 as f64,
+                            Y: 1.0,
+                        },
+                        &[&srgb_tf, &srgb_tf, &srgb_tf],
+                    )
+                    .expect("Failed to create custom RGB profile")
+                } else {
+                    warn!("Unable to read EDID color data, falling back to sRGB output profile.");
+                    self.profile_srgb()
+                }
+            }
+        }
+    }
+}
+
+fn run_udev_internal<C: CMS + ProfileGen + 'static>(cms: C, output_profile_generation: OutputProfileGen) {
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();
 
@@ -233,6 +419,8 @@ pub fn run_udev() {
         primary_gpu,
         gpus,
         allocator: None,
+        cms,
+        output_profile_generation,
         backends: HashMap::new(),
         pointer_image: crate::cursor::Cursor::load(),
         pointer_images: Vec::new(),
@@ -422,7 +610,7 @@ pub fn run_udev() {
         .unwrap();
     let mut dmabuf_state = DmabufState::new();
     let global = dmabuf_state
-        .create_global_with_default_feedback::<AnvilState<UdevData>>(&display.handle(), &default_feedback);
+        .create_global_with_default_feedback::<AnvilState<UdevData<C>>>(&display.handle(), &default_feedback);
     state.backend_data.dmabuf_state = Some((dmabuf_state, global));
 
     let gpus = &mut state.backend_data.gpus;
@@ -557,17 +745,21 @@ impl SurfaceComposition {
         }
     }
 
-    fn render_frame<'a, R, E, Target>(
+    fn render_frame<'a, R, C, E, Target>(
         &mut self,
         renderer: &mut R,
+        cms: &mut C,
         elements: &'a [E],
         clear_color: [f32; 4],
+        clear_profile: &C::ColorProfile,
+        output_profile: &C::ColorProfile,
     ) -> Result<(bool, RenderElementStates), SwapBuffersError>
     where
+        C: CMS + 'static,
         R: Renderer + Bind<Dmabuf> + Bind<Target> + Offscreen<Target> + ExportMem,
         <R as Renderer>::TextureId: 'static,
         <R as Renderer>::Error: Into<SwapBuffersError>,
-        E: RenderElement<R>,
+        E: RenderElement<R, C>,
     {
         match self {
             SurfaceComposition::Surface {
@@ -580,7 +772,15 @@ impl SurfaceComposition {
                 let current_debug_flags = renderer.debug_flags();
                 renderer.set_debug_flags(*debug_flags);
                 let res = damage_tracker
-                    .render_output(renderer, age.into(), elements, clear_color)
+                    .render_output(
+                        renderer,
+                        cms,
+                        age.into(),
+                        elements,
+                        clear_color,
+                        clear_profile,
+                        output_profile,
+                    )
                     .map(|(damage, states)| (damage.is_some(), states))
                     .map_err(|err| match err {
                         OutputDamageTrackerError::Rendering(err) => err.into(),
@@ -590,7 +790,14 @@ impl SurfaceComposition {
                 res
             }
             SurfaceComposition::Compositor(compositor) => compositor
-                .render_frame(renderer, elements, clear_color)
+                .render_frame(
+                    renderer,
+                    cms,
+                    elements,
+                    clear_color,
+                    clear_profile,
+                    output_profile,
+                )
                 .map(|render_frame_result| (render_frame_result.damage.is_some(), render_frame_result.states))
                 .map_err(|err| match err {
                     smithay::backend::drm::compositor::RenderFrameError::PrepareFrame(err) => err.into(),
@@ -620,7 +827,7 @@ struct DrmSurfaceDmabufFeedback {
     scanout_feedback: DmabufFeedback,
 }
 
-struct SurfaceData {
+struct SurfaceData<C: CMS + 'static> {
     dh: DisplayHandle,
     device_id: DrmNode,
     render_node: DrmNode,
@@ -631,18 +838,19 @@ struct SurfaceData {
     #[cfg(feature = "debug")]
     fps_element: Option<FpsElement<MultiTexture>>,
     dmabuf_feedback: Option<DrmSurfaceDmabufFeedback>,
+    output_profile: C::ColorProfile,
 }
 
-impl Drop for SurfaceData {
+impl<C: CMS + 'static> Drop for SurfaceData<C> {
     fn drop(&mut self) {
         if let Some(global) = self.global.take() {
-            self.dh.remove_global::<AnvilState<UdevData>>(global);
+            self.dh.remove_global::<AnvilState<UdevData<C>>>(global);
         }
     }
 }
 
-struct BackendData {
-    surfaces: HashMap<crtc::Handle, SurfaceData>,
+struct BackendData<C: CMS + 'static> {
+    surfaces: HashMap<crtc::Handle, SurfaceData<C>>,
     gbm: GbmDevice<DrmDeviceFd>,
     drm: DrmDevice,
     drm_scanner: DrmScanner,
@@ -731,7 +939,7 @@ fn get_surface_dmabuf_feedback(
     })
 }
 
-impl AnvilState<UdevData> {
+impl<C: CMS + ProfileGen + 'static> AnvilState<UdevData<C>> {
     fn device_added(&mut self, node: DrmNode, path: &Path) -> Result<(), DeviceAddError> {
         // Try to open the device
         let fd = self
@@ -831,13 +1039,13 @@ impl AnvilState<UdevData> {
 
         let output_name = format!("{}-{}", connector.interface().as_str(), connector.interface_id());
 
-        let (make, model) = EdidInfo::for_connector(&device.drm, connector.handle())
-            .map(|info| (info.manufacturer, info.model))
-            .unwrap_or_else(|| ("Unknown".into(), "Unknown".into()));
+        let (make, model, color) = EdidInfo::for_connector(&device.drm, connector.handle())
+            .map(|info| (info.manufacturer, info.model, Some(info.color_characteristics)))
+            .unwrap_or_else(|| ("Unknown".into(), "Unknown".into(), None));
 
         let (phys_w, phys_h) = connector.size().unwrap_or((0, 0));
         let output = Output::new(
-            output_name,
+            output_name.clone(),
             PhysicalProperties {
                 size: (phys_w as i32, phys_h as i32).into(),
                 subpixel: Subpixel::Unknown,
@@ -845,7 +1053,7 @@ impl AnvilState<UdevData> {
                 model,
             },
         );
-        let global = output.create_global::<AnvilState<UdevData>>(&self.display_handle);
+        let global = output.create_global::<AnvilState<UdevData<C>>>(&self.display_handle);
 
         let x = self
             .space
@@ -946,6 +1154,12 @@ impl AnvilState<UdevData> {
             &compositor,
         );
 
+        let output_profile = self.backend_data.cms.profile_from_type(
+            &self.backend_data.output_profile_generation,
+            output_name,
+            color,
+        );
+
         let surface = SurfaceData {
             dh: self.display_handle.clone(),
             device_id: node,
@@ -957,6 +1171,7 @@ impl AnvilState<UdevData> {
             #[cfg(feature = "debug")]
             fps_element,
             dmabuf_feedback,
+            output_profile,
         };
 
         device.surfaces.insert(crtc, surface);
@@ -1137,7 +1352,7 @@ impl AnvilState<UdevData> {
                             ..
                         })
                     ),
-                    SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
+                    SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {:?}", err),
                 }
             }
         };
@@ -1304,6 +1519,7 @@ impl AnvilState<UdevData> {
         let result = render_surface(
             surface,
             &mut renderer,
+            &mut self.backend_data.cms,
             &self.space,
             &output,
             self.seat.input_method().unwrap(),
@@ -1362,7 +1578,7 @@ impl AnvilState<UdevData> {
         &mut self,
         node: DrmNode,
         crtc: crtc::Handle,
-        evt_handle: LoopHandle<'static, CalloopData<UdevData>>,
+        evt_handle: LoopHandle<'static, CalloopData<UdevData<C>>>,
     ) {
         let device = if let Some(device) = self.backend_data.backends.get_mut(&node) {
             device
@@ -1379,7 +1595,7 @@ impl AnvilState<UdevData> {
         let node = surface.render_node;
         let result = {
             let mut renderer = self.backend_data.gpus.single_renderer(&node).unwrap();
-            initial_render(surface, &mut renderer)
+            initial_render(surface, &mut renderer, &mut self.backend_data.cms)
         };
 
         if let Err(err) = result {
@@ -1399,9 +1615,10 @@ impl AnvilState<UdevData> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn render_surface<'a, 'b>(
-    surface: &'a mut SurfaceData,
+fn render_surface<'a, 'b, C: CMS + 'static>(
+    surface: &'a mut SurfaceData<C>,
     renderer: &mut UdevRenderer<'a, 'b>,
+    cms: &mut C,
     space: &Space<WindowElement>,
     output: &Output,
     input_method: &InputMethodHandle,
@@ -1412,11 +1629,14 @@ fn render_surface<'a, 'b>(
     cursor_status: &mut CursorImageStatus,
     clock: &Clock<Monotonic>,
     show_window_preview: bool,
-) -> Result<bool, SwapBuffersError> {
+) -> Result<bool, SwapBuffersError>
+where
+    C::ColorProfile: 'static,
+{
     let output_geometry = space.output_geometry(output).unwrap();
     let scale = Scale::from(output.current_scale().fractional_scale());
 
-    let mut custom_elements: Vec<CustomRenderElements<_>> = Vec::new();
+    let mut custom_elements: Vec<CustomRenderElements<_, C>> = Vec::new();
     // draw input method surface if any
     let rectangle = input_method.coordinates();
     let position = Point::from((
@@ -1424,9 +1644,10 @@ fn render_surface<'a, 'b>(
         rectangle.loc.y + rectangle.size.h,
     ));
     input_method.with_surface(|surface| {
-        custom_elements.extend(AsRenderElements::<UdevRenderer<'a, 'b>>::render_elements(
+        custom_elements.extend(AsRenderElements::<UdevRenderer<'a, 'b>, C>::render_elements(
             &SurfaceTree::from_surface(surface),
             renderer,
+            cms,
             position.to_physical_precise_round(scale),
             scale,
         ));
@@ -1466,15 +1687,16 @@ fn render_surface<'a, 'b>(
             pointer_element.set_status(cursor_status.clone());
         }
 
-        custom_elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale));
+        custom_elements.extend(pointer_element.render_elements(renderer, cms, cursor_pos_scaled, scale));
 
         // draw the dnd icon if applicable
         {
             if let Some(wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.alive() {
-                    custom_elements.extend(AsRenderElements::<UdevRenderer<'a, 'b>>::render_elements(
+                    custom_elements.extend(AsRenderElements::<UdevRenderer<'a, 'b>, C>::render_elements(
                         &SurfaceTree::from_surface(wl_surface),
                         renderer,
+                        cms,
                         cursor_pos_scaled,
                         scale,
                     ));
@@ -1491,11 +1713,16 @@ fn render_surface<'a, 'b>(
     }
 
     let (elements, clear_color) =
-        output_elements(output, space, custom_elements, renderer, show_window_preview);
-    let (rendered, states) =
-        surface
-            .compositor
-            .render_frame::<_, _, GlesTexture>(renderer, &elements, clear_color)?;
+        output_elements(output, space, custom_elements, renderer, cms, show_window_preview);
+    let clear_profile = cms.profile_srgb();
+    let (rendered, states) = surface.compositor.render_frame::<_, _, _, GlesTexture>(
+        renderer,
+        cms,
+        &elements,
+        clear_color,
+        &clear_profile,
+        &surface.output_profile,
+    )?;
 
     post_repaint(
         output,
@@ -1522,13 +1749,22 @@ fn render_surface<'a, 'b>(
     Ok(rendered)
 }
 
-fn initial_render(
-    surface: &mut SurfaceData,
+fn initial_render<C: CMS + 'static>(
+    surface: &mut SurfaceData<C>,
     renderer: &mut UdevRenderer<'_, '_>,
+    cms: &mut C,
 ) -> Result<(), SwapBuffersError> {
+    let clear_profile = cms.profile_srgb();
     surface
         .compositor
-        .render_frame::<_, CustomRenderElements<_>, GlesTexture>(renderer, &[], CLEAR_COLOR)?;
+        .render_frame::<_, _, CustomRenderElements<_, C>, GlesTexture>(
+            renderer,
+            cms,
+            &[],
+            CLEAR_COLOR,
+            &clear_profile,
+            &surface.output_profile,
+        )?;
     surface.compositor.queue_frame(None)?;
     surface.compositor.reset_buffers();
 

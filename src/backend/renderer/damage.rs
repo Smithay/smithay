@@ -195,7 +195,10 @@ use indexmap::IndexMap;
 use tracing::{info_span, instrument, trace};
 
 use crate::{
-    backend::renderer::{element::RenderElementPresentationState, Frame},
+    backend::{
+        color::CMS,
+        renderer::{element::RenderElementPresentationState, Frame},
+    },
     output::Output,
     utils::{Physical, Rectangle, Scale, Size, Transform},
 };
@@ -347,18 +350,23 @@ impl OutputDamageTracker {
     /// Render this output with the provided [`Renderer`]
     ///
     /// - `elements` for this output in front-to-back order
-    #[instrument(level = "trace", parent = &self.span, skip(renderer, elements))]
-    pub fn render_output<E, R>(
+    #[instrument(level = "trace", parent = &self.span, skip(renderer, cms, elements, clear_profile, output_profile))]
+    pub fn render_output<E, R, C>(
         &mut self,
         renderer: &mut R,
+        cms: &mut C,
         age: usize,
         elements: &[E],
         clear_color: [f32; 4],
+        clear_profile: &C::ColorProfile,
+        output_profile: &C::ColorProfile,
     ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), Error<R>>
     where
-        E: RenderElement<R>,
+        E: RenderElement<R, C>,
         R: Renderer,
         <R as Renderer>::TextureId: Texture,
+        C: CMS + 'static,
+        C::ColorProfile: 'static,
     {
         let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
 
@@ -397,7 +405,7 @@ impl OutputDamageTracker {
         );
 
         let render_res = (|| {
-            let mut frame = renderer.render(output_size, output_transform)?;
+            let mut frame = renderer.render(output_size, output_transform, cms, output_profile)?;
 
             let clear_damage = opaque_regions.iter().flat_map(|(_, regions)| regions).fold(
                 damage.clone(),
@@ -410,7 +418,7 @@ impl OutputDamageTracker {
             );
 
             trace!("clearing damage {:?}", clear_damage);
-            frame.clear(clear_color, &clear_damage)?;
+            frame.clear(clear_color, &clear_damage, clear_profile)?;
 
             for (mut z_index, element) in render_elements.iter().rev().enumerate() {
                 // This is necessary because we reversed the render elements to draw

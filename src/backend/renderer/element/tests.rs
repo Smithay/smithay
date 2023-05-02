@@ -1,7 +1,10 @@
 use std::marker::PhantomData;
 
 use crate::{
-    backend::renderer::{gles::GlesRenderer, ImportDma, ImportMem, Renderer, Texture},
+    backend::{
+        color::CMS,
+        renderer::{gles::GlesRenderer, ImportDma, ImportMem, Renderer, Texture},
+    },
     utils::{Buffer, Physical, Point, Rectangle, Scale},
 };
 
@@ -139,17 +142,22 @@ impl Element for ImportMemRenderElement {
     }
 }
 
-impl<R> RenderElement<R> for ImportMemRenderElement
+impl<R, C> RenderElement<R, C> for ImportMemRenderElement
 where
     R: Renderer + ImportMem,
+    C: CMS,
 {
-    fn draw<'a>(
+    fn draw<'a, 'b>(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'a>,
+        _frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
+        todo!()
+    }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
         todo!()
     }
 }
@@ -176,17 +184,22 @@ impl Element for Empty {
     }
 }
 
-impl<R> RenderElement<R> for Empty
+impl<R, C> RenderElement<R, C> for Empty
 where
     R: Renderer,
+    C: CMS,
 {
-    fn draw<'a>(
+    fn draw<'a, 'b>(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'a>,
+        _frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
+        todo!()
+    }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
         todo!()
     }
 }
@@ -222,17 +235,22 @@ where
     }
 }
 
-impl<R> RenderElement<R> for TestRenderElement2<R>
+impl<R, C> RenderElement<R, C> for TestRenderElement2<R>
 where
     R: Renderer,
+    C: CMS,
 {
-    fn draw<'a>(
+    fn draw<'a, 'b>(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'a>,
+        _frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
+        todo!()
+    }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
         todo!()
     }
 }
@@ -267,17 +285,22 @@ where
     }
 }
 
-impl<'a, R> RenderElement<R> for TestRenderElement<'a, R>
+impl<'a, R, C> RenderElement<R, C> for TestRenderElement<'a, R>
 where
     R: Renderer,
+    C: CMS,
 {
-    fn draw<'b>(
+    fn draw<'b, 'c>(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'b>,
+        _frame: &mut <R as Renderer>::Frame<'b, 'c, C>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
+        todo!()
+    }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
         todo!()
     }
 }

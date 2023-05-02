@@ -204,6 +204,7 @@
 use std::{
     any::TypeId,
     collections::{hash_map::Entry, HashMap},
+    fmt,
     marker::PhantomData,
     sync::{Arc, Mutex, MutexGuard},
 };
@@ -213,6 +214,7 @@ use tracing::{instrument, trace, warn};
 use crate::{
     backend::{
         allocator::{format::get_bpp, Fourcc},
+        color::CMS,
         renderer::{
             utils::{CommitCounter, DamageBag},
             Frame, ImportMem, Renderer,
@@ -223,42 +225,41 @@ use crate::{
 
 use super::{Element, Id, RenderElement};
 
-#[derive(Debug)]
-struct MemoryRenderBufferInner {
+struct MemoryRenderBufferInner<C: CMS> {
     mem: Vec<u8>,
     format: Fourcc,
     size: Size<i32, Buffer>,
     scale: i32,
     transform: Transform,
+    input_profile: C::ColorProfile,
     opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     damage_bag: DamageBag<i32, Buffer>,
     textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
 }
 
-impl Default for MemoryRenderBufferInner {
-    fn default() -> Self {
-        MemoryRenderBufferInner {
-            mem: Vec::default(),
-            format: Fourcc::Abgr8888,
-            size: Size::default(),
-            scale: 1,
-            transform: Transform::Normal,
-            opaque_regions: None,
-            damage_bag: DamageBag::default(),
-            textures: HashMap::default(),
-            renderer_seen: HashMap::default(),
-        }
+impl<C: CMS> fmt::Debug for MemoryRenderBufferInner<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MemoryRenderBufferInner")
+            .field("mem", &"<...>")
+            .field("format", &self.format)
+            .field("size", &self.size)
+            .field("scale", &self.scale)
+            .field("transform", &self.transform)
+            .field("opaque_regions", &self.opaque_regions)
+            .field("damage_bag", &self.damage_bag)
+            .finish_non_exhaustive()
     }
 }
 
-impl MemoryRenderBufferInner {
+impl<C: CMS> MemoryRenderBufferInner<C> {
     fn new(
         format: Fourcc,
         size: impl Into<Size<i32, Buffer>>,
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+        input_profile: C::ColorProfile,
     ) -> Self {
         let size = size.into();
         MemoryRenderBufferInner {
@@ -272,6 +273,7 @@ impl MemoryRenderBufferInner {
             scale,
             transform,
             opaque_regions,
+            input_profile,
             damage_bag: DamageBag::default(),
             textures: HashMap::default(),
             renderer_seen: HashMap::default(),
@@ -285,6 +287,7 @@ impl MemoryRenderBufferInner {
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+        input_profile: C::ColorProfile,
     ) -> Self {
         let size = size.into();
         assert_eq!(
@@ -300,6 +303,7 @@ impl MemoryRenderBufferInner {
             scale,
             transform,
             opaque_regions,
+            input_profile,
             damage_bag: DamageBag::default(),
             textures: HashMap::default(),
             renderer_seen: HashMap::default(),
@@ -352,7 +356,7 @@ impl MemoryRenderBufferInner {
         Ok(())
     }
 
-    fn get_texture<R>(&mut self, renderer_id: usize) -> Option<&<R as Renderer>::TextureId>
+    fn get_texture<R>(&self, renderer_id: usize) -> Option<&<R as Renderer>::TextureId>
     where
         R: Renderer,
         <R as Renderer>::TextureId: 'static,
@@ -365,22 +369,22 @@ impl MemoryRenderBufferInner {
 }
 
 /// A memory backed render buffer
-#[derive(Debug, Clone)]
-pub struct MemoryRenderBuffer {
+#[derive(Debug)]
+pub struct MemoryRenderBuffer<C: CMS> {
     id: Id,
-    inner: Arc<Mutex<MemoryRenderBufferInner>>,
+    inner: Arc<Mutex<MemoryRenderBufferInner<C>>>,
 }
 
-impl Default for MemoryRenderBuffer {
-    fn default() -> Self {
-        Self {
-            id: Id::new(),
-            inner: Default::default(),
+impl<C: CMS> Clone for MemoryRenderBuffer<C> {
+    fn clone(&self) -> Self {
+        MemoryRenderBuffer {
+            id: self.id.clone(),
+            inner: self.inner.clone(),
         }
     }
 }
 
-impl MemoryRenderBuffer {
+impl<C: CMS> MemoryRenderBuffer<C> {
     /// Initialize a empty [`MemoryRenderBuffer`]
     pub fn new(
         format: Fourcc,
@@ -388,8 +392,10 @@ impl MemoryRenderBuffer {
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+        input_profile: C::ColorProfile,
     ) -> Self {
-        let inner = MemoryRenderBufferInner::new(format, size, scale, transform, opaque_regions);
+        let inner =
+            MemoryRenderBufferInner::new(format, size, scale, transform, opaque_regions, input_profile);
         MemoryRenderBuffer {
             id: Id::new(),
             inner: Arc::new(Mutex::new(inner)),
@@ -404,8 +410,17 @@ impl MemoryRenderBuffer {
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+        input_profile: C::ColorProfile,
     ) -> Self {
-        let inner = MemoryRenderBufferInner::from_memory(mem, format, size, scale, transform, opaque_regions);
+        let inner = MemoryRenderBufferInner::from_memory(
+            mem,
+            format,
+            size,
+            scale,
+            transform,
+            opaque_regions,
+            input_profile,
+        );
         MemoryRenderBuffer {
             id: Id::new(),
             inner: Arc::new(Mutex::new(inner)),
@@ -413,7 +428,7 @@ impl MemoryRenderBuffer {
     }
 
     /// Render to the memory buffer
-    pub fn render(&mut self) -> RenderContext<'_> {
+    pub fn render(&mut self) -> RenderContext<'_, C> {
         let guard = self.inner.lock().unwrap();
         RenderContext {
             buffer: guard,
@@ -434,13 +449,13 @@ impl MemoryRenderBuffer {
 
 /// A render context for [`MemoryRenderBuffer`]
 #[derive(Debug)]
-pub struct RenderContext<'a> {
-    buffer: MutexGuard<'a, MemoryRenderBufferInner>,
+pub struct RenderContext<'a, C: CMS> {
+    buffer: MutexGuard<'a, MemoryRenderBufferInner<C>>,
     damage: Vec<Rectangle<i32, Buffer>>,
     opaque_regions: Option<Option<Vec<Rectangle<i32, Buffer>>>>,
 }
 
-impl<'a> RenderContext<'a> {
+impl<'a, C: CMS> RenderContext<'a, C> {
     /// Resize the buffer
     ///
     /// Note that this will also reset the opaque regions.
@@ -468,7 +483,7 @@ impl<'a> RenderContext<'a> {
     }
 }
 
-impl<'a> Drop for RenderContext<'a> {
+impl<'a, C: CMS> Drop for RenderContext<'a, C> {
     fn drop(&mut self) {
         self.buffer.damage_bag.add(std::mem::take(&mut self.damage));
         if let Some(opaque_regions) = self.opaque_regions.take() {
@@ -479,22 +494,22 @@ impl<'a> Drop for RenderContext<'a> {
 
 /// A render element for [`MemoryRenderBuffer`]
 #[derive(Debug)]
-pub struct MemoryRenderBufferRenderElement<R: Renderer> {
+pub struct MemoryRenderBufferRenderElement<R: Renderer, C: CMS> {
     location: Point<f64, Physical>,
-    buffer: MemoryRenderBuffer,
+    buffer: MemoryRenderBuffer<C>,
     alpha: f32,
     src: Option<Rectangle<f64, Logical>>,
     size: Option<Size<i32, Logical>>,
     renderer_type: PhantomData<R>,
 }
 
-impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
+impl<R: Renderer, C: CMS> MemoryRenderBufferRenderElement<R, C> {
     /// Create a new [`MemoryRenderBufferRenderElement`] for
     /// a [`MemoryRenderBuffer`]
     pub fn from_buffer(
         renderer: &mut R,
         location: impl Into<Point<f64, Physical>>,
-        buffer: &MemoryRenderBuffer,
+        buffer: &MemoryRenderBuffer<C>,
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
@@ -614,7 +629,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
     }
 }
 
-impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
+impl<R: Renderer, C: CMS> Element for MemoryRenderBufferRenderElement<R, C> {
     fn id(&self) -> &super::Id {
         &self.buffer.id
     }
@@ -652,26 +667,38 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
     }
 }
 
-impl<R> RenderElement<R> for MemoryRenderBufferRenderElement<R>
+impl<R, C: CMS> RenderElement<R, C> for MemoryRenderBufferRenderElement<R, C>
 where
     R: Renderer + ImportMem,
     <R as Renderer>::TextureId: 'static,
 {
     #[instrument(level = "trace", skip(self, frame))]
-    fn draw<'a>(
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
-        let mut guard = self.buffer.inner.lock().unwrap();
+        let guard = self.buffer.inner.lock().unwrap();
         let transform = guard.transform;
         let Some(texture) = guard.get_texture::<R>(frame.id()) else {
             warn!("trying to render texture from different renderer");
             return Ok(());
         };
 
-        frame.render_texture_from_to(texture, src, dst, damage, transform, self.alpha)
+        frame.render_texture_from_to(
+            texture,
+            src,
+            dst,
+            damage,
+            transform,
+            self.alpha,
+            &guard.input_profile,
+        )
+    }
+
+    fn color_profile(&self) -> C::ColorProfile {
+        self.buffer.inner.lock().unwrap().input_profile.clone()
     }
 }

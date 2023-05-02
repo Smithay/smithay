@@ -31,6 +31,8 @@ ash = { version = "0.37.1", optional = true }
 bitflags = "1"
 calloop = "0.10.1"
 cgmath = "0.18.0"
+lcms2 = { git = "https://github.com/Drakulix/rust-lcms2", optional = true }
+lcms2-sys = { git = "https://github.com/Drakulix/rust-lcms2", optional = true }
 downcast-rs = "1.2.0"
 drm-fourcc = "^2.2.0"
 drm = { version = "0.9.0", optional = true }
@@ -76,7 +78,7 @@ pkg-config = { version = "0.3.17", optional = true }
 cc = { version = "1.0.79", optional = true }
 
 [features]
-default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_multi", "xwayland", "wayland_frontend", "backend_vulkan"]
+default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "backend_x11", "backend_winit", "color_lcms", "desktop", "renderer_gl", "renderer_multi", "xwayland", "wayland_frontend", "backend_vulkan"]
 backend_winit = ["winit", "backend_egl", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
@@ -89,6 +91,7 @@ backend_session = []
 backend_udev = ["udev", "input/udev"]
 backend_vulkan = ["ash", "scopeguard"]
 backend_session_libseat = ["backend_session", "libseat"]
+color_lcms = ["lcms2", "lcms2-sys"]
 desktop = []
 libinput_1_19 = ["input/libinput_1_19"]
 renderer_gl = ["gl_generator", "backend_egl"]

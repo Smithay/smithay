@@ -396,6 +396,7 @@ use tracing::{instrument, warn};
 use crate::{
     backend::{
         allocator::Fourcc,
+        color::CMS,
         renderer::{
             utils::{DamageBag, DamageSnapshot},
             Frame, ImportMem, Renderer, Texture,
@@ -608,7 +609,7 @@ impl<'a, T> Drop for RenderContext<'a, T> {
 
 /// A render element for a [`TextureRenderBuffer`]
 #[derive(Debug)]
-pub struct TextureRenderElement<T> {
+pub struct TextureRenderElement<T, C: CMS> {
     location: Point<f64, Physical>,
     id: Id,
     renderer_id: usize,
@@ -619,10 +620,11 @@ pub struct TextureRenderElement<T> {
     src: Option<Rectangle<f64, Logical>>,
     size: Option<Size<i32, Logical>>,
     opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
+    input_profile: C::ColorProfile,
     snapshot: DamageSnapshot<i32, Buffer>,
 }
 
-impl<T: Texture> TextureRenderElement<T> {
+impl<T: Texture, C: CMS> TextureRenderElement<T, C> {
     fn damage_since(&self, commit: Option<CommitCounter>) -> Vec<Rectangle<i32, Buffer>> {
         self.snapshot.damage_since(commit).unwrap_or_else(|| {
             vec![Rectangle::from_loc_and_size(
@@ -633,7 +635,7 @@ impl<T: Texture> TextureRenderElement<T> {
     }
 }
 
-impl<T: Texture + Clone> TextureRenderElement<T> {
+impl<T: Texture + Clone, C: CMS> TextureRenderElement<T, C> {
     /// Create a [`TextureRenderElement`] from a [`TextureRenderBuffer`]
     pub fn from_texture_render_buffer(
         location: impl Into<Point<f64, Physical>>,
@@ -641,6 +643,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
+        input_profile: C::ColorProfile,
     ) -> Self {
         TextureRenderElement::from_texture_with_damage(
             buffer.id.clone(),
@@ -653,6 +656,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
             src,
             size,
             buffer.opaque_regions.clone(),
+            input_profile,
             buffer.damage_tracker.lock().unwrap().snapshot(),
         )
     }
@@ -664,6 +668,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
+        input_profile: C::ColorProfile,
     ) -> Self {
         TextureRenderElement::from_static_texture(
             buffer.id.clone(),
@@ -676,11 +681,12 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
             src,
             size,
             buffer.opaque_regions.clone(),
+            input_profile,
         )
     }
 }
 
-impl<T: Texture> TextureRenderElement<T> {
+impl<T: Texture, C: CMS> TextureRenderElement<T, C> {
     /// Create a [`TextureRenderElement`] from an
     /// existing texture and a [`DamageTrackerSnapshot`]
     #[allow(clippy::too_many_arguments)]
@@ -695,6 +701,7 @@ impl<T: Texture> TextureRenderElement<T> {
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+        input_profile: C::ColorProfile,
         snapshot: DamageSnapshot<i32, Buffer>,
     ) -> Self {
         let opaque_regions = opaque_regions.map(|regions| {
@@ -714,6 +721,7 @@ impl<T: Texture> TextureRenderElement<T> {
             src,
             size,
             opaque_regions,
+            input_profile,
             snapshot,
         }
     }
@@ -732,6 +740,7 @@ impl<T: Texture> TextureRenderElement<T> {
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+        input_profile: C::ColorProfile,
     ) -> Self {
         TextureRenderElement::from_texture_with_damage(
             id,
@@ -744,6 +753,7 @@ impl<T: Texture> TextureRenderElement<T> {
             src,
             size,
             opaque_regions,
+            input_profile,
             DamageSnapshot::empty(),
         )
     }
@@ -786,8 +796,9 @@ impl<T: Texture> TextureRenderElement<T> {
     }
 }
 
-impl<T> Element for TextureRenderElement<T>
+impl<T, C> Element for TextureRenderElement<T, C>
 where
+    C: CMS,
     T: Texture,
 {
     fn id(&self) -> &Id {
@@ -864,15 +875,16 @@ where
     }
 }
 
-impl<R, T> RenderElement<R> for TextureRenderElement<T>
+impl<R, T, C> RenderElement<R, C> for TextureRenderElement<T, C>
 where
     R: Renderer<TextureId = T>,
     T: Texture,
+    C: CMS,
 {
     #[instrument(level = "trace", skip(self, frame))]
-    fn draw<'a>(
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -882,6 +894,18 @@ where
             return Ok(());
         }
 
-        frame.render_texture_from_to(&self.texture, src, dst, damage, self.transform, self.alpha)
+        frame.render_texture_from_to(
+            &self.texture,
+            src,
+            dst,
+            damage,
+            self.transform,
+            self.alpha,
+            &self.input_profile,
+        )
+    }
+
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
+        self.input_profile.clone()
     }
 }

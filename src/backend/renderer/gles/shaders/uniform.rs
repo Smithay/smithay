@@ -50,9 +50,9 @@ pub enum UniformType {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(super) struct UniformDesc {
-    pub(super) location: super::ffi::types::GLint,
-    pub(super) type_: UniformType,
+pub(in super::super) struct UniformDesc {
+    pub(in super::super) location: super::ffi::types::GLint,
+    pub(in super::super) type_: UniformType,
 }
 
 /// A shader uniform variable consisting out of a name and value
@@ -259,7 +259,7 @@ impl UniformValue {
         }
     }
 
-    pub(super) fn set(&self, gl: &super::ffi::Gles2, desc: &UniformDesc) -> Result<(), GlesError> {
+    pub(in super::super) fn set(&self, gl: &super::ffi::Gles2, desc: &UniformDesc) -> Result<(), GlesError> {
         if !self.matches(&desc.type_) {
             return Err(GlesError::UniformTypeMismatch {
                 provided: self.type_(),

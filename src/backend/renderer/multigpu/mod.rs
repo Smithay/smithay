@@ -55,6 +55,7 @@ use crate::wayland::{dmabuf::get_dmabuf, shm};
 use crate::{
     backend::{
         allocator::{dmabuf::AnyError, Allocator, Buffer as BufferTrait, Format, Fourcc},
+        color::null::NullCMS,
         drm::DrmNode,
         SwapBuffersError,
     },
@@ -696,8 +697,16 @@ impl<'render, 'target, 'alloc, R: GraphicsApi, T: GraphicsApi> AsMut<<R::Device 
 /// be no updated framebuffer contents.
 /// Additionally all problems related to the Frame-implementation of the underlying
 /// [`GraphicsApi`] will be present.
-pub struct MultiFrame<'render, 'target, 'alloc, 'frame, R: GraphicsApi + 'frame, T: GraphicsApi>
-where
+pub struct MultiFrame<
+    'render,
+    'target,
+    'alloc,
+    'frame,
+    'color,
+    R: GraphicsApi + 'frame,
+    T: GraphicsApi,
+    C: CMS + 'static,
+> where
     R: 'static,
     R::Error: 'static,
     T::Error: 'static,
@@ -707,7 +716,7 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     node: DrmNode,
-    frame: Option<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame>>,
+    frame: Option<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame, 'color, C>>,
     render: *mut &'render mut R::Device,
     target: &'frame mut Option<TargetData<'target, 'alloc, T>>,
     target_texture: Option<<<T::Device as ApiDevice>::Renderer as Renderer>::TextureId>,
@@ -725,8 +734,8 @@ struct TargetData<'target, 'alloc, T: GraphicsApi> {
     format: Fourcc,
 }
 
-impl<'render, 'target, 'alloc, 'frame, R: GraphicsApi + 'frame, T: GraphicsApi> fmt::Debug
-    for MultiFrame<'render, 'target, 'alloc, 'frame, R, T>
+impl<'render, 'target, 'alloc, 'frame, 'color, R: GraphicsApi + 'frame, T: GraphicsApi, C: CMS> fmt::Debug
+    for MultiFrame<'render, 'target, 'alloc, 'frame, 'color, R, T, C>
 where
     R: 'static,
     R::Error: 'static,
@@ -769,10 +778,11 @@ where
 // These casts are ok, because the frame cannot outlive the MultiFrame,
 // see MultiRenderer::render for how this hack works and why it is necessary.
 
-impl<'render, 'target, 'alloc, 'frame, R: GraphicsApi, T: GraphicsApi>
-    AsRef<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame>>
-    for MultiFrame<'render, 'target, 'alloc, 'frame, R, T>
+impl<'render, 'target, 'alloc, 'frame, 'color, R: GraphicsApi, T: GraphicsApi, C>
+    AsRef<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame, 'color, C>>
+    for MultiFrame<'render, 'target, 'alloc, 'frame, 'color, R, T, C>
 where
+    C: CMS + 'static,
     R: 'static,
     R::Error: 'static,
     T::Error: 'static,
@@ -781,15 +791,16 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn as_ref(&self) -> &<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame> {
+    fn as_ref(&self) -> &<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame, 'color, C> {
         self.frame.as_ref().unwrap()
     }
 }
 
-impl<'render, 'target, 'alloc, 'frame, R: GraphicsApi, T: GraphicsApi>
-    AsMut<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame>>
-    for MultiFrame<'render, 'target, 'alloc, 'frame, R, T>
+impl<'render, 'target, 'alloc, 'frame, 'color, R: GraphicsApi, T: GraphicsApi, C>
+    AsMut<<<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame, 'color, C>>
+    for MultiFrame<'render, 'target, 'alloc, 'frame, 'color, R, T, C>
 where
+    C: CMS + 'static,
     R: 'static,
     R::Error: 'static,
     T::Error: 'static,
@@ -798,7 +809,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn as_mut(&mut self) -> &mut <<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame> {
+    fn as_mut(&mut self) -> &mut <<R::Device as ApiDevice>::Renderer as Renderer>::Frame<'frame, 'color, C> {
         self.frame.as_mut().unwrap()
     }
 }
@@ -918,7 +929,7 @@ where
 {
     type Error = Error<R, T>;
     type TextureId = MultiTexture;
-    type Frame<'frame> = MultiFrame<'render, 'target, 'alloc, 'frame, R, T> where Self: 'frame;
+    type Frame<'frame, 'color, C: CMS + 'static> = MultiFrame<'render, 'target, 'alloc, 'frame, 'color, R, T, C> where Self: 'frame;
 
     fn id(&self) -> usize {
         self.render.renderer().id()
@@ -944,12 +955,14 @@ where
         self.render.renderer().debug_flags()
     }
 
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn render<'frame>(
+    #[instrument(level = "trace", parent = &self.span, skip(self, cms, output_profile))]
+    fn render<'frame, 'color, C: CMS + 'static>(
         &'frame mut self,
         size: Size<i32, Physical>,
         dst_transform: Transform,
-    ) -> Result<MultiFrame<'render, 'target, 'alloc, 'frame, R, T>, Self::Error> {
+        cms: &'color mut C,
+        output_profile: &'color C::ColorProfile,
+    ) -> Result<MultiFrame<'render, 'target, 'alloc, 'frame, 'color, R, T, C>, Self::Error> {
         let target_texture = if let Some(target) = self.target.as_mut() {
             let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
 
@@ -1061,7 +1074,7 @@ where
         let frame = self
             .render
             .renderer_mut()
-            .render(size, dst_transform)
+            .render(size, dst_transform, cms, output_profile)
             .map_err(Error::Render)?;
 
         let span = info_span!(
@@ -1085,9 +1098,10 @@ where
     }
 }
 
-impl<'render, 'target, 'alloc, 'frame, R: GraphicsApi, T: GraphicsApi>
-    MultiFrame<'render, 'target, 'alloc, 'frame, R, T>
+impl<'render, 'target, 'alloc, 'frame, 'color, R: GraphicsApi, T: GraphicsApi, C>
+    MultiFrame<'render, 'target, 'alloc, 'frame, 'color, R, T, C>
 where
+    C: CMS + 'static,
     R: 'static,
     R::Error: 'static,
     T::Error: 'static,
@@ -1124,13 +1138,15 @@ where
                         .iter()
                         .map(|rect| rect.to_logical(1, Transform::Normal, &buffer_size).to_physical(1))
                         .collect::<Vec<_>>();
+                    let mut cms = NullCMS;
+                    let profile = cms.profile_srgb();
                     let mut frame = target
                         .device
                         .renderer_mut()
-                        .render(self.size, Transform::Normal)
+                        .render(self.size, Transform::Normal, &mut cms, &profile)
                         .map_err(Error::Target)?;
                     frame
-                        .clear([0.0, 0.0, 0.0, 0.0], &damage)
+                        .clear([0.0, 0.0, 0.0, 0.0], &damage, &profile)
                         .map_err(Error::Target)?;
                     frame
                         .render_texture_from_to(
@@ -1140,6 +1156,7 @@ where
                             &damage,
                             Transform::Normal,
                             1.0,
+                            &profile,
                         )
                         .map_err(Error::Target)?;
                     frame.finish().map_err(Error::Target)?;
@@ -1201,10 +1218,12 @@ where
                         .renderer_mut()
                         .import_memory(slice, TextureMapping::format(&mapping), rect.size, false)
                         .map_err(Error::Target)?;
+                    let mut cms = NullCMS;
+                    let profile = cms.profile_srgb();
                     let mut frame = target
                         .device
                         .renderer_mut()
-                        .render(self.size, Transform::Normal)
+                        .render(self.size, Transform::Normal, &mut cms, &profile)
                         .map_err(Error::Target)?;
                     for damage_rect in damage.iter().filter_map(|dmg_rect| dmg_rect.intersection(rect)) {
                         let dst = damage_rect
@@ -1213,9 +1232,19 @@ where
                         let src = Rectangle::from_loc_and_size(damage_rect.loc - rect.loc, damage_rect.size)
                             .to_f64();
                         let damage = &[Rectangle::from_loc_and_size((0, 0), dst.size)];
-                        frame.clear([0.0, 0.0, 0.0, 0.0], &[dst]).map_err(Error::Target)?;
                         frame
-                            .render_texture_from_to(&texture, src, dst, damage, Transform::Normal, 1.0)
+                            .clear([0.0, 0.0, 0.0, 0.0], &[dst], &profile)
+                            .map_err(Error::Target)?;
+                        frame
+                            .render_texture_from_to(
+                                &texture,
+                                src,
+                                dst,
+                                damage,
+                                Transform::Normal,
+                                1.0,
+                                &profile,
+                            )
                             .map_err(Error::Target)?;
                     }
                     frame.finish().map_err(Error::Target)?;
@@ -1227,9 +1256,10 @@ where
     }
 }
 
-impl<'render, 'target, 'alloc, 'frame, R: GraphicsApi, T: GraphicsApi> Drop
-    for MultiFrame<'render, 'target, 'alloc, 'frame, R, T>
+impl<'render, 'target, 'alloc, 'frame, 'color, R: GraphicsApi, T: GraphicsApi, C> Drop
+    for MultiFrame<'render, 'target, 'alloc, 'frame, 'color, R, T, C>
 where
+    C: CMS + 'static,
     R: 'static,
     R::Error: 'static,
     T::Error: 'static,
@@ -1437,9 +1467,10 @@ impl Texture for MultiTexture {
     }
 }
 
-impl<'render, 'target, 'alloc, 'frame, R: GraphicsApi, T: GraphicsApi> Frame
-    for MultiFrame<'render, 'target, 'alloc, 'frame, R, T>
+impl<'render, 'target, 'alloc, 'frame, 'color, R: GraphicsApi, T: GraphicsApi, C> Frame<C>
+    for MultiFrame<'render, 'target, 'alloc, 'frame, 'color, R, T, C>
 where
+    C: CMS + 'static,
     R: 'static,
     R::Error: 'static,
     T::Error: 'static,
@@ -1455,22 +1486,28 @@ where
         self.frame.as_ref().unwrap().id()
     }
 
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Error<R, T>> {
+    #[instrument(level = "trace", parent = &self.span, skip(self, input_profile))]
+    fn clear(
+        &mut self,
+        color: [f32; 4],
+        at: &[Rectangle<i32, Physical>],
+        input_profile: &C::ColorProfile,
+    ) -> Result<(), Error<R, T>> {
         self.damage.extend(at);
         self.frame
             .as_mut()
             .unwrap()
-            .clear(color, at)
+            .clear(color, at, input_profile)
             .map_err(Error::Render)
     }
 
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, input_profile))]
     fn draw_solid(
         &mut self,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         color: [f32; 4],
+        input_profile: &C::ColorProfile,
     ) -> Result<(), Self::Error> {
         self.damage.extend(damage.iter().copied().map(|mut rect| {
             rect.loc += dst.loc;
@@ -1479,11 +1516,11 @@ where
         self.frame
             .as_mut()
             .unwrap()
-            .draw_solid(dst, damage, color)
+            .draw_solid(dst, damage, color, input_profile)
             .map_err(Error::Render)
     }
 
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, input_profile))]
     fn render_texture_from_to(
         &mut self,
         texture: &MultiTexture,
@@ -1492,6 +1529,7 @@ where
         damage: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
+        input_profile: &C::ColorProfile,
     ) -> Result<(), Error<R, T>> {
         if let Some(texture) = texture.get::<R>(&self.node) {
             self.damage.extend(damage.iter().copied().map(|mut rect| {
@@ -1501,7 +1539,7 @@ where
             self.frame
                 .as_mut()
                 .unwrap()
-                .render_texture_from_to(&texture, src, dst, damage, src_transform, alpha)
+                .render_texture_from_to(&texture, src, dst, damage, src_transform, alpha, input_profile)
                 .map_err(Error::Render)
         } else {
             warn!(
@@ -1574,7 +1612,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     fn import_memory(
         &mut self,
         data: &[u8],

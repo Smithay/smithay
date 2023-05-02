@@ -16,6 +16,7 @@ use smithay::{
 use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
+        color::{lcms::LcmsContext, null::NullCMS, CMS},
         egl::EGLDevice,
         renderer::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
@@ -50,8 +51,9 @@ use crate::{drawing::*, render::*};
 
 pub const OUTPUT_NAME: &str = "winit";
 
-pub struct WinitData {
+pub struct WinitData<C: CMS + 'static> {
     backend: WinitGraphicsBackend<GlesRenderer>,
+    cms: C,
     damage_tracker: OutputDamageTracker,
     dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
     full_redraw: u8,
@@ -59,7 +61,7 @@ pub struct WinitData {
     pub fps: fps_ticker::Fps,
 }
 
-impl DmabufHandler for AnvilState<WinitData> {
+impl<C: CMS + 'static> DmabufHandler for AnvilState<WinitData<C>> {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
         &mut self.backend_data.dmabuf_state.0
     }
@@ -73,9 +75,9 @@ impl DmabufHandler for AnvilState<WinitData> {
             .map_err(|_| ImportError::Failed)
     }
 }
-delegate_dmabuf!(AnvilState<WinitData>);
+delegate_dmabuf!(@<C: CMS + 'static> AnvilState<WinitData<C>>);
 
-impl Backend for WinitData {
+impl<C: CMS + 'static> Backend for WinitData<C> {
     fn seat_name(&self) -> String {
         String::from("winit")
     }
@@ -85,7 +87,35 @@ impl Backend for WinitData {
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
-pub fn run_winit() {
+pub fn run_winit(mut backend_args: impl Iterator<Item = String>) {
+    let mut color = None;
+    loop {
+        match (backend_args.next(), backend_args.next()) {
+            (Some(arg), Some(value)) => match &*arg {
+                "--color" => {
+                    color = Some(value);
+                }
+                x => {
+                    error!("Unknown argument: {x}");
+                    return;
+                }
+            },
+            (Some(arg), None) => {
+                error!("Unmatched argument: {arg}");
+                return;
+            }
+            _ => break,
+        }
+    }
+
+    match color.as_deref().unwrap_or("lcms") {
+        "null" => run_winit_internal(NullCMS),
+        "lcms" => run_winit_internal(LcmsContext::new()),
+        x => error!("Unknown color argument value: {x}"),
+    }
+}
+
+fn run_winit_internal<C: CMS + 'static>(cms: C) {
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();
 
@@ -112,7 +142,7 @@ pub fn run_winit() {
             model: "Winit".into(),
         },
     );
-    let _global = output.create_global::<AnvilState<WinitData>>(&display.handle());
+    let _global = output.create_global::<AnvilState<WinitData<C>>>(&display.handle());
     output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
     output.set_preferred(mode);
 
@@ -159,7 +189,7 @@ pub fn run_winit() {
     // Note: egl on Mesa requires either v4 or wl_drm (initialized with bind_wl_display)
     let dmabuf_state = if let Some(default_feedback) = dmabuf_default_feedback {
         let mut dmabuf_state = DmabufState::new();
-        let dmabuf_global = dmabuf_state.create_global_with_default_feedback::<AnvilState<WinitData>>(
+        let dmabuf_global = dmabuf_state.create_global_with_default_feedback::<AnvilState<WinitData<C>>>(
             &display.handle(),
             &default_feedback,
         );
@@ -168,7 +198,7 @@ pub fn run_winit() {
         let dmabuf_formats = backend.renderer().dmabuf_formats().collect::<Vec<_>>();
         let mut dmabuf_state = DmabufState::new();
         let dmabuf_global =
-            dmabuf_state.create_global::<AnvilState<WinitData>>(&display.handle(), dmabuf_formats);
+            dmabuf_state.create_global::<AnvilState<WinitData<C>>>(&display.handle(), dmabuf_formats);
         (dmabuf_state, dmabuf_global, None)
     };
 
@@ -182,6 +212,7 @@ pub fn run_winit() {
 
         WinitData {
             backend,
+            cms,
             damage_tracker,
             dmabuf_state,
             full_redraw: 0,
@@ -238,6 +269,7 @@ pub fn run_winit() {
 
         // drawing logic
         {
+            let cms = &mut state.backend_data.cms;
             let backend = &mut state.backend_data.backend;
 
             let mut cursor_guard = state.cursor_status.lock().unwrap();
@@ -307,9 +339,9 @@ pub fn run_winit() {
 
                 let renderer = backend.renderer();
 
-                let mut elements = Vec::<CustomRenderElements<GlesRenderer>>::new();
+                let mut elements = Vec::<CustomRenderElements<GlesRenderer, C>>::new();
 
-                elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale));
+                elements.extend(pointer_element.render_elements(renderer, cms, cursor_pos_scaled, scale));
 
                 // draw input method surface if any
                 let rectangle = input_method.coordinates();
@@ -318,9 +350,10 @@ pub fn run_winit() {
                     rectangle.loc.y + rectangle.size.h,
                 ));
                 input_method.with_surface(|surface| {
-                    elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
+                    elements.extend(AsRenderElements::<GlesRenderer, _>::render_elements(
                         &smithay::desktop::space::SurfaceTree::from_surface(surface),
                         renderer,
+                        cms,
                         position.to_physical_precise_round(scale),
                         scale,
                     ));
@@ -329,9 +362,10 @@ pub fn run_winit() {
                 // draw the dnd icon if any
                 if let Some(surface) = dnd_icon {
                     if surface.alive() {
-                        elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
+                        elements.extend(AsRenderElements::<GlesRenderer, _>::render_elements(
                             &smithay::desktop::space::SurfaceTree::from_surface(surface),
                             renderer,
+                            cms,
                             cursor_pos_scaled,
                             scale,
                         ));
@@ -341,11 +375,14 @@ pub fn run_winit() {
                 #[cfg(feature = "debug")]
                 elements.push(CustomRenderElements::Fps(fps_element.clone()));
 
+                let output_profile = cms.profile_srgb();
                 render_output(
                     &output,
                     space,
                     elements,
                     renderer,
+                    cms,
+                    &output_profile,
                     damage_tracker,
                     age,
                     show_window_preview,

@@ -83,6 +83,9 @@ pub enum GlesError {
         /// Uniform type that was declared when compiling
         declared: UniformType,
     },
+    /// Failed to compute the necessary color transformation
+    #[error("Color transformation error: {0:?}")]
+    ColorTransformationError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<GlesError> for SwapBuffersError {
@@ -110,7 +113,8 @@ impl From<GlesError> for SwapBuffersError {
             | x @ GlesError::CreateShaderObject
             | x @ GlesError::UniformTypeMismatch { .. }
             | x @ GlesError::UnknownUniform(_)
-            | x @ GlesError::EGLBufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            | x @ GlesError::EGLBufferAccessError(_)
+            | x @ GlesError::ColorTransformationError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
     #[cfg(not(feature = "wayland_frontend"))]
@@ -134,7 +138,8 @@ impl From<GlesError> for SwapBuffersError {
             | x @ GlesError::CreateShaderObject
             | x @ GlesError::UniformTypeMismatch { .. }
             | x @ GlesError::UnknownUniform(_)
-            | x @ GlesError::BindBufferEGLError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            | x @ GlesError::BindBufferEGLError(_)
+            | x @ GlesError::ColorTransformationError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
 }

@@ -1,5 +1,8 @@
 use crate::{
-    backend::renderer::{buffer_dimensions, buffer_has_alpha, element::RenderElement, ImportAll, Renderer},
+    backend::{
+        color::CMS,
+        renderer::{buffer_dimensions, buffer_has_alpha, element::RenderElement, ImportAll, Renderer},
+    },
     utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
@@ -43,6 +46,7 @@ pub struct RendererSurfaceState {
     pub(crate) damage: DamageBag<i32, BufferCoord>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
+    pub(crate) profiles: HashMap<TypeId, Box<dyn std::any::Any>>, // TODO key should be (TypeId, Color-Protocol-State)
     pub(crate) surface_view: Option<SurfaceView>,
     pub(crate) opaque_regions: Vec<Rectangle<i32, Logical>>,
 
@@ -269,6 +273,17 @@ impl RendererSurfaceState {
         self.textures.get(&texture_id).and_then(|e| e.downcast_ref())
     }
 
+    /// Gets a reference to the color profile for the specified cms
+    // TODO: Add color-information as key, once we know how that looks on the protocols ide
+    pub fn profile<C>(&self) -> Option<&C::ColorProfile>
+    where
+        C: CMS,
+        C::ColorProfile: 'static,
+    {
+        let id = TypeId::of::<<C as CMS>::ColorProfile>();
+        self.profiles.get(&id).and_then(|e| e.downcast_ref())
+    }
+
     /// Location of the buffer relative to the previous call of take_accumulated_buffer_delta
     ///
     /// In other words, the x and y, combined with the new surface size define in which directions
@@ -429,10 +444,16 @@ where
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 #[instrument(level = "trace", skip_all)]
-pub fn import_surface<R>(renderer: &mut R, states: &SurfaceData) -> Result<(), <R as Renderer>::Error>
+pub fn import_surface<R, C>(
+    renderer: &mut R,
+    cms: &mut C,
+    states: &SurfaceData,
+) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
+    C: CMS,
+    C::ColorProfile: 'static,
 {
     if let Some(data) = states.data_map.get::<RendererSurfaceStateUserData>() {
         let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
@@ -445,6 +466,15 @@ where
             if let Some(buffer) = data.buffer.as_ref() {
                 match renderer.import_buffer(buffer, Some(states), &buffer_damage) {
                     Some(Ok(m)) => {
+                        // only set a new profile, if we also import the buffer successfully
+
+                        // TODO, receive the color state from some protocol.
+                        // for now all surfaces are considered untagged.
+                        // TODO: Make the CMS provide a function and let downstream choose the default profile.
+                        let profile = cms.profile_srgb();
+                        data.profiles
+                            .insert(TypeId::of::<<C as CMS>::ColorProfile>(), Box::new(profile));
+
                         e.insert(Box::new(m));
                         data.renderer_seen.insert(texture_id, data.current_commit());
                     }
@@ -471,10 +501,16 @@ where
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 #[instrument(level = "trace", skip_all)]
-pub fn import_surface_tree<R>(renderer: &mut R, surface: &WlSurface) -> Result<(), <R as Renderer>::Error>
+pub fn import_surface_tree<R, C>(
+    renderer: &mut R,
+    cms: &mut C,
+    surface: &WlSurface,
+) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
+    C: CMS,
+    C::ColorProfile: 'static,
 {
     let scale = 1.0;
     let location: Point<f64, Physical> = (0.0, 0.0).into();
@@ -487,7 +523,7 @@ where
         |_surface, states, location| {
             let mut location = *location;
             // Import a new buffer if necessary
-            if let Err(err) = import_surface(renderer, states) {
+            if let Err(err) = import_surface(renderer, cms, states) {
                 result = Err(err);
             }
 
@@ -525,8 +561,8 @@ where
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 #[instrument(level = "trace", skip(frame, scale, elements))]
-pub fn draw_render_elements<'a, R, S, E>(
-    frame: &mut <R as Renderer>::Frame<'a>,
+pub fn draw_render_elements<'a, 'b, R, C, S, E>(
+    frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
     scale: S,
     elements: &[E],
     damage: &[Rectangle<i32, Physical>],
@@ -534,8 +570,9 @@ pub fn draw_render_elements<'a, R, S, E>(
 where
     R: Renderer,
     <R as Renderer>::TextureId: 'static,
+    C: CMS,
     S: Into<Scale<f64>>,
-    E: RenderElement<R>,
+    E: RenderElement<R, C>,
 {
     let scale = scale.into();
 

@@ -6,7 +6,11 @@ uniform mat3 tex_matrix;
 attribute vec2 vert;
 attribute vec4 vert_position;
 
-varying vec2 v_coords;
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+varying highp vec2 v_coords;
+#else
+varying mediump vec2 v_coords;
+#endif
 
 mat2 scale(vec2 scale_vec){
     return mat2(

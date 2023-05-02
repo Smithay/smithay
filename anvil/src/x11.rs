@@ -22,6 +22,7 @@ use smithay::{
             gbm::{GbmAllocator, GbmBufferFlags},
             vulkan::{ImageUsageFlags, VulkanAllocator},
         },
+        color::{lcms::LcmsContext, null::NullCMS, CMS},
         egl::{EGLContext, EGLDisplay},
         renderer::{
             damage::OutputDamageTracker, element::AsRenderElements, gles::GlesRenderer, Bind, ImportDma,
@@ -54,12 +55,13 @@ use tracing::{error, info, trace, warn};
 pub const OUTPUT_NAME: &str = "x11";
 
 #[derive(Debug)]
-pub struct X11Data {
+pub struct X11Data<C: CMS + 'static> {
     render: bool,
     mode: Mode,
     // FIXME: If GlesRenderer is dropped before X11Surface, then the MakeCurrent call inside Gles2Renderer will
     // fail because the X11Surface is keeping gbm alive.
     renderer: GlesRenderer,
+    cms: C,
     damage_tracker: OutputDamageTracker,
     surface: X11Surface,
     dmabuf_state: DmabufState,
@@ -69,7 +71,7 @@ pub struct X11Data {
     fps: fps_ticker::Fps,
 }
 
-impl DmabufHandler for AnvilState<X11Data> {
+impl<C: CMS + 'static> DmabufHandler for AnvilState<X11Data<C>> {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
         &mut self.backend_data.dmabuf_state
     }
@@ -82,9 +84,9 @@ impl DmabufHandler for AnvilState<X11Data> {
             .map_err(|_| ImportError::Failed)
     }
 }
-delegate_dmabuf!(AnvilState<X11Data>);
+delegate_dmabuf!(@<C: CMS + 'static> AnvilState<X11Data<C>>);
 
-impl Backend for X11Data {
+impl<C: CMS + 'static> Backend for X11Data<C> {
     fn seat_name(&self) -> String {
         "x11".to_owned()
     }
@@ -94,7 +96,35 @@ impl Backend for X11Data {
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
-pub fn run_x11() {
+pub fn run_x11(mut backend_args: impl Iterator<Item = String>) {
+    let mut color = None;
+    loop {
+        match (backend_args.next(), backend_args.next()) {
+            (Some(arg), Some(value)) => match &*arg {
+                "--color" => {
+                    color = Some(value);
+                }
+                x => {
+                    error!("Unknown argument: {x}");
+                    return;
+                }
+            },
+            (Some(arg), None) => {
+                error!("Unmatched argument: {arg}");
+                return;
+            }
+            _ => break,
+        }
+    }
+
+    match color.as_deref().unwrap_or("lcms") {
+        "null" => run_x11_internal(NullCMS),
+        "lcms" => run_x11_internal(LcmsContext::new()),
+        x => error!("Unknown color argument value: {x}"),
+    }
+}
+
+pub fn run_x11_internal<C: CMS + 'static>(cms: C) {
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();
 
@@ -185,7 +215,7 @@ pub fn run_x11() {
         .build()
         .unwrap();
     let mut dmabuf_state = DmabufState::new();
-    let dmabuf_global = dmabuf_state.create_global_with_default_feedback::<AnvilState<X11Data>>(
+    let dmabuf_global = dmabuf_state.create_global_with_default_feedback::<AnvilState<X11Data<C>>>(
         &display.handle(),
         &dmabuf_default_feedback,
     );
@@ -226,7 +256,7 @@ pub fn run_x11() {
             model: "X11".into(),
         },
     );
-    let _global = output.create_global::<AnvilState<X11Data>>(&display.handle());
+    let _global = output.create_global::<AnvilState<X11Data<C>>>(&display.handle());
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
 
@@ -237,6 +267,7 @@ pub fn run_x11() {
         mode,
         surface,
         renderer,
+        cms,
         damage_tracker,
         dmabuf_state,
         _dmabuf_global: dmabuf_global,
@@ -322,7 +353,7 @@ pub fn run_x11() {
             }
 
             let mut cursor_guard = cursor_status.lock().unwrap();
-            let mut elements: Vec<CustomRenderElements<GlesRenderer>> = Vec::new();
+            let mut elements: Vec<CustomRenderElements<GlesRenderer, C>> = Vec::new();
 
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
@@ -355,6 +386,7 @@ pub fn run_x11() {
             pointer_element.set_status(cursor_guard.clone());
             elements.extend(pointer_element.render_elements(
                 &mut backend_data.renderer,
+                &mut backend_data.cms,
                 cursor_pos_scaled,
                 scale,
             ));
@@ -367,9 +399,10 @@ pub fn run_x11() {
                 rectangle.loc.y + rectangle.size.h,
             ));
             input_method.with_surface(|surface| {
-                elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
+                elements.extend(AsRenderElements::<GlesRenderer, _>::render_elements(
                     &smithay::desktop::space::SurfaceTree::from_surface(surface),
                     &mut backend_data.renderer,
+                    &mut backend_data.cms,
                     position.to_physical_precise_round(scale),
                     scale,
                 ));
@@ -378,9 +411,10 @@ pub fn run_x11() {
             // draw the dnd icon if any
             if let Some(surface) = state.dnd_icon.as_ref() {
                 if surface.alive() {
-                    elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
+                    elements.extend(AsRenderElements::<GlesRenderer, _>::render_elements(
                         &smithay::desktop::space::SurfaceTree::from_surface(surface),
                         &mut backend_data.renderer,
+                        &mut backend_data.cms,
                         cursor_pos_scaled,
                         scale,
                     ));
@@ -390,11 +424,14 @@ pub fn run_x11() {
             #[cfg(feature = "debug")]
             elements.push(CustomRenderElements::Fps(fps_element.clone()));
 
+            let output_profile = backend_data.cms.profile_srgb();
             let render_res = render_output(
                 &output,
                 &state.space,
                 elements,
                 &mut backend_data.renderer,
+                &mut backend_data.cms,
+                &output_profile,
                 &mut backend_data.damage_tracker,
                 age.into(),
                 state.show_window_preview,

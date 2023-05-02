@@ -34,6 +34,8 @@ use crate::backend::egl::{
     display::{EGLBufferReader, BUFFER_READER},
     Error as EglError,
 };
+
+use crate::backend::color::CMS;
 #[cfg(feature = "renderer_multi")]
 pub mod multigpu;
 
@@ -143,7 +145,7 @@ pub trait TextureMapping: Texture {
 }
 
 /// Helper trait for [`Renderer`], which defines a rendering api for a currently in-progress frame during [`Renderer::render`].
-pub trait Frame {
+pub trait Frame<C: CMS> {
     /// Error type returned by the rendering operations of this renderer.
     type Error: Error;
     /// Texture Handle type used by this renderer.
@@ -160,7 +162,12 @@ pub trait Frame {
     ///
     /// This operation is only valid in between a `begin` and `finish`-call.
     /// If called outside this operation may error-out, do nothing or modify future rendering results in any way.
-    fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error>;
+    fn clear(
+        &mut self,
+        color: [f32; 4],
+        at: &[Rectangle<i32, Physical>],
+        input_profile: &<C as CMS>::ColorProfile,
+    ) -> Result<(), Self::Error>;
 
     /// Draw a solid color to the current target at the specified destination with the specified color.
     fn draw_solid(
@@ -168,6 +175,7 @@ pub trait Frame {
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         color: [f32; 4],
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), Self::Error>;
 
     /// Render a texture to the current target as a flat 2d-plane at a given
@@ -183,6 +191,7 @@ pub trait Frame {
         src_transform: Transform,
         damage: &[Rectangle<i32, Physical>],
         alpha: f32,
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), Self::Error> {
         self.render_texture_from_to(
             texture,
@@ -197,6 +206,7 @@ pub trait Frame {
             damage,
             src_transform,
             alpha,
+            input_profile,
         )
     }
 
@@ -211,6 +221,7 @@ pub trait Frame {
         damage: &[Rectangle<i32, Physical>],
         src_transform: Transform,
         alpha: f32,
+        input_profile: &<C as CMS>::ColorProfile,
     ) -> Result<(), Self::Error>;
 
     /// Output transformation that is applied to this frame
@@ -243,7 +254,7 @@ pub trait Renderer {
     /// Texture Handle type used by this renderer.
     type TextureId: Texture;
     /// Type representing a currently in-progress frame during the [`Renderer::render`]-call
-    type Frame<'frame>: Frame<Error = Self::Error, TextureId = Self::TextureId> + 'frame
+    type Frame<'frame, 'color, C: CMS + 'static>: Frame<C, Error = Self::Error, TextureId = Self::TextureId>
     where
         Self: 'frame;
 
@@ -271,11 +282,13 @@ pub trait Renderer {
     /// - The given Transformation is not supported by the renderer (`Transform::Normal` is always supported).
     /// - This renderer implements `Bind`, no target was bound *and* has no default target.
     /// - (Renderers not implementing `Bind` always have a default target.)
-    fn render(
-        &mut self,
+    fn render<'color, 'frame, C: CMS + 'static>(
+        &'frame mut self,
         output_size: Size<i32, Physical>,
         dst_transform: Transform,
-    ) -> Result<Self::Frame<'_>, Self::Error>;
+        cms: &'color mut C,
+        output_profile: &'color <C as CMS>::ColorProfile,
+    ) -> Result<Self::Frame<'frame, 'color, C>, Self::Error>;
 }
 
 /// Trait for renderers that support creating offscreen framebuffers to render into.

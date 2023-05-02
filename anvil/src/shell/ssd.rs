@@ -1,17 +1,24 @@
 use smithay::{
-    backend::renderer::{
-        element::{
-            solid::{SolidColorBuffer, SolidColorRenderElement},
-            AsRenderElements,
+    backend::{
+        color::CMS,
+        renderer::{
+            element::{
+                solid::{SolidColorBuffer, SolidColorRenderElement},
+                AsRenderElements,
+            },
+            Renderer,
         },
-        Renderer,
     },
     input::Seat,
     utils::{Logical, Point, Serial},
     wayland::shell::xdg::XdgShellHandler,
 };
 
-use std::cell::{RefCell, RefMut};
+use std::{
+    any::TypeId,
+    cell::{RefCell, RefMut},
+    collections::HashMap,
+};
 
 use crate::AnvilState;
 
@@ -23,15 +30,19 @@ pub struct WindowState {
     pub header_bar: HeaderBar,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct HeaderBar {
     pub pointer_loc: Option<Point<f64, Logical>>,
     pub width: u32,
     pub close_button_hover: bool,
     pub maximize_button_hover: bool,
-    pub background: SolidColorBuffer,
-    pub close_button: SolidColorBuffer,
-    pub maximize_button: SolidColorBuffer,
+    pub elements: RefCell<HashMap<TypeId, Box<dyn std::any::Any>>>,
+}
+
+pub struct HeaderElements<C: CMS> {
+    pub background: SolidColorBuffer<C>,
+    pub close_button: SolidColorBuffer<C>,
+    pub maximize_button: SolidColorBuffer<C>,
 }
 
 const BG_COLOR: [f32; 4] = [0.75f32, 0.9f32, 0.78f32, 1f32];
@@ -104,13 +115,36 @@ impl HeaderBar {
         };
     }
 
-    pub fn redraw(&mut self, width: u32) {
+    pub fn redraw<C: CMS + 'static>(&mut self, width: u32, cms: &C) {
         if width == 0 {
             self.width = 0;
             return;
         }
 
-        self.background
+        let srgb_profile = cms.profile_srgb();
+        let mut elements_ref = self.elements.borrow_mut();
+        let elements = elements_ref
+            .entry(TypeId::of::<C>())
+            .or_insert_with(|| {
+                Box::new(HeaderElements {
+                    background: SolidColorBuffer::<C>::new(
+                        (0, 0),
+                        [0.0, 0.0, 0.0, 0.0],
+                        srgb_profile.clone(),
+                    ),
+                    close_button: SolidColorBuffer::<C>::new(
+                        (0, 0),
+                        [0.0, 0.0, 0.0, 0.0],
+                        srgb_profile.clone(),
+                    ),
+                    maximize_button: SolidColorBuffer::<C>::new((0, 0), [0.0, 0.0, 0.0, 0.0], srgb_profile),
+                }) as Box<dyn std::any::Any>
+            })
+            .downcast_mut::<HeaderElements<C>>()
+            .unwrap();
+
+        elements
+            .background
             .update((width as i32, HEADER_BAR_HEIGHT), BG_COLOR);
 
         let mut needs_redraw_buttons = false;
@@ -126,7 +160,8 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || !self.close_button_hover)
         {
-            self.close_button
+            elements
+                .close_button
                 .update((BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32), CLOSE_COLOR_HOVER);
             self.close_button_hover = true;
         } else if !self
@@ -136,7 +171,8 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || self.close_button_hover)
         {
-            self.close_button
+            elements
+                .close_button
                 .update((BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32), CLOSE_COLOR);
             self.close_button_hover = false;
         }
@@ -148,7 +184,8 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || !self.maximize_button_hover)
         {
-            self.maximize_button
+            elements
+                .maximize_button
                 .update((BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32), MAX_COLOR_HOVER);
             self.maximize_button_hover = true;
         } else if !self
@@ -158,39 +195,71 @@ impl HeaderBar {
             .unwrap_or(false)
             && (needs_redraw_buttons || self.maximize_button_hover)
         {
-            self.maximize_button
+            elements
+                .maximize_button
                 .update((BUTTON_WIDTH as i32, BUTTON_HEIGHT as i32), MAX_COLOR);
             self.maximize_button_hover = false;
         }
     }
+
+    pub fn decoration_elements<'a, C: CMS + 'static>(&'a self, cms: &C) -> RefMut<'a, HeaderElements<C>> {
+        RefMut::map(self.elements.borrow_mut(), |elements_ref| {
+            elements_ref
+                .entry(TypeId::of::<C>())
+                .or_insert_with(|| {
+                    let srgb_profile = cms.profile_srgb();
+                    Box::new(HeaderElements {
+                        background: SolidColorBuffer::<C>::new(
+                            (0, 0),
+                            [0.0, 0.0, 0.0, 0.0],
+                            srgb_profile.clone(),
+                        ),
+                        close_button: SolidColorBuffer::<C>::new(
+                            (0, 0),
+                            [0.0, 0.0, 0.0, 0.0],
+                            srgb_profile.clone(),
+                        ),
+                        maximize_button: SolidColorBuffer::<C>::new(
+                            (0, 0),
+                            [0.0, 0.0, 0.0, 0.0],
+                            srgb_profile,
+                        ),
+                    }) as Box<dyn std::any::Any>
+                })
+                .downcast_mut::<HeaderElements<C>>()
+                .unwrap()
+        })
+    }
 }
 
-impl<R: Renderer> AsRenderElements<R> for HeaderBar {
-    type RenderElement = SolidColorRenderElement;
+impl<R: Renderer, C: CMS + 'static> AsRenderElements<R, C> for HeaderBar {
+    type RenderElement = SolidColorRenderElement<C>;
 
-    fn render_elements<C: From<Self::RenderElement>>(
+    fn render_elements<E: From<Self::RenderElement>>(
         &self,
         _renderer: &mut R,
+        cms: &mut C,
         location: Point<i32, smithay::utils::Physical>,
         scale: smithay::utils::Scale<f64>,
-    ) -> Vec<C> {
+    ) -> Vec<E> {
         let header_end_offset: Point<i32, Logical> = Point::from((self.width as i32, 0));
         let button_offset: Point<i32, Logical> = Point::from((BUTTON_WIDTH as i32, 0));
+        let elements = self.decoration_elements(cms);
 
         vec![
             SolidColorRenderElement::from_buffer(
-                &self.close_button,
+                &elements.close_button,
                 location + (header_end_offset - button_offset).to_physical_precise_round(scale),
                 scale,
             )
             .into(),
             SolidColorRenderElement::from_buffer(
-                &self.maximize_button,
+                &elements.maximize_button,
                 location + (header_end_offset - button_offset.upscale(2)).to_physical_precise_round(scale),
                 scale,
             )
             .into(),
-            SolidColorRenderElement::from_buffer(&self.background, location, scale).into(),
+            SolidColorRenderElement::from_buffer(&elements.background, location, scale).into(),
         ]
     }
 }
@@ -206,9 +275,7 @@ impl WindowElement {
                     width: 0,
                     close_button_hover: false,
                     maximize_button_hover: false,
-                    background: SolidColorBuffer::default(),
-                    close_button: SolidColorBuffer::default(),
-                    maximize_button: SolidColorBuffer::default(),
+                    elements: RefCell::new(HashMap::new()),
                 },
             })
         });

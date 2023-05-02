@@ -218,7 +218,10 @@ use tracing::{instrument, warn};
 use wayland_server::protocol::wl_surface;
 
 use crate::{
-    backend::renderer::{utils::RendererSurfaceStateUserData, Frame, ImportAll, Renderer, Texture},
+    backend::{
+        color::CMS,
+        renderer::{utils::RendererSurfaceStateUserData, Frame, ImportAll, Renderer, Texture},
+    },
     utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::compositor::{self, SurfaceData, TraversalAction},
 };
@@ -226,9 +229,10 @@ use crate::{
 use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
 
 /// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
-#[instrument(level = "trace", skip(renderer, location, scale))]
-pub fn render_elements_from_surface_tree<R, E>(
+#[instrument(level = "trace", skip(renderer, cms, location, scale))]
+pub fn render_elements_from_surface_tree<R, C, E>(
     renderer: &mut R,
+    cms: &mut C,
     surface: &wl_surface::WlSurface,
     location: impl Into<Point<i32, Physical>>,
     scale: impl Into<Scale<f64>>,
@@ -236,6 +240,8 @@ pub fn render_elements_from_surface_tree<R, E>(
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
+    C: CMS,
+    <C as CMS>::ColorProfile: 'static,
     E: From<WaylandSurfaceRenderElement<R>>,
 {
     let location = location.into().to_f64();
@@ -275,7 +281,8 @@ where
                 };
 
                 if has_view {
-                    match WaylandSurfaceRenderElement::from_surface(renderer, surface, states, location) {
+                    match WaylandSurfaceRenderElement::from_surface(renderer, cms, surface, states, location)
+                    {
                         Ok(surface) => surfaces.push(surface.into()),
                         Err(err) => {
                             warn!("Failed to import surface: {}", err);
@@ -310,17 +317,20 @@ impl<R> fmt::Debug for WaylandSurfaceRenderElement<R> {
 
 impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
     /// Create a render element from a surface
-    pub fn from_surface(
+    pub fn from_surface<C>(
         renderer: &mut R,
+        cms: &mut C,
         surface: &wl_surface::WlSurface,
         states: &SurfaceData,
         location: Point<f64, Physical>,
     ) -> Result<Self, <R as Renderer>::Error>
     where
         <R as Renderer>::TextureId: 'static,
+        C: CMS,
+        C::ColorProfile: 'static,
     {
         let id = Id::from_wayland_resource(surface);
-        crate::backend::renderer::utils::import_surface(renderer, states)?;
+        crate::backend::renderer::utils::import_surface(renderer, cms, states)?;
 
         Ok(Self {
             id,
@@ -468,10 +478,12 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
     }
 }
 
-impl<R> RenderElement<R> for WaylandSurfaceRenderElement<R>
+impl<R, C> RenderElement<R, C> for WaylandSurfaceRenderElement<R>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
+    C: CMS,
+    C::ColorProfile: 'static,
 {
     fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
         compositor::with_states(&self.surface, |states| {
@@ -481,10 +493,17 @@ where
         })
     }
 
+    fn color_profile(&self) -> <C as CMS>::ColorProfile {
+        compositor::with_states(&self.surface, |states| {
+            let data = states.data_map.get::<RendererSurfaceStateUserData>();
+            data.and_then(|d| d.borrow().profile::<C>().cloned()).unwrap()
+        })
+    }
+
     #[instrument(level = "trace", skip(frame))]
-    fn draw<'a>(
+    fn draw<'a, 'b>(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'a, 'b, C>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -494,10 +513,18 @@ where
             if let Some(data) = data {
                 let data = data.borrow();
 
-                if let Some(texture) = data.texture::<R>(frame.id()) {
-                    frame.render_texture_from_to(texture, src, dst, damage, data.buffer_transform, 1.0f32)?;
+                if let (Some(texture), Some(profile)) = (data.texture::<R>(frame.id()), data.profile::<C>()) {
+                    frame.render_texture_from_to(
+                        texture,
+                        src,
+                        dst,
+                        damage,
+                        data.buffer_transform,
+                        1.0f32,
+                        profile,
+                    )?;
                 } else {
-                    warn!("trying to render texture from different renderer");
+                    warn!("trying to render texture from different renderer or color profile from different cms");
                 }
             }
 
