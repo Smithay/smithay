@@ -1496,7 +1496,7 @@ where
     /// - `elements` for this frame in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip_all)]
     pub fn render_frame<'a, R, E, Target>(
-        &'a mut self,
+        &mut self,
         renderer: &mut R,
         elements: &'a [E],
         clear_color: [f32; 4],
