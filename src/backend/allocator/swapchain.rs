@@ -165,8 +165,7 @@ where
             .find(|s| !s.acquired.swap(true, Ordering::SeqCst))
         {
             if free_slot.buffer.is_none() {
-                let mut free_slot =
-                    Arc::get_mut(free_slot).expect("Acquired was false, but Arc is not unique?");
+                let free_slot = Arc::get_mut(free_slot).expect("Acquired was false, but Arc is not unique?");
                 match self
                     .allocator
                     .create_buffer(self.width, self.height, self.fourcc, &self.modifiers)

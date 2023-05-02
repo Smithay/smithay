@@ -2455,7 +2455,7 @@ where
             trace!("repositioning cursor plane");
             let mut plane_state = previous_state.plane_state(plane_info.handle).unwrap().clone();
             plane_state.skip = false;
-            let mut config = plane_state.config.as_mut().unwrap();
+            let config = plane_state.config.as_mut().unwrap();
             config.dst.loc = cursor_plane_location;
             let res = frame_state.test_state(&self.surface, plane_info.handle, plane_state, false);
 
