@@ -38,6 +38,10 @@
 //!
 //! ```
 //!
+//! | Warning! |
+//! |:-|
+//! | Text input focus is set automatically if an input method grabs the keyboard, but on a mobile platform the input method will normally not grab a keyboard and hence one will have to set text input focus manually using the `set_focus` function. |
+//!
 
 use wayland_protocols::wp::text_input::zv3::server::{
     zwp_text_input_manager_v3::{self, ZwpTextInputManagerV3},
