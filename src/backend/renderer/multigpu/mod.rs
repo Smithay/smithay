@@ -1612,7 +1612,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     fn import_memory(
         &mut self,
         data: &[u8],
