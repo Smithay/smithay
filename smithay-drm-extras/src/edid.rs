@@ -16,6 +16,7 @@
 
 use drm::control::{connector, Device as ControlDevice, PropertyValueSet};
 use edid_rs::MonitorDescriptor;
+pub use edid_rs::{ColorCharacteristics, WhitePoint};
 
 use super::hwdata;
 
@@ -26,6 +27,8 @@ pub struct EdidInfo {
     pub model: String,
     /// Name of manufacturer of this monitor
     pub manufacturer: String,
+    /// ColorCharacteristics of this monitor
+    pub color_characteristics: ColorCharacteristics,
 }
 
 impl EdidInfo {
@@ -38,6 +41,7 @@ impl EdidInfo {
             .map(|edid| EdidInfo {
                 model: get_monitor_name(&edid),
                 manufacturer: get_manufacturer_name(&edid),
+                color_characteristics: edid.color,
             })
     }
 }
