@@ -52,7 +52,7 @@
 //! #     drm::{DrmDevice, DrmDeviceFd},
 //! #     renderer::{
 //! #       element::surface::WaylandSurfaceRenderElement,
-//! #       gles::{GlesRenderbuffer, GlesRenderer},
+//! #       gles::{GlesTexture, GlesRenderer},
 //! #     },
 //! # };
 //! # use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
@@ -105,16 +105,20 @@
 //!
 //! # let elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 //! let render_frame_result = compositor
-//!     .render_frame::<_, _, GlesRenderbuffer>(&mut renderer, &elements, CLEAR_COLOR)
+//!     .render_frame::<_, _, GlesTexture>(&mut renderer, &elements, CLEAR_COLOR)
 //!     .expect("failed to render frame");
 //!
-//! compositor.queue_frame(()).expect("failed to queue frame");
+//! if render_frame_result.damage.is_some() {
+//!     compositor.queue_frame(()).expect("failed to queue frame");
 //!
-//! // ...wait for VBlank event
+//!     // ...wait for VBlank event
 //!
-//! compositor
-//!     .frame_submitted()
-//!     .expect("failed to mark frame as submitted");
+//!     compositor
+//!         .frame_submitted()
+//!         .expect("failed to mark frame as submitted");
+//! } else {
+//!     // ...re-schedule frame
+//! }
 //! ```
 use std::{
     cell::RefCell,
@@ -410,6 +414,13 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
     fn plane_buffer(&self, handle: plane::Handle) -> Option<&B> {
         self.plane_state(handle)
             .and_then(|state| state.config.as_ref().map(|config| &*config.buffer))
+    }
+
+    fn is_empty(&self) -> bool {
+        if self.planes.is_empty() {
+            return true;
+        }
+        self.planes.iter().all(|p| p.1.skip)
     }
 }
 
@@ -2026,7 +2037,13 @@ where
         Ok(frame_reference)
     }
 
-    /// Queues the current frame for rendering.
+    /// Queues the current frame for scan-out.
+    ///
+    /// If `render_frame` has not been called prior to this function or returned no damage
+    /// this function will return [`FrameError::EmptyFrame`]. Instead of calling `queue_frame` it
+    /// is the callers responsibility to re-schedule the frame. A simple strategy for frame
+    /// re-scheduling is to queue a one-shot timer that will trigger after approximately one
+    /// retrace duration.
     ///
     /// *Note*: This function needs to be followed up with [`DrmCompositor::frame_submitted`]
     /// when a vblank event is received, that denotes successful scan-out of the frame.
@@ -2034,23 +2051,27 @@ where
     ///
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`DrmCompositor::frame_submitted`]
     pub fn queue_frame(&mut self, user_data: U) -> FrameResult<(), A, F> {
-        self.queued_frame = self.next_frame.take().map(|state| {
-            if let Some(plane_state) = state.plane_state(self.planes.primary.handle) {
-                if !plane_state.skip {
-                    let slot = plane_state.buffer().and_then(|config| match &config.buffer {
-                        ScanoutBuffer::Swapchain(slot) => Some(slot),
-                        _ => None,
-                    });
+        let next_frame = self.next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
 
-                    if let Some(slot) = slot {
-                        self.swapchain.submitted(slot);
-                    }
+        if next_frame.is_empty() {
+            return Err(FrameErrorType::<A, F>::EmptyFrame);
+        }
+
+        if let Some(plane_state) = next_frame.plane_state(self.planes.primary.handle) {
+            if !plane_state.skip {
+                let slot = plane_state.buffer().and_then(|config| match &config.buffer {
+                    ScanoutBuffer::Swapchain(slot) => Some(slot),
+                    _ => None,
+                });
+
+                if let Some(slot) = slot {
+                    self.swapchain.submitted(slot);
                 }
             }
+        }
 
-            (state, user_data)
-        });
-        if self.pending_frame.is_none() && self.queued_frame.is_some() {
+        self.queued_frame = Some((next_frame, user_data));
+        if self.pending_frame.is_none() {
             self.submit()?;
         }
         Ok(())
@@ -2109,7 +2130,7 @@ where
     }
 
     /// Returns the pending [`connector`](drm::control::connector)s
-    /// used for the next frame queued via [`queue_buffer`](GbmBufferedSurface::queue_buffer).
+    /// used for the next frame queued via [`queue_frame`](DrmCompositor::queue_frame).
     pub fn pending_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         self.surface.pending_connectors()
     }
@@ -3157,6 +3178,12 @@ pub enum FrameError<
     /// No framebuffer available
     #[error("No framebuffer available")]
     NoFramebuffer,
+    /// The frame is empty
+    ///
+    /// Possible reasons include not calling `render_frame` prior to
+    /// `queue_frame` or trying to queue a frame without changes.
+    #[error("No frame has been prepared or it does not contain any changes")]
+    EmptyFrame,
 }
 
 /// Error returned from [`DrmCompositor::render_frame`]
@@ -3202,7 +3229,9 @@ impl<
             | x @ FrameError::NoSupportedRendererFormat
             | x @ FrameError::PrimaryPlaneClaimFailed
             | x @ FrameError::NoFramebuffer => SwapBuffersError::ContextLost(Box::new(x)),
-            x @ FrameError::NoFreeSlotsError => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ FrameError::NoFreeSlotsError | x @ FrameError::EmptyFrame => {
+                SwapBuffersError::TemporaryFailure(Box::new(x))
+            }
             FrameError::DrmError(err) => err.into(),
             FrameError::Allocator(err) => SwapBuffersError::ContextLost(Box::new(err)),
             FrameError::AsDmabufError(err) => SwapBuffersError::ContextLost(Box::new(err)),
