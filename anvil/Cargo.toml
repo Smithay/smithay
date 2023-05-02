@@ -47,11 +47,12 @@ udev = [
   "smithay/backend_vulkan",
   "smithay/backend_egl",
   "smithay/backend_session_libseat",
+  "smithay/color_lcms",
   "image",
   "smithay/renderer_gl",
   "smithay/renderer_multi",
   "xcursor",
 ]
-winit = ["smithay/backend_winit", "smithay/backend_drm"]
-x11 = ["smithay/backend_x11", "x11rb", "smithay/renderer_gl", "smithay/backend_vulkan"]
+winit = ["smithay/backend_winit", "smithay/backend_drm", "smithay/color_lcms"]
+x11 = ["smithay/backend_x11", "x11rb", "smithay/renderer_gl", "smithay/backend_vulkan", "smithay/color_lcms"]
 xwayland = ["smithay/xwayland", "x11rb", "smithay/x11rb_event_source", "xcursor"]

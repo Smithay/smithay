@@ -1,18 +1,5 @@
 #![allow(clippy::too_many_arguments)]
 
-use smithay::{
-    backend::renderer::{
-        element::{
-            surface::WaylandSurfaceRenderElement,
-            texture::{TextureBuffer, TextureRenderElement},
-            AsRenderElements,
-        },
-        ImportAll, Renderer, Texture,
-    },
-    input::pointer::CursorImageStatus,
-    render_elements,
-    utils::{Physical, Point, Scale},
-};
 #[cfg(feature = "debug")]
 use smithay::{
     backend::renderer::{
@@ -21,6 +8,22 @@ use smithay::{
         Frame,
     },
     utils::{Buffer, Logical, Rectangle, Size, Transform},
+};
+use smithay::{
+    backend::{
+        color::CMS,
+        renderer::{
+            element::{
+                surface::WaylandSurfaceRenderElement,
+                texture::{TextureBuffer, TextureRenderElement},
+                AsRenderElements,
+            },
+            ImportAll, Renderer, Texture,
+        },
+    },
+    input::pointer::CursorImageStatus,
+    render_elements,
+    utils::{Physical, Point, Scale},
 };
 
 pub static CLEAR_COLOR: [f32; 4] = [0.8, 0.8, 0.9, 1.0];
@@ -54,12 +57,13 @@ render_elements! {
     pub PointerRenderElement<R> where
         R: ImportAll;
     Surface=WaylandSurfaceRenderElement<R>,
-    Texture=TextureRenderElement<<R as Renderer>::TextureId>,
+    Texture=TextureRenderElement<<R as Renderer>::TextureId, CMS>,
 }
 
-impl<R: Renderer> std::fmt::Debug for PointerRenderElement<R>
+impl<R: Renderer, C: CMS + std::fmt::Debug> std::fmt::Debug for PointerRenderElement<R, C>
 where
     <R as Renderer>::TextureId: std::fmt::Debug,
+    <C as CMS>::ColorProfile: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -70,31 +74,35 @@ where
     }
 }
 
-impl<T: Texture + Clone + 'static, R> AsRenderElements<R> for PointerElement<T>
+impl<T: Texture + Clone + 'static, R, C> AsRenderElements<R, C> for PointerElement<T>
 where
     R: Renderer<TextureId = T> + ImportAll,
+    C: CMS + 'static,
 {
-    type RenderElement = PointerRenderElement<R>;
+    type RenderElement = PointerRenderElement<R, C>;
     fn render_elements<E>(
         &self,
         renderer: &mut R,
+        cms: &mut C,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
     ) -> Vec<E>
     where
-        E: From<PointerRenderElement<R>>,
+        E: From<PointerRenderElement<R, C>>,
     {
+        let srgb_profile = cms.profile_srgb();
         match &self.status {
             CursorImageStatus::Hidden => vec![],
             CursorImageStatus::Default => {
                 if let Some(texture) = self.texture.as_ref() {
                     vec![
-                        PointerRenderElement::<R>::from(TextureRenderElement::from_texture_buffer(
+                        PointerRenderElement::<R, C>::from(TextureRenderElement::from_texture_buffer(
                             location.to_f64(),
                             texture,
                             None,
                             None,
                             None,
+                            srgb_profile.clone(),
                         ))
                         .into(),
                     ]
@@ -103,9 +111,9 @@ where
                 }
             }
             CursorImageStatus::Surface(surface) => {
-                let elements: Vec<PointerRenderElement<R>> =
+                let elements: Vec<PointerRenderElement<R, C>> =
                     smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
-                        renderer, surface, location, scale,
+                        renderer, cms, surface, location, scale,
                     );
                 elements.into_iter().map(E::from).collect()
             }

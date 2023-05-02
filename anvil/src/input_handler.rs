@@ -12,9 +12,12 @@ use crate::udev::UdevData;
 use smithay::backend::renderer::DebugFlags;
 
 use smithay::{
-    backend::input::{
-        self, Axis, AxisSource, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
-        PointerAxisEvent, PointerButtonEvent,
+    backend::{
+        color::CMS,
+        input::{
+            self, Axis, AxisSource, Event, InputBackend, InputEvent, KeyState, KeyboardKeyEvent,
+            PointerAxisEvent, PointerButtonEvent,
+        },
     },
     desktop::{layer_map_for_output, WindowSurfaceType},
     input::{
@@ -527,7 +530,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
 }
 
 #[cfg(feature = "udev")]
-impl AnvilState<UdevData> {
+impl<C: CMS + 'static> AnvilState<UdevData<C>> {
     pub fn process_input_event<B: InputBackend>(&mut self, dh: &DisplayHandle, event: InputEvent<B>) {
         match event {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {

@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use smithay::{
     backend::{
+        color::CMS,
         input::KeyState,
         renderer::{
             element::{
@@ -464,10 +465,13 @@ impl SpaceElement for WindowElement {
 render_elements!(
     pub WindowRenderElement<R> where R: ImportAll + ImportMem;
     Window=WaylandSurfaceRenderElement<R>,
-    Decoration=SolidColorRenderElement,
+    Decoration=SolidColorRenderElement<CMS>,
 );
 
-impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for WindowRenderElement<R> {
+impl<R: Renderer + std::fmt::Debug, C: CMS + std::fmt::Debug> std::fmt::Debug for WindowRenderElement<R, C>
+where
+    <C as CMS>::ColorProfile: std::fmt::Debug,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Window(arg0) => f.debug_tuple("Window").field(arg0).finish(),
@@ -477,19 +481,21 @@ impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for WindowRenderElement<R> {
     }
 }
 
-impl<R> AsRenderElements<R> for WindowElement
+impl<R, C> AsRenderElements<R, C> for WindowElement
 where
+    C: CMS + 'static,
     R: Renderer + ImportAll + ImportMem,
     <R as Renderer>::TextureId: Texture + 'static,
 {
-    type RenderElement = WindowRenderElement<R>;
+    type RenderElement = WindowRenderElement<R, C>;
 
-    fn render_elements<C: From<Self::RenderElement>>(
+    fn render_elements<E: From<Self::RenderElement>>(
         &self,
         renderer: &mut R,
+        cms: &mut C,
         mut location: Point<i32, Physical>,
         scale: Scale<f64>,
-    ) -> Vec<C> {
+    ) -> Vec<E> {
         let window_bbox = match self {
             WindowElement::Wayland(w) => SpaceElement::bbox(w),
             #[cfg(feature = "xwayland")]
@@ -505,10 +511,11 @@ where
 
             let mut state = self.decoration_state();
             let width = window_geo.size.w;
-            state.header_bar.redraw(width as u32);
-            let mut vec = AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
+            state.header_bar.redraw::<C>(width as u32, cms);
+            let mut vec = AsRenderElements::<R, C>::render_elements::<WindowRenderElement<R, C>>(
                 &state.header_bar,
                 renderer,
+                cms,
                 location,
                 scale,
             );
@@ -516,32 +523,28 @@ where
             location.y += (scale.y * HEADER_BAR_HEIGHT as f64) as i32;
 
             let window_elements = match self {
-                WindowElement::Wayland(xdg) => {
-                    AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
-                        xdg, renderer, location, scale,
-                    )
-                }
+                WindowElement::Wayland(xdg) => AsRenderElements::<R, C>::render_elements::<
+                    WindowRenderElement<R, C>,
+                >(xdg, renderer, cms, location, scale),
                 #[cfg(feature = "xwayland")]
-                WindowElement::X11(x11) => AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
-                    x11, renderer, location, scale,
-                ),
+                WindowElement::X11(x11) => AsRenderElements::<R, C>::render_elements::<
+                    WindowRenderElement<R, C>,
+                >(x11, renderer, cms, location, scale),
             };
             vec.extend(window_elements);
-            vec.into_iter().map(C::from).collect()
+            vec.into_iter().map(E::from).collect()
         } else {
             match self {
-                WindowElement::Wayland(xdg) => {
-                    AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
-                        xdg, renderer, location, scale,
-                    )
-                }
+                WindowElement::Wayland(xdg) => AsRenderElements::<R, C>::render_elements::<
+                    WindowRenderElement<R, C>,
+                >(xdg, renderer, cms, location, scale),
                 #[cfg(feature = "xwayland")]
-                WindowElement::X11(x11) => AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
-                    x11, renderer, location, scale,
-                ),
+                WindowElement::X11(x11) => AsRenderElements::<R, C>::render_elements::<
+                    WindowRenderElement<R, C>,
+                >(x11, renderer, cms, location, scale),
             }
             .into_iter()
-            .map(C::from)
+            .map(E::from)
             .collect()
         }
     }
