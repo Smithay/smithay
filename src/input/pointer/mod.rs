@@ -653,7 +653,7 @@ impl AxisFrame {
     /// the nature of the axis event. E.g. a scroll wheel might issue separate steps,
     /// while a touchpad may never issue this event as it has no steps.
     pub fn discrete(mut self, axis: Axis, steps: i32) -> Self {
-        let mut discrete = self.discrete.get_or_insert_with(Default::default);
+        let discrete = self.discrete.get_or_insert_with(Default::default);
         match axis {
             Axis::Horizontal => {
                 discrete.0 = steps;
