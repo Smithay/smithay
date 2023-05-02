@@ -490,12 +490,13 @@ impl AtomicDrmSurface {
         let mut added = pending_conns.difference(&current_conns);
 
         let req = self.build_request(&mut added, &mut removed, &*planes, Some(pending.blob))?;
-
         let flags = if allow_modeset {
             AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY
         } else {
             AtomicCommitFlags::TEST_ONLY
         };
+        trace!(?planes, "Testing state: {:?} / {:?}", flags, req);
+
         self.fd.atomic_commit(flags, req).map_err(|source| Error::Access {
             errmsg: "Error testing state",
             dev: self.fd.dev_path(),
