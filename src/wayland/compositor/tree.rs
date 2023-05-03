@@ -3,7 +3,7 @@ use crate::{utils::Serial, wayland::compositor::SUBSURFACE_ROLE};
 use super::{
     cache::MultiCache,
     handlers::{is_effectively_sync, SurfaceUserData},
-    transaction::{PendingTransaction, TransactionQueue},
+    transaction::{Blocker, PendingTransaction, TransactionQueue},
     BufferAssignment, CompositorHandler, SurfaceAttributes, SurfaceData,
 };
 use std::{
@@ -179,6 +179,12 @@ impl PrivateSurfaceData {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let my_data = my_data_mutex.lock().unwrap();
         f(&my_data.public_data)
+    }
+
+    pub fn add_blocker(surface: &WlSurface, blocker: impl Blocker + Send + 'static) {
+        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
+        let my_data = my_data_mutex.lock().unwrap();
+        my_data.pending_transaction.add_blocker(blocker)
     }
 
     pub fn add_pre_commit_hook(

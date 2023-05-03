@@ -38,8 +38,6 @@
 // A significant part of the logic of this module is not yet used,
 // but will be once proper transaction & blockers support is
 // added to smithay
-#![allow(dead_code)]
-
 use std::{
     collections::HashSet,
     fmt,
@@ -52,14 +50,20 @@ use crate::{utils::IsAlive, utils::Serial};
 
 use super::tree::PrivateSurfaceData;
 
+/// Types potentially blocking state changes
 pub trait Blocker {
+    /// Retrieve the current state of the blocker
     fn state(&self) -> BlockerState;
 }
 
+/// States of a [`Blocker`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockerState {
+    /// The block is pending and not resolved yet
     Pending,
+    /// The block got released and changes can be applied
     Released,
+    /// The block got cancelled and changes should be discarded
     Cancelled,
 }
 
@@ -227,7 +231,8 @@ impl TransactionQueue {
         self.transactions.push(t);
     }
 
-    pub(crate) fn apply_ready(&mut self, dh: &DisplayHandle) {
+    pub(crate) fn apply_ready(&mut self, dh: &DisplayHandle) -> bool {
+        let mut applied = false;
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which
         // surface we have seen as they encode transaction dependencies
@@ -278,7 +283,9 @@ impl TransactionQueue {
             } else {
                 // this transaction is to be applied, yay!
                 self.transactions.remove(i).apply(dh);
+                applied = true;
             }
         }
+        applied
     }
 }

@@ -115,6 +115,7 @@ use std::{any::Any, sync::Mutex};
 pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
 use self::transaction::TransactionQueue;
+pub use self::transaction::{Blocker, BlockerState};
 use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
@@ -484,6 +485,19 @@ where
     PrivateSurfaceData::add_destruction_hook(surface, hook)
 }
 
+/// Adds a blocker for the currently queued up state changes of the given surface.
+///
+/// Blockers will delay the pending state to be applied on the next commit until
+/// all of them return the state `Released`. Any blocker returning `Cancelled` will
+/// discard all changes.
+///
+/// The module will only evaluate blocker states on commit. If a blocker
+/// becomes ready later, a call to [`CompositorClientState::blocker_cleared`] is necessary
+/// to trigger a re-evaluation.
+pub fn add_blocker(surface: &WlSurface, blocker: impl Blocker + Send + 'static) {
+    PrivateSurfaceData::add_blocker(surface, blocker)
+}
+
 /// Handler trait for compositor
 pub trait CompositorHandler {
     /// [CompositorState] getter
@@ -510,6 +524,24 @@ pub struct CompositorState {
 #[derive(Debug, Default)]
 pub struct CompositorClientState {
     queue: Mutex<Option<TransactionQueue>>,
+}
+
+impl CompositorClientState {
+    /// To be called, when a previously added blocker (via [`add_blocker`])
+    /// got `Released` or `Cancelled` from being `Pending` previously for any
+    /// surface belonging to this client.
+    pub fn blocker_cleared<D: CompositorHandler>(
+        &self,
+        surface: &WlSurface,
+        state: &mut D,
+        dh: &DisplayHandle,
+    ) {
+        if let Some(queue) = self.queue.lock().unwrap().as_mut() {
+            if queue.apply_ready(dh) {
+                CompositorHandler::commit(state, surface)
+            }
+        }
+    }
 }
 
 #[doc(hidden)]
