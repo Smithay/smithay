@@ -42,6 +42,7 @@
 
 use std::{
     collections::HashSet,
+    fmt,
     sync::{Arc, Mutex},
 };
 
@@ -55,6 +56,7 @@ pub trait Blocker {
     fn state(&self) -> BlockerState;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockerState {
     Pending,
     Released,
@@ -171,9 +173,17 @@ impl PendingTransaction {
         }
     }
 }
+
+#[derive(Debug)]
 pub(crate) struct Transaction {
     surfaces: Vec<(WlSurface, Serial)>,
     blockers: Vec<Box<dyn Blocker + Send>>,
+}
+
+impl fmt::Debug for Box<dyn Blocker + Send> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Blocker").field("state", &self.state()).finish()
+    }
 }
 
 impl Transaction {
@@ -205,7 +215,7 @@ impl Transaction {
 }
 
 // This queue should be per-client
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct TransactionQueue {
     transactions: Vec<Transaction>,
     // we keep the hashset around to reuse allocations
@@ -217,7 +227,7 @@ impl TransactionQueue {
         self.transactions.push(t);
     }
 
-    pub(crate) fn apply_ready<D: 'static>(&mut self, dh: &DisplayHandle) {
+    pub(crate) fn apply_ready(&mut self, dh: &DisplayHandle) {
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which
         // surface we have seen as they encode transaction dependencies
@@ -226,7 +236,7 @@ impl TransactionQueue {
         let mut i = 0;
         // the loop will terminate, as at every iteration either i is incremented by 1
         // or the lenght of self.transactions is reduced by 1.
-        while i <= self.transactions.len() {
+        while i < self.transactions.len() {
             let mut skip = false;
             // does the transaction have any active blocker?
             match self.transactions[i].state() {

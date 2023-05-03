@@ -9,13 +9,16 @@ use smithay::{
         WindowSurfaceType,
     },
     output::Output,
-    reexports::wayland_server::protocol::{wl_buffer::WlBuffer, wl_output, wl_surface::WlSurface},
+    reexports::wayland_server::{
+        protocol::{wl_buffer::WlBuffer, wl_output, wl_surface::WlSurface},
+        Client,
+    },
     utils::{Logical, Point, Rectangle, Size},
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            get_parent, is_sync_subsurface, with_states, with_surface_tree_upward, CompositorHandler,
-            CompositorState, TraversalAction,
+            get_parent, is_sync_subsurface, with_states, with_surface_tree_upward, CompositorClientState,
+            CompositorHandler, CompositorState, TraversalAction,
         },
         shell::{
             wlr_layer::{
@@ -25,11 +28,15 @@ use smithay::{
             xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData},
         },
     },
+    xwayland::XWaylandClientData,
 };
 
-use crate::state::{AnvilState, Backend};
 #[cfg(feature = "xwayland")]
 use crate::CalloopData;
+use crate::{
+    state::{AnvilState, Backend},
+    ClientState,
+};
 
 mod element;
 mod grabs;
@@ -88,6 +95,19 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.compositor_state
     }
+    fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
+        if let Some(state) = client.get_data::<XWaylandClientData>() {
+            state
+                .user_data()
+                .insert_if_missing(CompositorClientState::default);
+            return state.user_data().get::<CompositorClientState>().unwrap();
+        }
+        if let Some(state) = client.get_data::<ClientState>() {
+            return &state.compositor_state;
+        }
+        panic!("Unknown client data type")
+    }
+
     fn commit(&mut self, surface: &WlSurface) {
         #[cfg(feature = "xwayland")]
         X11Wm::commit_hook::<CalloopData<BackendData>>(surface);

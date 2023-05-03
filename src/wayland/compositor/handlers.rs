@@ -244,7 +244,7 @@ where
             wl_surface::Request::Commit => {
                 PrivateSurfaceData::invoke_pre_commit_hooks(state, handle, surface);
 
-                PrivateSurfaceData::commit(surface, handle);
+                PrivateSurfaceData::commit(surface, handle, state);
 
                 PrivateSurfaceData::invoke_post_commit_hooks(state, handle, surface);
 

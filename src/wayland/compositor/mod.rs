@@ -31,9 +31,11 @@
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
 //! use smithay::delegate_compositor;
-//! use smithay::wayland::compositor::{CompositorState, CompositorHandler};
+//! use smithay::wayland::compositor::{CompositorState, CompositorClientState, CompositorHandler};
 //!
 //! # struct State { compositor_state: CompositorState }
+//! # struct ClientState { compositor_state: CompositorClientState }
+//! # impl wayland_server::backend::ClientData for ClientState {}
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! // Create the compositor state
 //! let compositor_state = CompositorState::new::<State>(
@@ -47,6 +49,10 @@
 //! impl CompositorHandler for State {
 //!    fn compositor_state(&mut self) -> &mut CompositorState {
 //!        &mut self.compositor_state
+//!    }
+//!
+//!    fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState {
+//!        &client.get_data::<ClientState>().unwrap().compositor_state    
 //!    }
 //!
 //!    fn commit(&mut self, surface: &wayland_server::protocol::wl_surface::WlSurface) {
@@ -104,10 +110,11 @@ mod handlers;
 mod transaction;
 mod tree;
 
-use std::any::Any;
+use std::{any::Any, sync::Mutex};
 
 pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
+use self::transaction::TransactionQueue;
 use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
@@ -115,7 +122,7 @@ use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
-use wayland_server::{DisplayHandle, GlobalDispatch, Resource};
+use wayland_server::{Client, DisplayHandle, GlobalDispatch, Resource};
 
 /// The role of a subsurface surface.
 pub const SUBSURFACE_ROLE: &str = "subsurface";
@@ -481,6 +488,12 @@ where
 pub trait CompositorHandler {
     /// [CompositorState] getter
     fn compositor_state(&mut self) -> &mut CompositorState;
+    /// [CompositorClientState] getter
+    ///
+    /// The compositor implementation needs some state to be client specific.
+    /// Downstream is expected to store this inside its `ClientData` implementation(s)
+    /// to ensure automatic cleanup of the state, when the client disconnects.
+    fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState;
 
     /// Surface commit handler
     fn commit(&mut self, surface: &WlSurface);
@@ -491,6 +504,12 @@ pub trait CompositorHandler {
 pub struct CompositorState {
     compositor: GlobalId,
     subcompositor: GlobalId,
+}
+
+/// Per-client state of a compositor
+#[derive(Debug, Default)]
+pub struct CompositorClientState {
+    queue: Mutex<Option<TransactionQueue>>,
 }
 
 #[doc(hidden)]

@@ -37,7 +37,7 @@ use smithay::{
     },
     utils::{Clock, Logical, Monotonic, Point},
     wayland::{
-        compositor::{get_parent, with_states, CompositorState},
+        compositor::{get_parent, with_states, CompositorClientState, CompositorState},
         data_device::{
             set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
             ServerDndGrabHandler,
@@ -87,7 +87,9 @@ pub struct CalloopData<BackendData: Backend + 'static> {
 }
 
 #[derive(Debug, Default)]
-pub struct ClientState;
+pub struct ClientState {
+    pub compositor_state: CompositorClientState,
+}
 impl ClientData for ClientState {
     /// Notification that a client was initialized
     fn initialized(&self, _client_id: ClientId) {}
@@ -395,7 +397,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     if let Err(err) = data
                         .display
                         .handle()
-                        .insert_client(client_stream, Arc::new(ClientState))
+                        .insert_client(client_stream, Arc::new(ClientState::default()))
                     {
                         warn!("Error adding wayland client: {}", err);
                     };
