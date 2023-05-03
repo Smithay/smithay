@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 #[cfg(feature = "xwayland")]
-use smithay::xwayland::X11Wm;
+use smithay::xwayland::{X11Wm, XWaylandClientData};
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
@@ -9,17 +9,22 @@ use smithay::{
         WindowSurfaceType,
     },
     output::Output,
-    reexports::wayland_server::{
-        protocol::{wl_buffer::WlBuffer, wl_output, wl_surface::WlSurface},
-        Client,
+    reexports::{
+        calloop::Interest,
+        wayland_server::{
+            protocol::{wl_buffer::WlBuffer, wl_output, wl_surface::WlSurface},
+            Client, Resource,
+        },
     },
     utils::{Logical, Point, Rectangle, Size},
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            get_parent, is_sync_subsurface, with_states, with_surface_tree_upward, CompositorClientState,
-            CompositorHandler, CompositorState, TraversalAction,
+            add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
+            with_surface_tree_upward, BufferAssignment, CompositorClientState, CompositorHandler,
+            CompositorState, SurfaceAttributes, TraversalAction,
         },
+        dmabuf::get_dmabuf,
         shell::{
             wlr_layer::{
                 Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
@@ -28,7 +33,6 @@ use smithay::{
             xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData},
         },
     },
-    xwayland::XWaylandClientData,
 };
 
 #[cfg(feature = "xwayland")]
@@ -96,6 +100,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
         &mut self.compositor_state
     }
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
+        #[cfg(feature = "xwayland")]
         if let Some(state) = client.get_data::<XWaylandClientData>() {
             return &state.compositor_state;
         }
@@ -103,6 +108,36 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             return &state.compositor_state;
         }
         panic!("Unknown client data type")
+    }
+
+    fn new_surface(&mut self, surface: &WlSurface) {
+        add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
+            let maybe_dmabuf = with_states(surface, |surface_data| {
+                surface_data
+                    .cached_state
+                    .pending::<SurfaceAttributes>()
+                    .buffer
+                    .as_ref()
+                    .and_then(|assignment| match assignment {
+                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).ok(),
+                        _ => None,
+                    })
+            });
+            if let Some(dmabuf) = maybe_dmabuf {
+                if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
+                    let client = surface.client().unwrap();
+                    let res = state.handle.insert_source(source, move |_, _, data| {
+                        data.state
+                            .client_compositor_state(&client)
+                            .blocker_cleared(&mut data.state, &data.display.handle());
+                        Ok(())
+                    });
+                    if res.is_ok() {
+                        add_blocker(surface, blocker);
+                    }
+                }
+            }
+        })
     }
 
     fn commit(&mut self, surface: &WlSurface) {
