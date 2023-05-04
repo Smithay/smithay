@@ -80,6 +80,7 @@ where
                     SurfaceUserData {
                         inner: PrivateSurfaceData::new(),
                         alive_tracker: Default::default(),
+                        user_state_type: std::any::TypeId::of::<D>(),
                     },
                 );
                 PrivateSurfaceData::init(&surface);
@@ -146,6 +147,7 @@ impl Cacheable for SurfaceAttributes {
 pub struct SurfaceUserData {
     pub(crate) inner: Mutex<PrivateSurfaceData>,
     alive_tracker: AliveTracker,
+    pub(super) user_state_type: std::any::TypeId,
 }
 
 impl<D> Dispatch<WlSurface, SurfaceUserData, D> for CompositorState
@@ -290,13 +292,13 @@ where
     }
 
     fn destroyed(
-        _state: &mut D,
+        state: &mut D,
         _client_id: wayland_server::backend::ClientId,
         object_id: wayland_server::backend::ObjectId,
         data: &SurfaceUserData,
     ) {
         data.alive_tracker.destroy_notify();
-        PrivateSurfaceData::cleanup(data, object_id);
+        PrivateSurfaceData::cleanup(state, data, object_id);
     }
 }
 

@@ -319,7 +319,7 @@ impl RendererSurfaceState {
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
-pub fn on_commit_buffer_handler(surface: &WlSurface) {
+pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
     if !is_sync_subsurface(surface) {
         let mut new_surfaces = Vec::new();
         with_surface_tree_upward(
@@ -343,7 +343,7 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
             |_, _, _| true,
         );
         for surf in &new_surfaces {
-            add_destruction_hook(surf, |data| {
+            add_destruction_hook(surf, |_: &mut D, data| {
                 // We reset the state on destruction before the user_data is dropped
                 // to prevent a deadlock which can happen if we try to send a buffer
                 // release during drop. This also enables us to free resources earlier

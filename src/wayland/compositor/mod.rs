@@ -104,6 +104,8 @@ mod handlers;
 mod transaction;
 mod tree;
 
+use std::any::Any;
+
 pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
 use self::tree::PrivateSurfaceData;
@@ -418,7 +420,24 @@ pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSur
 ///
 /// It'll be invoked when the surface is destroyed (either explicitly by the client or on
 /// client disconnect).
-pub fn add_destruction_hook(surface: &WlSurface, hook: fn(&SurfaceData)) {
+///
+/// D generic is the compositor state, same as used in `CompositorState::new<D>()`
+pub fn add_destruction_hook<D, F>(surface: &WlSurface, hook: F)
+where
+    F: Fn(&mut D, &SurfaceData) + Send + 'static,
+    D: 'static,
+{
+    let user_state_type = surface.data::<SurfaceUserData>().unwrap().user_state_type;
+    assert_eq!(
+        user_state_type,
+        std::any::TypeId::of::<D>(),
+        "D has to equal D used in CompositorState::new<D>()"
+    );
+
+    let hook = move |state: &mut dyn Any, data: &SurfaceData| {
+        let state = state.downcast_mut::<D>().unwrap();
+        hook(state, data);
+    };
     PrivateSurfaceData::add_destruction_hook(surface, hook)
 }
 
