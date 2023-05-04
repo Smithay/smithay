@@ -126,14 +126,13 @@ where
         data.alive_tracker.destroy_notify();
         data.decoration.lock().unwrap().take();
 
-        let mut shell_data = data.shell_data.lock().unwrap();
-        if let Some(index) = shell_data
+        if let Some(index) = state
+            .xdg_shell_state()
             .known_toplevels
             .iter()
             .position(|top| top.shell_surface.id() == object_id)
         {
-            let toplevel = shell_data.known_toplevels.remove(index);
-            drop(shell_data);
+            let toplevel = state.xdg_shell_state().known_toplevels.remove(index);
             let surface = toplevel.wl_surface().clone();
             XdgShellHandler::toplevel_destroyed(state, toplevel);
             compositor::with_states(&surface, |states| {

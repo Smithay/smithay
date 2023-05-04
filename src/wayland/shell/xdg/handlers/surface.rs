@@ -24,7 +24,7 @@ use wayland_protocols::{
 use wayland_server::{protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource, Weak};
 
 use super::{
-    InnerState, PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
+    PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
     XdgPositionerUserData, XdgShellHandler, XdgToplevelSurfaceRoleAttributes,
 };
 
@@ -112,7 +112,6 @@ where
                 let toplevel = data_init.init(
                     id,
                     XdgShellSurfaceUserData {
-                        shell_data: state.xdg_shell_state().inner.clone(),
                         wl_surface: data.wl_surface.clone(),
                         xdg_surface: xdg_surface.clone(),
                         wm_base: data.wm_base.clone(),
@@ -123,9 +122,6 @@ where
 
                 state
                     .xdg_shell_state()
-                    .inner
-                    .lock()
-                    .unwrap()
                     .known_toplevels
                     .push(make_toplevel_handle(&toplevel));
 
@@ -190,7 +186,6 @@ where
                 let popup = data_init.init(
                     id,
                     XdgShellSurfaceUserData {
-                        shell_data: state.xdg_shell_state().inner.clone(),
                         wl_surface: data.wl_surface.clone(),
                         xdg_surface: xdg_surface.clone(),
                         wm_base: data.wm_base.clone(),
@@ -201,9 +196,6 @@ where
 
                 state
                     .xdg_shell_state()
-                    .inner
-                    .lock()
-                    .unwrap()
                     .known_popups
                     .push(make_popup_handle(&popup));
 
@@ -316,7 +308,6 @@ where
 /// User data of xdg toplevel surface
 #[derive(Debug)]
 pub struct XdgShellSurfaceUserData {
-    pub(crate) shell_data: Arc<Mutex<InnerState>>,
     pub(crate) wl_surface: wl_surface::WlSurface,
     pub(crate) wm_base: xdg_wm_base::XdgWmBase,
     pub(crate) xdg_surface: xdg_surface::XdgSurface,
