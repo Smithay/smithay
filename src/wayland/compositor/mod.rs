@@ -530,16 +530,15 @@ impl CompositorClientState {
     /// To be called, when a previously added blocker (via [`add_blocker`])
     /// got `Released` or `Cancelled` from being `Pending` previously for any
     /// surface belonging to this client.
-    pub fn blocker_cleared<D: CompositorHandler + 'static>(
-        &self,
-        surface: &WlSurface,
-        state: &mut D,
-        dh: &DisplayHandle,
-    ) {
-        if let Some(queue) = self.queue.lock().unwrap().as_mut() {
-            if queue.apply_ready(dh, state) {
-                CompositorHandler::commit(state, surface)
-            }
+    pub fn blocker_cleared<D: CompositorHandler + 'static>(&self, state: &mut D, dh: &DisplayHandle) {
+        let transactions = if let Some(queue) = self.queue.lock().unwrap().as_mut() {
+            queue.take_ready()
+        } else {
+            Vec::new()
+        };
+
+        for transaction in transactions {
+            transaction.apply(dh, state)
         }
     }
 }

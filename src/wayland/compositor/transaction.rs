@@ -237,8 +237,8 @@ impl TransactionQueue {
         self.transactions.push(t);
     }
 
-    pub(crate) fn apply_ready<C: CompositorHandler>(&mut self, dh: &DisplayHandle, state: &mut C) -> bool {
-        let mut applied = false;
+    pub(crate) fn take_ready(&mut self) -> Vec<Transaction> {
+        let mut ready_transactions = Vec::new();
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which
         // surface we have seen as they encode transaction dependencies
@@ -288,10 +288,10 @@ impl TransactionQueue {
                 i += 1;
             } else {
                 // this transaction is to be applied, yay!
-                self.transactions.remove(i).apply(dh, state);
-                applied = true;
+                ready_transactions.push(self.transactions.remove(i));
             }
         }
-        applied
+
+        ready_transactions
     }
 }
