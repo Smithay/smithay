@@ -42,7 +42,10 @@
 //! };
 //! ```
 
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{self, AtomicBool},
+    Mutex,
+};
 
 use wayland_protocols::wp::content_type::v1::server::{
     wp_content_type_manager_v1::WpContentTypeManagerV1,
@@ -100,19 +103,24 @@ impl Cacheable for ContentTypeSurfaceCachedState {
 }
 
 #[derive(Debug)]
-struct ContentTypeSurfaceData(Mutex<bool>);
+struct ContentTypeSurfaceData {
+    is_resource_attached: AtomicBool,
+}
 
 impl ContentTypeSurfaceData {
     fn new() -> Self {
-        Self(Mutex::new(false))
+        Self {
+            is_resource_attached: AtomicBool::new(false),
+        }
     }
 
     fn set_is_resource_attached(&self, is_attached: bool) {
-        *self.0.lock().unwrap() = is_attached;
+        self.is_resource_attached
+            .store(is_attached, atomic::Ordering::Release)
     }
 
     fn is_resource_attached(&self) -> bool {
-        *self.0.lock().unwrap()
+        self.is_resource_attached.load(atomic::Ordering::Acquire)
     }
 }
 
