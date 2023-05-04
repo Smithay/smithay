@@ -47,6 +47,7 @@
 
 pub mod buffer;
 pub mod compositor;
+pub mod content_type;
 pub mod data_device;
 pub mod dmabuf;
 pub mod fractional_scale;
