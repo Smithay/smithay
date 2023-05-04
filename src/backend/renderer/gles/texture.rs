@@ -1,6 +1,6 @@
 use super::*;
 
-/// A handle to a GLES2 texture
+/// A handle to a GLES texture
 #[derive(Debug, Clone)]
 pub struct GlesTexture(pub(super) Rc<GlesTextureInternal>);
 

@@ -160,7 +160,7 @@ impl Drop for GlesRenderbufferInternal {
 #[derive(Debug)]
 enum GlesTarget {
     Image {
-        // Gles2Buffer caches the shadow buffer and is renderer-local, so it works around the issue outlined below.
+        // GlesBuffer caches the shadow buffer and is renderer-local, so it works around the issue outlined below.
         // TODO: Ideally we would be able to share the texture between renderers with shared EGLContexts though.
         // But we definitly don't want to add user data to a dmabuf to facilitate this. Maybe use the EGLContexts userdata for storing the buffers?
         buf: GlesBuffer,
@@ -1955,7 +1955,7 @@ impl GlesRenderer {
     /// - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0) - only if `DEBUG_FLAGS` was defined
     ///
     /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
-    /// and can then be set in functions utilizing `GlesPixelProgram` (like [`Gles2Renderer::render_pixel_shader_to`]).
+    /// and can then be set in functions utilizing `GlesPixelProgram` (like [`GlesRenderer::render_pixel_shader_to`]).
     ///
     /// The shader must **not** contain a `#version` directive. It will be interpreted as version 100.
     ///
@@ -2068,7 +2068,7 @@ impl GlesRenderer {
         }
     }
 
-    /// Compile a custom texture shader for rendering with [`GlesRenderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`].
+    /// Compile a custom texture shader for rendering with [`GlesRenderer::render_texture`] or [`GlesRenderer::render_texture_from_to`].
     ///
     /// They need to handle the following #define variants:
     /// - `EXTERNAL` uses samplerExternalOES instead of sampler2D, requires the GL_OES_EGL_image_external extension
@@ -2082,7 +2082,7 @@ impl GlesRenderer {
     /// - *uniform* tint `float` - for the tint passed by the renderer (either 0.0 or 1.0) - only if `DEBUG_FLAGS` was defined
     ///
     /// Additional uniform values can be defined by passing `UniformName`s to the `additional_uniforms` argument
-    /// and can then be set in functions utilizing `GlesTexProgram` (like [`Gles2Renderer::render_texture`] or [`Gles2Renderer::render_texture_from_to`]).
+    /// and can then be set in functions utilizing `GlesTexProgram` (like [`GlesRenderer::render_texture`] or [`GlesRenderer::render_texture_from_to`]).
     ///
     /// The shader must contain a line only containing `//_DEFINES`. It will be replaced by the renderer with corresponding `#define` directives.
     ///
@@ -2453,9 +2453,9 @@ impl<'frame> GlesFrame<'frame> {
     /// Overrides the default texture shader used, if none is specified.
     ///
     /// This affects calls to [`Frame::render_texture_at`] or [`Frame::render_texture_from_to`] as well as
-    /// calls to [`GlesFrame::render_texture_to`] or [`Gles2Frame::render_texture`], if the passed in `program` is `None`.
+    /// calls to [`GlesFrame::render_texture_to`] or [`GlesFrame::render_texture`], if the passed in `program` is `None`.
     ///
-    /// Override is active only for the lifetime of this `GlesFrame` and can be reset via [`Gles2Frame::clear_tex_program_override`].
+    /// Override is active only for the lifetime of this `GlesFrame` and can be reset via [`GlesFrame::clear_tex_program_override`].
     pub fn override_default_tex_program(
         &mut self,
         program: GlesTexProgram,

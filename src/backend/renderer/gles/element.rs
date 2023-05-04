@@ -1,4 +1,4 @@
-//! RenderElements specific to using a `Gles2Renderer`
+//! RenderElements specific to using a `GlesRenderer`
 
 use crate::{
     backend::renderer::{
@@ -23,8 +23,8 @@ pub struct PixelShaderElement {
 }
 
 impl PixelShaderElement {
-    /// Create a new [`PixelShaderElement`] from a [`Gles2PixelProgram`],
-    /// which can be constructed using [`Gles2Renderer::compile_custom_pixel_shader`]
+    /// Create a new [`PixelShaderElement`] from a [`GlesPixelProgram`],
+    /// which can be constructed using [`GlesRenderer::compile_custom_pixel_shader`]
     pub fn new(
         shader: GlesPixelProgram,
         area: Rectangle<i32, Logical>,
@@ -58,7 +58,7 @@ impl PixelShaderElement {
     }
 
     /// Update the additional uniforms
-    /// (see [`Gles2Renderer::compile_custom_pixel_shader`] and [`Gles2Renderer::render_pixel_shader_to`]).
+    /// (see [`GlesRenderer::compile_custom_pixel_shader`] and [`GlesRenderer::render_pixel_shader_to`]).
     ///
     /// This replaces the stored uniforms, you have to update all of them, partial updates are not possible.
     pub fn update_uniforms(&mut self, additional_uniforms: Vec<Uniform<'_>>) {

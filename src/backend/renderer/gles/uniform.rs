@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use super::GlesError;
 
-/// Different value types of a shader uniform variable for the [`Gles2Renderer`](super::Gles2Renderer).
+/// Different value types of a shader uniform variable for the [`GlesRenderer`](super::GlesRenderer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UniformType {
     /// A single float
