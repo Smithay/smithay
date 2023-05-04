@@ -250,7 +250,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     fn update_keyboard_focus(&mut self, serial: Serial) {
         let pointer = self.seat.get_pointer().unwrap();
         let keyboard = self.seat.get_keyboard().unwrap();
-        let input_method = self.seat.input_method().unwrap();
+        let input_method = self.seat.input_method();
         // change the keyboard focus unless the pointer or keyboard is grabbed
         // We test for any matching surface type here but always use the root
         // (in case of a window the toplevel) surface for the focus.

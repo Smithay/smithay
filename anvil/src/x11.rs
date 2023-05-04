@@ -360,7 +360,7 @@ pub fn run_x11() {
             ));
 
             // draw input method surface if any
-            let input_method = state.seat.input_method().unwrap();
+            let input_method = state.seat.input_method();
             let rectangle = input_method.coordinates();
             let position = Point::from((
                 rectangle.loc.x + rectangle.size.w,
