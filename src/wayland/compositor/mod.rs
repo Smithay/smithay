@@ -510,6 +510,13 @@ pub trait CompositorHandler {
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState;
 
     /// Surface commit handler
+    ///
+    /// This is called when any changed state from a commit actually becomes visible.
+    /// That might be some time after the actual commit has taken place, if the
+    /// state changes are delayed by an added blocker (see [`add_blocker`]).
+    ///
+    /// If you need to handle a commit as soon as it occurs, you might want to consider
+    /// using a pre-commit hook (see [`add_pre_commit_hook`]).
     fn commit(&mut self, surface: &WlSurface);
 }
 
