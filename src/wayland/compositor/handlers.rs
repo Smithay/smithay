@@ -245,12 +245,6 @@ where
                 PrivateSurfaceData::invoke_pre_commit_hooks(state, handle, surface);
 
                 PrivateSurfaceData::commit(surface, handle, state);
-
-                PrivateSurfaceData::invoke_post_commit_hooks(state, handle, surface);
-
-                trace!("Calling user implementation for wl_surface.commit");
-
-                state.commit(surface);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
                 if let WEnum::Value(transform) = transform {

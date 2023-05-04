@@ -48,7 +48,7 @@ use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 use crate::{utils::IsAlive, utils::Serial};
 
-use super::tree::PrivateSurfaceData;
+use super::{tree::PrivateSurfaceData, CompositorHandler};
 
 /// Types potentially blocking state changes
 pub trait Blocker {
@@ -209,11 +209,17 @@ impl Transaction {
             })
     }
 
-    pub(crate) fn apply(self, dh: &DisplayHandle) {
+    pub(crate) fn apply<C: CompositorHandler + 'static>(self, dh: &DisplayHandle, state: &mut C) {
         for (surface, id) in self.surfaces {
             PrivateSurfaceData::with_states(&surface, |states| {
                 states.cached_state.apply_state(id, dh);
-            })
+            });
+
+            PrivateSurfaceData::invoke_post_commit_hooks::<C>(state, dh, &surface);
+
+            tracing::trace!("Calling user implementation for wl_surface.commit");
+
+            state.commit(&surface);
         }
     }
 }
@@ -231,7 +237,7 @@ impl TransactionQueue {
         self.transactions.push(t);
     }
 
-    pub(crate) fn apply_ready(&mut self, dh: &DisplayHandle) -> bool {
+    pub(crate) fn apply_ready<C: CompositorHandler>(&mut self, dh: &DisplayHandle, state: &mut C) -> bool {
         let mut applied = false;
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which
@@ -282,7 +288,7 @@ impl TransactionQueue {
                 i += 1;
             } else {
                 // this transaction is to be applied, yay!
-                self.transactions.remove(i).apply(dh);
+                self.transactions.remove(i).apply(dh, state);
                 applied = true;
             }
         }

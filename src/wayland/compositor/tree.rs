@@ -238,7 +238,7 @@ impl PrivateSurfaceData {
         }
     }
 
-    pub fn commit<C: CompositorHandler>(surface: &WlSurface, dh: &DisplayHandle, state: &mut C) {
+    pub fn commit<C: CompositorHandler + 'static>(surface: &WlSurface, dh: &DisplayHandle, state: &mut C) {
         let is_sync = is_effectively_sync(surface);
         let children = PrivateSurfaceData::get_children(surface);
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
@@ -279,7 +279,7 @@ impl PrivateSurfaceData {
             // release the mutex, as applying the transaction will try to lock it
             std::mem::drop(my_data);
             // trigger the queue
-            queue.apply_ready(dh);
+            queue.apply_ready(dh, state);
         }
     }
 
