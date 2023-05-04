@@ -79,14 +79,14 @@ mod input_method_popup_surface;
 /// Extends [Seat] with input method functionality
 pub trait InputMethodSeat {
     /// Get an input method associated with this seat
-    fn input_method(&self) -> Option<&InputMethodHandle>;
+    fn input_method(&self) -> &InputMethodHandle;
 }
 
 impl<D: SeatHandler + 'static> InputMethodSeat for Seat<D> {
-    fn input_method(&self) -> Option<&InputMethodHandle> {
+    fn input_method(&self) -> &InputMethodHandle {
         let user_data = self.user_data();
         user_data.insert_if_missing(InputMethodHandle::default);
-        user_data.get::<InputMethodHandle>()
+        user_data.get::<InputMethodHandle>().unwrap()
     }
 }
 
@@ -159,6 +159,7 @@ where
 
                 let user_data = seat.user_data();
                 user_data.insert_if_missing(TextInputHandle::default);
+                user_data.insert_if_missing(InputMethodHandle::default);
                 let handle = user_data.get::<InputMethodHandle>().unwrap();
                 let text_input_handle = user_data.get::<TextInputHandle>().unwrap();
                 text_input_handle.with_focused_text_input(|ti, surface, _| {
