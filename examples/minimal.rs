@@ -78,7 +78,7 @@ impl CompositorHandler for App {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
-        on_commit_buffer_handler(surface);
+        on_commit_buffer_handler::<Self>(surface);
     }
 }
 
