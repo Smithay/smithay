@@ -10,19 +10,20 @@
 //! ```
 //! use smithay::delegate_idle_inhibit;
 //! use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-//! use smithay::wayland::idle_inhibit::{FractionalScaleManagerState, FractionalScaleHandler};
+//! use smithay::wayland::idle_inhibit::{IdleInhibitManagerState, IdleInhibitHandler};
 //!
+//! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! // Create the compositor state
 //! IdleInhibitManagerState::new::<State>(&display.handle());
 //!
 //! // implement the necessary trait
 //! impl IdleInhibitHandler for State {
-//!    fn inhibit(&mut self, surface: wl_surface::WlSurface) {
+//!    fn inhibit(&mut self, surface: WlSurface) {
 //!        // …
 //!    }
 //!
-//!    fn uninhibit(&mut self, surface: wl_surface::WlSurface) {
+//!    fn uninhibit(&mut self, surface: WlSurface) {
 //!        // …
 //!    }
 //! }
@@ -125,6 +126,10 @@ pub trait IdleInhibitHandler {
     fn inhibit(&mut self, surface: WlSurface);
 
     /// Stop inhibition for the provided surface.
+    ///
+    /// This function is only called when a client explicitly removes the session
+    /// inhibition. It is up to the compositor to ignore inhibiting surfaces which
+    /// are invisible or dead.
     fn uninhibit(&mut self, surface: WlSurface);
 }
 
@@ -134,14 +139,14 @@ macro_rules! delegate_idle_inhibit {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         smithay::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1: ()
-        ] => $crate::protocols::idle_inhibit::IdleInhibitManagerState);
+        ] => $crate::wayland::idle_inhibit::IdleInhibitManagerState);
 
         smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1: ()
-        ] => $crate::protocols::idle_inhibit::IdleInhibitManagerState);
+        ] => $crate::wayland::idle_inhibit::IdleInhibitManagerState);
 
         smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1: $crate::protocols::idle_inhibit::inhibitor::IdleInhibitorState
-        ] => $crate::protocols::idle_inhibit::IdleInhibitManagerState);
+            smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1: $crate::wayland::idle_inhibit::inhibitor::IdleInhibitorState
+        ] => $crate::wayland::idle_inhibit::IdleInhibitManagerState);
     };
 }

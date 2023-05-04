@@ -7,7 +7,7 @@ use wayland_server::{Client, DataInit, Dispatch, DisplayHandle};
 
 use crate::wayland::idle_inhibit::{IdleInhibitHandler, IdleInhibitManagerState};
 
-/// State of the zwp_idle_inhibitor_v1 Global
+/// State of zwp_idle_inhibitor_v1.
 #[derive(Debug)]
 pub struct IdleInhibitorState {
     surface: WlSurface,
