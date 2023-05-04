@@ -266,7 +266,7 @@ pub fn run_winit() {
             let damage_tracker = &mut state.backend_data.damage_tracker;
             let show_window_preview = state.show_window_preview;
 
-            let input_method = state.seat.input_method().unwrap();
+            let input_method = state.seat.input_method();
             let dnd_icon = state.dnd_icon.as_ref();
 
             let scale = Scale::from(output.current_scale().fractional_scale());

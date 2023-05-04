@@ -1306,7 +1306,7 @@ impl AnvilState<UdevData> {
             &mut renderer,
             &self.space,
             &output,
-            self.seat.input_method().unwrap(),
+            self.seat.input_method(),
             self.pointer_location,
             &pointer_image,
             &mut self.backend_data.pointer_element,
