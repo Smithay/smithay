@@ -427,11 +427,13 @@ where
     F: Fn(&mut D, &SurfaceData) + Send + 'static,
     D: 'static,
 {
-    let user_state_type = surface.data::<SurfaceUserData>().unwrap().user_state_type;
+    let (user_state_type_id, user_state_type) = surface.data::<SurfaceUserData>().unwrap().user_state_type;
     assert_eq!(
-        user_state_type,
         std::any::TypeId::of::<D>(),
-        "D has to equal D used in CompositorState::new<D>()"
+        user_state_type_id,
+        "D has to equal D used in CompositorState::new<D>(), {} != {}",
+        std::any::type_name::<D>(),
+        user_state_type,
     );
 
     let hook = move |state: &mut dyn Any, data: &SurfaceData| {

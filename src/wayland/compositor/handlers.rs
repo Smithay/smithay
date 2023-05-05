@@ -80,7 +80,7 @@ where
                     SurfaceUserData {
                         inner: PrivateSurfaceData::new(),
                         alive_tracker: Default::default(),
-                        user_state_type: std::any::TypeId::of::<D>(),
+                        user_state_type: (std::any::TypeId::of::<D>(), std::any::type_name::<D>()),
                     },
                 );
                 PrivateSurfaceData::init(&surface);
@@ -147,7 +147,7 @@ impl Cacheable for SurfaceAttributes {
 pub struct SurfaceUserData {
     pub(crate) inner: Mutex<PrivateSurfaceData>,
     alive_tracker: AliveTracker,
-    pub(super) user_state_type: std::any::TypeId,
+    pub(super) user_state_type: (std::any::TypeId, &'static str),
 }
 
 impl<D> Dispatch<WlSurface, SurfaceUserData, D> for CompositorState
