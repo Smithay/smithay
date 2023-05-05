@@ -65,6 +65,8 @@ use tracing::{error, info, instrument};
 
 use super::x11_sockets::{prepare_x11_sockets, X11Lock};
 use crate::utils::user_data::UserDataMap;
+#[cfg(feature = "wayland_frontend")]
+use crate::wayland::compositor::CompositorClientState;
 
 /// The XWayland handle
 #[derive(Debug)]
@@ -208,6 +210,9 @@ struct Inner {
 #[derive(Debug)]
 pub struct XWaylandClientData {
     inner: Arc<Mutex<Inner>>,
+    /// client state of the [`wayland::compsitor`] module
+    #[cfg(feature = "wayland_frontend")]
+    pub compositor_state: CompositorClientState,
     data_map: UserDataMap,
 }
 
@@ -292,6 +297,8 @@ where
         wl_me,
         Arc::new(XWaylandClientData {
             inner: inner.clone(),
+            #[cfg(feature = "wayland_frontend")]
+            compositor_state: CompositorClientState::default(),
             data_map,
         }),
     )?;

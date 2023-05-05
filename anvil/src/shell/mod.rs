@@ -97,10 +97,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
     }
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
         if let Some(state) = client.get_data::<XWaylandClientData>() {
-            state
-                .user_data()
-                .insert_if_missing(CompositorClientState::default);
-            return state.user_data().get::<CompositorClientState>().unwrap();
+            return &state.compositor_state;
         }
         if let Some(state) = client.get_data::<ClientState>() {
             return &state.compositor_state;
