@@ -316,7 +316,11 @@ impl LayerSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self) {
+    ///
+    /// If changes have occured a configure event will be send to the clients and the serial will be returned
+    /// (for tracking the configure in [`LayerShellHandler::ack_configure`] if desired).
+    /// If no changes occured no event will be send and `None` will be returned.
+    pub fn send_configure(&self) -> Option<Serial> {
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -345,6 +349,9 @@ impl LayerSurface {
             let serial = configure.serial;
             self.shell_surface
                 .configure(serial.into(), width as u32, height as u32);
+            Some(configure.serial)
+        } else {
+            None
         }
     }
 

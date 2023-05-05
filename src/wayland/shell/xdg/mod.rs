@@ -1091,7 +1091,11 @@ impl ToplevelSurface {
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self) {
+    ///
+    /// If changes have occured a configure event will be send to the clients and the serial will be returned
+    /// (for tracking the configure in [`XdghellHandler::ack_configure`] if desired).
+    /// If no changes occured no event will be send and `None` will be returned.
+    pub fn send_configure(&self) -> Option<Serial> {
         let shell_surface_data = self.shell_surface.data::<XdgShellSurfaceUserData>();
         let decoration =
             shell_surface_data.and_then(|data| data.decoration.lock().unwrap().as_ref().cloned());
@@ -1145,7 +1149,12 @@ impl ToplevelSurface {
                 }
             }
 
-            self::handlers::send_toplevel_configure(&self.shell_surface, configure, bounds_changed)
+            let serial = configure.serial;
+            self::handlers::send_toplevel_configure(&self.shell_surface, configure, bounds_changed);
+
+            Some(serial)
+        } else {
+            None
         }
     }
 
@@ -1351,7 +1360,7 @@ impl PopupSurface {
 
     /// Internal configure function to re-use the configure
     /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
-    fn send_configure_internal(&self, reposition_token: Option<u32>) {
+    fn send_configure_internal(&self, reposition_token: Option<u32>) -> Option<Serial> {
         let next_configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -1384,7 +1393,11 @@ impl PopupSurface {
             }
         });
         if let Some(configure) = next_configure {
+            let serial = configure.serial;
             self::handlers::send_popup_configure(&self.shell_surface, configure);
+            Some(serial)
+        } else {
+            None
         }
     }
 
@@ -1397,8 +1410,12 @@ impl PopupSurface {
     ///
     /// Returns [`Err(PopupConfigureError)`] if the initial configure has already been sent and
     /// the client protocol version disallows a re-configure or the current [`PositionerState`]
-    /// is not reactive
-    pub fn send_configure(&self) -> Result<(), PopupConfigureError> {
+    /// is not reactive.
+    ///
+    /// If changes have occured a configure event will be send to the clients and the serial will be returned
+    /// (for tracking the configure in [`XdgShellHandler::ack_configure`] if desired).
+    /// If no changes occured no event will be send and `Ok(None)` will be returned.
+    pub fn send_configure(&self) -> Result<Option<Serial>, PopupConfigureError> {
         // Check if we are allowed to send a configure
         compositor::with_states(&self.wl_surface, |states| {
             let attributes = states
@@ -1424,16 +1441,16 @@ impl PopupSurface {
             Ok(())
         })?;
 
-        self.send_configure_internal(None);
+        let serial = self.send_configure_internal(None);
 
-        Ok(())
+        Ok(serial)
     }
 
     /// Send a configure event, including the `repositioned` event to the client
     /// in response to a `reposition` request.
     ///
     /// For further information see [`send_configure`](#method.send_configure)
-    pub fn send_repositioned(&self, token: u32) {
+    pub fn send_repositioned(&self, token: u32) -> Option<Serial> {
         self.send_configure_internal(Some(token))
     }
 
