@@ -9,10 +9,11 @@ use super::{
 use std::{
     any::Any,
     fmt,
-    sync::{atomic::Ordering, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex},
 };
 use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
+type CommitHook = dyn Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync;
 type DestructionHook = dyn Fn(&mut dyn Any, &SurfaceData) + Send;
 
 /// Node of a subsurface tree, holding some user specified data type U
@@ -34,8 +35,8 @@ pub struct PrivateSurfaceData {
     public_data: SurfaceData,
     pending_transaction: PendingTransaction,
     current_txid: Serial,
-    pre_commit_hooks: Vec<fn(&DisplayHandle, &WlSurface)>,
-    post_commit_hooks: Vec<fn(&DisplayHandle, &WlSurface)>,
+    pre_commit_hooks: Vec<Arc<Box<CommitHook>>>,
+    post_commit_hooks: Vec<Arc<Box<CommitHook>>>,
     destruction_hooks: Vec<Box<DestructionHook>>,
 }
 
@@ -180,16 +181,22 @@ impl PrivateSurfaceData {
         f(&my_data.public_data)
     }
 
-    pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
+    pub fn add_pre_commit_hook(
+        surface: &WlSurface,
+        hook: impl Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
+    ) {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
-        my_data.pre_commit_hooks.push(hook);
+        my_data.pre_commit_hooks.push(Arc::new(Box::new(hook)));
     }
 
-    pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
+    pub fn add_post_commit_hook(
+        surface: &WlSurface,
+        hook: impl Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
+    ) {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
-        my_data.post_commit_hooks.push(hook);
+        my_data.post_commit_hooks.push(Arc::new(Box::new(hook)));
     }
 
     pub fn add_destruction_hook(
@@ -201,7 +208,7 @@ impl PrivateSurfaceData {
         my_data.destruction_hooks.push(Box::new(hook));
     }
 
-    pub fn invoke_pre_commit_hooks(dh: &DisplayHandle, surface: &WlSurface) {
+    pub fn invoke_pre_commit_hooks<D: 'static>(state: &mut D, dh: &DisplayHandle, surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
         let hooks = {
             let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
@@ -209,11 +216,11 @@ impl PrivateSurfaceData {
             my_data.pre_commit_hooks.clone()
         };
         for hook in hooks {
-            hook(dh, surface);
+            hook(state, dh, surface);
         }
     }
 
-    pub fn invoke_post_commit_hooks(dh: &DisplayHandle, surface: &WlSurface) {
+    pub fn invoke_post_commit_hooks<D: 'static>(state: &mut D, dh: &DisplayHandle, surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
         let hooks = {
             let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
@@ -221,7 +228,7 @@ impl PrivateSurfaceData {
             my_data.post_commit_hooks.clone()
         };
         for hook in hooks {
-            hook(dh, surface);
+            hook(state, dh, surface);
         }
     }
 

@@ -405,14 +405,48 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 /// Register a pre-commit hook to be invoked on surface commit
 ///
 /// It'll be invoked on surface commit, *before* the new state is merged into the current state.
-pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
+pub fn add_pre_commit_hook<D, F>(surface: &WlSurface, hook: F)
+where
+    F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
+    D: 'static,
+{
+    let (user_state_type_id, user_state_type) = surface.data::<SurfaceUserData>().unwrap().user_state_type;
+    assert_eq!(
+        std::any::TypeId::of::<D>(),
+        user_state_type_id,
+        "D has to equal D used in CompositorState::new<D>(), {} != {}",
+        std::any::type_name::<D>(),
+        user_state_type,
+    );
+
+    let hook = move |state: &mut dyn Any, dh: &DisplayHandle, surface: &WlSurface| {
+        let state = state.downcast_mut::<D>().unwrap();
+        hook(state, dh, surface);
+    };
     PrivateSurfaceData::add_pre_commit_hook(surface, hook)
 }
 
 /// Register a post-commit hook to be invoked on surface commit
 ///
 /// It'll be invoked on surface commit, *after* the new state is merged into the current state.
-pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
+pub fn add_post_commit_hook<D, F>(surface: &WlSurface, hook: F)
+where
+    F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
+    D: 'static,
+{
+    let (user_state_type_id, user_state_type) = surface.data::<SurfaceUserData>().unwrap().user_state_type;
+    assert_eq!(
+        std::any::TypeId::of::<D>(),
+        user_state_type_id,
+        "D has to equal D used in CompositorState::new<D>(), {} != {}",
+        std::any::type_name::<D>(),
+        user_state_type,
+    );
+
+    let hook = move |state: &mut dyn Any, dh: &DisplayHandle, surface: &WlSurface| {
+        let state = state.downcast_mut::<D>().unwrap();
+        hook(state, dh, surface);
+    };
     PrivateSurfaceData::add_post_commit_hook(surface, hook)
 }
 

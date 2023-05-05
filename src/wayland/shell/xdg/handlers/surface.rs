@@ -106,7 +106,10 @@ where
                 });
 
                 if initial {
-                    compositor::add_pre_commit_hook(surface, super::super::ToplevelSurface::commit_hook);
+                    compositor::add_pre_commit_hook::<D, _>(
+                        surface,
+                        super::super::ToplevelSurface::commit_hook,
+                    );
                 }
 
                 let toplevel = data_init.init(
@@ -180,7 +183,7 @@ where
                 });
 
                 if initial {
-                    compositor::add_pre_commit_hook(surface, super::super::PopupSurface::commit_hook);
+                    compositor::add_pre_commit_hook::<D, _>(surface, super::super::PopupSurface::commit_hook);
                 }
 
                 let popup = data_init.init(

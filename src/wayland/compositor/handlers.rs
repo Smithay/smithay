@@ -242,11 +242,11 @@ where
                 });
             }
             wl_surface::Request::Commit => {
-                PrivateSurfaceData::invoke_pre_commit_hooks(handle, surface);
+                PrivateSurfaceData::invoke_pre_commit_hooks(state, handle, surface);
 
                 PrivateSurfaceData::commit(surface, handle);
 
-                PrivateSurfaceData::invoke_post_commit_hooks(handle, surface);
+                PrivateSurfaceData::invoke_post_commit_hooks(state, handle, surface);
 
                 trace!("Calling user implementation for wl_surface.commit");
 
