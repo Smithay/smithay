@@ -97,7 +97,7 @@ use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::shell::is_toplevel_equivalent;
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use wayland_protocols::xdg::shell::server::xdg_surface;
@@ -888,19 +888,14 @@ pub trait XdgShellHandler {
     fn popup_destroyed(&mut self, surface: PopupSurface) {}
 }
 
-#[derive(Debug)]
-pub(crate) struct InnerState {
-    known_toplevels: Vec<ToplevelSurface>,
-    known_popups: Vec<PopupSurface>,
-}
-
 /// Shell global state
 ///
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
 #[derive(Debug)]
 pub struct XdgShellState {
-    inner: Arc<Mutex<InnerState>>,
+    known_toplevels: Vec<ToplevelSurface>,
+    known_popups: Vec<PopupSurface>,
     global: GlobalId,
 }
 
@@ -913,41 +908,33 @@ impl XdgShellState {
         let global = display.create_global::<D, XdgWmBase, _>(4, ());
 
         XdgShellState {
-            inner: Arc::new(Mutex::new(InnerState {
-                known_toplevels: Vec::new(),
-                known_popups: Vec::new(),
-            })),
+            known_toplevels: Vec::new(),
+            known_popups: Vec::new(),
             global,
         }
     }
 
     /// Access all the shell surfaces known by this handler
-    pub fn toplevel_surfaces<T, F: FnMut(&[ToplevelSurface]) -> T>(&self, mut cb: F) -> T {
-        cb(&self.inner.lock().unwrap().known_toplevels)
+    pub fn toplevel_surfaces(&self) -> &[ToplevelSurface] {
+        &self.known_toplevels
     }
 
     /// Returns a [`ToplevelSurface`] from an underlying toplevel surface.
     pub fn get_toplevel(&self, toplevel: &xdg_toplevel::XdgToplevel) -> Option<ToplevelSurface> {
-        self.inner
-            .lock()
-            .unwrap()
-            .known_toplevels
+        self.known_toplevels
             .iter()
             .find(|surface| surface.xdg_toplevel() == toplevel)
             .cloned()
     }
 
     /// Access all the popup surfaces known by this handler
-    pub fn popup_surfaces<T, F: FnMut(&[PopupSurface]) -> T>(&self, mut cb: F) -> T {
-        cb(&self.inner.lock().unwrap().known_popups)
+    pub fn popup_surfaces(&self) -> &[PopupSurface] {
+        &self.known_popups
     }
 
     /// Returns a [`PopupSurface`] from an underlying popup surface.
     pub fn get_popup(&self, popup: &xdg_popup::XdgPopup) -> Option<PopupSurface> {
-        self.inner
-            .lock()
-            .unwrap()
-            .known_popups
+        self.known_popups
             .iter()
             .find(|surface| surface.xdg_popup() == popup)
             .cloned()

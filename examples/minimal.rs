@@ -170,10 +170,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 InputEvent::PointerMotionAbsolute { .. } => {
-                    if let Some(surface) = state
-                        .xdg_shell_state
-                        .toplevel_surfaces(|surfaces| surfaces.iter().next().cloned())
-                    {
+                    if let Some(surface) = state.xdg_shell_state.toplevel_surfaces().iter().next().cloned() {
                         let surface = surface.wl_surface().clone();
                         keyboard.set_focus(&mut state, Some(surface), 0.into());
                     };
@@ -188,25 +185,23 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         let size = backend.window_size().physical_size;
         let damage = Rectangle::from_loc_and_size((0, 0), size);
 
-        let elements = state.xdg_shell_state.toplevel_surfaces(|surfaces| {
-            surfaces
-                .iter()
-                .flat_map(|surface| {
-                    render_elements_from_surface_tree(backend.renderer(), surface.wl_surface(), (0, 0), 1.0)
-                })
-                .collect::<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>()
-        });
+        let elements = state
+            .xdg_shell_state
+            .toplevel_surfaces()
+            .iter()
+            .flat_map(|surface| {
+                render_elements_from_surface_tree(backend.renderer(), surface.wl_surface(), (0, 0), 1.0)
+            })
+            .collect::<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>();
 
         let mut frame = backend.renderer().render(size, Transform::Flipped180).unwrap();
         frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
         draw_render_elements(&mut frame, 1.0, &elements, &[damage]).unwrap();
         frame.finish().unwrap();
 
-        state.xdg_shell_state.toplevel_surfaces(|surfaces| {
-            for surface in surfaces {
-                send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
-            }
-        });
+        for surface in state.xdg_shell_state.toplevel_surfaces() {
+            send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
+        }
 
         if let Some(stream) = listener.accept()? {
             println!("Got a client: {:?}", stream);
