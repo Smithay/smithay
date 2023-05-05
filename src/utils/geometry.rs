@@ -1050,7 +1050,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         }
     }
 
-    /// Upscale this [`Rectangle`] by the supplied [`Scale`]
+    /// Downscale this [`Rectangle`] by the supplied [`Scale`]
     pub fn downscale(self, scale: impl Into<Scale<N>>) -> Rectangle<N, Kind> {
         let scale = scale.into();
         Rectangle {
