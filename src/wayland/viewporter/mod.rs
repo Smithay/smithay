@@ -135,19 +135,35 @@ where
                     return;
                 }
 
-                compositor::add_pre_commit_hook(&surface, viewport_commit_hook);
-
                 let viewport = data_init.init(
                     id,
                     ViewportState {
                         surface: surface.downgrade(),
                     },
                 );
-                with_states(&surface, |states| {
-                    states
+                let initial = with_states(&surface, |states| {
+                    let inserted = states
                         .data_map
                         .insert_if_missing(|| RefCell::new(Some(ViewportMarker(viewport.downgrade()))));
-                })
+
+                    // if we did not insert the marker it will be None as
+                    // checked in already_has_viewport and we have to update
+                    // it now
+                    if !inserted {
+                        *states
+                            .data_map
+                            .get::<RefCell<Option<ViewportMarker>>>()
+                            .unwrap()
+                            .borrow_mut() = Some(ViewportMarker(viewport.downgrade()));
+                    }
+
+                    inserted
+                });
+
+                // only add the pre-commit hook once for the surface
+                if initial {
+                    compositor::add_pre_commit_hook(&surface, viewport_commit_hook);
+                }
             }
             wp_viewporter::Request::Destroy => {
                 // All is already handled by our destructor
