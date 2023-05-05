@@ -2631,9 +2631,9 @@ impl<'frame> GlesFrame<'frame> {
         let src_size = src.size;
 
         let transform_mat = if transform.flipped() {
-            transform.matrix()
-        } else {
             transform.invert().matrix()
+        } else {
+            transform.matrix()
         };
 
         if src_size.w == 0. || src_size.h == 0. || tex_size.w == 0. || tex_size.h == 0. {
