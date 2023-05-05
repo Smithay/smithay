@@ -135,7 +135,7 @@ where
                     return;
                 }
 
-                compositor::add_pre_commit_hook(&surface, viewport_commit_hook);
+                compositor::add_pre_commit_hook::<D, _>(&surface, viewport_commit_hook);
 
                 let viewport = data_init.init(
                     id,
@@ -274,7 +274,7 @@ pub struct ViewportState {
 
 struct ViewportMarker(Weak<wp_viewport::WpViewport>);
 
-fn viewport_commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
+fn viewport_commit_hook<D: 'static>(_state: &mut D, _dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
     with_states(surface, |states| {
         states
             .data_map
