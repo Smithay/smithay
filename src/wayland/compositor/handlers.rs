@@ -63,7 +63,7 @@ where
     D: 'static,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlCompositor,
         request: wl_compositor::Request,
@@ -84,6 +84,7 @@ where
                     },
                 );
                 PrivateSurfaceData::init(&surface);
+                state.new_surface(&surface);
             }
             wl_compositor::Request::CreateRegion { id } => {
                 trace!(id = ?id, "Creating a new wl_region");

@@ -509,6 +509,14 @@ pub trait CompositorHandler {
     /// to ensure automatic cleanup of the state, when the client disconnects.
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState;
 
+    /// New surface handler.
+    ///
+    /// This handler can be used to setup hooks (see [`add_pre_commit_hook`]/[`add_post_commit_hook`]/[`add_destruction_hook`]),
+    /// but not much else. The surface has no role or attached data at this point and cannot be rendered.
+    fn new_surface(&mut self, surface: &WlSurface) {
+        let _ = surface;
+    }
+
     /// Surface commit handler
     ///
     /// This is called when any changed state from a commit actually becomes visible.
