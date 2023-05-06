@@ -127,7 +127,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                                 .initial_configure_sent
                         });
                         if mode_changed && initial_configure_sent {
-                            toplevel.send_configure();
+                            toplevel.send_pending_configure();
                         }
                     }
                 }

@@ -835,13 +835,17 @@ pub trait XdgShellHandler {
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial);
 
     /// A toplevel surface requested to be maximized
-    fn maximize_request(&mut self, surface: ToplevelSurface) {}
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        surface.send_configure();
+    }
 
     /// A toplevel surface requested to stop being maximized
     fn unmaximize_request(&mut self, surface: ToplevelSurface) {}
 
     /// A toplevel surface requested to be set fullscreen
-    fn fullscreen_request(&mut self, surface: ToplevelSurface, output: Option<wl_output::WlOutput>) {}
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, output: Option<wl_output::WlOutput>) {
+        surface.send_configure();
+    }
 
     /// A toplevel surface request to stop being fullscreen
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {}
@@ -1085,6 +1089,22 @@ impl ToplevelSurface {
         attributes.server_pending.take()
     }
 
+    /// Send a pending configure event to this toplevel surface to suggest it a new configuration
+    ///
+    /// If changes have occurred a configure event will be send to the clients and the serial will be returned
+    /// (for tracking the configure in [`XdgShellHandler::ack_configure`] if desired).
+    /// If no changes occurred no event will be send and `None` will be returned.
+    ///
+    /// See [`send_configure`](ToplevelSurface::send_configure) and [`has_pending_changes`](ToplevelSurface::has_pending_changes)
+    /// for more information.
+    pub fn send_pending_configure(&self) -> Option<Serial> {
+        if self.has_pending_changes() {
+            Some(self.send_configure())
+        } else {
+            None
+        }
+    }
+
     /// Send a configure event to this toplevel surface to suggest it a new configuration
     ///
     /// The serial of this configure will be tracked waiting for the client to ACK it.
@@ -1092,21 +1112,24 @@ impl ToplevelSurface {
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
     ///
-    /// If changes have occured a configure event will be send to the clients and the serial will be returned
-    /// (for tracking the configure in [`XdghellHandler::ack_configure`] if desired).
-    /// If no changes occured no event will be send and `None` will be returned.
-    pub fn send_configure(&self) -> Option<Serial> {
+    /// Note: This will always send a configure event, if you intend to only send a configure event on changes take a look at
+    /// [`send_pending_configure`](ToplevelSurface::send_pending_configure)
+    pub fn send_configure(&self) -> Serial {
         let shell_surface_data = self.shell_surface.data::<XdgShellSurfaceUserData>();
         let decoration =
             shell_surface_data.and_then(|data| data.decoration.lock().unwrap().as_ref().cloned());
-        let configure = compositor::with_states(&self.wl_surface, |states| {
-            let mut attributes = states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-            if let Some(pending) = self.get_pending_state(&mut attributes) {
+        let (configure, decoration_mode_changed, bounds_changed) =
+            compositor::with_states(&self.wl_surface, |states| {
+                let mut attributes = states
+                    .data_map
+                    .get::<XdgToplevelSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+
+                let pending = self
+                    .get_pending_state(&mut attributes)
+                    .unwrap_or_else(|| attributes.current_server_state().clone());
                 // retrieve the current state before adding it to the
                 // pending state so that we can compare what has changed
                 let current = attributes.current_server_state();
@@ -1131,31 +1154,25 @@ impl ToplevelSurface {
                     attributes.initial_decoration_configure_sent = true;
                 }
 
-                Some((configure, decoration_mode_changed, bounds_changed))
-            } else {
-                None
-            }
-        });
-        if let Some((configure, decoration_mode_changed, bounds_changed)) = configure {
-            if decoration_mode_changed {
-                if let Some(decoration) = &decoration {
-                    self::decoration::send_decoration_configure(
-                        decoration,
-                        configure
-                            .state
-                            .decoration_mode
-                            .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
-                    );
-                }
-            }
+                (configure, decoration_mode_changed, bounds_changed)
+            });
 
-            let serial = configure.serial;
-            self::handlers::send_toplevel_configure(&self.shell_surface, configure, bounds_changed);
-
-            Some(serial)
-        } else {
-            None
+        if decoration_mode_changed {
+            if let Some(decoration) = &decoration {
+                self::decoration::send_decoration_configure(
+                    decoration,
+                    configure
+                        .state
+                        .decoration_mode
+                        .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
+                );
+            }
         }
+
+        let serial = configure.serial;
+        self::handlers::send_toplevel_configure(&self.shell_surface, configure, bounds_changed);
+
+        serial
     }
 
     /// Handles the role specific commit logic
@@ -1246,6 +1263,23 @@ impl ToplevelSurface {
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
+        })
+    }
+
+    /// Tests this [`ToplevelSurface`] for pending changes
+    ///
+    /// Returns `true` if [`with_pending_state`](ToplevelSurface::with_pending_state) was used to manipulate the state
+    /// and resulted in a different state or if the initial configure is still pending.
+    pub fn has_pending_changes(&self) -> bool {
+        compositor::with_states(&self.wl_surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            !attributes.initial_configure_sent || attributes.has_pending_changes()
         })
     }
 
@@ -1360,8 +1394,8 @@ impl PopupSurface {
 
     /// Internal configure function to re-use the configure
     /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
-    fn send_configure_internal(&self, reposition_token: Option<u32>) -> Option<Serial> {
-        let next_configure = compositor::with_states(&self.wl_surface, |states| {
+    fn send_configure_internal(&self, reposition_token: Option<u32>) -> Serial {
+        let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
                 .get::<XdgPopupSurfaceData>()
@@ -1369,35 +1403,40 @@ impl PopupSurface {
                 .lock()
                 .unwrap();
 
-            if !attributes.initial_configure_sent
-                || attributes.has_pending_changes()
-                || reposition_token.is_some()
-            {
-                let pending = attributes
-                    .server_pending
-                    .take()
-                    .unwrap_or_else(|| *attributes.current_server_state());
+            let pending = attributes
+                .server_pending
+                .take()
+                .unwrap_or_else(|| *attributes.current_server_state());
 
-                let configure = PopupConfigure {
-                    state: pending,
-                    serial: SERIAL_COUNTER.next_serial(),
-                    reposition_token,
-                };
+            let configure = PopupConfigure {
+                state: pending,
+                serial: SERIAL_COUNTER.next_serial(),
+                reposition_token,
+            };
 
-                attributes.pending_configures.push(configure);
-                attributes.initial_configure_sent = true;
+            attributes.pending_configures.push(configure);
+            attributes.initial_configure_sent = true;
 
-                Some(configure)
-            } else {
-                None
-            }
+            configure
         });
-        if let Some(configure) = next_configure {
-            let serial = configure.serial;
-            self::handlers::send_popup_configure(&self.shell_surface, configure);
-            Some(serial)
+        let serial = configure.serial;
+        self::handlers::send_popup_configure(&self.shell_surface, configure);
+        serial
+    }
+
+    /// Send a pending configure event to this popup surface to suggest it a new configuration
+    ///
+    /// If changes have occurred a configure event will be send to the clients and the serial will be returned
+    /// (for tracking the configure in [`XdgShellHandler::ack_configure`] if desired).
+    /// If no changes occurred no event will be send and `Ok(None)` will be returned.
+    ///
+    /// See [`send_configure`](PopupSurface::send_configure) and [`has_pending_changes`](PopupSurface::has_pending_changes)
+    /// for more information.
+    pub fn send_pending_configure(&self) -> Result<Option<Serial>, PopupConfigureError> {
+        if self.has_pending_changes() {
+            self.send_configure().map(Some)
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -1412,10 +1451,9 @@ impl PopupSurface {
     /// the client protocol version disallows a re-configure or the current [`PositionerState`]
     /// is not reactive.
     ///
-    /// If changes have occured a configure event will be send to the clients and the serial will be returned
-    /// (for tracking the configure in [`XdgShellHandler::ack_configure`] if desired).
-    /// If no changes occured no event will be send and `Ok(None)` will be returned.
-    pub fn send_configure(&self) -> Result<Option<Serial>, PopupConfigureError> {
+    /// Note: This will always send a configure event, if you intend to only send a configure event on changes take a look at
+    /// [`send_pending_configure`](PopupSurface::send_pending_configure)
+    pub fn send_configure(&self) -> Result<Serial, PopupConfigureError> {
         // Check if we are allowed to send a configure
         compositor::with_states(&self.wl_surface, |states| {
             let attributes = states
@@ -1450,7 +1488,7 @@ impl PopupSurface {
     /// in response to a `reposition` request.
     ///
     /// For further information see [`send_configure`](#method.send_configure)
-    pub fn send_repositioned(&self, token: u32) -> Option<Serial> {
+    pub fn send_repositioned(&self, token: u32) -> Serial {
         self.send_configure_internal(Some(token))
     }
 
@@ -1573,6 +1611,23 @@ impl PopupSurface {
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
+        })
+    }
+
+    /// Tests this [`PopupSurface`] for pending changes
+    ///
+    /// Returns `true` if [`with_pending_state`](PopupSurface::with_pending_state) was used to manipulate the state
+    /// and resulted in a different state or if the initial configure is still pending.
+    pub fn has_pending_changes(&self) -> bool {
+        compositor::with_states(&self.wl_surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<XdgPopupSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            !attributes.initial_configure_sent || attributes.has_pending_changes()
         })
     }
 }

@@ -422,7 +422,7 @@ impl LayerMap {
                 // we would send a wrong size to the client and also violate
                 // the spec by sending a configure event before a prior commit.
                 if size_changed && initial_configure_sent {
-                    layer.0.surface.send_configure();
+                    layer.0.surface.send_pending_configure();
                 }
 
                 layer_state(layer).location = location;

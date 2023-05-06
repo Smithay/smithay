@@ -240,7 +240,6 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 state.size = Some(geometry.size);
                 state.fullscreen_output = wl_output;
             });
-            surface.send_configure();
             output.user_data().insert_if_missing(FullscreenSurface::default);
             output
                 .user_data()
@@ -249,9 +248,21 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .set(window.clone());
             trace!("Fullscreening: {:?}", window);
         }
+
+        // The protocol demands us to always reply with a configure,
+        // regardless of we fulfilled the request or not
+        surface.send_configure();
     }
 
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        if !surface
+            .current_state()
+            .states
+            .contains(xdg_toplevel::State::Fullscreen)
+        {
+            return;
+        }
+
         let ret = surface.with_pending_state(|state| {
             state.states.unset(xdg_toplevel::State::Fullscreen);
             state.size = None;
@@ -264,9 +275,9 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 fullscreen.clear();
                 self.backend_data.reset_buffers(&output);
             }
-
-            surface.send_configure();
         }
+
+        surface.send_pending_configure();
     }
 
     fn maximize_request(&mut self, surface: ToplevelSurface) {
@@ -286,16 +297,27 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
             state.states.set(xdg_toplevel::State::Maximized);
             state.size = Some(geometry.size);
         });
-        surface.send_configure();
         self.space.map_element(window, geometry.loc, true);
+
+        // The protocol demands us to always reply with a configure,
+        // regardless of we fulfilled the request or not
+        surface.send_configure();
     }
 
     fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        if !surface
+            .current_state()
+            .states
+            .contains(xdg_toplevel::State::Maximized)
+        {
+            return;
+        }
+
         surface.with_pending_state(|state| {
             state.states.unset(xdg_toplevel::State::Maximized);
             state.size = None;
         });
-        surface.send_configure();
+        surface.send_pending_configure();
     }
 
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {

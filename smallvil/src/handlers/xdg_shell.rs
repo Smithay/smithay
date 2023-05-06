@@ -94,7 +94,7 @@ impl XdgShellHandler for Smallvil {
                 state.states.set(xdg_toplevel::State::Resizing);
             });
 
-            surface.send_configure();
+            surface.send_pending_configure();
 
             let grab = ResizeSurfaceGrab::start(
                 start_data,
