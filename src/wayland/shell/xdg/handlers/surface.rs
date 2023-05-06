@@ -100,9 +100,23 @@ where
                 data.has_active_role.store(true, Ordering::Release);
 
                 let initial = compositor::with_states(surface, |states| {
-                    states.data_map.insert_if_missing_threadsafe(|| {
+                    let initial = states.data_map.insert_if_missing_threadsafe(|| {
                         Mutex::new(XdgToplevelSurfaceRoleAttributes::default())
-                    })
+                    });
+
+                    // Initialize the toplevel capabilities from the default capabilities
+                    let default_capabilities = &state.xdg_shell_state().default_capabilities;
+                    let current_capabilties = &mut states
+                        .data_map
+                        .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .current
+                        .capabilities;
+                    current_capabilties.replace(default_capabilities.capabilities.iter().copied());
+
+                    initial
                 });
 
                 if initial {

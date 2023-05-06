@@ -96,8 +96,7 @@ use crate::utils::{Serial, SERIAL_COUNTER};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::shell::is_toplevel_equivalent;
-use std::fmt::Debug;
-use std::sync::Mutex;
+use std::{collections::HashSet, fmt::Debug, sync::Mutex};
 
 use wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use wayland_protocols::xdg::shell::server::xdg_surface;
@@ -644,6 +643,9 @@ pub struct ToplevelState {
 
     /// The xdg decoration mode of the surface
     pub decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
+
+    /// The wm capabilities for this toplevel
+    pub capabilities: WmCapabilitieSet,
 }
 
 impl Clone for ToplevelState {
@@ -654,6 +656,7 @@ impl Clone for ToplevelState {
             size: self.size,
             bounds: self.bounds,
             decoration_mode: self.decoration_mode,
+            capabilities: self.capabilities.clone(),
         }
     }
 }
@@ -746,6 +749,55 @@ impl IntoIterator for ToplevelStateSet {
 impl From<ToplevelStateSet> for Vec<xdg_toplevel::State> {
     fn from(states: ToplevelStateSet) -> Self {
         states.states
+    }
+}
+
+/// Container holding the [`xdg_toplevel::WmCapabilities`] for a toplevel
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct WmCapabilitieSet {
+    capabilities: HashSet<xdg_toplevel::WmCapabilities>,
+}
+
+impl WmCapabilitieSet {
+    /// Returns `true` if the set contains a capability.
+    pub fn contains(&self, capability: xdg_toplevel::WmCapabilities) -> bool {
+        self.capabilities.contains(&capability)
+    }
+
+    /// Adds a capability to the set.
+    ///
+    /// If the set did not have this capability present, `true` is returned.
+    ///
+    /// If the set did have this capability present, `false` is returned.
+    pub fn set(&mut self, capability: xdg_toplevel::WmCapabilities) -> bool {
+        self.capabilities.insert(capability)
+    }
+
+    /// Removes a capability from the set. Returns whether the capability was
+    /// present in the set.
+    pub fn unset(&mut self, capability: xdg_toplevel::WmCapabilities) -> bool {
+        self.capabilities.remove(&capability)
+    }
+
+    /// Replace all capabilities in this set
+    pub fn replace(&mut self, capabilities: impl IntoIterator<Item = xdg_toplevel::WmCapabilities>) {
+        self.capabilities.clear();
+        self.capabilities.extend(capabilities);
+    }
+
+    /// Returns the raw [`xdg_toplevel::WmCapabilities`] stored in this set
+    pub fn capabilities(&self) -> impl Iterator<Item = &xdg_toplevel::WmCapabilities> {
+        self.capabilities.iter()
+    }
+}
+
+impl<T> From<T> for WmCapabilitieSet
+where
+    T: IntoIterator<Item = xdg_toplevel::WmCapabilities>,
+{
+    fn from(capabilities: T) -> Self {
+        let capabilities = capabilities.into_iter().collect();
+        Self { capabilities }
     }
 }
 
@@ -900,22 +952,52 @@ pub trait XdgShellHandler {
 pub struct XdgShellState {
     known_toplevels: Vec<ToplevelSurface>,
     known_popups: Vec<PopupSurface>,
+    default_capabilities: WmCapabilitieSet,
     global: GlobalId,
 }
 
 impl XdgShellState {
-    /// Create a new `xdg_shell` global
+    /// Create a new `xdg_shell` global with all [`WmCapabilities`](xdg_toplevel::WmCapabilities)
     pub fn new<D>(display: &DisplayHandle) -> XdgShellState
     where
         D: GlobalDispatch<XdgWmBase, ()> + 'static,
     {
-        let global = display.create_global::<D, XdgWmBase, _>(4, ());
+        Self::new_with_capabilities::<D>(
+            display,
+            [
+                xdg_toplevel::WmCapabilities::Fullscreen,
+                xdg_toplevel::WmCapabilities::Maximize,
+                xdg_toplevel::WmCapabilities::Minimize,
+                xdg_toplevel::WmCapabilities::WindowMenu,
+            ],
+        )
+    }
+
+    /// Create a new `xdg_shell` global with a specific set of [`WmCapabilities`](xdg_toplevel::WmCapabilities)
+    pub fn new_with_capabilities<D>(
+        display: &DisplayHandle,
+        capabilities: impl Into<WmCapabilitieSet>,
+    ) -> XdgShellState
+    where
+        D: GlobalDispatch<XdgWmBase, ()> + 'static,
+    {
+        let global = display.create_global::<D, XdgWmBase, _>(5, ());
 
         XdgShellState {
             known_toplevels: Vec::new(),
             known_popups: Vec::new(),
+            default_capabilities: capabilities.into(),
             global,
         }
+    }
+
+    /// Replace the capabilities of this global
+    ///
+    /// *Note*: This does not update the capabilities on existing toplevels, only new
+    /// toplevels are affected. To update existing toplevels iterate over them,
+    /// update their capabilities and send a configure.
+    pub fn replace_capabilities(&mut self, capabilities: impl Into<WmCapabilitieSet>) {
+        self.default_capabilities = capabilities.into();
     }
 
     /// Access all the shell surfaces known by this handler
@@ -1076,7 +1158,12 @@ impl ToplevelSurface {
     /// to the `last_acked`
     fn get_pending_state(&self, attributes: &mut XdgToplevelSurfaceRoleAttributes) -> Option<ToplevelState> {
         if !attributes.initial_configure_sent {
-            return Some(attributes.server_pending.take().unwrap_or_default());
+            return Some(
+                attributes
+                    .server_pending
+                    .take()
+                    .unwrap_or_else(|| attributes.current_server_state().clone()),
+            );
         }
 
         // Check if the state really changed, it is possible
@@ -1118,7 +1205,7 @@ impl ToplevelSurface {
         let shell_surface_data = self.shell_surface.data::<XdgShellSurfaceUserData>();
         let decoration =
             shell_surface_data.and_then(|data| data.decoration.lock().unwrap().as_ref().cloned());
-        let (configure, decoration_mode_changed, bounds_changed) =
+        let (configure, decoration_mode_changed, bounds_changed, capabilities_changed) =
             compositor::with_states(&self.wl_surface, |states| {
                 let mut attributes = states
                     .data_map
@@ -1143,6 +1230,11 @@ impl ToplevelSurface {
                 // bounds changed or we never sent one
                 let bounds_changed = !attributes.initial_configure_sent || (pending.bounds != current.bounds);
 
+                // test if we should send a capabilities event, either because the
+                // capabilities changed or we never sent one
+                let capabilities_changed =
+                    !attributes.initial_configure_sent || (pending.capabilities != current.capabilities);
+
                 let configure = ToplevelConfigure {
                     serial: SERIAL_COUNTER.next_serial(),
                     state: pending,
@@ -1154,7 +1246,12 @@ impl ToplevelSurface {
                     attributes.initial_decoration_configure_sent = true;
                 }
 
-                (configure, decoration_mode_changed, bounds_changed)
+                (
+                    configure,
+                    decoration_mode_changed,
+                    bounds_changed,
+                    capabilities_changed,
+                )
             });
 
         if decoration_mode_changed {
@@ -1170,7 +1267,12 @@ impl ToplevelSurface {
         }
 
         let serial = configure.serial;
-        self::handlers::send_toplevel_configure(&self.shell_surface, configure, bounds_changed);
+        self::handlers::send_toplevel_configure(
+            &self.shell_surface,
+            configure,
+            bounds_changed,
+            capabilities_changed,
+        );
 
         serial
     }
