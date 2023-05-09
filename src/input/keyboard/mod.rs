@@ -1,7 +1,7 @@
 //! Keyboard-related types for smithay's input abstraction
 
 use crate::backend::input::KeyState;
-use crate::utils::{IsAlive, Serial};
+use crate::utils::{IsAlive, Serial, SERIAL_COUNTER};
 use std::collections::HashSet;
 use std::{
     default::Default,
@@ -60,6 +60,7 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
     pub(crate) pressed_keys: HashSet<u32>,
     pub(crate) mods_state: ModifiersState,
+    context: xkb::Context,
     pub(crate) keymap: xkb::Keymap,
     pub(crate) state: xkb::State,
     pub(crate) repeat_rate: i32,
@@ -99,22 +100,14 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         // FIXME: This is an issue with the xkbcommon-rs crate that does not reflect this
         // non-threadsafety properly.
         let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
-        let keymap = xkb::Keymap::new_from_names(
-            &context,
-            &xkb_config.rules,
-            &xkb_config.model,
-            &xkb_config.layout,
-            &xkb_config.variant,
-            xkb_config.options,
-            xkb::KEYMAP_COMPILE_NO_FLAGS,
-        )
-        .ok_or(())?;
+        let keymap = xkb_config.compile_keymap(&context)?;
         let state = xkb::State::new(&keymap);
         Ok(KbdInternal {
             focus: None,
             pending_focus: None,
             pressed_keys: HashSet::new(),
             mods_state: ModifiersState::default(),
+            context,
             keymap,
             state,
             repeat_rate,
@@ -428,6 +421,35 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 );
             }
         }
+    }
+
+    /// Change the [`XkbConfig`] used by the keyboard.
+    pub fn set_xkb_config(&self, data: &mut D, xkb_config: XkbConfig<'_>) -> Result<(), Error> {
+        let mut internal = self.arc.internal.lock().unwrap();
+
+        let keymap = xkb_config.compile_keymap(&internal.context).map_err(|_| {
+            debug!("Loading keymap failed");
+            Error::BadKeymap
+        })?;
+        let mut state = xkb::State::new(&keymap);
+        for key in &internal.pressed_keys {
+            state.update_key(*key, xkb::KeyDirection::Down);
+        }
+
+        internal.mods_state.update_with(&state);
+        internal.state = state;
+        internal.keymap = keymap.clone();
+
+        let mods = internal.mods_state;
+        let seat = self.get_seat(data);
+        if let Some((focus, _)) = internal.focus.as_mut() {
+            focus.modifiers(&seat, data, mods, SERIAL_COUNTER.next_serial());
+        };
+
+        #[cfg(feature = "wayland_frontend")]
+        self.change_keymap(keymap);
+
+        Ok(())
     }
 
     /// Change the current grab on this keyboard to the provided grab

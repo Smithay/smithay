@@ -1,3 +1,5 @@
+pub use xkbcommon::xkb;
+
 /// Configuration for xkbcommon.
 ///
 /// For the fields that are not set ("" or None, as set in the `Default` impl), xkbcommon will use
@@ -25,4 +27,19 @@ pub struct XkbConfig<'a> {
     /// preferences, like which key combinations are used for switching layouts, or which key is the
     /// Compose key.
     pub options: Option<String>,
+}
+
+impl<'a> XkbConfig<'a> {
+    pub(crate) fn compile_keymap(&self, context: &xkb::Context) -> Result<xkb::Keymap, ()> {
+        xkb::Keymap::new_from_names(
+            context,
+            self.rules,
+            self.model,
+            self.layout,
+            self.variant,
+            self.options.clone(),
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+        .ok_or(())
+    }
 }
