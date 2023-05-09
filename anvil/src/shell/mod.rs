@@ -92,7 +92,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
         #[cfg(feature = "xwayland")]
         X11Wm::commit_hook::<CalloopData<BackendData>>(surface);
 
-        on_commit_buffer_handler(surface);
+        on_commit_buffer_handler::<Self>(surface);
         self.backend_data.early_import(surface);
 
         if !is_sync_subsurface(surface) {

@@ -114,7 +114,7 @@ where
                 });
 
                 if initial {
-                    compositor::add_pre_commit_hook(&wl_surface, |_dh, surface| {
+                    compositor::add_pre_commit_hook::<D, _>(&wl_surface, |_state, _dh, surface| {
                         compositor::with_states(surface, |states| {
                             let mut guard = states
                                 .data_map
