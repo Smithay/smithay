@@ -44,6 +44,7 @@ where
             &self.surface,
             location,
             scale,
+            1.0,
         )
     }
 }

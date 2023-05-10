@@ -203,7 +203,7 @@
 //!     // Create the render elements from the surface
 //!     let location = Point::from((100, 100));
 //!     let render_elements: Vec<WaylandSurfaceRenderElement<FakeRenderer>> =
-//!         render_elements_from_surface_tree(&mut renderer, &surface, location, 1.0);
+//!         render_elements_from_surface_tree(&mut renderer, &surface, location, 1.0, 1.0);
 //!
 //!     // Render the element(s)
 //!     damage_tracker
@@ -232,6 +232,7 @@ pub fn render_elements_from_surface_tree<R, E>(
     surface: &wl_surface::WlSurface,
     location: impl Into<Point<i32, Physical>>,
     scale: impl Into<Scale<f64>>,
+    alpha: f32,
 ) -> Vec<E>
 where
     R: Renderer + ImportAll,
@@ -275,7 +276,9 @@ where
                 };
 
                 if has_view {
-                    match WaylandSurfaceRenderElement::from_surface(renderer, surface, states, location) {
+                    match WaylandSurfaceRenderElement::from_surface(
+                        renderer, surface, states, location, alpha,
+                    ) {
                         Ok(surface) => surfaces.push(surface.into()),
                         Err(err) => {
                             warn!("Failed to import surface: {}", err);
@@ -294,6 +297,7 @@ where
 pub struct WaylandSurfaceRenderElement<R> {
     id: Id,
     location: Point<f64, Physical>,
+    alpha: f32,
     surface: wl_surface::WlSurface,
     renderer_type: PhantomData<R>,
 }
@@ -315,6 +319,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         surface: &wl_surface::WlSurface,
         states: &SurfaceData,
         location: Point<f64, Physical>,
+        alpha: f32,
     ) -> Result<Self, <R as Renderer>::Error>
     where
         <R as Renderer>::TextureId: 'static,
@@ -325,6 +330,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         Ok(Self {
             id,
             location,
+            alpha,
             surface: surface.clone(),
             renderer_type: PhantomData,
         })
@@ -444,6 +450,10 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        if self.alpha < 1.0 {
+            return Vec::new();
+        }
+
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
             data.map(|d| {
@@ -495,7 +505,14 @@ where
                 let data = data.borrow();
 
                 if let Some(texture) = data.texture::<R>(frame.id()) {
-                    frame.render_texture_from_to(texture, src, dst, damage, data.buffer_transform, 1.0f32)?;
+                    frame.render_texture_from_to(
+                        texture,
+                        src,
+                        dst,
+                        damage,
+                        data.buffer_transform,
+                        self.alpha,
+                    )?;
                 } else {
                     warn!("trying to render texture from different renderer");
                 }

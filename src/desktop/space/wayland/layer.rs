@@ -33,13 +33,19 @@ where
                     .to_physical(scale)
                     .to_i32_round();
 
-                render_elements_from_surface_tree(renderer, popup.wl_surface(), location + offset, scale)
+                render_elements_from_surface_tree(
+                    renderer,
+                    popup.wl_surface(),
+                    location + offset,
+                    scale,
+                    1.0,
+                )
             });
 
         render_elements.extend(popup_render_elements);
 
         render_elements.extend(render_elements_from_surface_tree(
-            renderer, surface, location, scale,
+            renderer, surface, location, scale, 1.0,
         ));
 
         render_elements

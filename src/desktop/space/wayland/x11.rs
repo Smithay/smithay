@@ -107,6 +107,6 @@ where
     ) -> Vec<C> {
         let state = self.state.lock().unwrap();
         let Some(surface) = state.wl_surface.as_ref() else { return Vec::new() };
-        render_elements_from_surface_tree(renderer, surface, location, scale)
+        render_elements_from_surface_tree(renderer, surface, location, scale, 1.0)
     }
 }
