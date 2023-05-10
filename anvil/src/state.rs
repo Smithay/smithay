@@ -301,7 +301,7 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
                 .initial_configure_sent
         });
         if initial_configure_sent {
-            toplevel.send_configure();
+            toplevel.send_pending_configure();
         }
     }
     fn unset_mode(&mut self, toplevel: ToplevelSurface) {
@@ -319,7 +319,7 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
                 .initial_configure_sent
         });
         if initial_configure_sent {
-            toplevel.send_configure();
+            toplevel.send_pending_configure();
         }
     }
 }

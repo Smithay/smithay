@@ -205,6 +205,7 @@ pub fn send_toplevel_configure(
     resource: &xdg_toplevel::XdgToplevel,
     configure: ToplevelConfigure,
     send_bounds: bool,
+    send_capabilities: bool,
 ) {
     let data = resource.data::<XdgShellSurfaceUserData>().unwrap();
     let (width, height) = configure.state.size.unwrap_or_default().into();
@@ -224,6 +225,24 @@ pub fn send_toplevel_configure(
     if send_bounds && resource.version() >= xdg_toplevel::EVT_CONFIGURE_BOUNDS_SINCE {
         let bounds = configure.state.bounds.unwrap_or_default();
         resource.configure_bounds(bounds.w, bounds.h);
+    }
+
+    // send the capabilities if requested
+    if send_capabilities && resource.version() >= xdg_toplevel::EVT_WM_CAPABILITIES_SINCE {
+        let mut capabilities = configure
+            .state
+            .capabilities
+            .capabilities()
+            .copied()
+            .collect::<Vec<_>>();
+        let capabilities = {
+            let ptr = capabilities.as_mut_ptr();
+            let len = capabilities.len();
+            let cap = capabilities.capacity();
+            ::std::mem::forget(capabilities);
+            unsafe { Vec::from_raw_parts(ptr as *mut u8, len * 4, cap * 4) }
+        };
+        resource.wm_capabilities(capabilities);
     }
 
     // Send the toplevel configure

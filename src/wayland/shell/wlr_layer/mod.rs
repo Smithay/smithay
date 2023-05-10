@@ -156,6 +156,21 @@ impl LayerSurfaceAttributes {
         self.last_acked = None;
         self.current = Default::default();
     }
+
+    fn current_server_state(&self) -> &LayerSurfaceState {
+        self.pending_configures
+            .last()
+            .map(|c| &c.state)
+            .or(self.last_acked.as_ref())
+            .unwrap_or(&self.current)
+    }
+
+    fn has_pending_changes(&self) -> bool {
+        self.server_pending
+            .as_ref()
+            .map(|s| s != self.current_server_state())
+            .unwrap_or(false)
+    }
 }
 
 /// State of a layer surface
@@ -285,29 +300,38 @@ impl LayerSurface {
     /// to the `last_acked`
     fn get_pending_state(&self, attributes: &mut LayerSurfaceAttributes) -> Option<LayerSurfaceState> {
         if !attributes.initial_configure_sent {
-            return Some(attributes.server_pending.take().unwrap_or_default());
+            return Some(
+                attributes
+                    .server_pending
+                    .take()
+                    .unwrap_or_else(|| attributes.current_server_state().clone()),
+            );
         }
 
-        let server_pending = match attributes.server_pending.take() {
-            Some(state) => state,
-            None => {
-                return None;
-            }
-        };
-
-        let last_state = attributes
-            .pending_configures
-            .last()
-            .map(|c| &c.state)
-            .or(attributes.last_acked.as_ref());
-
-        if let Some(state) = last_state {
-            if state == &server_pending {
-                return None;
-            }
+        // Check if the state really changed, it is possible
+        // that with_pending_state has been called without
+        // modifying the state.
+        if !attributes.has_pending_changes() {
+            return None;
         }
 
-        Some(server_pending)
+        attributes.server_pending.take()
+    }
+
+    /// Send a pending configure event to this layer surface to suggest it a new configuration
+    ///
+    /// If changes have occurred a configure event will be send to the clients and the serial will be returned
+    /// (for tracking the configure in [`LayerShellHandler::ack_configure`] if desired).
+    /// If no changes occurred no event will be send and `None` will be returned.
+    ///
+    /// See [`send_configure`](LayerSurface::send_configure) and [`has_pending_changes`](LayerSurface::has_pending_changes)
+    /// for more information.
+    pub fn send_pending_configure(&self) -> Option<Serial> {
+        if self.has_pending_changes() {
+            Some(self.send_configure())
+        } else {
+            None
+        }
     }
 
     /// Send a configure event to this layer surface to suggest it a new configuration
@@ -317,10 +341,9 @@ impl LayerSurface {
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
     ///
-    /// If changes have occured a configure event will be send to the clients and the serial will be returned
-    /// (for tracking the configure in [`LayerShellHandler::ack_configure`] if desired).
-    /// If no changes occured no event will be send and `None` will be returned.
-    pub fn send_configure(&self) -> Option<Serial> {
+    /// Note: This will always send a configure event, if you intend to only send a configure event on changes take a look at
+    /// [`send_pending_configure`](LayerSurface::send_pending_configure)
+    pub fn send_configure(&self) -> Serial {
         let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
@@ -328,31 +351,28 @@ impl LayerSurface {
                 .unwrap()
                 .lock()
                 .unwrap();
-            if let Some(pending) = self.get_pending_state(&mut attributes) {
-                let configure = LayerSurfaceConfigure {
-                    serial: SERIAL_COUNTER.next_serial(),
-                    state: pending,
-                };
 
-                attributes.pending_configures.push(configure.clone());
-                attributes.initial_configure_sent = true;
+            let state = self
+                .get_pending_state(&mut attributes)
+                .unwrap_or_else(|| attributes.current_server_state().clone());
 
-                Some(configure)
-            } else {
-                None
-            }
+            let configure = LayerSurfaceConfigure {
+                serial: SERIAL_COUNTER.next_serial(),
+                state,
+            };
+
+            attributes.pending_configures.push(configure.clone());
+            attributes.initial_configure_sent = true;
+
+            configure
         });
 
         // send surface configure
-        if let Some(configure) = configure {
-            let (width, height) = configure.state.size.unwrap_or_default().into();
-            let serial = configure.serial;
-            self.shell_surface
-                .configure(serial.into(), width as u32, height as u32);
-            Some(configure.serial)
-        } else {
-            None
-        }
+        let (width, height) = configure.state.size.unwrap_or_default().into();
+        let serial = configure.serial;
+        self.shell_surface
+            .configure(serial.into(), width as u32, height as u32);
+        serial
     }
 
     /// Make sure this surface was configured
@@ -410,11 +430,28 @@ impl LayerSurface {
                 .lock()
                 .unwrap();
             if attributes.server_pending.is_none() {
-                attributes.server_pending = Some(attributes.current.clone());
+                attributes.server_pending = Some(attributes.current_server_state().clone());
             }
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
+        })
+    }
+
+    /// Tests this [`LayerSurface`] for pending changes
+    ///
+    /// Returns `true` if [`with_pending_state`](LayerSurface::with_pending_state) was used to manipulate the state
+    /// and resulted in a different state or if the initial configure is still pending.
+    pub fn has_pending_changes(&self) -> bool {
+        compositor::with_states(&self.wl_surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<Mutex<LayerSurfaceAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            !attributes.initial_configure_sent || attributes.has_pending_changes()
         })
     }
 
