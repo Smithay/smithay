@@ -8,13 +8,15 @@
 //! use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 //! use smithay::{
 //!     delegate_content_type, delegate_compositor,
-//!     wayland::compositor::{self, CompositorState, CompositorHandler},
+//!     wayland::compositor::{self, CompositorState, CompositorClientState, CompositorHandler},
 //!     wayland::content_type::{ContentTypeSurfaceCachedState, ContentTypeState},
 //! };
 //!
 //! pub struct State {
 //!     compositor_state: CompositorState,
 //! };
+//! struct ClientState { compositor_state: CompositorClientState }
+//! impl wayland_server::backend::ClientData for ClientState {}
 //!
 //! delegate_content_type!(State);
 //! delegate_compositor!(State);
@@ -22,6 +24,10 @@
 //! impl CompositorHandler for State {
 //!    fn compositor_state(&mut self) -> &mut CompositorState {
 //!        &mut self.compositor_state
+//!    }
+//!
+//!    fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState {
+//!        &client.get_data::<ClientState>().unwrap().compositor_state    
 //!    }
 //!
 //!    fn commit(&mut self, surface: &WlSurface) {

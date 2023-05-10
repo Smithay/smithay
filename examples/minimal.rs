@@ -18,8 +18,8 @@ use smithay::{
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            with_surface_tree_downward, CompositorHandler, CompositorState, SurfaceAttributes,
-            TraversalAction,
+            with_surface_tree_downward, CompositorClientState, CompositorHandler, CompositorState,
+            SurfaceAttributes, TraversalAction,
         },
         data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
         shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
@@ -33,7 +33,7 @@ use wayland_server::{
         wl_buffer,
         wl_surface::{self, WlSurface},
     },
-    ListeningSocket,
+    Client, ListeningSocket,
 };
 
 impl BufferHandler for App {
@@ -75,6 +75,10 @@ impl ServerDndGrabHandler for App {
 impl CompositorHandler for App {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.compositor_state
+    }
+
+    fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
+        &client.get_data::<ClientState>().unwrap().compositor_state
     }
 
     fn commit(&mut self, surface: &WlSurface) {
@@ -208,7 +212,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
 
             let client = display
                 .handle()
-                .insert_client(stream, Arc::new(ClientState))
+                .insert_client(stream, Arc::new(ClientState::default()))
                 .unwrap();
             clients.push(client);
         }
@@ -243,7 +247,10 @@ pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
     );
 }
 
-struct ClientState;
+#[derive(Default)]
+struct ClientState {
+    compositor_state: CompositorClientState,
+}
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {
         println!("initialized");

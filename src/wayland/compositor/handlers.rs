@@ -63,7 +63,7 @@ where
     D: 'static,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         _client: &wayland_server::Client,
         _resource: &WlCompositor,
         request: wl_compositor::Request,
@@ -84,6 +84,7 @@ where
                     },
                 );
                 PrivateSurfaceData::init(&surface);
+                state.new_surface(&surface);
             }
             wl_compositor::Request::CreateRegion { id } => {
                 trace!(id = ?id, "Creating a new wl_region");
@@ -244,13 +245,7 @@ where
             wl_surface::Request::Commit => {
                 PrivateSurfaceData::invoke_pre_commit_hooks(state, handle, surface);
 
-                PrivateSurfaceData::commit(surface, handle);
-
-                PrivateSurfaceData::invoke_post_commit_hooks(state, handle, surface);
-
-                trace!("Calling user implementation for wl_surface.commit");
-
-                state.commit(surface);
+                PrivateSurfaceData::commit(surface, handle, state);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
                 if let WEnum::Value(transform) = transform {

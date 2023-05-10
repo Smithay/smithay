@@ -13,8 +13,12 @@ use smithay::{
     },
     utils::{Logical, Point},
     wayland::{
-        compositor::CompositorState, data_device::DataDeviceState, output::OutputManagerState,
-        shell::xdg::XdgShellState, shm::ShmState, socket::ListeningSocketSource,
+        compositor::{CompositorClientState, CompositorState},
+        data_device::DataDeviceState,
+        output::OutputManagerState,
+        shell::xdg::XdgShellState,
+        shm::ShmState,
+        socket::ListeningSocketSource,
     },
 };
 
@@ -113,7 +117,7 @@ impl Smallvil {
                 state
                     .display
                     .handle()
-                    .insert_client(client_stream, Arc::new(ClientState))
+                    .insert_client(client_stream, Arc::new(ClientState::default()))
                     .unwrap();
             })
             .expect("Failed to init the wayland event source.");
@@ -149,7 +153,11 @@ impl Smallvil {
     }
 }
 
-pub struct ClientState;
+#[derive(Default)]
+pub struct ClientState {
+    pub compositor_state: CompositorClientState,
+}
+
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
