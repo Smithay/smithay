@@ -108,6 +108,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
                     &mut renderer,
                     position.to_physical_precise_round(scale),
                     scale,
+                    1.0,
                 ));
             });
 
@@ -138,7 +139,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
             let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
             pointer_element.set_status(cursor_guard.clone());
-            elements.extend(pointer_element.render_elements(&mut renderer, cursor_pos_scaled, scale));
+            elements.extend(pointer_element.render_elements(&mut renderer, cursor_pos_scaled, scale, 1.0));
 
             // draw the dnd icon if any
             if let Some(surface) = state.dnd_icon.as_ref() {
@@ -148,6 +149,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
                         &mut renderer,
                         cursor_pos_scaled,
                         scale,
+                        1.0,
                     ));
                 }
             }

@@ -22,6 +22,7 @@ where
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
+        alpha: f32,
     ) -> Vec<C> {
         let surface = self.wl_surface();
 
@@ -38,14 +39,14 @@ where
                     popup.wl_surface(),
                     location + offset,
                     scale,
-                    1.0,
+                    alpha,
                 )
             });
 
         render_elements.extend(popup_render_elements);
 
         render_elements.extend(render_elements_from_surface_tree(
-            renderer, surface, location, scale, 1.0,
+            renderer, surface, location, scale, alpha,
         ));
 
         render_elements

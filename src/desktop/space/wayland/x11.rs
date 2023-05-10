@@ -104,9 +104,10 @@ where
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
+        alpha: f32,
     ) -> Vec<C> {
         let state = self.state.lock().unwrap();
         let Some(surface) = state.wl_surface.as_ref() else { return Vec::new() };
-        render_elements_from_surface_tree(renderer, surface, location, scale, 1.0)
+        render_elements_from_surface_tree(renderer, surface, location, scale, alpha)
     }
 }

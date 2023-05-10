@@ -133,7 +133,7 @@
 //! loop {
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100, 100));
-//!     let render_element = SolidColorRenderElement::from_buffer(&buffer, location, 1f64);
+//!     let render_element = SolidColorRenderElement::from_buffer(&buffer, location, 1f64, 1.0);
 //!
 //!     // Render the element(s)
 //!     damage_tracker
@@ -230,9 +230,12 @@ impl SolidColorRenderElement {
         buffer: &SolidColorBuffer,
         location: impl Into<Point<i32, Physical>>,
         scale: impl Into<Scale<f64>>,
+        alpha: f32,
     ) -> Self {
         let geo = Rectangle::from_loc_and_size(location, buffer.size.to_physical_precise_round(scale));
-        Self::new(buffer.id.clone(), geo, buffer.commit, buffer.color)
+        let mut color = buffer.color;
+        color[3] *= alpha;
+        Self::new(buffer.id.clone(), geo, buffer.commit, color)
     }
 
     /// Create a new solid color render element with the specified geometry and color
@@ -311,7 +314,8 @@ where
         _renderer: &mut R,
         location: crate::utils::Point<i32, crate::utils::Physical>,
         scale: crate::utils::Scale<f64>,
+        alpha: f32,
     ) -> Vec<C> {
-        vec![SolidColorRenderElement::from_buffer(self, location, scale).into()]
+        vec![SolidColorRenderElement::from_buffer(self, location, scale, alpha).into()]
     }
 }

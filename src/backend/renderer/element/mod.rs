@@ -382,6 +382,7 @@ where
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
+        alpha: f32,
     ) -> Vec<C>;
 }
 

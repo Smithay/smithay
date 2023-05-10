@@ -425,6 +425,7 @@ pub fn constrain_as_render_elements<R, E, C>(
     element: &E,
     renderer: &mut R,
     location: impl Into<Point<i32, Physical>>,
+    alpha: f32,
     constrain: Rectangle<i32, Physical>,
     reference: Rectangle<i32, Physical>,
     behavior: ConstrainScaleBehavior,
@@ -443,7 +444,7 @@ where
     let location = location.into();
     let output_scale = output_scale.into();
     let elements: Vec<<E as AsRenderElements<R>>::RenderElement> =
-        AsRenderElements::<R>::render_elements(element, renderer, location, output_scale);
+        AsRenderElements::<R>::render_elements(element, renderer, location, output_scale, alpha);
     constrain_render_elements(
         elements,
         location,

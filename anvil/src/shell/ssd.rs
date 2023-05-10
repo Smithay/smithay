@@ -173,6 +173,7 @@ impl<R: Renderer> AsRenderElements<R> for HeaderBar {
         _renderer: &mut R,
         location: Point<i32, smithay::utils::Physical>,
         scale: smithay::utils::Scale<f64>,
+        alpha: f32,
     ) -> Vec<C> {
         let header_end_offset: Point<i32, Logical> = Point::from((self.width as i32, 0));
         let button_offset: Point<i32, Logical> = Point::from((BUTTON_WIDTH as i32, 0));
@@ -182,15 +183,17 @@ impl<R: Renderer> AsRenderElements<R> for HeaderBar {
                 &self.close_button,
                 location + (header_end_offset - button_offset).to_physical_precise_round(scale),
                 scale,
+                alpha,
             )
             .into(),
             SolidColorRenderElement::from_buffer(
                 &self.maximize_button,
                 location + (header_end_offset - button_offset.upscale(2)).to_physical_precise_round(scale),
                 scale,
+                alpha,
             )
             .into(),
-            SolidColorRenderElement::from_buffer(&self.background, location, scale).into(),
+            SolidColorRenderElement::from_buffer(&self.background, location, scale, alpha).into(),
         ]
     }
 }

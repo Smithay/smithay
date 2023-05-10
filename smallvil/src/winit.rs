@@ -114,6 +114,7 @@ pub fn winit_dispatch(
     smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
         output,
         backend.renderer(),
+        1.0,
         0,
         [&state.space],
         &[],
