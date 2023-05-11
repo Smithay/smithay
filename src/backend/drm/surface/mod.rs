@@ -150,6 +150,8 @@ pub struct PlaneConfig<'a> {
     pub dst: Rectangle<i32, Physical>,
     /// Transform for the attached framebuffer
     pub transform: Transform,
+    /// Alpha value for the plane
+    pub alpha: f32,
     /// Damage clips of the attached framebuffer
     pub damage_clips: Option<drm::control::property::Value<'a>>,
     /// Framebuffer handle

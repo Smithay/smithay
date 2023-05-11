@@ -287,6 +287,7 @@ impl AtomicDrmSurface {
                             (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
                         ),
                         transform: Transform::Normal,
+                        alpha: 1.0,
                         damage_clips: None,
                         fb: test_buffer.fb,
                     }),
@@ -337,6 +338,7 @@ impl AtomicDrmSurface {
                         (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
                     ),
                     transform: Transform::Normal,
+                    alpha: 1.0,
                     damage_clips: None,
                     fb: test_buffer.fb,
                 }),
@@ -389,6 +391,7 @@ impl AtomicDrmSurface {
                         (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
                     ),
                     transform: Transform::Normal,
+                    alpha: 1.0,
                     damage_clips: None,
                     fb: test_buffer.fb,
                 }),
@@ -440,6 +443,7 @@ impl AtomicDrmSurface {
                         (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
                     ),
                     transform: Transform::Normal,
+                    alpha: 1.0,
                     damage_clips: None,
                     fb: test_buffer.fb,
                 }),
@@ -797,6 +801,19 @@ impl AtomicDrmSurface {
                         name: "rotation",
                     });
                 }
+                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "alpha") {
+                    req.add_property(
+                        *handle,
+                        prop,
+                        property::Value::UnsignedRange((config.alpha * u16::MAX as f32).round() as u64),
+                    );
+                } else if config.alpha != 1.0 {
+                    // if we are missing the alpha property we can not display any transparent alpha values
+                    return Err(Error::UnknownProperty {
+                        handle: (*handle).into(),
+                        name: "alpha",
+                    });
+                }
                 if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "FB_DAMAGE_CLIPS") {
                     if let Some(damage) = config.damage_clips.as_ref() {
                         req.add_property(*handle, prop, *damage);
@@ -871,6 +888,9 @@ impl AtomicDrmSurface {
                         prop,
                         property::Value::Bitmask(DrmRotation::from(Transform::Normal).bits() as u64),
                     );
+                }
+                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "alpha") {
+                    req.add_property(*handle, prop, property::Value::UnsignedRange(0xffff));
                 }
                 if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "FB_DAMAGE_CLIPS") {
                     req.add_property(*handle, prop, property::Value::Blob(0));
@@ -953,6 +973,9 @@ impl AtomicDrmSurface {
                 prop,
                 property::Value::Bitmask(DrmRotation::from(Transform::Normal).bits() as u64),
             );
+        }
+        if let Ok(prop) = plane_prop_handle(&prop_mapping, plane, "alpha") {
+            req.add_property(plane, prop, property::Value::UnsignedRange(0xffff));
         }
         if let Ok(prop) = plane_prop_handle(&prop_mapping, plane, "FB_DAMAGE_CLIPS") {
             req.add_property(plane, prop, property::Value::Blob(0));
