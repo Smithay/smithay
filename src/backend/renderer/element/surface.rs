@@ -476,6 +476,10 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
             .unwrap_or_default()
         })
     }
+
+    fn alpha(&self) -> f32 {
+        self.alpha
+    }
 }
 
 impl<R> RenderElement<R> for WaylandSurfaceRenderElement<R>

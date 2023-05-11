@@ -349,6 +349,11 @@ pub trait Element {
     fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         vec![]
     }
+    /// Returns an alpha value the element should be drawn with regardless of any
+    /// already encoded alpha in it's underlying representation.
+    fn alpha(&self) -> f32 {
+        1.0
+    }
 }
 
 /// A single render element
@@ -424,6 +429,10 @@ where
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         (*self).opaque_regions(scale)
+    }
+
+    fn alpha(&self) -> f32 {
+        (*self).alpha()
     }
 }
 
@@ -687,6 +696,19 @@ macro_rules! render_elements_internal {
                         #[$meta]
                     )*
                     Self::$body(x) => $crate::render_elements_internal!(@call opaque_regions; x, scale)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn alpha(&self) -> f32 {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call alpha; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1382,6 +1404,10 @@ where
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         self.0.opaque_regions(scale)
+    }
+
+    fn alpha(&self) -> f32 {
+        self.0.alpha()
     }
 }
 

@@ -84,6 +84,10 @@ impl<E: Element> Element for RescaleRenderElement<E> {
             .map(|rect| rect.to_f64().upscale(self.scale).to_i32_round())
             .collect::<Vec<_>>()
     }
+
+    fn alpha(&self) -> f32 {
+        self.element.alpha()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement<E> {
@@ -258,6 +262,10 @@ impl<E: Element> Element for CropRenderElement<E> {
             Default::default()
         }
     }
+
+    fn alpha(&self) -> f32 {
+        self.element.alpha()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E> {
@@ -349,6 +357,10 @@ impl<E: Element> Element for RelocateRenderElement<E> {
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         self.element.opaque_regions(scale)
+    }
+
+    fn alpha(&self) -> f32 {
+        self.element.alpha()
     }
 }
 

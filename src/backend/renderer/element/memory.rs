@@ -650,6 +650,10 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         self.opaque_regions(scale)
     }
+
+    fn alpha(&self) -> f32 {
+        self.alpha
+    }
 }
 
 impl<R> RenderElement<R> for MemoryRenderBufferRenderElement<R>

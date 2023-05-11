@@ -285,6 +285,10 @@ impl Element for SolidColorRenderElement {
     fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         self.opaque_regions.clone()
     }
+
+    fn alpha(&self) -> f32 {
+        1.0
+    }
 }
 
 impl<R: Renderer> RenderElement<R> for SolidColorRenderElement {
