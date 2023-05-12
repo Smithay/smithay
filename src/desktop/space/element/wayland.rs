@@ -38,12 +38,14 @@ where
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
+        alpha: f32,
     ) -> Vec<C> {
         crate::backend::renderer::element::surface::render_elements_from_surface_tree(
             renderer,
             &self.surface,
             location,
             scale,
+            alpha,
         )
     }
 }

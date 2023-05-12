@@ -84,6 +84,10 @@ impl<E: Element> Element for RescaleRenderElement<E> {
             .map(|rect| rect.to_f64().upscale(self.scale).to_i32_round())
             .collect::<Vec<_>>()
     }
+
+    fn alpha(&self) -> f32 {
+        self.element.alpha()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement<E> {
@@ -258,6 +262,10 @@ impl<E: Element> Element for CropRenderElement<E> {
             Default::default()
         }
     }
+
+    fn alpha(&self) -> f32 {
+        self.element.alpha()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E> {
@@ -350,6 +358,10 @@ impl<E: Element> Element for RelocateRenderElement<E> {
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
         self.element.opaque_regions(scale)
     }
+
+    fn alpha(&self) -> f32 {
+        self.element.alpha()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElement<E> {
@@ -425,6 +437,7 @@ pub fn constrain_as_render_elements<R, E, C>(
     element: &E,
     renderer: &mut R,
     location: impl Into<Point<i32, Physical>>,
+    alpha: f32,
     constrain: Rectangle<i32, Physical>,
     reference: Rectangle<i32, Physical>,
     behavior: ConstrainScaleBehavior,
@@ -443,7 +456,7 @@ where
     let location = location.into();
     let output_scale = output_scale.into();
     let elements: Vec<<E as AsRenderElements<R>>::RenderElement> =
-        AsRenderElements::<R>::render_elements(element, renderer, location, output_scale);
+        AsRenderElements::<R>::render_elements(element, renderer, location, output_scale, alpha);
     constrain_render_elements(
         elements,
         location,

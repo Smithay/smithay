@@ -381,6 +381,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         renderer: &mut R,
         region: &Rectangle<i32, Logical>,
         scale: S,
+        alpha: f32,
     ) -> Vec<<E as AsRenderElements<R>>::RenderElement>
     where
         <R as Renderer>::TextureId: Texture + 'static,
@@ -403,6 +404,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
                         renderer,
                         location.to_physical_precise_round(scale),
                         scale,
+                        alpha,
                     )
             })
             .collect::<Vec<_>>()
@@ -418,6 +420,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         &'a self,
         renderer: &mut R,
         output: &Output,
+        alpha: f32,
     ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputError>
     where
         <R as Renderer>::TextureId: Texture + 'static,
@@ -460,6 +463,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
                     renderer,
                     location.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
+                    alpha,
                 )
             })
             .collect::<Vec<_>>())
@@ -576,6 +580,7 @@ pub fn space_render_elements<
     renderer: &mut R,
     spaces: S,
     output: &Output,
+    alpha: f32,
 ) -> Result<Vec<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>, OutputNoMode>
 where
     <R as Renderer>::TextureId: Texture + 'static,
@@ -605,6 +610,7 @@ where
                         renderer,
                         loc.to_physical_precise_round(output_scale),
                         Scale::from(output_scale),
+                        alpha,
                     )
                     .into_iter()
                     .map(SpaceRenderElements::Surface)
@@ -619,7 +625,7 @@ where
         if let Some(output_geo) = space.output_geometry(output) {
             render_elements.extend(
                 space
-                    .render_elements_for_region(renderer, &output_geo, output_scale)
+                    .render_elements_for_region(renderer, &output_geo, output_scale, alpha)
                     .into_iter()
                     .map(|e| SpaceRenderElements::Element(Wrap::from(e))),
             );
@@ -637,6 +643,7 @@ where
                     renderer,
                     loc.to_physical_precise_round(output_scale),
                     Scale::from(output_scale),
+                    alpha,
                 )
                 .into_iter()
                 .map(SpaceRenderElements::Surface)
@@ -661,6 +668,7 @@ pub fn render_output<
 >(
     output: &Output,
     renderer: &mut R,
+    alpha: f32,
     age: usize,
     spaces: S,
     custom_elements: &'a [C],
@@ -677,7 +685,7 @@ where
         assert!(renderer_output == output);
     }
 
-    let space_render_elements = space_render_elements(renderer, spaces, output)?;
+    let space_render_elements = space_render_elements(renderer, spaces, output, alpha)?;
 
     let mut render_elements: Vec<OutputRenderElements<'a, R, <E as AsRenderElements<R>>::RenderElement, C>> =
         Vec::with_capacity(custom_elements.len() + space_render_elements.len());

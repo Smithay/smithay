@@ -80,6 +80,7 @@ where
         renderer: &mut R,
         location: Point<i32, Physical>,
         scale: Scale<f64>,
+        alpha: f32,
     ) -> Vec<E>
     where
         E: From<PointerRenderElement<R>>,
@@ -105,7 +106,7 @@ where
             CursorImageStatus::Surface(surface) => {
                 let elements: Vec<PointerRenderElement<R>> =
                     smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
-                        renderer, surface, location, scale,
+                        renderer, surface, location, scale, alpha,
                     );
                 elements.into_iter().map(E::from).collect()
             }

@@ -132,6 +132,7 @@ where
                 renderer,
                 window,
                 preview_location,
+                1.0,
                 output_scale,
                 constrain,
                 constrain_behavior,
@@ -157,7 +158,7 @@ where
     {
         let scale = output.current_scale().fractional_scale().into();
         let window_render_elements: Vec<WindowRenderElement<R>> =
-            AsRenderElements::<R>::render_elements(&window, renderer, (0, 0).into(), scale);
+            AsRenderElements::<R>::render_elements(&window, renderer, (0, 0).into(), scale, 1.0);
 
         let elements = custom_elements
             .into_iter()
@@ -179,9 +180,13 @@ where
             output_render_elements.extend(space_preview_elements(renderer, space, output));
         }
 
-        let space_elements =
-            smithay::desktop::space::space_render_elements::<_, WindowElement, _>(renderer, [space], output)
-                .expect("output without mode?");
+        let space_elements = smithay::desktop::space::space_render_elements::<_, WindowElement, _>(
+            renderer,
+            [space],
+            output,
+            1.0,
+        )
+        .expect("output without mode?");
         output_render_elements.extend(space_elements.into_iter().map(OutputRenderElements::Space));
 
         (output_render_elements, CLEAR_COLOR)

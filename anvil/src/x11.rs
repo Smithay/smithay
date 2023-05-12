@@ -357,6 +357,7 @@ pub fn run_x11() {
                 &mut backend_data.renderer,
                 cursor_pos_scaled,
                 scale,
+                1.0,
             ));
 
             // draw input method surface if any
@@ -372,6 +373,7 @@ pub fn run_x11() {
                     &mut backend_data.renderer,
                     position.to_physical_precise_round(scale),
                     scale,
+                    1.0,
                 ));
             });
 
@@ -383,6 +385,7 @@ pub fn run_x11() {
                         &mut backend_data.renderer,
                         cursor_pos_scaled,
                         scale,
+                        1.0,
                     ));
                 }
             }

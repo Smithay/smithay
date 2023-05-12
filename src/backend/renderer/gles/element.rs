@@ -92,6 +92,10 @@ impl Element for PixelShaderElement {
             .map(|region| region.to_physical_precise_round(scale))
             .collect()
     }
+
+    fn alpha(&self) -> f32 {
+        1.0
+    }
 }
 
 impl RenderElement<GlesRenderer> for PixelShaderElement {

@@ -309,7 +309,7 @@ pub fn run_winit() {
 
                 let mut elements = Vec::<CustomRenderElements<GlesRenderer>>::new();
 
-                elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale));
+                elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale, 1.0));
 
                 // draw input method surface if any
                 let rectangle = input_method.coordinates();
@@ -323,6 +323,7 @@ pub fn run_winit() {
                         renderer,
                         position.to_physical_precise_round(scale),
                         scale,
+                        1.0,
                     ));
                 });
 
@@ -334,6 +335,7 @@ pub fn run_winit() {
                             renderer,
                             cursor_pos_scaled,
                             scale,
+                            1.0,
                         ));
                     }
                 }

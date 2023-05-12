@@ -328,6 +328,7 @@ struct PlaneConfig<B> {
     pub dst: Rectangle<i32, Physical>,
     pub transform: Transform,
     pub damage_clips: Option<PlaneDamageClips>,
+    pub alpha: f32,
     pub buffer: Owned<B>,
     pub plane_claim: PlaneClaim,
 }
@@ -339,6 +340,7 @@ impl<B> Clone for PlaneConfig<B> {
             dst: self.dst,
             transform: self.transform,
             damage_clips: self.damage_clips.clone(),
+            alpha: self.alpha,
             buffer: self.buffer.clone(),
             plane_claim: self.plane_claim.clone(),
         }
@@ -501,6 +503,7 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
                         src: config.src,
                         dst: config.dst,
                         transform: config.transform,
+                        alpha: config.alpha,
                         damage_clips: config.damage_clips.as_ref().map(|d| d.blob()),
                         fb: *config.buffer.as_ref(),
                     }),
@@ -527,6 +530,7 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
                     config: state.config.as_ref().map(|config| super::PlaneConfig {
                         src: config.src,
                         dst: config.dst,
+                        alpha: config.alpha,
                         transform: config.transform,
                         damage_clips: config.damage_clips.as_ref().map(|d| d.blob()),
                         fb: *config.buffer.as_ref(),
@@ -547,6 +551,7 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
                     config: state.config.as_ref().map(|config| super::PlaneConfig {
                         src: config.src,
                         dst: config.dst,
+                        alpha: config.alpha,
                         transform: config.transform,
                         damage_clips: config.damage_clips.as_ref().map(|d| d.blob()),
                         fb: *config.buffer.as_ref(),
@@ -1466,6 +1471,7 @@ where
                 src: Rectangle::from_loc_and_size(Point::default(), dmabuf.size()).to_f64(),
                 dst: Rectangle::from_loc_and_size(Point::default(), mode_size),
                 transform: Transform::Normal,
+                alpha: 1.0,
                 damage_clips: None,
                 buffer: Owned::from(DrmScanoutBuffer {
                     buffer: ScanoutBuffer::Swapchain(buffer),
@@ -1617,6 +1623,7 @@ where
                 dst: Rectangle::from_loc_and_size(Point::default(), current_size),
                 // NOTE: We do not apply the transform to the primary plane as this is handled by the dtr/renderer
                 transform: Transform::Normal,
+                alpha: 1.0,
                 damage_clips: None,
                 buffer: Owned::from(DrmScanoutBuffer {
                     buffer: ScanoutBuffer::Swapchain(primary_plane_buffer),
@@ -2597,6 +2604,7 @@ where
         let config = Some(PlaneConfig {
             src,
             dst,
+            alpha: 1.0,
             transform: Transform::Normal,
             damage_clips: None,
             buffer: Owned::from(DrmScanoutBuffer {
@@ -2923,9 +2931,10 @@ where
 
         let src = element.src();
         let dst = output_transform.transform_rect_in(element_geometry, &output_geometry.size);
+        let alpha = element.alpha();
 
         // We can only skip the plane update if we have no damage and if
-        // the src/dst properties are unchanged. Also we can not skip if
+        // the src/dst/alpha properties are unchanged. Also we can not skip if
         // the fb did change (this includes the case where we previously
         // had not assigned anything to the plane)
         let skip = element_damage.is_empty()
@@ -2940,6 +2949,7 @@ where
                                 && config.dst == dst
                                 && config.transform == transform
                                 && config.buffer.fb == fb
+                                && config.alpha == alpha
                         })
                         .unwrap_or(false)
                 })
@@ -2968,6 +2978,7 @@ where
             config: Some(PlaneConfig {
                 src,
                 dst,
+                alpha,
                 transform,
                 damage_clips,
                 buffer: Owned::from(DrmScanoutBuffer {

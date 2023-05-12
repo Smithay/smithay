@@ -1429,6 +1429,7 @@ fn render_surface<'a, 'b>(
             renderer,
             position.to_physical_precise_round(scale),
             scale,
+            1.0,
         ));
     });
 
@@ -1466,7 +1467,7 @@ fn render_surface<'a, 'b>(
             pointer_element.set_status(cursor_status.clone());
         }
 
-        custom_elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale));
+        custom_elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale, 1.0));
 
         // draw the dnd icon if applicable
         {
@@ -1477,6 +1478,7 @@ fn render_surface<'a, 'b>(
                         renderer,
                         cursor_pos_scaled,
                         scale,
+                        1.0,
                     ));
                 }
             }

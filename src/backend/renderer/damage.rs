@@ -210,12 +210,13 @@ use super::{Renderer, Texture};
 #[derive(Debug, Clone, Copy)]
 struct ElementInstanceState {
     last_geometry: Rectangle<i32, Physical>,
+    last_alpha: f32,
     last_z_index: usize,
 }
 
 impl ElementInstanceState {
-    fn matches(&self, geometry: Rectangle<i32, Physical>, z_index: usize) -> bool {
-        self.last_geometry == geometry && self.last_z_index == z_index
+    fn matches(&self, geometry: Rectangle<i32, Physical>, alpha: f32, z_index: usize) -> bool {
+        self.last_geometry == geometry && self.last_alpha == alpha && self.last_z_index == z_index
     }
 }
 
@@ -226,10 +227,10 @@ struct ElementState {
 }
 
 impl ElementState {
-    fn instance_matches(&self, geometry: Rectangle<i32, Physical>, z_index: usize) -> bool {
+    fn instance_matches(&self, geometry: Rectangle<i32, Physical>, alpha: f32, z_index: usize) -> bool {
         self.last_instances
             .iter()
-            .any(|instance| instance.matches(geometry, z_index))
+            .any(|instance| instance.matches(geometry, alpha, z_index))
     }
 }
 
@@ -643,13 +644,14 @@ impl OutputDamageTracker {
             .collect::<Vec<_>>();
         damage.extend(elements_gone);
 
-        // if the element has been moved or it's z index changed damage it
+        // if the element has been moved or it's alpha or z index changed, damage it
         for (z_index, element) in render_elements.iter().enumerate() {
             let element_geometry = element.geometry(output_scale);
+            let element_alpha = element.alpha();
             let element_last_state = self.last_state.elements.get(element.id());
 
             if element_last_state
-                .map(|s| !s.instance_matches(element_geometry, z_index))
+                .map(|s| !s.instance_matches(element_geometry, element_alpha, z_index))
                 .unwrap_or(true)
             {
                 let mut element_damage = if let Some(damage) = element_geometry.intersection(output_geo) {
@@ -742,11 +744,13 @@ impl OutputDamageTracker {
             IndexMap::<Id, ElementState>::with_capacity(render_elements.len()),
             |mut map, (z_index, elem)| {
                 let id = elem.id();
+                let elem_alpha = elem.alpha();
                 let elem_geometry = elem.geometry(output_scale);
 
                 if let Some(state) = map.get_mut(id) {
                     state.last_instances.push(ElementInstanceState {
                         last_geometry: elem_geometry,
+                        last_alpha: elem_alpha,
                         last_z_index: z_index,
                     });
                 } else {
@@ -757,6 +761,7 @@ impl OutputDamageTracker {
                             last_commit: current_commit,
                             last_instances: vec![ElementInstanceState {
                                 last_geometry: elem_geometry,
+                                last_alpha: elem_alpha,
                                 last_z_index: z_index,
                             }],
                         },

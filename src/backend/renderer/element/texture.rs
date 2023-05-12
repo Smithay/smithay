@@ -862,6 +862,10 @@ where
             })
             .unwrap_or_default()
     }
+
+    fn alpha(&self) -> f32 {
+        self.alpha
+    }
 }
 
 impl<R, T> RenderElement<R> for TextureRenderElement<T>
