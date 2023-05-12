@@ -526,6 +526,11 @@ pub trait CompositorHandler {
     /// If you need to handle a commit as soon as it occurs, you might want to consider
     /// using a pre-commit hook (see [`add_pre_commit_hook`]).
     fn commit(&mut self, surface: &WlSurface);
+
+    /// The surface was destroyed.
+    ///
+    /// This allows the compositor to clean up any uses of the surface.
+    fn destroyed(&mut self, _surface: &WlSurface) {}
 }
 
 /// State of a compositor
@@ -533,6 +538,7 @@ pub trait CompositorHandler {
 pub struct CompositorState {
     compositor: GlobalId,
     subcompositor: GlobalId,
+    surfaces: Vec<WlSurface>,
 }
 
 /// Per-client state of a compositor
@@ -575,6 +581,7 @@ impl CompositorState {
         CompositorState {
             compositor,
             subcompositor,
+            surfaces: Vec::new(),
         }
     }
 
