@@ -1,6 +1,7 @@
 //! Implementation of the multi-gpu [`GraphicsApi`] using
 //! EGL for device enumeration and OpenGL ES for rendering.
 
+use tracing::{info, warn};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use wayland_server::protocol::wl_buffer;
 
@@ -8,7 +9,7 @@ use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode},
     egl::{EGLContext, EGLDevice, EGLDisplay, Error as EGLError},
     renderer::{
-        gles2::{Gles2Error, Gles2Renderer},
+        gles::{GlesError, GlesRenderer},
         multigpu::{ApiDevice, Error as MultiError, GraphicsApi},
         Renderer,
     },
@@ -21,7 +22,7 @@ use crate::{
         egl::display::EGLBufferReader,
         renderer::{
             multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
-            ExportDma, ExportMem, ImportDma, ImportEgl, ImportMem, Offscreen,
+            Bind, ExportMem, ImportDma, ImportEgl, ImportMem,
         },
     },
     utils::{Buffer as BufferCoords, Rectangle},
@@ -37,7 +38,7 @@ pub enum Error {
     Egl(#[from] EGLError),
     /// OpenGL error
     #[error(transparent)]
-    Gl(#[from] Gles2Error),
+    Gl(#[from] GlesError),
     /// Error creating a drm node
     #[error(transparent)]
     DrmNode(#[from] CreateDrmNodeError),
@@ -53,11 +54,6 @@ impl From<Error> for SwapBuffersError {
 }
 
 /// A [`GraphicsApi`] utilizing EGL for device enumeration and OpenGL ES for rendering.
-///
-/// If not necessary for other operations, it is recommended to not use a
-/// [`Gles2Texture`](crate::backend::renderer::gles2::Gles2Texture), but a
-/// [`Gles2Renderbuffer`](crate::backend::renderer::gles2::Gles2Renderbuffer)
-/// as a `Target`, when creating [`MultiRenderer`](super::MultiRenderer)s
 #[derive(Debug)]
 pub struct EglGlesBackend<R>(std::marker::PhantomData<R>);
 
@@ -67,11 +63,11 @@ impl<R> Default for EglGlesBackend<R> {
     }
 }
 
-impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglGlesBackend<R> {
+impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for EglGlesBackend<R> {
     type Device = EglGlesDevice<R>;
     type Error = Error;
 
-    fn enumerate(&self, list: &mut Vec<Self::Device>, log: &slog::Logger) -> Result<(), Self::Error> {
+    fn enumerate(&self, list: &mut Vec<Self::Device>) -> Result<(), Self::Error> {
         let devices = EGLDevice::enumerate()
             .map_err(Error::Egl)?
             .flat_map(|device| {
@@ -86,10 +82,10 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglG
             .into_iter()
             .filter(|(_, node)| !list.iter().any(|renderer| &renderer.node == node))
             .map(|(device, node)| {
-                slog::info!(log, "Trying to initialize {:?} from {}", device, node);
-                let display = EGLDisplay::new(device, None).map_err(Error::Egl)?;
-                let context = EGLContext::new(&display, None).map_err(Error::Egl)?;
-                let renderer = unsafe { Gles2Renderer::new(context, None).map_err(Error::Gl)? }.into();
+                info!("Trying to initialize {:?} from {}", device, node);
+                let display = EGLDisplay::new(device).map_err(Error::Egl)?;
+                let context = EGLContext::new(&display).map_err(Error::Egl)?;
+                let renderer = unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into();
 
                 Ok(EglGlesDevice {
                     node,
@@ -100,7 +96,7 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglG
             .flat_map(|x: Result<EglGlesDevice<R>, Error>| match x {
                 Ok(x) => Some(x),
                 Err(x) => {
-                    slog::warn!(log, "Skipping EGLDevice: {}", x);
+                    warn!("Skipping EGLDevice: {}", x);
                     None
                 }
             })
@@ -110,16 +106,20 @@ impl<R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> GraphicsApi for EglG
 
         Ok(())
     }
+
+    fn identifier() -> &'static str {
+        "egl_gles"
+    }
 }
 
 // TODO: Replace with specialization impl in multigpu/mod once possible
-impl<T: GraphicsApi, R: From<Gles2Renderer> + Renderer<Error = Gles2Error>> std::convert::From<Gles2Error>
+impl<T: GraphicsApi, R: From<GlesRenderer> + Renderer<Error = GlesError>> std::convert::From<GlesError>
     for MultiError<EglGlesBackend<R>, T>
 where
     T::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn from(err: Gles2Error) -> MultiError<EglGlesBackend<R>, T> {
+    fn from(err: GlesError) -> MultiError<EglGlesBackend<R>, T> {
         MultiError::Render(err)
     }
 }
@@ -147,19 +147,18 @@ impl<R: Renderer> ApiDevice for EglGlesDevice<R> {
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, Target, R> ImportEgl for MultiRenderer<'a, 'b, EglGlesBackend<R>, EglGlesBackend<R>, Target>
+impl<'render, 'target, 'alloc, R> ImportEgl
+    for MultiRenderer<'render, 'target, 'alloc, EglGlesBackend<R>, EglGlesBackend<R>>
 where
-    R: From<Gles2Renderer>
-        + BorrowMut<Gles2Renderer>
-        + Renderer<Error = Gles2Error>
-        + Offscreen<Target>
+    R: From<GlesRenderer>
+        + BorrowMut<GlesRenderer>
+        + Renderer<Error = GlesError>
+        + Bind<Dmabuf>
         + ImportDma
         + ImportMem
         + ImportEgl
-        + ExportDma
         + ExportMem
         + 'static,
-    Target: Clone,
 {
     fn bind_wl_display(&mut self, display: &wayland_server::DisplayHandle) -> Result<(), EGLError> {
         self.render.renderer_mut().bind_wl_display(display)
@@ -210,16 +209,15 @@ where
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, Target, R> MultiRenderer<'a, 'b, EglGlesBackend<R>, EglGlesBackend<R>, Target>
+impl<'render, 'target, 'alloc, R>
+    MultiRenderer<'render, 'target, 'alloc, EglGlesBackend<R>, EglGlesBackend<R>>
 where
-    R: From<Gles2Renderer>
-        + BorrowMut<Gles2Renderer>
-        + Renderer<Error = Gles2Error>
-        + Offscreen<Target>
+    R: From<GlesRenderer>
+        + BorrowMut<GlesRenderer>
+        + Renderer<Error = GlesError>
         + ImportDma
         + ImportMem
         + ImportEgl
-        + ExportDma
         + ExportMem
         + 'static,
 {
@@ -233,13 +231,13 @@ where
             .iter()
             .any(|ext| ext == "GL_OES_EGL_image")
         {
-            return Err(MultigpuError::Render(Gles2Error::GLExtensionNotSupported(&[
+            return Err(MultigpuError::Render(GlesError::GLExtensionNotSupported(&[
                 "GL_OES_EGL_image",
             ])));
         }
 
         if renderer.egl_reader().is_none() {
-            return Err(MultigpuError::Render(Gles2Error::EGLBufferAccessError(
+            return Err(MultigpuError::Render(GlesError::EGLBufferAccessError(
                 crate::backend::egl::BufferAccessError::NotManaged(crate::backend::egl::EGLError::BadDisplay),
             )));
         }
@@ -247,7 +245,7 @@ where
         renderer
             .borrow_mut()
             .make_current()
-            .map_err(Gles2Error::from)
+            .map_err(GlesError::from)
             .map_err(MultigpuError::Render)?;
 
         let egl = renderer
@@ -255,14 +253,14 @@ where
             .as_ref()
             .unwrap()
             .egl_buffer_contents(buffer)
-            .map_err(Gles2Error::EGLBufferAccessError)
+            .map_err(GlesError::EGLBufferAccessError)
             .map_err(MultigpuError::Render)?;
         renderer
             .borrow_mut()
             .egl_context()
             .display()
             .create_dmabuf_from_image(egl.image(0).unwrap(), egl.size, egl.y_inverted)
-            .map_err(Gles2Error::BindBufferEGLError)
+            .map_err(GlesError::BindBufferEGLError)
             .map_err(MultigpuError::Render)
     }
 }

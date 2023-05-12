@@ -15,9 +15,8 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //!
 //! // Create the viewporter state:
-//! let viewporter_state = ViewporterState::new::<State, _>(
+//! let viewporter_state = ViewporterState::new::<State>(
 //!     &display.handle(), // the display
-//!     None // provide a logger, if you want
 //! );
 //!
 //! // implement Dispatch for the Viewporter types
@@ -46,12 +45,13 @@
 
 use std::cell::RefCell;
 
+use tracing::trace;
 use wayland_protocols::wp::viewporter::server::{wp_viewport, wp_viewporter};
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource,
+    backend::GlobalId, protocol::wl_surface, Dispatch, DisplayHandle, GlobalDispatch, Resource, Weak,
 };
 
-use crate::utils::{IsAlive, Logical, Rectangle, Size};
+use crate::utils::{Logical, Rectangle, Size};
 
 use super::compositor::{self, with_states, Cacheable, SurfaceData};
 
@@ -66,19 +66,15 @@ impl ViewporterState {
     ///
     /// It returns the viewporter state, which you can drop to remove these global from
     /// the event loop in the future.
-    pub fn new<D, L>(display: &DisplayHandle, log: L) -> ViewporterState
+    pub fn new<D>(display: &DisplayHandle) -> ViewporterState
     where
-        D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>
-            + Dispatch<wp_viewporter::WpViewporter, slog::Logger>
+        D: GlobalDispatch<wp_viewporter::WpViewporter, ()>
+            + Dispatch<wp_viewporter::WpViewporter, ()>
             + Dispatch<wp_viewport::WpViewport, ViewportState>
             + 'static,
-        L: Into<Option<slog::Logger>>,
     {
         ViewporterState {
-            global: display.create_global::<D, wp_viewporter::WpViewporter, slog::Logger>(
-                1,
-                crate::slog_or_fallback(log).new(slog::o!("smithay_module" => "wp_viewporter")),
-            ),
+            global: display.create_global::<D, wp_viewporter::WpViewporter, ()>(1, ()),
         }
     }
 
@@ -88,10 +84,10 @@ impl ViewporterState {
     }
 }
 
-impl<D> GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger, D> for ViewporterState
+impl<D> GlobalDispatch<wp_viewporter::WpViewporter, (), D> for ViewporterState
 where
-    D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>,
-    D: Dispatch<wp_viewporter::WpViewporter, slog::Logger>,
+    D: GlobalDispatch<wp_viewporter::WpViewporter, ()>,
+    D: Dispatch<wp_viewporter::WpViewporter, ()>,
     D: Dispatch<wp_viewport::WpViewport, ViewportState>,
 {
     fn bind(
@@ -99,17 +95,17 @@ where
         _handle: &DisplayHandle,
         _client: &wayland_server::Client,
         resource: wayland_server::New<wp_viewporter::WpViewporter>,
-        global_data: &slog::Logger,
+        _global_data: &(),
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        data_init.init(resource, global_data.clone());
+        data_init.init(resource, ());
     }
 }
 
-impl<D> Dispatch<wp_viewporter::WpViewporter, slog::Logger, D> for ViewporterState
+impl<D> Dispatch<wp_viewporter::WpViewporter, (), D> for ViewporterState
 where
-    D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>,
-    D: Dispatch<wp_viewporter::WpViewporter, slog::Logger>,
+    D: GlobalDispatch<wp_viewporter::WpViewporter, ()>,
+    D: Dispatch<wp_viewporter::WpViewporter, ()>,
     D: Dispatch<wp_viewport::WpViewport, ViewportState>,
 {
     fn request(
@@ -117,7 +113,7 @@ where
         _client: &wayland_server::Client,
         _resource: &wp_viewporter::WpViewporter,
         request: <wp_viewporter::WpViewporter as wayland_server::Resource>::Request,
-        data: &slog::Logger,
+        _data: &(),
         _dhandle: &DisplayHandle,
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
@@ -139,20 +135,35 @@ where
                     return;
                 }
 
-                compositor::add_pre_commit_hook(&surface, viewport_commit_hook);
-
                 let viewport = data_init.init(
                     id,
                     ViewportState {
-                        surface: surface.clone(),
-                        log: data.new(slog::o!("surface" => format!("{:?}", surface))),
+                        surface: surface.downgrade(),
                     },
                 );
-                with_states(&surface, |states| {
-                    states
+                let initial = with_states(&surface, |states| {
+                    let inserted = states
                         .data_map
-                        .insert_if_missing(|| RefCell::new(Some(ViewportMarker(viewport))));
-                })
+                        .insert_if_missing(|| RefCell::new(Some(ViewportMarker(viewport.downgrade()))));
+
+                    // if we did not insert the marker it will be None as
+                    // checked in already_has_viewport and we have to update
+                    // it now
+                    if !inserted {
+                        *states
+                            .data_map
+                            .get::<RefCell<Option<ViewportMarker>>>()
+                            .unwrap()
+                            .borrow_mut() = Some(ViewportMarker(viewport.downgrade()));
+                    }
+
+                    inserted
+                });
+
+                // only add the pre-commit hook once for the surface
+                if initial {
+                    compositor::add_pre_commit_hook::<D, _>(&surface, viewport_commit_hook);
+                }
             }
             wp_viewporter::Request::Destroy => {
                 // All is already handled by our destructor
@@ -164,8 +175,8 @@ where
 
 impl<D> Dispatch<wp_viewport::WpViewport, ViewportState, D> for ViewportState
 where
-    D: GlobalDispatch<wp_viewporter::WpViewporter, slog::Logger>,
-    D: Dispatch<wp_viewporter::WpViewporter, slog::Logger>,
+    D: GlobalDispatch<wp_viewporter::WpViewporter, ()>,
+    D: Dispatch<wp_viewporter::WpViewporter, ()>,
     D: Dispatch<wp_viewport::WpViewport, ViewportState>,
 {
     fn request(
@@ -179,15 +190,18 @@ where
     ) {
         match request {
             wp_viewport::Request::Destroy => {
-                with_states(&data.surface, |states| {
-                    states
-                        .data_map
-                        .get::<RefCell<Option<ViewportMarker>>>()
-                        .unwrap()
-                        .borrow_mut()
-                        .take();
-                    *states.cached_state.pending::<ViewportCachedState>() = ViewportCachedState::default();
-                });
+                if let Ok(surface) = data.surface.upgrade() {
+                    with_states(&surface, |states| {
+                        states
+                            .data_map
+                            .get::<RefCell<Option<ViewportMarker>>>()
+                            .unwrap()
+                            .borrow_mut()
+                            .take();
+                        *states.cached_state.pending::<ViewportCachedState>() =
+                            ViewportCachedState::default();
+                    });
+                }
             }
             wp_viewport::Request::SetSource { x, y, width, height } => {
                 // If all of x, y, width and height are -1.0, the source rectangle is unset instead.
@@ -206,21 +220,21 @@ where
 
                 // If the wl_surface associated with the wp_viewport is destroyed,
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
-                if !data.surface.alive() {
+                let Ok(surface) = data.surface.upgrade() else {
                     resource.post_error(
                         wp_viewport::Error::NoSurface as u32,
                         "the wl_surface was destroyed".to_string(),
                     );
                     return;
-                }
+                };
 
-                with_states(&data.surface, |states| {
+                with_states(&surface, |states| {
                     let mut viewport_state = states.cached_state.pending::<ViewportCachedState>();
                     let src = if is_unset {
                         None
                     } else {
                         let src = Rectangle::from_loc_and_size((x, y), (width, height));
-                        slog::trace!(data.log, "New destination: {:?}", src);
+                        trace!(surface = ?surface, src = ?src, "setting surface viewport src");
                         Some(src)
                     };
                     viewport_state.src = src;
@@ -243,20 +257,21 @@ where
 
                 // If the wl_surface associated with the wp_viewport is destroyed,
                 // all wp_viewport requests except 'destroy' raise the protocol error no_surface.
-                if !data.surface.alive() {
+                let Ok(surface) = data.surface.upgrade() else {
                     resource.post_error(
                         wp_viewport::Error::NoSurface as u32,
                         "the wl_surface was destroyed".to_string(),
                     );
-                }
+                    return;
+                };
 
-                with_states(&data.surface, |states| {
+                with_states(&surface, |states| {
                     let mut viewport_state = states.cached_state.pending::<ViewportCachedState>();
                     let size = if is_unset {
                         None
                     } else {
                         let dst = Size::from((width, height));
-                        slog::trace!(data.log, "New destination: {:?}", dst);
+                        trace!(surface = ?surface, size = ?dst, "setting surface viewport destination size");
                         Some(dst)
                     };
                     viewport_state.dst = size;
@@ -270,13 +285,12 @@ where
 /// State of a single viewport attached to a surface
 #[derive(Debug)]
 pub struct ViewportState {
-    surface: wl_surface::WlSurface,
-    log: slog::Logger,
+    surface: Weak<wl_surface::WlSurface>,
 }
 
-struct ViewportMarker(wp_viewport::WpViewport);
+struct ViewportMarker(Weak<wp_viewport::WpViewport>);
 
-fn viewport_commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
+fn viewport_commit_hook<D: 'static>(_state: &mut D, _dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
     with_states(surface, |states| {
         states
             .data_map
@@ -295,10 +309,12 @@ fn viewport_commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
             if viewport_state.dst.is_none()
                 && src_size != src_size.map(|s| Size::from((s.w as i32, s.h as i32)).to_f64())
             {
-                viewport.0.post_error(
-                    wp_viewport::Error::BadSize as u32,
-                    "destination size is not integer".to_string(),
-                );
+                if let Ok(viewport) = viewport.0.upgrade() {
+                    viewport.post_error(
+                        wp_viewport::Error::BadSize as u32,
+                        "destination size is not integer".to_string(),
+                    );
+                }
             }
         }
     });
@@ -325,10 +341,12 @@ pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logica
         let src = state.src.unwrap_or(buffer_rect);
         let valid = buffer_rect.contains_rect(src);
         if !valid {
-            viewport.0.post_error(
-                wp_viewport::Error::OutOfBuffer as u32,
-                "source rectangle extends outside of the content area".to_string(),
-            );
+            if let Ok(viewport) = viewport.0.upgrade() {
+                viewport.post_error(
+                    wp_viewport::Error::OutOfBuffer as u32,
+                    "source rectangle extends outside of the content area".to_string(),
+                );
+            }
         }
         valid
     } else {
@@ -381,11 +399,11 @@ impl Cacheable for ViewportCachedState {
 macro_rules! delegate_viewporter {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: slog::Logger
+            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: ()
         ] => $crate::wayland::viewporter::ViewporterState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: slog::Logger
+            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: ()
         ] => $crate::wayland::viewporter::ViewporterState);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
             $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewport::WpViewport: $crate::wayland::viewporter::ViewportState

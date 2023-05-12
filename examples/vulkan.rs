@@ -1,7 +1,4 @@
-use std::sync::Mutex;
-
 use drm_fourcc::{DrmFourcc, DrmModifier};
-use slog::{o, Drain};
 use smithay::backend::{
     allocator::{
         dmabuf::AsDmabuf,
@@ -12,7 +9,11 @@ use smithay::backend::{
 };
 
 fn main() {
-    let logger = slog::Logger::root(Mutex::new(slog_term::term_full().fuse()).fuse(), o!());
+    if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    } else {
+        tracing_subscriber::fmt().init();
+    }
 
     println!(
         "Available instance extensions: {:?}",
@@ -20,7 +21,7 @@ fn main() {
     );
     println!();
 
-    let instance = Instance::new(Version::VERSION_1_3, None, logger).unwrap();
+    let instance = Instance::new(Version::VERSION_1_3, None).unwrap();
 
     for (idx, phy) in PhysicalDevice::enumerate(&instance).unwrap().enumerate() {
         println!(

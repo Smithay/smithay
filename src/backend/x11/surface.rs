@@ -4,13 +4,13 @@ use std::{
 };
 
 use drm_fourcc::DrmFourcc;
-use gbm::BufferObject;
+use tracing::instrument;
 use x11rb::{connection::Connection, protocol::xproto::PixmapWrapper, rust_connection::RustConnection};
 
 use crate::{
     backend::{
         allocator::{
-            dmabuf::{AsDmabuf, Dmabuf},
+            dmabuf::{AnyError, Dmabuf},
             Allocator, Slot, Swapchain,
         },
         x11::{buffer::PixmapWrapperExt, window_inner::WindowInner, AllocateBuffersError, Window},
@@ -42,12 +42,12 @@ pub struct X11Surface {
     pub(crate) connection: Weak<RustConnection>,
     pub(crate) window: Weak<WindowInner>,
     pub(crate) resize: Receiver<Size<u16, Logical>>,
-    pub(crate) swapchain:
-        Swapchain<Box<dyn Allocator<Buffer = BufferObject<()>, Error = std::io::Error> + 'static>>,
+    pub(crate) swapchain: Swapchain<Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>>,
     pub(crate) format: DrmFourcc,
     pub(crate) width: u16,
     pub(crate) height: u16,
-    pub(crate) buffer: Option<Slot<BufferObject<()>>>,
+    pub(crate) buffer: Option<Slot<Dmabuf>>,
+    pub(crate) span: tracing::Span,
 }
 
 impl X11Surface {
@@ -68,6 +68,7 @@ impl X11Surface {
     /// You may bind this buffer to a renderer to render.
     /// This function will return the same buffer until [`submit`](Self::submit) is called
     /// or [`reset_buffers`](Self::reset_buffers) is used to reset the buffers.
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn buffer(&mut self) -> Result<(Dmabuf, u8), AllocateBuffersError> {
         if let Some(new_size) = self.resize.try_iter().last() {
             self.resize(new_size);
@@ -84,17 +85,11 @@ impl X11Surface {
 
         let slot = self.buffer.as_ref().unwrap();
         let age = slot.age();
-        match slot.userdata().get::<Dmabuf>() {
-            Some(dmabuf) => Ok((dmabuf.clone(), age)),
-            None => {
-                let dmabuf = slot.export().map_err(Into::<AllocateBuffersError>::into)?;
-                slot.userdata().insert_if_missing(|| dmabuf.clone());
-                Ok((dmabuf, age))
-            }
-        }
+        Ok(((*slot).clone(), age))
     }
 
     /// Consume and submit the buffer to the window.
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn submit(&mut self) -> Result<(), X11Error> {
         if let Some(connection) = self.connection.upgrade() {
             // Get a new buffer
@@ -111,11 +106,7 @@ impl X11Surface {
 
             {
                 let window = self.window().ok_or(AllocateBuffersError::WindowDestroyed)?;
-                let pixmap = PixmapWrapper::with_dmabuf(
-                    &*connection,
-                    window.as_ref(),
-                    next.userdata().get::<Dmabuf>().unwrap(),
-                )?;
+                let pixmap = PixmapWrapper::with_dmabuf(&*connection, window.as_ref(), &next)?;
 
                 // Now present the current buffer
                 let _ = pixmap.present(&*connection, window.as_ref())?;
@@ -129,6 +120,7 @@ impl X11Surface {
     }
 
     /// Resets the internal buffers, e.g. to reset age values
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn reset_buffers(&mut self) {
         self.swapchain.reset_buffers();
         self.buffer = None;

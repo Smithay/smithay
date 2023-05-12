@@ -37,9 +37,18 @@ pub enum Error {
     /// The given plane cannot be used with the given crtc
     #[error("Plane `{1:?}` is not compatible for use with crtc `{0:?}`")]
     PlaneNotCompatible(crtc::Handle, plane::Handle),
+    /// The given configuration does not specify a plane which is not supported by the underlying implementation
+    #[error("No Plane has been specified which is not supported by the underlying implementation")]
+    NoPlane,
     /// The given plane is not a primary plane and therefor not supported by the underlying implementation
     #[error("Non-Primary Planes (provided was `{0:?}`) are not available for use with legacy devices")]
     NonPrimaryPlane(plane::Handle),
+    /// The given plane does not allow to clear the framebuffer
+    #[error("Clearing the framebuffer on plane `{0:?}` is not supported")]
+    NoFramebuffer(plane::Handle),
+    /// The configuration is not supported on the given plane
+    #[error("The configuration is not supported on plane `{0:?}`")]
+    UnsupportedPlaneConfiguration(plane::Handle),
     /// No encoder was found for a given connector on the set crtc
     #[error("No encoder found for the given connector '{connector:?}' on crtc `{crtc:?}`")]
     NoSuitableEncoder {

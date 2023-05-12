@@ -1,10 +1,9 @@
 use std::io;
 
-use gbm::DeviceDestroyedError;
 use nix::errno::Errno;
 use x11rb::rust_connection::{ConnectError, ConnectionError, ReplyError, ReplyOrIdError};
 
-use crate::backend::{allocator::gbm::GbmConvertError, drm::CreateDrmNodeError};
+use crate::backend::{allocator::dmabuf::AnyError, drm::CreateDrmNodeError};
 
 use super::PresentError;
 
@@ -116,17 +115,13 @@ pub enum AllocateBuffersError {
     #[error("Failed to open the DRM device to allocate buffers.")]
     OpenDevice(#[from] io::Error),
 
-    /// The gbm device was destroyed
-    #[error("The gbm device was destroyed.")]
-    DeviceDestroyed(#[from] DeviceDestroyedError),
-
     /// The device used to allocate buffers is not the correct drm node type.
     #[error("The device used to allocate buffers is not the correct drm node type.")]
     UnsupportedDrmNode,
 
-    /// Exporting a dmabuf failed.
-    #[error("Exporting a dmabuf failed.")]
-    ExportDmabuf(#[from] GbmConvertError),
+    /// Allocating a new buffer failed
+    #[error(transparent)]
+    AllocationError(#[from] AnyError),
 
     /// No free slots
     #[error("No free slots in the swapchain")]

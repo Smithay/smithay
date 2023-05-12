@@ -1,11 +1,12 @@
 //! Utilities and helpers around the `Element` trait.
 
 use crate::{
-    backend::renderer::Renderer,
+    backend::renderer::{
+        element::{AsRenderElements, Element, Id, RenderElement, UnderlyingStorage},
+        Renderer,
+    },
     utils::{Buffer, Physical, Point, Rectangle, Scale},
 };
-
-use super::{AsRenderElements, Element, RenderElement};
 
 /// A element that allows to re-scale another element
 #[derive(Debug)]
@@ -31,7 +32,7 @@ impl<E: Element> RescaleRenderElement<E> {
 }
 
 impl<E: Element> Element for RescaleRenderElement<E> {
-    fn id(&self) -> &super::Id {
+    fn id(&self) -> &Id {
         self.element.id()
     }
 
@@ -92,12 +93,11 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-        log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        self.element.draw(frame, src, dst, damage, log)
+        self.element.draw(frame, src, dst, damage)
     }
 
-    fn underlying_storage(&self, renderer: &R) -> Option<super::UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.element.underlying_storage(renderer)
     }
 }
@@ -154,11 +154,14 @@ impl<E: Element> CropRenderElement<E> {
             // Ok, for the src we need to know how much we cropped from the element geometry
             // and then bring that rectangle into buffer space. For this we have to first
             // apply the element transform and then scale it to buffer space.
-            let src = element_relative_intersection.to_f64().to_logical(1.0).to_buffer(
+            let mut src = element_relative_intersection.to_f64().to_logical(1.0).to_buffer(
                 physical_to_buffer_scale,
                 transform,
                 &element_geometry.size.to_f64().to_logical(1.0),
             );
+
+            // Ensure cropping of the existing element is respected.
+            src.loc += element_src.loc;
 
             Some(CropRenderElement {
                 element,
@@ -188,7 +191,7 @@ impl<E: Element> CropRenderElement<E> {
 }
 
 impl<E: Element> Element for CropRenderElement<E> {
-    fn id(&self) -> &super::Id {
+    fn id(&self) -> &Id {
         self.element.id()
     }
 
@@ -264,12 +267,11 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E>
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-        log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        self.element.draw(frame, src, dst, damage, log)
+        self.element.draw(frame, src, dst, damage)
     }
 
-    fn underlying_storage(&self, renderer: &R) -> Option<super::UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.element.underlying_storage(renderer)
     }
 }
@@ -305,7 +307,7 @@ impl<E: Element> RelocateRenderElement<E> {
 }
 
 impl<E: Element> Element for RelocateRenderElement<E> {
-    fn id(&self) -> &super::Id {
+    fn id(&self) -> &Id {
         self.element.id()
     }
 
@@ -357,12 +359,11 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElemen
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
-        log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        self.element.draw(frame, src, dst, damage, log)
+        self.element.draw(frame, src, dst, damage)
     }
 
-    fn underlying_storage(&self, renderer: &R) -> Option<super::UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.element.underlying_storage(renderer)
     }
 }

@@ -27,7 +27,7 @@ use super::{
     RegionAttributes, SurfaceAttributes,
 };
 
-use slog::trace;
+use tracing::trace;
 
 /*
  * wl_compositor
@@ -71,25 +71,26 @@ where
         _dhandle: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let log = &state.compositor_state().log;
         match request {
             wl_compositor::Request::CreateSurface { id } => {
-                trace!(log, "Creating a new wl_surface.");
+                trace!(id = ?id, "Creating a new wl_surface");
 
                 let surface = data_init.init(
                     id,
                     SurfaceUserData {
                         inner: PrivateSurfaceData::new(),
                         alive_tracker: Default::default(),
+                        user_state_type: (std::any::TypeId::of::<D>(), std::any::type_name::<D>()),
                     },
                 );
 
                 state.compositor_state().surfaces.push(surface.clone());
 
                 PrivateSurfaceData::init(&surface);
+                state.new_surface(&surface);
             }
             wl_compositor::Request::CreateRegion { id } => {
-                trace!(log, "Creating a new wl_region.");
+                trace!(id = ?id, "Creating a new wl_region");
 
                 data_init.init(
                     id,
@@ -150,6 +151,7 @@ impl Cacheable for SurfaceAttributes {
 pub struct SurfaceUserData {
     pub(crate) inner: Mutex<PrivateSurfaceData>,
     alive_tracker: AliveTracker,
+    pub(super) user_state_type: (std::any::TypeId, &'static str),
 }
 
 impl<D> Dispatch<WlSurface, SurfaceUserData, D> for CompositorState
@@ -244,18 +246,9 @@ where
                 });
             }
             wl_surface::Request::Commit => {
-                PrivateSurfaceData::invoke_pre_commit_hooks(handle, surface);
+                PrivateSurfaceData::invoke_pre_commit_hooks(state, handle, surface);
 
-                PrivateSurfaceData::commit(surface, handle);
-
-                PrivateSurfaceData::invoke_post_commit_hooks(handle, surface);
-
-                trace!(
-                    state.compositor_state().log,
-                    "Calling user implementation for wl_surface.commit"
-                );
-
-                state.commit(surface);
+                PrivateSurfaceData::commit(surface, handle, state);
             }
             wl_surface::Request::SetBufferTransform { transform } => {
                 if let WEnum::Value(transform) = transform {
@@ -313,7 +306,6 @@ where
         // We let the destruction hooks run first and then tell the compositor handler the surface was
         // destroyed.
         data.alive_tracker.destroy_notify();
-        PrivateSurfaceData::cleanup(data, object_id.clone());
         state.destroyed(&surface);
 
         // Remove the surface after the callback is invoked.
@@ -321,6 +313,7 @@ where
             .compositor_state()
             .surfaces
             .retain(|surface| surface.id() != object_id);
+        PrivateSurfaceData::cleanup(state, data, object_id);
     }
 }
 
@@ -447,6 +440,13 @@ where
 pub struct SubsurfaceUserData {
     surface: WlSurface,
 }
+
+impl SubsurfaceUserData {
+    /// Returns the surface for this subsurface (not to be confused with the parent surface).
+    pub fn surface(&self) -> &WlSurface {
+        &self.surface
+    }
+}
 /// The cached state associated with a subsurface
 #[derive(Debug)]
 pub struct SubsurfaceCachedState {
@@ -572,10 +572,17 @@ where
         _object_id: wayland_server::backend::ObjectId,
         data: &SubsurfaceUserData,
     ) {
-        // TODO
-        // if surface.as_ref().is_alive() {
         PrivateSurfaceData::unset_parent(&data.surface);
-        // }
+        PrivateSurfaceData::with_states(&data.surface, |state| {
+            state
+                .data_map
+                .get::<SubsurfaceState>()
+                .unwrap()
+                .sync
+                .store(true, Ordering::Release);
+            *state.cached_state.pending::<SubsurfaceCachedState>() = Default::default();
+            *state.cached_state.current::<SubsurfaceCachedState>() = Default::default();
+        });
     }
 }
 

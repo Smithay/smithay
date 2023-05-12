@@ -23,17 +23,17 @@ pub const DRM_MAJOR: u64 = 226;
 #[cfg(not(target_os = "openbsd"))]
 pub const PRIMARY_NAME: &str = "card";
 
-#[cfg(target_os = "freebsd")]
+#[cfg(target_os = "openbsd")]
 pub const PRIMARY_NAME: &str = "drm";
 
 #[cfg(not(target_os = "openbsd"))]
 pub const CONTROL_NAME: &str = "controlD";
 
-#[cfg(target_os = "freebsd")]
+#[cfg(target_os = "openbsd")]
 pub const CONTROL_NAME: &str = "drmC";
 
 #[cfg(not(target_os = "openbsd"))]
 pub const RENDER_NAME: &str = "renderD";
 
-#[cfg(target_os = "freebsd")]
+#[cfg(target_os = "openbsd")]
 pub const RENDER_NAME: &str = "drmR";

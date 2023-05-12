@@ -21,6 +21,8 @@
 - The `slot` method on touch events no longer returns an `Option` and multi-touch capability is thus opaque to the compositor
 - `wayland::output::Output` now is created separately from it's `Global` as reflected by [`Output::new`] and the new [`Output::create_global] method.
 - `PointerHandle` no longer sends an implicit motion event when a grab is set, `time` has been replaced by an explicit `focus` parameter in [`PointerHandle::set_grab`]
+- `ToplevelSurface::send_configure`/`PopupSurface::send_configure`/`LayerSurface::send_configure` now always send a configure event regardless of changes and return
+  the serial of the configure event. `send_pending_configure` can be used to only send a configure event on pending changes.
 
 #### Backends
 

@@ -5,8 +5,7 @@ use smithay::{
         input::KeyState,
         renderer::{
             element::{
-                memory::MemoryRenderBufferRenderElement, surface::WaylandSurfaceRenderElement,
-                AsRenderElements,
+                solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement, AsRenderElements,
             },
             ImportAll, ImportMem, Renderer, Texture,
         },
@@ -24,13 +23,13 @@ use smithay::{
     },
     render_elements,
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
-    wayland::{compositor::SurfaceData as WlSurfaceData, seat::WaylandFocus},
+    wayland::{compositor::SurfaceData as WlSurfaceData, dmabuf::DmabufFeedback, seat::WaylandFocus},
 };
 #[cfg(feature = "xwayland")]
 use smithay::{
     desktop::utils::{
-        send_frames_surface_tree, take_presentation_feedback_surface_tree, under_from_surface_tree,
-        with_surfaces_surface_tree,
+        send_dmabuf_feedback_surface_tree, send_frames_surface_tree, take_presentation_feedback_surface_tree,
+        under_from_surface_tree, with_surfaces_surface_tree,
     },
     xwayland::X11Surface,
 };
@@ -91,6 +90,33 @@ impl WindowElement {
             WindowElement::X11(w) => {
                 if let Some(surface) = w.wl_surface() {
                     send_frames_surface_tree(&surface, output, time, throttle, primary_scan_out_output);
+                }
+            }
+        }
+    }
+
+    pub fn send_dmabuf_feedback<'a, P, F>(
+        &self,
+        output: &Output,
+        primary_scan_out_output: P,
+        select_dmabuf_feedback: F,
+    ) where
+        P: FnMut(&WlSurface, &WlSurfaceData) -> Option<Output> + Copy,
+        F: Fn(&WlSurface, &WlSurfaceData) -> &'a DmabufFeedback + Copy,
+    {
+        match self {
+            WindowElement::Wayland(w) => {
+                w.send_dmabuf_feedback(output, primary_scan_out_output, select_dmabuf_feedback)
+            }
+            #[cfg(feature = "xwayland")]
+            WindowElement::X11(w) => {
+                if let Some(surface) = w.wl_surface() {
+                    send_dmabuf_feedback_surface_tree(
+                        &surface,
+                        output,
+                        primary_scan_out_output,
+                        select_dmabuf_feedback,
+                    )
                 }
             }
         }
@@ -438,8 +464,18 @@ impl SpaceElement for WindowElement {
 render_elements!(
     pub WindowRenderElement<R> where R: ImportAll + ImportMem;
     Window=WaylandSurfaceRenderElement<R>,
-    Decoration=MemoryRenderBufferRenderElement<R>,
+    Decoration=SolidColorRenderElement,
 );
+
+impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for WindowRenderElement<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Window(arg0) => f.debug_tuple("Window").field(arg0).finish(),
+            Self::Decoration(arg0) => f.debug_tuple("Decoration").field(arg0).finish(),
+            Self::_GenericCatcher(arg0) => f.debug_tuple("_GenericCatcher").field(arg0).finish(),
+        }
+    }
+}
 
 impl<R> AsRenderElements<R> for WindowElement
 where
@@ -470,19 +506,16 @@ where
             let mut state = self.decoration_state();
             let width = window_geo.size.w;
             state.header_bar.redraw(width as u32);
-            let Ok(decoration_render_element) = MemoryRenderBufferRenderElement::from_buffer(
+            let mut vec = AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
+                &state.header_bar,
                 renderer,
-                location.to_f64(),
-                &state.header_bar.buffer,
-                None,
-                None,
-                None,
-                None,
-            ) else { return Vec::new() };
+                location,
+                scale,
+            );
 
             location.y += (scale.y * HEADER_BAR_HEIGHT as f64) as i32;
 
-            let vec = match self {
+            let window_elements = match self {
                 WindowElement::Wayland(xdg) => {
                     AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
                         xdg, renderer, location, scale,
@@ -493,12 +526,8 @@ where
                     x11, renderer, location, scale,
                 ),
             };
-            vec.into_iter()
-                .chain(std::iter::once(WindowRenderElement::Decoration(
-                    decoration_render_element,
-                )))
-                .map(C::from)
-                .collect()
+            vec.extend(window_elements);
+            vec.into_iter().map(C::from).collect()
         } else {
             match self {
                 WindowElement::Wayland(xdg) => {

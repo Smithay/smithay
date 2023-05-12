@@ -1,11 +1,12 @@
+use std::collections::HashMap;
 use std::io;
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd};
 use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{atomic::AtomicBool, Arc, Mutex, Weak};
 use std::time::{Duration, SystemTime};
 
 use calloop::{EventSource, Interest, Poll, PostAction, Readiness, Token, TokenFactory};
-use drm::control::{connector, crtc, Device as ControlDevice, Event, Mode, ResourceHandles};
+use drm::control::{connector, crtc, plane, Device as ControlDevice, Event, Mode, ResourceHandles};
 use drm::{ClientCapability, Device as BasicDevice, DriverCapability};
 use nix::libc::dev_t;
 
@@ -13,14 +14,97 @@ pub(super) mod atomic;
 mod fd;
 pub use self::fd::DrmDeviceFd;
 pub(super) mod legacy;
-use crate::utils::{DevPath, Physical, Size};
+use crate::utils::{Buffer, DevPath, Size};
 
 use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurface, DrmSurfaceInternal};
 use super::{error::Error, planes, Planes};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
 
-use slog::{info, o, trace};
+use tracing::{debug_span, error, info, instrument, trace};
+
+#[derive(Debug)]
+struct PlaneClaimInner {
+    plane: drm::control::plane::Handle,
+    crtc: drm::control::crtc::Handle,
+    storage: PlaneClaimStorage,
+}
+
+impl Drop for PlaneClaimInner {
+    fn drop(&mut self) {
+        self.storage.remove(self.plane);
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PlaneClaimWeak(Weak<PlaneClaimInner>);
+
+impl PlaneClaimWeak {
+    fn upgrade(&self) -> Option<PlaneClaim> {
+        self.0.upgrade().map(|claim| PlaneClaim { claim })
+    }
+}
+
+/// A claim of a plane
+#[derive(Debug, Clone)]
+pub struct PlaneClaim {
+    claim: Arc<PlaneClaimInner>,
+}
+
+impl PlaneClaim {
+    /// The plane the claim was taken for
+    pub fn plane(&self) -> drm::control::plane::Handle {
+        self.claim.plane
+    }
+
+    /// The crtc the claim was taken for
+    pub fn crtc(&self) -> drm::control::crtc::Handle {
+        self.claim.crtc
+    }
+}
+
+impl PlaneClaim {
+    fn downgrade(&self) -> PlaneClaimWeak {
+        PlaneClaimWeak(Arc::downgrade(&self.claim))
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PlaneClaimStorage {
+    claimed_planes: Arc<Mutex<HashMap<drm::control::plane::Handle, PlaneClaimWeak>>>,
+}
+
+impl PlaneClaimStorage {
+    pub fn claim(
+        &self,
+        plane: drm::control::plane::Handle,
+        crtc: drm::control::crtc::Handle,
+    ) -> Option<PlaneClaim> {
+        let mut guard = self.claimed_planes.lock().unwrap();
+        if let Some(claim) = guard.get(&plane).and_then(|claim| claim.upgrade()) {
+            if claim.crtc() == crtc {
+                Some(claim)
+            } else {
+                None
+            }
+        } else {
+            let claim = PlaneClaim {
+                claim: Arc::new(PlaneClaimInner {
+                    plane,
+                    crtc,
+                    storage: self.clone(),
+                }),
+            };
+            guard.insert(plane, claim.downgrade());
+            Some(claim)
+        }
+    }
+
+    fn remove(&self, plane: drm::control::plane::Handle) {
+        let mut guard = self.claimed_planes.lock().unwrap();
+        guard.remove(&plane);
+    }
+}
 
 /// An open drm device
 #[derive(Debug)]
@@ -28,11 +112,9 @@ pub struct DrmDevice {
     pub(super) dev_id: dev_t,
     pub(crate) internal: Arc<DrmDeviceInternal>,
     has_universal_planes: bool,
-    has_monotonic_timestamps: bool,
-    cursor_size: Size<u32, Physical>,
+    cursor_size: Size<u32, Buffer>,
     resources: ResourceHandles,
-    pub(super) logger: ::slog::Logger,
-    token: Option<Token>,
+    plane_claim_storage: PlaneClaimStorage,
 }
 
 impl AsFd for DrmDevice {
@@ -52,6 +134,22 @@ impl ControlDevice for DrmDevice {}
 pub enum DrmDeviceInternal {
     Atomic(AtomicDrmDevice),
     Legacy(LegacyDrmDevice),
+}
+
+impl DrmDeviceInternal {
+    pub(crate) fn device_fd(&self) -> &DrmDeviceFd {
+        match self {
+            DrmDeviceInternal::Atomic(dev) => &dev.fd,
+            DrmDeviceInternal::Legacy(dev) => &dev.fd,
+        }
+    }
+
+    fn span(&self) -> &tracing::Span {
+        match self {
+            DrmDeviceInternal::Atomic(internal) => &internal.span,
+            DrmDeviceInternal::Legacy(internal) => &internal.span,
+        }
+    }
 }
 
 impl AsFd for DrmDeviceInternal {
@@ -78,19 +176,19 @@ impl DrmDevice {
     ///     requires usage of `drm-rs` to disable unused connectors to prevent them \
     ///     showing garbage, but will also prevent flickering of already turned on \
     ///     connectors (assuming you won't change the resolution).
-    /// - `logger` - Optional [`slog::Logger`] to be used by this device.
     ///
     /// # Return
     ///
     /// Returns an error if the file is no valid drm node or the device is not accessible.
+    pub fn new(fd: DrmDeviceFd, disable_connectors: bool) -> Result<(Self, DrmDeviceNotifier), Error> {
+        // setup parent span for internal device types
+        let span = debug_span!(
+            "drm_device",
+            device = ?fd.dev_path()
+        );
+        let _guard = span.enter();
 
-    pub fn new(
-        fd: DrmDeviceFd,
-        disable_connectors: bool,
-        logger: impl Into<Option<slog::Logger>>,
-    ) -> Result<Self, Error> {
-        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_drm"));
-        info!(log, "DrmDevice initializing");
+        info!("DrmDevice initializing");
 
         let dev_id = fd.dev_id().map_err(Error::UnableToGetDeviceId)?;
         let active = Arc::new(AtomicBool::new(true));
@@ -114,30 +212,30 @@ impl DrmDevice {
             dev: fd.dev_path(),
             source,
         })?;
-        let internal = Arc::new(DrmDevice::create_internal(
-            fd,
-            active,
-            disable_connectors,
-            log.clone(),
-        )?);
 
-        Ok(DrmDevice {
-            dev_id,
-            internal,
-            has_universal_planes,
-            has_monotonic_timestamps,
-            cursor_size,
-            resources,
-            logger: log,
-            token: None,
-        })
+        let internal = Arc::new(DrmDevice::create_internal(fd, active, disable_connectors)?);
+
+        Ok((
+            DrmDevice {
+                dev_id,
+                internal: internal.clone(),
+                has_universal_planes,
+                cursor_size,
+                resources,
+                plane_claim_storage: Default::default(),
+            },
+            DrmDeviceNotifier {
+                internal,
+                has_monotonic_timestamps,
+                token: None,
+            },
+        ))
     }
 
     fn create_internal(
         fd: DrmDeviceFd,
         active: Arc<AtomicBool>,
         disable_connectors: bool,
-        log: ::slog::Logger,
     ) -> Result<DrmDeviceInternal, Error> {
         let force_legacy = std::env::var("SMITHAY_USE_LEGACY")
             .map(|x| {
@@ -146,15 +244,15 @@ impl DrmDevice {
             .unwrap_or(false);
 
         if force_legacy {
-            info!(log, "SMITHAY_USE_LEGACY is set. Forcing LegacyDrmDevice.");
+            info!("SMITHAY_USE_LEGACY is set. Forcing LegacyDrmDevice.");
         };
 
         Ok(
             if !force_legacy && fd.set_client_capability(ClientCapability::Atomic, true).is_ok() {
-                DrmDeviceInternal::Atomic(AtomicDrmDevice::new(fd, active, disable_connectors, log)?)
+                DrmDeviceInternal::Atomic(AtomicDrmDevice::new(fd, active, disable_connectors)?)
             } else {
-                info!(log, "Falling back to LegacyDrmDevice");
-                DrmDeviceInternal::Legacy(LegacyDrmDevice::new(fd, active, disable_connectors, log)?)
+                info!("Falling back to LegacyDrmDevice");
+                DrmDeviceInternal::Legacy(LegacyDrmDevice::new(fd, active, disable_connectors)?)
             },
         )
     }
@@ -177,12 +275,19 @@ impl DrmDevice {
         planes(self, crtc, self.has_universal_planes)
     }
 
+    /// Claim a plane so that it won't be used by a different crtc
+    ///  
+    /// Returns `None` if the plane could not be claimed
+    pub fn claim_plane(&self, plane: plane::Handle, crtc: crtc::Handle) -> Option<PlaneClaim> {
+        self.plane_claim_storage.claim(plane, crtc)
+    }
+
     /// Returns the size of the hardware cursor
     ///
     /// Note: In case of universal planes this is the
     /// maximum size of a buffer that can be used on
     /// the cursor plane.
-    pub fn cursor_size(&self) -> Size<u32, Physical> {
+    pub fn cursor_size(&self) -> Size<u32, Buffer> {
         self.cursor_size
     }
 
@@ -200,6 +305,7 @@ impl DrmDevice {
     ///     has to be compatible with the provided `connectors`.
     /// - [`connectors`](drm::control::connector) - List of connectors driven by the crtc. At least one(!) connector needs to be \
     ///     attached to a crtc in smithay.
+    #[instrument(skip(self), parent = self.internal.span(), err)]
     pub fn create_surface(
         &self,
         crtc: crtc::Handle,
@@ -215,14 +321,14 @@ impl DrmDevice {
         }
 
         let plane = planes(self, &crtc, self.has_universal_planes)?.primary;
-        let info = self.get_plane(plane).map_err(|source| Error::Access {
+        let info = self.get_plane(plane.handle).map_err(|source| Error::Access {
             errmsg: "Failed to get plane info",
             dev: self.dev_path(),
             source,
         })?;
         let filter = info.possible_crtcs();
         if !self.resources.filter_crtcs(filter).contains(&crtc) {
-            return Err(Error::PlaneNotCompatible(crtc, plane));
+            return Err(Error::PlaneNotCompatible(crtc, plane.handle));
         }
 
         let active = match &*self.internal {
@@ -240,11 +346,10 @@ impl DrmDevice {
                 self.internal.clone(),
                 active,
                 crtc,
-                plane,
+                plane.handle,
                 mapping,
                 mode,
                 connectors,
-                self.logger.clone(),
             )?)
         } else {
             DrmSurfaceInternal::Legacy(LegacyDrmSurface::new(
@@ -253,16 +358,16 @@ impl DrmDevice {
                 crtc,
                 mode,
                 connectors,
-                self.logger.clone(),
             )?)
         };
 
         Ok(DrmSurface {
             dev_id: self.dev_id,
             crtc,
-            primary: plane,
+            primary: plane.handle,
             internal: Arc::new(internal),
             has_universal_planes: self.has_universal_planes,
+            plane_claim_storage: self.plane_claim_storage.clone(),
         })
     }
 
@@ -272,11 +377,8 @@ impl DrmDevice {
     }
 
     /// Returns the underlying file descriptor
-    pub fn device_fd(&self) -> DrmDeviceFd {
-        match &*self.internal {
-            DrmDeviceInternal::Atomic(internal) => internal.fd.clone(),
-            DrmDeviceInternal::Legacy(internal) => internal.fd.clone(),
-        }
+    pub fn device_fd(&self) -> &DrmDeviceFd {
+        self.internal.device_fd()
     }
 
     /// Pauses the device.
@@ -288,7 +390,7 @@ impl DrmDevice {
         self.set_active(false);
         if self.device_fd().is_privileged() {
             if let Err(err) = self.release_master_lock() {
-                slog::error!(self.logger, "Failed to drop drm master state Error: {}", err);
+                error!("Failed to drop drm master state Error: {}", err);
             }
         }
     }
@@ -297,7 +399,7 @@ impl DrmDevice {
     pub fn activate(&self) {
         if self.device_fd().is_privileged() {
             if let Err(err) = self.acquire_master_lock() {
-                slog::crit!(self.logger, "Failed to acquire drm master again. Error: {}", err);
+                error!("Failed to acquire drm master again. Error: {}", err);
             }
         }
         self.set_active(true);
@@ -346,7 +448,15 @@ pub enum Time {
     Realtime(SystemTime),
 }
 
-impl EventSource for DrmDevice {
+/// Even source of [`DrmDevice`]
+#[derive(Debug)]
+pub struct DrmDeviceNotifier {
+    internal: Arc<DrmDeviceInternal>,
+    has_monotonic_timestamps: bool,
+    token: Option<Token>,
+}
+
+impl EventSource for DrmDeviceNotifier {
     type Event = DrmEvent;
     type Metadata = Option<EventMetadata>;
     type Ret = ();
@@ -356,14 +466,17 @@ impl EventSource for DrmDevice {
     where
         F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
+        let _guard = self.internal.span().enter();
+
         if Some(token) != self.token {
             return Ok(PostAction::Continue);
         }
-        match self.receive_events() {
+
+        match self.internal.receive_events() {
             Ok(events) => {
                 for event in events {
                     if let Event::PageFlip(event) = event {
-                        trace!(self.logger, "Got a page-flip event for crtc ({:?})", event.crtc);
+                        trace!("Got a page-flip event for crtc ({:?})", event.crtc);
                         let metadata = EventMetadata {
                             time: if self.has_monotonic_timestamps {
                                 Time::Monotonic(event.duration)
@@ -375,9 +488,8 @@ impl EventSource for DrmDevice {
                         callback(DrmEvent::VBlank(event.crtc), &mut Some(metadata));
                     } else {
                         trace!(
-                            self.logger,
                             "Got a non-page-flip event of device '{:?}'.",
-                            self.dev_path()
+                            self.internal.dev_path()
                         );
                     }
                 }
@@ -386,7 +498,7 @@ impl EventSource for DrmDevice {
                 callback(
                     DrmEvent::Error(Error::Access {
                         errmsg: "Error processing drm events",
-                        dev: self.dev_path(),
+                        dev: self.internal.dev_path(),
                         source,
                     }),
                     &mut None,
@@ -399,7 +511,7 @@ impl EventSource for DrmDevice {
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
         poll.register(
-            self.as_fd().as_raw_fd(),
+            self.internal.as_fd().as_raw_fd(),
             Interest::READ,
             calloop::Mode::Level,
             self.token.unwrap(),
@@ -409,7 +521,7 @@ impl EventSource for DrmDevice {
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
         poll.reregister(
-            self.as_fd().as_raw_fd(),
+            self.internal.as_fd().as_raw_fd(),
             Interest::READ,
             calloop::Mode::Level,
             self.token.unwrap(),
@@ -418,6 +530,6 @@ impl EventSource for DrmDevice {
 
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.token = None;
-        poll.unregister(self.as_fd().as_raw_fd())
+        poll.unregister(self.internal.as_fd().as_raw_fd())
     }
 }

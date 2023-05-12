@@ -8,6 +8,7 @@ use std::{
     thread::{spawn, JoinHandle},
 };
 
+use tracing::{error, warn};
 use x11rb::{
     connection::Connection as _,
     protocol::{
@@ -39,7 +40,6 @@ pub struct X11Source {
     event_thread: Option<JoinHandle<()>>,
     close_window: Window,
     close_type: Atom,
-    log: slog::Logger,
 }
 
 impl X11Source {
@@ -49,17 +49,11 @@ impl X11Source {
     /// the given window with the given type. The expectation is that this is a window that was
     /// created by us. Thus, the event reading thread will wake up and check an internal exit flag,
     /// then exit.
-    pub fn new(
-        connection: Arc<RustConnection>,
-        close_window: Window,
-        close_type: Atom,
-        log: slog::Logger,
-    ) -> Self {
+    pub fn new(connection: Arc<RustConnection>, close_window: Window, close_type: Atom) -> Self {
         let (sender, channel) = sync_channel(5);
         let conn = Arc::clone(&connection);
-        let log2 = log.clone();
         let event_thread = Some(spawn(move || {
-            run_event_thread(conn, sender, log2);
+            run_event_thread(conn, sender);
         }));
 
         Self {
@@ -68,7 +62,6 @@ impl X11Source {
             event_thread,
             close_window,
             close_type,
-            log,
         }
     }
 }
@@ -113,11 +106,9 @@ impl EventSource for X11Source {
     where
         C: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
-        let log = self.log.clone();
-
         if let Some(channel) = &mut self.channel {
             channel.process_events(readiness, token, move |event, meta| match event {
-                ChannelEvent::Closed => slog::warn!(log, "Event thread exited"),
+                ChannelEvent::Closed => warn!("Event thread exited"),
                 ChannelEvent::Msg(event) => callback(event, meta),
             })
         } else {
@@ -160,13 +151,13 @@ impl EventSource for X11Source {
 /// This thread will call wait_for_event(). RustConnection then ensures internally to wake us up
 /// when an event arrives. So far, this seems to be the only safe way to integrate x11rb with
 /// calloop.
-fn run_event_thread(connection: Arc<RustConnection>, sender: SyncSender<Event>, log: slog::Logger) {
+fn run_event_thread(connection: Arc<RustConnection>, sender: SyncSender<Event>) {
     loop {
         let event = match connection.wait_for_event() {
             Ok(event) => event,
             Err(err) => {
                 // Connection errors are most likely permanent. Thus, exit the thread.
-                slog::crit!(log, "Event thread exiting due to connection error {}", err);
+                error!("Event thread exiting due to connection error {}", err);
                 break;
             }
         };

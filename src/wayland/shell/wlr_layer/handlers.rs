@@ -93,46 +93,60 @@ where
                     },
                 );
 
-                compositor::with_states(&wl_surface, |states| {
-                    states
+                let initial = compositor::with_states(&wl_surface, |states| {
+                    let inserted = states
                         .data_map
                         .insert_if_missing_threadsafe(|| Mutex::new(LayerSurfaceAttributes::new(id.clone())));
 
-                    states.cached_state.pending::<LayerSurfaceCachedState>().layer = layer;
-                });
-
-                compositor::add_pre_commit_hook(&wl_surface, |_dh, surface| {
-                    compositor::with_states(surface, |states| {
-                        let mut guard = states
+                    if !inserted {
+                        let mut attributes = states
                             .data_map
                             .get::<Mutex<LayerSurfaceAttributes>>()
                             .unwrap()
                             .lock()
                             .unwrap();
+                        attributes.surface = id.clone();
+                    }
 
-                        let pending = states.cached_state.pending::<LayerSurfaceCachedState>();
+                    states.cached_state.pending::<LayerSurfaceCachedState>().layer = layer;
 
-                        if pending.size.w == 0 && !pending.anchor.anchored_horizontally() {
-                            guard.surface.post_error(
-                                zwlr_layer_surface_v1::Error::InvalidSize,
-                                "width 0 requested without setting left and right anchors",
-                            );
-                            return;
-                        }
-
-                        if pending.size.h == 0 && !pending.anchor.anchored_vertically() {
-                            guard.surface.post_error(
-                                zwlr_layer_surface_v1::Error::InvalidSize,
-                                "height 0 requested without setting top and bottom anchors",
-                            );
-                            return;
-                        }
-
-                        if let Some(state) = guard.last_acked.clone() {
-                            guard.current = state;
-                        }
-                    });
+                    inserted
                 });
+
+                if initial {
+                    compositor::add_pre_commit_hook::<D, _>(&wl_surface, |_state, _dh, surface| {
+                        compositor::with_states(surface, |states| {
+                            let mut guard = states
+                                .data_map
+                                .get::<Mutex<LayerSurfaceAttributes>>()
+                                .unwrap()
+                                .lock()
+                                .unwrap();
+
+                            let pending = states.cached_state.pending::<LayerSurfaceCachedState>();
+
+                            if pending.size.w == 0 && !pending.anchor.anchored_horizontally() {
+                                guard.surface.post_error(
+                                    zwlr_layer_surface_v1::Error::InvalidSize,
+                                    "width 0 requested without setting left and right anchors",
+                                );
+                                return;
+                            }
+
+                            if pending.size.h == 0 && !pending.anchor.anchored_vertically() {
+                                guard.surface.post_error(
+                                    zwlr_layer_surface_v1::Error::InvalidSize,
+                                    "height 0 requested without setting top and bottom anchors",
+                                );
+                                return;
+                            }
+
+                            if let Some(state) = guard.last_acked.clone() {
+                                guard.current = state;
+                            }
+                        });
+                    });
+                }
 
                 let handle = super::LayerSurface {
                     wl_surface,
@@ -323,7 +337,19 @@ where
         {
             let layer = layers.remove(index);
             drop(layers);
+            let surface = layer.wl_surface().clone();
             WlrLayerShellHandler::layer_destroyed(state, layer);
+            compositor::with_states(&surface, |states| {
+                let mut attributes = states
+                    .data_map
+                    .get::<Mutex<LayerSurfaceAttributes>>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+                attributes.reset();
+                *states.cached_state.pending::<LayerSurfaceCachedState>() = Default::default();
+                *states.cached_state.current::<LayerSurfaceCachedState>() = Default::default();
+            });
         }
     }
 }

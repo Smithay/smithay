@@ -10,6 +10,7 @@ use crate::{
     utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle, Serial},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, SurfaceData, TraversalAction},
+        dmabuf::DmabufFeedback,
         seat::WaylandFocus,
         shell::wlr_layer::{
             Anchor, ExclusiveZone, KeyboardInteractivity, Layer as WlrLayer, LayerSurface as WlrLayerSurface,
@@ -18,6 +19,7 @@ use crate::{
     },
 };
 use indexmap::IndexSet;
+use tracing::{debug_span, trace};
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use wayland_server::{
     backend::ObjectId,
@@ -45,7 +47,6 @@ pub struct LayerMap {
     zone: Rectangle<i32, Logical>,
     // surfaces for tracking enter and leave events
     surfaces: HashSet<Weak<WlSurface>>,
-    logger: ::slog::Logger,
 }
 
 /// Retrieve a [`LayerMap`] for a given [`Output`].
@@ -75,13 +76,6 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
                     .unwrap_or_else(|| (0, 0).into()),
             ),
             surfaces: HashSet::new(),
-            logger: o
-                .inner
-                .0
-                .lock()
-                .unwrap()
-                .log
-                .new(slog::o!("smithay_module" => "layer_map")),
         })
     });
     userdata.get::<RefCell<LayerMap>>().unwrap().borrow_mut()
@@ -254,6 +248,9 @@ impl LayerMap {
     /// Note: Mapping or unmapping a layer surface will automatically cause a re-arrangement.
     pub fn arrange(&mut self) {
         if let Some(output) = self.output() {
+            let span = debug_span!("layer_map", output = output.name());
+            let _guard = span.enter();
+
             let output_rect = Rectangle::from_loc_and_size(
                 (0, 0),
                 output
@@ -267,7 +264,7 @@ impl LayerMap {
                     .unwrap_or_else(|| (0, 0).into()),
             );
             let mut zone = output_rect;
-            slog::trace!(self.logger, "Arranging layers into {:?}", output_rect.size);
+            trace!("Arranging layers into {:?}", output_rect.size);
 
             for layer in self.layers.iter() {
                 let surface = layer.wl_surface();
@@ -307,12 +304,28 @@ impl LayerMap {
                     *states.cached_state.current::<LayerSurfaceCachedState>()
                 });
 
-                let source = match data.exclusive_zone {
-                    ExclusiveZone::Neutral | ExclusiveZone::Exclusive(_) => &zone,
-                    ExclusiveZone::DontCare => &output_rect,
+                let mut source = match data.exclusive_zone {
+                    ExclusiveZone::Exclusive(_) | ExclusiveZone::Neutral => zone,
+                    ExclusiveZone::DontCare => output_rect,
                 };
 
+                // adjust the copy rect to account for the margins
+                if data.anchor.contains(Anchor::LEFT) {
+                    source.size.w -= data.margin.left
+                }
+                if data.anchor.contains(Anchor::RIGHT) {
+                    source.size.w -= data.margin.right
+                }
+                if data.anchor.contains(Anchor::TOP) {
+                    source.size.h -= data.margin.top
+                }
+                if data.anchor.contains(Anchor::BOTTOM) {
+                    source.size.h -= data.margin.bottom
+                }
+
                 let mut size = data.size;
+                size.w = size.w.min(source.size.w);
+                size.h = size.h.min(source.size.h);
                 if size.w == 0 {
                     size.w = source.size.w / 2;
                 }
@@ -329,7 +342,7 @@ impl LayerMap {
                 let x = if data.anchor.contains(Anchor::LEFT) {
                     source.loc.x + data.margin.left
                 } else if data.anchor.contains(Anchor::RIGHT) {
-                    source.loc.x + (source.size.w - size.w) - data.margin.right
+                    source.loc.x + (source.size.w - size.w)
                 } else {
                     source.loc.x + ((source.size.w / 2) - (size.w / 2))
                 };
@@ -337,7 +350,7 @@ impl LayerMap {
                 let y = if data.anchor.contains(Anchor::TOP) {
                     source.loc.y + data.margin.top
                 } else if data.anchor.contains(Anchor::BOTTOM) {
-                    source.loc.y + (source.size.h - size.h) - data.margin.bottom
+                    source.loc.y + (source.size.h - size.h)
                 } else {
                     source.loc.y + ((source.size.h / 2) - (size.h / 2))
                 };
@@ -346,30 +359,49 @@ impl LayerMap {
 
                 if let ExclusiveZone::Exclusive(amount) = data.exclusive_zone {
                     match data.anchor {
+                        x if x.contains(Anchor::TOP) && x.contains(Anchor::BOTTOM) => {
+                            zone.size.w -= amount as i32;
+                            if x.contains(Anchor::LEFT) {
+                                zone.loc.x += amount as i32 + data.margin.left;
+                                zone.size.w -= data.margin.left;
+                            }
+                            if x.contains(Anchor::RIGHT) {
+                                zone.size.w -= data.margin.right
+                            }
+                        }
+                        x if x.contains(Anchor::LEFT) && x.contains(Anchor::RIGHT) => {
+                            zone.size.h -= amount as i32;
+                            if x.contains(Anchor::TOP) {
+                                zone.loc.y += amount as i32 + data.margin.top;
+                                zone.size.h -= data.margin.top
+                            }
+                            if x.contains(Anchor::BOTTOM) {
+                                zone.size.h -= data.margin.bottom
+                            }
+                        }
+                        x if x == Anchor::all() => {
+                            zone.size.w = 0;
+                            zone.size.h = 0;
+                        }
                         x if x.contains(Anchor::LEFT) && !x.contains(Anchor::RIGHT) => {
-                            zone.loc.x += amount as i32 + data.margin.left + data.margin.right;
-                            zone.size.w -= amount as i32 + data.margin.left + data.margin.right;
+                            zone.loc.x += amount as i32 + data.margin.left;
+                            zone.size.w -= amount as i32 + data.margin.left;
                         }
                         x if x.contains(Anchor::TOP) && !x.contains(Anchor::BOTTOM) => {
-                            zone.loc.y += amount as i32 + data.margin.top + data.margin.bottom;
-                            zone.size.h -= amount as i32 + data.margin.top + data.margin.bottom;
+                            zone.loc.y += amount as i32 + data.margin.top;
+                            zone.size.h -= amount as i32 + data.margin.top;
                         }
                         x if x.contains(Anchor::RIGHT) && !x.contains(Anchor::LEFT) => {
-                            zone.size.w -= amount as i32 + data.margin.left + data.margin.right;
+                            zone.size.w -= amount as i32 + data.margin.right;
                         }
                         x if x.contains(Anchor::BOTTOM) && !x.contains(Anchor::TOP) => {
-                            zone.size.h -= amount as i32 + data.margin.top + data.margin.bottom;
+                            zone.size.h -= amount as i32 + data.margin.bottom;
                         }
                         _ => {}
                     }
                 }
 
-                slog::trace!(
-                    self.logger,
-                    "Setting layer to pos {:?} and size {:?}",
-                    location,
-                    size
-                );
+                trace!("Setting layer to pos {:?} and size {:?}", location, size);
                 let size_changed = layer.0.surface.with_pending_state(|state| {
                     state.size.replace(size).map(|old| old != size).unwrap_or(true)
                 });
@@ -390,13 +422,13 @@ impl LayerMap {
                 // we would send a wrong size to the client and also violate
                 // the spec by sending a configure event before a prior commit.
                 if size_changed && initial_configure_sent {
-                    layer.0.surface.send_configure();
+                    layer.0.surface.send_pending_configure();
                 }
 
                 layer_state(layer).location = location;
             }
 
-            slog::trace!(self.logger, "Remaining zone {:?}", zone);
+            trace!("Remaining zone {:?}", zone);
             self.zone = zone;
         }
     }
@@ -596,6 +628,31 @@ impl LayerSurface {
         for (popup, _) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
             send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+        }
+    }
+
+    /// Sends the dmabuf feedback to all the subsurfaces in this window that requested it
+    ///
+    /// See [`send_dmabuf_feedback_surface_tree`] for more information
+    pub fn send_dmabuf_feedback<'a, P, F>(
+        &self,
+        output: &Output,
+        primary_scan_out_output: P,
+        select_dmabuf_feedback: F,
+    ) where
+        P: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
+        F: Fn(&wl_surface::WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy,
+    {
+        let surface = self.0.surface.wl_surface();
+        send_dmabuf_feedback_surface_tree(surface, output, primary_scan_out_output, select_dmabuf_feedback);
+        for (popup, _) in PopupManager::popups_for_surface(surface) {
+            let surface = popup.wl_surface();
+            send_dmabuf_feedback_surface_tree(
+                surface,
+                output,
+                primary_scan_out_output,
+                select_dmabuf_feedback,
+            );
         }
     }
 

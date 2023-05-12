@@ -1,6 +1,5 @@
 use std::{ffi::OsString, os::unix::io::AsRawFd, sync::Arc};
 
-use slog::Logger;
 use smithay::{
     desktop::{Space, Window, WindowSurfaceType},
     input::{pointer::PointerHandle, Seat, SeatState},
@@ -14,8 +13,12 @@ use smithay::{
     },
     utils::{Logical, Point},
     wayland::{
-        compositor::CompositorState, data_device::DataDeviceState, output::OutputManagerState,
-        shell::xdg::XdgShellState, shm::ShmState, socket::ListeningSocketSource,
+        compositor::{CompositorClientState, CompositorState},
+        data_device::DataDeviceState,
+        output::OutputManagerState,
+        shell::xdg::XdgShellState,
+        shm::ShmState,
+        socket::ListeningSocketSource,
     },
 };
 
@@ -27,7 +30,6 @@ pub struct Smallvil {
 
     pub space: Space<Window>,
     pub loop_signal: LoopSignal,
-    pub log: slog::Logger,
 
     // Smithay State
     pub compositor_state: CompositorState,
@@ -41,21 +43,21 @@ pub struct Smallvil {
 }
 
 impl Smallvil {
-    pub fn new(event_loop: &mut EventLoop<CalloopData>, display: &mut Display<Self>, log: Logger) -> Self {
+    pub fn new(event_loop: &mut EventLoop<CalloopData>, display: &mut Display<Self>) -> Self {
         let start_time = std::time::Instant::now();
 
         let dh = display.handle();
 
-        let compositor_state = CompositorState::new::<Self, _>(&dh, log.clone());
-        let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone());
-        let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
+        let compositor_state = CompositorState::new::<Self>(&dh);
+        let xdg_shell_state = XdgShellState::new::<Self>(&dh);
+        let shm_state = ShmState::new::<Self>(&dh, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
-        let data_device_state = DataDeviceState::new::<Self, _>(&dh, log.clone());
+        let data_device_state = DataDeviceState::new::<Self>(&dh);
 
         // A seat is a group of keyboards, pointer and touch devices.
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
-        let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "winit", log.clone());
+        let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "winit");
 
         // Notify clients that we have a keyboard, for the sake of the example we assume that keyboard is always present.
         // You may want to track keyboard hot-plug in real compositor.
@@ -69,9 +71,9 @@ impl Smallvil {
         //
         // Windows get a position and stacking order through mapping.
         // Outputs become views of a part of the Space and can be rendered via Space::render_output.
-        let space = Space::new(log.clone());
+        let space = Space::default();
 
-        let socket_name = Self::init_wayland_listener(display, event_loop, log.clone());
+        let socket_name = Self::init_wayland_listener(display, event_loop);
 
         // Get the loop signal, used to stop the event loop
         let loop_signal = event_loop.get_signal();
@@ -83,7 +85,6 @@ impl Smallvil {
             loop_signal,
             socket_name,
 
-            log,
             compositor_state,
             xdg_shell_state,
             shm_state,
@@ -97,10 +98,9 @@ impl Smallvil {
     fn init_wayland_listener(
         display: &mut Display<Smallvil>,
         event_loop: &mut EventLoop<CalloopData>,
-        log: slog::Logger,
     ) -> OsString {
         // Creates a new listening socket, automatically choosing the next available `wayland` socket name.
-        let listening_socket = ListeningSocketSource::new_auto(log).unwrap();
+        let listening_socket = ListeningSocketSource::new_auto().unwrap();
 
         // Get the name of the listening socket.
         // Clients will connect to this socket.
@@ -117,7 +117,7 @@ impl Smallvil {
                 state
                     .display
                     .handle()
-                    .insert_client(client_stream, Arc::new(ClientState))
+                    .insert_client(client_stream, Arc::new(ClientState::default()))
                     .unwrap();
             })
             .expect("Failed to init the wayland event source.");
@@ -153,7 +153,11 @@ impl Smallvil {
     }
 }
 
-pub struct ClientState;
+#[derive(Default)]
+pub struct ClientState {
+    pub compositor_state: CompositorClientState,
+}
+
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}

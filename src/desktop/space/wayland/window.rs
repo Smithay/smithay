@@ -59,12 +59,7 @@ impl SpaceElement for Window {
             (),
             |_, _, _| TraversalAction::DoChildren(()),
             |wl_surface, _, _| {
-                output_leave(
-                    output,
-                    &mut surface_list,
-                    wl_surface,
-                    &crate::slog_or_fallback(None),
-                );
+                output_leave(output, &mut surface_list, wl_surface);
             },
             |_, _, _| true,
         );
@@ -74,12 +69,7 @@ impl SpaceElement for Window {
                 (),
                 |_, _, _| TraversalAction::DoChildren(()),
                 |wl_surface, _, _| {
-                    output_leave(
-                        output,
-                        &mut surface_list,
-                        wl_surface,
-                        &crate::slog_or_fallback(None),
-                    );
+                    output_leave(output, &mut surface_list, wl_surface);
                 },
                 |_, _, _| true,
             );
@@ -93,16 +83,11 @@ impl SpaceElement for Window {
         let surface = self.toplevel().wl_surface();
         for (weak, overlap) in state.output_overlap.iter() {
             if let Some(output) = weak.upgrade() {
-                output_update(&output, *overlap, surface, &crate::slog_or_fallback(None));
+                output_update(&output, *overlap, surface);
                 for (popup, location) in PopupManager::popups_for_surface(surface) {
                     let mut overlap = *overlap;
                     overlap.loc -= location;
-                    output_update(
-                        &output,
-                        overlap,
-                        popup.wl_surface(),
-                        &crate::slog_or_fallback(None),
-                    );
+                    output_update(&output, overlap, popup.wl_surface());
                 }
             }
         }
@@ -130,19 +115,13 @@ where
                 let offset = (self.geometry().loc + popup_offset - popup.geometry().loc)
                     .to_physical_precise_round(scale);
 
-                render_elements_from_surface_tree(
-                    renderer,
-                    popup.wl_surface(),
-                    location + offset,
-                    scale,
-                    None,
-                )
+                render_elements_from_surface_tree(renderer, popup.wl_surface(), location + offset, scale)
             });
 
         render_elements.extend(popup_render_elements);
 
         render_elements.extend(render_elements_from_surface_tree(
-            renderer, surface, location, scale, None,
+            renderer, surface, location, scale,
         ));
 
         render_elements

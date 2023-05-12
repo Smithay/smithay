@@ -4,8 +4,12 @@ use std::{
     time::Duration,
 };
 
+use tracing::{info, warn};
+
 use smithay::{
-    backend::renderer::element::{default_primary_scanout_output_compare, RenderElementStates},
+    backend::renderer::element::{
+        default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
+    },
     delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_input_method_manager,
     delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_presentation,
     delegate_primary_selection, delegate_relative_pointer, delegate_seat, delegate_shm,
@@ -33,13 +37,14 @@ use smithay::{
     },
     utils::{Clock, Logical, Monotonic, Point},
     wayland::{
-        compositor::{get_parent, with_states, CompositorState},
+        compositor::{get_parent, with_states, CompositorClientState, CompositorState},
         data_device::{
             set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
             ServerDndGrabHandler,
         },
-        fractional_scale::{with_fractional_scale, FractionScaleHandler, FractionalScaleManagerState},
-        input_method::{InputMethodManagerState, InputMethodSeat},
+        dmabuf::DmabufFeedback,
+        fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
+        input_method::InputMethodManagerState,
         keyboard_shortcuts_inhibit::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
@@ -82,7 +87,9 @@ pub struct CalloopData<BackendData: Backend + 'static> {
 }
 
 #[derive(Debug, Default)]
-pub struct ClientState;
+pub struct ClientState {
+    pub compositor_state: CompositorClientState,
+}
 impl ClientData for ClientState {
     /// Notification that a client was initialized
     fn initialized(&self, _client_id: ClientId) {}
@@ -119,7 +126,6 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub fractional_scale_manager_state: FractionalScaleManagerState,
 
     pub dnd_icon: Option<WlSurface>,
-    pub log: slog::Logger,
 
     // input-related fields
     pub suppressed_keys: Vec<u32>,
@@ -148,7 +154,7 @@ impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
-    fn send_selection(&mut self, _mime_type: String, _fd: OwnedFd) {
+    fn send_selection(&mut self, _mime_type: String, _fd: OwnedFd, _seat: Seat<Self>) {
         unreachable!("Anvil doesn't do server-side selections");
     }
 }
@@ -161,7 +167,7 @@ impl<BackendData: Backend> ClientDndGrabHandler for AnvilState<BackendData> {
     }
 }
 impl<BackendData: Backend> ServerDndGrabHandler for AnvilState<BackendData> {
-    fn send(&mut self, _mime_type: String, _fd: OwnedFd) {
+    fn send(&mut self, _mime_type: String, _fd: OwnedFd, _seat: Seat<Self>) {
         unreachable!("Anvil doesn't do server-side grabs");
     }
 }
@@ -272,68 +278,50 @@ delegate_xdg_activation!(@<BackendData: Backend + 'static> AnvilState<BackendDat
 impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
+        // Set the default to client side
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ClientSide);
         });
-        toplevel.send_configure();
     }
     fn request_mode(&mut self, toplevel: ToplevelSurface, mode: DecorationMode) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
-        if let Some(w) = self
-            .space
-            .elements()
-            .find(|window| matches!(window, WindowElement::Wayland(w) if w.toplevel() == &toplevel))
-        {
-            toplevel.with_pending_state(|state| {
-                state.decoration_mode = Some(match mode {
-                    DecorationMode::ServerSide => {
-                        w.set_ssd(true);
-                        Mode::ServerSide
-                    }
-                    _ => {
-                        w.set_ssd(false);
-                        Mode::ClientSide
-                    }
-                });
-            });
 
-            let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
-                states
-                    .data_map
-                    .get::<XdgToplevelSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .initial_configure_sent
+        toplevel.with_pending_state(|state| {
+            state.decoration_mode = Some(match mode {
+                DecorationMode::ServerSide => Mode::ServerSide,
+                _ => Mode::ClientSide,
             });
-            if initial_configure_sent {
-                toplevel.send_configure();
-            }
+        });
+
+        let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
+            states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .initial_configure_sent
+        });
+        if initial_configure_sent {
+            toplevel.send_pending_configure();
         }
     }
     fn unset_mode(&mut self, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
-        if let Some(w) = self
-            .space
-            .elements()
-            .find(|window| matches!(window, WindowElement::Wayland(w) if w.toplevel() == &toplevel))
-        {
-            w.set_ssd(false);
-            toplevel.with_pending_state(|state| {
-                state.decoration_mode = Some(Mode::ClientSide);
-            });
-            let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
-                states
-                    .data_map
-                    .get::<XdgToplevelSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .initial_configure_sent
-            });
-            if initial_configure_sent {
-                toplevel.send_configure();
-            }
+        toplevel.with_pending_state(|state| {
+            state.decoration_mode = Some(Mode::ClientSide);
+        });
+        let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
+            states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .initial_configure_sent
+        });
+        if initial_configure_sent {
+            toplevel.send_pending_configure();
         }
     }
 }
@@ -343,7 +331,7 @@ delegate_xdg_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 delegate_layer_shell!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 delegate_presentation!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData: Backend> FractionScaleHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
     fn new_fractional_scale(
         &mut self,
         surface: smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
@@ -396,27 +384,26 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         display: &mut Display<AnvilState<BackendData>>,
         handle: LoopHandle<'static, CalloopData<BackendData>>,
         backend_data: BackendData,
-        log: slog::Logger,
         listen_on_socket: bool,
     ) -> AnvilState<BackendData> {
         let clock = Clock::new().expect("failed to initialize clock");
 
         // init wayland clients
         let socket_name = if listen_on_socket {
-            let source = ListeningSocketSource::new_auto(log.clone()).unwrap();
+            let source = ListeningSocketSource::new_auto().unwrap();
             let socket_name = source.socket_name().to_string_lossy().into_owned();
             handle
                 .insert_source(source, |client_stream, _, data| {
                     if let Err(err) = data
                         .display
                         .handle()
-                        .insert_client(client_stream, Arc::new(ClientState))
+                        .insert_client(client_stream, Arc::new(ClientState::default()))
                     {
-                        slog::warn!(data.state.log, "Error adding wayland client: {}", err);
+                        warn!("Error adding wayland client: {}", err);
                     };
                 })
                 .expect("Failed to init wayland socket source");
-            info!(log, "Listening on wayland socket"; "name" => socket_name.clone());
+            info!(name = socket_name, "Listening on wayland socket");
             Some(socket_name)
         } else {
             None
@@ -437,19 +424,19 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         // init globals
         let dh = display.handle();
-        let compositor_state = CompositorState::new::<Self, _>(&dh, log.clone());
-        let data_device_state = DataDeviceState::new::<Self, _>(&dh, log.clone());
-        let layer_shell_state = WlrLayerShellState::new::<Self, _>(&dh, log.clone());
+        let compositor_state = CompositorState::new::<Self>(&dh);
+        let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
-        let primary_selection_state = PrimarySelectionState::new::<Self, _>(&dh, log.clone());
+        let primary_selection_state = PrimarySelectionState::new::<Self>(&dh);
         let mut seat_state = SeatState::new();
-        let shm_state = ShmState::new::<Self, _>(&dh, vec![], log.clone());
-        let viewporter_state = ViewporterState::new::<Self, _>(&dh, log.clone());
-        let xdg_activation_state = XdgActivationState::new::<Self, _>(&dh, log.clone());
-        let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&dh, log.clone());
-        let xdg_shell_state = XdgShellState::new::<Self, _>(&dh, log.clone());
+        let shm_state = ShmState::new::<Self>(&dh, vec![]);
+        let viewporter_state = ViewporterState::new::<Self>(&dh);
+        let xdg_activation_state = XdgActivationState::new::<Self>(&dh);
+        let xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
+        let xdg_shell_state = XdgShellState::new::<Self>(&dh);
         let presentation_state = PresentationState::new::<Self>(&dh, clock.id() as u32);
-        let fractional_scale_manager_state = FractionalScaleManagerState::new::<Self, _>(&dh, log.clone());
+        let fractional_scale_manager_state = FractionalScaleManagerState::new::<Self>(&dh);
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self>(&dh);
         VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
@@ -460,7 +447,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         // init input
         let seat_name = backend_data.seat_name();
-        let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone(), log.clone());
+        let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone());
 
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
         seat.add_pointer();
@@ -473,15 +460,12 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             *cursor_status2.lock().unwrap() = new_status;
         });
 
-        seat.add_input_method(XkbConfig::default(), 200, 25);
-
         let dh = display.handle();
         let keyboard_shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
 
         #[cfg(feature = "xwayland")]
         let xwayland = {
-            let (xwayland, channel) = XWayland::new(log.clone(), &dh);
-            let log2 = log.clone();
+            let (xwayland, channel) = XWayland::new(&dh);
             let ret = handle.insert_source(channel, move |event, _, data| match event {
                 XWaylandEvent::Ready {
                     connection,
@@ -489,15 +473,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                     client_fd: _,
                     display,
                 } => {
-                    let mut wm = X11Wm::start_wm(
-                        data.state.handle.clone(),
-                        dh.clone(),
-                        connection,
-                        client,
-                        log2.clone(),
-                    )
-                    .expect("Failed to attach X11 Window Manager");
-                    let cursor = Cursor::load(&log2);
+                    let mut wm = X11Wm::start_wm(data.state.handle.clone(), dh.clone(), connection, client)
+                        .expect("Failed to attach X11 Window Manager");
+                    let cursor = Cursor::load();
                     let image = cursor.get_image(1, Duration::ZERO);
                     wm.set_cursor(
                         &image.pixels_rgba,
@@ -513,10 +491,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 }
             });
             if let Err(e) = ret {
-                error!(
-                    log,
-                    "Failed to insert the XWaylandSource into the event loop: {}", e
-                );
+                tracing::error!("Failed to insert the XWaylandSource into the event loop: {}", e);
             }
             xwayland
         };
@@ -527,8 +502,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             socket_name,
             running: Arc::new(AtomicBool::new(true)),
             handle,
-            space: Space::new(log.clone()),
-            popups: PopupManager::new(log.clone()),
+            space: Space::default(),
+            popups: PopupManager::default(),
             compositor_state,
             data_device_state,
             layer_shell_state,
@@ -544,7 +519,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             presentation_state,
             fractional_scale_manager_state,
             dnd_icon: None,
-            log,
             suppressed_keys: Vec::new(),
             pointer_location: (0.0, 0.0).into(),
             cursor_status,
@@ -564,10 +538,17 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct SurfaceDmabufFeedback<'a> {
+    pub render_feedback: &'a DmabufFeedback,
+    pub scanout_feedback: &'a DmabufFeedback,
+}
+
 pub fn post_repaint(
     output: &Output,
     render_element_states: &RenderElementStates,
     space: &Space<WindowElement>,
+    dmabuf_feedback: Option<SurfaceDmabufFeedback<'_>>,
     time: impl Into<Duration>,
 ) {
     let time = time.into();
@@ -592,6 +573,16 @@ pub fn post_repaint(
 
         if space.outputs_for_element(window).contains(output) {
             window.send_frame(output, time, throttle, surface_primary_scanout_output);
+            if let Some(dmabuf_feedback) = dmabuf_feedback {
+                window.send_dmabuf_feedback(output, surface_primary_scanout_output, |surface, _| {
+                    select_dmabuf_feedback(
+                        surface,
+                        render_element_states,
+                        dmabuf_feedback.render_feedback,
+                        dmabuf_feedback.scanout_feedback,
+                    )
+                });
+            }
         }
     });
     let map = smithay::desktop::layer_map_for_output(output);
@@ -613,6 +604,16 @@ pub fn post_repaint(
         });
 
         layer_surface.send_frame(output, time, throttle, surface_primary_scanout_output);
+        if let Some(dmabuf_feedback) = dmabuf_feedback {
+            layer_surface.send_dmabuf_feedback(output, surface_primary_scanout_output, |surface, _| {
+                select_dmabuf_feedback(
+                    surface,
+                    render_element_states,
+                    dmabuf_feedback.render_feedback,
+                    dmabuf_feedback.scanout_feedback,
+                )
+            });
+        }
     }
 }
 

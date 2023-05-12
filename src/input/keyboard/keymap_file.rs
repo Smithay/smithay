@@ -1,5 +1,5 @@
 use crate::utils::sealed_file::SealedFile;
-use slog::error;
+use tracing::error;
 use xkbcommon::xkb::{Keymap, KEYMAP_FORMAT_TEXT_V1};
 
 use std::ffi::CString;
@@ -14,17 +14,13 @@ pub struct KeymapFile {
 
 impl KeymapFile {
     /// Turn the keymap into a string using KEYMAP_FORMAT_TEXT_V1, create a sealed file for it, and store the string
-    pub fn new<L>(keymap: &Keymap, logger: L) -> Self
-    where
-        L: Into<Option<slog::Logger>>,
-    {
-        let logger = crate::slog_or_fallback(logger);
+    pub fn new(keymap: &Keymap) -> Self {
         let name = CString::new("smithay-keymap").unwrap();
         let keymap = keymap.get_as_string(KEYMAP_FORMAT_TEXT_V1);
-        let sealed = SealedFile::new(name, CString::new(keymap.as_str()).unwrap());
+        let sealed = SealedFile::with_content(name, CString::new(keymap.as_str()).unwrap());
 
         if let Err(err) = sealed.as_ref() {
-            error!(logger, "Error when creating sealed keymap file: {}", err);
+            error!("Error when creating sealed keymap file: {}", err);
         }
 
         Self {
@@ -34,16 +30,12 @@ impl KeymapFile {
     }
 
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) fn change_keymap<L>(&mut self, keymap: String, logger: L)
-    where
-        L: Into<Option<slog::Logger>>,
-    {
-        let logger = crate::slog_or_fallback(logger);
+    pub(crate) fn change_keymap(&mut self, keymap: String) {
         let name = CString::new("smithay-keymap-file").unwrap();
-        let sealed = SealedFile::new(name, CString::new(keymap.clone()).unwrap());
+        let sealed = SealedFile::with_content(name, CString::new(keymap.clone()).unwrap());
 
         if let Err(err) = sealed.as_ref() {
-            error!(logger, "Error when creating sealed keymap file: {}", err);
+            error!("Error when creating sealed keymap file: {}", err);
         }
 
         self.sealed = sealed.ok();

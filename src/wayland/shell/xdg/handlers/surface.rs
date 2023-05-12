@@ -2,6 +2,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use indexmap::IndexSet;
+
 use crate::utils::alive_tracker::{AliveTracker, IsAlive};
 use crate::wayland::shell::xdg::{XdgPopupSurfaceData, XdgToplevelSurfaceData};
 use crate::{
@@ -19,10 +21,10 @@ use wayland_protocols::{
     },
 };
 
-use wayland_server::{protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource};
+use wayland_server::{protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource, Weak};
 
 use super::{
-    InnerState, PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
+    PopupConfigure, SurfaceCachedState, ToplevelConfigure, XdgPopupSurfaceRoleAttributes,
     XdgPositionerUserData, XdgShellHandler, XdgToplevelSurfaceRoleAttributes,
 };
 
@@ -36,6 +38,7 @@ pub use popup::{make_popup_handle, send_popup_configure};
 /// User data of XdgSurface
 #[derive(Debug)]
 pub struct XdgSurfaceUserData {
+    pub(crate) known_surfaces: Arc<Mutex<IndexSet<Weak<xdg_surface::XdgSurface>>>>,
     pub(crate) wl_surface: wl_surface::WlSurface,
     pub(crate) wm_base: xdg_wm_base::XdgWmBase,
     pub(crate) has_active_role: AtomicBool,
@@ -60,6 +63,11 @@ where
     ) {
         match request {
             xdg_surface::Request::Destroy => {
+                data.known_surfaces
+                    .lock()
+                    .unwrap()
+                    .remove(&xdg_surface.downgrade());
+
                 if !data.wl_surface.alive() {
                     // the wl_surface is destroyed, this means the client is not
                     // trying to change the role but it's a cleanup (possibly a
@@ -91,18 +99,36 @@ where
 
                 data.has_active_role.store(true, Ordering::Release);
 
-                compositor::with_states(surface, |states| {
-                    states.data_map.insert_if_missing_threadsafe(|| {
+                let initial = compositor::with_states(surface, |states| {
+                    let initial = states.data_map.insert_if_missing_threadsafe(|| {
                         Mutex::new(XdgToplevelSurfaceRoleAttributes::default())
-                    })
+                    });
+
+                    // Initialize the toplevel capabilities from the default capabilities
+                    let default_capabilities = &state.xdg_shell_state().default_capabilities;
+                    let current_capabilties = &mut states
+                        .data_map
+                        .get::<Mutex<XdgToplevelSurfaceRoleAttributes>>()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .current
+                        .capabilities;
+                    current_capabilties.replace(default_capabilities.capabilities.iter().copied());
+
+                    initial
                 });
 
-                compositor::add_pre_commit_hook(surface, super::super::ToplevelSurface::commit_hook);
+                if initial {
+                    compositor::add_pre_commit_hook::<D, _>(
+                        surface,
+                        super::super::ToplevelSurface::commit_hook,
+                    );
+                }
 
                 let toplevel = data_init.init(
                     id,
                     XdgShellSurfaceUserData {
-                        shell_data: state.xdg_shell_state().inner.clone(),
                         wl_surface: data.wl_surface.clone(),
                         xdg_surface: xdg_surface.clone(),
                         wm_base: data.wm_base.clone(),
@@ -113,9 +139,6 @@ where
 
                 state
                     .xdg_shell_state()
-                    .inner
-                    .lock()
-                    .unwrap()
                     .known_toplevels
                     .push(make_toplevel_handle(&toplevel));
 
@@ -160,8 +183,8 @@ where
 
                 data.has_active_role.store(true, Ordering::Release);
 
-                compositor::with_states(surface, |states| {
-                    states.data_map.insert_if_missing_threadsafe(|| {
+                let initial = compositor::with_states(surface, |states| {
+                    let inserted = states.data_map.insert_if_missing_threadsafe(|| {
                         Mutex::new(XdgPopupSurfaceRoleAttributes::default())
                     });
                     *states
@@ -170,14 +193,16 @@ where
                         .unwrap()
                         .lock()
                         .unwrap() = attributes;
+                    inserted
                 });
 
-                compositor::add_pre_commit_hook(surface, super::super::PopupSurface::commit_hook);
+                if initial {
+                    compositor::add_pre_commit_hook::<D, _>(surface, super::super::PopupSurface::commit_hook);
+                }
 
                 let popup = data_init.init(
                     id,
                     XdgShellSurfaceUserData {
-                        shell_data: state.xdg_shell_state().inner.clone(),
                         wl_surface: data.wl_surface.clone(),
                         xdg_surface: xdg_surface.clone(),
                         wm_base: data.wm_base.clone(),
@@ -188,9 +213,6 @@ where
 
                 state
                     .xdg_shell_state()
-                    .inner
-                    .lock()
-                    .unwrap()
                     .known_popups
                     .push(make_popup_handle(&popup));
 
@@ -303,7 +325,6 @@ where
 /// User data of xdg toplevel surface
 #[derive(Debug)]
 pub struct XdgShellSurfaceUserData {
-    pub(crate) shell_data: Arc<Mutex<InnerState>>,
     pub(crate) wl_surface: wl_surface::WlSurface,
     pub(crate) wm_base: xdg_wm_base::XdgWmBase,
     pub(crate) xdg_surface: xdg_surface::XdgSurface,

@@ -7,7 +7,7 @@ use std::{
 use smithay::{
     backend::{
         input::ButtonState,
-        renderer::{damage::DamageTrackedRenderer, element::AsRenderElements},
+        renderer::{damage::OutputDamageTracker, element::AsRenderElements},
     },
     input::pointer::{
         ButtonEvent, CursorImageAttributes, CursorImageStatus, MotionEvent, RelativeMotionEvent,
@@ -50,19 +50,11 @@ pub fn run(channel: Channel<WlcsEvent>) {
     let mut display = Display::new().expect("Failed to init display");
     let dh = display.handle();
 
-    let logger = slog::Logger::root(slog::Discard, slog::o!());
-
     let test_state = TestState {
         clients: HashMap::new(),
     };
 
-    let mut state = AnvilState::init(
-        &mut display,
-        event_loop.handle(),
-        test_state,
-        logger.clone(),
-        false,
-    );
+    let mut state = AnvilState::init(&mut display, event_loop.handle(), test_state, false);
 
     event_loop
         .handle()
@@ -87,14 +79,13 @@ pub fn run(channel: Channel<WlcsEvent>) {
             make: "Smithay".into(),
             model: "WLCS".into(),
         },
-        logger.clone(),
     );
     let _global = output.create_global::<AnvilState<TestState>>(&dh);
     output.change_current_state(Some(mode), None, None, Some((0, 0).into()));
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
 
-    let mut damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
+    let mut damage_tracker = OutputDamageTracker::from_output(&output);
     let mut pointer_element = PointerElement::default();
 
     while state.running.load(Ordering::SeqCst) {
@@ -105,7 +96,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
             let mut elements: Vec<CustomRenderElements<_>> = Vec::new();
 
             // draw input method square if any
-            let input_method = state.seat.input_method().unwrap();
+            let input_method = state.seat.input_method();
             let rectangle = input_method.coordinates();
             let position = Point::from((
                 rectangle.loc.x + rectangle.size.w,
@@ -164,12 +155,11 @@ pub fn run(channel: Channel<WlcsEvent>) {
             let _ = render_output(
                 &output,
                 &state.space,
-                &elements,
+                elements,
                 &mut renderer,
-                &mut damage_tracked_renderer,
+                &mut damage_tracker,
                 0,
                 false,
-                &logger,
             );
         }
 
@@ -265,7 +255,7 @@ fn handle_event(
                 state,
                 under,
                 &RelativeMotionEvent {
-                    delta: delta,
+                    delta,
                     delta_unaccel: delta,
                     utime,
                 },

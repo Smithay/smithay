@@ -10,15 +10,17 @@ use crate::{
         viewporter,
     },
 };
+use std::sync::Arc;
 use std::{
     any::TypeId,
     cell::RefCell,
     collections::{hash_map::Entry, HashMap},
 };
+use tracing::{error, instrument, warn};
 
 use wayland_server::protocol::{wl_buffer::WlBuffer, wl_surface::WlSurface};
 
-use super::{CommitCounter, DamageTracker, SurfaceView};
+use super::{CommitCounter, DamageBag, SurfaceView};
 
 /// Type stored in WlSurface states data_map
 ///
@@ -37,14 +39,57 @@ pub struct RendererSurfaceState {
     pub(crate) buffer_transform: Transform,
     pub(crate) buffer_delta: Option<Point<i32, Logical>>,
     pub(crate) buffer_has_alpha: Option<bool>,
-    pub(crate) buffer: Option<WlBuffer>,
-    pub(crate) damage: DamageTracker<i32, BufferCoord>,
+    pub(crate) buffer: Option<Buffer>,
+    pub(crate) damage: DamageBag<i32, BufferCoord>,
     pub(crate) renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
     pub(crate) opaque_regions: Vec<Rectangle<i32, Logical>>,
 
     accumulated_buffer_delta: Point<i32, Logical>,
+}
+
+#[derive(Debug)]
+struct InnerBuffer(WlBuffer);
+
+impl Drop for InnerBuffer {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+
+/// A wayland buffer
+#[derive(Debug, Clone)]
+pub struct Buffer {
+    inner: Arc<InnerBuffer>,
+}
+
+impl From<WlBuffer> for Buffer {
+    fn from(buffer: WlBuffer) -> Self {
+        Buffer {
+            inner: Arc::new(InnerBuffer(buffer)),
+        }
+    }
+}
+
+impl std::ops::Deref for Buffer {
+    type Target = WlBuffer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner.0
+    }
+}
+
+impl PartialEq<WlBuffer> for Buffer {
+    fn eq(&self, other: &WlBuffer) -> bool {
+        self.inner.0 == *other
+    }
+}
+
+impl PartialEq<WlBuffer> for &Buffer {
+    fn eq(&self, other: &WlBuffer) -> bool {
+        self.inner.0 == *other
+    }
 }
 
 impl RendererSurfaceState {
@@ -63,17 +108,17 @@ impl RendererSurfaceState {
                 if self.buffer_dimensions.is_none() {
                     // This results in us rendering nothing (can happen e.g. for failed egl-buffer-calls),
                     // but it is better than crashing the compositor for a bad buffer
+                    self.reset();
                     return;
                 }
                 self.buffer_has_alpha = buffer_has_alpha(&buffer);
                 self.buffer_scale = attrs.buffer_scale;
                 self.buffer_transform = attrs.buffer_transform.into();
 
-                if let Some(old_buffer) = std::mem::replace(&mut self.buffer, Some(buffer)) {
-                    if &old_buffer != self.buffer.as_ref().unwrap() {
-                        old_buffer.release();
-                    }
+                if !self.buffer.as_ref().map_or(false, |b| b == buffer) {
+                    self.buffer = Some(Buffer::from(buffer));
                 }
+
                 self.textures.clear();
 
                 let surface_size = self
@@ -102,7 +147,7 @@ impl RendererSurfaceState {
                     })
                     .collect::<Vec<Rectangle<i32, BufferCoord>>>();
                 buffer_damage.dedup();
-                self.damage.add(&buffer_damage);
+                self.damage.add(buffer_damage);
 
                 self.opaque_regions.clear();
                 if !self.buffer_has_alpha.unwrap_or(true) {
@@ -135,7 +180,7 @@ impl RendererSurfaceState {
                                     RectangleKind::Add => {
                                         let added_regions = new_regions
                                             .iter()
-                                            .filter(|region| region.overlaps(rect))
+                                            .filter(|region| region.overlaps_or_touches(rect))
                                             .fold(vec![rect], |new_regions, existing_region| {
                                                 new_regions
                                                     .into_iter()
@@ -161,15 +206,7 @@ impl RendererSurfaceState {
             }
             Some(BufferAssignment::Removed) => {
                 // remove the contents
-                self.buffer_dimensions = None;
-                if let Some(buffer) = self.buffer.take() {
-                    buffer.release();
-                };
-                self.textures.clear();
-                self.damage.reset();
-                self.surface_view = None;
-                self.buffer_has_alpha = None;
-                self.opaque_regions.clear();
+                self.reset();
             }
             None => {}
         }
@@ -218,7 +255,7 @@ impl RendererSurfaceState {
 
     /// Get the attached buffer.
     /// Can be used to check if surface is mapped
-    pub fn wl_buffer(&self) -> Option<&WlBuffer> {
+    pub fn buffer(&self) -> Option<&Buffer> {
         self.buffer.as_ref()
     }
 
@@ -261,6 +298,16 @@ impl RendererSurfaceState {
     pub fn view(&self) -> Option<SurfaceView> {
         self.surface_view
     }
+
+    fn reset(&mut self) {
+        self.buffer_dimensions = None;
+        self.buffer = None;
+        self.textures.clear();
+        self.damage.reset();
+        self.surface_view = None;
+        self.buffer_has_alpha = None;
+        self.opaque_regions.clear();
+    }
 }
 
 /// Handler to let smithay take over buffer management.
@@ -272,7 +319,7 @@ impl RendererSurfaceState {
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
-pub fn on_commit_buffer_handler(surface: &WlSurface) {
+pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
     if !is_sync_subsurface(surface) {
         let mut new_surfaces = Vec::new();
         with_surface_tree_upward(
@@ -296,13 +343,17 @@ pub fn on_commit_buffer_handler(surface: &WlSurface) {
             |_, _, _| true,
         );
         for surf in &new_surfaces {
-            add_destruction_hook(surf, |data| {
-                if let Some(buffer) = data
+            add_destruction_hook(surf, |_: &mut D, data| {
+                // We reset the state on destruction before the user_data is dropped
+                // to prevent a deadlock which can happen if we try to send a buffer
+                // release during drop. This also enables us to free resources earlier
+                // like the stored textures
+                if let Some(mut state) = data
                     .data_map
                     .get::<RendererSurfaceStateUserData>()
-                    .and_then(|s| s.borrow_mut().buffer.take())
+                    .map(|s| s.borrow_mut())
                 {
-                    buffer.release();
+                    state.reset();
                 }
             });
         }
@@ -377,11 +428,8 @@ where
 /// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn import_surface<R>(
-    renderer: &mut R,
-    states: &SurfaceData,
-    log: &slog::Logger,
-) -> Result<(), <R as Renderer>::Error>
+#[instrument(level = "trace", skip_all)]
+pub fn import_surface<R>(renderer: &mut R, states: &SurfaceData) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
@@ -401,11 +449,11 @@ where
                         data.renderer_seen.insert(texture_id, data.current_commit());
                     }
                     Some(Err(err)) => {
-                        slog::warn!(log, "Error loading buffer: {}", err);
+                        warn!("Error loading buffer: {}", err);
                         return Err(err);
                     }
                     None => {
-                        slog::error!(log, "Unknown buffer format for: {:?}", buffer);
+                        error!("Unknown buffer format for: {:?}", buffer);
                     }
                 }
             }
@@ -422,11 +470,8 @@ where
 /// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
-pub fn import_surface_tree<R>(
-    renderer: &mut R,
-    surface: &WlSurface,
-    log: &slog::Logger,
-) -> Result<(), <R as Renderer>::Error>
+#[instrument(level = "trace", skip_all)]
+pub fn import_surface_tree<R>(renderer: &mut R, surface: &WlSurface) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: 'static,
@@ -442,7 +487,7 @@ where
         |_surface, states, location| {
             let mut location = *location;
             // Import a new buffer if necessary
-            if let Err(err) = import_surface(renderer, states, log) {
+            if let Err(err) = import_surface(renderer, states) {
                 result = Err(err);
             }
 
@@ -479,12 +524,12 @@ where
 /// Note: This element will render nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
+#[instrument(level = "trace", skip(frame, scale, elements))]
 pub fn draw_render_elements<'a, R, S, E>(
     frame: &mut <R as Renderer>::Frame<'a>,
     scale: S,
     elements: &[E],
     damage: &[Rectangle<i32, Physical>],
-    log: &slog::Logger,
 ) -> Result<Option<Vec<Rectangle<i32, Physical>>>, <R as Renderer>::Error>
 where
     R: Renderer,
@@ -543,8 +588,9 @@ where
         .into_iter()
         .fold(Vec::new(), |new_damage, mut rect| {
             // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                new_damage.into_iter().partition(|other| other.overlaps(rect));
+            let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
+                .into_iter()
+                .partition(|other| other.overlaps_or_touches(rect));
 
             for overlap in overlapping {
                 rect = rect.merge(overlap);
@@ -573,7 +619,7 @@ where
             continue;
         }
 
-        element.draw(frame, element.src(), element_geometry, &element_damage, log)?;
+        element.draw(frame, element.src(), element_geometry, &element_damage)?;
     }
 
     Ok(Some(render_damage))

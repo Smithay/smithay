@@ -16,7 +16,7 @@
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //!
 //! // Create the new KdeDecorationState.
-//! let state = KdeDecorationState::new::<State, _>(&display.handle(), Mode::Server, None);
+//! let state = KdeDecorationState::new::<State>(&display.handle(), Mode::Server);
 //!
 //! // Insert KdeDecorationState into your compositor state.
 //! // …
@@ -31,7 +31,6 @@
 //! delegate_kde_decoration!(State);
 //! ```
 
-use slog::Logger;
 use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::{
     Mode, OrgKdeKwinServerDecoration,
 };
@@ -80,30 +79,25 @@ pub trait KdeDecorationHandler {
 #[derive(Debug)]
 pub struct KdeDecorationState {
     pub(crate) default_mode: DefaultMode,
-    pub(crate) logger: Logger,
 
     kde_decoration_manager: GlobalId,
 }
 
 impl KdeDecorationState {
     /// Create a new KDE server decoration global.
-    pub fn new<D, L>(display: &DisplayHandle, default_mode: DefaultMode, logger: L) -> Self
+    pub fn new<D>(display: &DisplayHandle, default_mode: DefaultMode) -> Self
     where
         D: GlobalDispatch<OrgKdeKwinServerDecorationManager, ()>
             + Dispatch<OrgKdeKwinServerDecorationManager, ()>
             + Dispatch<OrgKdeKwinServerDecoration, WlSurface>
             + KdeDecorationHandler
             + 'static,
-        L: Into<Option<Logger>>,
     {
         let kde_decoration_manager = display.create_global::<D, OrgKdeKwinServerDecorationManager, _>(1, ());
-        let logger =
-            crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "kde_decoration_handler"));
 
         Self {
             kde_decoration_manager,
             default_mode,
-            logger,
         }
     }
 

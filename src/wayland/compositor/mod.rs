@@ -31,14 +31,15 @@
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
 //! use smithay::delegate_compositor;
-//! use smithay::wayland::compositor::{CompositorState, CompositorHandler};
+//! use smithay::wayland::compositor::{CompositorState, CompositorClientState, CompositorHandler};
 //!
 //! # struct State { compositor_state: CompositorState }
+//! # struct ClientState { compositor_state: CompositorClientState }
+//! # impl wayland_server::backend::ClientData for ClientState {}
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! // Create the compositor state
-//! let compositor_state = CompositorState::new::<State, _>(
+//! let compositor_state = CompositorState::new::<State>(
 //!     &display.handle(),
-//!     None // We don't add a logger in this example
 //! );
 //!
 //! // insert the CompositorState into your state
@@ -48,6 +49,10 @@
 //! impl CompositorHandler for State {
 //!    fn compositor_state(&mut self) -> &mut CompositorState {
 //!        &mut self.compositor_state
+//!    }
+//!
+//!    fn client_compositor_state<'a>(&self, client: &'a wayland_server::Client) -> &'a CompositorClientState {
+//!        &client.get_data::<ClientState>().unwrap().compositor_state    
 //!    }
 //!
 //!    fn commit(&mut self, surface: &wayland_server::protocol::wl_surface::WlSurface) {
@@ -105,8 +110,12 @@ mod handlers;
 mod transaction;
 mod tree;
 
+use std::{any::Any, sync::Mutex};
+
 pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
+use self::transaction::TransactionQueue;
+pub use self::transaction::{Blocker, BlockerState};
 use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
@@ -114,7 +123,7 @@ use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
-use wayland_server::{DisplayHandle, GlobalDispatch, Resource};
+use wayland_server::{Client, DisplayHandle, GlobalDispatch, Resource};
 
 /// The role of a subsurface surface.
 pub const SUBSURFACE_ROLE: &str = "subsurface";
@@ -404,14 +413,48 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 /// Register a pre-commit hook to be invoked on surface commit
 ///
 /// It'll be invoked on surface commit, *before* the new state is merged into the current state.
-pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
+pub fn add_pre_commit_hook<D, F>(surface: &WlSurface, hook: F)
+where
+    F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
+    D: 'static,
+{
+    let (user_state_type_id, user_state_type) = surface.data::<SurfaceUserData>().unwrap().user_state_type;
+    assert_eq!(
+        std::any::TypeId::of::<D>(),
+        user_state_type_id,
+        "D has to equal D used in CompositorState::new<D>(), {} != {}",
+        std::any::type_name::<D>(),
+        user_state_type,
+    );
+
+    let hook = move |state: &mut dyn Any, dh: &DisplayHandle, surface: &WlSurface| {
+        let state = state.downcast_mut::<D>().unwrap();
+        hook(state, dh, surface);
+    };
     PrivateSurfaceData::add_pre_commit_hook(surface, hook)
 }
 
 /// Register a post-commit hook to be invoked on surface commit
 ///
 /// It'll be invoked on surface commit, *after* the new state is merged into the current state.
-pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
+pub fn add_post_commit_hook<D, F>(surface: &WlSurface, hook: F)
+where
+    F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
+    D: 'static,
+{
+    let (user_state_type_id, user_state_type) = surface.data::<SurfaceUserData>().unwrap().user_state_type;
+    assert_eq!(
+        std::any::TypeId::of::<D>(),
+        user_state_type_id,
+        "D has to equal D used in CompositorState::new<D>(), {} != {}",
+        std::any::type_name::<D>(),
+        user_state_type,
+    );
+
+    let hook = move |state: &mut dyn Any, dh: &DisplayHandle, surface: &WlSurface| {
+        let state = state.downcast_mut::<D>().unwrap();
+        hook(state, dh, surface);
+    };
     PrivateSurfaceData::add_post_commit_hook(surface, hook)
 }
 
@@ -419,16 +462,69 @@ pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSur
 ///
 /// It'll be invoked when the surface is destroyed (either explicitly by the client or on
 /// client disconnect).
-pub fn add_destruction_hook(surface: &WlSurface, hook: fn(&SurfaceData)) {
+///
+/// D generic is the compositor state, same as used in `CompositorState::new<D>()`
+pub fn add_destruction_hook<D, F>(surface: &WlSurface, hook: F)
+where
+    F: Fn(&mut D, &SurfaceData) + Send + 'static,
+    D: 'static,
+{
+    let (user_state_type_id, user_state_type) = surface.data::<SurfaceUserData>().unwrap().user_state_type;
+    assert_eq!(
+        std::any::TypeId::of::<D>(),
+        user_state_type_id,
+        "D has to equal D used in CompositorState::new<D>(), {} != {}",
+        std::any::type_name::<D>(),
+        user_state_type,
+    );
+
+    let hook = move |state: &mut dyn Any, data: &SurfaceData| {
+        let state = state.downcast_mut::<D>().unwrap();
+        hook(state, data);
+    };
     PrivateSurfaceData::add_destruction_hook(surface, hook)
+}
+
+/// Adds a blocker for the currently queued up state changes of the given surface.
+///
+/// Blockers will delay the pending state to be applied on the next commit until
+/// all of them return the state `Released`. Any blocker returning `Cancelled` will
+/// discard all changes.
+///
+/// The module will only evaluate blocker states on commit. If a blocker
+/// becomes ready later, a call to [`CompositorClientState::blocker_cleared`] is necessary
+/// to trigger a re-evaluation.
+pub fn add_blocker(surface: &WlSurface, blocker: impl Blocker + Send + 'static) {
+    PrivateSurfaceData::add_blocker(surface, blocker)
 }
 
 /// Handler trait for compositor
 pub trait CompositorHandler {
     /// [CompositorState] getter
     fn compositor_state(&mut self) -> &mut CompositorState;
+    /// [CompositorClientState] getter
+    ///
+    /// The compositor implementation needs some state to be client specific.
+    /// Downstream is expected to store this inside its `ClientData` implementation(s)
+    /// to ensure automatic cleanup of the state, when the client disconnects.
+    fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState;
+
+    /// New surface handler.
+    ///
+    /// This handler can be used to setup hooks (see [`add_pre_commit_hook`]/[`add_post_commit_hook`]/[`add_destruction_hook`]),
+    /// but not much else. The surface has no role or attached data at this point and cannot be rendered.
+    fn new_surface(&mut self, surface: &WlSurface) {
+        let _ = surface;
+    }
 
     /// Surface commit handler
+    ///
+    /// This is called when any changed state from a commit actually becomes visible.
+    /// That might be some time after the actual commit has taken place, if the
+    /// state changes are delayed by an added blocker (see [`add_blocker`]).
+    ///
+    /// If you need to handle a commit as soon as it occurs, you might want to consider
+    /// using a pre-commit hook (see [`add_pre_commit_hook`]).
     fn commit(&mut self, surface: &WlSurface);
 
     /// The surface was destroyed.
@@ -440,10 +536,32 @@ pub trait CompositorHandler {
 /// State of a compositor
 #[derive(Debug)]
 pub struct CompositorState {
-    log: slog::Logger,
     compositor: GlobalId,
     subcompositor: GlobalId,
     surfaces: Vec<WlSurface>,
+}
+
+/// Per-client state of a compositor
+#[derive(Debug, Default)]
+pub struct CompositorClientState {
+    queue: Mutex<Option<TransactionQueue>>,
+}
+
+impl CompositorClientState {
+    /// To be called, when a previously added blocker (via [`add_blocker`])
+    /// got `Released` or `Cancelled` from being `Pending` previously for any
+    /// surface belonging to this client.
+    pub fn blocker_cleared<D: CompositorHandler + 'static>(&self, state: &mut D, dh: &DisplayHandle) {
+        let transactions = if let Some(queue) = self.queue.lock().unwrap().as_mut() {
+            queue.take_ready()
+        } else {
+            Vec::new()
+        };
+
+        for transaction in transactions {
+            transaction.apply(dh, state)
+        }
+    }
 }
 
 #[doc(hidden)]
@@ -453,18 +571,14 @@ impl CompositorState {
     ///
     /// It returns the two global handles, in case you wish to remove these globals from
     /// the event loop in the future.
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> Self
+    pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
     {
-        let log = crate::slog_or_fallback(logger).new(slog::o!("smithay_module" => "compositor_handler"));
-
         let compositor = display.create_global::<D, WlCompositor, ()>(5, ());
         let subcompositor = display.create_global::<D, WlSubcompositor, ()>(1, ());
 
         CompositorState {
-            log,
             compositor,
             subcompositor,
             surfaces: Vec::new(),

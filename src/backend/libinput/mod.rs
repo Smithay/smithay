@@ -23,7 +23,7 @@ use std::{
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
-use slog::{info, o, trace};
+use tracing::{debug_span, info, trace};
 
 mod tablet;
 
@@ -34,23 +34,24 @@ mod tablet;
 #[derive(Debug)]
 pub struct LibinputInputBackend {
     context: libinput::Libinput,
-    logger: ::slog::Logger,
     token: Option<Token>,
+    span: tracing::Span,
 }
 
 impl LibinputInputBackend {
     /// Initialize a new [`LibinputInputBackend`] from a given already initialized
     /// [libinput context](libinput::Libinput).
-    pub fn new<L>(context: libinput::Libinput, logger: L) -> Self
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_libinput"));
-        info!(log, "Initializing a libinput backend");
+    pub fn new(context: libinput::Libinput) -> Self {
+        let span = debug_span!("backend_libinput");
+        let _guard = span.enter();
+
+        info!("Initializing a libinput backend");
+
+        drop(_guard);
         LibinputInputBackend {
             context,
-            logger: log,
             token: None,
+            span,
         }
     }
 
@@ -635,6 +636,7 @@ impl EventSource for LibinputInputBackend {
         F: FnMut(Self::Event, &mut ()) -> Self::Ret,
     {
         if Some(token) == self.token {
+            let _guard = self.span.enter();
             self.context.dispatch()?;
 
             for event in &mut self.context {
@@ -643,19 +645,19 @@ impl EventSource for LibinputInputBackend {
                         event::DeviceEvent::Added(device_added_event) => {
                             let added = event::EventTrait::device(&device_added_event);
 
-                            info!(self.logger, "New device {:?}", added.sysname(),);
+                            info!("New device {:?}", added.sysname(),);
 
                             callback(InputEvent::DeviceAdded { device: added }, &mut ());
                         }
                         event::DeviceEvent::Removed(device_removed_event) => {
                             let removed = event::EventTrait::device(&device_removed_event);
 
-                            info!(self.logger, "Removed device {:?}", removed.sysname(),);
+                            info!("Removed device {:?}", removed.sysname(),);
 
                             callback(InputEvent::DeviceRemoved { device: removed }, &mut ());
                         }
                         _ => {
-                            trace!(self.logger, "Unknown libinput device event");
+                            trace!("Unknown libinput device event");
                         }
                     },
                     libinput::Event::Touch(touch_event) => match touch_event {
@@ -675,7 +677,7 @@ impl EventSource for LibinputInputBackend {
                             callback(InputEvent::TouchFrame { event: frame_event }, &mut ());
                         }
                         _ => {
-                            trace!(self.logger, "Unknown libinput touch event");
+                            trace!("Unknown libinput touch event");
                         }
                     },
                     libinput::Event::Keyboard(keyboard_event) => match keyboard_event {
@@ -683,7 +685,7 @@ impl EventSource for LibinputInputBackend {
                             callback(InputEvent::Keyboard { event: key_event }, &mut ());
                         }
                         _ => {
-                            trace!(self.logger, "Unknown libinput keyboard event");
+                            trace!("Unknown libinput keyboard event");
                         }
                     },
                     libinput::Event::Pointer(pointer_event) => match pointer_event {
@@ -705,7 +707,7 @@ impl EventSource for LibinputInputBackend {
                             callback(InputEvent::PointerButton { event: button_event }, &mut ());
                         }
                         _ => {
-                            trace!(self.logger, "Unknown libinput pointer event");
+                            trace!("Unknown libinput pointer event");
                         }
                     },
                     libinput::Event::Gesture(gesture_event) => match gesture_event {
@@ -736,7 +738,7 @@ impl EventSource for LibinputInputBackend {
                             callback(InputEvent::GestureHoldEnd { event }, &mut ());
                         }
                         _ => {
-                            trace!(self.logger, "Unknown libinput gesture event");
+                            trace!("Unknown libinput gesture event");
                         }
                     },
                     libinput::Event::Tablet(tablet_event) => match tablet_event {
@@ -753,7 +755,7 @@ impl EventSource for LibinputInputBackend {
                             callback(InputEvent::TabletToolButton { event }, &mut ());
                         }
                         _ => {
-                            trace!(self.logger, "Unknown libinput tablet event");
+                            trace!("Unknown libinput tablet event");
                         }
                     },
                     _ => {} //FIXME: What to do with the rest.

@@ -24,7 +24,6 @@
 //! let seat = seat_state.new_wl_seat(
 //!     &display_handle,          // the display
 //!     "seat-0",                 // the name of the seat, will be advertized to clients
-//!     None                      // insert a logger here
 //! );
 //!
 //! // implement the required traits
@@ -126,7 +125,9 @@ impl<D: SeatHandler> Inner<D> {
     pub(crate) fn send_all_caps(&self) {
         let capabilities = self.compute_caps();
         for seat in &self.known_seats {
-            seat.capabilities(capabilities);
+            if let Ok(seat) = seat.upgrade() {
+                seat.capabilities(capabilities);
+            }
         }
     }
 }
@@ -155,15 +156,14 @@ impl<D: SeatHandler + 'static> SeatState<D> {
     /// You are provided with the state token to retrieve it (allowing
     /// you to add or remove capabilities from it), and the global handle,
     /// in case you want to remove it.
-    pub fn new_wl_seat<N, L>(&mut self, display: &DisplayHandle, name: N, logger: L) -> Seat<D>
+    pub fn new_wl_seat<N>(&mut self, display: &DisplayHandle, name: N) -> Seat<D>
     where
         D: GlobalDispatch<WlSeat, SeatGlobalData<D>> + SeatHandler + 'static,
         <D as SeatHandler>::PointerFocus: WaylandFocus,
         <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         N: Into<String>,
-        L: Into<Option<::slog::Logger>>,
     {
-        let Seat { arc } = self.new_seat(name, logger);
+        let Seat { arc } = self.new_seat(name);
 
         let global_id = display.create_global::<D, _, _>(7, SeatGlobalData { arc: arc.clone() });
         arc.inner.lock().unwrap().global = Some(global_id);
@@ -194,8 +194,8 @@ impl<D: SeatHandler + 'static> Seat<D> {
             .unwrap()
             .known_seats
             .iter()
+            .filter_map(|w| w.upgrade().ok())
             .filter(|s| s.client().map_or(false, |c| &c == client))
-            .cloned()
             .collect()
     }
 
@@ -414,6 +414,6 @@ where
 
         let mut inner = global_data.arc.inner.lock().unwrap();
         resource.capabilities(inner.compute_caps());
-        inner.known_seats.push(resource);
+        inner.known_seats.push(resource.downgrade());
     }
 }

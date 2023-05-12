@@ -5,28 +5,28 @@ use std::{
     time::Duration,
 };
 
-use slog::Logger;
-#[cfg(feature = "debug")]
-use smithay::backend::renderer::ImportMem;
 #[cfg(feature = "egl")]
+use smithay::backend::renderer::ImportEgl;
+#[cfg(feature = "debug")]
+use smithay::{
+    backend::{allocator::Fourcc, renderer::ImportMem},
+    reexports::winit::platform::unix::WindowExtUnix,
+};
+
 use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
-        renderer::{ImportDma, ImportEgl},
-    },
-    delegate_dmabuf,
-    wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError},
-};
-use smithay::{
-    backend::{
+        egl::EGLDevice,
         renderer::{
-            damage::{DamageTrackedRenderer, DamageTrackedRendererError},
+            damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::AsRenderElements,
-            gles2::{Gles2Renderer, Gles2Texture},
+            gles::{GlesRenderer, GlesTexture},
+            ImportDma, ImportMemWl,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
         SwapBuffersError,
     },
+    delegate_dmabuf,
     input::pointer::{CursorImageAttributes, CursorImageStatus},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
@@ -35,8 +35,15 @@ use smithay::{
         wayland_server::{protocol::wl_surface, Display},
     },
     utils::{IsAlive, Point, Scale, Transform},
-    wayland::{compositor, input_method::InputMethodSeat},
+    wayland::{
+        compositor,
+        dmabuf::{
+            DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportError,
+        },
+        input_method::InputMethodSeat,
+    },
 };
+use tracing::{error, info, warn};
 
 use crate::state::{post_repaint, take_presentation_feedback, AnvilState, Backend, CalloopData};
 use crate::{drawing::*, render::*};
@@ -44,19 +51,17 @@ use crate::{drawing::*, render::*};
 pub const OUTPUT_NAME: &str = "winit";
 
 pub struct WinitData {
-    backend: WinitGraphicsBackend<Gles2Renderer>,
-    damage_tracked_renderer: DamageTrackedRenderer,
-    #[cfg(feature = "egl")]
-    dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
+    backend: WinitGraphicsBackend<GlesRenderer>,
+    damage_tracker: OutputDamageTracker,
+    dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
     full_redraw: u8,
     #[cfg(feature = "debug")]
     pub fps: fps_ticker::Fps,
 }
 
-#[cfg(feature = "egl")]
 impl DmabufHandler for AnvilState<WinitData> {
     fn dmabuf_state(&mut self) -> &mut DmabufState {
-        &mut self.backend_data.dmabuf_state.as_mut().unwrap().0
+        &mut self.backend_data.dmabuf_state.0
     }
 
     fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
@@ -68,7 +73,6 @@ impl DmabufHandler for AnvilState<WinitData> {
             .map_err(|_| ImportError::Failed)
     }
 }
-#[cfg(feature = "egl")]
 delegate_dmabuf!(AnvilState<WinitData>);
 
 impl Backend for WinitData {
@@ -81,15 +85,15 @@ impl Backend for WinitData {
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
 }
 
-pub fn run_winit(log: Logger) {
+pub fn run_winit() {
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
-    let (mut backend, mut winit) = match winit::init::<Gles2Renderer, _>(log.clone()) {
+    let (mut backend, mut winit) = match winit::init::<GlesRenderer>() {
         Ok(ret) => ret,
         Err(err) => {
-            slog::crit!(log, "Failed to initialize Winit backend: {}", err);
+            error!("Failed to initialize Winit backend: {}", err);
             return;
         }
     };
@@ -107,7 +111,6 @@ pub fn run_winit(log: Logger) {
             make: "Smithay".into(),
             model: "Winit".into(),
         },
-        log.clone(),
     );
     let _global = output.create_global::<AnvilState<WinitData>>(&display.handle());
     output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
@@ -123,6 +126,7 @@ pub fn run_winit(log: Logger) {
         .renderer()
         .import_memory(
             &fps_image.to_rgba8(),
+            Fourcc::Abgr8888,
             (fps_image.width() as i32, fps_image.height() as i32).into(),
             false,
         )
@@ -130,35 +134,65 @@ pub fn run_winit(log: Logger) {
     #[cfg(feature = "debug")]
     let mut fps_element = FpsElement::new(fps_texture);
 
-    let data = {
-        #[cfg(feature = "egl")]
-        let dmabuf_state = if backend.renderer().bind_wl_display(&display.handle()).is_ok() {
-            info!(log, "EGL hardware-acceleration enabled");
-            let dmabuf_formats = backend.renderer().dmabuf_formats().cloned().collect::<Vec<_>>();
-            let mut state = DmabufState::new();
-            let global = state.create_global::<AnvilState<WinitData>, _>(
-                &display.handle(),
-                dmabuf_formats,
-                log.clone(),
-            );
-            Some((state, global))
-        } else {
-            None
-        };
+    let render_node = EGLDevice::device_for_display(backend.renderer().egl_context().display())
+        .and_then(|device| device.try_get_render_node());
 
-        let damage_tracked_renderer = DamageTrackedRenderer::from_output(&output);
+    let dmabuf_default_feedback = match render_node {
+        Ok(Some(node)) => {
+            let dmabuf_formats = backend.renderer().dmabuf_formats().collect::<Vec<_>>();
+            let dmabuf_default_feedback = DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
+                .build()
+                .unwrap();
+            Some(dmabuf_default_feedback)
+        }
+        Ok(None) => {
+            warn!("failed to query render node, dmabuf will use v3");
+            None
+        }
+        Err(err) => {
+            warn!(?err, "failed to egl device for display, dmabuf will use v3");
+            None
+        }
+    };
+
+    // if we failed to build dmabuf feedback we fall back to dmabuf v3
+    // Note: egl on Mesa requires either v4 or wl_drm (initialized with bind_wl_display)
+    let dmabuf_state = if let Some(default_feedback) = dmabuf_default_feedback {
+        let mut dmabuf_state = DmabufState::new();
+        let dmabuf_global = dmabuf_state.create_global_with_default_feedback::<AnvilState<WinitData>>(
+            &display.handle(),
+            &default_feedback,
+        );
+        (dmabuf_state, dmabuf_global, Some(default_feedback))
+    } else {
+        let dmabuf_formats = backend.renderer().dmabuf_formats().collect::<Vec<_>>();
+        let mut dmabuf_state = DmabufState::new();
+        let dmabuf_global =
+            dmabuf_state.create_global::<AnvilState<WinitData>>(&display.handle(), dmabuf_formats);
+        (dmabuf_state, dmabuf_global, None)
+    };
+
+    #[cfg(feature = "egl")]
+    if backend.renderer().bind_wl_display(&display.handle()).is_ok() {
+        info!("EGL hardware-acceleration enabled");
+    };
+
+    let data = {
+        let damage_tracker = OutputDamageTracker::from_output(&output);
 
         WinitData {
             backend,
-            damage_tracked_renderer,
-            #[cfg(feature = "egl")]
+            damage_tracker,
             dmabuf_state,
             full_redraw: 0,
             #[cfg(feature = "debug")]
             fps: fps_ticker::Fps::default(),
         }
     };
-    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, log.clone(), true);
+    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, true);
+    state
+        .shm_state
+        .update_formats(state.backend_data.backend.renderer().shm_formats());
     state.space.map_output(&output, (0, 0));
 
     #[cfg(feature = "xwayland")]
@@ -166,14 +200,15 @@ pub fn run_winit(log: Logger) {
         state.handle.clone(),
         None,
         std::iter::empty::<(OsString, OsString)>(),
+        true,
         |_| {},
     ) {
-        error!(log, "Failed to start XWayland: {}", e);
+        error!("Failed to start XWayland: {}", e);
     }
 
-    info!(log, "Initialization completed, starting the main loop.");
+    info!("Initialization completed, starting the main loop.");
 
-    let mut pointer_element = PointerElement::<Gles2Texture>::default();
+    let mut pointer_element = PointerElement::<GlesTexture>::default();
 
     while state.running.load(Ordering::SeqCst) {
         if winit
@@ -228,10 +263,10 @@ pub fn run_winit(log: Logger) {
             let full_redraw = &mut state.backend_data.full_redraw;
             *full_redraw = full_redraw.saturating_sub(1);
             let space = &mut state.space;
-            let damage_tracked_renderer = &mut state.backend_data.damage_tracked_renderer;
+            let damage_tracker = &mut state.backend_data.damage_tracker;
             let show_window_preview = state.show_window_preview;
 
-            let input_method = state.seat.input_method().unwrap();
+            let input_method = state.seat.input_method();
             let dnd_icon = state.dnd_icon.as_ref();
 
             let scale = Scale::from(output.current_scale().fractional_scale());
@@ -251,7 +286,19 @@ pub fn run_winit(log: Logger) {
             let cursor_pos = state.pointer_location - cursor_hotspot.to_f64();
             let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
+            #[cfg(feature = "debug")]
+            let mut renderdoc = state.renderdoc.as_mut();
             let render_res = backend.bind().and_then(|_| {
+                #[cfg(feature = "debug")]
+                if let Some(renderdoc) = renderdoc.as_mut() {
+                    renderdoc.start_frame_capture(
+                        backend.renderer().egl_context().get_context_handle(),
+                        backend
+                            .window()
+                            .wayland_surface()
+                            .unwrap_or_else(std::ptr::null_mut),
+                    );
+                }
                 let age = if *full_redraw > 0 {
                     0
                 } else {
@@ -260,7 +307,7 @@ pub fn run_winit(log: Logger) {
 
                 let renderer = backend.renderer();
 
-                let mut elements = Vec::<CustomRenderElements<Gles2Renderer>>::new();
+                let mut elements = Vec::<CustomRenderElements<GlesRenderer>>::new();
 
                 elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale));
 
@@ -271,7 +318,7 @@ pub fn run_winit(log: Logger) {
                     rectangle.loc.y + rectangle.size.h,
                 ));
                 input_method.with_surface(|surface| {
-                    elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                    elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
                         &smithay::desktop::space::SurfaceTree::from_surface(surface),
                         renderer,
                         position.to_physical_precise_round(scale),
@@ -282,7 +329,7 @@ pub fn run_winit(log: Logger) {
                 // draw the dnd icon if any
                 if let Some(surface) = dnd_icon {
                     if surface.alive() {
-                        elements.extend(AsRenderElements::<Gles2Renderer>::render_elements(
+                        elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
                             &smithay::desktop::space::SurfaceTree::from_surface(surface),
                             renderer,
                             cursor_pos_scaled,
@@ -297,15 +344,14 @@ pub fn run_winit(log: Logger) {
                 render_output(
                     &output,
                     space,
-                    &elements,
+                    elements,
                     renderer,
-                    damage_tracked_renderer,
+                    damage_tracker,
                     age,
                     show_window_preview,
-                    &log,
                 )
                 .map_err(|err| match err {
-                    DamageTrackedRendererError::Rendering(err) => err.into(),
+                    OutputDamageTrackerError::Rendering(err) => err.into(),
                     _ => unreachable!(),
                 })
             });
@@ -315,14 +361,26 @@ pub fn run_winit(log: Logger) {
                     let has_rendered = damage.is_some();
                     if let Some(damage) = damage {
                         if let Err(err) = backend.submit(Some(&*damage)) {
-                            warn!(log, "Failed to submit buffer: {}", err);
+                            warn!("Failed to submit buffer: {}", err);
                         }
                     }
+
+                    #[cfg(feature = "debug")]
+                    if let Some(renderdoc) = renderdoc.as_mut() {
+                        renderdoc.end_frame_capture(
+                            backend.renderer().egl_context().get_context_handle(),
+                            backend
+                                .window()
+                                .wayland_surface()
+                                .unwrap_or_else(std::ptr::null_mut),
+                        );
+                    }
+
                     backend.window().set_cursor_visible(cursor_visible);
 
                     // Send frame events so that client start drawing their next frame
                     let time = state.clock.now();
-                    post_repaint(&output, &states, &state.space, time);
+                    post_repaint(&output, &states, &state.space, None, time);
 
                     if has_rendered {
                         let mut output_presentation_feedback =
@@ -339,10 +397,21 @@ pub fn run_winit(log: Logger) {
                     }
                 }
                 Err(SwapBuffersError::ContextLost(err)) => {
-                    error!(log, "Critical Rendering Error: {}", err);
+                    #[cfg(feature = "debug")]
+                    if let Some(renderdoc) = renderdoc.as_mut() {
+                        renderdoc.discard_frame_capture(
+                            backend.renderer().egl_context().get_context_handle(),
+                            backend
+                                .window()
+                                .wayland_surface()
+                                .unwrap_or_else(std::ptr::null_mut),
+                        );
+                    }
+
+                    error!("Critical Rendering Error: {}", err);
                     state.running.store(false, Ordering::SeqCst);
                 }
-                Err(err) => warn!(log, "Rendering error: {}", err),
+                Err(err) => warn!("Rendering error: {}", err),
             }
         }
 

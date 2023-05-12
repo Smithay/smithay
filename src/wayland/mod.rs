@@ -47,9 +47,11 @@
 
 pub mod buffer;
 pub mod compositor;
+pub mod content_type;
 pub mod data_device;
 pub mod dmabuf;
 pub mod fractional_scale;
+pub mod idle_inhibit;
 pub mod input_method;
 pub mod keyboard_shortcuts_inhibit;
 pub mod output;

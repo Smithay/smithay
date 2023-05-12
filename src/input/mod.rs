@@ -34,7 +34,6 @@
 //! // create the seat
 //! let seat = seat_state.new_seat(
 //!     "seat-0",  // the name of the seat, will be advertized to clients
-//!     None       // insert a logger here
 //! );
 //!
 //! # #[derive(Debug, Clone, PartialEq)]
@@ -103,6 +102,8 @@ use std::{
     hash::Hash,
     sync::{Arc, Mutex},
 };
+
+use tracing::{info_span, instrument};
 
 use self::keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardTarget};
 use self::pointer::{CursorImageStatus, PointerHandle, PointerTarget};
@@ -188,7 +189,7 @@ pub(crate) struct Inner<D: SeatHandler> {
     #[cfg(feature = "wayland_frontend")]
     pub(crate) global: Option<wayland_server::backend::GlobalId>,
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) known_seats: Vec<wayland_server::protocol::wl_seat::WlSeat>,
+    pub(crate) known_seats: Vec<wayland_server::Weak<wayland_server::protocol::wl_seat::WlSeat>>,
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
@@ -226,8 +227,8 @@ pub(crate) struct SeatRc<D: SeatHandler> {
     #[allow(dead_code)]
     pub(crate) name: String,
     pub(crate) inner: Mutex<Inner<D>>,
+    span: tracing::Span,
     user_data_map: UserDataMap,
-    log: ::slog::Logger,
 }
 
 impl<D: SeatHandler> fmt::Debug for SeatRc<D>
@@ -240,7 +241,6 @@ where
             .field("name", &self.name)
             .field("inner", &self.inner)
             .field("user_data_map", &self.user_data_map)
-            .field("log", &self.log)
             .finish()
     }
 }
@@ -266,15 +266,12 @@ impl<D: SeatHandler> SeatState<D> {
     }
 
     /// Create a new seat
-    pub fn new_seat<N, L>(&mut self, name: N, logger: L) -> Seat<D>
+    pub fn new_seat<N>(&mut self, name: N) -> Seat<D>
     where
         N: Into<String>,
-        L: Into<Option<::slog::Logger>>,
     {
         let name = name.into();
-
-        let log = crate::slog_or_fallback(logger);
-        let log = log.new(slog::o!("smithay_module" => "seat_handler", "seat_name" => name.clone()));
+        let span = info_span!("input_seat", name);
 
         let arc = Arc::new(SeatRc {
             name,
@@ -289,8 +286,8 @@ impl<D: SeatHandler> SeatState<D> {
                 #[cfg(feature = "wayland_frontend")]
                 known_seats: Vec::new(),
             }),
+            span,
             user_data_map: UserDataMap::new(),
-            log,
         });
         self.seats.push(Seat { arc: arc.clone() });
 
@@ -363,6 +360,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # let mut seat: Seat<State> = unimplemented!();
     /// let pointer_handle = seat.add_pointer();
     /// ```
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub fn add_pointer(&mut self) -> PointerHandle<D> {
         let mut inner = self.arc.inner.lock().unwrap();
         let pointer = PointerHandle::new();
@@ -387,6 +385,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// Remove the pointer capability from this seat
     ///
     /// Clients will be appropriately notified.
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub fn remove_pointer(&mut self) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.pointer.is_some() {
@@ -470,6 +469,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     ///     )
     ///     .expect("Failed to initialize the keyboard");
     /// ```
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub fn add_keyboard(
         &mut self,
         xkb_config: keyboard::XkbConfig<'_>,
@@ -477,8 +477,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
         repeat_rate: i32,
     ) -> Result<KeyboardHandle<D>, KeyboardError> {
         let mut inner = self.arc.inner.lock().unwrap();
-        let keyboard =
-            self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate, &self.arc.log)?;
+        let keyboard = self::keyboard::KeyboardHandle::new(xkb_config, repeat_delay, repeat_rate)?;
         if inner.keyboard.is_some() {
             // there is already a keyboard, remove it and notify the clients
             // of the change
@@ -500,6 +499,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// Remove the keyboard capability from this seat
     ///
     /// Clients will be appropriately notified.
+    #[instrument(parent = &self.arc.span, skip(self))]
     pub fn remove_keyboard(&mut self) {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.keyboard.is_some() {

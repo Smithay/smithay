@@ -61,10 +61,12 @@ use wayland_server::{
     Client, DisplayHandle,
 };
 
-use slog::{error, info, o};
+use tracing::{error, info, instrument};
 
 use super::x11_sockets::{prepare_x11_sockets, X11Lock};
 use crate::utils::user_data::UserDataMap;
+#[cfg(feature = "wayland_frontend")]
+use crate::wayland::compositor::CompositorClientState;
 
 /// The XWayland handle
 #[derive(Debug)]
@@ -112,18 +114,13 @@ impl XWayland {
     ///
     /// This function returns both the [`XWayland`] handle and an [`XWaylandSource`] that needs to be inserted
     /// into the [`calloop`] event loop, producing the Xwayland startup and shutdown events.
-    pub fn new<L>(logger: L, dh: &DisplayHandle) -> (XWayland, XWaylandSource)
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_fallback(logger);
+    pub fn new(dh: &DisplayHandle) -> (XWayland, XWaylandSource) {
         // We don't expect to ever have more than 2 messages in flight, if XWayland got ready and then died right away
         let (sender, channel) = sync_channel(2);
         let inner = Arc::new(Mutex::new(Inner {
             instance: None,
             sender,
             dh: dh.clone(),
-            log: log.new(o!("smithay_module" => "XWayland")),
         }));
         (XWayland { inner }, XWaylandSource { channel })
     }
@@ -135,6 +132,8 @@ impl XWayland {
     /// - `display` - if provided only the given display number will be tested.
     ///     If you wish smithay to choose a display for you, pass `None`.
     /// - `envs` - Allows additionally environment variables for the xwayland executable to be set
+    /// - `open_abstract_socket` - Open an abstract socket as well as filesystem sockets (only on
+    ///    Linux)
     /// - `user_data` - Allows mutating the `XWaylandClientData::user_data`-map before the client
     ///    is added to the wayland display. Useful for initializing state for global filters.
     ///
@@ -154,6 +153,7 @@ impl XWayland {
         loop_handle: LoopHandle<'_, D>,
         display: impl Into<Option<u32>>,
         envs: I,
+        open_abstract_socket: bool,
         user_data: F,
     ) -> io::Result<u32>
     where
@@ -163,7 +163,15 @@ impl XWayland {
         F: FnOnce(&UserDataMap),
     {
         let dh = self.inner.lock().unwrap().dh.clone();
-        launch(&self.inner, loop_handle, dh, display.into(), envs, user_data)
+        launch(
+            &self.inner,
+            loop_handle,
+            dh,
+            display.into(),
+            envs,
+            open_abstract_socket,
+            user_data,
+        )
     }
 
     /// Shutdown XWayland
@@ -196,13 +204,15 @@ struct Inner {
     sender: SyncSender<XWaylandEvent>,
     instance: Option<XWaylandInstance>,
     dh: DisplayHandle,
-    log: ::slog::Logger,
 }
 
 /// Inner `ClientData`-type of an xwayland client
 #[derive(Debug)]
 pub struct XWaylandClientData {
     inner: Arc<Mutex<Inner>>,
+    /// client state of the [`wayland::compsitor`] module
+    #[cfg(feature = "wayland_frontend")]
+    pub compositor_state: CompositorClientState,
     data_map: UserDataMap,
 }
 
@@ -234,6 +244,7 @@ fn launch<D, K, V, I, F>(
     mut dh: DisplayHandle,
     display: Option<u32>,
     envs: I,
+    open_abstract_socket: bool,
     user_data: F,
 ) -> io::Result<u32>
 where
@@ -247,12 +258,12 @@ where
         return Ok(instance.display_lock.display());
     }
 
-    info!(guard.log, "Starting XWayland");
+    info!("Starting XWayland");
 
     let (x_wm_x11, x_wm_me) = UnixStream::pair()?;
     let (wl_x11, wl_me) = UnixStream::pair()?;
 
-    let (lock, x_fds) = prepare_x11_sockets(guard.log.clone(), display)?;
+    let (lock, x_fds) = prepare_x11_sockets(display, open_abstract_socket)?;
     let display = lock.display();
 
     // we have now created all the required sockets
@@ -261,7 +272,7 @@ where
     let child_stdout = match spawn_xwayland(display, wl_x11, x_wm_x11, &x_fds, envs) {
         Ok(child_stdout) => child_stdout,
         Err(e) => {
-            error!(guard.log, "XWayland failed to spawn"; "err" => format!("{:?}", e));
+            error!(error = ?e, "XWayland failed to spawn");
             return Err(e);
         }
     };
@@ -286,6 +297,8 @@ where
         wl_me,
         Arc::new(XWaylandClientData {
             inner: inner.clone(),
+            #[cfg(feature = "wayland_frontend")]
+            compositor_state: CompositorClientState::default(),
             data_map,
         }),
     )?;
@@ -360,7 +373,10 @@ impl Inner {
     fn shutdown(&mut self) {
         // don't do anything if not running
         if let Some(instance) = self.instance.take() {
-            info!(self.log, "Shutting down XWayland.");
+            info!(
+                display = instance.display_lock.display(),
+                "Shutting down XWayland."
+            );
             self.dh
                 .backend_handle()
                 .kill_client(instance.wayland_client.id(), DisconnectReason::ConnectionClosed);
@@ -377,15 +393,15 @@ impl Inner {
     }
 }
 
+#[instrument(name = "xwayland", skip(inner), fields(display = inner.lock().unwrap().instance.as_ref().map(|i| i.display_lock.display())))]
 fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
     // Lots of re-borrowing to please the borrow-checker
     let mut guard = inner.lock().unwrap();
     let guard = &mut *guard;
-    info!(guard.log, "XWayland ready");
+    info!("XWayland ready");
     // instance should never be None at this point
     let Some(instance) = guard.instance.as_mut() else {
         error!(
-            guard.log,
             "XWayland crashed at startup, will not try to restart it."
         );
         return;
@@ -398,7 +414,7 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
     let success = match child_stdout.read(&mut buffer) {
         Ok(len) => len > 0 && buffer[0] == b'S',
         Err(e) => {
-            error!(guard.log, "Checking launch status failed"; "err" => format!("{:?}", e));
+            error!(error = ?e, "Checking launch status failed");
             false
         }
     };
@@ -406,7 +422,6 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
     if success {
         // signal the WM
         info!(
-            guard.log,
             "XWayland is ready on DISPLAY \":{}\", signaling the WM.",
             instance.display_lock.display()
         );
@@ -418,10 +433,7 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
             display: instance.display_lock.display(),
         });
     } else {
-        error!(
-            guard.log,
-            "XWayland crashed at startup, will not try to restart it."
-        );
+        error!("XWayland crashed at startup, will not try to restart it.");
     }
 }
 

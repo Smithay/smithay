@@ -1,16 +1,24 @@
-//! Helper for effective damage tracked rendering
+//! Helper for effective output damage tracking
 //!
 //! # Why use this implementation
 //!
-//! The [`DamageTrackedRenderer`] in combination with the [`RenderElement`] trait
+//! The [`OutputDamageTracker`] in combination with the [`RenderElement`] trait
 //! can help you to reduce resource consumption by tracking what elements have
 //! been damaged and only redraw the damaged parts on an output.
 //!
 //! It does so by keeping track of the last used [`CommitCounter`] for all provided
-//! [`RenderElement`]s and queries the element for new damage on each call to [`render_output`](DamageTrackedRenderer::render_output).
+//! [`RenderElement`]s and queries the element for new damage on each call to [`render_output`](OutputDamageTracker::render_output) or [`damage_output`](OutputDamageTracker::damage_output).
 //!
-//! You can initialize it with a static output by using [`DamageTrackedRenderer::new`] or
-//! allow it to track a specific [`Output`] with [`DamageTrackedRenderer::from_output`].
+//! Additionally the damage tracker will automatically generate damage in the following situations:
+//! - Current geometry for elements entering the output
+//! - Current and last known geometry for moved elements (includes z-index changes)
+//! - Last known geometry for elements no longer present
+//!
+//! Elements fully occluded by opaque regions as defined by elements higher in the stack are skipped.
+//! The actual action taken by the damage tracker can be inspected from the returned [`RenderElementStates`].
+//!
+//! You can initialize it with a static output by using [`OutputDamageTracker::new`] or
+//! allow it to track a specific [`Output`] with [`OutputDamageTracker::from_output`].
 //!
 //! See the [`renderer::element`](crate::backend::renderer::element) module for more information
 //! about how to use [`RenderElement`].
@@ -19,10 +27,9 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
 //! #     utils::{Buffer, Physical, Rectangle, Size},
 //! # };
-//! # use slog::Drain;
 //! #
 //! # #[derive(Clone)]
 //! # struct FakeTexture;
@@ -32,6 +39,9 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn height(&self) -> u32 {
+//! #         unimplemented!()
+//! #     }
+//! #     fn format(&self) -> Option<Fourcc> {
 //! #         unimplemented!()
 //! #     }
 //! # }
@@ -44,6 +54,14 @@
 //! #
 //! #     fn id(&self) -> usize { unimplemented!() }
 //! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn draw_solid(
+//! #         &mut self,
+//! #         _dst: Rectangle<i32, Physical>,
+//! #         _damage: &[Rectangle<i32, Physical>],
+//! #         _color: [f32; 4],
+//! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
 //! #     fn render_texture_from_to(
@@ -79,6 +97,12 @@
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
+//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
+//! #         unimplemented!()
+//! #     }
+//! #     fn debug_flags(&self) -> DebugFlags {
+//! #         unimplemented!()
+//! #     }
 //! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
 //! #     {
 //! #         unimplemented!()
@@ -89,6 +113,7 @@
 //! #     fn import_memory(
 //! #         &mut self,
 //! #         _: &[u8],
+//! #         _: Fourcc,
 //! #         _: Size<i32, Buffer>,
 //! #         _: bool,
 //! #     ) -> Result<Self::TextureId, Self::Error> {
@@ -102,11 +127,17 @@
 //! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
+//! #     fn mem_formats(&self) -> Box<dyn Iterator<Item=Fourcc>> {
+//! #         unimplemented!()
+//! #     }
 //! # }
 //! use smithay::{
-//!     backend::renderer::{
-//!         damage::DamageTrackedRenderer,
-//!         element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement}
+//!     backend::{
+//!         allocator::Fourcc,
+//!         renderer::{
+//!             damage::OutputDamageTracker,
+//!             element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement}
+//!         },
 //!     },
 //!     utils::{Point, Transform},
 //! };
@@ -116,13 +147,12 @@
 //! const HEIGHT: i32 = 10;
 //! # let mut renderer = FakeRenderer;
 //! # let buffer_age = 0;
-//! # let log = slog::Logger::root(slog::Discard.fuse(), slog::o!());
 //!
-//! // Initialize a new damage tracked renderer
-//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//! // Initialize a new damage tracker for a static output
+//! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
 //!
 //! // Initialize a buffer to render
-//! let mut memory_buffer = MemoryRenderBuffer::new((WIDTH, HEIGHT), 1, Transform::Normal, None);
+//! let mut memory_buffer = MemoryRenderBuffer::new(Fourcc::Argb8888, (WIDTH, HEIGHT), 1, Transform::Normal, None);
 //!
 //! let mut last_update = Instant::now();
 //!
@@ -144,17 +174,16 @@
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
 //!     let render_element =
-//!         MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &memory_buffer, None, None, None, None)
+//!         MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &memory_buffer, None, None, None)
 //!         .expect("Failed to upload memory to gpu");
 //!
 //!     // Render the output
-//!     damage_tracked_renderer
+//!     damage_tracker
 //!         .render_output(
 //!             &mut renderer,
 //!             buffer_age,
 //!             &[render_element],
 //!             [0.8, 0.8, 0.9, 1.0],
-//!             log.clone(),
 //!         )
 //!         .expect("failed to render the output");
 //! }
@@ -163,6 +192,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use indexmap::IndexMap;
+use tracing::{info_span, instrument, trace};
 
 use crate::{
     backend::renderer::{element::RenderElementPresentationState, Frame},
@@ -210,12 +240,12 @@ struct RendererState {
     old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
 }
 
-/// Mode for the [`DamageTrackedRenderer`]
+/// Mode for the [`OutputDamageTracker`] output
 #[derive(Debug, Clone)]
-pub enum DamageTrackedRendererMode {
-    /// Automatic mode based on a output
+pub enum OutputDamageTrackerMode {
+    /// Automatic mode based on a [`Output`]
     Auto(Output),
-    /// Static mode
+    /// Static output mode
     Static {
         /// Size of the static output
         size: Size<i32, Physical>,
@@ -231,17 +261,17 @@ pub enum DamageTrackedRendererMode {
 #[error("Output has no active mode")]
 pub struct OutputNoMode;
 
-impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for DamageTrackedRendererMode {
+impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for OutputDamageTrackerMode {
     type Error = OutputNoMode;
 
     fn try_into(self) -> Result<(Size<i32, Physical>, Scale<f64>, Transform), Self::Error> {
         match self {
-            DamageTrackedRendererMode::Auto(output) => Ok((
+            OutputDamageTrackerMode::Auto(output) => Ok((
                 output.current_mode().ok_or(OutputNoMode)?.size,
                 output.current_scale().fractional_scale().into(),
                 output.current_transform(),
             )),
-            DamageTrackedRendererMode::Static {
+            OutputDamageTrackerMode::Static {
                 size,
                 scale,
                 transform,
@@ -250,16 +280,17 @@ impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for DamageTrackedRend
     }
 }
 
-/// Damage tracked renderer for a single output
+/// Damage tracker for a single output
 #[derive(Debug)]
-pub struct DamageTrackedRenderer {
-    mode: DamageTrackedRendererMode,
+pub struct OutputDamageTracker {
+    mode: OutputDamageTrackerMode,
     last_state: RendererState,
+    span: tracing::Span,
 }
 
-/// Errors thrown by [`DamageTrackedRenderer::render_output`]
+/// Errors thrown by [`OutputDamageTracker::render_output`]
 #[derive(thiserror::Error)]
-pub enum DamageTrackedRendererError<R: Renderer> {
+pub enum Error<R: Renderer> {
     /// The provided [`Renderer`] returned an error
     #[error(transparent)]
     Rendering(R::Error),
@@ -268,66 +299,73 @@ pub enum DamageTrackedRendererError<R: Renderer> {
     OutputNoMode(#[from] OutputNoMode),
 }
 
-impl<R: Renderer> std::fmt::Debug for DamageTrackedRendererError<R> {
+impl<R: Renderer> std::fmt::Debug for Error<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DamageTrackedRendererError::Rendering(err) => std::fmt::Debug::fmt(err, f),
-            DamageTrackedRendererError::OutputNoMode(err) => std::fmt::Debug::fmt(err, f),
+            Error::Rendering(err) => std::fmt::Debug::fmt(err, f),
+            Error::OutputNoMode(err) => std::fmt::Debug::fmt(err, f),
         }
     }
 }
 
-impl DamageTrackedRenderer {
-    /// Initialize a static [`DamageTrackedRenderer`]
+impl OutputDamageTracker {
+    /// Initialize a static [`OutputDamageTracker`]
     pub fn new(
         size: impl Into<Size<i32, Physical>>,
         scale: impl Into<Scale<f64>>,
         transform: Transform,
     ) -> Self {
         Self {
-            mode: DamageTrackedRendererMode::Static {
+            mode: OutputDamageTrackerMode::Static {
                 size: size.into(),
                 scale: scale.into(),
                 transform,
             },
             last_state: Default::default(),
+            span: info_span!("renderer_damage"),
         }
     }
 
-    /// Initialize a new [`DamageTrackedRenderer`] from an [`Output`]
+    /// Initialize a new [`OutputDamageTracker`] from an [`Output`]
     ///
     /// The renderer will keep track of changes to the [`Output`]
     /// and handle size and scaling changes automatically on the
-    /// next call to [`render_output`](DamageTrackedRenderer::render_output)
+    /// next call to [`render_output`](OutputDamageTracker::render_output)
     pub fn from_output(output: &Output) -> Self {
         Self {
-            mode: DamageTrackedRendererMode::Auto(output.clone()),
+            mode: OutputDamageTrackerMode::Auto(output.clone()),
             last_state: Default::default(),
+            span: info_span!("renderer_damage", output = output.name()),
         }
     }
 
-    /// Get the [`DamageTrackedRendererMode`] of the [`DamageTrackedRenderer`]
-    pub fn mode(&self) -> &DamageTrackedRendererMode {
+    /// Get the [`OutputDamageTrackerMode`] of the [`OutputDamageTracker`]
+    pub fn mode(&self) -> &OutputDamageTrackerMode {
         &self.mode
     }
 
-    /// Render this output
+    /// Render this output with the provided [`Renderer`]
+    ///
+    /// - `elements` for this output in front-to-back order
+    #[instrument(level = "trace", parent = &self.span, skip(renderer, elements))]
     pub fn render_output<E, R>(
         &mut self,
         renderer: &mut R,
         age: usize,
         elements: &[E],
         clear_color: [f32; 4],
-        log: impl Into<Option<slog::Logger>>,
-    ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
+    ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), Error<R>>
     where
         E: RenderElement<R>,
         R: Renderer,
         <R as Renderer>::TextureId: Texture,
     {
-        let log = crate::slog_or_fallback(log);
-
         let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
+
+        // Output transform is specified in surface-rotation, so inversion gives us the
+        // render transform for the output itself.
+        let output_transform = output_transform.invert();
+
         // We have to apply to output transform to the output size so that the intersection
         // tests in damage_output_internal produces the correct results and do not crop
         // damage with the wrong size
@@ -340,7 +378,6 @@ impl DamageTrackedRenderer {
         let states = self.damage_output_internal(
             age,
             elements,
-            &log,
             output_scale,
             output_geo,
             &mut damage,
@@ -349,12 +386,11 @@ impl DamageTrackedRenderer {
         );
 
         if damage.is_empty() {
-            slog::trace!(log, "no damage, skipping rendering");
+            trace!("no damage, skipping rendering");
             return Ok((None, states));
         }
 
-        slog::trace!(
-            log,
+        trace!(
             "rendering with damage {:?} and opaque regions {:?}",
             damage,
             opaque_regions
@@ -373,7 +409,7 @@ impl DamageTrackedRenderer {
                 },
             );
 
-            slog::trace!(log, "clearing damage {:?}", clear_damage);
+            trace!("clearing damage {:?}", clear_damage);
             frame.clear(clear_color, &clear_damage)?;
 
             for (mut z_index, element) in render_elements.iter().rev().enumerate() {
@@ -410,8 +446,7 @@ impl DamageTrackedRenderer {
                     .collect::<Vec<_>>();
 
                 if element_damage.is_empty() {
-                    slog::trace!(
-                        log,
+                    trace!(
                         "skipping rendering element {:?} with geometry {:?}, no damage",
                         element_id,
                         element_geometry
@@ -419,15 +454,14 @@ impl DamageTrackedRenderer {
                     continue;
                 }
 
-                slog::trace!(
-                    log,
+                trace!(
                     "rendering element {:?} with geometry {:?} and damage {:?}",
                     element_id,
                     element_geometry,
                     element_damage,
                 );
 
-                element.draw(&mut frame, element.src(), element_geometry, &element_damage, &log)?;
+                element.draw(&mut frame, element.src(), element_geometry, &element_damage)?;
             }
 
             Result::<(), R::Error>::Ok(())
@@ -437,24 +471,24 @@ impl DamageTrackedRenderer {
             // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
             // thus clean our old states before returning
             self.last_state = Default::default();
-            return Err(DamageTrackedRendererError::Rendering(err));
+            return Err(Error::Rendering(err));
         }
 
         Ok((Some(damage), states))
     }
 
     /// Damage this output and return the damage without actually rendering the difference
+    ///
+    /// - `elements` for this output in front-to-back order
+    #[instrument(level = "trace", parent = &self.span, skip(elements))]
     pub fn damage_output<E>(
         &mut self,
         age: usize,
         elements: &[E],
-        log: impl Into<Option<slog::Logger>>,
     ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputNoMode>
     where
         E: Element,
     {
-        let log = crate::slog_or_fallback(log);
-
         let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
         // We have to apply to output transform to the output size so that the intersection
         // tests in damage_output_internal produces the correct results and do not crop
@@ -468,7 +502,6 @@ impl DamageTrackedRenderer {
         let states = self.damage_output_internal(
             age,
             elements,
-            &log,
             output_scale,
             output_geo,
             &mut damage,
@@ -488,7 +521,6 @@ impl DamageTrackedRenderer {
         &mut self,
         age: usize,
         elements: &'a [E],
-        log: &slog::Logger,
         output_scale: Scale<f64>,
         output_geo: Rectangle<i32, Physical>,
         damage: &mut Vec<Rectangle<i32, Physical>>,
@@ -598,7 +630,7 @@ impl DamageTrackedRenderer {
                         state
                             .last_instances
                             .iter()
-                            .map(|i| i.last_geometry)
+                            .filter_map(|i| i.last_geometry.intersection(output_geo))
                             .collect::<Vec<_>>(),
                         |damage, opaque_region| {
                             damage
@@ -620,9 +652,18 @@ impl DamageTrackedRenderer {
                 .map(|s| !s.instance_matches(element_geometry, z_index))
                 .unwrap_or(true)
             {
-                let mut element_damage = vec![element_geometry];
+                let mut element_damage = if let Some(damage) = element_geometry.intersection(output_geo) {
+                    vec![damage]
+                } else {
+                    vec![]
+                };
                 if let Some(state) = element_last_state {
-                    element_damage.extend(state.last_instances.iter().map(|i| i.last_geometry));
+                    element_damage.extend(
+                        state
+                            .last_instances
+                            .iter()
+                            .filter_map(|i| i.last_geometry.intersection(output_geo)),
+                    );
                 }
                 damage.extend(
                     opaque_regions
@@ -646,7 +687,7 @@ impl DamageTrackedRenderer {
             .unwrap_or(true)
         {
             // The output geometry changed, so just damage everything
-            slog::trace!(log, "Output geometry changed, damaging whole output geometry. previous geometry: {:?}, current geometry: {:?}", self.last_state.size, output_geo);
+            trace!("Output geometry changed, damaging whole output geometry. previous geometry: {:?}, current geometry: {:?}", self.last_state.size, output_geo);
             *damage = vec![output_geo];
         }
 
@@ -655,13 +696,12 @@ impl DamageTrackedRenderer {
 
         // We now add old damage states, if we have an age value
         if age > 0 && self.last_state.old_damage.len() >= age {
-            slog::trace!(log, "age of {} recent enough, using old damage", age);
+            trace!("age of {} recent enough, using old damage", age);
             // We do not need even older states anymore
             self.last_state.old_damage.truncate(age);
             damage.extend(self.last_state.old_damage.iter().flatten().copied());
         } else {
-            slog::trace!(
-                log,
+            trace!(
                 "no old damage available, re-render everything. age: {} old_damage len: {}",
                 age,
                 self.last_state.old_damage.len(),
@@ -672,7 +712,7 @@ impl DamageTrackedRenderer {
 
         // Optimize the damage for rendering
         damage.dedup();
-        damage.retain(|rect| rect.overlaps(output_geo));
+        damage.retain(|rect| rect.overlaps_or_touches(output_geo));
         damage.retain(|rect| !rect.is_empty());
         // filter damage outside of the output gep and merge overlapping rectangles
         *damage = damage
@@ -680,8 +720,9 @@ impl DamageTrackedRenderer {
             .filter_map(|rect| rect.intersection(output_geo))
             .fold(Vec::new(), |new_damage, mut rect| {
                 // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) =
-                    new_damage.into_iter().partition(|other| other.overlaps(rect));
+                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
+                    .into_iter()
+                    .partition(|other| other.overlaps_or_touches(rect));
 
                 for overlap in overlapping {
                     rect = rect.merge(overlap);
@@ -691,11 +732,11 @@ impl DamageTrackedRenderer {
             });
 
         if damage.is_empty() {
-            slog::trace!(log, "nothing damaged, exiting early");
+            trace!("nothing damaged, exiting early");
             return element_render_states;
         }
 
-        slog::trace!(log, "damage to be rendered: {:#?}", &damage);
+        trace!("damage to be rendered: {:#?}", &damage);
 
         let new_elements_state = render_elements.iter().enumerate().fold(
             IndexMap::<Id, ElementState>::with_capacity(render_elements.len()),

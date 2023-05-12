@@ -1,9 +1,15 @@
 use std::{convert::TryInto, process::Command, sync::atomic::Ordering};
 
-use crate::{focus::FocusTarget, shell::FullscreenSurface, AnvilState};
+use crate::{
+    focus::FocusTarget,
+    shell::{FullscreenSurface, WindowElement},
+    AnvilState,
+};
 
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
+#[cfg(feature = "udev")]
+use smithay::backend::renderer::DebugFlags;
 
 use smithay::{
     backend::input::{
@@ -16,13 +22,19 @@ use smithay::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     output::Scale,
-    reexports::wayland_server::{protocol::wl_pointer, DisplayHandle},
+    reexports::{
+        wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1,
+        wayland_server::{protocol::wl_pointer, DisplayHandle},
+    },
     utils::{Logical, Point, Serial, Transform, SERIAL_COUNTER as SCOUNTER},
     wayland::{
         compositor::with_states,
         input_method::InputMethodSeat,
         keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
-        shell::wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
+        shell::{
+            wlr_layer::{KeyboardInteractivity, Layer as WlrLayer, LayerSurfaceCachedState},
+            xdg::XdgToplevelSurfaceData,
+        },
     },
 };
 
@@ -31,6 +43,7 @@ use smithay::backend::input::AbsolutePositionEvent;
 
 #[cfg(any(feature = "winit", feature = "x11"))]
 use smithay::output::Output;
+use tracing::{debug, error, info};
 
 use crate::state::Backend;
 #[cfg(feature = "udev")]
@@ -49,21 +62,18 @@ use smithay::{
     },
 };
 
-#[cfg(feature = "xwayland")]
-use crate::shell::WindowElement;
-
 impl<BackendData: Backend> AnvilState<BackendData> {
     fn process_common_key_action(&mut self, action: KeyAction) {
         match action {
             KeyAction::None => (),
 
             KeyAction::Quit => {
-                info!(self.log, "Quitting.");
+                info!("Quitting.");
                 self.running.store(false, Ordering::SeqCst);
             }
 
             KeyAction::Run(cmd) => {
-                info!(self.log, "Starting program"; "cmd" => cmd.clone());
+                info!(cmd, "Starting program");
 
                 if let Err(e) = Command::new(&cmd)
                     .envs(
@@ -80,16 +90,47 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     )
                     .spawn()
                 {
-                    error!(self.log,
-                        "Failed to start program";
-                        "cmd" => cmd,
-                        "err" => format!("{:?}", e)
-                    );
+                    error!(cmd, err = %e, "Failed to start program");
                 }
             }
 
             KeyAction::TogglePreview => {
                 self.show_window_preview = !self.show_window_preview;
+            }
+
+            KeyAction::ToggleDecorations => {
+                for element in self.space.elements() {
+                    #[allow(irrefutable_let_patterns)]
+                    if let WindowElement::Wayland(window) = element {
+                        let toplevel = window.toplevel();
+                        let mode_changed = toplevel.with_pending_state(|state| {
+                            if let Some(current_mode) = state.decoration_mode {
+                                let new_mode =
+                                    if current_mode == zxdg_toplevel_decoration_v1::Mode::ClientSide {
+                                        zxdg_toplevel_decoration_v1::Mode::ServerSide
+                                    } else {
+                                        zxdg_toplevel_decoration_v1::Mode::ClientSide
+                                    };
+                                state.decoration_mode = Some(new_mode);
+                                true
+                            } else {
+                                false
+                            }
+                        });
+                        let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {
+                            states
+                                .data_map
+                                .get::<XdgToplevelSurfaceData>()
+                                .unwrap()
+                                .lock()
+                                .unwrap()
+                                .initial_configure_sent
+                        });
+                        if mode_changed && initial_configure_sent {
+                            toplevel.send_pending_configure();
+                        }
+                    }
+                }
             }
 
             _ => unreachable!(
@@ -102,9 +143,8 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     fn keyboard_key_to_action<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) -> KeyAction {
         let keycode = evt.key_code();
         let state = evt.state();
-        debug!(self.log, "key"; "keycode" => keycode, "state" => format!("{:?}", state));
+        debug!(keycode, ?state, "key");
         let serial = SCOUNTER.next_serial();
-        let log = self.log.clone();
         let time = Event::time_msec(&evt);
         let mut suppressed_keys = self.suppressed_keys.clone();
         let keyboard = self.seat.get_keyboard().unwrap();
@@ -145,10 +185,11 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             .input(self, keycode, state, serial, time, |_, modifiers, handle| {
                 let keysym = handle.modified_sym();
 
-                debug!(log, "keysym";
-                    "state" => format!("{:?}", state),
-                    "mods" => format!("{:?}", modifiers),
-                    "keysym" => ::xkbcommon::xkb::keysym_get_name(keysym)
+                debug!(
+                    ?state,
+                    mods = ?modifiers,
+                    keysym = ::xkbcommon::xkb::keysym_get_name(keysym),
+                    "keysym"
                 );
 
                 // If the key is pressed and triggered a action
@@ -209,7 +250,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     fn update_keyboard_focus(&mut self, serial: Serial) {
         let pointer = self.seat.get_pointer().unwrap();
         let keyboard = self.seat.get_keyboard().unwrap();
-        let input_method = self.seat.input_method().unwrap();
+        let input_method = self.seat.input_method();
         // change the keyboard focus unless the pointer or keyboard is grabbed
         // We test for any matching surface type here but always use the root
         // (in case of a window the toplevel) surface for the focus.
@@ -431,13 +472,16 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                 }
 
                 action => match action {
-                    KeyAction::None | KeyAction::Quit | KeyAction::Run(_) | KeyAction::TogglePreview => {
-                        self.process_common_key_action(action)
-                    }
+                    KeyAction::None
+                    | KeyAction::Quit
+                    | KeyAction::Run(_)
+                    | KeyAction::TogglePreview
+                    | KeyAction::ToggleDecorations => self.process_common_key_action(action),
 
-                    _ => warn!(
-                        self.log,
-                        "Key action {:?} unsupported on on output {} backend.", action, output_name
+                    _ => tracing::warn!(
+                        ?action,
+                        output_name,
+                        "Key action unsupported on on output backend.",
                     ),
                 },
             },
@@ -489,9 +533,9 @@ impl AnvilState<UdevData> {
             InputEvent::Keyboard { event, .. } => match self.keyboard_key_to_action::<B>(event) {
                 #[cfg(feature = "udev")]
                 KeyAction::VtSwitch(vt) => {
-                    info!(self.log, "Trying to switch to vt {}", vt);
+                    info!(to = vt, "Trying to switch vt");
                     if let Err(err) = self.backend_data.session.change_vt(vt) {
-                        error!(self.log, "Error switching to vt {}: {}", vt, err);
+                        error!(vt, "Error switching vt: {}", err);
                     }
                 }
                 KeyAction::Screen(num) => {
@@ -606,6 +650,11 @@ impl AnvilState<UdevData> {
                         crate::shell::fixup_positions(&mut self.space);
                         self.backend_data.reset_buffers(&output);
                     }
+                }
+                KeyAction::ToggleTint => {
+                    let mut debug_flags = self.backend_data.debug_flags();
+                    debug_flags.toggle(DebugFlags::TINT);
+                    self.backend_data.set_debug_flags(debug_flags);
                 }
 
                 action => match action {
@@ -886,6 +935,8 @@ enum KeyAction {
     ScaleDown,
     TogglePreview,
     RotateOutput,
+    ToggleTint,
+    ToggleDecorations,
     /// Do nothing more
     None,
 }
@@ -915,6 +966,10 @@ fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Optio
         Some(KeyAction::TogglePreview)
     } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_R {
         Some(KeyAction::RotateOutput)
+    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_T {
+        Some(KeyAction::ToggleTint)
+    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_D {
+        Some(KeyAction::ToggleDecorations)
     } else {
         None
     }

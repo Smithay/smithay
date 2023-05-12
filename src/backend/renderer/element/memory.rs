@@ -23,10 +23,9 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
 //! #     utils::{Buffer, Physical},
 //! # };
-//! # use slog::Drain;
 //! #
 //! # #[derive(Clone)]
 //! # struct FakeTexture;
@@ -36,6 +35,9 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn height(&self) -> u32 {
+//! #         unimplemented!()
+//! #     }
+//! #     fn format(&self) -> Option<Fourcc> {
 //! #         unimplemented!()
 //! #     }
 //! # }
@@ -48,6 +50,14 @@
 //! #
 //! #     fn id(&self) -> usize { unimplemented!() }
 //! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn draw_solid(
+//! #         &mut self,
+//! #         _dst: Rectangle<i32, Physical>,
+//! #         _damage: &[Rectangle<i32, Physical>],
+//! #         _color: [f32; 4],
+//! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
 //! #     fn render_texture_from_to(
@@ -83,6 +93,12 @@
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
+//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
+//! #         unimplemented!()
+//! #     }
+//! #     fn debug_flags(&self) -> DebugFlags {
+//! #         unimplemented!()
+//! #     }
 //! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
 //! #     {
 //! #         unimplemented!()
@@ -93,6 +109,7 @@
 //! #     fn import_memory(
 //! #         &mut self,
 //! #         _: &[u8],
+//! #         _: Fourcc,
 //! #         _: Size<i32, Buffer>,
 //! #         _: bool,
 //! #     ) -> Result<Self::TextureId, Self::Error> {
@@ -106,13 +123,19 @@
 //! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
+//! #     fn mem_formats(&self) -> Box<dyn Iterator<Item=Fourcc>> {
+//! #         unimplemented!()
+//! #     }
 //! # }
 //! use std::time::{Duration, Instant};
 //!
 //! use smithay::{
-//!     backend::renderer::{
-//!         damage::DamageTrackedRenderer,
-//!         element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+//!     backend::{
+//!         allocator::Fourcc,
+//!         renderer::{
+//!             damage::OutputDamageTracker,
+//!             element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+//!         },
 //!     },
 //!     utils::{Point, Rectangle, Size, Transform},
 //! };
@@ -120,10 +143,8 @@
 //! const WIDTH: i32 = 10;
 //! const HEIGHT: i32 = 10;
 //!
-//! # let log = slog::Logger::root(slog::Discard.fuse(), slog::o!());
-//!
 //! // Initialize a empty render buffer
-//! let mut buffer = MemoryRenderBuffer::new((WIDTH, HEIGHT), 1, Transform::Normal, None);
+//! let mut buffer = MemoryRenderBuffer::new(Fourcc::Argb8888, (WIDTH, HEIGHT), 1, Transform::Normal, None);
 //!
 //! // Create a rendering context
 //! let mut render_context = buffer.render();
@@ -147,8 +168,8 @@
 //! // We explicitly drop the context here to make the borrow checker happy
 //! std::mem::drop(render_context);
 //!
-//! // Initialize a static damage tracked renderer
-//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//! // Initialize a static damage tracker
+//! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
 //! # let mut renderer = FakeRenderer;
 //!
 //! let mut last_update = Instant::now();
@@ -170,12 +191,12 @@
 //!
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
-//!     let render_element = MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &buffer, None, None, None, None)
+//!     let render_element = MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &buffer, None, None, None)
 //!         .expect("Failed to upload from memory to gpu");
 //!
 //!     // Render the element(s)
-//!     damage_tracked_renderer
-//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0], log.clone())
+//!     damage_tracker
+//!         .render_output(&mut renderer, 0, &[&render_element], [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
 //! ```
@@ -187,12 +208,15 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use slog::{trace, warn};
+use tracing::{instrument, trace, warn};
 
 use crate::{
-    backend::renderer::{
-        utils::{CommitCounter, DamageTracker},
-        Frame, ImportMem, Renderer,
+    backend::{
+        allocator::{format::get_bpp, Fourcc},
+        renderer::{
+            utils::{CommitCounter, DamageBag},
+            Frame, ImportMem, Renderer,
+        },
     },
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
@@ -202,11 +226,12 @@ use super::{Element, Id, RenderElement};
 #[derive(Debug)]
 struct MemoryRenderBufferInner {
     mem: Vec<u8>,
+    format: Fourcc,
     size: Size<i32, Buffer>,
     scale: i32,
     transform: Transform,
     opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
-    damage_tracker: DamageTracker<i32, Buffer>,
+    damage_bag: DamageBag<i32, Buffer>,
     textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     renderer_seen: HashMap<(TypeId, usize), CommitCounter>,
 }
@@ -215,11 +240,12 @@ impl Default for MemoryRenderBufferInner {
     fn default() -> Self {
         MemoryRenderBufferInner {
             mem: Vec::default(),
+            format: Fourcc::Abgr8888,
             size: Size::default(),
             scale: 1,
             transform: Transform::Normal,
             opaque_regions: None,
-            damage_tracker: DamageTracker::default(),
+            damage_bag: DamageBag::default(),
             textures: HashMap::default(),
             renderer_seen: HashMap::default(),
         }
@@ -228,21 +254,25 @@ impl Default for MemoryRenderBufferInner {
 
 impl MemoryRenderBufferInner {
     fn new(
+        format: Fourcc,
         size: impl Into<Size<i32, Buffer>>,
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Self {
-        // TODO: Allow to specify the format when ImportMem
-        // has been changed to allow specifying a format
         let size = size.into();
         MemoryRenderBufferInner {
-            mem: vec![0; (size.w * 4 * size.h) as usize],
+            mem: vec![
+                0;
+                (size.w * (get_bpp(format).expect("Format with unknown bits per pixel") / 8) as i32 * size.h)
+                    as usize
+            ],
+            format,
             size,
             scale,
             transform,
             opaque_regions,
-            damage_tracker: DamageTracker::default(),
+            damage_bag: DamageBag::default(),
             textures: HashMap::default(),
             renderer_seen: HashMap::default(),
         }
@@ -250,23 +280,27 @@ impl MemoryRenderBufferInner {
 
     fn from_memory(
         mem: &[u8],
+        format: Fourcc,
         size: impl Into<Size<i32, Buffer>>,
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Self {
-        // TODO: Allow to specify the format when ImportMem
-        // has been changed to allow specifying a format
         let size = size.into();
-        assert_eq!(mem.len(), (size.w * 4 * size.h) as usize);
+        assert_eq!(
+            mem.len(),
+            (size.w * (get_bpp(format).expect("Format with unknown bits per pixel") / 8) as i32 * size.h)
+                as usize
+        );
 
         MemoryRenderBufferInner {
             mem: mem.to_vec(),
+            format,
             size,
             scale,
             transform,
             opaque_regions,
-            damage_tracker: DamageTracker::default(),
+            damage_bag: DamageBag::default(),
             textures: HashMap::default(),
             renderer_seen: HashMap::default(),
         }
@@ -279,26 +313,23 @@ impl MemoryRenderBufferInner {
             self.mem.resize(mem_size, 0);
             self.renderer_seen.clear();
             self.textures.clear();
-            self.damage_tracker.reset();
+            self.damage_bag.reset();
             self.size = size;
             self.opaque_regions = None;
         }
     }
 
-    fn import_texture<R>(
-        &mut self,
-        renderer: &mut R,
-        log: &slog::Logger,
-    ) -> Result<(), <R as Renderer>::Error>
+    #[instrument(level = "trace", skip(renderer))]
+    fn import_texture<R>(&mut self, renderer: &mut R) -> Result<(), <R as Renderer>::Error>
     where
         R: Renderer + ImportMem,
         <R as Renderer>::TextureId: 'static,
     {
         let texture_id = (TypeId::of::<<R as Renderer>::TextureId>(), renderer.id());
-        let current_commit = self.damage_tracker.current_commit();
+        let current_commit = self.damage_bag.current_commit();
         let last_commit = self.renderer_seen.get(&texture_id).copied();
         let buffer_damage = self
-            .damage_tracker
+            .damage_bag
             .damage_since(last_commit)
             .map(|d| d.into_iter().reduce(|a, b| a.merge(b)).unwrap_or_default())
             .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.size));
@@ -306,13 +337,13 @@ impl MemoryRenderBufferInner {
         match self.textures.entry(texture_id) {
             Entry::Occupied(entry) => {
                 if !buffer_damage.is_empty() {
-                    trace!(log, "updating memory with damage {:#?}", &buffer_damage);
+                    trace!("updating memory with damage {:#?}", &buffer_damage);
                     renderer.update_memory(entry.get().downcast_ref().unwrap(), &self.mem, buffer_damage)?
                 }
             }
             Entry::Vacant(entry) => {
-                trace!(log, "importing memory");
-                let tex = renderer.import_memory(&self.mem, self.size, false)?;
+                trace!("importing memory");
+                let tex = renderer.import_memory(&self.mem, self.format, self.size, false)?;
                 entry.insert(Box::new(tex));
             }
         };
@@ -352,12 +383,13 @@ impl Default for MemoryRenderBuffer {
 impl MemoryRenderBuffer {
     /// Initialize a empty [`MemoryRenderBuffer`]
     pub fn new(
+        format: Fourcc,
         size: impl Into<Size<i32, Buffer>>,
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Self {
-        let inner = MemoryRenderBufferInner::new(size, scale, transform, opaque_regions);
+        let inner = MemoryRenderBufferInner::new(format, size, scale, transform, opaque_regions);
         MemoryRenderBuffer {
             id: Id::new(),
             inner: Arc::new(Mutex::new(inner)),
@@ -367,12 +399,13 @@ impl MemoryRenderBuffer {
     /// Initialize a [`MemoryRenderBuffer`] from existing memory
     pub fn from_memory(
         mem: &[u8],
+        format: Fourcc,
         size: impl Into<Size<i32, Buffer>>,
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Self {
-        let inner = MemoryRenderBufferInner::from_memory(mem, size, scale, transform, opaque_regions);
+        let inner = MemoryRenderBufferInner::from_memory(mem, format, size, scale, transform, opaque_regions);
         MemoryRenderBuffer {
             id: Id::new(),
             inner: Arc::new(Mutex::new(inner)),
@@ -390,7 +423,7 @@ impl MemoryRenderBuffer {
     }
 
     fn current_commit(&self) -> CommitCounter {
-        self.inner.lock().unwrap().damage_tracker.current_commit()
+        self.inner.lock().unwrap().damage_bag.current_commit()
     }
 
     fn size(&self) -> Size<i32, Logical> {
@@ -437,7 +470,7 @@ impl<'a> RenderContext<'a> {
 
 impl<'a> Drop for RenderContext<'a> {
     fn drop(&mut self) {
-        self.buffer.damage_tracker.add(&self.damage);
+        self.buffer.damage_bag.add(std::mem::take(&mut self.damage));
         if let Some(opaque_regions) = self.opaque_regions.take() {
             self.buffer.opaque_regions = opaque_regions;
         }
@@ -465,14 +498,12 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
-        log: impl Into<Option<slog::Logger>>,
     ) -> Result<Self, <R as Renderer>::Error>
     where
         R: ImportMem,
         <R as Renderer>::TextureId: 'static,
     {
-        let logger = crate::slog_or_fallback(log);
-        buffer.inner.lock().unwrap().import_texture(renderer, &logger)?;
+        buffer.inner.lock().unwrap().import_texture(renderer)?;
         Ok(MemoryRenderBufferRenderElement {
             location: location.into(),
             buffer: buffer.clone(),
@@ -511,7 +542,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         let guard = self.buffer.inner.lock().unwrap();
 
         guard
-            .damage_tracker
+            .damage_bag
             .damage_since(commit)
             .map(|damage| {
                 damage
@@ -626,18 +657,18 @@ where
     R: Renderer + ImportMem,
     <R as Renderer>::TextureId: 'static,
 {
+    #[instrument(level = "trace", skip(self, frame))]
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
         let mut guard = self.buffer.inner.lock().unwrap();
         let transform = guard.transform;
         let Some(texture) = guard.get_texture::<R>(frame.id()) else {
-            warn!(log, "trying to render texture from different renderer");
+            warn!("trying to render texture from different renderer");
             return Ok(());
         };
 

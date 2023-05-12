@@ -1,4 +1,5 @@
 //! Handlers for KDE decoration events.
+use tracing::trace;
 
 use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::{
     OrgKdeKwinServerDecoration, Request,
@@ -33,8 +34,7 @@ where
         let default_mode = state.kde_decoration_state().default_mode;
         kde_decoration_manager.default_mode(default_mode);
 
-        let logger = &state.kde_decoration_state().logger;
-        slog::trace!(logger, "Bound decoration manager global");
+        trace!("Bound decoration manager global");
     }
 }
 
@@ -65,8 +65,7 @@ where
         let surface = kde_decoration.data().unwrap();
         state.new_decoration(surface, &kde_decoration);
 
-        let logger = &state.kde_decoration_state().logger;
-        slog::trace!(logger, "Created decoration object for surface {:?}", surface);
+        trace!(surface = ?surface, "Created decoration object for surface");
     }
 }
 
@@ -83,12 +82,10 @@ where
         _dh: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
     ) {
-        let logger = &state.kde_decoration_state().logger;
-        slog::trace!(
-            logger,
-            "Decoration request for surface {:?}: {:?}",
-            surface,
-            request
+        trace!(
+            surface = ?surface,
+            request = ?request,
+            "Decoration request for surface"
         );
 
         match request {

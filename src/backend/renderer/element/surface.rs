@@ -21,15 +21,14 @@
 //! #     renderer::ImportEgl,
 //! # };
 //! # use smithay::{
-//! #     backend::allocator::dmabuf::Dmabuf,
+//! #     backend::allocator::{Fourcc, dmabuf::Dmabuf},
 //! #     backend::renderer::{
-//! #         Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
+//! #         DebugFlags, Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
 //! #         TextureFilter,
 //! #     },
 //! #     utils::{Buffer, Physical},
 //! #     wayland::compositor::SurfaceData,
 //! # };
-//! # use slog::Drain;
 //! #
 //! # #[derive(Clone)]
 //! # struct FakeTexture;
@@ -39,6 +38,9 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn height(&self) -> u32 {
+//! #         unimplemented!()
+//! #     }
+//! #     fn format(&self) -> Option<Fourcc> {
 //! #         unimplemented!()
 //! #     }
 //! # }
@@ -51,6 +53,14 @@
 //! #
 //! #     fn id(&self) -> usize { unimplemented!() }
 //! #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn draw_solid(
+//! #         &mut self,
+//! #         _dst: Rectangle<i32, Physical>,
+//! #         _damage: &[Rectangle<i32, Physical>],
+//! #         _color: [f32; 4],
+//! #     ) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
 //! #     fn render_texture_from_to(
@@ -86,6 +96,12 @@
 //! #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
 //! #         unimplemented!()
 //! #     }
+//! #     fn set_debug_flags(&mut self, _: DebugFlags) {
+//! #         unimplemented!()
+//! #     }
+//! #     fn debug_flags(&self) -> DebugFlags {
+//! #         unimplemented!()
+//! #     }
 //! #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
 //! #     {
 //! #         unimplemented!()
@@ -96,6 +112,7 @@
 //! #     fn import_memory(
 //! #         &mut self,
 //! #         _: &[u8],
+//! #         _: Fourcc,
 //! #         _: Size<i32, Buffer>,
 //! #         _: bool,
 //! #     ) -> Result<Self::TextureId, Self::Error> {
@@ -107,6 +124,9 @@
 //! #         _: &[u8],
 //! #         _: Rectangle<i32, Buffer>,
 //! #     ) -> Result<(), Self::Error> {
+//! #         unimplemented!()
+//! #     }
+//! #     fn mem_formats(&self) -> Box<dyn Iterator<Item=Fourcc>> {
 //! #         unimplemented!()
 //! #     }
 //! # }
@@ -165,37 +185,36 @@
 //! # impl ImportDmaWl for FakeRenderer {}
 //! use smithay::{
 //!     backend::renderer::{
-//!         damage::DamageTrackedRenderer,
+//!         damage::OutputDamageTracker,
 //!         element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
 //!     },
 //!     utils::{Point, Rectangle, Size, Transform},
 //! };
 //! # use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, Resource};
-//! # let log = slog::Logger::root(slog::Discard.fuse(), slog::o!());
 //! # let display = wayland_server::Display::<()>::new().unwrap();
 //! # let dh = display.handle();
 //! # let surface = WlSurface::from_id(&dh, ObjectId::null()).unwrap();
 //!
 //! // Initialize a static damage tracked renderer
-//! let mut damage_tracked_renderer = DamageTrackedRenderer::new((800, 600), 1.0, Transform::Normal);
+//! let mut damage_tracker = OutputDamageTracker::new((800, 600), 1.0, Transform::Normal);
 //! # let mut renderer = FakeRenderer;
 //!
 //! loop {
 //!     // Create the render elements from the surface
 //!     let location = Point::from((100, 100));
 //!     let render_elements: Vec<WaylandSurfaceRenderElement<FakeRenderer>> =
-//!         render_elements_from_surface_tree(&mut renderer, &surface, location, 1.0, log.clone());
+//!         render_elements_from_surface_tree(&mut renderer, &surface, location, 1.0);
 //!
 //!     // Render the element(s)
-//!     damage_tracked_renderer
-//!         .render_output(&mut renderer, 0, &*render_elements, [0.8, 0.8, 0.9, 1.0], log.clone())
+//!     damage_tracker
+//!         .render_output(&mut renderer, 0, &*render_elements, [0.8, 0.8, 0.9, 1.0])
 //!         .expect("failed to render output");
 //! }
 //! ```
 
 use std::{fmt, marker::PhantomData};
 
-use slog::warn;
+use tracing::{instrument, warn};
 use wayland_server::protocol::wl_surface;
 
 use crate::{
@@ -207,12 +226,12 @@ use crate::{
 use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
 
 /// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
+#[instrument(level = "trace", skip(renderer, location, scale))]
 pub fn render_elements_from_surface_tree<R, E>(
     renderer: &mut R,
     surface: &wl_surface::WlSurface,
     location: impl Into<Point<i32, Physical>>,
     scale: impl Into<Scale<f64>>,
-    log: impl Into<Option<::slog::Logger>>,
 ) -> Vec<E>
 where
     R: Renderer + ImportAll,
@@ -222,7 +241,6 @@ where
     let location = location.into().to_f64();
     let scale = scale.into();
     let mut surfaces: Vec<E> = Vec::new();
-    let logger = crate::slog_or_fallback(log);
 
     compositor::with_surface_tree_downward(
         surface,
@@ -257,16 +275,10 @@ where
                 };
 
                 if has_view {
-                    match WaylandSurfaceRenderElement::from_surface(
-                        renderer,
-                        surface,
-                        states,
-                        location,
-                        logger.clone(),
-                    ) {
+                    match WaylandSurfaceRenderElement::from_surface(renderer, surface, states, location) {
                         Ok(surface) => surfaces.push(surface.into()),
                         Err(err) => {
-                            warn!(logger, "Failed to import surface: {}", err);
+                            warn!("Failed to import surface: {}", err);
                         }
                     };
                 }
@@ -303,14 +315,12 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         surface: &wl_surface::WlSurface,
         states: &SurfaceData,
         location: Point<f64, Physical>,
-        log: impl Into<Option<::slog::Logger>>,
     ) -> Result<Self, <R as Renderer>::Error>
     where
         <R as Renderer>::TextureId: 'static,
     {
         let id = Id::from_wayland_resource(surface);
-        let logger = crate::slog_or_fallback(log);
-        crate::backend::renderer::utils::import_surface(renderer, states, &logger)?;
+        crate::backend::renderer::utils::import_surface(renderer, states)?;
 
         Ok(Self {
             id,
@@ -463,21 +473,21 @@ where
     R: Renderer + ImportAll,
     <R as Renderer>::TextureId: Texture + 'static,
 {
-    fn underlying_storage(&self, _renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
-            data.and_then(|d| d.borrow().wl_buffer().cloned())
-                .map(|b| UnderlyingStorage::Wayland(b))
+            data.and_then(|d| d.borrow().buffer().cloned())
+                .map(UnderlyingStorage::Wayland)
         })
     }
 
+    #[instrument(level = "trace", skip(frame))]
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
     ) -> Result<(), R::Error> {
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
@@ -487,7 +497,7 @@ where
                 if let Some(texture) = data.texture::<R>(frame.id()) {
                     frame.render_texture_from_to(texture, src, dst, damage, data.buffer_transform, 1.0f32)?;
                 } else {
-                    warn!(log, "trying to render texture from different renderer");
+                    warn!("trying to render texture from different renderer");
                 }
             }
 

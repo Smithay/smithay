@@ -1,4 +1,4 @@
-use slog::{trace, warn};
+use tracing::{trace, warn, warn_span};
 use wayland_protocols::xdg::xdg_output::zv1::server::{
     zxdg_output_manager_v1::{self, ZxdgOutputManagerV1},
     zxdg_output_v1::{self, ZxdgOutputV1},
@@ -37,16 +37,19 @@ where
 
         let mut inner = global_data.inner.0.lock().unwrap();
 
-        trace!(inner.log, "New WlOutput global instantiated."; "name" => &inner.name);
+        let span = warn_span!("output_bind", name = inner.name);
+        let _enter = span.enter();
+
+        trace!("New WlOutput global instantiated");
 
         if inner.modes.is_empty() {
-            warn!(inner.log, "Output is used with no modes set"; "name" => &inner.name);
+            warn!("Output is used with no modes set");
         }
         if inner.current_mode.is_none() {
-            warn!(inner.log, "Output is used with no current mod set"; "name" => &inner.name);
+            warn!("Output is used with no current mod set");
         }
         if inner.preferred_mode.is_none() {
-            warn!(inner.log, "Output is used with not preferred mode set"; "name" => &inner.name);
+            warn!("Output is used with not preferred mode set");
         }
 
         inner.send_geometry_to(&output);
@@ -152,7 +155,7 @@ where
                 let output = Output::from_resource(&wl_output).unwrap();
                 let mut inner = output.inner.0.lock().unwrap();
 
-                let xdg_output = XdgOutput::new(&inner, inner.log.clone());
+                let xdg_output = XdgOutput::new(&inner);
 
                 if inner.xdg_output.is_none() {
                     inner.xdg_output = Some(xdg_output.clone());

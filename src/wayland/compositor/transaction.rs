@@ -38,10 +38,9 @@
 // A significant part of the logic of this module is not yet used,
 // but will be once proper transaction & blockers support is
 // added to smithay
-#![allow(dead_code)]
-
 use std::{
     collections::HashSet,
+    fmt,
     sync::{Arc, Mutex},
 };
 
@@ -49,15 +48,22 @@ use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource};
 
 use crate::{utils::IsAlive, utils::Serial};
 
-use super::tree::PrivateSurfaceData;
+use super::{tree::PrivateSurfaceData, CompositorHandler};
 
+/// Types potentially blocking state changes
 pub trait Blocker {
+    /// Retrieve the current state of the blocker
     fn state(&self) -> BlockerState;
 }
 
+/// States of a [`Blocker`]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockerState {
+    /// The block is pending and not resolved yet
     Pending,
+    /// The block got released and changes can be applied
     Released,
+    /// The block got cancelled and changes should be discarded
     Cancelled,
 }
 
@@ -171,9 +177,17 @@ impl PendingTransaction {
         }
     }
 }
+
+#[derive(Debug)]
 pub(crate) struct Transaction {
     surfaces: Vec<(WlSurface, Serial)>,
     blockers: Vec<Box<dyn Blocker + Send>>,
+}
+
+impl fmt::Debug for Box<dyn Blocker + Send> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Blocker").field("state", &self.state()).finish()
+    }
 }
 
 impl Transaction {
@@ -195,17 +209,23 @@ impl Transaction {
             })
     }
 
-    pub(crate) fn apply(self, dh: &DisplayHandle) {
+    pub(crate) fn apply<C: CompositorHandler + 'static>(self, dh: &DisplayHandle, state: &mut C) {
         for (surface, id) in self.surfaces {
             PrivateSurfaceData::with_states(&surface, |states| {
                 states.cached_state.apply_state(id, dh);
-            })
+            });
+
+            PrivateSurfaceData::invoke_post_commit_hooks::<C>(state, dh, &surface);
+
+            tracing::trace!("Calling user implementation for wl_surface.commit");
+
+            state.commit(&surface);
         }
     }
 }
 
 // This queue should be per-client
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct TransactionQueue {
     transactions: Vec<Transaction>,
     // we keep the hashset around to reuse allocations
@@ -217,7 +237,8 @@ impl TransactionQueue {
         self.transactions.push(t);
     }
 
-    pub(crate) fn apply_ready<D: 'static>(&mut self, dh: &DisplayHandle) {
+    pub(crate) fn take_ready(&mut self) -> Vec<Transaction> {
+        let mut ready_transactions = Vec::new();
         // this is a very non-optimized implementation
         // we just iterate over the queue of transactions, keeping track of which
         // surface we have seen as they encode transaction dependencies
@@ -226,7 +247,7 @@ impl TransactionQueue {
         let mut i = 0;
         // the loop will terminate, as at every iteration either i is incremented by 1
         // or the lenght of self.transactions is reduced by 1.
-        while i <= self.transactions.len() {
+        while i < self.transactions.len() {
             let mut skip = false;
             // does the transaction have any active blocker?
             match self.transactions[i].state() {
@@ -267,8 +288,10 @@ impl TransactionQueue {
                 i += 1;
             } else {
                 // this transaction is to be applied, yay!
-                self.transactions.remove(i).apply(dh);
+                ready_transactions.push(self.transactions.remove(i));
             }
         }
+
+        ready_transactions
     }
 }

@@ -1,4 +1,6 @@
-use std::sync::{atomic::AtomicBool, Mutex};
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
+
+use indexmap::IndexSet;
 
 use crate::{
     utils::{alive_tracker::AliveTracker, IsAlive, Serial},
@@ -6,12 +8,12 @@ use crate::{
 };
 
 use wayland_protocols::xdg::shell::server::{
-    xdg_positioner::XdgPositioner, xdg_surface::XdgSurface, xdg_wm_base, xdg_wm_base::XdgWmBase,
+    xdg_positioner::XdgPositioner, xdg_surface, xdg_surface::XdgSurface, xdg_wm_base, xdg_wm_base::XdgWmBase,
 };
 
 use wayland_server::{
     backend::{ClientId, ObjectId},
-    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
 };
 
 use super::{ShellClient, ShellClientData, XdgPositionerUserData, XdgShellHandler, XdgSurfaceUserData};
@@ -64,15 +66,19 @@ where
                 // Do not assign a role to the surface here
                 // xdg_surface is not role, only xdg_toplevel and
                 // xdg_popup are defined as roles
-
-                data_init.init(
+                let xdg_surface = data_init.init(
                     id,
                     XdgSurfaceUserData {
+                        known_surfaces: data.known_surfaces.clone(),
                         wl_surface: surface,
                         wm_base: wm_base.clone(),
                         has_active_role: AtomicBool::new(false),
                     },
                 );
+                data.known_surfaces
+                    .lock()
+                    .unwrap()
+                    .insert(xdg_surface.downgrade());
             }
             xdg_wm_base::Request::Pong { serial } => {
                 let serial = Serial::from(serial);
@@ -90,7 +96,12 @@ where
                 }
             }
             xdg_wm_base::Request::Destroy => {
-                // all is handled by destructor
+                if !data.known_surfaces.lock().unwrap().is_empty() {
+                    wm_base.post_error(
+                        xdg_wm_base::Error::DefunctSurfaces,
+                        "xdg_wm_base was destroyed before children",
+                    );
+                }
             }
             _ => unreachable!(),
         }
@@ -116,5 +127,6 @@ impl IsAlive for XdgWmBase {
 #[derive(Default, Debug)]
 pub struct XdgWmBaseUserData {
     pub(crate) client_data: Mutex<ShellClientData>,
+    known_surfaces: Arc<Mutex<IndexSet<Weak<xdg_surface::XdgSurface>>>>,
     alive_tracker: AliveTracker,
 }

@@ -12,12 +12,17 @@
 //!
 //! ## Structure of the crate
 //!
-//! The provided helpers are split into two main modules. [`backend`] contains helpers for interacting with
-//! the operating system, such as session management, interactions with the graphic stack and input
-//! processing. On the other hand, [`wayland`] contains helpers for interacting with wayland clients
-//! according to the wayland protocol. In addition, the [`xwayland`] module contains helpers for managing
-//! an XWayland instance if you want to support it. See the documentation of these respective modules for
-//! information about their usage.
+//! The provided helpers are split into two main modules:
+//!
+//! - [`backend`] contains helpers for interacting with the operating
+//!     system, such as session management, interactions with the graphic stack
+//!     and input processing.
+//! - [`wayland`] contains helpers for interacting with wayland clients
+//!     according to the wayland protocol.
+//!
+//!     In addition, the [`xwayland`] module contains helpers for managing an
+//!     XWayland instance if you want to support it. See the documentation of
+//!     these respective modules for information about their usage.
 //!
 //! ## General principles for using Smithay
 //!
@@ -43,11 +48,7 @@
 //!
 //! ### Logging
 //!
-//! Most entry points in the modules can take an optional [`slog::Logger`](::slog::Logger) as argument
-//! that will be used as a drain for logging. If `None` is provided, the behavior depends on
-//! whether the `slog-stdlog` is enabled. If yes, the module will log to the global logger of the
-//! `log` crate. If not, the logs will discarded. This cargo feature is part of the default set of
-//! features of Smithay.
+//! TODO: docs about tracing
 
 pub mod backend;
 #[cfg(feature = "desktop")]
@@ -62,26 +63,3 @@ pub mod wayland;
 pub mod xwayland;
 
 pub mod reexports;
-
-#[cfg(feature = "slog-stdlog")]
-#[allow(dead_code)]
-fn slog_or_fallback<L>(logger: L) -> ::slog::Logger
-where
-    L: Into<Option<::slog::Logger>>,
-{
-    use slog::Drain;
-    logger
-        .into()
-        .unwrap_or_else(|| ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), slog::o!()))
-}
-
-#[cfg(not(feature = "slog-stdlog"))]
-#[allow(dead_code)]
-fn slog_or_fallback<L>(logger: L) -> ::slog::Logger
-where
-    L: Into<Option<::slog::Logger>>,
-{
-    logger
-        .into()
-        .unwrap_or_else(|| ::slog::Logger::root(::slog::Discard, slog::o!()))
-}

@@ -34,7 +34,6 @@
 //!         make: "Screens Inc".into(),     // make of the monitor
 //!         model: "Monitor Ultra".into(),  // model of the monitor
 //!     },
-//!     None // insert a logger here
 //! );
 //! // Now you can configure it
 //! output.change_current_state(
@@ -55,10 +54,12 @@ use std::{
     sync::{Arc, Mutex, Weak},
 };
 
-use slog::{info, o};
+use tracing::{info, instrument};
 
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::output::xdg::XdgOutput;
+#[cfg(feature = "backend_drm")]
+use drm::control::{Mode as DrmMode, ModeFlags};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{backend::WeakHandle, protocol::wl_output::WlOutput};
 
@@ -78,6 +79,36 @@ pub struct Mode {
     ///
     /// `1000` is one fps (frame per second), `2000` is 2 fps, etc...
     pub refresh: i32,
+}
+
+#[cfg(feature = "backend_drm")]
+impl From<DrmMode> for Mode {
+    fn from(mode: DrmMode) -> Self {
+        let clock = mode.clock() as u64;
+        let htotal = mode.hsync().2 as u64;
+        let vtotal = mode.vsync().2 as u64;
+
+        let mut refresh = (clock * 1_000_000 / htotal + vtotal / 2) / vtotal;
+
+        if mode.flags().contains(ModeFlags::INTERLACE) {
+            refresh *= 2;
+        }
+
+        if mode.flags().contains(ModeFlags::DBLSCAN) {
+            refresh /= 2;
+        }
+
+        if mode.vscan() > 1 {
+            refresh /= mode.vscan() as u64;
+        }
+
+        let (w, h) = mode.size();
+
+        Self {
+            size: (w as i32, h as i32).into(),
+            refresh: refresh as i32,
+        }
+    }
 }
 
 /// Subpixel geometry information
@@ -177,9 +208,6 @@ pub(crate) struct Inner {
     pub(crate) handle: Option<WeakHandle>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) xdg_output: Option<XdgOutput>,
-
-    #[allow(dead_code)]
-    pub(crate) log: ::slog::Logger,
 }
 
 /// An abstract output.
@@ -205,13 +233,9 @@ pub(crate) type OutputData = Arc<(Mutex<Inner>, UserDataMap)>;
 
 impl Output {
     /// Create a new output with given name and physical properties.
-    pub fn new<L>(name: String, physical: PhysicalProperties, logger: L) -> Output
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let log = crate::slog_or_fallback(logger).new(o!("smithay_module" => "output_handler"));
-
-        info!(log, "Creating new wl_output"; "name" => &name);
+    #[instrument]
+    pub fn new(name: String, physical: PhysicalProperties) -> Output {
+        info!(name, "Creating new Output");
 
         let data = Arc::new((
             Mutex::new(Inner {
@@ -230,7 +254,6 @@ impl Output {
                 preferred_mode: None,
                 #[cfg(feature = "wayland_frontend")]
                 xdg_output: None,
-                log,
             }),
             UserDataMap::default(),
         ));
@@ -327,6 +350,7 @@ impl Output {
     /// internal list.
     ///
     /// By default, transform status is `Normal`, and scale is `1`.
+    #[instrument(skip(self), fields(output = self.name()))]
     pub fn change_current_state(
         &self,
         new_mode: Option<Mode>,

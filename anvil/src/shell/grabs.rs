@@ -104,8 +104,6 @@ impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
 impl From<ResizeEdge> for xdg_toplevel::ResizeEdge {
     #[inline]
     fn from(x: ResizeEdge) -> Self {
-        use std::convert::TryFrom;
-
         Self::try_from(x.bits()).unwrap()
     }
 }
@@ -240,7 +238,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
                     state.states.set(xdg_toplevel::State::Resizing);
                     state.size = Some(self.last_window_size);
                 });
-                xdg.send_configure();
+                xdg.send_pending_configure();
             }
             #[cfg(feature = "xwayland")]
             WindowElement::X11(x11) => {
@@ -284,7 +282,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
                         state.states.unset(xdg_toplevel::State::Resizing);
                         state.size = Some(self.last_window_size);
                     });
-                    xdg.send_configure();
+                    xdg.send_pending_configure();
                     if self.edges.intersects(ResizeEdge::TOP_LEFT) {
                         let geometry = self.window.geometry();
                         let mut location = data.space.element_location(&self.window).unwrap();

@@ -4,31 +4,26 @@
 //!
 //! A device exposes certain properties, which are directly derived
 //! from the *device* as perceived by the direct rendering manager api (drm). These resources consists
-//! out of connectors, encoders, framebuffers, planes and crtcs.
+//! out of:
+//! - [`connectors`](drm::control::connector) represents a port on your computer, possibly with a connected monitor, TV, capture card, etc.
+//! - [`encoder`](drm::control::encoder) encodes the data of connected crtcs into a video signal for a fixed set of connectors.
+//!     E.g. you might have an analog encoder based on a DAG for VGA ports, but another one for digital ones.
+//!     Also not every encoder might be connected to every crtc.
+//! - [`framebuffer`](drm::control::framebuffer) represents a buffer you may display, see `DrmSurface` below.
+//! - [`plane`](drm::control::plane) adds another layer on top of the crtcs, which allow us to layer multiple images on top of each other more efficiently
+//!     then by combining the rendered images in the rendering phase, e.g. via OpenGL. Planes have to be explicitly used by the user to be useful.
+//!     Every device has at least one primary plane used to display an image to the whole crtc. Additionally cursor and overlay planes may be present.
+//!     Cursor planes are usually very restricted in size and meant to be used for hardware cursors, while overlay planes may
+//!     be used for performance reasons to display any overlay on top of the image, e.g. the top-most windows.
+//!     Overlay planes may have a bunch of weird limitation, that you cannot query, e.g. only working on round pixel coordinates.
+//!     You code should never rely on a fixed set of overlay planes, but always have a fallback solution in place.
+//! - [`crtc`](drm::control::crtc)s represent scanout engines of the device pointer to one framebuffer.
+//!     Their responsibility is to read the data of the framebuffer and export it into an "Encoder".
+//!     The number of crtc's represent the number of independent output devices the hardware may handle.
 //!
-//! [`crtc`](drm::control::crtc)s represent scanout engines of the device pointer to one framebuffer.
-//! Their responsibility is to read the data of the framebuffer and export it into an "Encoder".
-//! The number of crtc's represent the number of independent output devices the hardware may handle.
-//!
-//! On modern graphic cards it is better to think about the `crtc` as some sort of rendering engine.
-//! You can only have so many different pictures, you may display, as you have `crtc`s, but a single image
-//! may be put onto multiple displays.
-//!
-//! An [`encoder`](drm::control::encoder) encodes the data of connected crtcs into a video signal for a fixed set of connectors.
-//! E.g. you might have an analog encoder based on a DAG for VGA ports, but another one for digital ones.
-//! Also not every encoder might be connected to every crtc.
-//!
-//! A [`connector`](drm::control::connector) represents a port on your computer, possibly with a connected monitor, TV, capture card, etc.
-//!
-//! A [`framebuffer`](drm::control::framebuffer) represents a buffer you may display, see `DrmSurface` below.
-//!
-//! A [`plane`](drm::control::plane) adds another layer on top of the crtcs, which allow us to layer multiple images on top of each other more efficiently
-//! then by combining the rendered images in the rendering phase, e.g. via OpenGL. Planes have to be explicitly used by the user to be useful.
-//! Every device has at least one primary plane used to display an image to the whole crtc. Additionally cursor and overlay planes may be present.
-//! Cursor planes are usually very restricted in size and meant to be used for hardware cursors, while overlay planes may
-//! be used for performance reasons to display any overlay on top of the image, e.g. the top-most windows.
-//! Overlay planes may have a bunch of weird limitation, that you cannot query, e.g. only working on round pixel coordinates.
-//! You code should never rely on a fixed set of overlay planes, but always have a fallback solution in place.
+//!     On modern graphic cards it is better to think about the `crtc` as some sort of rendering engine.
+//!     You can only have so many different pictures, you may display, as you have `crtc`s, but a single image
+//!     may be put onto multiple displays.
 //!
 //! The main functionality of a `Device` in smithay is to give access to all these properties for the user to
 //! choose an appropriate rendering configuration. What that means is defined by the requirements and constraints documented
@@ -62,6 +57,12 @@
 //! Buffer management and details about the various types can be found in the [`allocator`-Module](crate::backend::allocator) and
 //! rendering abstractions, which can target these buffers can be found in the [`renderer`-Module](crate::backend::renderer).
 //!
+//! ### Hardware composition
+//!
+//! The [`DrmCompositor`](crate::backend::drm::compositor::DrmCompositor) provides a simplified way to utilize drm planes for
+//! using hardware composition.
+//! See the [`compositor`] module docs for more information on that topic.
+//!
 //! ## [`DrmNode`]
 //!
 //! A drm node refers to a drm device and the capabilities that may be performed using the node.
@@ -69,31 +70,49 @@
 //! to allocate buffers for use in X11 or Wayland. If you need to do mode setting, you should use
 //! [`DrmDevice`] instead.
 
+#[cfg(all(feature = "wayland_frontend", feature = "backend_gbm"))]
+pub mod compositor;
 pub(crate) mod device;
 pub(self) mod error;
+#[cfg(feature = "backend_gbm")]
+pub mod gbm;
 pub mod node;
 
 pub(self) mod surface;
 
 use crate::utils::DevPath;
-pub use device::{DrmDevice, DrmDeviceFd, DrmEvent, EventMetadata as DrmEventMetadata, Time as DrmEventTime};
+pub use device::{
+    DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmEvent, EventMetadata as DrmEventMetadata, PlaneClaim,
+    Time as DrmEventTime,
+};
 pub use error::Error as DrmError;
 pub use node::{CreateDrmNodeError, DrmNode, NodeType};
 #[cfg(feature = "backend_gbm")]
 pub use surface::gbm::{Error as GbmBufferedSurfaceError, GbmBufferedSurface};
-pub use surface::DrmSurface;
+pub use surface::{DrmSurface, PlaneConfig, PlaneDamageClips, PlaneState};
 
 use drm::control::{crtc, plane, Device as ControlDevice, PlaneType};
 
 /// A set of planes as supported by a crtc
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Planes {
     /// The primary plane of the crtc (automatically selected for [DrmDevice::create_surface])
-    pub primary: plane::Handle,
+    pub primary: PlaneInfo,
     /// The cursor plane of the crtc, if available
-    pub cursor: Option<plane::Handle>,
+    pub cursor: Option<PlaneInfo>,
     /// Overlay planes supported by the crtc, if available
-    pub overlay: Vec<plane::Handle>,
+    pub overlay: Vec<PlaneInfo>,
+}
+
+/// Info about a single plane
+#[derive(Debug, Copy, Clone)]
+pub struct PlaneInfo {
+    /// Handle of the plane
+    pub handle: plane::Handle,
+    /// Type of the plane
+    pub type_: PlaneType,
+    /// z-position of the plane if available
+    pub zpos: Option<i32>,
 }
 
 fn planes(
@@ -125,15 +144,22 @@ fn planes(
         })?;
         let filter = info.possible_crtcs();
         if resources.filter_crtcs(filter).contains(crtc) {
-            match plane_type(dev, plane)? {
+            let zpos = plane_zpos(dev, plane).ok().flatten();
+            let type_ = plane_type(dev, plane)?;
+            let plane_info = PlaneInfo {
+                handle: plane,
+                type_,
+                zpos,
+            };
+            match type_ {
                 PlaneType::Primary => {
-                    primary = Some(plane);
+                    primary = Some(plane_info);
                 }
                 PlaneType::Cursor => {
-                    cursor = Some(plane);
+                    cursor = Some(plane_info);
                 }
                 PlaneType::Overlay => {
-                    overlay.push(plane);
+                    overlay.push(plane_info);
                 }
             };
         }
@@ -168,4 +194,32 @@ fn plane_type(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Res
         }
     }
     unreachable!()
+}
+
+fn plane_zpos(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Result<Option<i32>, DrmError> {
+    let props = dev.get_properties(plane).map_err(|source| DrmError::Access {
+        errmsg: "Failed to get properties of plane",
+        dev: dev.dev_path(),
+        source,
+    })?;
+    let (ids, vals) = props.as_props_and_values();
+    for (&id, &val) in ids.iter().zip(vals.iter()) {
+        let info = dev.get_property(id).map_err(|source| DrmError::Access {
+            errmsg: "Failed to get property info",
+            dev: dev.dev_path(),
+            source,
+        })?;
+        if info.name().to_str().map(|x| x == "zpos").unwrap_or(false) {
+            let plane_zpos = match info.value_type().convert_value(val) {
+                drm::control::property::Value::UnsignedRange(u) => Some(u as i32),
+                drm::control::property::Value::SignedRange(i) => Some(i as i32),
+                // A range from [0,1] will be interpreted as Boolean in drm-rs
+                // TODO: Once that has been changed we can remove this special handling here
+                drm::control::property::Value::Boolean(b) => Some(b.into()),
+                _ => None,
+            };
+            return Ok(plane_zpos);
+        }
+    }
+    Ok(None)
 }

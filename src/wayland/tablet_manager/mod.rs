@@ -21,7 +21,6 @@
 //! let seat = seat_state.new_wl_seat(
 //!     &display_handle,          // the display
 //!     "seat-0",                 // the name of the seat, will be advertized to clients
-//!     None                      // insert a logger here
 //! );
 //!
 //! use smithay::wayland::tablet_manager::TabletSeatTrait;

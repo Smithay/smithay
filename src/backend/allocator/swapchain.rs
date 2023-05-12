@@ -7,6 +7,8 @@ use std::{
     },
 };
 
+use tracing::instrument;
+
 use crate::backend::allocator::{Allocator, Buffer, Fourcc, Modifier};
 use crate::utils::user_data::UserDataMap;
 
@@ -155,6 +157,7 @@ where
     ///
     /// The swapchain has an internal maximum of four re-usable buffers.
     /// This function returns the first free one.
+    #[instrument(level = "trace", skip_all, err)]
     pub fn acquire(&mut self) -> Result<Option<Slot<A::Buffer>>, A::Error> {
         if let Some(free_slot) = self
             .slots
@@ -162,14 +165,17 @@ where
             .find(|s| !s.acquired.swap(true, Ordering::SeqCst))
         {
             if free_slot.buffer.is_none() {
-                let mut free_slot =
-                    Arc::get_mut(free_slot).expect("Acquired was false, but Arc is not unique?");
-                free_slot.buffer = Some(self.allocator.create_buffer(
-                    self.width,
-                    self.height,
-                    self.fourcc,
-                    &self.modifiers,
-                )?);
+                let free_slot = Arc::get_mut(free_slot).expect("Acquired was false, but Arc is not unique?");
+                match self
+                    .allocator
+                    .create_buffer(self.width, self.height, self.fourcc, &self.modifiers)
+                {
+                    Ok(buffer) => free_slot.buffer = Some(buffer),
+                    Err(err) => {
+                        free_slot.acquired.store(false, Ordering::SeqCst);
+                        return Err(err);
+                    }
+                }
             }
             assert!(free_slot.buffer.is_some());
             return Ok(Some(Slot(free_slot.clone())));
@@ -239,5 +245,10 @@ where
                 *slot = Default::default();
             }
         }
+    }
+
+    /// Get set format
+    pub fn format(&self) -> Fourcc {
+        self.fourcc
     }
 }

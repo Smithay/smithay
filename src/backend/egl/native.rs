@@ -4,6 +4,8 @@ use super::{
     display::{DamageSupport, EGLDisplayHandle},
     ffi, wrap_egl_call, EGLDevice, SwapBuffersError,
 };
+#[cfg(feature = "backend_gbm")]
+use crate::utils::DevPath;
 use crate::utils::{Physical, Rectangle};
 #[cfg(feature = "backend_winit")]
 use std::os::raw::c_int;
@@ -132,6 +134,11 @@ pub trait EGLNativeDisplay: Send {
     fn surface_type(&self) -> ffi::EGLint {
         ffi::egl::WINDOW_BIT as ffi::EGLint
     }
+
+    /// String identifying this native display from its counterparts of the same platform, if applicable.
+    fn identifier(&self) -> Option<String> {
+        None
+    }
 }
 
 #[cfg(feature = "backend_gbm")]
@@ -143,6 +150,10 @@ impl<A: AsFd + Send + 'static> EGLNativeDisplay for GbmDevice<A> {
             // see: https://www.khronos.org/registry/EGL/extensions/MESA/EGL_MESA_platform_gbm.txt
             egl_platform!(PLATFORM_GBM_MESA, self.as_raw(), &["EGL_MESA_platform_gbm"]),
         ]
+    }
+
+    fn identifier(&self) -> Option<String> {
+        self.dev_path().map(|p| p.to_string_lossy().into_owned())
     }
 }
 
@@ -198,6 +209,13 @@ impl EGLNativeDisplay for EGLDevice {
         // EGLDisplays based on EGLDevices do not support normal windowed surfaces.
         // But they may support streams, so lets allow users to create them themselves.
         ffi::egl::STREAM_BIT_KHR as ffi::EGLint
+    }
+
+    fn identifier(&self) -> Option<String> {
+        self.render_device_path()
+            .ok()
+            .or_else(|| self.drm_device_path().ok())
+            .map(|p| p.to_string_lossy().into_owned())
     }
 }
 
@@ -293,6 +311,11 @@ pub unsafe trait EGLNativeSurface: Send {
         })
         .map_err(SwapBuffersError::EGLSwapBuffers)
     }
+
+    /// String identifying this native surface from its counterparts of the same platform, if applicable.
+    fn identifier(&self) -> Option<String> {
+        None
+    }
 }
 
 #[cfg(feature = "backend_winit")]
@@ -324,6 +347,10 @@ unsafe impl EGLNativeSurface for XlibWindow {
             )
         })
     }
+
+    fn identifier(&self) -> Option<String> {
+        Some("Winit/X11".into())
+    }
 }
 
 #[cfg(feature = "backend_winit")]
@@ -346,5 +373,9 @@ unsafe impl EGLNativeSurface for wegl::WlEglSurface {
     fn resize(&self, width: i32, height: i32, dx: i32, dy: i32) -> bool {
         wegl::WlEglSurface::resize(self, width, height, dx, dy);
         true
+    }
+
+    fn identifier(&self) -> Option<String> {
+        Some("Winit/Wayland".into())
     }
 }

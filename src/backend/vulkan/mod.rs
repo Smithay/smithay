@@ -63,7 +63,7 @@
 //! instance and have the same physical device handle.
 
 #![warn(missing_debug_implementations)]
-#![deny(unsafe_op_in_unsafe_fn)]
+#![forbid(unsafe_op_in_unsafe_fn)]
 
 use std::{
     env::{self, VarError},
@@ -80,6 +80,7 @@ use ash::{
 use libc::c_void;
 use once_cell::sync::Lazy;
 use scopeguard::ScopeGuard;
+use tracing::{error, info, info_span, instrument, trace, warn};
 
 use crate::backend::vulkan::inner::DebugState;
 
@@ -87,8 +88,6 @@ use self::{inner::InstanceInner, version::Version};
 
 #[cfg(feature = "backend_drm")]
 use super::drm::DrmNode;
-#[cfg(feature = "backend_drm")]
-use nix::sys::stat;
 
 mod inner;
 mod phd;
@@ -163,15 +162,8 @@ pub struct Instance(Arc<InstanceInner>);
 
 impl Instance {
     /// Creates a new [`Instance`].
-    pub fn new<L>(
-        max_version: Version,
-        app_info: Option<AppInfo>,
-        logger: L,
-    ) -> Result<Instance, InstanceError>
-    where
-        L: Into<Option<slog::Logger>>,
-    {
-        unsafe { Self::with_extensions(max_version, app_info, logger, &[]) }
+    pub fn new(max_version: Version, app_info: Option<AppInfo>) -> Result<Instance, InstanceError> {
+        unsafe { Self::with_extensions(max_version, app_info, &[]) }
     }
 
     /// Creates a new [`Instance`] with some additionally specified extensions.
@@ -182,23 +174,19 @@ impl Instance {
     ///   must be satisfied.
     /// * Any enabled extensions must also have the dependency extensions enabled
     ///   (see `VUID-vkCreateInstance-ppEnabledExtensionNames-01388`).
-    pub unsafe fn with_extensions<L>(
+    pub unsafe fn with_extensions(
         max_version: Version,
         app_info: Option<AppInfo>,
-        logger: L,
         extensions: &[&'static CStr],
-    ) -> Result<Instance, InstanceError>
-    where
-        L: Into<Option<slog::Logger>>,
-    {
-        let logger =
-            crate::slog_or_fallback(logger.into()).new(slog::o!("smithay_module" => "backend_vulkan"));
-
+    ) -> Result<Instance, InstanceError> {
         assert!(
             max_version >= Version::VERSION_1_1,
             "Smithay requires at least Vulkan 1.1"
         );
-        let requested_max_version = get_env_or_max_version(max_version, &logger);
+        let requested_max_version = get_env_or_max_version(max_version);
+
+        let span = info_span!("backend_vulkan", version = tracing::field::Empty);
+        let _guard = span.enter();
 
         // Determine the maximum instance version that is possible.
         let max_version = {
@@ -214,12 +202,13 @@ impl Instance {
         };
 
         if max_version == Version::VERSION_1_0 {
-            slog::error!(logger, "Vulkan does not support version 1.1");
+            error!("Vulkan does not support version 1.1");
             return Err(InstanceError::UnsupportedVersion);
         }
 
         // Pick the lower of the requested max version and max possible version
         let api_version = Version::from_raw(u32::min(max_version.to_raw(), requested_max_version.to_raw()));
+        span.record("version", tracing::field::display(api_version));
 
         let available_layers = Self::enumerate_layers()?.collect::<Vec<_>>();
         let available_extensions = Self::enumerate_extensions()?.collect::<Vec<_>>();
@@ -237,10 +226,7 @@ impl Instance {
             {
                 layers.push(VALIDATION);
             } else {
-                slog::warn!(
-                    logger,
-                    "Validation layers not available. These can be installed through your package manager",
-                );
+                warn!("Validation layers not available. These can be installed through your package manager",);
             }
         }
 
@@ -296,12 +282,11 @@ impl Instance {
 
         // Setup the debug utils
         let debug_state = if has_debug_utils {
-            let messenger_logger = logger.new(slog::o!("vulkan" => "debug_messenger"));
+            let span = info_span!("backend_vulkan_debug");
             let debug_utils = DebugUtils::new(library, &instance);
-
-            // Place the pointer to the logger in a scopeguard to prevent a memory leak in case creating the
+            // Place the pointer to the span in a scopeguard to prevent a memory leak in case creating the
             // debug messenger fails.
-            let logger_ptr = scopeguard::guard(Box::into_raw(Box::new(messenger_logger)), |ptr| unsafe {
+            let span_ptr = scopeguard::guard(Box::into_raw(Box::new(span)), |ptr| unsafe {
                 let _ = Box::from_raw(ptr);
             });
 
@@ -318,18 +303,18 @@ impl Instance {
                         | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION,
                 )
                 .pfn_user_callback(Some(vulkan_debug_utils_callback))
-                .user_data(*logger_ptr as *mut _);
+                .user_data(*span_ptr as *mut _);
 
             let debug_messenger = unsafe { debug_utils.create_debug_utils_messenger(&create_info, None) }?;
 
             // Disarm the destructor for the logger pointer since the instance is now responsible for
             // destroying the logger.
-            let logger_ptr = ScopeGuard::into_inner(logger_ptr);
+            let span_ptr = ScopeGuard::into_inner(span_ptr);
 
             Some(DebugState {
                 debug_utils,
                 debug_messenger,
-                logger_ptr,
+                span_ptr,
             })
         } else {
             None
@@ -338,19 +323,17 @@ impl Instance {
         // Creating the debug messenger was successful, disarm the scopeguard and let InstanceInner manage
         // destroying the instance.
         let instance = ScopeGuard::into_inner(instance);
+        drop(_guard);
         let inner = InstanceInner {
             instance,
             version: api_version,
             debug_state,
+            span,
             enabled_extensions,
         };
 
-        slog::info!(logger, "Created new instance" ; slog::o!("version" => format!("{}", api_version)));
-        slog::info!(
-            logger,
-            "Enabled instance extensions: {:?}",
-            inner.enabled_extensions
-        );
+        info!("Created new instance");
+        info!("Enabled instance extensions: {:?}", inner.enabled_extensions);
 
         Ok(Instance(Arc::new(inner)))
     }
@@ -415,11 +398,14 @@ pub struct PhysicalDevice {
     info: PhdInfo,
     extensions: Vec<CString>,
     instance: Instance,
+    span: tracing::Span,
 }
 
 impl PhysicalDevice {
     /// Enumerates over all physical devices available on the system, returning an iterator of [`PhysicalDevice`]
     pub fn enumerate(instance: &Instance) -> VkResult<impl Iterator<Item = PhysicalDevice>> {
+        let _span = instance.0.span.enter();
+
         // Must clone instance or else the returned iterator has a lifetime over `&Instance`
         let instance = instance.clone();
         let devices = unsafe { instance.handle().enumerate_physical_devices() }?;
@@ -497,12 +483,13 @@ impl PhysicalDevice {
     /// Returns the major and minor numbers of the primary node which corresponds to this physical device's DRM
     /// device.
     #[cfg(feature = "backend_drm")]
+    #[instrument(level = "debug", parent = &self.span, skip(self))]
     pub fn primary_node(&self) -> Result<Option<DrmNode>, UnsupportedProperty> {
         let properties_drm = self.info.get_drm_properties()?;
         let node = Some(properties_drm)
             .filter(|props| props.has_primary == vk::TRUE)
             .and_then(|props| {
-                DrmNode::from_dev_id(stat::makedev(props.primary_major as _, props.primary_minor as _)).ok()
+                DrmNode::from_dev_id(libc::makedev(props.primary_major as _, props.primary_minor as _)).ok()
             });
 
         Ok(node)
@@ -514,12 +501,13 @@ impl PhysicalDevice {
     /// Note that not every device has a render node. If there is no render node (this function returns [`None`])
     /// then try to use the primary node.
     #[cfg(feature = "backend_drm")]
+    #[instrument(level = "debug", parent = &self.span, skip(self))]
     pub fn render_node(&self) -> Result<Option<DrmNode>, UnsupportedProperty> {
         let properties_drm = self.info.get_drm_properties()?;
         let node = Some(properties_drm)
             .filter(|props| props.has_render == vk::TRUE)
             .and_then(|props| {
-                DrmNode::from_dev_id(stat::makedev(props.render_major as _, props.render_minor as _)).ok()
+                DrmNode::from_dev_id(libc::makedev(props.render_major as _, props.render_minor as _)).ok()
             });
 
         Ok(node)
@@ -562,6 +550,7 @@ impl PhysicalDevice {
     /// Returns properties for each supported DRM modifier for the specified format.
     ///
     /// Returns [`Err`] if the `VK_EXT_image_drm_format_modifier` extension is not supported.
+    #[instrument(level = "debug", parent = &self.span, skip(self))]
     pub fn get_format_modifier_properties(
         &self,
         format: vk::Format,
@@ -669,16 +658,13 @@ struct PhdInfo {
     driver: Option<DriverInfo>,
 }
 
-fn get_env_or_max_version(max_version: Version, logger: &slog::Logger) -> Version {
+fn get_env_or_max_version(max_version: Version) -> Version {
     // Consider max version overrides from env
     match env::var("SMITHAY_VK_VERSION") {
         Ok(version) => {
             let overriden_version = match &version[..] {
                 "1.0" => {
-                    slog::warn!(
-                        logger,
-                        "Smithay does not support Vulkan 1.0, ignoring SMITHAY_VK_VERSION"
-                    );
+                    warn!("Smithay does not support Vulkan 1.0, ignoring SMITHAY_VK_VERSION");
                     return max_version;
                 }
                 "1.1" => Some(Version::VERSION_1_1),
@@ -690,8 +676,7 @@ fn get_env_or_max_version(max_version: Version, logger: &slog::Logger) -> Versio
             // The env var can only lower the maximum version, not raise it.
             if let Some(overridden_version) = overriden_version {
                 if overridden_version > max_version {
-                    slog::warn!(
-                        logger,
+                    warn!(
                         "Ignoring SMITHAY_VK_VERSION since the requested max version is higher than the maximum of {}.{}",
                         max_version.major,
                         max_version.minor
@@ -701,16 +686,13 @@ fn get_env_or_max_version(max_version: Version, logger: &slog::Logger) -> Versio
                     overridden_version
                 }
             } else {
-                slog::warn!(logger, "SMITHAY_VK_VERSION was set to an unknown Vulkan version");
+                warn!("SMITHAY_VK_VERSION was set to an unknown Vulkan version");
                 max_version
             }
         }
 
         Err(VarError::NotUnicode(_)) => {
-            slog::warn!(
-                logger,
-                "Value of SMITHAY_VK_VERSION is not valid Unicode, ignoring."
-            );
+            warn!("Value of SMITHAY_VK_VERSION is not valid Unicode, ignoring.");
 
             max_version
         }
@@ -723,14 +705,14 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
     message_type: vk::DebugUtilsMessageTypeFlagsEXT,
     p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
-    logger: *mut c_void,
+    span: *mut c_void,
 ) -> vk::Bool32 {
     let _ = std::panic::catch_unwind(|| {
-        // Get the logger from the user data pointer we gave to Vulkan.
+        // Get the span from the user data pointer we gave to Vulkan.
         //
-        // The logger is allocated on the heap using a box, but we do not want to drop the logger, so read from
-        // the pointer.
-        let logger: &slog::Logger = unsafe { (logger as *mut slog::Logger).as_ref() }.unwrap();
+        // The span is allocated on the heap using a box, but we do not want to drop the span,
+        // so read from the pointer.
+        let _guard = unsafe { (span as *mut tracing::Span).as_ref() }.unwrap().enter();
 
         // VUID-VkDebugUtilsMessengerCallbackDataEXT-pMessage-parameter: Message must be valid UTF-8 with a null
         // terminator.
@@ -740,11 +722,11 @@ unsafe extern "system" fn vulkan_debug_utils_callback(
 
         match message_severity {
             vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => {
-                slog::trace!(logger, "{}", message ; "ty" => ty)
+                trace!(ty, "{}", message)
             }
-            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => slog::info!(logger, "{}", message ; "ty" => ty),
-            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => slog::warn!(logger, "{}", message ; "ty" => ty),
-            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => slog::error!(logger, "{}", message ; "ty" => ty),
+            vk::DebugUtilsMessageSeverityFlagsEXT::INFO => info!(ty, "{}", message),
+            vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => warn!(ty, "{}", message),
+            vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => error!(ty, "{}", message),
             _ => (),
         }
     });

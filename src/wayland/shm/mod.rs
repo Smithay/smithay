@@ -29,10 +29,9 @@
 //! // Create the ShmState.
 //! // Here, we specify that Yuyv and C8 format are supported
 //! // additionally to the standard Argb8888 and Xrgb8888.
-//! let state = ShmState::new::<State, _>(
+//! let state = ShmState::new::<State>(
 //!     &display.handle(),
 //!     vec![Format::Yuyv, Format::C8],
-//!     None // we don't provide a logger here
 //! );
 //!
 //! // insert the shmstate into your compositor state.
@@ -64,7 +63,7 @@
 //! use smithay::wayland::shm::{with_buffer_contents, BufferData, BufferAccessError};
 //!
 //! let content = with_buffer_contents(&buffer,
-//!     |slice: &[u8], buffer_metadata: BufferData| {
+//!     |ptr: *const u8, len: usize, buffer_metadata: BufferData| {
 //!         // do something to extract the contents of the buffer
 //!     }
 //! );
@@ -96,7 +95,7 @@
 //!
 //! If you are already using an handler for this signal, you probably don't want to use this handler.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use wayland_server::{
     backend::GlobalId,
@@ -120,9 +119,8 @@ use super::buffer::BufferHandler;
 /// State of SHM module
 #[derive(Debug)]
 pub struct ShmState {
-    formats: Vec<wl_shm::Format>,
+    formats: HashSet<wl_shm::Format>,
     shm: GlobalId,
-    log: ::slog::Logger,
 }
 
 impl ShmState {
@@ -134,7 +132,7 @@ impl ShmState {
     /// The global is directly created on the provided [`Display`](wayland_server::Display),
     /// and this function returns the a delegate type. The id provided by [`ShmState::global`] may be used to
     /// remove this global in the future.
-    pub fn new<D, L>(display: &DisplayHandle, mut formats: Vec<wl_shm::Format>, logger: L) -> ShmState
+    pub fn new<D>(display: &DisplayHandle, formats: impl IntoIterator<Item = wl_shm::Format>) -> ShmState
     where
         D: GlobalDispatch<WlShm, ()>
             + Dispatch<WlShm, ()>
@@ -142,26 +140,36 @@ impl ShmState {
             + BufferHandler
             + ShmHandler
             + 'static,
-        L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_fallback(logger);
+        let mut formats = formats.into_iter().collect::<HashSet<_>>();
 
         // Mandatory formats
-        formats.push(wl_shm::Format::Argb8888);
-        formats.push(wl_shm::Format::Xrgb8888);
+        formats.insert(wl_shm::Format::Argb8888);
+        formats.insert(wl_shm::Format::Xrgb8888);
 
         let shm = display.create_global::<D, WlShm, _>(1, ());
 
-        ShmState {
-            formats,
-            shm,
-            log: log.new(slog::o!("smithay_module" => "shm_handler")),
-        }
+        ShmState { formats, shm }
     }
 
     /// Returns the id of the [`WlShm`] global.
     pub fn global(&self) -> GlobalId {
         self.shm.clone()
+    }
+
+    /// Updates the list of formats advertised by the global.
+    ///
+    /// This will only affect new binds to the wl_shm global.
+    ///
+    /// Removing formats will cause old clients trying to create
+    /// a buffer of a now unsupported format to be killed.
+    ///
+    /// This function will never remove the mandatory formats `ARGB8888` and `XRGB8888`.
+    pub fn update_formats(&mut self, formats: impl IntoIterator<Item = wl_shm::Format>) {
+        self.formats = formats.into_iter().collect::<HashSet<_>>();
+        // Mandatory formats
+        self.formats.insert(wl_shm::Format::Argb8888);
+        self.formats.insert(wl_shm::Format::Xrgb8888);
     }
 }
 
@@ -207,21 +215,30 @@ impl From<UnmanagedResource> for BufferAccessError {
 /// If the buffer is managed by the provided `ShmGlobal`, its contents are
 /// extracted and the closure is extracted with them:
 ///
-/// - The first argument is a data slice of the contents of the pool
-/// - The second argument is the specification of this buffer is this pool
+/// - The first argument is a pointer to the contents of the pool
+/// - The second argument is the length of the contents of the pool
+/// - The third argument is the specification of this buffer is this pool
+///
+/// The pool cannot be provided as a slice since it is shared memory that could be mutated
+/// by the client.
 ///
 /// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
 /// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
 /// EGL buffer for example).
+///
+/// # Safety
+/// The pointer passed to the callback is only valid while the callback is running. The shared
+/// memory may be mutated by the client at any time. Creating a reference or slice into this memory
+/// is undefined behavior if it is mutated by the client while the reference exists.
 pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<T, BufferAccessError>
 where
-    F: FnOnce(&[u8], BufferData) -> T,
+    F: FnOnce(*const u8, usize, BufferData) -> T,
 {
     let data = buffer
         .data::<ShmBufferUserData>()
         .ok_or(BufferAccessError::NotManaged)?;
 
-    match data.pool.with_data_slice(|slice| f(slice, data.data)) {
+    match data.pool.with_data(|ptr, len| f(ptr, len, data.data)) {
         Ok(t) => Ok(t),
         Err(()) => {
             // SIGBUS error occurred
@@ -236,21 +253,30 @@ where
 /// If the buffer is managed by the provided `ShmGlobal`, its contents are
 /// extracted and the closure is extracted with them:
 ///
-/// - The first argument is a data slice of the contents of the pool
-/// - The second argument is the specification of this buffer is this pool
+/// - The first argument is a pointer to the contents of the pool
+/// - The second argument is the length of the contents of the pool
+/// - The third argument is the specification of this buffer is this pool
+///
+/// The pool cannot be provided as a slice since it is shared memory that could be mutated
+/// by the client.
 ///
 /// If the buffer is not managed by the provided `ShmGlobal`, the closure is not called
 /// and this method will return `Err(BufferAccessError::NotManaged)` (this will be the case for an
 /// EGL buffer for example).
+///
+/// # Safety
+/// The pointer passed to the callback is only valid while the callback is running. The shared
+/// memory may be mutated by the client at any time. Creating a reference or slice into this memory
+/// is undefined behavior if it is mutated by the client while the reference exists.
 pub fn with_buffer_contents_mut<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<T, BufferAccessError>
 where
-    F: FnOnce(&mut [u8], BufferData) -> T,
+    F: FnOnce(*mut u8, usize, BufferData) -> T,
 {
     let data = buffer
         .data::<ShmBufferUserData>()
         .ok_or(BufferAccessError::NotManaged)?;
 
-    match data.pool.with_data_slice_mut(|slice| f(slice, data.data)) {
+    match data.pool.with_data_mut(|ptr, len| f(ptr, len, data.data)) {
         Ok(t) => Ok(t),
         Err(()) => {
             // SIGBUS error occurred
@@ -355,6 +381,147 @@ pub fn has_alpha(format: wl_shm::Format) -> bool {
             | wl_shm::Format::Xrgb16161616
             | wl_shm::Format::Xbgr16161616
     )
+}
+
+macro_rules! shm_format_table {
+    (
+        $(
+            $fourcc: ident => $shm: ident
+        ),* $(,)?
+    ) => {
+        /// Convert from a [`Fourcc`](backend::allocator::Fourcc) format to a wl_shm format
+        pub const fn fourcc_to_shm_format(value: $crate::backend::allocator::Fourcc) -> Option<$crate::reexports::wayland_server::protocol::wl_shm::Format> {
+            match value {
+                $(
+                    $crate::backend::allocator::Fourcc::$fourcc => Some($crate::reexports::wayland_server::protocol::wl_shm::Format::$shm),
+                )*
+                _ => None,
+            }
+        }
+
+        /// Convert from a wl_shm format to a [`Fourcc`](backend::allocator::Fourcc) format
+        pub const fn shm_format_to_fourcc(value: $crate::reexports::wayland_server::protocol::wl_shm::Format) -> Option<$crate::backend::allocator::Fourcc> {
+            match value {
+                $(
+                    $crate::reexports::wayland_server::protocol::wl_shm::Format::$shm => Some($crate::backend::allocator::Fourcc::$fourcc),
+                )*
+                _ => None,
+            }
+        }
+    }
+}
+
+shm_format_table! {
+    Argb8888 => Argb8888,
+    Xrgb8888 => Xrgb8888,
+    C8 => C8,
+    Rgb332 => Rgb332,
+    Bgr233 => Bgr233,
+    Xrgb4444 => Xrgb4444,
+    Xbgr4444 => Xbgr4444,
+    Rgbx4444 => Rgbx4444,
+    Bgrx4444 => Bgrx4444,
+    Argb4444 => Argb4444,
+    Abgr4444 => Abgr4444,
+    Rgba4444 => Rgba4444,
+    Bgra4444 => Bgra4444,
+    Xrgb1555 => Xrgb1555,
+    Xbgr1555 => Xbgr1555,
+    Rgbx5551 => Rgbx5551,
+    Bgrx5551 => Bgrx5551,
+    Argb1555 => Argb1555,
+    Abgr1555 => Abgr1555,
+    Rgba5551 => Rgba5551,
+    Bgra5551 => Bgra5551,
+    Rgb565 => Rgb565,
+    Bgr565 => Bgr565,
+    Rgb888 => Rgb888,
+    Bgr888 => Bgr888,
+    Xbgr8888 => Xbgr8888,
+    Rgbx8888 => Rgbx8888,
+    Bgrx8888 => Bgrx8888,
+    Abgr8888 => Abgr8888,
+    Rgba8888 => Rgba8888,
+    Bgra8888 => Bgra8888,
+    Xrgb2101010 => Xrgb2101010,
+    Xbgr2101010 => Xbgr2101010,
+    Rgbx1010102 => Rgbx1010102,
+    Bgrx1010102 => Bgrx1010102,
+    Argb2101010 => Argb2101010,
+    Abgr2101010 => Abgr2101010,
+    Rgba1010102 => Rgba1010102,
+    Bgra1010102 => Bgra1010102,
+    Yuyv => Yuyv,
+    Yvyu => Yvyu,
+    Uyvy => Uyvy,
+    Vyuy => Vyuy,
+    Ayuv => Ayuv,
+    Nv12 => Nv12,
+    Nv21 => Nv21,
+    Nv16 => Nv16,
+    Nv61 => Nv61,
+    Yuv410 => Yuv410,
+    Yvu410 => Yvu410,
+    Yuv411 => Yuv411,
+    Yvu411 => Yvu411,
+    Yuv420 => Yuv420,
+    Yvu420 => Yvu420,
+    Yuv422 => Yuv422,
+    Yvu422 => Yvu422,
+    Yuv444 => Yuv444,
+    Yvu444 => Yvu444,
+    R8 => R8,
+    R16 => R16,
+    Rg88 => Rg88,
+    Gr88 => Gr88,
+    Rg1616 => Rg1616,
+    Gr1616 => Gr1616,
+    Xrgb16161616f => Xrgb16161616f,
+    Xbgr16161616f => Xbgr16161616f,
+    Argb16161616f => Argb16161616f,
+    Abgr16161616f => Abgr16161616f,
+    Xyuv8888 => Xyuv8888,
+    Vuy888 => Vuy888,
+    Vuy101010 => Vuy101010,
+    Y210 => Y210,
+    Y212 => Y212,
+    Y216 => Y216,
+    Y410 => Y410,
+    Y412 => Y412,
+    Y416 => Y416,
+    Xvyu2101010 => Xvyu2101010,
+    Xvyu12_16161616 => Xvyu1216161616,
+    Xvyu16161616 => Xvyu16161616,
+    Y0l0 => Y0l0,
+    X0l0 => X0l0,
+    Y0l2 => Y0l2,
+    X0l2 => X0l2,
+    Yuv420_8bit => Yuv4208bit,
+    Yuv420_10bit => Yuv42010bit,
+    Xrgb8888_a8 => Xrgb8888A8,
+    Xbgr8888_a8 => Xbgr8888A8,
+    Rgbx8888_a8 => Rgbx8888A8,
+    Bgrx8888_a8 => Bgrx8888A8,
+    Rgb888_a8 => Rgb888A8,
+    Bgr888_a8 => Bgr888A8,
+    Rgb565_a8 => Rgb565A8,
+    Bgr565_a8 => Bgr565A8,
+    Nv24 => Nv24,
+    Nv42 => Nv42,
+    P210 => P210,
+    P010 => P010,
+    P012 => P012,
+    P016 => P016,
+    Axbxgxrx106106106106 => Axbxgxrx106106106106,
+    Nv15 => Nv15,
+    Q410 => Q410,
+    Q401 => Q401,
+
+    // these currently have no drm variant
+    //Xrgb16161616 => Xrgb16161616,
+    //Xbgr16161616 => Xbgr16161616,
+    //Argb16161616 => Argb16161616,
+    //Abgr16161616 => Abgr16161616,
 }
 
 /// Details of the contents of a buffer relative to its pool

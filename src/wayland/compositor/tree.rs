@@ -3,14 +3,18 @@ use crate::{utils::Serial, wayland::compositor::SUBSURFACE_ROLE};
 use super::{
     cache::MultiCache,
     handlers::{is_effectively_sync, SurfaceUserData},
-    transaction::PendingTransaction,
-    BufferAssignment, SurfaceAttributes, SurfaceData,
+    transaction::{Blocker, PendingTransaction, TransactionQueue},
+    BufferAssignment, CompositorHandler, SurfaceAttributes, SurfaceData,
 };
 use std::{
+    any::Any,
     fmt,
-    sync::{atomic::Ordering, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex},
 };
 use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle, Resource};
+
+type CommitHook = dyn Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync;
+type DestructionHook = dyn Fn(&mut dyn Any, &SurfaceData) + Send;
 
 /// Node of a subsurface tree, holding some user specified data type U
 /// at each node
@@ -31,9 +35,9 @@ pub struct PrivateSurfaceData {
     public_data: SurfaceData,
     pending_transaction: PendingTransaction,
     current_txid: Serial,
-    pre_commit_hooks: Vec<fn(&DisplayHandle, &WlSurface)>,
-    post_commit_hooks: Vec<fn(&DisplayHandle, &WlSurface)>,
-    destruction_hooks: Vec<fn(&SurfaceData)>,
+    pre_commit_hooks: Vec<Arc<Box<CommitHook>>>,
+    post_commit_hooks: Vec<Arc<Box<CommitHook>>>,
+    destruction_hooks: Vec<Box<DestructionHook>>,
 }
 
 impl fmt::Debug for PrivateSurfaceData {
@@ -111,7 +115,7 @@ impl PrivateSurfaceData {
     }
 
     /// Cleans the `as_ref().user_data` of that surface, must be called when it is destroyed
-    pub fn cleanup(surface_data: &SurfaceUserData, surface_id: ObjectId) {
+    pub fn cleanup<D: 'static>(state: &mut D, surface_data: &SurfaceUserData, surface_id: ObjectId) {
         let my_data_mutex = &surface_data.inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         if let Some(old_parent) = my_data.parent.take() {
@@ -151,7 +155,7 @@ impl PrivateSurfaceData {
         };
 
         for hook in &my_data.destruction_hooks {
-            hook(&my_data.public_data)
+            hook(state, &my_data.public_data)
         }
     }
 
@@ -177,25 +181,40 @@ impl PrivateSurfaceData {
         f(&my_data.public_data)
     }
 
-    pub fn add_pre_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
+    pub fn add_blocker(surface: &WlSurface, blocker: impl Blocker + Send + 'static) {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
-        let mut my_data = my_data_mutex.lock().unwrap();
-        my_data.pre_commit_hooks.push(hook);
+        let my_data = my_data_mutex.lock().unwrap();
+        my_data.pending_transaction.add_blocker(blocker)
     }
 
-    pub fn add_post_commit_hook(surface: &WlSurface, hook: fn(&DisplayHandle, &WlSurface)) {
+    pub fn add_pre_commit_hook(
+        surface: &WlSurface,
+        hook: impl Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
+    ) {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
-        my_data.post_commit_hooks.push(hook);
+        my_data.pre_commit_hooks.push(Arc::new(Box::new(hook)));
     }
 
-    pub fn add_destruction_hook(surface: &WlSurface, hook: fn(&SurfaceData)) {
+    pub fn add_post_commit_hook(
+        surface: &WlSurface,
+        hook: impl Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
+    ) {
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
         let mut my_data = my_data_mutex.lock().unwrap();
-        my_data.destruction_hooks.push(hook);
+        my_data.post_commit_hooks.push(Arc::new(Box::new(hook)));
     }
 
-    pub fn invoke_pre_commit_hooks(dh: &DisplayHandle, surface: &WlSurface) {
+    pub fn add_destruction_hook(
+        surface: &WlSurface,
+        hook: impl Fn(&mut dyn Any, &SurfaceData) + Send + 'static,
+    ) {
+        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
+        let mut my_data = my_data_mutex.lock().unwrap();
+        my_data.destruction_hooks.push(Box::new(hook));
+    }
+
+    pub fn invoke_pre_commit_hooks<D: 'static>(state: &mut D, dh: &DisplayHandle, surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
         let hooks = {
             let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
@@ -203,11 +222,11 @@ impl PrivateSurfaceData {
             my_data.pre_commit_hooks.clone()
         };
         for hook in hooks {
-            hook(dh, surface);
+            hook(state, dh, surface);
         }
     }
 
-    pub fn invoke_post_commit_hooks(dh: &DisplayHandle, surface: &WlSurface) {
+    pub fn invoke_post_commit_hooks<D: 'static>(state: &mut D, dh: &DisplayHandle, surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
         let hooks = {
             let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
@@ -215,11 +234,11 @@ impl PrivateSurfaceData {
             my_data.post_commit_hooks.clone()
         };
         for hook in hooks {
-            hook(dh, surface);
+            hook(state, dh, surface);
         }
     }
 
-    pub fn commit(surface: &WlSurface, dh: &DisplayHandle) {
+    pub fn commit<C: CompositorHandler + 'static>(surface: &WlSurface, dh: &DisplayHandle, state: &mut C) {
         let is_sync = is_effectively_sync(surface);
         let children = PrivateSurfaceData::get_children(surface);
         let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
@@ -251,12 +270,22 @@ impl PrivateSurfaceData {
             .pending_transaction
             .insert_state(surface.clone(), my_data.current_txid);
         if !is_sync {
-            // if we are not sync, apply the transaction immediately
+            // if we are not sync, add the transaction to the queue
             let tx = std::mem::take(&mut my_data.pending_transaction);
+            let client = surface.client().unwrap();
+            let mut queue_guard = state.client_compositor_state(&client).queue.lock().unwrap();
+            let queue = queue_guard.get_or_insert_with(TransactionQueue::default);
+            queue.append(tx.finalize());
             // release the mutex, as applying the transaction will try to lock it
             std::mem::drop(my_data);
-            // apply the transaction
-            tx.finalize().apply(dh);
+            // trigger the queue
+            let transactions = queue.take_ready();
+            // release the queue lock
+            std::mem::drop(queue_guard);
+            // apply might call commit, which might call blocker_cleared, so we need to free the queue before applying
+            for transaction in transactions {
+                transaction.apply(dh, state)
+            }
         }
     }
 

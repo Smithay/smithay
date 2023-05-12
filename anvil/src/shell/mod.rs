@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 #[cfg(feature = "xwayland")]
-use smithay::xwayland::X11Wm;
+use smithay::xwayland::{X11Wm, XWaylandClientData};
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
@@ -9,14 +9,22 @@ use smithay::{
         WindowSurfaceType,
     },
     output::Output,
-    reexports::wayland_server::protocol::{wl_buffer::WlBuffer, wl_output, wl_surface::WlSurface},
+    reexports::{
+        calloop::Interest,
+        wayland_server::{
+            protocol::{wl_buffer::WlBuffer, wl_output, wl_surface::WlSurface},
+            Client, Resource,
+        },
+    },
     utils::{Logical, Point, Rectangle, Size},
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            get_parent, is_sync_subsurface, with_states, with_surface_tree_upward, CompositorHandler,
-            CompositorState, TraversalAction,
+            add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
+            with_surface_tree_upward, BufferAssignment, CompositorClientState, CompositorHandler,
+            CompositorState, SurfaceAttributes, TraversalAction,
         },
+        dmabuf::get_dmabuf,
         shell::{
             wlr_layer::{
                 Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
@@ -27,9 +35,12 @@ use smithay::{
     },
 };
 
-use crate::state::{AnvilState, Backend};
 #[cfg(feature = "xwayland")]
 use crate::CalloopData;
+use crate::{
+    state::{AnvilState, Backend},
+    ClientState,
+};
 
 mod element;
 mod grabs;
@@ -88,11 +99,52 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
     fn compositor_state(&mut self) -> &mut CompositorState {
         &mut self.compositor_state
     }
+    fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
+        #[cfg(feature = "xwayland")]
+        if let Some(state) = client.get_data::<XWaylandClientData>() {
+            return &state.compositor_state;
+        }
+        if let Some(state) = client.get_data::<ClientState>() {
+            return &state.compositor_state;
+        }
+        panic!("Unknown client data type")
+    }
+
+    fn new_surface(&mut self, surface: &WlSurface) {
+        add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
+            let maybe_dmabuf = with_states(surface, |surface_data| {
+                surface_data
+                    .cached_state
+                    .pending::<SurfaceAttributes>()
+                    .buffer
+                    .as_ref()
+                    .and_then(|assignment| match assignment {
+                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).ok(),
+                        _ => None,
+                    })
+            });
+            if let Some(dmabuf) = maybe_dmabuf {
+                if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
+                    let client = surface.client().unwrap();
+                    let res = state.handle.insert_source(source, move |_, _, data| {
+                        data.state
+                            .client_compositor_state(&client)
+                            .blocker_cleared(&mut data.state, &data.display.handle());
+                        Ok(())
+                    });
+                    if res.is_ok() {
+                        add_blocker(surface, blocker);
+                    }
+                }
+            }
+        })
+    }
+
     fn commit(&mut self, surface: &WlSurface) {
         #[cfg(feature = "xwayland")]
         X11Wm::commit_hook::<CalloopData<BackendData>>(surface);
 
-        on_commit_buffer_handler(surface);
+        on_commit_buffer_handler::<Self>(surface);
         self.backend_data.early_import(surface);
 
         if !is_sync_subsurface(surface) {
@@ -128,6 +180,19 @@ impl<BackendData: Backend> WlrLayerShellHandler for AnvilState<BackendData> {
             .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
         let mut map = layer_map_for_output(&output);
         map.map_layer(&LayerSurface::new(surface, namespace)).unwrap();
+    }
+
+    fn layer_destroyed(&mut self, surface: WlrLayerSurface) {
+        if let Some((mut map, layer)) = self.space.outputs().find_map(|o| {
+            let map = layer_map_for_output(o);
+            let layer = map
+                .layers()
+                .find(|&layer| layer.layer_surface() == &surface)
+                .cloned();
+            layer.map(|layer| (map, layer))
+        }) {
+            map.unmap_layer(&layer);
+        }
     }
 }
 
@@ -232,14 +297,13 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
                 .initial_configure_sent
         });
 
+        let mut map = layer_map_for_output(output);
+
+        // arrange the layers before sending the initial configure
+        // to respect any size the client may have sent
+        map.arrange();
         // send the initial configure if relevant
         if !initial_configure_sent {
-            let mut map = layer_map_for_output(output);
-
-            // arrange the layers before sending the initial configure
-            // to respect any size the client may have sent
-            map.arrange();
-
             let layer = map
                 .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
                 .unwrap();
@@ -263,6 +327,14 @@ fn place_new_window(space: &mut Space<WindowElement>, window: &WindowElement, ac
             Some(Rectangle::from_loc_and_size(geo.loc + zone.loc, zone.size))
         })
         .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (800, 800)));
+
+    // set the initial toplevel bounds
+    #[allow(irrefutable_let_patterns)]
+    if let WindowElement::Wayland(window) = window {
+        window.toplevel().with_pending_state(|state| {
+            state.bounds = Some(output_geometry.size);
+        });
+    }
 
     let max_x = output_geometry.loc.x + (((output_geometry.size.w as f32) / 3.0) * 2.0) as i32;
     let max_y = output_geometry.loc.y + (((output_geometry.size.h as f32) / 3.0) * 2.0) as i32;

@@ -13,13 +13,9 @@ use wayland_server::{
     protocol::{wl_keyboard::KeymapFormat, wl_surface::WlSurface},
     Client, DataInit, Dispatch, DisplayHandle,
 };
-use xkbcommon::xkb;
 
 use crate::{
-    input::{
-        keyboard::{KeyboardHandle, KeymapFile, XkbConfig},
-        SeatHandler,
-    },
+    input::{keyboard::KeyboardHandle, SeatHandler},
     utils::{IsAlive, Logical, Physical, Point, Rectangle, SERIAL_COUNTER},
     wayland::{seat::WaylandFocus, text_input::TextInputHandle},
 };
@@ -51,28 +47,6 @@ impl InputMethodHandle {
         } else {
             inner.instance = Some(instance.clone());
         }
-    }
-
-    pub(crate) fn configure_keyboard(&self, xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32) {
-        let inner = self.inner.lock().unwrap();
-        let mut keyboard_inner = inner.keyboard_grab.inner.lock().unwrap();
-        keyboard_inner.repeat_delay = repeat_delay;
-        keyboard_inner.repeat_rate = repeat_rate;
-
-        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
-        let keymap = xkb::Keymap::new_from_names(
-            &context,
-            &xkb_config.rules,
-            &xkb_config.model,
-            &xkb_config.layout,
-            &xkb_config.variant,
-            xkb_config.options,
-            xkb::KEYMAP_COMPILE_NO_FLAGS,
-        )
-        .ok_or(())
-        .unwrap();
-        let log = crate::slog_or_fallback(None);
-        keyboard_inner.keymap_file = Some(KeymapFile::new(&keymap, log));
     }
 
     /// Callback function to access the input method object
@@ -215,11 +189,10 @@ where
                 keyboard.grab = Some(instance.clone());
                 keyboard.text_input_handle = data.text_input_handle.clone();
                 keyboard.popup_handle = input_method.popup.clone();
-                instance.repeat_info(keyboard.repeat_rate, keyboard.repeat_delay);
-                keyboard
-                    .keymap_file
-                    .as_ref()
-                    .unwrap()
+                let guard = data.keyboard_handle.arc.internal.lock().unwrap();
+                instance.repeat_info(guard.repeat_rate, guard.repeat_delay);
+                let keymap_file = data.keyboard_handle.arc.keymap.lock().unwrap();
+                keymap_file
                     .with_fd(false, |fd, size| {
                         instance.keymap(KeymapFormat::XkbV1, fd, size as u32);
                     })

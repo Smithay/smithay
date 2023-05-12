@@ -2,9 +2,9 @@ use std::cell::Cell;
 
 use smithay::{
     backend::{
-        allocator::dmabuf::Dmabuf,
+        allocator::{dmabuf::Dmabuf, Fourcc},
         renderer::{
-            Frame, ImportDma, ImportDmaWl, ImportEgl, ImportMem, ImportMemWl, Renderer, Texture,
+            DebugFlags, Frame, ImportDma, ImportDmaWl, ImportEgl, ImportMem, ImportMemWl, Renderer, Texture,
             TextureFilter,
         },
         SwapBuffersError,
@@ -46,12 +46,19 @@ impl Renderer for DummyRenderer {
     fn downscale_filter(&mut self, _filter: TextureFilter) -> Result<(), Self::Error> {
         Ok(())
     }
+
+    fn set_debug_flags(&mut self, _flags: DebugFlags) {}
+
+    fn debug_flags(&self) -> DebugFlags {
+        DebugFlags::empty()
+    }
 }
 
 impl ImportMem for DummyRenderer {
     fn import_memory(
         &mut self,
         _data: &[u8],
+        _format: Fourcc,
         _size: Size<i32, Buffer>,
         _flipped: bool,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
@@ -66,6 +73,10 @@ impl ImportMem for DummyRenderer {
     ) -> Result<(), <Self as Renderer>::Error> {
         unimplemented!()
     }
+
+    fn mem_formats(&self) -> Box<dyn Iterator<Item = Fourcc>> {
+        Box::new([Fourcc::Argb8888, Fourcc::Xrgb8888].iter().copied())
+    }
 }
 
 impl ImportMemWl for DummyRenderer {
@@ -76,7 +87,8 @@ impl ImportMemWl for DummyRenderer {
         _damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         use smithay::wayland::shm::with_buffer_contents;
-        let ret = with_buffer_contents(buffer, |slice, data| {
+        use std::ptr;
+        let ret = with_buffer_contents(buffer, |ptr, len, data| {
             let offset = data.offset as u32;
             let width = data.width as u32;
             let height = data.height as u32;
@@ -85,7 +97,9 @@ impl ImportMemWl for DummyRenderer {
             let mut x = 0;
             for h in 0..height {
                 for w in 0..width {
-                    x |= slice[(offset + w + h * stride) as usize];
+                    let idx = (offset + w + h * stride) as usize;
+                    assert!(idx < len);
+                    x |= unsafe { ptr::read(ptr.offset(idx as isize)) };
                 }
             }
 
@@ -156,6 +170,15 @@ impl Frame for DummyFrame {
         Ok(())
     }
 
+    fn draw_solid(
+        &mut self,
+        _dst: Rectangle<i32, Physical>,
+        _damage: &[Rectangle<i32, Physical>],
+        _color: [f32; 4],
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     fn render_texture_from_to(
         &mut self,
         _texture: &Self::TextureId,
@@ -190,5 +213,9 @@ impl Texture for DummyTexture {
 
     fn height(&self) -> u32 {
         self.height
+    }
+
+    fn format(&self) -> Option<Fourcc> {
+        None
     }
 }

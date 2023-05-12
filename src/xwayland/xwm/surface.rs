@@ -12,6 +12,7 @@ use std::{
     collections::HashSet,
     sync::{Arc, Mutex, Weak},
 };
+use tracing::warn;
 use wayland_server::protocol::wl_surface::WlSurface;
 
 use x11rb::{
@@ -37,7 +38,6 @@ pub struct X11Surface {
     atoms: super::Atoms,
     pub(crate) state: Arc<Mutex<SharedSurfaceState>>,
     user_data: Arc<UserDataMap>,
-    log: slog::Logger,
 }
 
 const MWM_HINTS_FLAGS_FIELD: usize = 0;
@@ -58,7 +58,7 @@ pub(crate) struct SharedSurfaceState {
     hints: Option<WmHints>,
     normal_hints: Option<WmSizeHints>,
     transient_for: Option<X11Window>,
-    net_state: Vec<Atom>,
+    net_state: HashSet<Atom>,
     motif_hints: Vec<u32>,
     window_type: Vec<Atom>,
 }
@@ -125,7 +125,6 @@ impl X11Surface {
     /// - `conn` Weak reference on the X11 connection
     /// - `atoms` Atoms struct as defined by the [xwm module](super).
     /// - `geometry` Initial geometry of the window
-    /// - `log` slog logger to be used by this window
     pub fn new(
         xwm: impl Into<Option<XwmId>>,
         window: u32,
@@ -133,7 +132,6 @@ impl X11Surface {
         conn: Weak<RustConnection>,
         atoms: super::Atoms,
         geometry: Rectangle<i32, Logical>,
-        log: impl Into<Option<::slog::Logger>>,
     ) -> X11Surface {
         X11Surface {
             xwm: xwm.into(),
@@ -153,12 +151,11 @@ impl X11Surface {
                 hints: None,
                 normal_hints: None,
                 transient_for: None,
-                net_state: Vec::new(),
+                net_state: HashSet::new(),
                 motif_hints: vec![0; 5],
                 window_type: Vec::new(),
             })),
             user_data: Arc::new(UserDataMap::new()),
-            log: crate::slog_or_fallback(log).new(slog::o!("X11 Window" => window)),
         }
     }
 
@@ -475,41 +472,35 @@ impl X11Surface {
     }
 
     fn change_net_state(&self, added: &[Atom], removed: &[Atom]) -> Result<(), ConnectionError> {
-        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        conn.grab_server()?;
-        let _guard = scopeguard::guard((), |_| {
-            let _ = conn.ungrab_server();
-            let _ = conn.flush();
-        });
+        let mut state = self.state.lock().unwrap();
 
-        let props = conn
-            .get_property(
-                false,
+        let mut changed = false;
+        for atom in removed {
+            changed |= state.net_state.remove(atom);
+        }
+        for atom in added {
+            changed |= state.net_state.insert(*atom);
+        }
+
+        if changed {
+            let new_props = Vec::from_iter(state.net_state.iter().copied());
+
+            let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
+            conn.grab_server()?;
+            let _guard = scopeguard::guard((), |_| {
+                let _ = conn.ungrab_server();
+                let _ = conn.flush();
+            });
+
+            conn.change_property32(
+                PropMode::REPLACE,
                 self.window,
                 self.atoms._NET_WM_STATE,
                 AtomEnum::ATOM,
-                0,
-                1024,
-            )?
-            .reply_unchecked()?;
-        let mut new_props = props
-            .and_then(|props| Some(props.value32()?.collect::<HashSet<_>>()))
-            .unwrap_or_default();
-        new_props.retain(|p| !removed.contains(p));
-        new_props.extend(added);
-        let new_props = Vec::from_iter(new_props.into_iter());
-
-        conn.change_property32(
-            PropMode::REPLACE,
-            self.window,
-            self.atoms._NET_WM_STATE,
-            AtomEnum::ATOM,
-            &new_props,
-        )?;
-        {
-            let mut state = self.state.lock().unwrap();
-            state.net_state = new_props;
+                &new_props,
+            )?;
         }
+
         Ok(())
     }
 
@@ -536,7 +527,6 @@ impl X11Surface {
             Some(atom) if atom == self.atoms.WM_HINTS => self.update_hints(),
             Some(atom) if atom == AtomEnum::WM_NORMAL_HINTS.into() => self.update_normal_hints(),
             Some(atom) if atom == AtomEnum::WM_TRANSIENT_FOR.into() => self.update_transient_for(),
-            Some(atom) if atom == self.atoms._NET_WM_STATE => self.update_net_state(),
             Some(atom) if atom == self.atoms._NET_WM_WINDOW_TYPE => self.update_net_window_type(),
             Some(atom) if atom == self.atoms._MOTIF_WM_HINTS => self.update_motif_hints(),
             Some(_) => Ok(()), // unknown
@@ -686,31 +676,6 @@ impl X11Surface {
         Ok(())
     }
 
-    fn update_net_state(&self) -> Result<(), ConnectionError> {
-        let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let atoms = match conn
-            .get_property(
-                false,
-                self.window,
-                self.atoms._NET_WM_STATE,
-                AtomEnum::ATOM,
-                0,
-                1024,
-            )?
-            .reply_unchecked()
-        {
-            Ok(atoms) => atoms,
-            Err(ConnectionError::ParseError(_)) => return Ok(()),
-            Err(err) => return Err(err),
-        };
-
-        let mut state = self.state.lock().unwrap();
-        state.net_state = atoms
-            .and_then(|atoms| Some(atoms.value32()?.collect::<Vec<_>>()))
-            .unwrap_or_default();
-        Ok(())
-    }
-
     fn update_net_window_type(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
         let atoms = match conn
@@ -730,7 +695,7 @@ impl X11Surface {
         };
 
         let mut state = self.state.lock().unwrap();
-        state.net_state = atoms
+        state.window_type = atoms
             .and_then(|atoms| Some(atoms.value32()?.collect::<Vec<_>>()))
             .unwrap_or_default();
         Ok(())
@@ -828,43 +793,39 @@ impl IsAlive for X11Surface {
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        match self.input_mode() {
+        let (set_input_focus, send_take_focus) = match self.input_mode() {
             InputMode::None => return,
-            InputMode::Passive => {
-                if let Some(conn) = self.conn.upgrade() {
-                    if let Err(err) = conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME)
-                    {
-                        slog::warn!(
-                            self.log,
-                            "Unable to set focus for X11Surface ({:?}): {}",
-                            self.window,
-                            err
-                        );
-                    }
-                    let _ = conn.flush();
-                }
-            }
-            InputMode::LocallyActive => {
-                if let Some(conn) = self.conn.upgrade() {
-                    let event = ClientMessageEvent::new(
-                        32,
-                        self.window,
-                        self.atoms.WM_PROTOCOLS,
-                        [self.atoms.WM_TAKE_FOCUS, x11rb::CURRENT_TIME, 0, 0, 0],
-                    );
-                    if let Err(err) = conn.send_event(false, self.window, EventMask::NO_EVENT, event) {
-                        slog::warn!(
-                            self.log,
-                            "Unable to send take focus event for X11Surface ({:?}): {}",
-                            self.window,
-                            err
-                        );
-                    }
-                    let _ = conn.flush();
-                }
-            }
-            _ => {}
+            InputMode::Passive => (true, false),
+            InputMode::LocallyActive => (true, true),
+            InputMode::GloballyActive => (false, true),
         };
+
+        if let Some(conn) = self.conn.upgrade() {
+            if set_input_focus {
+                if let Err(err) = conn.set_input_focus(InputFocus::NONE, self.window, x11rb::CURRENT_TIME) {
+                    warn!("Unable to set focus for X11Surface ({:?}): {}", self.window, err);
+                }
+            }
+
+            if send_take_focus {
+                let event = ClientMessageEvent::new(
+                    32,
+                    self.window,
+                    self.atoms.WM_PROTOCOLS,
+                    [self.atoms.WM_TAKE_FOCUS, x11rb::CURRENT_TIME, 0, 0, 0],
+                );
+                if let Err(err) = conn.send_event(false, self.window, EventMask::NO_EVENT, event) {
+                    warn!(
+                        "Unable to send take focus event for X11Surface ({:?}): {}",
+                        self.window, err
+                    );
+                }
+                let _ = conn.flush();
+            }
+
+            let _ = conn.flush();
+        }
+
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             KeyboardTarget::enter(surface, seat, data, keys, serial);
         }
@@ -875,12 +836,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for X11Surface {
             return;
         } else if let Some(conn) = self.conn.upgrade() {
             if let Err(err) = conn.set_input_focus(InputFocus::NONE, x11rb::NONE, x11rb::CURRENT_TIME) {
-                slog::warn!(
-                    self.log,
-                    "Unable to unfocus X11Surface ({:?}): {}",
-                    self.window,
-                    err
-                );
+                warn!("Unable to unfocus X11Surface ({:?}): {}", self.window, err);
             }
             let _ = conn.flush();
         }

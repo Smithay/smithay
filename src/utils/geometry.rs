@@ -952,17 +952,6 @@ impl<N: Coordinate, Kind> SubAssign for Size<N, Kind> {
     }
 }
 
-impl<N: Coordinate, Kind> PartialOrd<Size<N, Kind>> for Size<N, Kind> {
-    #[inline]
-    fn partial_cmp(&self, other: &Size<N, Kind>) -> Option<std::cmp::Ordering> {
-        match self.w.partial_cmp(&other.w) {
-            Some(core::cmp::Ordering::Equal) => {}
-            ord => return ord,
-        }
-        self.h.partial_cmp(&other.h)
-    }
-}
-
 impl<N: Coordinate + Div<Output = N>, KindLhs, KindRhs> Div<Size<N, KindRhs>> for Size<N, KindLhs> {
     type Output = Scale<N>;
 
@@ -1061,7 +1050,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         }
     }
 
-    /// Upscale this [`Rectangle`] by the supplied [`Scale`]
+    /// Downscale this [`Rectangle`] by the supplied [`Scale`]
     pub fn downscale(self, scale: impl Into<Scale<N>>) -> Rectangle<N, Kind> {
         let scale = scale.into();
         Rectangle {
@@ -1152,8 +1141,25 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     }
 
     /// Checks whether a given [`Rectangle`] overlaps with this one
+    ///
+    /// Note: This operation is exclusive, touching only rectangles will return `false`.
+    /// For inclusive overlap test see [`overlaps_or_touches`](Rectangle::overlaps_or_touches)
     #[inline]
     pub fn overlaps(self, other: impl Into<Rectangle<N, Kind>>) -> bool {
+        let other = other.into();
+
+        self.loc.x < other.loc.x.saturating_add(other.size.w)
+            && other.loc.x < self.loc.x.saturating_add(self.size.w)
+            && self.loc.y < other.loc.y.saturating_add(other.size.h)
+            && other.loc.y < self.loc.y.saturating_add(self.size.h)
+    }
+
+    /// Checks whether a given [`Rectangle`] overlaps with this one or touches it
+    ///
+    /// Note: This operation is inclusive, touching only rectangles will return `true`.
+    /// For exclusive overlap test see [`overlaps`](Rectangle::overlaps)
+    #[inline]
+    pub fn overlaps_or_touches(self, other: impl Into<Rectangle<N, Kind>>) -> bool {
         let other = other.into();
 
         self.loc.x <= other.loc.x.saturating_add(other.size.w)
@@ -1817,5 +1823,47 @@ mod tests {
                 Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (20, 100)),
             ]
         )
+    }
+
+    #[test]
+    fn rectangle_overlaps_or_touches_top() {
+        let top = Rectangle::<i32, Logical>::from_loc_and_size((0, -24), (800, 24));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(main.overlaps_or_touches(top));
+    }
+
+    #[test]
+    fn rectangle_overlaps_or_touches_left() {
+        let left = Rectangle::<i32, Logical>::from_loc_and_size((-4, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(main.overlaps_or_touches(left));
+    }
+
+    #[test]
+    fn rectangle_overlaps_or_touches_right() {
+        let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(main.overlaps_or_touches(right));
+    }
+
+    #[test]
+    fn rectangle_no_overlap_top() {
+        let top = Rectangle::<i32, Logical>::from_loc_and_size((0, -24), (800, 24));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(!main.overlaps(top));
+    }
+
+    #[test]
+    fn rectangle_no_overlap_left() {
+        let left = Rectangle::<i32, Logical>::from_loc_and_size((-4, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(!main.overlaps(left));
+    }
+
+    #[test]
+    fn rectangle_no_overlap_right() {
+        let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        assert!(!main.overlaps(right));
     }
 }

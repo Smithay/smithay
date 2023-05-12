@@ -1,3 +1,5 @@
+#![forbid(unsafe_op_in_unsafe_fn)]
+
 use std::{
     cell::Cell,
     num::NonZeroUsize,
@@ -13,18 +15,19 @@ use nix::{
         signal::{self, SigAction, SigHandler, Signal},
     },
 };
-use slog::{debug, trace};
+use tracing::{debug, instrument, trace};
 
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
 
-static SIGBUS_INIT: Once = Once::new();
+/// SAFETY:
+/// This will be only set in the `SIGBUS_INIT` closure, hence only once!
 static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
+static SIGBUS_INIT: Once = Once::new();
 
 #[derive(Debug)]
 pub struct Pool {
     map: RwLock<MemMap>,
     fd: OwnedFd,
-    log: ::slog::Logger,
 }
 
 // SAFETY: The memmap is owned by the pool and content is only accessible via a reference.
@@ -38,18 +41,18 @@ pub enum ResizeError {
 }
 
 impl Pool {
-    pub fn new(fd: OwnedFd, size: NonZeroUsize, log: ::slog::Logger) -> Result<Pool, OwnedFd> {
+    #[instrument(skip_all, name = "wayland_shm")]
+    pub fn new(fd: OwnedFd, size: NonZeroUsize) -> Result<Pool, OwnedFd> {
         let memmap = match MemMap::new(fd.as_raw_fd(), size) {
             Ok(memmap) => memmap,
             Err(_) => {
                 return Err(fd);
             }
         };
-        trace!(log, "Creating new shm pool"; "fd" => fd.as_raw_fd() as i32, "size" => usize::from(size));
+        trace!(fd = ?fd, size = ?size, "Creating new shm pool");
         Ok(Pool {
             map: RwLock::new(memmap),
             fd,
-            log,
         })
     }
 
@@ -61,10 +64,9 @@ impl Pool {
             return Err(ResizeError::InvalidSize);
         }
 
-        trace!(self.log, "Resizing shm pool"; "fd" => self.fd.as_raw_fd() as i32, "oldsize" => oldsize, "newsize" => usize::from(newsize));
-
+        trace!(fd = ?self.fd, oldsize = oldsize, newsize = ?newsize, "Resizing shm pool");
         guard.remap(newsize).map_err(|()| {
-            debug!(self.log, "SHM pool resize failed"; "fd" => self.fd.as_raw_fd() as i32, "oldsize" => oldsize, "newsize" => usize::from(newsize));
+            debug!(fd = ?self.fd, oldsize = oldsize, newsize = ?newsize, "SHM pool resize failed");
             ResizeError::MremapFailed
         })
     }
@@ -73,7 +75,8 @@ impl Pool {
         self.map.read().unwrap().size
     }
 
-    pub fn with_data_slice<T, F: FnOnce(&[u8]) -> T>(&self, f: F) -> Result<T, ()> {
+    #[instrument(level = "trace", skip_all, name = "wayland_shm")]
+    pub fn with_data<T, F: FnOnce(*const u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {
             place_sigbus_handler();
@@ -81,7 +84,7 @@ impl Pool {
 
         let pool_guard = self.map.read().unwrap();
 
-        trace!(self.log, "Buffer access on shm pool"; "fd" => self.fd.as_raw_fd() as i32);
+        trace!(fd = ?self.fd, "Buffer access on shm pool");
 
         // Prepare the access
         SIGBUS_GUARD.with(|guard| {
@@ -93,15 +96,14 @@ impl Pool {
             guard.set((&*pool_guard as *const MemMap, false))
         });
 
-        let slice = pool_guard.get_slice();
-        let t = f(slice);
+        let t = f(pool_guard.ptr as *const _, pool_guard.size);
 
         // Cleanup Post-access
         SIGBUS_GUARD.with(|guard| {
             let (_, triggered) = guard.get();
             guard.set((ptr::null_mut(), false));
             if triggered {
-                debug!(self.log, "SIGBUS caught on access on shm pool"; "fd" => self.fd.as_raw_fd());
+                debug!(fd = ?self.fd, "SIGBUS caught on access on shm pool");
                 Err(())
             } else {
                 Ok(t)
@@ -109,15 +111,16 @@ impl Pool {
         })
     }
 
-    pub fn with_data_slice_mut<T, F: FnOnce(&mut [u8]) -> T>(&self, f: F) -> Result<T, ()> {
+    #[instrument(level = "trace", skip_all, name = "wayland_shm")]
+    pub fn with_data_mut<T, F: FnOnce(*mut u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
         // Place the sigbus handler
         SIGBUS_INIT.call_once(|| unsafe {
             place_sigbus_handler();
         });
 
-        let mut pool_guard = self.map.write().unwrap();
+        let pool_guard = self.map.write().unwrap();
 
-        trace!(self.log, "Mutable buffer access on shm pool"; "fd" => self.fd.as_raw_fd() as i32);
+        trace!(fd = ?self.fd, "Mutable buffer access on shm pool");
 
         // Prepare the access
         SIGBUS_GUARD.with(|guard| {
@@ -129,15 +132,14 @@ impl Pool {
             guard.set((&*pool_guard as *const MemMap, false))
         });
 
-        let slice = pool_guard.get_slice_mut();
-        let t = f(slice);
+        let t = f(pool_guard.ptr, pool_guard.size);
 
         // Cleanup Post-access
         SIGBUS_GUARD.with(|guard| {
             let (_, triggered) = guard.get();
             guard.set((ptr::null_mut(), false));
             if triggered {
-                debug!(self.log, "SIGBUS caught on access on shm pool"; "fd" => self.fd.as_raw_fd());
+                debug!(fd = ?self.fd, "SIGBUS caught on access on shm pool");
                 Err(())
             } else {
                 Ok(t)
@@ -190,24 +192,6 @@ impl MemMap {
         self.size
     }
 
-    fn get_slice(&self) -> &[u8] {
-        if self.ptr.is_null() {
-            &[]
-        } else {
-            // SAFETY: if we are in the 'invalid state', `self.ptr` is null and the previous branch is used
-            unsafe { ::std::slice::from_raw_parts(self.ptr, self.size) }
-        }
-    }
-
-    fn get_slice_mut(&mut self) -> &mut [u8] {
-        if self.ptr.is_null() {
-            &mut []
-        } else {
-            // SAFETY: if we are in the 'invalid state', `self.ptr` is null and the previous branch is used
-            unsafe { ::std::slice::from_raw_parts_mut(self.ptr, self.size) }
-        }
-    }
-
     fn contains(&self, ptr: *mut u8) -> bool {
         ptr >= self.ptr && ptr < unsafe { self.ptr.add(self.size) }
     }
@@ -225,37 +209,45 @@ impl Drop for MemMap {
     }
 }
 
+/// A simple wrapper with some default arguments for `nix::mman::mmap`.
 unsafe fn map(fd: RawFd, size: NonZeroUsize) -> Result<*mut u8, ()> {
-    let ret = mman::mmap(
-        None,
-        size,
-        mman::ProtFlags::PROT_READ | mman::ProtFlags::PROT_WRITE,
-        mman::MapFlags::MAP_SHARED,
-        fd,
-        0,
-    );
+    let ret = unsafe {
+        mman::mmap(
+            None,
+            size,
+            mman::ProtFlags::PROT_READ | mman::ProtFlags::PROT_WRITE,
+            mman::MapFlags::MAP_SHARED,
+            fd,
+            0,
+        )
+    };
     ret.map(|p| p as *mut u8).map_err(|_| ())
 }
 
+/// A simple wrapper for `nix::mman::munmap`.
 unsafe fn unmap(ptr: *mut u8, size: usize) -> Result<(), ()> {
-    let ret = mman::munmap(ptr as *mut _, size);
+    let ret = unsafe { mman::munmap(ptr as *mut _, size) };
     ret.map_err(|_| ())
 }
 
 unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
     let size = NonZeroUsize::try_from(size).map_err(|_| ())?;
     let addr = NonZeroUsize::try_from(ptr as usize).map_err(|_| ())?;
-    let ret = mman::mmap(
-        Some(addr),
-        size,
-        mman::ProtFlags::PROT_READ,
-        mman::MapFlags::MAP_ANONYMOUS | mman::MapFlags::MAP_PRIVATE | mman::MapFlags::MAP_FIXED,
-        -1,
-        0,
-    );
+    let ret = unsafe {
+        mman::mmap(
+            Some(addr),
+            size,
+            mman::ProtFlags::PROT_READ,
+            mman::MapFlags::MAP_ANONYMOUS | mman::MapFlags::MAP_PRIVATE | mman::MapFlags::MAP_FIXED,
+            -1,
+            0,
+        )
+    };
     ret.map(|_| ()).map_err(|_| ())
 }
 
+/// SAFETY: This function will be called only ONCE and that is in the closure of
+/// `SIGBUS_INIT`.
 unsafe fn place_sigbus_handler() {
     // create our sigbus handler
     let action = SigAction::new(
@@ -263,17 +255,17 @@ unsafe fn place_sigbus_handler() {
         signal::SaFlags::SA_NODEFER,
         signal::SigSet::empty(),
     );
-    match signal::sigaction(Signal::SIGBUS, &action) {
-        Ok(old_signal) => {
+    match unsafe { signal::sigaction(Signal::SIGBUS, &action) } {
+        Ok(old_signal) => unsafe {
             OLD_SIGBUS_HANDLER = Box::into_raw(Box::new(old_signal));
-        }
+        },
         Err(e) => panic!("sigaction failed sor SIGBUS handler: {:?}", e),
     }
 }
 
 unsafe fn reraise_sigbus() {
     // reset the old sigaction
-    let _ = signal::sigaction(Signal::SIGBUS, &*OLD_SIGBUS_HANDLER);
+    let _ = unsafe { signal::sigaction(Signal::SIGBUS, &*OLD_SIGBUS_HANDLER) };
     let _ = signal::raise(Signal::SIGBUS);
 }
 
@@ -300,10 +292,13 @@ extern "C" fn sigbus_handler(_signum: libc::c_int, info: *mut libc::siginfo_t, _
     });
 }
 
-// This was shamelessly stolen from rustc's source
-// so I expect it to work whenever rust works
-// I guess it's good enough?
-
+/// This was shamelessly stolen from rustc's source
+/// so I expect it to work whenever rust works
+/// I guess it's good enough?
+///
+/// SAFETY:
+/// The returned pointer points to a struct. Make sure that you use it
+/// appropriately.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
     #[repr(C)]
@@ -312,10 +307,10 @@ unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
         si_addr: *mut libc::c_void,
     }
 
-    (*(info as *const siginfo_t)).si_addr
+    unsafe { (*(info as *const siginfo_t)).si_addr }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
-    (*info).si_addr
+    unsafe { (*info).si_addr }
 }

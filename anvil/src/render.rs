@@ -1,19 +1,18 @@
 use smithay::{
     backend::renderer::{
-        damage::{DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode},
+        damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
         element::{
             surface::WaylandSurfaceRenderElement,
             utils::{
                 ConstrainAlign, ConstrainScaleBehavior, CropRenderElement, RelocateRenderElement,
                 RescaleRenderElement,
             },
-            AsRenderElements, RenderElementStates,
+            AsRenderElements, RenderElement, RenderElementStates, Wrap,
         },
         ImportAll, ImportMem, Renderer,
     },
-    desktop::{
-        self,
-        space::{constrain_space_element, ConstrainBehavior, ConstrainReference, Space},
+    desktop::space::{
+        constrain_space_element, ConstrainBehavior, ConstrainReference, Space, SpaceRenderElements,
     },
     output::Output,
     utils::{Physical, Point, Rectangle, Size},
@@ -22,7 +21,7 @@ use smithay::{
 #[cfg(feature = "debug")]
 use crate::drawing::FpsElement;
 use crate::{
-    drawing::{PointerRenderElement, CLEAR_COLOR},
+    drawing::{PointerRenderElement, CLEAR_COLOR, CLEAR_COLOR_FULLSCREEN},
     shell::{FullscreenSurface, WindowElement, WindowRenderElement},
 };
 
@@ -31,7 +30,6 @@ smithay::backend::renderer::element::render_elements! {
         R: ImportAll + ImportMem;
     Pointer=PointerRenderElement<R>,
     Surface=WaylandSurfaceRenderElement<R>,
-    Window=WindowRenderElement<R>,
     #[cfg(feature = "debug")]
     // Note: We would like to borrow this element instead, but that would introduce
     // a feature-dependent lifetime, which introduces a lot more feature bounds
@@ -40,115 +38,171 @@ smithay::backend::renderer::element::render_elements! {
     Fps=FpsElement<<R as Renderer>::TextureId>,
 }
 
+impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for CustomRenderElements<R>
+where
+    <R as Renderer>::TextureId: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pointer(arg0) => f.debug_tuple("Pointer").field(arg0).finish(),
+            Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),
+            #[cfg(feature = "debug")]
+            Self::Fps(arg0) => f.debug_tuple("Fps").field(arg0).finish(),
+            Self::_GenericCatcher(arg0) => f.debug_tuple("_GenericCatcher").field(arg0).finish(),
+        }
+    }
+}
+
 smithay::backend::renderer::element::render_elements! {
-    pub OutputRenderElements<'a, R> where
-        R: ImportAll + ImportMem;
-    Custom=&'a CustomRenderElements<R>,
+    pub OutputRenderElements<R, E> where R: ImportAll + ImportMem;
+    Space=SpaceRenderElements<R, E>,
+    Window=Wrap<E>,
+    Custom=CustomRenderElements<R>,
     Preview=CropRenderElement<RelocateRenderElement<RescaleRenderElement<WindowRenderElement<R>>>>,
+}
+
+impl<R: Renderer + ImportAll + ImportMem + std::fmt::Debug, E: RenderElement<R> + std::fmt::Debug>
+    std::fmt::Debug for OutputRenderElements<R, E>
+where
+    <R as Renderer>::TextureId: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Space(arg0) => f.debug_tuple("Space").field(arg0).finish(),
+            Self::Window(arg0) => f.debug_tuple("Window").field(arg0).finish(),
+            Self::Custom(arg0) => f.debug_tuple("Custom").field(arg0).finish(),
+            Self::Preview(arg0) => f.debug_tuple("Preview").field(arg0).finish(),
+            Self::_GenericCatcher(arg0) => f.debug_tuple("_GenericCatcher").field(arg0).finish(),
+        }
+    }
+}
+
+pub fn space_preview_elements<'a, R, C>(
+    renderer: &'a mut R,
+    space: &'a Space<WindowElement>,
+    output: &'a Output,
+) -> impl Iterator<Item = C> + 'a
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Clone + 'static,
+    C: From<CropRenderElement<RelocateRenderElement<RescaleRenderElement<WindowRenderElement<R>>>>> + 'a,
+{
+    let constrain_behavior = ConstrainBehavior {
+        reference: ConstrainReference::BoundingBox,
+        behavior: ConstrainScaleBehavior::Fit,
+        align: ConstrainAlign::CENTER,
+    };
+
+    let preview_padding = 10;
+
+    let elements_on_space = space.elements_for_output(output).count();
+    let output_scale = output.current_scale().fractional_scale();
+    let output_transform = output.current_transform();
+    let output_size = output
+        .current_mode()
+        .map(|mode| {
+            output_transform
+                .transform_size(mode.size)
+                .to_f64()
+                .to_logical(output_scale)
+        })
+        .unwrap_or_default();
+
+    let max_elements_per_row = 4;
+    let elements_per_row = usize::min(elements_on_space, max_elements_per_row);
+    let rows = f64::ceil(elements_on_space as f64 / elements_per_row as f64);
+
+    let preview_size = Size::from((
+        f64::round(output_size.w / elements_per_row as f64) as i32 - preview_padding * 2,
+        f64::round(output_size.h / rows) as i32 - preview_padding * 2,
+    ));
+
+    space
+        .elements_for_output(output)
+        .enumerate()
+        .flat_map(move |(element_index, window)| {
+            let column = element_index % elements_per_row;
+            let row = element_index / elements_per_row;
+            let preview_location = Point::from((
+                preview_padding + (preview_padding + preview_size.w) * column as i32,
+                preview_padding + (preview_padding + preview_size.h) * row as i32,
+            ));
+            let constrain = Rectangle::from_loc_and_size(preview_location, preview_size);
+            constrain_space_element(
+                renderer,
+                window,
+                preview_location,
+                output_scale,
+                constrain,
+                constrain_behavior,
+            )
+        })
+}
+
+pub fn output_elements<'a, R>(
+    output: &Output,
+    space: &'a Space<WindowElement>,
+    custom_elements: impl IntoIterator<Item = CustomRenderElements<R>>,
+    renderer: &mut R,
+    show_window_preview: bool,
+) -> (Vec<OutputRenderElements<R, WindowRenderElement<R>>>, [f32; 4])
+where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: Clone + 'static,
+{
+    if let Some(window) = output
+        .user_data()
+        .get::<FullscreenSurface>()
+        .and_then(|f| f.get())
+    {
+        let scale = output.current_scale().fractional_scale().into();
+        let window_render_elements: Vec<WindowRenderElement<R>> =
+            AsRenderElements::<R>::render_elements(&window, renderer, (0, 0).into(), scale);
+
+        let elements = custom_elements
+            .into_iter()
+            .map(OutputRenderElements::from)
+            .chain(
+                window_render_elements
+                    .into_iter()
+                    .map(|e| OutputRenderElements::Window(Wrap::from(e))),
+            )
+            .collect::<Vec<_>>();
+        (elements, CLEAR_COLOR_FULLSCREEN)
+    } else {
+        let mut output_render_elements = custom_elements
+            .into_iter()
+            .map(OutputRenderElements::from)
+            .collect::<Vec<_>>();
+
+        if show_window_preview && space.elements_for_output(output).count() > 0 {
+            output_render_elements.extend(space_preview_elements(renderer, space, output));
+        }
+
+        let space_elements =
+            smithay::desktop::space::space_render_elements::<_, WindowElement, _>(renderer, [space], output)
+                .expect("output without mode?");
+        output_render_elements.extend(space_elements.into_iter().map(OutputRenderElements::Space));
+
+        (output_render_elements, CLEAR_COLOR)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
 pub fn render_output<'a, R>(
     output: &Output,
     space: &'a Space<WindowElement>,
-    custom_elements: &'a [CustomRenderElements<R>],
+    custom_elements: impl IntoIterator<Item = CustomRenderElements<R>>,
     renderer: &mut R,
-    damage_tracked_renderer: &mut DamageTrackedRenderer,
+    damage_tracker: &mut OutputDamageTracker,
     age: usize,
     show_window_preview: bool,
-    log: &slog::Logger,
-) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
+) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputDamageTrackerError<R>>
 where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Clone + 'static,
 {
-    let output_scale = output.current_scale().fractional_scale().into();
-
-    if let Some(window) = output
-        .user_data()
-        .get::<FullscreenSurface>()
-        .and_then(|f| f.get())
-    {
-        if let DamageTrackedRendererMode::Auto(renderer_output) = damage_tracked_renderer.mode() {
-            assert!(renderer_output == output);
-        }
-
-        let window_render_elements =
-            AsRenderElements::<R>::render_elements(&window, renderer, (0, 0).into(), output_scale);
-
-        let render_elements = custom_elements
-            .iter()
-            .chain(window_render_elements.iter())
-            .collect::<Vec<_>>();
-
-        damage_tracked_renderer.render_output(renderer, age, &render_elements, CLEAR_COLOR, log.clone())
-    } else {
-        let mut output_render_elements = custom_elements
-            .iter()
-            .map(OutputRenderElements::from)
-            .collect::<Vec<_>>();
-
-        if show_window_preview && space.elements_for_output(output).count() > 0 {
-            let constrain_behavior = ConstrainBehavior {
-                reference: ConstrainReference::BoundingBox,
-                behavior: ConstrainScaleBehavior::Fit,
-                align: ConstrainAlign::CENTER,
-            };
-
-            let preview_padding = 10;
-
-            let elements_on_space = space.elements_for_output(output).count();
-            let output_scale = output.current_scale().fractional_scale();
-            let output_transform = output.current_transform();
-            let output_size = output
-                .current_mode()
-                .map(|mode| {
-                    output_transform
-                        .transform_size(mode.size)
-                        .to_f64()
-                        .to_logical(output_scale)
-                })
-                .unwrap_or_default();
-
-            let max_elements_per_row = 4;
-            let elements_per_row = usize::min(elements_on_space, max_elements_per_row);
-            let rows = f64::ceil(elements_on_space as f64 / elements_per_row as f64);
-
-            let preview_size = Size::from((
-                f64::round(output_size.w / elements_per_row as f64) as i32 - preview_padding * 2,
-                f64::round(output_size.h / rows) as i32 - preview_padding * 2,
-            ));
-
-            output_render_elements.extend(space.elements_for_output(output).enumerate().flat_map(
-                |(element_index, window)| {
-                    let column = element_index % elements_per_row;
-                    let row = element_index / elements_per_row;
-                    let preview_location = Point::from((
-                        preview_padding + (preview_padding + preview_size.w) * column as i32,
-                        preview_padding + (preview_padding + preview_size.h) * row as i32,
-                    ));
-                    let constrain = Rectangle::from_loc_and_size(preview_location, preview_size);
-                    constrain_space_element(
-                        renderer,
-                        window,
-                        preview_location,
-                        output_scale,
-                        constrain,
-                        constrain_behavior,
-                    )
-                },
-            ));
-        }
-
-        desktop::space::render_output(
-            output,
-            renderer,
-            age,
-            [space],
-            &output_render_elements,
-            damage_tracked_renderer,
-            CLEAR_COLOR,
-            log.clone(),
-        )
-    }
+    let (elements, clear_color) =
+        output_elements(output, space, custom_elements, renderer, show_window_preview);
+    damage_tracker.render_output(renderer, age, &elements, clear_color)
 }

@@ -122,7 +122,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
             state.size = Some(self.last_window_size);
         });
 
-        xdg.send_configure();
+        xdg.send_pending_configure();
     }
 
     fn relative_motion(
@@ -157,7 +157,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
                 state.size = Some(self.last_window_size);
             });
 
-            xdg.send_configure();
+            xdg.send_pending_configure();
 
             ResizeSurfaceState::with(xdg.wl_surface(), |state| {
                 *state = ResizeSurfaceState::WaitingForLastCommit {

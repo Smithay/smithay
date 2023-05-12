@@ -79,8 +79,12 @@ where
     D: SeatHandler + 'static,
 {
     fn enter(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
+        let serial = event.serial;
+        if let Some(pointer) = seat.get_pointer() {
+            *pointer.last_enter.lock().unwrap() = Some(serial);
+        }
         for_each_focused_pointers(seat, self, |ptr| {
-            ptr.enter(event.serial.into(), self, event.location.x, event.location.y);
+            ptr.enter(serial.into(), self, event.location.x, event.location.y);
             if ptr.version() >= 5 {
                 ptr.frame();
             }
@@ -92,7 +96,10 @@ where
             if ptr.version() >= 5 {
                 ptr.frame();
             }
-        })
+        });
+        if let Some(pointer) = seat.get_pointer() {
+            *pointer.last_enter.lock().unwrap() = None;
+        }
     }
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
         for_each_focused_pointers(seat, self, |ptr| {
@@ -209,9 +216,20 @@ where
                 surface,
                 hotspot_x,
                 hotspot_y,
-                ..
+                serial,
             } => {
                 if let Some(ref handle) = data.handle {
+                    if !handle
+                        .last_enter
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .map(|last_serial| last_serial.0 == serial)
+                        .unwrap_or(false)
+                    {
+                        return; // Ignore mismatches in serial
+                    }
+
                     let seat = {
                         let seat_state = state.seat_state();
                         seat_state

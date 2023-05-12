@@ -44,20 +44,10 @@
 //! // Add text input capabilities, needed for the input method to work
 //! TextInputManagerState::new::<State>(&display_handle);
 //!
-//! // create the seat
-//! let seat = seat_state.new_wl_seat(
-//!     &display_handle,          // the display
-//!     "seat-0",                 // the name of the seat, will be advertized to clients
-//!     None                      // insert a logger here
-//! );
-//!
-//! seat.add_input_method(XkbConfig::default(), 200, 25);
-//! // Add input method capabilities to a seat
-//!
 //! ```
 //! ### Run usage
 //!
-//! Once the input method and text input cabailities have been added to a seat,
+//! Once the input method and text input capabilities have been added to a seat,
 //! use the [`seat.input_method().set_point`] function to set the top left point
 //! of a focused surface. This is used to calculate the popup surface location.
 //!
@@ -72,7 +62,7 @@ use wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_v2::ZwpInputMethodV2,
 };
 
-use crate::input::{keyboard::XkbConfig, Seat, SeatHandler};
+use crate::input::{Seat, SeatHandler};
 
 pub use input_method_handle::{InputMethodHandle, InputMethodUserData};
 pub use input_method_keyboard_grab::InputMethodKeyboardUserData;
@@ -88,27 +78,15 @@ mod input_method_popup_surface;
 
 /// Extends [Seat] with input method functionality
 pub trait InputMethodSeat {
-    /// Add an input method to this seat, and configures the associated keyboard.
-    /// Input methods need different keyboard languages for different input methods.
-    /// E.g a pinyin user will want to use their native keyboard layout, but a
-    /// zhuyin user will always want a taiwanese keyboard layout.
-    fn add_input_method(&self, xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32);
-
     /// Get an input method associated with this seat
-    fn input_method(&self) -> Option<&InputMethodHandle>;
+    fn input_method(&self) -> &InputMethodHandle;
 }
 
 impl<D: SeatHandler + 'static> InputMethodSeat for Seat<D> {
-    fn add_input_method(&self, xkb_config: XkbConfig<'_>, repeat_delay: i32, repeat_rate: i32) {
+    fn input_method(&self) -> &InputMethodHandle {
         let user_data = self.user_data();
         user_data.insert_if_missing(InputMethodHandle::default);
-        let input_method = user_data.get::<InputMethodHandle>().unwrap().clone();
-        input_method.configure_keyboard(xkb_config, repeat_delay, repeat_rate);
-    }
-
-    fn input_method(&self) -> Option<&InputMethodHandle> {
-        let user_data = self.user_data();
-        user_data.get::<InputMethodHandle>()
+        user_data.get::<InputMethodHandle>().unwrap()
     }
 }
 
@@ -181,6 +159,7 @@ where
 
                 let user_data = seat.user_data();
                 user_data.insert_if_missing(TextInputHandle::default);
+                user_data.insert_if_missing(InputMethodHandle::default);
                 let handle = user_data.get::<InputMethodHandle>().unwrap();
                 let text_input_handle = user_data.get::<TextInputHandle>().unwrap();
                 text_input_handle.with_focused_text_input(|ti, surface, _| {

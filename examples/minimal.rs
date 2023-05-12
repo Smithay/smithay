@@ -5,7 +5,7 @@ use smithay::{
         input::{InputEvent, KeyboardKeyEvent},
         renderer::{
             element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-            gles2::Gles2Renderer,
+            gles::GlesRenderer,
             utils::{draw_render_elements, on_commit_buffer_handler},
             Frame, Renderer,
         },
@@ -18,8 +18,8 @@ use smithay::{
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            with_surface_tree_downward, CompositorHandler, CompositorState, SurfaceAttributes,
-            TraversalAction,
+            with_surface_tree_downward, CompositorClientState, CompositorHandler, CompositorState,
+            SurfaceAttributes, TraversalAction,
         },
         data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
         shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
@@ -33,7 +33,7 @@ use wayland_server::{
         wl_buffer,
         wl_surface::{self, WlSurface},
     },
-    ListeningSocket,
+    Client, ListeningSocket,
 };
 
 impl BufferHandler for App {
@@ -69,7 +69,7 @@ impl DataDeviceHandler for App {
 
 impl ClientDndGrabHandler for App {}
 impl ServerDndGrabHandler for App {
-    fn send(&mut self, _mime_type: String, _fd: OwnedFd) {}
+    fn send(&mut self, _mime_type: String, _fd: OwnedFd, _seat: Seat<Self>) {}
 }
 
 impl CompositorHandler for App {
@@ -77,8 +77,12 @@ impl CompositorHandler for App {
         &mut self.compositor_state
     }
 
+    fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
+        &client.get_data::<ClientState>().unwrap().compositor_state
+    }
+
     fn commit(&mut self, surface: &WlSurface) {
-        on_commit_buffer_handler(surface);
+        on_commit_buffer_handler::<Self>(surface);
     }
 }
 
@@ -111,32 +115,31 @@ struct App {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    } else {
+        tracing_subscriber::fmt().init();
+    }
+
     run_winit()
 }
 
-fn log() -> ::slog::Logger {
-    use slog::Drain;
-    ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), slog::o!())
-}
-
 pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
-    let log = log();
-
     let mut display: Display<App> = Display::new()?;
     let dh = display.handle();
 
-    let compositor_state = CompositorState::new::<App, _>(&dh, None);
-    let shm_state = ShmState::new::<App, _>(&dh, vec![], None);
+    let compositor_state = CompositorState::new::<App>(&dh);
+    let shm_state = ShmState::new::<App>(&dh, vec![]);
     let mut seat_state = SeatState::new();
-    let seat = seat_state.new_wl_seat(&dh, "winit", None);
+    let seat = seat_state.new_wl_seat(&dh, "winit");
 
     let mut state = {
         App {
             compositor_state,
-            xdg_shell_state: XdgShellState::new::<App, _>(&dh, None),
+            xdg_shell_state: XdgShellState::new::<App>(&dh),
             shm_state,
             seat_state,
-            data_device_state: DataDeviceState::new::<App, _>(&dh, None),
+            data_device_state: DataDeviceState::new::<App>(&dh),
             seat,
         }
     };
@@ -144,7 +147,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     let listener = ListeningSocket::bind("wayland-5").unwrap();
     let mut clients = Vec::new();
 
-    let (mut backend, mut winit) = winit::init::<Gles2Renderer, _>(None)?;
+    let (mut backend, mut winit) = winit::init::<GlesRenderer>()?;
 
     let start_time = std::time::Instant::now();
 
@@ -171,10 +174,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
                 InputEvent::PointerMotionAbsolute { .. } => {
-                    if let Some(surface) = state
-                        .xdg_shell_state
-                        .toplevel_surfaces(|surfaces| surfaces.iter().next().cloned())
-                    {
+                    if let Some(surface) = state.xdg_shell_state.toplevel_surfaces().iter().next().cloned() {
                         let surface = surface.wl_surface().clone();
                         keyboard.set_focus(&mut state, Some(surface), 0.into());
                     };
@@ -189,38 +189,30 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         let size = backend.window_size().physical_size;
         let damage = Rectangle::from_loc_and_size((0, 0), size);
 
-        let elements = state.xdg_shell_state.toplevel_surfaces(|surfaces| {
-            surfaces
-                .iter()
-                .flat_map(|surface| {
-                    render_elements_from_surface_tree(
-                        backend.renderer(),
-                        surface.wl_surface(),
-                        (0, 0),
-                        1.0,
-                        log.clone(),
-                    )
-                })
-                .collect::<Vec<WaylandSurfaceRenderElement<Gles2Renderer>>>()
-        });
+        let elements = state
+            .xdg_shell_state
+            .toplevel_surfaces()
+            .iter()
+            .flat_map(|surface| {
+                render_elements_from_surface_tree(backend.renderer(), surface.wl_surface(), (0, 0), 1.0)
+            })
+            .collect::<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>();
 
         let mut frame = backend.renderer().render(size, Transform::Flipped180).unwrap();
         frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
-        draw_render_elements(&mut frame, 1.0, &elements, &[damage], &log).unwrap();
+        draw_render_elements(&mut frame, 1.0, &elements, &[damage]).unwrap();
         frame.finish().unwrap();
 
-        state.xdg_shell_state.toplevel_surfaces(|surfaces| {
-            for surface in surfaces {
-                send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
-            }
-        });
+        for surface in state.xdg_shell_state.toplevel_surfaces() {
+            send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);
+        }
 
         if let Some(stream) = listener.accept()? {
             println!("Got a client: {:?}", stream);
 
             let client = display
                 .handle()
-                .insert_client(stream, Arc::new(ClientState))
+                .insert_client(stream, Arc::new(ClientState::default()))
                 .unwrap();
             clients.push(client);
         }
@@ -255,7 +247,10 @@ pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
     );
 }
 
-struct ClientState;
+#[derive(Default)]
+struct ClientState {
+    compositor_state: CompositorClientState,
+}
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {
         println!("initialized");

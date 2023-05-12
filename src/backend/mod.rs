@@ -37,11 +37,14 @@
 //! Smithay provides a rendering infrastructure built around graphics buffers: you retrieve buffers
 //! for your client, you composite them into a new buffer holding the contents of your desktop,
 //! that you will then submit to the hardware for display. The backbone of this infrastructure is
-//! structured around the [`allocator`] and [`renderer`] modules. The first one contains generic
-//! traits representing the capability to allocate and convert graphical buffers, as well as an
-//! implementation of this capability using GBM (see its module-level docs for details). The second
-//! provides traits representing the capability of graphics rendering using those buffers, as well
-//! as an implementation of this capability using GLes2 (see its module-level docs for details).
+//! structured around two modules:
+//!
+//! - [`allocator`] contains generic traits representing the capability to
+//!     allocate and convert graphical buffers, as well as an implementation of this
+//!     capability using GBM (see its module-level docs for details).
+//! - [`renderer`] provides traits representing the capability of graphics
+//!     rendering using those buffers, as well as an implementation of this
+//!     capability using GLes2 (see its module-level docs for details).
 //!
 //! Alongside this backbone capability, Smithay also provides the [`drm`] module, which handles
 //! direct interaction with the graphical physical devices to setup the display pipeline and

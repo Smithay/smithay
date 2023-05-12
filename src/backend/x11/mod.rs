@@ -14,18 +14,18 @@
 //! ```rust,no_run
 //! # use std::{sync::{Arc, Mutex}, error::Error};
 //! # use smithay::backend::x11::{X11Backend, X11Surface, WindowBuilder};
+//! use smithay::backend::allocator::dmabuf::DmabufAllocator;
+//! use smithay::backend::allocator::gbm::{GbmAllocator, GbmDevice, GbmBufferFlags};
 //! use smithay::backend::egl::{EGLDisplay, EGLContext};
-//! use smithay::reexports::gbm;
 //! use smithay::utils::DeviceFd;
 //! use std::collections::HashSet;
 //!
 //! # struct CompositorState;
 //! fn init_x11_backend(
 //!    handle: calloop::LoopHandle<CompositorState>,
-//!    logger: slog::Logger
 //! ) -> Result<(), Box<dyn Error>> {
 //!     // Create the backend, also yielding a surface that may be used to render to the window.
-//!     let backend = X11Backend::new(logger.clone())?;
+//!     let backend = X11Backend::new()?;
 //!
 //!     // Get a handle from the backend to interface with the X server
 //!     let x_handle = backend.handle();
@@ -40,15 +40,15 @@
 //!     // Get the DRM node used by the X server for direct rendering.
 //!     let (_drm_node, fd) = x_handle.drm_node()?;
 //!     // Create the gbm device for allocating buffers
-//!     let device = gbm::Device::new(DeviceFd::from(fd))?;
+//!     let device = GbmDevice::new(DeviceFd::from(fd))?;
 //!     // Initialize EGL to retrieve the support modifier list
-//!     let egl = unsafe { EGLDisplay::new(device.clone(), logger.clone()).expect("Failed to create EGLDisplay") };
-//!     let context = EGLContext::new(&egl, logger).expect("Failed to create EGLContext");
+//!     let egl = unsafe { EGLDisplay::new(device.clone()).expect("Failed to create EGLDisplay") };
+//!     let context = EGLContext::new(&egl).expect("Failed to create EGLContext");
 //!     let modifiers = context.dmabuf_render_formats().iter().map(|format| format.modifier).collect::<HashSet<_>>();
 //!
 //!     // Finally create the X11 surface, you will use this to obtain buffers that will be presented to the
 //!     // window.
-//!     let surface = x_handle.create_surface(&window, device, modifiers.into_iter());
+//!     let surface = x_handle.create_surface(&window, DmabufAllocator(GbmAllocator::new(device, GbmBufferFlags::RENDERING)), modifiers.into_iter());
 //!
 //!     // Insert the backend into the event loop to receive events.
 //!     handle.insert_source(backend, |event, _window, state| {
@@ -92,12 +92,10 @@ use crate::{
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm_fourcc::{DrmFourcc, DrmModifier};
-use gbm::BufferObject;
 use nix::{
     fcntl::{self, OFlag},
     sys::stat::Mode,
 };
-use slog::{error, info, o, Logger};
 use std::{
     collections::HashMap,
     io,
@@ -107,6 +105,7 @@ use std::{
         mpsc, Arc, Mutex, Weak,
     },
 };
+use tracing::{debug_span, error, info, instrument, warn};
 use x11rb::{
     atom_manager,
     connection::Connection,
@@ -124,6 +123,8 @@ use self::{extension::Extensions, window_inner::WindowInner};
 pub use self::error::*;
 pub use self::input::*;
 pub use self::surface::*;
+
+use super::allocator::dmabuf::{AnyError, Dmabuf};
 
 /// An event emitted by the X11 backend.
 #[derive(Debug)]
@@ -163,27 +164,26 @@ pub enum X11Event {
 /// Represents an active connection to the X to manage events on the Window provided by the backend.
 #[derive(Debug)]
 pub struct X11Backend {
-    log: Logger,
     connection: Arc<RustConnection>,
     source: X11Source,
     inner: Arc<Mutex<X11Inner>>,
+    span: tracing::Span,
 }
 
 impl X11Backend {
     /// Initializes the X11 backend by connecting to the X server.
-    pub fn new<L>(logger: L) -> Result<X11Backend, X11Error>
-    where
-        L: Into<Option<slog::Logger>>,
-    {
-        let logger = crate::slog_or_fallback(logger).new(o!("smithay_module" => "backend_x11"));
+    pub fn new() -> Result<X11Backend, X11Error> {
+        let span = debug_span!("backend_x11");
+        let _guard = span.enter();
 
-        info!(logger, "Connecting to the X server");
+        info!("Connecting to the X server");
 
         let (connection, screen_number) = RustConnection::connect(None)?;
         let connection = Arc::new(connection);
-        info!(logger, "Connected to screen {}", screen_number);
+        info!(screen = screen_number, "Connected");
+        span.record("screen", screen_number);
 
-        let extensions = Extensions::check_extensions(&*connection, &logger)?;
+        let extensions = Extensions::check_extensions(&*connection)?;
 
         let screen = &connection.setup().roots[screen_number];
 
@@ -210,6 +210,7 @@ impl X11Backend {
             32 => DrmFourcc::Argb8888,
             _ => unreachable!(),
         };
+        info!(?depth, visual_id, %format, "Window parameters selected");
 
         // Make a colormap
         let colormap = connection.generate_id()?;
@@ -236,15 +237,9 @@ impl X11Backend {
         )?
         .into_window();
 
-        let source = X11Source::new(
-            connection.clone(),
-            close_window,
-            atoms._SMITHAY_X11_BACKEND_CLOSE,
-            logger.clone(),
-        );
+        let source = X11Source::new(connection.clone(), close_window, atoms._SMITHAY_X11_BACKEND_CLOSE);
 
         let inner = X11Inner {
-            log: logger.clone(),
             connection: connection.clone(),
             screen_number,
             windows: HashMap::new(),
@@ -258,20 +253,21 @@ impl X11Backend {
             devices: false,
         };
 
+        drop(_guard);
         Ok(X11Backend {
-            log: logger,
             connection,
             source,
             inner: Arc::new(Mutex::new(inner)),
+            span,
         })
     }
 
     /// Returns a handle to the X11 backend.
     pub fn handle(&self) -> X11Handle {
         X11Handle {
-            log: self.log.clone(),
             connection: self.connection.clone(),
             inner: self.inner.clone(),
+            span: self.span.clone(),
         }
     }
 }
@@ -289,9 +285,9 @@ enum EGLInitError {
 /// This is the primary object used to interface with the backend.
 #[derive(Debug)]
 pub struct X11Handle {
-    log: Logger,
     connection: Arc<RustConnection>,
     inner: Arc<Mutex<X11Inner>>,
+    span: tracing::Span,
 }
 
 impl X11Handle {
@@ -313,6 +309,7 @@ impl X11Handle {
     /// Returns the DRM node the X server uses for direct rendering.
     ///
     /// The DRM node may be used to create a [`gbm::Device`] to allocate buffers.
+    #[instrument(parent = &self.span, skip(self), ret, err)]
     pub fn drm_node(&self) -> Result<(DrmNode, OwnedFd), X11Error> {
         // Kernel documentation explains why we should prefer the node to be a render node:
         // https://kernel.readthedocs.io/en/latest/gpu/drm-uapi.html
@@ -335,8 +332,7 @@ impl X11Handle {
         let inner = self.inner.lock().unwrap();
 
         egl_init(&inner).or_else(|err| {
-            slog::warn!(
-                &self.log,
+            warn!(
                 "Failed to init X11 surface via egl, falling back to dri3: {}",
                 err
             );
@@ -347,7 +343,8 @@ impl X11Handle {
     /// Creates a surface that allocates and presents buffers to the window.
     ///
     /// This will fail if the window has already been used to create a surface.
-    pub fn create_surface<A: Allocator<Buffer = BufferObject<()>, Error = std::io::Error> + 'static>(
+    #[instrument(parent = &self.span, skip(self, allocator, modifiers))]
+    pub fn create_surface<A: Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>(
         &self,
         window: &Window,
         allocator: A,
@@ -377,8 +374,7 @@ impl X11Handle {
         let format = window.0.format;
         let size = window.size();
         let swapchain = Swapchain::new(
-            Box::new(allocator)
-                as Box<dyn Allocator<Buffer = BufferObject<()>, Error = std::io::Error> + 'static>,
+            Box::new(allocator) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>,
             size.w as u32,
             size.h as u32,
             format,
@@ -401,6 +397,7 @@ impl X11Handle {
             height: size.h,
             buffer: None,
             resize: recv,
+            span: self.span.clone(),
         })
     }
 
@@ -451,6 +448,7 @@ impl<'a> WindowBuilder<'a> {
 
     /// Creates a window using the options specified in the builder.
     pub fn build(self, handle: &X11Handle) -> Result<Window, X11Error> {
+        let _guard = handle.span.enter();
         let connection = handle.connection();
 
         let inner = &mut *handle.inner.lock().unwrap();
@@ -557,13 +555,13 @@ impl EventSource for X11Backend {
         F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
     {
         let connection = self.connection.clone();
-        let log = self.log.clone();
         let inner = self.inner.clone();
+        let _guard = self.span.enter();
 
         let post_action = self
             .source
             .process_events(readiness, token, |event, _| {
-                X11Inner::process_event(&inner, &log, event, &mut callback);
+                X11Inner::process_event(&inner, event, &mut callback);
             })
             .map_err(|_| X11Error::ConnectionLost)?;
 
@@ -598,7 +596,6 @@ atom_manager! {
 
 #[derive(Debug)]
 pub(crate) struct X11Inner {
-    log: Logger,
     connection: Arc<RustConnection>,
     screen_number: usize,
     windows: HashMap<u32, Weak<WindowInner>>,
@@ -619,7 +616,7 @@ impl X11Inner {
         inner.windows.get(id).cloned()
     }
 
-    fn process_event<F>(inner: &Arc<Mutex<X11Inner>>, log: &Logger, event: x11::Event, callback: &mut F)
+    fn process_event<F>(inner: &Arc<Mutex<X11Inner>>, event: x11::Event, callback: &mut F)
     where
         F: FnMut(X11Event, &mut ()),
     {
@@ -918,7 +915,7 @@ impl X11Inner {
             }
 
             x11::Event::Error(e) => {
-                error!(log, "X11 protocol error: {:?}", e);
+                error!("X11 protocol error: {:?}", e);
             }
 
             _ => (),
@@ -927,7 +924,7 @@ impl X11Inner {
 }
 
 fn egl_init(_: &X11Inner) -> Result<(DrmNode, OwnedFd), EGLInitError> {
-    let display = EGLDisplay::new(X11DefaultDisplay, None)?;
+    let display = EGLDisplay::new(X11DefaultDisplay)?;
     let device = EGLDevice::device_for_display(&display)?;
     let path = path_to_type(device.drm_device_path()?, NodeType::Render)?;
     let node = DrmNode::from_path(&path)
@@ -977,19 +974,18 @@ fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, OwnedFd), X11Error> {
                 {
                     Some(Ok(fd)) => return Ok((node, unsafe { OwnedFd::from_raw_fd(fd) })),
                     Some(Err(err)) => {
-                        slog::warn!(&x11.log, "Could not create render node from existing DRM node ({:?}): {}, falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()), err);
+                        warn!("Could not create render node from existing DRM node ({:?}): {}, falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()), err);
                     }
                     None => {
-                        slog::warn!(&x11.log, "Could not create render node from existing DRM node ({:?}), falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()));
+                        warn!("Could not create render node from existing DRM node ({:?}), falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()));
                     }
                 }
             }
             Some(Err(err)) => {
-                slog::warn!(&x11.log, "Could not create render node from existing DRM node ({:?}): {}, falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()), err);
+                warn!("Could not create render node from existing DRM node ({:?}): {}, falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()), err);
             }
             None => {
-                slog::warn!(
-                    &x11.log,
+                warn!(
                     "No render node available for DRM node ({:?}), falling back to primary node",
                     dri_node.dev_path().as_ref().map(|x| x.display())
                 );

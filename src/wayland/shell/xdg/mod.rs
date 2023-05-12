@@ -32,9 +32,8 @@
 //!
 //! # struct State { xdg_shell_state: XdgShellState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
-//! let xdg_shell_state = XdgShellState::new::<State, _>(
+//! let xdg_shell_state = XdgShellState::new::<State>(
 //!     &display.handle(),
-//!     None  // put a logger if you want
 //! );
 //!
 //! // insert the xdg_shell_state into your state
@@ -97,8 +96,7 @@ use crate::utils::{Serial, SERIAL_COUNTER};
 use crate::wayland::compositor;
 use crate::wayland::compositor::Cacheable;
 use crate::wayland::shell::is_toplevel_equivalent;
-use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::{collections::HashSet, fmt::Debug, sync::Mutex};
 
 use wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use wayland_protocols::xdg::shell::server::xdg_surface;
@@ -161,6 +159,9 @@ macro_rules! xdg_role {
                 /// during the first commit a initial
                 /// configure event is sent to the client
                 pub initial_configure_sent: bool,
+                /// An `zxdg_toplevel_decoration_v1::configure` event has been sent
+                /// to the client.
+                pub initial_decoration_configure_sent: bool,
                 /// Holds the configures the server has sent out
                 /// to the client waiting to be acknowledged by
                 /// the client. All pending configures that are older
@@ -260,6 +261,7 @@ macro_rules! xdg_role {
                     configure_serial: None,
                     pending_configures: Vec::new(),
                     initial_configure_sent: false,
+                    initial_decoration_configure_sent: false,
                     server_pending: None,
                     last_acked: None,
                     current: Default::default(),
@@ -627,6 +629,12 @@ pub struct ToplevelState {
     /// The suggested size of the surface
     pub size: Option<Size<i32, Logical>>,
 
+    /// The bounds for this toplevel
+    ///
+    /// The bounds can for example correspond to the size of a monitor excluding any panels or
+    /// other shell components, so that a surface isn't created in a way that it cannot fit.
+    pub bounds: Option<Size<i32, Logical>>,
+
     /// The states for this surface
     pub states: ToplevelStateSet,
 
@@ -635,6 +643,9 @@ pub struct ToplevelState {
 
     /// The xdg decoration mode of the surface
     pub decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
+
+    /// The wm capabilities for this toplevel
+    pub capabilities: WmCapabilitieSet,
 }
 
 impl Clone for ToplevelState {
@@ -643,7 +654,9 @@ impl Clone for ToplevelState {
             fullscreen_output: self.fullscreen_output.clone(),
             states: self.states.clone(),
             size: self.size,
+            bounds: self.bounds,
             decoration_mode: self.decoration_mode,
+            capabilities: self.capabilities.clone(),
         }
     }
 }
@@ -739,6 +752,55 @@ impl From<ToplevelStateSet> for Vec<xdg_toplevel::State> {
     }
 }
 
+/// Container holding the [`xdg_toplevel::WmCapabilities`] for a toplevel
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct WmCapabilitieSet {
+    capabilities: HashSet<xdg_toplevel::WmCapabilities>,
+}
+
+impl WmCapabilitieSet {
+    /// Returns `true` if the set contains a capability.
+    pub fn contains(&self, capability: xdg_toplevel::WmCapabilities) -> bool {
+        self.capabilities.contains(&capability)
+    }
+
+    /// Adds a capability to the set.
+    ///
+    /// If the set did not have this capability present, `true` is returned.
+    ///
+    /// If the set did have this capability present, `false` is returned.
+    pub fn set(&mut self, capability: xdg_toplevel::WmCapabilities) -> bool {
+        self.capabilities.insert(capability)
+    }
+
+    /// Removes a capability from the set. Returns whether the capability was
+    /// present in the set.
+    pub fn unset(&mut self, capability: xdg_toplevel::WmCapabilities) -> bool {
+        self.capabilities.remove(&capability)
+    }
+
+    /// Replace all capabilities in this set
+    pub fn replace(&mut self, capabilities: impl IntoIterator<Item = xdg_toplevel::WmCapabilities>) {
+        self.capabilities.clear();
+        self.capabilities.extend(capabilities);
+    }
+
+    /// Returns the raw [`xdg_toplevel::WmCapabilities`] stored in this set
+    pub fn capabilities(&self) -> impl Iterator<Item = &xdg_toplevel::WmCapabilities> {
+        self.capabilities.iter()
+    }
+}
+
+impl<T> From<T> for WmCapabilitieSet
+where
+    T: IntoIterator<Item = xdg_toplevel::WmCapabilities>,
+{
+    fn from(capabilities: T) -> Self {
+        let capabilities = capabilities.into_iter().collect();
+        Self { capabilities }
+    }
+}
+
 /// Represents the client pending state
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SurfaceCachedState {
@@ -825,13 +887,17 @@ pub trait XdgShellHandler {
     fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial);
 
     /// A toplevel surface requested to be maximized
-    fn maximize_request(&mut self, surface: ToplevelSurface) {}
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        surface.send_configure();
+    }
 
     /// A toplevel surface requested to stop being maximized
     fn unmaximize_request(&mut self, surface: ToplevelSurface) {}
 
     /// A toplevel surface requested to be set fullscreen
-    fn fullscreen_request(&mut self, surface: ToplevelSurface, output: Option<wl_output::WlOutput>) {}
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, output: Option<wl_output::WlOutput>) {
+        surface.send_configure();
+    }
 
     /// A toplevel surface request to stop being fullscreen
     fn unfullscreen_request(&mut self, surface: ToplevelSurface) {}
@@ -878,70 +944,83 @@ pub trait XdgShellHandler {
     fn popup_destroyed(&mut self, surface: PopupSurface) {}
 }
 
-#[derive(Debug)]
-pub(crate) struct InnerState {
-    known_toplevels: Vec<ToplevelSurface>,
-    known_popups: Vec<PopupSurface>,
-}
-
 /// Shell global state
 ///
 /// This state allows you to retrieve a list of surfaces
 /// currently known to the shell global.
 #[derive(Debug)]
 pub struct XdgShellState {
-    inner: Arc<Mutex<InnerState>>,
+    known_toplevels: Vec<ToplevelSurface>,
+    known_popups: Vec<PopupSurface>,
+    default_capabilities: WmCapabilitieSet,
     global: GlobalId,
-    _log: slog::Logger,
 }
 
 impl XdgShellState {
-    /// Create a new `xdg_shell` global
-    pub fn new<D, L>(display: &DisplayHandle, logger: L) -> XdgShellState
+    /// Create a new `xdg_shell` global with all [`WmCapabilities`](xdg_toplevel::WmCapabilities)
+    pub fn new<D>(display: &DisplayHandle) -> XdgShellState
     where
-        L: Into<Option<::slog::Logger>>,
         D: GlobalDispatch<XdgWmBase, ()> + 'static,
     {
-        let log = crate::slog_or_fallback(logger);
-        let global = display.create_global::<D, XdgWmBase, _>(3, ());
+        Self::new_with_capabilities::<D>(
+            display,
+            [
+                xdg_toplevel::WmCapabilities::Fullscreen,
+                xdg_toplevel::WmCapabilities::Maximize,
+                xdg_toplevel::WmCapabilities::Minimize,
+                xdg_toplevel::WmCapabilities::WindowMenu,
+            ],
+        )
+    }
+
+    /// Create a new `xdg_shell` global with a specific set of [`WmCapabilities`](xdg_toplevel::WmCapabilities)
+    pub fn new_with_capabilities<D>(
+        display: &DisplayHandle,
+        capabilities: impl Into<WmCapabilitieSet>,
+    ) -> XdgShellState
+    where
+        D: GlobalDispatch<XdgWmBase, ()> + 'static,
+    {
+        let global = display.create_global::<D, XdgWmBase, _>(5, ());
 
         XdgShellState {
-            inner: Arc::new(Mutex::new(InnerState {
-                known_toplevels: Vec::new(),
-                known_popups: Vec::new(),
-            })),
+            known_toplevels: Vec::new(),
+            known_popups: Vec::new(),
+            default_capabilities: capabilities.into(),
             global,
-            _log: log.new(slog::o!("smithay_module" => "xdg_shell_handler")),
         }
     }
 
+    /// Replace the capabilities of this global
+    ///
+    /// *Note*: This does not update the capabilities on existing toplevels, only new
+    /// toplevels are affected. To update existing toplevels iterate over them,
+    /// update their capabilities and send a configure.
+    pub fn replace_capabilities(&mut self, capabilities: impl Into<WmCapabilitieSet>) {
+        self.default_capabilities = capabilities.into();
+    }
+
     /// Access all the shell surfaces known by this handler
-    pub fn toplevel_surfaces<T, F: FnMut(&[ToplevelSurface]) -> T>(&self, mut cb: F) -> T {
-        cb(&self.inner.lock().unwrap().known_toplevels)
+    pub fn toplevel_surfaces(&self) -> &[ToplevelSurface] {
+        &self.known_toplevels
     }
 
     /// Returns a [`ToplevelSurface`] from an underlying toplevel surface.
     pub fn get_toplevel(&self, toplevel: &xdg_toplevel::XdgToplevel) -> Option<ToplevelSurface> {
-        self.inner
-            .lock()
-            .unwrap()
-            .known_toplevels
+        self.known_toplevels
             .iter()
             .find(|surface| surface.xdg_toplevel() == toplevel)
             .cloned()
     }
 
     /// Access all the popup surfaces known by this handler
-    pub fn popup_surfaces<T, F: FnMut(&[PopupSurface]) -> T>(&self, mut cb: F) -> T {
-        cb(&self.inner.lock().unwrap().known_popups)
+    pub fn popup_surfaces(&self) -> &[PopupSurface] {
+        &self.known_popups
     }
 
     /// Returns a [`PopupSurface`] from an underlying popup surface.
     pub fn get_popup(&self, popup: &xdg_popup::XdgPopup) -> Option<PopupSurface> {
-        self.inner
-            .lock()
-            .unwrap()
-            .known_popups
+        self.known_popups
             .iter()
             .find(|surface| surface.xdg_popup() == popup)
             .cloned()
@@ -1079,7 +1158,12 @@ impl ToplevelSurface {
     /// to the `last_acked`
     fn get_pending_state(&self, attributes: &mut XdgToplevelSurfaceRoleAttributes) -> Option<ToplevelState> {
         if !attributes.initial_configure_sent {
-            return Some(attributes.server_pending.take().unwrap_or_default());
+            return Some(
+                attributes
+                    .server_pending
+                    .take()
+                    .unwrap_or_else(|| attributes.current_server_state().clone()),
+            );
         }
 
         // Check if the state really changed, it is possible
@@ -1092,27 +1176,64 @@ impl ToplevelSurface {
         attributes.server_pending.take()
     }
 
+    /// Send a pending configure event to this toplevel surface to suggest it a new configuration
+    ///
+    /// If changes have occurred a configure event will be send to the clients and the serial will be returned
+    /// (for tracking the configure in [`XdgShellHandler::ack_configure`] if desired).
+    /// If no changes occurred no event will be send and `None` will be returned.
+    ///
+    /// See [`send_configure`](ToplevelSurface::send_configure) and [`has_pending_changes`](ToplevelSurface::has_pending_changes)
+    /// for more information.
+    pub fn send_pending_configure(&self) -> Option<Serial> {
+        if self.has_pending_changes() {
+            Some(self.send_configure())
+        } else {
+            None
+        }
+    }
+
     /// Send a configure event to this toplevel surface to suggest it a new configuration
     ///
     /// The serial of this configure will be tracked waiting for the client to ACK it.
     ///
     /// You can manipulate the state that will be sent to the client with the [`with_pending_state`](#method.with_pending_state)
     /// method.
-    pub fn send_configure(&self) {
-        let configure = compositor::with_states(&self.wl_surface, |states| {
-            let mut attributes = states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap();
-            if let Some(pending) = self.get_pending_state(&mut attributes) {
-                // Retrieve the last configured decoration mode and test
-                // if the mode has changed.
-                // We have to do this check before adding the pending state
-                // to the pending configures.
-                let decoration_mode_changed =
-                    pending.decoration_mode != attributes.current_server_state().decoration_mode;
+    ///
+    /// Note: This will always send a configure event, if you intend to only send a configure event on changes take a look at
+    /// [`send_pending_configure`](ToplevelSurface::send_pending_configure)
+    pub fn send_configure(&self) -> Serial {
+        let shell_surface_data = self.shell_surface.data::<XdgShellSurfaceUserData>();
+        let decoration =
+            shell_surface_data.and_then(|data| data.decoration.lock().unwrap().as_ref().cloned());
+        let (configure, decoration_mode_changed, bounds_changed, capabilities_changed) =
+            compositor::with_states(&self.wl_surface, |states| {
+                let mut attributes = states
+                    .data_map
+                    .get::<XdgToplevelSurfaceData>()
+                    .unwrap()
+                    .lock()
+                    .unwrap();
+
+                let pending = self
+                    .get_pending_state(&mut attributes)
+                    .unwrap_or_else(|| attributes.current_server_state().clone());
+                // retrieve the current state before adding it to the
+                // pending state so that we can compare what has changed
+                let current = attributes.current_server_state();
+
+                // test if we should send the decoration mode, either because it changed
+                // or we never sent it
+                let decoration_mode_changed = !attributes.initial_decoration_configure_sent
+                    || (pending.decoration_mode != current.decoration_mode);
+
+                // test if we should send a bounds configure event, either because the
+                // bounds changed or we never sent one
+                let bounds_changed = !attributes.initial_configure_sent || (pending.bounds != current.bounds);
+
+                // test if we should send a capabilities event, either because the
+                // capabilities changed or we never sent one
+                let capabilities_changed =
+                    !attributes.initial_configure_sent || (pending.capabilities != current.capabilities);
 
                 let configure = ToplevelConfigure {
                     serial: SERIAL_COUNTER.next_serial(),
@@ -1121,36 +1242,50 @@ impl ToplevelSurface {
 
                 attributes.pending_configures.push(configure.clone());
                 attributes.initial_configure_sent = true;
-
-                Some((configure, decoration_mode_changed))
-            } else {
-                None
-            }
-        });
-        if let Some((configure, decoration_mode_changed)) = configure {
-            if decoration_mode_changed {
-                if let Some(data) = self.shell_surface.data::<XdgShellSurfaceUserData>() {
-                    if let Some(decoration) = &*data.decoration.lock().unwrap() {
-                        self::decoration::send_decoration_configure(
-                            decoration,
-                            configure
-                                .state
-                                .decoration_mode
-                                .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
-                        );
-                    }
+                if decoration.is_some() {
+                    attributes.initial_decoration_configure_sent = true;
                 }
-            }
 
-            self::handlers::send_toplevel_configure(&self.shell_surface, configure)
+                (
+                    configure,
+                    decoration_mode_changed,
+                    bounds_changed,
+                    capabilities_changed,
+                )
+            });
+
+        if decoration_mode_changed {
+            if let Some(decoration) = &decoration {
+                self::decoration::send_decoration_configure(
+                    decoration,
+                    configure
+                        .state
+                        .decoration_mode
+                        .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
+                );
+            }
         }
+
+        let serial = configure.serial;
+        self::handlers::send_toplevel_configure(
+            &self.shell_surface,
+            configure,
+            bounds_changed,
+            capabilities_changed,
+        );
+
+        serial
     }
 
     /// Handles the role specific commit logic
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
+    pub(crate) fn commit_hook<D: 'static>(
+        _state: &mut D,
+        _dh: &DisplayHandle,
+        surface: &wl_surface::WlSurface,
+    ) {
         compositor::with_states(surface, |states| {
             let mut guard = states
                 .data_map
@@ -1234,6 +1369,23 @@ impl ToplevelSurface {
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
+        })
+    }
+
+    /// Tests this [`ToplevelSurface`] for pending changes
+    ///
+    /// Returns `true` if [`with_pending_state`](ToplevelSurface::with_pending_state) was used to manipulate the state
+    /// and resulted in a different state or if the initial configure is still pending.
+    pub fn has_pending_changes(&self) -> bool {
+        compositor::with_states(&self.wl_surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            !attributes.initial_configure_sent || attributes.has_pending_changes()
         })
     }
 
@@ -1348,8 +1500,8 @@ impl PopupSurface {
 
     /// Internal configure function to re-use the configure
     /// logic for both [`XdgRequest::send_configure`] and [`XdgRequest::send_repositioned`]
-    fn send_configure_internal(&self, reposition_token: Option<u32>) {
-        let next_configure = compositor::with_states(&self.wl_surface, |states| {
+    fn send_configure_internal(&self, reposition_token: Option<u32>) -> Serial {
+        let configure = compositor::with_states(&self.wl_surface, |states| {
             let mut attributes = states
                 .data_map
                 .get::<XdgPopupSurfaceData>()
@@ -1357,31 +1509,40 @@ impl PopupSurface {
                 .lock()
                 .unwrap();
 
-            if !attributes.initial_configure_sent
-                || attributes.has_pending_changes()
-                || reposition_token.is_some()
-            {
-                let pending = attributes
-                    .server_pending
-                    .take()
-                    .unwrap_or_else(|| *attributes.current_server_state());
+            let pending = attributes
+                .server_pending
+                .take()
+                .unwrap_or_else(|| *attributes.current_server_state());
 
-                let configure = PopupConfigure {
-                    state: pending,
-                    serial: SERIAL_COUNTER.next_serial(),
-                    reposition_token,
-                };
+            let configure = PopupConfigure {
+                state: pending,
+                serial: SERIAL_COUNTER.next_serial(),
+                reposition_token,
+            };
 
-                attributes.pending_configures.push(configure);
-                attributes.initial_configure_sent = true;
+            attributes.pending_configures.push(configure);
+            attributes.initial_configure_sent = true;
 
-                Some(configure)
-            } else {
-                None
-            }
+            configure
         });
-        if let Some(configure) = next_configure {
-            self::handlers::send_popup_configure(&self.shell_surface, configure);
+        let serial = configure.serial;
+        self::handlers::send_popup_configure(&self.shell_surface, configure);
+        serial
+    }
+
+    /// Send a pending configure event to this popup surface to suggest it a new configuration
+    ///
+    /// If changes have occurred a configure event will be send to the clients and the serial will be returned
+    /// (for tracking the configure in [`XdgShellHandler::ack_configure`] if desired).
+    /// If no changes occurred no event will be send and `Ok(None)` will be returned.
+    ///
+    /// See [`send_configure`](PopupSurface::send_configure) and [`has_pending_changes`](PopupSurface::has_pending_changes)
+    /// for more information.
+    pub fn send_pending_configure(&self) -> Result<Option<Serial>, PopupConfigureError> {
+        if self.has_pending_changes() {
+            self.send_configure().map(Some)
+        } else {
+            Ok(None)
         }
     }
 
@@ -1394,8 +1555,11 @@ impl PopupSurface {
     ///
     /// Returns [`Err(PopupConfigureError)`] if the initial configure has already been sent and
     /// the client protocol version disallows a re-configure or the current [`PositionerState`]
-    /// is not reactive
-    pub fn send_configure(&self) -> Result<(), PopupConfigureError> {
+    /// is not reactive.
+    ///
+    /// Note: This will always send a configure event, if you intend to only send a configure event on changes take a look at
+    /// [`send_pending_configure`](PopupSurface::send_pending_configure)
+    pub fn send_configure(&self) -> Result<Serial, PopupConfigureError> {
         // Check if we are allowed to send a configure
         compositor::with_states(&self.wl_surface, |states| {
             let attributes = states
@@ -1421,16 +1585,16 @@ impl PopupSurface {
             Ok(())
         })?;
 
-        self.send_configure_internal(None);
+        let serial = self.send_configure_internal(None);
 
-        Ok(())
+        Ok(serial)
     }
 
     /// Send a configure event, including the `repositioned` event to the client
     /// in response to a `reposition` request.
     ///
     /// For further information see [`send_configure`](#method.send_configure)
-    pub fn send_repositioned(&self, token: u32) {
+    pub fn send_repositioned(&self, token: u32) -> Serial {
         self.send_configure_internal(Some(token))
     }
 
@@ -1438,7 +1602,11 @@ impl PopupSurface {
     ///
     /// This should be called when the underlying WlSurface
     /// handles a wl_surface.commit request.
-    pub(crate) fn commit_hook(_dh: &DisplayHandle, surface: &wl_surface::WlSurface) {
+    pub(crate) fn commit_hook<D: 'static>(
+        _state: &mut D,
+        _dh: &DisplayHandle,
+        surface: &wl_surface::WlSurface,
+    ) {
         let send_error_to = compositor::with_states(surface, |states| {
             let attributes = states
                 .data_map
@@ -1553,6 +1721,23 @@ impl PopupSurface {
 
             let server_pending = attributes.server_pending.as_mut().unwrap();
             f(server_pending)
+        })
+    }
+
+    /// Tests this [`PopupSurface`] for pending changes
+    ///
+    /// Returns `true` if [`with_pending_state`](PopupSurface::with_pending_state) was used to manipulate the state
+    /// and resulted in a different state or if the initial configure is still pending.
+    pub fn has_pending_changes(&self) -> bool {
+        compositor::with_states(&self.wl_surface, |states| {
+            let attributes = states
+                .data_map
+                .get::<XdgPopupSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
+            !attributes.initial_configure_sent || attributes.has_pending_changes()
         })
     }
 }

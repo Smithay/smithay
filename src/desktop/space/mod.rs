@@ -4,7 +4,7 @@
 use crate::{
     backend::renderer::{
         damage::{
-            DamageTrackedRenderer, DamageTrackedRendererError, DamageTrackedRendererMode, OutputNoMode,
+            Error as OutputDamageTrackerError, OutputDamageTracker, OutputDamageTrackerMode, OutputNoMode,
         },
         element::{AsRenderElements, RenderElement, RenderElementStates, Wrap},
         Renderer, Texture,
@@ -19,6 +19,7 @@ use crate::{
     wayland::shell::wlr_layer::Layer,
 };
 use std::{collections::HashMap, fmt};
+use tracing::{debug, debug_span, instrument};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_surface::WlSurface;
 
@@ -54,7 +55,7 @@ pub struct Space<E: SpaceElement> {
     // in z-order, back to front
     elements: Vec<InnerElement<E>>,
     outputs: Vec<Output>,
-    _logger: ::slog::Logger,
+    span: tracing::Span,
 }
 
 impl<E: SpaceElement> PartialEq for Space<E> {
@@ -69,20 +70,21 @@ impl<E: SpaceElement> Drop for Space<E> {
     }
 }
 
-impl<E: SpaceElement + PartialEq> Space<E> {
-    /// Create a new [`Space`]
-    pub fn new<L>(log: L) -> Self
-    where
-        L: Into<Option<slog::Logger>>,
-    {
-        Space {
-            id: next_space_id(),
-            elements: Vec::new(),
-            outputs: Vec::new(),
-            _logger: crate::slog_or_fallback(log),
+impl<E: SpaceElement> Default for Space<E> {
+    fn default() -> Self {
+        let id = next_space_id();
+        let span = debug_span!("desktop_space", id);
+
+        Self {
+            id,
+            elements: Default::default(),
+            outputs: Default::default(),
+            span,
         }
     }
+}
 
+impl<E: SpaceElement + PartialEq> Space<E> {
     /// Gets the id of this space
     pub fn id(&self) -> usize {
         self.id
@@ -90,11 +92,8 @@ impl<E: SpaceElement + PartialEq> Space<E> {
 
     /// Map a [`SpaceElement`] and move it to top of the stack
     ///
-    /// If a z_index is provided it will override the default
-    /// z_index of [`RenderZindex::Shell`] for the mapped window.
-    ///
     /// This can safely be called on an already mapped window
-    /// to update its location or z_index inside the space.
+    /// to update its location inside the space.
     ///
     /// If activate is true it will set the new windows state
     /// to be activate and removes that state from every
@@ -256,10 +255,10 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// *Note:* Remapping an output does reset it's damage memory.
     pub fn map_output<P: Into<Point<i32, Logical>>>(&mut self, output: &Output, location: P) {
         let mut state = output_state(self.id, output);
-        *state = OutputState {
-            location: location.into(),
-        };
+        let location = location.into();
+        *state = OutputState { location };
         if !self.outputs.contains(output) {
+            debug!(parent: &self.span, output = output.name(), "Mapping output at {:?}", location);
             self.outputs.push(output.clone());
         }
     }
@@ -276,6 +275,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         if !self.outputs.contains(output) {
             return;
         }
+        debug!(parent: &self.span, output = output.name(), "Unmapping output");
         if let Some(map) = output.user_data().get::<OutputUserdata>() {
             map.borrow_mut().remove(&self.id);
         }
@@ -375,6 +375,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// *Note:* Because this is not rendering a specific output,
     /// this will not contain layer surfaces.
     /// Use [`Space::render_elements_for_output`], if you care about this.
+    #[instrument(level = "trace", skip(self, renderer, scale), parent = &self.span)]
     pub fn render_elements_for_region<'a, R: Renderer, S: Into<Scale<f64>>>(
         &'a self,
         renderer: &mut R,
@@ -408,6 +409,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     }
 
     /// Retrieve the render elements for an output
+    #[instrument(level = "trace", skip(self, renderer), parent = &self.span)]
     pub fn render_elements_for_output<
         'a,
         #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
@@ -563,6 +565,7 @@ crate::backend::renderer::element::render_elements! {
 /// *Note*: If the `wayland_frontend`-feature is enabled
 /// this will include layer-shell surfaces added to this
 /// outputs [`LayerMap`].
+#[instrument(level = "trace", skip(spaces, renderer))]
 pub fn space_render_elements<
     'a,
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
@@ -587,7 +590,7 @@ where
     let layer_map = layer_map_for_output(output);
     #[cfg(feature = "wayland_frontend")]
     let lower = {
-        let (upper, lower): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
+        let (lower, upper): (Vec<&LayerSurface>, Vec<&LayerSurface>) = layer_map
             .layers()
             .rev()
             .partition(|s| matches!(s.layer(), Layer::Background | Layer::Bottom));
@@ -612,6 +615,7 @@ where
     };
 
     for space in spaces {
+        let _guard = space.span.enter();
         if let Some(output_geo) = space.output_geometry(output) {
             render_elements.extend(
                 space
@@ -653,7 +657,6 @@ pub fn render_output<
     #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
     C: RenderElement<R>,
     E: SpaceElement + PartialEq + AsRenderElements<R> + 'a,
-    L: Into<Option<slog::Logger>>,
     S: IntoIterator<Item = &'a Space<E>>,
 >(
     output: &Output,
@@ -661,17 +664,16 @@ pub fn render_output<
     age: usize,
     spaces: S,
     custom_elements: &'a [C],
-    damage_tracked_renderer: &mut DamageTrackedRenderer,
+    damage_tracker: &mut OutputDamageTracker,
     clear_color: [f32; 4],
-    log: L,
-) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), DamageTrackedRendererError<R>>
+) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputDamageTrackerError<R>>
 where
     <R as Renderer>::TextureId: Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
-    if let DamageTrackedRendererMode::Auto(renderer_output) = damage_tracked_renderer.mode() {
+    if let OutputDamageTrackerMode::Auto(renderer_output) = damage_tracker.mode() {
         assert!(renderer_output == output);
     }
 
@@ -683,5 +685,5 @@ where
     render_elements.extend(custom_elements.iter().map(OutputRenderElements::Custom));
     render_elements.extend(space_render_elements.into_iter().map(OutputRenderElements::Space));
 
-    damage_tracked_renderer.render_output(renderer, age, &render_elements, clear_color, log)
+    damage_tracker.render_output(renderer, age, &render_elements, clear_color)
 }

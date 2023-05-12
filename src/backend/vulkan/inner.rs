@@ -4,7 +4,6 @@ use std::{
 };
 
 use ash::{extensions::ext::DebugUtils, vk};
-use slog::Logger;
 
 use super::{version::Version, LoadError, LIBRARY};
 
@@ -12,6 +11,7 @@ pub struct InstanceInner {
     pub instance: ash::Instance,
     pub version: Version,
     pub debug_state: Option<DebugState>,
+    pub span: tracing::Span,
 
     /// Enabled instance extensions.
     pub enabled_extensions: Vec<&'static CStr>,
@@ -20,7 +20,7 @@ pub struct InstanceInner {
 pub struct DebugState {
     pub debug_utils: DebugUtils,
     pub debug_messenger: vk::DebugUtilsMessengerEXT,
-    pub logger_ptr: *mut Logger,
+    pub span_ptr: *mut tracing::Span,
 }
 
 impl fmt::Debug for InstanceInner {
@@ -33,14 +33,13 @@ impl fmt::Debug for InstanceInner {
 
 impl Drop for InstanceInner {
     fn drop(&mut self) {
-        let logger = if let Some(debug) = &self.debug_state {
+        let span = if let Some(debug) = &self.debug_state {
             unsafe {
                 debug
                     .debug_utils
                     .destroy_debug_utils_messenger(debug.debug_messenger, None);
             }
-
-            Some(unsafe { Box::from_raw(debug.logger_ptr as *mut slog::Logger) })
+            Some(unsafe { Box::from_raw(debug.span_ptr as *mut tracing::Span) })
         } else {
             None
         };
@@ -51,8 +50,8 @@ impl Drop for InstanceInner {
         // synchronized (since the inner value of an Arc is always dropped on a single thread).
         unsafe { self.instance.destroy_instance(None) };
 
-        // Now that the instance has been destroyed, we can destroy the logger.
-        drop(logger);
+        // Now that the instance has been destroyed, we can destroy the span.
+        drop(span);
     }
 }
 

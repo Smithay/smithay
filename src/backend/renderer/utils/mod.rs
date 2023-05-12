@@ -56,26 +56,26 @@ impl From<usize> for CommitCounter {
 /// and automatically caps the damage
 /// with the specified limit.
 ///
-/// See [`DamageTrackerSnapshot`] for more
+/// See [`DamageSnapshot`] for more
 /// information.
-pub struct DamageTracker<N, Kind> {
+pub struct DamageBag<N, Kind> {
     limit: usize,
-    state: DamageTrackerSnapshot<N, Kind>,
+    state: DamageSnapshot<N, Kind>,
 }
 
-/// A snapshot of the current state of a [`DamageTracker`]
+/// A snapshot of the current state of a [`DamageBag`]
 ///
 /// The snapshot can be used to get an immutable view
-/// into the current state of a [`DamageTracker`].
+/// into the current state of a [`DamageBag`].
 /// It provides an easy way to get the damage between two
 /// [`CommitCounter`]s.
-pub struct DamageTrackerSnapshot<N, Kind> {
+pub struct DamageSnapshot<N, Kind> {
     limit: usize,
     commit_counter: CommitCounter,
     damage: VecDeque<Vec<Rectangle<N, Kind>>>,
 }
 
-impl<N: Clone, Kind> Clone for DamageTrackerSnapshot<N, Kind> {
+impl<N: Clone, Kind> Clone for DamageSnapshot<N, Kind> {
     fn clone(&self) -> Self {
         Self {
             limit: self.limit,
@@ -85,54 +85,54 @@ impl<N: Clone, Kind> Clone for DamageTrackerSnapshot<N, Kind> {
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for DamageTracker<N, BufferCoord> {
+impl<N: fmt::Debug> fmt::Debug for DamageBag<N, BufferCoord> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DamageTracker")
+        f.debug_struct("DamageBag")
             .field("limit", &self.limit)
             .field("state", &self.state)
             .finish()
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for DamageTracker<N, Physical> {
+impl<N: fmt::Debug> fmt::Debug for DamageBag<N, Physical> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DamageTracker")
+        f.debug_struct("DamageBag")
             .field("limit", &self.limit)
             .field("state", &self.state)
             .finish()
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for DamageTracker<N, Logical> {
+impl<N: fmt::Debug> fmt::Debug for DamageBag<N, Logical> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DamageTracker")
+        f.debug_struct("DamageBag")
             .field("limit", &self.limit)
             .field("state", &self.state)
             .finish()
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for DamageTrackerSnapshot<N, BufferCoord> {
+impl<N: fmt::Debug> fmt::Debug for DamageSnapshot<N, BufferCoord> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DamageTrackerSnapshot")
+        f.debug_struct("DamageSnapshot")
             .field("commit_counter", &self.commit_counter)
             .field("damage", &self.damage)
             .finish()
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for DamageTrackerSnapshot<N, Physical> {
+impl<N: fmt::Debug> fmt::Debug for DamageSnapshot<N, Physical> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DamageTrackerSnapshot")
+        f.debug_struct("DamageSnapshot")
             .field("commit_counter", &self.commit_counter)
             .field("damage", &self.damage)
             .finish()
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for DamageTrackerSnapshot<N, Logical> {
+impl<N: fmt::Debug> fmt::Debug for DamageSnapshot<N, Logical> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DamageTrackerSnapshot")
+        f.debug_struct("DamageSnapshot")
             .field("commit_counter", &self.commit_counter)
             .field("damage", &self.damage)
             .finish()
@@ -141,15 +141,15 @@ impl<N: fmt::Debug> fmt::Debug for DamageTrackerSnapshot<N, Logical> {
 
 const MAX_DAMAGE: usize = 4;
 
-impl<N, Kind> Default for DamageTracker<N, Kind> {
+impl<N, Kind> Default for DamageBag<N, Kind> {
     fn default() -> Self {
-        DamageTracker::new(MAX_DAMAGE)
+        DamageBag::new(MAX_DAMAGE)
     }
 }
 
-impl<N, Kind> DamageTrackerSnapshot<N, Kind> {
+impl<N, Kind> DamageSnapshot<N, Kind> {
     fn new(limit: usize) -> Self {
-        DamageTrackerSnapshot {
+        DamageSnapshot {
             limit,
             commit_counter: CommitCounter::default(),
             damage: VecDeque::with_capacity(limit),
@@ -158,7 +158,7 @@ impl<N, Kind> DamageTrackerSnapshot<N, Kind> {
 
     /// Create an empty damage snapshot
     pub fn empty() -> Self {
-        DamageTrackerSnapshot {
+        DamageSnapshot {
             limit: 0,
             commit_counter: CommitCounter::default(),
             damage: VecDeque::default(),
@@ -168,8 +168,8 @@ impl<N, Kind> DamageTrackerSnapshot<N, Kind> {
     /// Gets the current [`CommitCounter`] of this snapshot
     ///
     /// The returned [`CommitCounter`] should be stored after
-    /// calling [`damage_since`](DamageTrackerSnapshot::damage_since)
-    /// and provided to the next call of [`damage_since`](DamageTrackerSnapshot::damage_since)
+    /// calling [`damage_since`](DamageSnapshot::damage_since)
+    /// and provided to the next call of [`damage_since`](DamageSnapshot::damage_since)
     /// to query the damage between these two [`CommitCounter`]s.
     pub fn current_commit(&self) -> CommitCounter {
         self.commit_counter
@@ -186,7 +186,7 @@ impl<N, Kind> DamageTrackerSnapshot<N, Kind> {
     }
 }
 
-impl<N: Coordinate, Kind> DamageTrackerSnapshot<N, Kind> {
+impl<N: Coordinate, Kind> DamageSnapshot<N, Kind> {
     /// Get the damage since the last commit
     ///
     /// Returns `None` in case the [`CommitCounter`] is too old
@@ -216,7 +216,9 @@ impl<N: Coordinate, Kind> DamageTrackerSnapshot<N, Kind> {
         }
     }
 
-    fn add(&mut self, damage: &[Rectangle<N, Kind>]) {
+    fn add(&mut self, damage: impl IntoIterator<Item = Rectangle<N, Kind>>) {
+        let damage = damage.into_iter().collect::<Vec<_>>();
+
         if damage.is_empty() || damage.iter().all(|d| d.is_empty()) {
             // do not track empty damage
             return;
@@ -236,12 +238,12 @@ impl<N: Coordinate, Kind> DamageTrackerSnapshot<N, Kind> {
     }
 }
 
-impl<N, Kind> DamageTracker<N, Kind> {
-    /// Initialize a a new [`DamageTracker`]
+impl<N, Kind> DamageBag<N, Kind> {
+    /// Initialize a a new [`DamageBag`] with the specified limit
     pub fn new(limit: usize) -> Self {
-        DamageTracker {
+        DamageBag {
             limit,
-            state: DamageTrackerSnapshot::new(limit),
+            state: DamageSnapshot::new(limit),
         }
     }
 
@@ -264,16 +266,16 @@ impl<N, Kind> DamageTracker<N, Kind> {
     }
 }
 
-impl<N: Clone, Kind> DamageTracker<N, Kind> {
+impl<N: Clone, Kind> DamageBag<N, Kind> {
     /// Get a snapshot of the current damage
-    pub fn snapshot(&self) -> DamageTrackerSnapshot<N, Kind> {
+    pub fn snapshot(&self) -> DamageSnapshot<N, Kind> {
         self.state.clone()
     }
 }
 
-impl<N: Coordinate, Kind> DamageTracker<N, Kind> {
+impl<N: Coordinate, Kind> DamageBag<N, Kind> {
     /// Add some damage to the tracker
-    pub fn add(&mut self, damage: &[Rectangle<N, Kind>]) {
+    pub fn add(&mut self, damage: impl IntoIterator<Item = Rectangle<N, Kind>>) {
         self.state.add(damage)
     }
 

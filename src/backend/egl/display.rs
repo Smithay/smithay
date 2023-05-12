@@ -34,7 +34,7 @@ use crate::{
     utils::{Buffer as BufferCoords, Size},
 };
 
-use slog::{debug, error, info, o, trace, warn};
+use tracing::{debug, error, info, info_span, instrument, trace, warn};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 lazy_static::lazy_static! {
@@ -79,18 +79,15 @@ pub struct EGLDisplay {
     dmabuf_import_formats: HashSet<DrmFormat>,
     dmabuf_render_formats: HashSet<DrmFormat>,
     surface_type: ffi::EGLint,
-    logger: slog::Logger,
+    pub(super) span: tracing::Span,
 }
 
 unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
     native: &N,
     dp_extensions: &[String],
-    log: &::slog::Logger,
-) -> Result<*const c_void, Error> {
+) -> Result<(*const c_void, &'static str), Error> {
     for platform in native.supported_platforms() {
-        debug!(log, "Trying EGL platform: {}", platform.platform_name);
-
-        let log = log.new(o!("platform" => format!("{:?}", platform)));
+        debug!("Trying EGL platform: {}", platform.platform_name);
 
         let missing_extensions = platform
             .required_extensions
@@ -100,7 +97,6 @@ unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
 
         if !missing_extensions.is_empty() {
             info!(
-                log,
                 "Skipping EGL platform because one or more required extensions are not supported. Missing extensions: {:?}", missing_extensions
             );
             continue;
@@ -118,7 +114,7 @@ unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
         let display = match display {
             Ok(display) => {
                 if display == ffi::egl::NO_DISPLAY {
-                    info!(log, "Skipping platform because the display is not supported");
+                    info!("Skipping platform because the display is not supported");
                     continue;
                 }
 
@@ -126,37 +122,42 @@ unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
             }
             Err(err) => {
                 info!(
-                    log,
-                    "Skipping platform because of an display creation error: {:?}", err
+                    "Skipping platform because of an display creation error: {:?}",
+                    err
                 );
                 continue;
             }
         };
 
-        info!(
-            log,
-            "Successfully selected EGL platform: {}", platform.platform_name
-        );
-        return Ok(display);
+        info!("Successfully selected EGL platform: {}", platform.platform_name);
+        return Ok((display, platform.platform_name));
     }
 
-    error!(log, "Unable to find suitable EGL platform");
+    error!("Unable to find suitable EGL platform");
     Err(Error::DisplayNotSupported)
 }
 
 impl EGLDisplay {
     /// Create a new [`EGLDisplay`] from a given [`EGLNativeDisplay`]
-    pub fn new<N, L>(native: N, logger: L) -> Result<EGLDisplay, Error>
+    pub fn new<N>(native: N) -> Result<EGLDisplay, Error>
     where
         N: EGLNativeDisplay + 'static,
-        L: Into<Option<::slog::Logger>>,
     {
-        let log = crate::slog_or_fallback(logger.into()).new(o!("smithay_module" => "backend_egl"));
+        let span = info_span!(
+            "egl",
+            platform = tracing::field::Empty,
+            native = tracing::field::Empty,
+            version = tracing::field::Empty,
+        );
+        if let Some(value) = native.identifier() {
+            span.record("native", value);
+        }
 
         let dp_extensions = ffi::make_sure_egl_is_loaded()?;
-        debug!(log, "Supported EGL client extensions: {:?}", dp_extensions);
+        debug!("Supported EGL client extensions: {:?}", dp_extensions);
         // we create an EGLDisplay
-        let display = unsafe { select_platform_display(&native, &dp_extensions, &log)? };
+        let (display, platform) = unsafe { select_platform_display(&native, &dp_extensions)? };
+        span.record("platform", platform);
 
         // We can then query the egl api version
         let egl_version = unsafe {
@@ -169,19 +170,20 @@ impl EGLDisplay {
             let major = major.assume_init();
             let minor = minor.assume_init();
 
-            info!(log, "EGL Initialized");
-            info!(log, "EGL Version: {:?}", (major, minor));
+            info!("EGL Initialized");
+            info!("EGL Version: {:?}", (major, minor));
 
             (major, minor)
         };
+        span.record("version", tracing::field::debug(egl_version));
 
         // the list of extensions supported by the client once initialized is different from the
         // list of extensions obtained earlier
         let extensions = EGLDisplay::get_extensions(egl_version, display)?;
-        info!(log, "Supported EGL display extensions: {:?}", extensions);
+        info!("Supported EGL display extensions: {:?}", extensions);
 
         let (dmabuf_import_formats, dmabuf_render_formats) =
-            get_dmabuf_formats(&display, &extensions, &log).map_err(Error::DisplayCreationError)?;
+            get_dmabuf_formats(&display, &extensions).map_err(Error::DisplayCreationError)?;
 
         // egl <= 1.2 does not support OpenGL ES (maybe we want to support OpenGL in the future?)
         if egl_version <= (1, 2) {
@@ -202,7 +204,7 @@ impl EGLDisplay {
             extensions,
             dmabuf_import_formats,
             dmabuf_render_formats,
-            logger: log,
+            span,
         })
     }
 
@@ -212,21 +214,14 @@ impl EGLDisplay {
     ///
     /// - The display must be created from the system default EGL library (`dlopen("libEGL.so")`)
     /// - The `display` and `config` must be valid for the lifetime of the returned display and any handles created by this display (using [`EGLDisplay::get_display_handle`])
-    pub unsafe fn from_raw<L>(
-        display: *const c_void,
-        config_id: *const c_void,
-        logger: L,
-    ) -> Result<EGLDisplay, Error>
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
+    pub unsafe fn from_raw(display: *const c_void, config_id: *const c_void) -> Result<EGLDisplay, Error> {
+        let span = info_span!("egl", platform = "unknown/raw", version = tracing::field::Empty);
+
         assert!(!display.is_null(), "EGLDisplay pointer is null");
         assert!(!config_id.is_null(), "EGL configuration id pointer is null");
 
-        let log = crate::slog_or_fallback(logger.into()).new(o!("smithay_module" => "backend_egl"));
-
         let dp_extensions = ffi::make_sure_egl_is_loaded()?;
-        debug!(log, "Supported EGL client extensions: {:?}", dp_extensions);
+        debug!("Supported EGL client extensions: {:?}", dp_extensions);
 
         let egl_version = {
             let p = CStr::from_ptr(
@@ -250,15 +245,16 @@ impl EGLDisplay {
                 .and_then(|v| v.parse::<i32>().ok())
                 .ok_or(Error::DisplayQueryResultInvalid)?;
 
-            info!(log, "EGL Version: {:?}", (major, minor));
+            info!("EGL Version: {:?}", (major, minor));
             (major, minor)
         };
+        span.record("version", tracing::field::debug(egl_version));
 
         let extensions = EGLDisplay::get_extensions(egl_version, display)?;
-        info!(log, "Supported EGL display extensions: {:?}", extensions);
+        info!("Supported EGL display extensions: {:?}", extensions);
 
         let (dmabuf_import_formats, dmabuf_render_formats) =
-            get_dmabuf_formats(&display, &extensions, &log).map_err(Error::DisplayCreationError)?;
+            get_dmabuf_formats(&display, &extensions).map_err(Error::DisplayCreationError)?;
 
         let egl_api =
             wrap_egl_call(|| ffi::egl::QueryAPI()).map_err(|_| Error::OpenGlesNotSupported(None))?;
@@ -292,7 +288,7 @@ impl EGLDisplay {
             extensions,
             dmabuf_import_formats,
             dmabuf_render_formats,
-            logger: log,
+            span,
         })
     }
 
@@ -321,12 +317,12 @@ impl EGLDisplay {
             let mut out: Vec<c_int> = Vec::with_capacity(37);
 
             if self.egl_version >= (1, 2) {
-                trace!(self.logger, "Setting COLOR_BUFFER_TYPE to RGB_BUFFER");
+                trace!("Setting COLOR_BUFFER_TYPE to RGB_BUFFER");
                 out.push(ffi::egl::COLOR_BUFFER_TYPE as c_int);
                 out.push(ffi::egl::RGB_BUFFER as c_int);
             }
 
-            trace!(self.logger, "Setting SURFACE_TYPE to {}", self.surface_type);
+            trace!("Setting SURFACE_TYPE to {}", self.surface_type);
 
             out.push(ffi::egl::SURFACE_TYPE as c_int);
             out.push(self.surface_type);
@@ -334,31 +330,25 @@ impl EGLDisplay {
             match attributes.version {
                 (3, _) => {
                     if self.egl_version < (1, 3) {
-                        error!(
-                            self.logger,
-                            "OpenglES 3.* is not supported on EGL Versions lower then 1.3"
-                        );
+                        error!("OpenglES 3.* is not supported on EGL Versions lower then 1.3");
                         return Err(Error::NoAvailablePixelFormat);
                     }
-                    trace!(self.logger, "Setting RENDERABLE_TYPE to OPENGL_ES3");
+                    trace!("Setting RENDERABLE_TYPE to OPENGL_ES3");
                     out.push(ffi::egl::RENDERABLE_TYPE as c_int);
                     out.push(ffi::egl::OPENGL_ES3_BIT as c_int);
-                    trace!(self.logger, "Setting CONFORMANT to OPENGL_ES3");
+                    trace!("Setting CONFORMANT to OPENGL_ES3");
                     out.push(ffi::egl::CONFORMANT as c_int);
                     out.push(ffi::egl::OPENGL_ES3_BIT as c_int);
                 }
                 (2, _) => {
                     if self.egl_version < (1, 3) {
-                        error!(
-                            self.logger,
-                            "OpenglES 2.* is not supported on EGL Versions lower then 1.3"
-                        );
+                        error!("OpenglES 2.* is not supported on EGL Versions lower then 1.3");
                         return Err(Error::NoAvailablePixelFormat);
                     }
-                    trace!(self.logger, "Setting RENDERABLE_TYPE to OPENGL_ES2");
+                    trace!("Setting RENDERABLE_TYPE to OPENGL_ES2");
                     out.push(ffi::egl::RENDERABLE_TYPE as c_int);
                     out.push(ffi::egl::OPENGL_ES2_BIT as c_int);
-                    trace!(self.logger, "Setting CONFORMANT to OPENGL_ES2");
+                    trace!("Setting CONFORMANT to OPENGL_ES2");
                     out.push(ffi::egl::CONFORMANT as c_int);
                     out.push(ffi::egl::OPENGL_ES2_BIT as c_int);
                 }
@@ -367,7 +357,7 @@ impl EGLDisplay {
                 }
             };
 
-            reqs.create_attributes(&mut out, &self.logger);
+            reqs.create_attributes(&mut out);
             out.push(ffi::egl::NONE as c_int);
             out
         };
@@ -453,7 +443,7 @@ impl EGLDisplay {
 
         // return the format that was selected for our config
         let desc = unsafe { self.get_pixel_format(config_id)? };
-        info!(self.logger, "Selected color format: {:?}", desc);
+        info!("Selected color format: {:?}", desc);
 
         Ok((desc, config_id))
     }
@@ -548,6 +538,7 @@ impl EGLDisplay {
 
     /// Exports an [`EGLImage`] as a [`Dmabuf`]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    #[instrument(level = "trace", skip(self), parent = &self.span, err)]
     pub fn create_dmabuf_from_image(
         &self,
         image: EGLImage,
@@ -630,6 +621,7 @@ impl EGLDisplay {
     }
 
     /// Imports a [`Dmabuf`] as an [`EGLImage`]
+    #[instrument(level = "trace", skip(self), parent = &self.span, err)]
     pub fn create_image_from_dmabuf(&self, dmabuf: &Dmabuf) -> Result<EGLImage, Error> {
         if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
             && !self
@@ -759,17 +751,13 @@ impl EGLDisplay {
         }
         wrap_egl_call(|| unsafe { ffi::egl::BindWaylandDisplayWL(**self.display, display_ptr as *mut _) })
             .map_err(Error::OtherEGLDisplayAlreadyBound)?;
-        let reader = EGLBufferReader::new(self.display.clone(), display_ptr, self.logger.clone());
+        let reader = EGLBufferReader::new(self.display.clone(), display_ptr);
         let mut global = BUFFER_READER.lock().unwrap();
         if global.as_ref().and_then(|x| x.upgrade()).is_some() {
-            warn!(
-                self.logger,
-                "Double bind_wl_display, smithay does not support this, please report"
-            );
+            warn!("Double bind_wl_display, smithay does not support this, please report");
         }
         *global = Some(WeakBufferReader {
             display: Arc::downgrade(&self.display),
-            logger: self.logger.clone(),
         });
         Ok(reader)
     }
@@ -778,10 +766,9 @@ impl EGLDisplay {
 fn get_dmabuf_formats(
     display: &ffi::egl::types::EGLDisplay,
     extensions: &[String],
-    log: &::slog::Logger,
 ) -> Result<(HashSet<DrmFormat>, HashSet<DrmFormat>), EGLError> {
     if !extensions.iter().any(|s| s == "EGL_EXT_image_dma_buf_import") {
-        warn!(log, "Dmabuf import extension not available");
+        warn!("Dmabuf import extension not available");
         return Ok((HashSet::new(), HashSet::new()));
     }
 
@@ -850,8 +837,7 @@ fn get_dmabuf_formats(
         }) {
             Ok(_) => {}
             Err(EGLError::BadParameter) => {
-                slog::debug!(
-                    log,
+                debug!(
                     "eglQueryDmaBufModifiersEXT returned BadParameter for {:?}",
                     fourcc
                 );
@@ -904,8 +890,8 @@ fn get_dmabuf_formats(
         }
     }
 
-    trace!(log, "Supported dmabuf import formats: {:?}", texture_formats);
-    trace!(log, "Supported dmabuf render formats: {:?}", render_formats);
+    trace!("Supported dmabuf import formats: {:?}", texture_formats);
+    trace!("Supported dmabuf render formats: {:?}", render_formats);
 
     Ok((texture_formats, render_formats))
 }
@@ -918,14 +904,11 @@ fn get_dmabuf_formats(
 pub struct EGLBufferReader {
     display: Arc<EGLDisplayHandle>,
     wayland: Option<Arc<*mut wl_display>>,
-    #[allow(dead_code)]
-    logger: ::slog::Logger,
 }
 
 #[cfg(feature = "use_system_lib")]
 pub(crate) struct WeakBufferReader {
     display: Weak<EGLDisplayHandle>,
-    logger: ::slog::Logger,
 }
 
 #[cfg(feature = "use_system_lib")]
@@ -934,7 +917,6 @@ impl WeakBufferReader {
         Some(EGLBufferReader {
             display: self.display.upgrade()?,
             wayland: None,
-            logger: self.logger.clone(),
         })
     }
 }
@@ -944,16 +926,10 @@ unsafe impl Send for EGLBufferReader {}
 
 #[cfg(feature = "use_system_lib")]
 impl EGLBufferReader {
-    fn new<L>(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display, log: L) -> Self
-    where
-        L: Into<Option<::slog::Logger>>,
-    {
-        let logger = crate::slog_or_fallback(log.into()).new(o!("smithay_module" => "egl_buffer_reader"));
-
+    fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display) -> Self {
         Self {
             display,
             wayland: Some(Arc::new(wayland)),
-            logger,
         }
     }
 

@@ -11,6 +11,7 @@
 //! - [`memory`](crate::backend::renderer::element::memory) - Memory based render element
 //! - [`texture`](crate::backend::renderer::element::texture) - Texture based render element
 //! - [`surface`](crate::backend::renderer::element::surface) - Wayland surface render element
+//! - [`solid`](crate::backend::renderer::element::solid) - Solid color render element
 //!
 //! The [`render_elements!`] macro provides an easy way to aggregate multiple different [RenderElement]s
 //! into a single enum.
@@ -21,16 +22,19 @@
 use std::{collections::HashMap, sync::Arc};
 
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{backend::ObjectId, protocol::wl_buffer, Resource};
+use wayland_server::{backend::ObjectId, Resource};
 
 use crate::{
     output::{Output, WeakOutput},
     utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Transform},
 };
 
+#[cfg(feature = "wayland_frontend")]
+use super::utils::Buffer;
 use super::{utils::CommitCounter, Renderer};
 
 pub mod memory;
+pub mod solid;
 #[cfg(feature = "wayland_frontend")]
 pub mod surface;
 pub mod texture;
@@ -91,20 +95,32 @@ impl<R: Resource> From<&R> for Id {
 }
 
 /// The underlying storage for a element
-#[derive(Debug)]
-pub enum UnderlyingStorage<'a, R: Renderer> {
+#[derive(Debug, Clone)]
+pub enum UnderlyingStorage {
     /// A wayland buffer
     #[cfg(feature = "wayland_frontend")]
-    Wayland(wl_buffer::WlBuffer),
-    /// A texture
-    External(&'a R::TextureId),
+    Wayland(Buffer),
+}
+
+/// Defines the (optional) reason why a [`Element`] was selected for
+/// rendering instead of direct scan-out
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderingReason {
+    /// Element was selected for direct scan-out but failed
+    ScanoutFailed,
 }
 
 /// Defines the presentation state of an element after rendering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderElementPresentationState {
     /// The element was selected for rendering
-    Rendering,
+    Rendering {
+        /// Optional reason why the element was selected for rendering
+        ///
+        /// Can be used to make a decision on sending an dmabuf feedback
+        /// scan-out tranche.
+        reason: Option<RenderingReason>,
+    },
     /// The element was selected for zero-copy scan-out
     ZeroCopy,
     /// The element was skipped as it is current not visible
@@ -133,7 +149,7 @@ impl RenderElementState {
     pub(crate) fn rendered(visible_area: usize) -> Self {
         RenderElementState {
             visible_area,
-            presentation_state: RenderElementPresentationState::Rendering,
+            presentation_state: RenderElementPresentationState::Rendering { reason: None },
         }
     }
 }
@@ -275,7 +291,7 @@ pub fn default_primary_scanout_output_compare<'a>(
 }
 
 /// Holds the states for a set of [`RenderElement`]s
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct RenderElementStates {
     /// Holds the render states of the elements
     pub states: HashMap<Id, RenderElementState>,
@@ -344,11 +360,10 @@ pub trait RenderElement<R: Renderer>: Element {
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
     ) -> Result<(), R::Error>;
 
     /// Get the underlying storage of this element, may be used to optimize rendering (eg. drm planes)
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         let _ = renderer;
         None
     }
@@ -416,7 +431,7 @@ where
     R: Renderer,
     E: RenderElement<R> + Element,
 {
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         (*self).underlying_storage(renderer)
     }
 
@@ -426,9 +441,8 @@ where
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
     ) -> Result<(), R::Error> {
-        (*self).draw(frame, src, dst, damage, log)
+        (*self).draw(frame, src, dst, damage)
     }
 }
 
@@ -684,7 +698,6 @@ macro_rules! render_elements_internal {
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
-            log: &slog::Logger,
         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
         where
         $(
@@ -701,13 +714,13 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
 
-        fn underlying_storage(&self, renderer: &$renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_, $renderer>>
+        fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage>
         {
             match self {
                 $(
@@ -728,7 +741,6 @@ macro_rules! render_elements_internal {
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
-            log: &slog::Logger,
         ) -> Result<(), <$renderer as $crate::backend::renderer::Renderer>::Error>
         {
             match self {
@@ -737,13 +749,13 @@ macro_rules! render_elements_internal {
                     $(
                         #[$meta]
                     )*
-                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage, log)
+                    Self::$body(x) => $crate::render_elements_internal!(@call $renderer $(as $other_renderer)?; draw; x, frame, src, dst, damage)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
         }
 
-        fn underlying_storage(&self, renderer: &$renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage<'_, $renderer>>
+        fn underlying_storage(&self, renderer: &mut $renderer) -> Option<$crate::backend::renderer::element::UnderlyingStorage>
         {
             match self {
                 $(
@@ -1025,10 +1037,13 @@ macro_rules! render_elements_internal {
 ///
 /// ```
 /// # use smithay::{
-/// #     backend::renderer::{
-/// #         element::{Element, Id, RenderElement},
-/// #         utils::CommitCounter,
-/// #         Renderer,
+/// #     backend::{
+/// #         allocator::Fourcc,
+/// #         renderer::{
+/// #             element::{Element, Id, RenderElement},
+/// #             utils::CommitCounter,
+/// #             Renderer,
+/// #         },
 /// #     },
 /// #     utils::{Buffer, Point, Physical, Rectangle, Scale, Transform},
 /// # };
@@ -1061,7 +1076,6 @@ macro_rules! render_elements_internal {
 /// #         _src: Rectangle<f64, Buffer>,
 /// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
-/// #         _log: &slog::Logger,
 /// #     ) -> Result<(), <R as Renderer>::Error> {
 /// #         unimplemented!()
 /// #     }
@@ -1092,7 +1106,6 @@ macro_rules! render_elements_internal {
 /// #         _src: Rectangle<f64, Buffer>,
 /// #         _dst: Rectangle<i32, Physical>,
 /// #         _damage: &[Rectangle<i32, Physical>],
-/// #         _log: &slog::Logger,
 /// #     ) -> Result<(), <R as Renderer>::Error> {
 /// #         unimplemented!()
 /// #     }
@@ -1160,7 +1173,10 @@ macro_rules! render_elements_internal {
 ///
 /// ```
 /// # use smithay::{
-/// #     backend::renderer::{Frame, Renderer, Texture, TextureFilter},
+/// #     backend::{
+/// #         allocator::Fourcc,
+/// #         renderer::{DebugFlags, Frame, Renderer, Texture, TextureFilter},
+/// #     },
 /// #     utils::{Buffer, Physical, Rectangle, Size, Transform},
 /// # };
 /// #
@@ -1174,6 +1190,9 @@ macro_rules! render_elements_internal {
 /// #     fn height(&self) -> u32 {
 /// #         unimplemented!()
 /// #     }
+/// #     fn format(&self) -> Option<Fourcc> {
+/// #         unimplemented!()
+/// #     }
 /// # }
 /// #
 /// # struct MyRendererFrame;
@@ -1184,6 +1203,14 @@ macro_rules! render_elements_internal {
 /// #
 /// #     fn id(&self) -> usize { unimplemented!() }
 /// #     fn clear(&mut self, _: [f32; 4], _: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
+/// #         unimplemented!()
+/// #     }
+/// #     fn draw_solid(
+/// #         &mut self,
+/// #         _dst: Rectangle<i32, Physical>,
+/// #         _damage: &[Rectangle<i32, Physical>],
+/// #         _color: [f32; 4],
+/// #     ) -> Result<(), Self::Error> {
 /// #         unimplemented!()
 /// #     }
 /// #     fn render_texture_from_to(
@@ -1217,6 +1244,12 @@ macro_rules! render_elements_internal {
 /// #         unimplemented!()
 /// #     }
 /// #     fn upscale_filter(&mut self, _: TextureFilter) -> Result<(), Self::Error> {
+/// #         unimplemented!()
+/// #     }
+/// #     fn set_debug_flags(&mut self, flags: DebugFlags) {
+/// #         unimplemented!()
+/// #     }
+/// #     fn debug_flags(&self) -> DebugFlags {
 /// #         unimplemented!()
 /// #     }
 /// #     fn render(&mut self, _: Size<i32, Physical>, _: Transform) -> Result<Self::Frame<'_>, Self::Error>
@@ -1362,12 +1395,11 @@ where
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
-        log: &slog::Logger,
     ) -> Result<(), <R as Renderer>::Error> {
-        self.0.draw(frame, src, dst, damage, log)
+        self.0.draw(frame, src, dst, damage)
     }
 
-    fn underlying_storage(&self, renderer: &R) -> Option<UnderlyingStorage<'_, R>> {
+    fn underlying_storage(&self, renderer: &mut R) -> Option<UnderlyingStorage> {
         self.0.underlying_storage(renderer)
     }
 }
