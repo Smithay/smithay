@@ -178,6 +178,27 @@ pub enum Reorder {
     Bottom,
 }
 
+enum StackingDirection {
+    Downwards,
+    Upwards,
+}
+
+impl StackingDirection {
+    fn pos_comparator(&self, pos: usize, last_pos: usize) -> bool {
+        match self {
+            Self::Downwards => last_pos > pos,
+            Self::Upwards => last_pos < pos,
+        }
+    }
+
+    fn stack_mode(&self) -> StackMode {
+        match self {
+            Self::Downwards => StackMode::ABOVE,
+            Self::Upwards => StackMode::BELOW,
+        }
+    }
+}
+
 /// Handler trait for X11Wm interactions
 pub trait XwmHandler {
     /// [`X11Wm`] getter for a given ID.
@@ -555,7 +576,7 @@ impl X11Wm {
             });
             self.conn.grab_server()?;
             self.conn.configure_window(
-                elem.window_id(),
+                elem.mapped_window_id().unwrap_or_else(|| elem.window_id()),
                 &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
             )?;
             self.client_list_stacking.retain(|e| *e != elem.window_id());
@@ -571,67 +592,50 @@ impl X11Wm {
         Ok(())
     }
 
-    /// Updates the stacking order by matching provided windows downwards.
-    ///
-    /// This function reorders provided x11 windows in such a way,
-    /// that windows inside the internal X11 stack follow the provided `order`
-    /// without moving other windows around as much as possible.
-    ///
-    /// Window IDs unknown to this XWM will be ignored.
-    /// The first window in `order` found will not be moved.
-    ///
-    /// If a window is encountered in `order`, that is stacked before the first window,
-    /// it will be moved behind the first window and so on.
-    /// E.g. Windows `C -> A -> B -> E` given in order with an internal stack of `D -> A -> B -> C`,
-    /// will be reorder as `D -> C -> A -> B`.
-    ///
-    /// Windows in the internal stack, that are not present in `order`
-    /// will be skipped over in the process.
-    ///
-    /// So if windows `A -> C` are given in order and the internal stack is `A -> B -> C`,
-    /// no reordering will occur.
-    ///  
-    /// See [`X11Surface::update_stacking_order_upwards`] for a variant of this algorithm,
-    /// which works from the bottom up or [`X11Surface::raise_window`] for an easier but
-    /// much more limited way to reorder.
-    pub fn update_stacking_order_downwards<'a, W: X11Relatable + 'a>(
+    fn update_stacking_order_impl<'a, W: X11Relatable + 'a>(
         &mut self,
         order: impl Iterator<Item = &'a W>,
+        direction: StackingDirection,
     ) -> Result<(), ConnectionError> {
         let _guard = scopeguard::guard((), |_| {
             let _ = self.conn.ungrab_server();
             let _ = self.conn.flush();
         });
+        self.conn.grab_server()?;
 
         let mut last_pos = None;
-        self.conn.grab_server()?;
         let mut changed = false;
+
         for relatable in order {
-            let pos = self
+            let stacking_ordered_elems: Vec<&X11Surface> = self
                 .client_list_stacking
                 .iter()
                 .filter_map(|w| self.windows.iter().find(|s| s.window_id() == *w))
-                .position(|w| relatable.is_window(w));
+                .collect();
+            let pos = stacking_ordered_elems.iter().position(|w| relatable.is_window(w));
             if let (Some(pos), Some(last_pos)) = (pos, last_pos) {
-                if last_pos < pos {
-                    // move pos before last_pos
-                    let sibling = self.client_list_stacking[last_pos];
-                    let elem = self.client_list_stacking.remove(pos);
+                if direction.pos_comparator(pos, last_pos) {
+                    let sibling = stacking_ordered_elems[last_pos];
+                    let sibling_id = self.client_list_stacking[last_pos];
+                    let elem = stacking_ordered_elems[pos];
+                    let elem_id = self.client_list_stacking.remove(pos);
                     self.conn.configure_window(
-                        elem,
+                        elem.mapped_window_id().unwrap_or(elem_id),
                         &ConfigureWindowAux::new()
-                            .sibling(sibling)
-                            .stack_mode(StackMode::BELOW),
+                            .sibling(sibling.mapped_window_id().unwrap_or(sibling_id))
+                            .stack_mode(direction.stack_mode()),
                     )?;
-                    self.client_list_stacking.insert(last_pos, elem);
+                    self.client_list_stacking.insert(last_pos, elem_id);
                     changed = true;
                     continue;
                 }
             }
+
             if pos.is_some() {
                 last_pos = pos;
             }
         }
+
         if changed {
             self.conn.change_property32(
                 PropMode::REPLACE,
@@ -644,19 +648,54 @@ impl X11Wm {
         Ok(())
     }
 
-    /// Updates the stacking order by matching provided windows upwards.
+    /// Updates the stacking order by matching provided windows downwards.
     ///
     /// This function reorders provided x11 windows in such a way,
     /// that windows inside the internal X11 stack follow the provided `order`
-    /// in reverse without moving other windows around as much as possible.
+    /// without moving other windows around as much as possible. The internal stack
+    /// stores windows bottom -> top, so order here is also bottom -> top.
     ///
     /// Window IDs unknown to this XWM will be ignored.
     /// The first window in `order` found will not be moved.
     ///
-    /// If a window is encountered in `order`, that is stacked after the first window,
-    /// it will be moved before the first window and so on.
+    /// If a window is encountered in `order` that is stacked below the first window,
+    /// it will be moved to be directly above the previous window in `order`.
+    /// E.g. Windows `C -> A -> B -> E` given in order with an internal stack of `D -> A -> B -> C`,
+    /// will be reordered as `D -> C -> A -> B`. First `A` is moved to be directly
+    /// above `C`, then `B`is moved to be directly above `A`.
+    ///
+    /// Windows in the internal stack, that are not present in `order`
+    /// will be skipped over in the process.
+    ///
+    /// So if windows `A -> C` are given in order and the internal stack is `A -> B -> C`,
+    /// no reordering will occur.
+    ///
+    /// See [`X11Surface::update_stacking_order_upwards`] for a variant of this algorithm,
+    /// which works from the bottom up or [`X11Surface::raise_window`] for an easier but
+    /// much more limited way to reorder.
+    pub fn update_stacking_order_downwards<'a, W: X11Relatable + 'a>(
+        &mut self,
+        order: impl Iterator<Item = &'a W>,
+    ) -> Result<(), ConnectionError> {
+        self.update_stacking_order_impl(order, StackingDirection::Downwards)
+    }
+
+    /// Updates the stacking order by moving provided windows upwards.
+    ///
+    /// This function reorders provided x11 windows in such a way,
+    /// that windows inside the internal X11 stack follow the provided `order`
+    /// in reverse without moving other windows around as much as possible. The
+    /// internal stack stores windows bottom -> top, so due to the reversal, order
+    /// here is top -> bottom.
+    ///
+    /// Window IDs unknown to this XWM will be ignored.
+    /// The first window in `order` found will not be moved.
+    ///
+    /// If a window is encountered in `order` that is stacked above the first window,
+    /// it will be moved to be directly below the previous window in `order`.
     /// E.g. Windows C -> A -> B given in order with an internal stack of `D -> A -> B -> C`,
-    /// will be reordered as `D -> B -> A -> C`.
+    /// will be reordered as `D -> B -> A -> C`. `A` is below `C`, so it isn't moved,
+    /// then `B` is moved to be directly below `A`.
     ///
     /// Windows in the internal stack, that are not present in `order`
     /// will be skipped over in the process.
@@ -671,49 +710,7 @@ impl X11Wm {
         &mut self,
         order: impl Iterator<Item = &'a W>,
     ) -> Result<(), ConnectionError> {
-        let mut last_pos = None;
-        let _guard = scopeguard::guard((), |_| {
-            let _ = self.conn.ungrab_server();
-            let _ = self.conn.flush();
-        });
-        self.conn.grab_server()?;
-        let mut changed = false;
-        for relatable in order {
-            let pos = self
-                .client_list_stacking
-                .iter()
-                .filter_map(|w| self.windows.iter().find(|s| s.window_id() == *w))
-                .position(|w| relatable.is_window(w));
-            if let (Some(pos), Some(last_pos)) = (pos, last_pos) {
-                if last_pos > pos {
-                    // move pos after last_pos
-                    let sibling = self.client_list_stacking[last_pos];
-                    let elem = self.client_list_stacking.remove(pos);
-                    self.conn.configure_window(
-                        elem,
-                        &ConfigureWindowAux::new()
-                            .sibling(sibling)
-                            .stack_mode(StackMode::ABOVE),
-                    )?;
-                    self.client_list_stacking.insert(last_pos, elem);
-                    changed = true;
-                    continue;
-                }
-            }
-            if pos.is_some() {
-                last_pos = pos;
-            }
-        }
-        if changed {
-            self.conn.change_property32(
-                PropMode::REPLACE,
-                self.screen.root,
-                self.atoms._NET_CLIENT_LIST_STACKING,
-                AtomEnum::WINDOW,
-                &self.client_list_stacking,
-            )?;
-        }
-        Ok(())
+        self.update_stacking_order_impl(order, StackingDirection::Upwards)
     }
 
     /// This function has to be called on [`CompositorState::commit`] to correctly
@@ -920,7 +917,10 @@ fn handle_event<D: XwmHandler>(state: &mut D, xwmid: XwmId, event: Event) -> Res
             if let Some(surface) = xwm
                 .windows
                 .iter()
-                .find(|x| x.window_id() == n.window || x.mapped_window_id() == Some(n.window))
+                .find(|x|
+                      // don't include the reparenting windows
+                      (x.window_id() == n.window && n.override_redirect) ||
+                      x.mapped_window_id() == Some(n.window))
                 .cloned()
             {
                 xwm.client_list.push(surface.window_id());
