@@ -231,6 +231,7 @@ pub trait Frame {
 
 bitflags::bitflags! {
     /// Debug flags that can be enabled at runtime
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct DebugFlags: u32 {
         /// Tint all rendered textures
         const TINT = 0b00000001;

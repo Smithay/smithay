@@ -43,7 +43,7 @@ use winit::{
     event::{ElementState, Event, KeyboardInput, Touch, TouchPhase, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     platform::run_return::EventLoopExtRunReturn,
-    platform::unix::WindowExtUnix,
+    platform::{wayland::WindowExtWayland, x11::WindowExtX11},
     window::{Window as WinitWindow, WindowBuilder},
 };
 

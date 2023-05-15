@@ -67,6 +67,7 @@ bitflags! {
     ///
     /// [`VulkanAllocator::is_format_supported`] can check if the combination of format, modifier and usage
     /// flags are supported.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct ImageUsageFlags: vk::Flags {
         /// The image may be the source of a transfer command.
         ///
