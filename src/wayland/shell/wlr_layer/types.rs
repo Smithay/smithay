@@ -117,6 +117,7 @@ impl TryFrom<WEnum<zwlr_layer_surface_v1::KeyboardInteractivity>> for KeyboardIn
 
 bitflags::bitflags! {
     /// Anchor bitflags, describing how the layers surface should be positioned and sized
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct Anchor: u32 {
         /// The top edge of the anchor rectangle
         const TOP = 1;

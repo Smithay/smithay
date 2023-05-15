@@ -17,7 +17,10 @@ use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 #[cfg(feature = "backend_winit")]
 use wayland_egl as wegl;
 #[cfg(feature = "backend_winit")]
-use winit::{platform::unix::WindowExtUnix, window::Window as WinitWindow};
+use winit::{
+    platform::{wayland::WindowExtWayland, x11::WindowExtX11},
+    window::Window as WinitWindow,
+};
 
 #[cfg(feature = "backend_gbm")]
 use gbm::{AsRaw, Device as GbmDevice};

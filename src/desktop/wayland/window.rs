@@ -73,6 +73,7 @@ impl IsAlive for Window {
 bitflags::bitflags! {
     /// Defines the surface types that can be
     /// queried with [`Window::surface_under`]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct WindowSurfaceType: u32 {
         /// Include the toplevel surface
         const TOPLEVEL = 1;
@@ -81,7 +82,7 @@ bitflags::bitflags! {
         /// Include all popup surfaces
         const POPUP = 4;
         /// Query all surfaces
-        const ALL = Self::TOPLEVEL.bits | Self::SUBSURFACE.bits | Self::POPUP.bits;
+        const ALL = Self::TOPLEVEL.bits() | Self::SUBSURFACE.bits() | Self::POPUP.bits();
     }
 }
 

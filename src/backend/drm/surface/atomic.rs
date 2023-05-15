@@ -1144,6 +1144,7 @@ fn to_fixed<N: Coordinate>(n: N) -> u32 {
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     struct DrmRotation: u8 {
         const ROTATE_0      =   0b00000001;
         const ROTATE_90     =   0b00000010;

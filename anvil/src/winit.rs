@@ -10,7 +10,7 @@ use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
 use smithay::{
     backend::{allocator::Fourcc, renderer::ImportMem},
-    reexports::winit::platform::unix::WindowExtUnix,
+    reexports::winit::platform::wayland::WindowExtWayland,
 };
 
 use smithay::{

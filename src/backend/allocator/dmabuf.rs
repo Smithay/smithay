@@ -62,6 +62,7 @@ impl From<Plane> for OwnedFd {
 
 bitflags::bitflags! {
     /// Possible flags for a DMA buffer
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct DmabufFlags: u32 {
         /// The buffer content is Y-inverted
         const Y_INVERT = 1;

@@ -397,6 +397,7 @@ pub enum ConstrainScaleBehavior {
 
 bitflags::bitflags! {
     /// Defines how the elements should be aligned during constrain
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct ConstrainAlign: u8 {
         /// Align to the top
         const TOP = 0b000001;

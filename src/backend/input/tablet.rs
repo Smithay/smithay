@@ -43,6 +43,7 @@ bitflags! {
     /// Describes extra capabilities on a tablet.
     ///
     /// Any tool must provide x and y values, extra axes are device-specific.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct TabletToolCapabilities: u32 {
         /// Tilt axes
         const TILT = 1;
