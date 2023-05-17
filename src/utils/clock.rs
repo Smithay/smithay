@@ -15,26 +15,6 @@ impl ClockSource for Monotonic {
 
 impl NonNegativeClockSource for Monotonic {}
 
-/// Clock based on boottime
-#[derive(Debug)]
-pub struct Boottime;
-
-#[cfg(target_os = "linux")]
-impl ClockSource for Boottime {
-    fn id() -> libc::clockid_t {
-        libc::CLOCK_BOOTTIME
-    }
-}
-
-#[cfg(any(target_os = "freebsd", target_os = "dragonfly"))]
-impl ClockSource for Boottime {
-    fn id() -> libc::clockid_t {
-        libc::CLOCK_UPTIME
-    }
-}
-
-impl NonNegativeClockSource for Boottime {}
-
 /// Realtime clock
 #[derive(Debug)]
 pub struct Realtime;
@@ -214,21 +194,13 @@ fn clock_get_time(clk_id: libc::clockid_t) -> Result<libc::timespec, std::io::Er
 mod test {
     use std::time::Duration;
 
-    use crate::utils::{Boottime, Clock, Monotonic, Time};
+    use crate::utils::{Clock, Monotonic, Time};
 
     #[test]
     fn monotonic() {
         let clock_source: Clock<Monotonic> = Clock::new().unwrap();
         let now = clock_source.now();
         let zero = Time::<Monotonic>::from(Duration::ZERO);
-        assert_eq!(zero.duration_since(now), now.into());
-    }
-
-    #[test]
-    fn boottime() {
-        let clock_source: Clock<Boottime> = Clock::new().unwrap();
-        let now = clock_source.now();
-        let zero = Time::<Boottime>::from(Duration::ZERO);
         assert_eq!(zero.duration_since(now), now.into());
     }
 }
