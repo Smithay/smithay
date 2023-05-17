@@ -8,6 +8,16 @@ use std::thread::{self, ThreadId};
 
 use self::list::AppendList;
 
+// `UserData.get()` is called frequently, and unfortunately
+// `thread::current().id()` is not very efficient to be calling every time.
+#[inline]
+fn current_thread_id() -> ThreadId {
+    thread_local! {
+        static ID: ThreadId = thread::current().id();
+    }
+    ID.with(|id| *id)
+}
+
 /// A wrapper for user data, able to store any type, and correctly
 /// handling access from a wrong thread
 #[derive(Debug)]
@@ -40,7 +50,7 @@ impl UserData {
     /// does nothing is the UserData had already been set.
     pub fn set<T: Any + 'static, F: FnOnce() -> T>(&self, f: F) {
         self.inner.get_or_init(|| {
-            UserDataInner::NonThreadSafe(Box::new(ManuallyDrop::new(f())), thread::current().id())
+            UserDataInner::NonThreadSafe(Box::new(ManuallyDrop::new(f())), current_thread_id())
         });
     }
 
@@ -65,7 +75,7 @@ impl UserData {
             Some(&UserDataInner::ThreadSafe(ref val)) => <dyn Any>::downcast_ref::<T>(&**val),
             Some(&UserDataInner::NonThreadSafe(ref val, threadid)) => {
                 // only give access if we are on the right thread
-                if threadid == thread::current().id() {
+                if threadid == current_thread_id() {
                     <dyn Any>::downcast_ref::<T>(&***val)
                 } else {
                     None
@@ -80,7 +90,7 @@ impl Drop for UserData {
     fn drop(&mut self) {
         // only drop non-Send user data if we are on the right thread, leak it otherwise
         if let Some(&mut UserDataInner::NonThreadSafe(ref mut val, threadid)) = self.inner.get_mut() {
-            if threadid == thread::current().id() {
+            if threadid == current_thread_id() {
                 unsafe {
                     ManuallyDrop::drop(&mut **val);
                 }
