@@ -67,6 +67,7 @@ encoding = { version = "0.2.33", optional = true }
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
+criterion = { version = "0.4" }
 image = "0.24"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 
@@ -119,3 +120,7 @@ required-features = ["backend_vulkan"]
 [[example]]
 name = "buffer_test"
 required-features = ["backend_drm", "backend_gbm", "backend_egl", "backend_vulkan", "renderer_gl"]
+
+[[bench]]
+name = "benchmark"
+harness = false
