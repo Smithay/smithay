@@ -231,7 +231,7 @@ pub trait KeyboardShortcutsInhibitHandler {
     /// You may also postpone activation based on your compositor specific policy.
     fn new_inhibitor(&mut self, inhibitor: KeyboardShortcutsInhibitor) {}
 
-    /// Inhibitor got destoryed
+    /// Inhibitor got destroyed
     fn inhibitor_destroyed(&mut self, inhibitor: KeyboardShortcutsInhibitor) {}
 }
 

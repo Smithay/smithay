@@ -570,7 +570,7 @@ impl AtomicDrmSurface {
             } else {
                 if current.mode != pending.mode {
                     if let Err(err) = self.fd.destroy_property_blob(current.blob.into()) {
-                        warn!("Failed to destory old mode property blob: {}", err);
+                        debug!("Failed to destory old mode property blob: {}", err);
                     }
                 }
 

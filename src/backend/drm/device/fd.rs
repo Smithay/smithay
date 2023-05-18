@@ -3,7 +3,7 @@ use std::{
     os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd},
     sync::Arc,
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::utils::{DevPath, DeviceFd};
 
@@ -69,7 +69,7 @@ impl DrmDeviceFd {
         // This is only needed on older kernels. Newer kernels grant this permission,
         // if no other process is already the *master*. So we skip over this error.
         if dev.acquire_master_lock().is_err() {
-            warn!("Unable to become drm master, assuming unprivileged mode");
+            debug!("Unable to become drm master, assuming unprivileged mode");
         } else {
             dev.privileged = true;
         }
