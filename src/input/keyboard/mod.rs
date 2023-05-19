@@ -218,6 +218,7 @@ where
 }
 
 /// Handle to the underlying keycode to allow for different conversions
+#[derive(Clone)]
 pub struct KeysymHandle<'a> {
     keycode: u32,
     keymap: &'a xkb::Keymap,
@@ -516,18 +517,18 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     {
         trace!("Handling keystroke");
         let mut guard = self.arc.internal.lock().unwrap();
-        let mods_changed = guard.key_input(keycode, state);
         let key_handle = KeysymHandle {
             // Offset the keycode by 8, as the evdev XKB rules reflect X's
             // broken keycode system, which starts at 8.
             keycode: keycode + 8,
-            state: &guard.state,
-            keymap: &guard.keymap,
+            state: &guard.state.clone(),
+            keymap: &guard.keymap.clone(),
         };
 
         trace!(mods_state = ?guard.mods_state, sym = xkb::keysym_get_name(key_handle.modified_sym()), "Calling input filter");
 
-        if let FilterResult::Intercept(val) = filter(data, &guard.mods_state, key_handle) {
+        let (mods, handle) = (&guard.mods_state.clone(), key_handle.clone());
+        if let FilterResult::Intercept(val) = filter(data, mods, handle) {
             // the filter returned false, we do not forward to client
             trace!("Input was intercepted by filter");
             return Some(val);
@@ -535,9 +536,18 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         // forward to client if no keybinding is triggered
         let seat = self.get_seat(data);
-        let modifiers = mods_changed.then_some(guard.mods_state);
+        let mods_changed = guard.key_input(keycode, state);
+        let modifiers = mods_changed.then_some(mods);
         guard.with_grab(&seat, move |mut handle, grab| {
-            grab.input(data, &mut handle, keycode, state, modifiers, serial, time);
+            grab.input(
+                data,
+                &mut handle,
+                keycode,
+                state,
+                modifiers.copied(),
+                serial,
+                time,
+            );
         });
         if guard.focus.is_some() {
             trace!("Input forwarded to client");
