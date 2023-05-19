@@ -517,6 +517,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     {
         trace!("Handling keystroke");
         let mut guard = self.arc.internal.lock().unwrap();
+        let mods_changed = guard.key_input(keycode, state);
         let key_handle = KeysymHandle {
             // Offset the keycode by 8, as the evdev XKB rules reflect X's
             // broken keycode system, which starts at 8.
@@ -528,15 +529,20 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         trace!(mods_state = ?guard.mods_state, sym = xkb::keysym_get_name(key_handle.modified_sym()), "Calling input filter");
 
         let (mods, handle) = (&guard.mods_state.clone(), key_handle.clone());
+        drop(guard);
         if let FilterResult::Intercept(val) = filter(data, mods, handle) {
             // the filter returned false, we do not forward to client
             trace!("Input was intercepted by filter");
             return Some(val);
         }
 
+        // The lock is reacquired here though the keymap and state may have changed. Operations
+        // after this point cannot rely on the state or keymap being the same as they were before
+        // the filter was called.
+        let mut guard = self.arc.internal.lock().unwrap();
+
         // forward to client if no keybinding is triggered
         let seat = self.get_seat(data);
-        let mods_changed = guard.key_input(keycode, state);
         let modifiers = mods_changed.then_some(mods);
         guard.with_grab(&seat, move |mut handle, grab| {
             grab.input(
