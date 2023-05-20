@@ -106,19 +106,20 @@ pub(super) unsafe fn link_program(
 
 pub(super) unsafe fn texture_program(
     gl: &ffi::Gles2,
-    src: &str,
+    frag_shader: &str,
+    vert_shader: &str,
     additional_uniforms: &[UniformName<'_>],
     destruction_callback_sender: Sender<CleanupResource>,
 ) -> Result<GlesTexProgram, GlesError> {
     let create_variant = |defines: &[&str]| -> Result<GlesTexProgramVariant, GlesError> {
-        let shader = src.replace(
+        let shader = frag_shader.replace(
             "//_DEFINES_",
             &defines
                 .iter()
                 .map(|define| format!("#define {}\n", define))
                 .collect::<String>(),
         );
-        let debug_shader = src.replace(
+        let debug_shader = frag_shader.replace(
             "//_DEFINES_",
             &defines
                 .iter()
@@ -126,9 +127,8 @@ pub(super) unsafe fn texture_program(
                 .map(|define| format!("#define {}\n", define))
                 .collect::<String>(),
         );
-
-        let program = unsafe { link_program(gl, shaders::VERTEX_SHADER, &shader)? };
-        let debug_program = unsafe { link_program(gl, shaders::VERTEX_SHADER, debug_shader.as_ref())? };
+        let program = unsafe { link_program(gl, vert_shader, &shader)? };
+        let debug_program = unsafe { link_program(gl, vert_shader, debug_shader.as_ref())? };
 
         let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
         let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");

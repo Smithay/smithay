@@ -603,7 +603,7 @@ impl GlesRenderer {
         };
 
         let (tx, rx) = channel();
-        let tex_program = texture_program(&gl, shaders::FRAGMENT_SHADER, &[], tx.clone())?;
+        let tex_program = texture_program(&gl, shaders::FRAGMENT_SHADER, shaders::VERTEX_SHADER,&[], tx.clone())?;
         let solid_program = solid_program(&gl)?;
         let output_program = capabilities
             .contains(&Capability::ColorTransformations)
@@ -1964,15 +1964,20 @@ impl GlesRenderer {
     /// Panics if any of the names of the passed additional uniforms contains a `\0`/NUL-byte.
     pub fn compile_custom_pixel_shader(
         &mut self,
-        src: impl AsRef<str>,
+        frag_shader: impl AsRef<str>,
+        vert_shader: Option<impl AsRef<str>>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<GlesPixelProgram, GlesError> {
         self.make_current()?;
-
-        let shader = format!("#version 100\n{}", src.as_ref());
-        let program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &shader)? };
-        let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src.as_ref());
-        let debug_program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &debug_shader)? };
+        let vert_shader = if let Some(vert_shader) = vert_shader {
+            format!("#version 100\n{}", vert_shader.as_ref())
+        } else {
+            shaders::VERTEX_SHADER.to_string()
+        };
+        let shader = format!("#version 100\n{}", frag_shader.as_ref());
+        let program = unsafe { link_program(&self.gl, &vert_shader, &shader)? };
+        let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, frag_shader.as_ref());
+        let debug_program = unsafe { link_program(&self.gl, &vert_shader, &debug_shader)? };
 
         let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
         let vert_position = CStr::from_bytes_with_nul(b"vert_position\0").expect("NULL terminated");
@@ -2091,15 +2096,21 @@ impl GlesRenderer {
     /// Panics if any of the names of the passed additional uniforms contains a `\0`/NUL-byte.
     pub fn compile_custom_texture_shader(
         &mut self,
-        shader: impl AsRef<str>,
+        frag_shader: impl AsRef<str>,
+        vert_shader: Option<impl AsRef<str>>,
         additional_uniforms: &[UniformName<'_>],
     ) -> Result<GlesTexProgram, GlesError> {
         self.make_current()?;
-
+        let vert_shader = if let Some(vert_shader) = vert_shader {
+            format!("#version 100\n{}", vert_shader.as_ref())
+        } else {
+            shaders::VERTEX_SHADER.to_string()
+        };
         unsafe {
             texture_program(
                 &self.gl,
-                shader.as_ref(),
+                frag_shader.as_ref(),
+                vert_shader.as_ref(),
                 additional_uniforms,
                 self.destruction_callback_sender.clone(),
             )
