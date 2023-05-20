@@ -603,7 +603,13 @@ impl GlesRenderer {
         };
 
         let (tx, rx) = channel();
-        let tex_program = texture_program(&gl, shaders::FRAGMENT_SHADER, shaders::VERTEX_SHADER,&[], tx.clone())?;
+        let tex_program = texture_program(
+            &gl,
+            shaders::FRAGMENT_SHADER,
+            shaders::VERTEX_SHADER,
+            &[],
+            tx.clone(),
+        )?;
         let solid_program = solid_program(&gl)?;
         let output_program = capabilities
             .contains(&Capability::ColorTransformations)
@@ -1976,7 +1982,11 @@ impl GlesRenderer {
         };
         let shader = format!("#version 100\n{}", frag_shader.as_ref());
         let program = unsafe { link_program(&self.gl, &vert_shader, &shader)? };
-        let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, frag_shader.as_ref());
+        let debug_shader = format!(
+            "#version 100\n#define {}\n{}",
+            shaders::DEBUG_FLAGS,
+            frag_shader.as_ref()
+        );
         let debug_program = unsafe { link_program(&self.gl, &vert_shader, &debug_shader)? };
 
         let vert = CStr::from_bytes_with_nul(b"vert\0").expect("NULL terminated");
