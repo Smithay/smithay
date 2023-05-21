@@ -233,7 +233,7 @@ where
         self.slots = Default::default();
     }
 
-    /// Remove all internally cached buffers to e.g. reset age values
+    /// Remove all internally cached buffers.
     pub fn reset_buffers(&mut self) {
         for slot in &mut self.slots {
             if let Some(internal_slot) = Arc::get_mut(slot) {
@@ -243,6 +243,19 @@ where
                 };
             } else {
                 *slot = Default::default();
+            }
+        }
+    }
+
+    /// Reset the age for each buffer.
+    ///
+    /// Resetting the buffer age will discard all damage information and force a
+    /// full redraw for the next frame.
+    pub fn reset_buffer_age(&mut self) {
+        for slot in &mut self.slots {
+            match Arc::get_mut(slot) {
+                Some(slot) => slot.age = AtomicU8::new(0),
+                None => *slot = Default::default(),
             }
         }
     }
