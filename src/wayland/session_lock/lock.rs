@@ -78,7 +78,7 @@ where
                 let data = ExtLockSurfaceUserData {
                     surface: surface.clone(),
                 };
-                let shell_surface = data_init.init(id, data);
+                let lock_surface = data_init.init(id, data);
 
                 // Initialize surface data.
                 compositor::with_states(&surface, |states| {
@@ -100,7 +100,7 @@ where
                 });
 
                 // Call compositor handler.
-                let lock_surface = LockSurface::new(surface, shell_surface);
+                let lock_surface = LockSurface::new(surface, lock_surface);
                 state.new_surface(lock_surface.clone(), output);
 
                 // Send initial configure when the interface is bound.
