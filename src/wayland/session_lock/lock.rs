@@ -49,7 +49,9 @@ where
         match request {
             Request::GetLockSurface { id, surface, output } => {
                 // Assign surface a role and ensure it never had one before.
-                if compositor::give_role(&surface, LOCK_SURFACE_ROLE).is_err() {
+                if compositor::get_role(&surface).is_some()
+                    || compositor::give_role(&surface, LOCK_SURFACE_ROLE).is_err()
+                {
                     lock.post_error(Error::Role, "Surface already has a role.");
                     return;
                 }
