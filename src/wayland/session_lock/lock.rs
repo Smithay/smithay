@@ -64,8 +64,9 @@ where
 
                 // Ensure surface has no existing buffers attached.
                 let has_buffer = compositor::with_states(&surface, |states| {
-                    let attributes = states.cached_state.current::<SurfaceAttributes>();
-                    attributes.buffer.is_some()
+                    let pending = states.cached_state.pending::<SurfaceAttributes>();
+                    let current = states.cached_state.current::<SurfaceAttributes>();
+                    current.buffer.is_some() || pending.buffer.is_some()
                 });
                 if has_buffer {
                     lock.post_error(Error::AlreadyConstructed, "Surface has a buffer attached.");
