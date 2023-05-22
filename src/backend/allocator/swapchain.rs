@@ -236,14 +236,7 @@ where
     /// Remove all internally cached buffers.
     pub fn reset_buffers(&mut self) {
         for slot in &mut self.slots {
-            if let Some(internal_slot) = Arc::get_mut(slot) {
-                *internal_slot = InternalSlot {
-                    buffer: internal_slot.buffer.take(),
-                    ..Default::default()
-                };
-            } else {
-                *slot = Default::default();
-            }
+            *slot = Default::default();
         }
     }
 
