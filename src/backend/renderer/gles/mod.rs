@@ -1304,6 +1304,10 @@ impl ExportMem for GlesRenderer {
         let mut pbo = 0;
         let old_target = self.target.take();
         self.bind(texture.clone())?;
+        self.target
+            .as_ref()
+            .unwrap()
+            .make_current_no_shadow(&self.gl, &self.egl, None)?;
 
         let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
         let bpp = gl_bpp(format, layout).expect("We check the format before") / 8;
