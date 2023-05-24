@@ -22,19 +22,19 @@ use crate::{
 
 use super::{with_source_metadata, PrimaryDeviceUserData, PrimarySelectionHandler, SourceMetadata};
 
-pub enum Selection {
+pub enum Selection<U: Clone + Send + Sync + 'static> {
     Empty,
     Client(PrimarySource),
-    Compositor(SourceMetadata),
+    Compositor { metadata: SourceMetadata, user_data: U },
 }
 
-pub struct SeatData {
+pub struct SeatData<U: Clone + Send + Sync + 'static> {
     known_devices: Vec<PrimaryDevice>,
-    selection: Selection,
+    selection: Selection<U>,
     current_focus: Option<Client>,
 }
 
-impl Default for SeatData {
+impl<U: Clone + Send + Sync + 'static> Default for SeatData<U> {
     fn default() -> Self {
         Self {
             known_devices: Vec::new(),
@@ -44,7 +44,7 @@ impl Default for SeatData {
     }
 }
 
-impl SeatData {
+impl<U: Clone + Send + Sync + 'static> SeatData<U> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -62,16 +62,16 @@ impl SeatData {
 
     pub fn set_focus<D>(&mut self, dh: &DisplayHandle, new_focus: Option<Client>)
     where
-        D: PrimarySelectionHandler,
+        D: PrimarySelectionHandler<SelectionUserData = U>,
         D: 'static,
     {
         self.current_focus = new_focus;
         self.send_selection::<D>(dh);
     }
 
-    pub fn set_selection<D>(&mut self, dh: &DisplayHandle, new_selection: Selection)
+    pub fn set_selection<D>(&mut self, dh: &DisplayHandle, new_selection: Selection<U>)
     where
-        D: PrimarySelectionHandler,
+        D: PrimarySelectionHandler<SelectionUserData = U>,
         D: 'static,
     {
         if let Selection::Client(source) = &self.selection {
@@ -86,9 +86,13 @@ impl SeatData {
         self.send_selection::<D>(dh);
     }
 
+    pub fn get_selection(&self) -> &Selection<U> {
+        &self.selection
+    }
+
     pub fn send_selection<D>(&mut self, dh: &DisplayHandle)
     where
-        D: PrimarySelectionHandler,
+        D: PrimarySelectionHandler<SelectionUserData = U>,
         D: 'static,
     {
         let client = match self.current_focus.as_ref() {
@@ -149,7 +153,10 @@ impl SeatData {
                     pd.selection(Some(&offer));
                 }
             }
-            Selection::Compositor(ref meta) => {
+            Selection::Compositor {
+                metadata: ref meta,
+                ref user_data,
+            } => {
                 for pd in &self.known_devices {
                     // skip data devices not belonging to our client
                     if dh.get_client(pd.id()).map(|c| &c != client).unwrap_or(true) {
@@ -169,7 +176,11 @@ impl SeatData {
                             client.id(),
                             PrimaryOffer::interface(),
                             pd.version(),
-                            Arc::new(ServerSelection { offer_meta, wl_seat }),
+                            Arc::new(ServerSelection {
+                                offer_meta,
+                                wl_seat,
+                                user_data: user_data.clone(),
+                            }),
                         )
                         .unwrap();
                     let offer = PrimaryOffer::from_id(dh, offer).unwrap();
@@ -229,12 +240,13 @@ fn handle_client_selection(request: primary_offer::Request, source: &PrimarySour
     }
 }
 
-struct ServerSelection {
+struct ServerSelection<U: Clone + Send + Sync + 'static> {
     offer_meta: SourceMetadata,
     wl_seat: WlSeat,
+    user_data: U,
 }
 
-impl<D> ObjectData<D> for ServerSelection
+impl<D> ObjectData<D> for ServerSelection<D::SelectionUserData>
 where
     D: PrimarySelectionHandler + SeatHandler + 'static,
 {
@@ -251,7 +263,7 @@ where
                 return None;
             }
             if let Some(seat) = Seat::<D>::from_resource(&self.wl_seat) {
-                handle_server_selection(handler, request, seat, &self.offer_meta);
+                handle_server_selection(handler, request, seat, &self.offer_meta, &self.user_data);
             }
         }
 
@@ -266,6 +278,7 @@ pub fn handle_server_selection<D>(
     request: primary_offer::Request,
     seat: Seat<D>,
     offer_meta: &SourceMetadata,
+    user_data: &D::SelectionUserData,
 ) where
     D: PrimarySelectionHandler + SeatHandler + 'static,
 {
@@ -276,7 +289,7 @@ pub fn handle_server_selection<D>(
             // deny the receive
             debug!("Denying a zwp_primary_selection_offer_v1.receive with invalid source.");
         } else {
-            handler.send_selection(mime_type, fd, seat);
+            handler.send_selection(mime_type, fd, seat, user_data);
         }
     }
 }

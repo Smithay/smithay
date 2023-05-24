@@ -33,7 +33,7 @@ impl Default for SourceMetadata {
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct DataSourceUserData {
-    inner: Mutex<SourceMetadata>,
+    pub(super) inner: Mutex<SourceMetadata>,
     alive_tracker: AliveTracker,
 }
 

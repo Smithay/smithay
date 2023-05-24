@@ -98,7 +98,7 @@ renderer_multi = ["backend_drm"]
 use_system_lib = ["wayland_frontend", "wayland-backend/server_system", "wayland-sys", "gbm?/import-wayland"]
 wayland_frontend = ["wayland-server", "wayland-protocols", "wayland-protocols-wlr", "wayland-protocols-misc", "tempfile"]
 x11rb_event_source = ["x11rb"]
-xwayland = ["encoding", "wayland_frontend", "x11rb/composite", "x11rb_event_source", "scopeguard"]
+xwayland = ["encoding", "wayland_frontend", "x11rb/composite", "x11rb/xfixes", "x11rb_event_source", "scopeguard"]
 test_all_features = ["default", "use_system_lib", "renderer_glow", "libinput_1_19"]
 
 [[example]]

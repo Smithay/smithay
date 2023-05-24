@@ -22,7 +22,7 @@ pub struct SourceMetadata {
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct PrimarySourceUserData {
-    inner: Mutex<SourceMetadata>,
+    pub(super) inner: Mutex<SourceMetadata>,
     alive_tracker: AliveTracker,
 }
 
