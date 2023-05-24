@@ -1400,6 +1400,7 @@ impl MultiTexture {
                     warn!(has = ?format, got = ?mapping_fmt, "Multi-SubTexture Mapping with wrong format!");
                     false
                 } else {
+                    tex.format = Some(mapping_fmt);
                     true
                 }
             })
