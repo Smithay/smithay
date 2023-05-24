@@ -41,19 +41,20 @@ impl TouchHandle {
     }
 
     /// Notify clients about new touch points.
+    ///
+    /// The `position` parameter is in surface-local coordinates.
     pub fn down(
         &mut self,
         serial: Serial,
         time: u32,
         surface: &WlSurface,
-        surface_offset: Point<i32, Logical>,
+        position: Point<f64, Logical>,
         slot: TouchSlot,
-        location: Point<f64, Logical>,
     ) {
         self.inner
             .lock()
             .unwrap()
-            .down(serial, time, surface, surface_offset, slot, location);
+            .down(serial, time, surface, position, slot);
     }
 
     /// Notify clients about touch point removal.
@@ -104,13 +105,11 @@ impl TouchInternal {
         serial: Serial,
         time: u32,
         surface: &WlSurface,
-        surface_offset: Point<i32, Logical>,
+        position: Point<f64, Logical>,
         slot: TouchSlot,
-        location: Point<f64, Logical>,
     ) {
         // Update focused client state.
         let focus = self.focus.entry(slot).or_default();
-        focus.surface_offset = surface_offset.to_f64();
         focus.handles.clear();
 
         // Select all WlTouch instances associated to the active WlSurface.
@@ -120,9 +119,8 @@ impl TouchInternal {
             }
         }
 
-        let (x, y) = (location - focus.surface_offset).into();
         self.with_focused_handles(slot, |handle| {
-            handle.down(serial.into(), time, surface, slot.into(), x, y)
+            handle.down(serial.into(), time, surface, slot.into(), position.x, position.y)
         });
     }
 
