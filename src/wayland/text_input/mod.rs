@@ -60,6 +60,20 @@ const MANAGER_VERSION: u32 = 1;
 
 mod text_input_handle;
 
+/// Extends [Seat] with text input functionality
+pub trait TextInputSeat {
+    /// Get text input associated with this seat
+    fn text_input(&self) -> &TextInputHandle;
+}
+
+impl<D: SeatHandler + 'static> TextInputSeat for Seat<D> {
+    fn text_input(&self) -> &TextInputHandle {
+        let user_data = self.user_data();
+        user_data.insert_if_missing(TextInputHandle::default);
+        user_data.get::<TextInputHandle>().unwrap()
+    }
+}
+
 /// State of wp text input protocol
 #[derive(Debug)]
 pub struct TextInputManagerState {

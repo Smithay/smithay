@@ -63,7 +63,7 @@ use smithay::{
         shm::{ShmHandler, ShmState},
         socket::ListeningSocketSource,
         tablet_manager::TabletSeatTrait,
-        text_input::TextInputManagerState,
+        text_input::{TextInputManagerState, TextInputSeat},
         viewporter::ViewporterState,
         virtual_keyboard::VirtualKeyboardManagerState,
         xdg_activation::{
@@ -259,6 +259,10 @@ impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
             .and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, focus.clone());
         set_primary_focus(dh, seat, focus);
+
+        let text_input = seat.text_input();
+        let surface = target.and_then(WaylandFocus::wl_surface);
+        text_input.set_focus(surface.as_ref(), || {});
     }
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
         *self.cursor_status.lock().unwrap() = image;
