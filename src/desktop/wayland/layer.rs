@@ -68,10 +68,12 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
                 (0, 0),
                 o.current_mode()
                     .map(|mode| {
-                        mode.size
+                        let logical_size = mode
+                            .size
                             .to_f64()
                             .to_logical(o.current_scale().fractional_scale())
-                            .to_i32_round()
+                            .to_i32_round();
+                        o.current_transform().transform_size(logical_size)
                     })
                     .unwrap_or_else(|| (0, 0).into()),
             ),
@@ -256,10 +258,12 @@ impl LayerMap {
                 output
                     .current_mode()
                     .map(|mode| {
-                        mode.size
+                        let logical_size = mode
+                            .size
                             .to_f64()
                             .to_logical(output.current_scale().fractional_scale())
-                            .to_i32_round()
+                            .to_i32_round();
+                        output.current_transform().transform_size(logical_size)
                     })
                     .unwrap_or_else(|| (0, 0).into()),
             );
