@@ -1,5 +1,5 @@
 use std::{
-    os::unix::io::{AsRawFd, OwnedFd},
+    os::unix::io::OwnedFd,
     sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
@@ -100,7 +100,7 @@ use smithay::{
 
 pub struct CalloopData<BackendData: Backend + 'static> {
     pub state: AnvilState<BackendData>,
-    pub display: Display<AnvilState<BackendData>>,
+    pub display_handle: DisplayHandle,
 }
 
 #[derive(Debug, Default)]
@@ -470,8 +470,7 @@ impl<BackendData: Backend + 'static> SecurityContextHandler for AnvilState<Backe
                     ..ClientState::default()
                 };
                 if let Err(err) = data
-                    .display
-                    .handle()
+                    .display_handle
                     .insert_client(client_stream, Arc::new(client_state))
                 {
                     warn!("Error adding wayland client: {}", err);
@@ -497,11 +496,13 @@ delegate_xwayland_keyboard_grab!(@<BackendData: Backend + 'static> AnvilState<Ba
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
-        display: &mut Display<AnvilState<BackendData>>,
+        display: Display<AnvilState<BackendData>>,
         handle: LoopHandle<'static, CalloopData<BackendData>>,
         backend_data: BackendData,
         listen_on_socket: bool,
     ) -> AnvilState<BackendData> {
+        let dh = display.handle();
+
         let clock = Clock::new().expect("failed to initialize clock");
 
         // init wayland clients
@@ -511,8 +512,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             handle
                 .insert_source(source, |client_stream, _, data| {
                     if let Err(err) = data
-                        .display
-                        .handle()
+                        .display_handle
                         .insert_client(client_stream, Arc::new(ClientState::default()))
                     {
                         warn!("Error adding wayland client: {}", err);
@@ -526,21 +526,16 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         };
         handle
             .insert_source(
-                Generic::new(
-                    display.backend().poll_fd().as_raw_fd(),
-                    Interest::READ,
-                    Mode::Level,
-                ),
-                |_, _, data| {
+                Generic::new(display, Interest::READ, Mode::Level),
+                |_, display, data| {
                     profiling::scope!("dispatch_clients");
-                    data.display.dispatch_clients(&mut data.state).unwrap();
+                    display.dispatch_clients(&mut data.state).unwrap();
                     Ok(PostAction::Continue)
                 },
             )
             .expect("Failed to init wayland server source");
 
         // init globals
-        let dh = display.handle();
         let compositor_state = CompositorState::new::<Self>(&dh);
         let data_device_state = DataDeviceState::new::<Self>(&dh);
         let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
@@ -586,7 +581,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             *cursor_status2.lock().unwrap() = new_status;
         });
 
-        let dh = display.handle();
         let keyboard_shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
 
         #[cfg(feature = "xwayland")]
@@ -594,6 +588,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             XWaylandKeyboardGrabState::new::<Self>(&dh);
 
             let (xwayland, channel) = XWayland::new(&dh);
+            let dh = dh.clone();
             let ret = handle.insert_source(channel, move |event, _, data| match event {
                 XWaylandEvent::Ready {
                     connection,
@@ -626,7 +621,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         AnvilState {
             backend_data,
-            display_handle: display.handle(),
+            display_handle: dh,
             socket_name,
             running: Arc::new(AtomicBool::new(true)),
             handle,

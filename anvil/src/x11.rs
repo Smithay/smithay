@@ -96,7 +96,8 @@ impl Backend for X11Data {
 
 pub fn run_x11() {
     let mut event_loop = EventLoop::try_new().unwrap();
-    let mut display = Display::new().unwrap();
+    let display = Display::new().unwrap();
+    let mut display_handle = display.handle();
 
     let backend = X11Backend::new().expect("Failed to initilize X11 backend");
     let handle = backend.handle();
@@ -245,7 +246,7 @@ pub fn run_x11() {
         fps: fps_ticker::Fps::default(),
     };
 
-    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, true);
+    let mut state = AnvilState::init(display, event_loop.handle(), data, true);
     state
         .shm_state
         .update_formats(state.backend_data.renderer.shm_formats());
@@ -278,7 +279,7 @@ pub fn run_x11() {
             }
             X11Event::Input(event) => {
                 data.state
-                    .process_input_event_windowed(&data.display.handle(), event, OUTPUT_NAME)
+                    .process_input_event_windowed(&data.display_handle, event, OUTPUT_NAME)
             }
         })
         .expect("Failed to insert X11 Backend into event loop");
@@ -470,16 +471,22 @@ pub fn run_x11() {
             profiling::finish_frame!();
         }
 
-        let mut calloop_data = CalloopData { state, display };
+        let mut calloop_data = CalloopData {
+            state,
+            display_handle,
+        };
         let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
-        CalloopData { state, display } = calloop_data;
+        CalloopData {
+            state,
+            display_handle,
+        } = calloop_data;
 
         if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
             state.space.refresh();
             state.popups.cleanup();
-            display.flush_clients().unwrap();
+            display_handle.flush_clients().unwrap();
         }
     }
 }

@@ -21,7 +21,7 @@ pub fn init_winit(
     event_loop: &mut EventLoop<CalloopData>,
     data: &mut CalloopData,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let display = &mut data.display;
+    let display_handle = &mut data.display_handle;
     let state = &mut data.state;
 
     let (mut backend, mut winit) = winit::init()?;
@@ -40,7 +40,7 @@ pub fn init_winit(
             model: "Winit".into(),
         },
     );
-    let _global = output.create_global::<Smallvil>(&display.handle());
+    let _global = output.create_global::<Smallvil>(display_handle);
     output.change_current_state(Some(mode), Some(Transform::Flipped180), None, Some((0, 0).into()));
     output.set_preferred(mode);
 
@@ -66,7 +66,7 @@ pub fn winit_dispatch(
     output: &Output,
     damage_tracker: &mut OutputDamageTracker,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let display = &mut data.display;
+    let display_handle = &mut data.display_handle;
     let state = &mut data.state;
 
     let res = winit.dispatch_new_events(|event| match event {
@@ -121,7 +121,7 @@ pub fn winit_dispatch(
 
     state.space.refresh();
     state.popups.cleanup();
-    display.flush_clients()?;
+    display_handle.flush_clients()?;
 
     Ok(())
 }

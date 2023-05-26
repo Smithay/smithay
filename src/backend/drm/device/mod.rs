@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io;
-use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd};
+use std::os::unix::io::{AsFd, BorrowedFd};
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicBool, Arc, Mutex, Weak};
 use std::time::{Duration, SystemTime};
@@ -512,7 +512,7 @@ impl EventSource for DrmDeviceNotifier {
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
         poll.register(
-            self.internal.as_fd().as_raw_fd(),
+            self.internal.as_fd(),
             Interest::READ,
             calloop::Mode::Level,
             self.token.unwrap(),
@@ -522,7 +522,7 @@ impl EventSource for DrmDeviceNotifier {
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
         poll.reregister(
-            self.internal.as_fd().as_raw_fd(),
+            self.internal.as_fd(),
             Interest::READ,
             calloop::Mode::Level,
             self.token.unwrap(),
@@ -531,6 +531,6 @@ impl EventSource for DrmDeviceNotifier {
 
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.token = None;
-        poll.unregister(self.internal.as_fd().as_raw_fd())
+        poll.unregister(self.internal.as_fd())
     }
 }
