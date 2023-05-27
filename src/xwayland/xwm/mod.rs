@@ -871,6 +871,10 @@ impl X11Wm {
     /// in sync with the compositor to avoid erroneous behavior.
     pub fn raise_window<'a, W: X11Relatable + 'a>(&mut self, window: &'a W) -> Result<(), ConnectionError> {
         if let Some(elem) = self.windows.iter().find(|s| window.is_window(s)) {
+            if self.client_list_stacking.last() == Some(&elem.window_id()) {
+                return Ok(());
+            }
+
             let _guard = scopeguard::guard((), |_| {
                 let _ = self.conn.ungrab_server();
                 let _ = self.conn.flush();
