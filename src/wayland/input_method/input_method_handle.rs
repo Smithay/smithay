@@ -83,6 +83,13 @@ impl InputMethodHandle {
         }
     }
 
+    /// Convenience function to close popup surfaces
+    pub(crate) fn close_popup(&self) {
+        let inner = self.inner.lock().unwrap();
+        let mut popup = inner.popup.inner.lock().unwrap();
+        popup.surface_role = None;
+    }
+
     /// Used to access the relative location of an input popup surface
     pub fn coordinates(&self) -> Rectangle<i32, Physical> {
         let inner = self.inner.lock().unwrap();
