@@ -313,12 +313,21 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
     };
 }
 
-fn place_new_window(space: &mut Space<WindowElement>, window: &WindowElement, activate: bool) {
-    // place the window at a random location on the primary output
+fn place_new_window(
+    space: &mut Space<WindowElement>,
+    pointer_location: Point<f64, Logical>,
+    window: &WindowElement,
+    activate: bool,
+) {
+    // place the window at a random location on same output as pointer
     // or if there is not output in a [0;800]x[0;800] square
     use rand::distributions::{Distribution, Uniform};
 
-    let output = space.outputs().next().cloned();
+    let output = space
+        .output_under(pointer_location)
+        .next()
+        .or_else(|| space.outputs().next())
+        .cloned();
     let output_geometry = output
         .and_then(|o| {
             let geo = space.output_geometry(&o)?;
@@ -347,7 +356,7 @@ fn place_new_window(space: &mut Space<WindowElement>, window: &WindowElement, ac
     space.map_element(window.clone(), (x, y), activate);
 }
 
-pub fn fixup_positions(space: &mut Space<WindowElement>) {
+pub fn fixup_positions(space: &mut Space<WindowElement>, pointer_location: Point<f64, Logical>) {
     // fixup outputs
     let mut offset = Point::<i32, Logical>::from((0, 0));
     for output in space.outputs().cloned().collect::<Vec<_>>().into_iter() {
@@ -383,6 +392,6 @@ pub fn fixup_positions(space: &mut Space<WindowElement>) {
         }
     }
     for window in orphaned_windows.into_iter() {
-        place_new_window(space, &window, false);
+        place_new_window(space, pointer_location, &window, false);
     }
 }
