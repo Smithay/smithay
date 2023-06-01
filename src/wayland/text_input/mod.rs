@@ -3,6 +3,8 @@
 //! This module provides you with utilities to handle text input surfaces,
 //! it is usually used in conjunction with the input method module.
 //!
+//! Text input focus is automatically set to the same surface that has keyboard focus.
+//!
 //! ```
 //! use smithay::{
 //!     delegate_seat, delegate_tablet_manager, delegate_text_input_manager,
@@ -37,10 +39,6 @@
 //! TextInputManagerState::new::<State>(&display_handle);
 //!
 //! ```
-//!
-//! | Warning! |
-//! |:-|
-//! | Text input focus is set automatically if an input method grabs the keyboard, but on a mobile platform the input method will normally not grab a keyboard and hence one will have to set text input focus manually using the `set_focus` function. |
 //!
 
 use wayland_protocols::wp::text_input::zv3::server::{
