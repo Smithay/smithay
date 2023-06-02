@@ -3,6 +3,8 @@
 //! This module provides you with utilities to handle text input surfaces,
 //! it is usually used in conjunction with the input method module.
 //!
+//! Text input focus is automatically set to the same surface that has keyboard focus.
+//!
 //! ```
 //! use smithay::{
 //!     delegate_seat, delegate_tablet_manager, delegate_text_input_manager,
@@ -38,10 +40,6 @@
 //!
 //! ```
 //!
-//! | Warning! |
-//! |:-|
-//! | Text input focus is set automatically if an input method grabs the keyboard, but on a mobile platform the input method will normally not grab a keyboard and hence one will have to set text input focus manually using the `set_focus` function. |
-//!
 
 use wayland_protocols::wp::text_input::zv3::server::{
     zwp_text_input_manager_v3::{self, ZwpTextInputManagerV3},
@@ -59,6 +57,20 @@ use super::input_method::InputMethodHandle;
 const MANAGER_VERSION: u32 = 1;
 
 mod text_input_handle;
+
+/// Extends [Seat] with text input functionality
+pub trait TextInputSeat {
+    /// Get text input associated with this seat
+    fn text_input(&self) -> &TextInputHandle;
+}
+
+impl<D: SeatHandler + 'static> TextInputSeat for Seat<D> {
+    fn text_input(&self) -> &TextInputHandle {
+        let user_data = self.user_data();
+        user_data.insert_if_missing(TextInputHandle::default);
+        user_data.get::<TextInputHandle>().unwrap()
+    }
+}
 
 /// State of wp text input protocol
 #[derive(Debug)]
