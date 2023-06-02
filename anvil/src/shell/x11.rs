@@ -52,7 +52,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
     fn map_window_request(&mut self, _xwm: XwmId, window: X11Surface) {
         window.set_mapped(true).unwrap();
         let window = WindowElement::X11(window);
-        place_new_window(&mut self.state.space, &window, true);
+        place_new_window(&mut self.state.space, self.state.pointer_location, &window, true);
         let bbox = self.state.space.element_bbox(&window).unwrap();
         let WindowElement::X11(xsurface) = &window else { unreachable!() };
         xsurface.configure(Some(bbox)).unwrap();

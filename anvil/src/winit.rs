@@ -223,7 +223,7 @@ pub fn run_winit() {
                     };
                     output.change_current_state(Some(mode), None, None, None);
                     output.set_preferred(mode);
-                    crate::shell::fixup_positions(&mut state.space);
+                    crate::shell::fixup_positions(&mut state.space, state.pointer_location);
                 }
                 WinitEvent::Input(event) => {
                     state.process_input_event_windowed(&display.handle(), event, OUTPUT_NAME)
