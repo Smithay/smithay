@@ -11,13 +11,13 @@ use wayland_protocols_misc::zwp_input_method_v2::server::{
 use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::{
     protocol::{wl_keyboard::KeymapFormat, wl_surface::WlSurface},
-    Client, DataInit, Dispatch, DisplayHandle,
+    Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::{
     input::{keyboard::KeyboardHandle, SeatHandler},
     utils::{IsAlive, Logical, Physical, Point, Rectangle, SERIAL_COUNTER},
-    wayland::{seat::WaylandFocus, text_input::TextInputHandle},
+    wayland::{compositor, seat::WaylandFocus, text_input::TextInputHandle},
 };
 
 use super::{
@@ -25,6 +25,8 @@ use super::{
     input_method_popup_surface::InputMethodPopupSurfaceHandle, InputMethodKeyboardUserData,
     InputMethodManagerState, InputMethodPopupSurfaceUserData,
 };
+
+const INPUT_POPUP_SURFACE_ROLE: &str = "zwp_input_popup_surface_v2";
 
 #[derive(Default, Debug)]
 pub(crate) struct InputMethod {
@@ -128,7 +130,7 @@ where
     fn request(
         _state: &mut D,
         _client: &Client,
-        _seat: &ZwpInputMethodV2,
+        seat: &ZwpInputMethodV2,
         request: zwp_input_method_v2::Request,
         data: &InputMethodUserData<D>,
         _dh: &DisplayHandle,
@@ -163,6 +165,11 @@ where
                 });
             }
             zwp_input_method_v2::Request::GetInputPopupSurface { id, surface } => {
+                if compositor::give_role(&surface, INPUT_POPUP_SURFACE_ROLE).is_err() {
+                    // Protocol requires this raise an error, but doesn't define an error enum
+                    seat.post_error(0u32, "Surface already has a role.");
+                    return;
+                }
                 let input_method = data.handle.inner.lock().unwrap();
                 let instance = data_init.init(
                     id,
