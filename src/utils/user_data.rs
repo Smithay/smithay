@@ -127,6 +127,34 @@ impl UserDataMap {
         None
     }
 
+    /// Access the user data of a given type, initializing it if required.
+    pub fn get_or_insert<T: 'static, F: FnOnce() -> T>(&self, init: F) -> &T {
+        match self.get() {
+            Some(data) => data,
+            None => {
+                // Innsert the new node.
+                self.insert(init);
+
+                // Return it again immediately.
+                self.list.iter().last().and_then(|data| data.get::<T>()).unwrap()
+            }
+        }
+    }
+
+    /// Access the user data of a given type, initializing it if required.
+    pub fn get_or_insert_threadsafe<T: Send + Sync + 'static, F: FnOnce() -> T>(&self, init: F) -> &T {
+        match self.get() {
+            Some(data) => data,
+            None => {
+                // Innsert the new node.
+                self.insert_threadsafe(init);
+
+                // Return it again immediately.
+                self.list.iter().last().and_then(|data| data.get::<T>()).unwrap()
+            }
+        }
+    }
+
     /// Insert a value in the map if it is not already there
     ///
     /// This is the non-threadsafe variant, the type you insert don't have to be
@@ -140,9 +168,9 @@ impl UserDataMap {
         if self.get::<T>().is_some() {
             return false;
         }
-        let data = UserData::new();
-        data.set(init);
-        self.list.append(data);
+
+        self.insert(init);
+
         true
     }
 
@@ -158,10 +186,24 @@ impl UserDataMap {
         if self.get::<T>().is_some() {
             return false;
         }
+
+        self.insert_threadsafe(init);
+
+        true
+    }
+
+    /// Insert a value into the user data.
+    fn insert<T: 'static, F: FnOnce() -> T>(&self, init: F) {
+        let data = UserData::new();
+        data.set(init);
+        self.list.append(data);
+    }
+
+    /// Insert a value into the user data.
+    fn insert_threadsafe<T: Send + Sync + 'static, F: FnOnce() -> T>(&self, init: F) {
         let data = UserData::new();
         data.set_threadsafe(init);
         self.list.append(data);
-        true
     }
 }
 
