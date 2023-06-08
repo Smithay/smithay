@@ -132,7 +132,7 @@ impl UserDataMap {
         match self.get() {
             Some(data) => data,
             None => {
-                // Innsert the new node.
+                // Insert the new node.
                 self.insert(init);
 
                 // Return it again immediately.
@@ -146,7 +146,7 @@ impl UserDataMap {
         match self.get() {
             Some(data) => data,
             None => {
-                // Innsert the new node.
+                // Insert the new node.
                 self.insert_threadsafe(init);
 
                 // Return it again immediately.
