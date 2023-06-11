@@ -119,11 +119,19 @@ impl X11Surface {
         Ok(())
     }
 
-    /// Resets the internal buffers, e.g. to reset age values
+    /// Resets the internal buffers.
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     pub fn reset_buffers(&mut self) {
         self.swapchain.reset_buffers();
         self.buffer = None;
+    }
+
+    /// Reset the age for all internal buffers.
+    ///
+    /// This can be used to clear the damage history.
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    pub fn reset_buffer_ages(&mut self) {
+        self.swapchain.reset_buffer_ages();
     }
 
     fn resize(&mut self, size: Size<u16, Logical>) {

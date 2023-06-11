@@ -2121,6 +2121,14 @@ where
         self.swapchain.reset_buffers();
     }
 
+    /// Reset the age for all buffers.
+    ///
+    /// This can be used to efficiently clear the damage history without having to
+    /// modify the damage for each surface.
+    pub fn reset_buffer_ages(&mut self) {
+        self.swapchain.reset_buffer_ages();
+    }
+
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
     pub fn crtc(&self) -> crtc::Handle {
         self.surface.crtc()
