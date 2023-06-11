@@ -244,7 +244,7 @@ where
     ///
     /// Resetting the buffer age will discard all damage information and force a
     /// full redraw for the next frame.
-    pub fn reset_buffer_age(&mut self) {
+    pub fn reset_buffer_ages(&mut self) {
         for slot in &mut self.slots {
             match Arc::get_mut(slot) {
                 Some(slot) => slot.age = AtomicU8::new(0),
