@@ -16,7 +16,8 @@ use crate::{
     backend::{
         allocator::{dmabuf::Dmabuf, Fourcc},
         renderer::{
-            sync::SyncPoint, DebugFlags, Frame, ImportDma, ImportMem, Renderer, Texture, TextureFilter,
+            sync::SyncPoint, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Renderer, Texture,
+            TextureFilter,
         },
         SwapBuffersError,
     },
@@ -177,6 +178,65 @@ impl ImportEgl for DummyRenderer {
 #[cfg(feature = "wayland_frontend")]
 impl ImportDmaWl for DummyRenderer {}
 
+#[allow(dead_code)]
+#[derive(Debug)]
+enum Target {
+    Framebuffer,
+    Texture { txtr: DummyTexture },
+}
+
+#[derive(Debug)]
+pub struct DummyTextureMapping {}
+
+impl Texture for DummyTextureMapping {
+    fn width(&self) -> u32 {
+        todo!()
+    }
+
+    fn height(&self) -> u32 {
+        todo!()
+    }
+
+    fn format(&self) -> Option<Fourcc> {
+        todo!()
+    }
+}
+
+impl TextureMapping for DummyTextureMapping {
+    fn flipped(&self) -> bool {
+        true
+    }
+}
+
+impl ExportMem for DummyRenderer {
+    type TextureMapping = DummyTextureMapping;
+
+    fn copy_framebuffer(
+        &mut self,
+        _region: Rectangle<i32, Buffer>,
+        _format: Fourcc,
+    ) -> Result<Self::TextureMapping, <Self as Renderer>::Error> {
+        todo!()
+    }
+
+    fn copy_texture(
+        &mut self,
+        _texture: &Self::TextureId,
+        _region: Rectangle<i32, Buffer>,
+        _format: Fourcc,
+    ) -> Result<Self::TextureMapping, Self::Error> {
+        todo!()
+    }
+
+    fn map_texture<'a>(
+        &mut self,
+        _texture_mapping: &'a Self::TextureMapping,
+    ) -> Result<&'a [u8], <Self as Renderer>::Error> {
+        todo!()
+    }
+}
+
+/// Frame implementation for DummyRenderer
 #[derive(Debug)]
 pub struct DummyFrame {}
 
