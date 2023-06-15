@@ -1,6 +1,9 @@
 #![allow(missing_docs)]
 #[cfg(feature = "wayland_frontend")]
 use std::cell::Cell;
+use std::collections::HashSet;
+
+use drm_fourcc::{DrmFormat, DrmModifier};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::renderer::ImportEgl;
@@ -14,16 +17,17 @@ use crate::{
 
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Fourcc},
+        allocator::{self, dmabuf::Dmabuf, format::get_bpp, Fourcc},
         renderer::{
-            sync::SyncPoint, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Renderer, Texture,
-            TextureFilter,
+            sync::SyncPoint, Bind, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Renderer, Texture,
+            TextureFilter, Unbind,
         },
         SwapBuffersError,
     },
     utils::{Buffer, Physical, Rectangle, Size, Transform},
 };
 
+/// Encapsulates a renderer that does no actual rendering
 #[derive(Debug)]
 pub struct DummyRenderer {}
 
@@ -180,12 +184,7 @@ impl ImportDmaWl for DummyRenderer {}
 
 #[allow(dead_code)]
 #[derive(Debug)]
-enum Target {
-    Framebuffer,
-    Texture { txtr: DummyTexture },
-}
-
-#[derive(Debug)]
+#[allow(missing_docs)]
 pub struct DummyTextureMapping {}
 
 impl Texture for DummyTextureMapping {
@@ -297,7 +296,42 @@ impl Texture for DummyTexture {
     }
 
     fn format(&self) -> Option<Fourcc> {
-        None
+        Some(Fourcc::Abgr8888)
+    }
+}
+
+impl Bind<DummyTexture> for DummyRenderer {
+    fn bind(&mut self, _target: DummyTexture) -> Result<(), <Self as Renderer>::Error> {
+        self.unbind()?;
+        Ok(())
+    }
+
+    fn supported_formats(&self) -> Option<HashSet<allocator::Format>> {
+        let format = DrmFormat {
+            code: Fourcc::Abgr8888,
+            modifier: DrmModifier::Linear,
+        };
+        Some(HashSet::from([format]))
+    }
+}
+
+impl Bind<Dmabuf> for DummyRenderer {
+    fn bind(&mut self, _target: Dmabuf) -> Result<(), <Self as Renderer>::Error> {
+        Ok(())
+    }
+
+    fn supported_formats(&self) -> Option<HashSet<allocator::Format>> {
+        let format = DrmFormat {
+            code: Fourcc::Xrgb8888,
+            modifier: DrmModifier::Linear,
+        };
+        Some(HashSet::from([format]))
+    }
+}
+
+impl Unbind for DummyRenderer {
+    fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
+        Ok(())
     }
 }
 
