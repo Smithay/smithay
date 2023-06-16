@@ -43,6 +43,8 @@ fn gl_generate() {
                 "EGL_EXT_buffer_age",
                 "EGL_EXT_swap_buffers_with_damage",
                 "EGL_KHR_swap_buffers_with_damage",
+                "EGL_KHR_fence_sync",
+                "EGL_ANDROID_native_fence_sync",
             ],
         )
         .write_bindings(gl_generator::GlobalGenerator, &mut file)
@@ -61,6 +63,7 @@ fn gl_generate() {
                 "GL_OES_EGL_image_external",
                 "GL_EXT_texture_format_BGRA8888",
                 "GL_EXT_unpack_subimage",
+                "GL_OES_EGL_sync",
             ],
         )
         .write_bindings(gl_generator::StructGenerator, &mut file)
