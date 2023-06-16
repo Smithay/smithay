@@ -324,6 +324,9 @@ jobs:
           - job_name: "Pointer input tests"
             gtest_filter: "*/SurfacePointerMotionTest*:RelativePointer*"
             flag: pointer-input
+          - job_name: "Bad Buffer Test"
+            gtest_filter: "BadBufferTest*"
+            flag: buffer 
 
     name: "WLCS: ${{ matrix.job_name }}"
 

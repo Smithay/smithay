@@ -1,4 +1,7 @@
-use crate::wayland::{buffer::BufferHandler, shm::ShmBufferUserData};
+use crate::wayland::{
+    buffer::BufferHandler,
+    shm::{wl_bytes_per_pixel, ShmBufferUserData},
+};
 
 use super::{
     pool::{Pool, ResizeError},
@@ -124,10 +127,12 @@ where
                     Some("offset must not be negative".to_string())
                 } else if width <= 0 || height <= 0 {
                     Some(format!("invalid width or height ({}x{})", width, height))
-                } else if stride < width {
+                } else if stride.checked_div(wl_bytes_per_pixel(format)).unwrap_or(0) < width {
+                    // stride is in bytes...
                     Some(format!(
                         "width must not be larger than stride (width {}, stride {})",
-                        width, stride
+                        width,
+                        stride.checked_div(wl_bytes_per_pixel(format)).unwrap_or(0)
                     ))
                 } else if (i32::MAX / stride) < height {
                     Some(format!(

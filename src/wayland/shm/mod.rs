@@ -104,13 +104,13 @@ use wayland_server::{
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
     },
-    Dispatch, DisplayHandle, GlobalDispatch, Resource,
+    Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
 };
 
 mod handlers;
 mod pool;
 
-use crate::utils::UnmanagedResource;
+use crate::{backend::allocator::format::get_bpp, utils::UnmanagedResource};
 
 use self::pool::Pool;
 
@@ -284,6 +284,20 @@ where
             Err(BufferAccessError::BadMap)
         }
     }
+}
+
+/// Returns the bpp of the format
+///
+/// Note: This will return 0 for formats that don't have a specified width.
+pub fn wl_bytes_per_pixel(format: WEnum<wl_shm::Format>) -> i32 {
+    match format {
+        WEnum::Value(f) => {
+            shm_format_to_fourcc(f).map_or(0, |fourcc| get_bpp(fourcc).map_or(0, |bpp| bpp / 8))
+        }
+        WEnum::Unknown(_) => 0,
+    }
+    .try_into()
+    .unwrap()
 }
 
 /// Returns if the buffer has an alpha channel
