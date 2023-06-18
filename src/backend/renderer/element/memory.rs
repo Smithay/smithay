@@ -23,7 +23,7 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint},
 //! #     utils::{Buffer, Physical},
 //! # };
 //! #
@@ -74,7 +74,7 @@
 //! #     fn transformation(&self) -> Transform {
 //! #         unimplemented!()
 //! #     }
-//! #     fn finish(self) -> Result<(), Self::Error> { unimplemented!() }
+//! #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
 //! # }
 //! #
 //! # struct FakeRenderer;

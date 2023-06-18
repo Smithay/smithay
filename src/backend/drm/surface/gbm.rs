@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::os::unix::io::AsFd;
 use std::sync::Arc;
 
 use drm::control::{connector, crtc, plane, Mode};
@@ -9,7 +10,8 @@ use crate::backend::allocator::format::get_opaque;
 use crate::backend::allocator::gbm::GbmConvertError;
 use crate::backend::allocator::{Allocator, Format, Fourcc, Modifier, Slot, Swapchain};
 use crate::backend::drm::gbm::{framebuffer_from_bo, GbmFramebuffer};
-use crate::backend::drm::{DrmError, DrmSurface};
+use crate::backend::drm::{plane_has_property, DrmError, DrmSurface};
+use crate::backend::renderer::sync::SyncPoint;
 use crate::backend::SwapBuffersError;
 use crate::utils::{Physical, Point, Rectangle, Transform};
 
@@ -17,16 +19,24 @@ use tracing::{debug, error, info_span, instrument, trace, warn};
 
 use super::{PlaneConfig, PlaneDamageClips, PlaneState};
 
+#[derive(Debug)]
+struct QueuedFb<U> {
+    slot: Slot<BufferObject<()>>,
+    sync: Option<SyncPoint>,
+    damage: Option<Vec<Rectangle<i32, Physical>>>,
+    user_data: U,
+}
+
 /// Simplified abstraction of a swapchain for gbm-buffers displayed on a [`DrmSurface`].
 #[derive(Debug)]
 pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static, U> {
     current_fb: Slot<BufferObject<()>>,
     pending_fb: Option<(Slot<BufferObject<()>>, U)>,
-    #[allow(clippy::type_complexity)]
-    queued_fb: Option<(Slot<BufferObject<()>>, Option<Vec<Rectangle<i32, Physical>>>, U)>,
+    queued_fb: Option<QueuedFb<U>>,
     next_fb: Option<Slot<BufferObject<()>>>,
     swapchain: Swapchain<A>,
     drm: Arc<DrmSurface>,
+    supports_fencing: bool,
     span: tracing::Span,
 }
 
@@ -60,6 +70,9 @@ where
             match Self::new_internal(drm.clone(), allocator, renderer_formats.clone(), *format) {
                 Ok((current_fb, swapchain)) => {
                     drop(_guard);
+                    let supports_fencing =
+                        !drm.is_legacy() && plane_has_property(&*drm, drm.plane(), "IN_FENCE_FD")?;
+
                     return Ok(GbmBufferedSurface {
                         current_fb,
                         pending_fb: None,
@@ -67,6 +80,7 @@ where
                         next_fb: None,
                         swapchain,
                         drm,
+                        supports_fencing,
                         span,
                     });
                 }
@@ -207,6 +221,7 @@ where
                 transform: Transform::Normal,
                 damage_clips: None,
                 fb: *handle.as_ref(),
+                fence: None,
             }),
         };
 
@@ -264,6 +279,7 @@ where
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`GbmBufferedSurface::frame_submitted`]
     pub fn queue_buffer(
         &mut self,
+        sync: Option<SyncPoint>,
         damage: Option<Vec<Rectangle<i32, Physical>>>,
         user_data: U,
     ) -> Result<(), Error<A::Error>> {
@@ -271,7 +287,12 @@ where
 
         self.swapchain.submitted(&next_fb);
 
-        self.queued_fb = Some((next_fb, damage, user_data));
+        self.queued_fb = Some(QueuedFb {
+            slot: next_fb,
+            sync,
+            damage,
+            user_data,
+        });
         if self.pending_fb.is_none() {
             self.submit()?;
         }
@@ -300,7 +321,12 @@ where
 
     fn submit(&mut self) -> Result<(), Error<A::Error>> {
         // yes it does not look like it, but both of these lines should be safe in all cases.
-        let (slot, damage, user_data) = self.queued_fb.take().unwrap();
+        let QueuedFb {
+            slot,
+            sync,
+            damage,
+            user_data,
+        } = self.queued_fb.take().unwrap();
         let handle = slot.userdata().get::<GbmFramebuffer>().unwrap();
         let mode = self.drm.pending_mode();
         let src =
@@ -315,6 +341,26 @@ where
                 .flatten()
         });
 
+        // Try to extract a native fence out of the supplied sync point if any
+        // If the sync point has no native fence or the surface does not support
+        // fencing force a wait
+        let fence = if let Some(sync) = sync {
+            if !self.supports_fencing {
+                sync.wait();
+                None
+            } else {
+                let fence = sync.export();
+
+                if fence.is_none() {
+                    sync.wait();
+                }
+
+                fence
+            }
+        } else {
+            None
+        };
+
         let plane_state = PlaneState {
             handle: self.plane(),
             config: Some(PlaneConfig {
@@ -324,6 +370,7 @@ where
                 alpha: 1.0,
                 damage_clips: damage_clips.as_ref().map(|d| d.blob()),
                 fb: *handle.as_ref(),
+                fence: fence.as_ref().map(|fence| fence.as_fd()),
             }),
         };
 

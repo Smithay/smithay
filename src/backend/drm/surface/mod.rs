@@ -131,7 +131,7 @@ impl Clone for PlaneDamageClips {
 }
 
 /// State of a single plane
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PlaneState<'a> {
     /// Handle of the plane
     pub handle: plane::Handle,
@@ -142,7 +142,7 @@ pub struct PlaneState<'a> {
 }
 
 /// Configuration for a single plane
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct PlaneConfig<'a> {
     /// Source [`Rectangle`] of the attached framebuffer
     pub src: Rectangle<f64, Buffer>,
@@ -156,6 +156,8 @@ pub struct PlaneConfig<'a> {
     pub damage_clips: Option<drm::control::property::Value<'a>>,
     /// Framebuffer handle
     pub fb: framebuffer::Handle,
+    /// Optional fence
+    pub fence: Option<BorrowedFd<'a>>,
 }
 
 #[derive(Debug)]
@@ -183,6 +185,11 @@ impl DrmSurface {
             DrmSurfaceInternal::Atomic(surf) => surf.device_fd(),
             DrmSurfaceInternal::Legacy(surf) => surf.device_fd(),
         }
+    }
+
+    /// Returns whether this surface is using the legacy api
+    pub fn is_legacy(&self) -> bool {
+        matches!(&*self.internal, DrmSurfaceInternal::Legacy(_))
     }
 
     /// Returns the underlying [`crtc`](drm::control::crtc) of this surface

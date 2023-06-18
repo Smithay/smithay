@@ -38,17 +38,20 @@ pub use uniform::*;
 use self::version::GlVersion;
 
 use super::{
-    Bind, Blit, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer, Texture,
-    TextureFilter, TextureMapping, Unbind,
-};
-use crate::backend::allocator::{
-    dmabuf::{Dmabuf, WeakDmabuf},
-    format::{get_bpp, get_opaque, get_transparent, has_alpha},
-    Format, Fourcc,
+    sync::SyncPoint, Bind, Blit, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
+    Texture, TextureFilter, TextureMapping, Unbind,
 };
 use crate::backend::egl::{
     ffi::egl::{self as ffi_egl, types::EGLImage},
     EGLContext, EGLSurface, MakeCurrentError,
+};
+use crate::backend::{
+    allocator::{
+        dmabuf::{Dmabuf, WeakDmabuf},
+        format::{get_bpp, get_opaque, get_transparent, has_alpha},
+        Format, Fourcc,
+    },
+    egl::fence::EGLFence,
 };
 use crate::utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform};
 
@@ -364,6 +367,8 @@ pub enum Capability {
     Renderbuffer,
     /// GlesRenderer supports color transformations
     ColorTransformations,
+    /// GlesRenderer supports fencing,
+    Fencing,
 }
 
 /// A renderer utilizing OpenGL ES
@@ -582,6 +587,10 @@ impl GlesRenderer {
                     capabilities.push(Capability::ColorTransformations);
                     debug!("Color Transformations are supported");
                 }
+            }
+            if exts.iter().any(|ext| ext == "GL_OES_EGL_sync") {
+                debug!("Fencing is supported");
+                capabilities.push(Capability::Fencing);
             }
 
             let gl_debug_span = if exts.iter().any(|ext| ext == "GL_KHR_debug") {
@@ -2349,17 +2358,17 @@ impl<'frame> Frame for GlesFrame<'frame> {
         self.transform
     }
 
-    fn finish(mut self) -> Result<(), Self::Error> {
+    fn finish(mut self) -> Result<SyncPoint, Self::Error> {
         self.finish_internal()
     }
 }
 
 impl<'frame> GlesFrame<'frame> {
-    fn finish_internal(&mut self) -> Result<(), GlesError> {
+    fn finish_internal(&mut self) -> Result<SyncPoint, GlesError> {
         let _guard = self.span.enter();
 
         if self.finished.swap(true, Ordering::SeqCst) {
-            return Ok(());
+            return Ok(SyncPoint::signaled());
         }
 
         unsafe {
@@ -2426,24 +2435,21 @@ impl<'frame> GlesFrame<'frame> {
             }
         }
 
+        // if we support egl fences we should use it
+        if self.renderer.capabilities.contains(&Capability::Fencing) {
+            if let Ok(fence) = EGLFence::create(self.renderer.egl.display()) {
+                unsafe {
+                    self.renderer.gl.Flush();
+                }
+                return Ok(SyncPoint::from(fence));
+            }
+        }
+
+        // as a last option we force finish, this is unlikely to happen
         unsafe {
-            // We need to wait for the previously submitted GL commands to complete
-            // or otherwise the buffer could be submitted to the drm surface while
-            // still writing to the buffer which results in flickering on the screen.
-            // The proper solution would be to create a fence just before calling
-            // glFlush that the backend can use to wait for the commands to be finished.
-            // In case of a drm atomic backend the fence could be supplied by using the
-            // IN_FENCE_FD property.
-            // See https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#explicit-fencing-properties for
-            // the topic on submitting a IN_FENCE_FD and the mesa kmskube example
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c
-            // especially here
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L147
-            // and here
-            // https://gitlab.freedesktop.org/mesa/kmscube/-/blob/9f63f359fab1b5d8e862508e4e51c9dfe339ccb0/drm-atomic.c#L235
             self.renderer.gl.Finish();
         }
-        Ok(())
+        Ok(SyncPoint::signaled())
     }
 
     /// Overrides the default texture shader used, if none is specified.
@@ -3054,8 +3060,13 @@ impl<'frame> GlesFrame<'frame> {
 
 impl<'frame> Drop for GlesFrame<'frame> {
     fn drop(&mut self) {
-        if let Err(err) = self.finish_internal() {
-            warn!("Ignored error finishing GlesFrame on drop: {}", err);
+        match self.finish_internal() {
+            Ok(sync) => {
+                sync.wait();
+            }
+            Err(err) => {
+                warn!("Ignored error finishing GlesFrame on drop: {}", err);
+            }
         }
     }
 }

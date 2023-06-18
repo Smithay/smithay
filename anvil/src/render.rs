@@ -1,13 +1,13 @@
 use smithay::{
     backend::renderer::{
-        damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
+        damage::{Error as OutputDamageTrackerError, OutputDamageTracker, RenderOutputResult},
         element::{
             surface::WaylandSurfaceRenderElement,
             utils::{
                 ConstrainAlign, ConstrainScaleBehavior, CropRenderElement, RelocateRenderElement,
                 RescaleRenderElement,
             },
-            AsRenderElements, RenderElement, RenderElementStates, Wrap,
+            AsRenderElements, RenderElement, Wrap,
         },
         ImportAll, ImportMem, Renderer,
     },
@@ -15,7 +15,7 @@ use smithay::{
         constrain_space_element, ConstrainBehavior, ConstrainReference, Space, SpaceRenderElements,
     },
     output::Output,
-    utils::{Physical, Point, Rectangle, Size},
+    utils::{Point, Rectangle, Size},
 };
 
 #[cfg(feature = "debug")]
@@ -202,7 +202,7 @@ pub fn render_output<R>(
     damage_tracker: &mut OutputDamageTracker,
     age: usize,
     show_window_preview: bool,
-) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputDamageTrackerError<R>>
+) -> Result<RenderOutputResult, OutputDamageTrackerError<R>>
 where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: Clone + 'static,

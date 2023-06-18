@@ -305,7 +305,7 @@ where
             &[Rectangle::from_loc_and_size((w / 2, h / 2), (w / 2, h / 2))],
         )
         .expect("Render error");
-    frame.finish().expect("Failed to finish render frame");
+    frame.finish().expect("Failed to finish render frame").wait();
 }
 
 fn render_from<R, T>(renderer: &mut R, buffer: Dmabuf, w: i32, h: i32, dump: Option<String>)
@@ -332,7 +332,7 @@ where
             1.0,
         )
         .expect("Failed to sample dmabuf");
-    frame.finish().expect("Failed to finish render frame");
+    frame.finish().expect("Failed to finish render frame").wait();
 
     if let Some(path) = dump {
         let mapping = renderer

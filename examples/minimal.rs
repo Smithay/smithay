@@ -202,7 +202,8 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         let mut frame = backend.renderer().render(size, Transform::Flipped180).unwrap();
         frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
         draw_render_elements(&mut frame, 1.0, &elements, &[damage]).unwrap();
-        frame.finish().unwrap();
+        // We rely on the nested compositor to do the sync for us
+        let _ = frame.finish().unwrap();
 
         for surface in state.xdg_shell_state.toplevel_surfaces() {
             send_frames_surface_tree(surface.wl_surface(), start_time.elapsed().as_millis() as u32);

@@ -24,7 +24,7 @@
 //! #     backend::allocator::{Fourcc, dmabuf::Dmabuf},
 //! #     backend::renderer::{
 //! #         DebugFlags, Frame, ImportDma, ImportDmaWl, ImportMem, ImportMemWl, Renderer, Texture,
-//! #         TextureFilter,
+//! #         TextureFilter, sync::SyncPoint,
 //! #     },
 //! #     utils::{Buffer, Physical},
 //! #     wayland::compositor::SurfaceData,
@@ -77,7 +77,7 @@
 //! #     fn transformation(&self) -> Transform {
 //! #         unimplemented!()
 //! #     }
-//! #     fn finish(self) -> Result<(), Self::Error> { unimplemented!() }
+//! #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
 //! # }
 //! #
 //! # struct FakeRenderer;

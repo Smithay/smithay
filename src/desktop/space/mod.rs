@@ -5,12 +5,13 @@ use crate::{
     backend::renderer::{
         damage::{
             Error as OutputDamageTrackerError, OutputDamageTracker, OutputDamageTrackerMode, OutputNoMode,
+            RenderOutputResult,
         },
-        element::{AsRenderElements, RenderElement, RenderElementStates, Wrap},
+        element::{AsRenderElements, RenderElement, Wrap},
         Renderer, Texture,
     },
     output::Output,
-    utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform},
+    utils::{IsAlive, Logical, Point, Rectangle, Scale, Transform},
 };
 #[cfg(feature = "wayland_frontend")]
 use crate::{
@@ -674,7 +675,7 @@ pub fn render_output<
     custom_elements: &'a [C],
     damage_tracker: &mut OutputDamageTracker,
     clear_color: [f32; 4],
-) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputDamageTrackerError<R>>
+) -> Result<RenderOutputResult, OutputDamageTrackerError<R>>
 where
     <R as Renderer>::TextureId: Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,

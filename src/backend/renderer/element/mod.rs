@@ -1198,7 +1198,7 @@ macro_rules! render_elements_internal {
 /// # use smithay::{
 /// #     backend::{
 /// #         allocator::Fourcc,
-/// #         renderer::{DebugFlags, Frame, Renderer, Texture, TextureFilter},
+/// #         renderer::{DebugFlags, Frame, Renderer, Texture, TextureFilter, sync::SyncPoint},
 /// #     },
 /// #     utils::{Buffer, Physical, Rectangle, Size, Transform},
 /// # };
@@ -1250,7 +1250,7 @@ macro_rules! render_elements_internal {
 /// #     fn transformation(&self) -> Transform {
 /// #         unimplemented!()
 /// #     }
-/// #     fn finish(self) -> Result<(), Self::Error> { unimplemented!() }
+/// #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
 /// # }
 /// #
 /// # struct MyRenderer;

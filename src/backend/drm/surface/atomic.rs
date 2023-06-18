@@ -5,6 +5,7 @@ use drm::control::{
 };
 
 use std::collections::HashSet;
+use std::os::unix::io::AsRawFd;
 use std::sync::Mutex;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -290,6 +291,7 @@ impl AtomicDrmSurface {
                         alpha: 1.0,
                         damage_clips: None,
                         fb: test_buffer.fb,
+                        fence: None,
                     }),
                 }],
                 Some(pending.blob),
@@ -341,6 +343,7 @@ impl AtomicDrmSurface {
                     alpha: 1.0,
                     damage_clips: None,
                     fb: test_buffer.fb,
+                    fence: None,
                 }),
             }],
             Some(pending.blob),
@@ -394,6 +397,7 @@ impl AtomicDrmSurface {
                     alpha: 1.0,
                     damage_clips: None,
                     fb: test_buffer.fb,
+                    fence: None,
                 }),
             }],
             Some(pending.blob),
@@ -446,6 +450,7 @@ impl AtomicDrmSurface {
                     alpha: 1.0,
                     damage_clips: None,
                     fb: test_buffer.fb,
+                    fence: None,
                 }),
             }],
             Some(new_blob),
@@ -821,6 +826,18 @@ impl AtomicDrmSurface {
                         req.add_property(*handle, prop, property::Value::Blob(0));
                     }
                 }
+                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "IN_FENCE_FD") {
+                    if let Some(fence) = config.fence.as_ref().map(|f| f.as_raw_fd()) {
+                        req.add_property(*handle, prop, property::Value::SignedRange(fence as i64));
+                    } else {
+                        req.add_property(*handle, prop, property::Value::SignedRange(-1));
+                    }
+                } else if config.fence.is_some() {
+                    return Err(Error::UnknownProperty {
+                        handle: (*handle).into(),
+                        name: "IN_FENCE_FD",
+                    });
+                }
             } else {
                 // disconnect the plane from the CRTC
                 req.add_property(
@@ -894,6 +911,9 @@ impl AtomicDrmSurface {
                 }
                 if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "FB_DAMAGE_CLIPS") {
                     req.add_property(*handle, prop, property::Value::Blob(0));
+                }
+                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "IN_FENCE_FD") {
+                    req.add_property(*handle, prop, property::Value::SignedRange(-1));
                 }
             }
         }
@@ -979,6 +999,9 @@ impl AtomicDrmSurface {
         }
         if let Ok(prop) = plane_prop_handle(&prop_mapping, plane, "FB_DAMAGE_CLIPS") {
             req.add_property(plane, prop, property::Value::Blob(0));
+        }
+        if let Ok(prop) = plane_prop_handle(&prop_mapping, plane, "IN_FENCE_FD") {
+            req.add_property(plane, prop, property::Value::SignedRange(-1));
         }
 
         let result = self

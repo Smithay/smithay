@@ -6,7 +6,7 @@
 //! # use smithay::{
 //! #     backend::{
 //! #         allocator::Fourcc,
-//! #         renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #         renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint},
 //! #     },
 //! #     utils::{Buffer, Physical, Rectangle, Transform},
 //! # };
@@ -59,7 +59,7 @@
 //! #     fn transformation(&self) -> Transform {
 //! #         unimplemented!()
 //! #     }
-//! #     fn finish(self) -> Result<(), Self::Error> {
+//! #     fn finish(self) -> Result<SyncPoint, Self::Error> {
 //! #         unimplemented!()
 //! #     }
 //! # }

@@ -359,9 +359,9 @@ pub fn run_winit() {
             });
 
             match render_res {
-                Ok((damage, states)) => {
-                    let has_rendered = damage.is_some();
-                    if let Some(damage) = damage {
+                Ok(render_output_result) => {
+                    let has_rendered = render_output_result.damage.is_some();
+                    if let Some(damage) = render_output_result.damage {
                         if let Err(err) = backend.submit(Some(&*damage)) {
                             warn!("Failed to submit buffer: {}", err);
                         }
@@ -382,11 +382,11 @@ pub fn run_winit() {
 
                     // Send frame events so that client start drawing their next frame
                     let time = state.clock.now();
-                    post_repaint(&output, &states, &state.space, None, time);
+                    post_repaint(&output, &render_output_result.states, &state.space, None, time);
 
                     if has_rendered {
                         let mut output_presentation_feedback =
-                            take_presentation_feedback(&output, &state.space, &states);
+                            take_presentation_feedback(&output, &state.space, &render_output_result.states);
                         output_presentation_feedback.presented(
                             time,
                             output

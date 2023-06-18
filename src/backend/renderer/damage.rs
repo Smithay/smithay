@@ -27,7 +27,7 @@
 //!
 //! ```no_run
 //! # use smithay::{
-//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter},
+//! #     backend::renderer::{DebugFlags, Frame, ImportMem, Renderer, Texture, TextureFilter, sync::SyncPoint},
 //! #     utils::{Buffer, Physical, Rectangle, Size},
 //! # };
 //! #
@@ -78,7 +78,7 @@
 //! #     fn transformation(&self) -> Transform {
 //! #         unimplemented!()
 //! #     }
-//! #     fn finish(self) -> Result<(), Self::Error> { unimplemented!() }
+//! #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
 //! # }
 //! #
 //! # struct FakeRenderer;
@@ -202,6 +202,7 @@ use crate::{
 
 use super::{
     element::{Element, Id, RenderElement, RenderElementState, RenderElementStates},
+    sync::SyncPoint,
     utils::CommitCounter,
 };
 
@@ -300,6 +301,27 @@ pub enum Error<R: Renderer> {
     OutputNoMode(#[from] OutputNoMode),
 }
 
+/// Represents the result from rendering the output
+#[derive(Debug)]
+pub struct RenderOutputResult {
+    /// Holds the sync point of the rendering operation
+    pub sync: SyncPoint,
+    /// Holds the damage from the rendering operation
+    pub damage: Option<Vec<Rectangle<i32, Physical>>>,
+    /// Holds the render element states
+    pub states: RenderElementStates,
+}
+
+impl RenderOutputResult {
+    fn skipped(states: RenderElementStates) -> Self {
+        Self {
+            sync: SyncPoint::signaled(),
+            damage: None,
+            states,
+        }
+    }
+}
+
 impl<R: Renderer> std::fmt::Debug for Error<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -355,7 +377,7 @@ impl OutputDamageTracker {
         age: usize,
         elements: &[E],
         clear_color: [f32; 4],
-    ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), Error<R>>
+    ) -> Result<RenderOutputResult, Error<R>>
     where
         E: RenderElement<R>,
         R: Renderer,
@@ -388,7 +410,7 @@ impl OutputDamageTracker {
 
         if damage.is_empty() {
             trace!("no damage, skipping rendering");
-            return Ok((None, states));
+            return Ok(RenderOutputResult::skipped(states));
         }
 
         trace!(
@@ -465,17 +487,22 @@ impl OutputDamageTracker {
                 element.draw(&mut frame, element.src(), element_geometry, &element_damage)?;
             }
 
-            Result::<(), R::Error>::Ok(())
+            frame.finish()
         })();
 
-        if let Err(err) = render_res {
-            // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
-            // thus clean our old states before returning
-            self.last_state = Default::default();
-            return Err(Error::Rendering(err));
+        match render_res {
+            Ok(sync) => Ok(RenderOutputResult {
+                sync,
+                damage: Some(damage),
+                states,
+            }),
+            Err(err) => {
+                // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
+                // thus clean our old states before returning
+                self.last_state = Default::default();
+                Err(Error::Rendering(err))
+            }
         }
-
-        Ok((Some(damage), states))
     }
 
     /// Damage this output and return the damage without actually rendering the difference
