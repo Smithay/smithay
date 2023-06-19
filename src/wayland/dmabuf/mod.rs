@@ -422,8 +422,22 @@ impl DmabufFeedbackBuilder {
 /// Feedback for dmabuf allocation
 ///
 /// Use the [`DmabufFeedbackBuilder`] to create a new instance.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct DmabufFeedback(Arc<DmabufFeedbackInner>);
+
+impl PartialEq for DmabufFeedback {
+    fn eq(&self, other: &Self) -> bool {
+        // Note: The dmabuf feedback can not change, it is initialized
+        // with the DmabufFeedbackBuilder, so if the arc ptr equal we
+        // can short-circuit the expensive equality test saving us
+        // a few cpu cycles
+        if Arc::ptr_eq(&self.0, &other.0) {
+            return true;
+        }
+
+        self.0 == other.0
+    }
+}
 
 impl DmabufFeedback {
     /// Send this feedback to the provided [`ZwpLinuxDmabufFeedbackV1`](zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1)
