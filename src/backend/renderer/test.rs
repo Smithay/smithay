@@ -129,7 +129,9 @@ impl super::ImportMemWl for DummyRenderer {
         });
 
         match ret {
-            Ok((width, height)) => Ok(DummyTexture { width, height }),
+            Ok((width, height)) => Ok(DummyTexture {
+                size: Size::<u32, Buffer>::from((width, height)),
+            }),
             Err(e) => Err(DummyRendererError::BufferAccessError(e)),
         }
     }
@@ -222,17 +224,16 @@ impl Frame for DummyFrame {
 
 #[derive(Clone, Debug)]
 pub struct DummyTexture {
-    width: u32,
-    height: u32,
+    size: Size<u32, Buffer>,
 }
 
 impl Texture for DummyTexture {
     fn width(&self) -> u32 {
-        self.width
+        self.size.w
     }
 
     fn height(&self) -> u32 {
-        self.height
+        self.size.h
     }
 
     fn format(&self) -> Option<Fourcc> {
