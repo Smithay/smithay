@@ -78,12 +78,20 @@ impl Renderer for DummyRenderer {
 impl ImportMem for DummyRenderer {
     fn import_memory(
         &mut self,
-        _data: &[u8],
-        _format: Fourcc,
-        _size: Size<i32, Buffer>,
+        data: &[u8],
+        format: Fourcc,
+        size: Size<i32, Buffer>,
         _flipped: bool,
-    ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        unimplemented!()
+    ) -> Result<DummyTexture, DummyRendererError> {
+        if data.len()
+            < (size.w * size.h) as usize
+                * (get_bpp(format).ok_or(DummyRendererError::UnsupportedPixelFormat(format))? / 8)
+        {
+            return Err(DummyRendererError::UnexpectedSize);
+        }
+        Ok(DummyTexture {
+            size: Size::from((size.w as u32, size.h as u32)),
+        })
     }
 
     fn update_memory(
@@ -342,12 +350,26 @@ pub enum DummyRendererError {
     #[error("Error accessing the buffer ({0:?})")]
     #[cfg(feature = "wayland_frontend")]
     BufferAccessError(shm::BufferAccessError),
+    /// Unknown pixel layout
+    #[error("Unsupported pixel layout")]
+    UnsupportedPixelLayout,
+    /// The given buffer has an unsupported pixel format
+    #[error("Unsupported pixel format: {0:?}")]
+    UnsupportedPixelFormat(Fourcc),
+    /// The provided buffer's size did not match the requested one.
+    #[error("Error reading buffer, size is too small for the given dimensions")]
+    UnexpectedSize,
 }
 
 impl From<DummyRendererError> for SwapBuffersError {
     fn from(value: DummyRendererError) -> Self {
         match value {
             x @ DummyRendererError::BufferAccessError(_) => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ DummyRendererError::UnsupportedPixelLayout => SwapBuffersError::TemporaryFailure(Box::new(x)),
+            x @ DummyRendererError::UnsupportedPixelFormat(_) => {
+                SwapBuffersError::TemporaryFailure(Box::new(x))
+            }
+            x @ DummyRendererError::UnexpectedSize => SwapBuffersError::TemporaryFailure(Box::new(x)),
         }
     }
 }
