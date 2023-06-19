@@ -2497,7 +2497,6 @@ impl<'frame> GlesFrame<'frame> {
         unsafe {
             self.renderer.gl.Disable(ffi::SCISSOR_TEST);
             self.renderer.gl.Disable(ffi::BLEND);
-            self.renderer.gl.Flush();
         }
 
         if let Some(target) = self.renderer.target.as_ref() {
