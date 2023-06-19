@@ -1037,7 +1037,7 @@ where
 
             trace!("blitting frame with damage: {:#?}", blit_damage);
 
-            sync.wait();
+            renderer.wait(&sync).map_err(BlitFrameResultError::Rendering)?;
             for rect in blit_damage {
                 renderer
                     .blit_from(

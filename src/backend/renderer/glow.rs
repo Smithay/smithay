@@ -202,6 +202,10 @@ impl Renderer for GlowRenderer {
             glow,
         })
     }
+
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        self.gl.wait(sync)
+    }
 }
 
 impl<'frame> Frame for GlowFrame<'frame> {

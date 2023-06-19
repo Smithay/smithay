@@ -1084,6 +1084,10 @@ where
             span,
         })
     }
+
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        self.render.renderer_mut().wait(sync).map_err(Error::Render)
+    }
 }
 
 impl<'render, 'target, 'alloc, 'frame, R: GraphicsApi, T: GraphicsApi>
@@ -1526,6 +1530,10 @@ where
 
     fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
         self.finish_internal()
+    }
+
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().wait(sync).map_err(Error::Render)
     }
 }
 

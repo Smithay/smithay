@@ -2226,6 +2226,39 @@ impl Renderer for GlesRenderer {
     fn debug_flags(&self) -> DebugFlags {
         self.debug_flags
     }
+
+    fn wait(&mut self, sync: &super::sync::SyncPoint) -> Result<(), Self::Error> {
+        self.make_current()?;
+
+        let display = self.egl_context().display();
+
+        // if the sync point holds a EGLFence we can try
+        // to directly insert it in our context
+        if let Some(fence) = sync.get::<EGLFence>() {
+            if fence.wait(display).is_ok() {
+                return Ok(());
+            }
+        }
+
+        // alternative we try to create a temporary fence
+        // out of the native fence if available and try
+        // to insert it in our context
+        if let Some(native) = EGLFence::supports_importing(display)
+            .then(|| sync.export())
+            .flatten()
+        {
+            if let Ok(fence) = EGLFence::import(display, native) {
+                if fence.wait(display).is_ok() {
+                    return Ok(());
+                }
+            }
+        }
+
+        // if everything above failed we can only
+        // block until the sync point has been reached
+        sync.wait();
+        Ok(())
+    }
 }
 
 /// Vertices for instanced rendering.
@@ -2360,6 +2393,10 @@ impl<'frame> Frame for GlesFrame<'frame> {
 
     fn finish(mut self) -> Result<SyncPoint, Self::Error> {
         self.finish_internal()
+    }
+
+    fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
+        self.renderer.wait(sync)
     }
 }
 

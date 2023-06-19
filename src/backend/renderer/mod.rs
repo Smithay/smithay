@@ -218,6 +218,12 @@ pub trait Frame {
     /// Output transformation that is applied to this frame
     fn transformation(&self) -> Transform;
 
+    /// Wait for a [`SyncPoint`](sync::SyncPoint) to be signaled
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        sync.wait();
+        Ok(())
+    }
+
     /// Finish this [`Frame`] returning any error that may happen during any cleanup.
     ///
     /// Dropping the frame instead may result in any of the following and is implementation dependent:
@@ -279,6 +285,12 @@ pub trait Renderer {
         output_size: Size<i32, Physical>,
         dst_transform: Transform,
     ) -> Result<Self::Frame<'_>, Self::Error>;
+
+    /// Wait for a [`SyncPoint`](sync::SyncPoint) to be signaled
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        sync.wait();
+        Ok(())
+    }
 }
 
 /// Trait for renderers that support creating offscreen framebuffers to render into.
