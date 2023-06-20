@@ -32,9 +32,8 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v3
       - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.65.0
           components: clippy
       - name: Get date for registry cache
         id: date
@@ -74,6 +73,39 @@ jobs:
       - name: Clippy Smallvil
         run: cargo clippy --manifest-path "./smallvil/Cargo.toml" --no-deps -- -D warnings
   
+  check-msrv:
+    env:
+      RUSTFLAGS: "-D warnings"
+
+    runs-on: ubuntu-22.04
+    needs:
+      - clippy-check
+      - format
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@1.65.0
+      - name: Get date for registry cache
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      - name: Cargo registry cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+      - name: System dependencies
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
+      - name: Downgrade log
+        run: cargo update -p log --precise 0.4.14
+      - name: Check
+        run: cargo check --features "test_all_features"
+
   check-minimal:
     env:
       RUSTFLAGS: "-D warnings"
