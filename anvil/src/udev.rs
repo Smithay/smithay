@@ -215,7 +215,7 @@ pub fn run_udev() {
             .unwrap()
             .and_then(|x| DrmNode::from_path(x).ok()?.node_with_type(NodeType::Render)?.ok())
             .unwrap_or_else(|| {
-                all_gpus(&session.seat())
+                all_gpus(session.seat())
                     .unwrap()
                     .into_iter()
                     .find_map(|x| DrmNode::from_path(x).ok())
@@ -557,10 +557,10 @@ impl SurfaceComposition {
         }
     }
 
-    fn render_frame<'a, R, E, Target>(
+    fn render_frame<R, E, Target>(
         &mut self,
         renderer: &mut R,
-        elements: &'a [E],
+        elements: &[E],
         clear_color: [f32; 4],
     ) -> Result<(bool, RenderElementStates), SwapBuffersError>
     where

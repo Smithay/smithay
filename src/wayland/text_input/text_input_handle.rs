@@ -46,7 +46,7 @@ pub struct TextInputHandle {
 }
 
 impl TextInputHandle {
-    pub(super) fn add_instance<D>(&self, instance: &ZwpTextInputV3) {
+    pub(super) fn add_instance(&self, instance: &ZwpTextInputV3) {
         let mut inner = self.inner.lock().unwrap();
         inner.instances.push(Instance {
             instance: instance.clone(),

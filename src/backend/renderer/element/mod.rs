@@ -359,9 +359,9 @@ pub trait Element {
 /// A single render element
 pub trait RenderElement<R: Renderer>: Element {
     /// Draw this element
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'_>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -445,9 +445,9 @@ where
         (*self).underlying_storage(renderer)
     }
 
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'_>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -715,9 +715,9 @@ macro_rules! render_elements_internal {
         }
     };
     (@draw <$renderer:ty>; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        fn draw<'frame>(
+        fn draw(
             &self,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'frame>,
+            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'_>,
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
@@ -758,9 +758,9 @@ macro_rules! render_elements_internal {
         }
     };
     (@draw $renderer:ty; $($(#[$meta:meta])* $body:ident=$field:ty $(as <$other_renderer:ty>)?),* $(,)?) => {
-        fn draw<'frame>(
+        fn draw(
             &self,
-            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'frame>,
+            frame: &mut <$renderer as $crate::backend::renderer::Renderer>::Frame<'_>,
             src: $crate::utils::Rectangle<f64, $crate::utils::Buffer>,
             dst: $crate::utils::Rectangle<i32, $crate::utils::Physical>,
             damage: &[$crate::utils::Rectangle<i32, $crate::utils::Physical>],
@@ -1416,9 +1416,9 @@ where
     R: Renderer,
     C: RenderElement<R>,
 {
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'_>,
         src: Rectangle<f64, BufferCoords>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

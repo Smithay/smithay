@@ -174,7 +174,7 @@ where
                         keyboard_handle,
                     },
                 );
-                handle.add_instance::<InputMethodHandle>(&instance);
+                handle.add_instance(&instance);
             }
             zwp_input_method_manager_v2::Request::Destroy => {
                 // Nothing to do

@@ -292,9 +292,9 @@ impl Element for SolidColorRenderElement {
 }
 
 impl<R: Renderer> RenderElement<R> for SolidColorRenderElement {
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'_>,
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

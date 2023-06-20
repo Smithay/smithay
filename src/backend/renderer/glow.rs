@@ -462,9 +462,9 @@ impl Unbind for GlowRenderer {
 }
 
 impl RenderElement<GlowRenderer> for PixelShaderElement {
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut GlowFrame<'a>,
+        frame: &mut GlowFrame<'_>,
         src: Rectangle<f64, BufferCoord>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

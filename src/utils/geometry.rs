@@ -1460,8 +1460,10 @@ impl<N: Default, Kind> Default for Rectangle<N, Kind> {
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Possible transformations to two-dimensional planes
+#[derive(Default)]
 pub enum Transform {
     /// Identity transformation (plane is unaltered when applied)
+    #[default]
     Normal,
     /// Plane is rotated by 90 degrees
     _90,
@@ -1477,12 +1479,6 @@ pub enum Transform {
     Flipped180,
     /// Plane is flipped vertically and rotated by 270 degrees
     Flipped270,
-}
-
-impl Default for Transform {
-    fn default() -> Transform {
-        Transform::Normal
-    }
 }
 
 impl Transform {

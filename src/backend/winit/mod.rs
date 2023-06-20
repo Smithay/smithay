@@ -196,25 +196,29 @@ where
             }
             .map_err(|err| Error::Surface(err.into()))?;
             (
-                EGLSurface::new(
-                    &display,
-                    context.pixel_format().unwrap(),
-                    context.config_id(),
-                    surface,
-                )
-                .map_err(EGLError::CreationFailed)?,
+                unsafe {
+                    EGLSurface::new(
+                        &display,
+                        context.pixel_format().unwrap(),
+                        context.config_id(),
+                        surface,
+                    )
+                    .map_err(EGLError::CreationFailed)?
+                },
                 false,
             )
         } else if let Some(xlib_window) = winit_window.xlib_window().map(native::XlibWindow) {
             debug!("Winit backend: X11");
             (
-                EGLSurface::new(
-                    &display,
-                    context.pixel_format().unwrap(),
-                    context.config_id(),
-                    xlib_window,
-                )
-                .map_err(EGLError::CreationFailed)?,
+                unsafe {
+                    EGLSurface::new(
+                        &display,
+                        context.pixel_format().unwrap(),
+                        context.config_id(),
+                        xlib_window,
+                    )
+                    .map_err(EGLError::CreationFailed)?
+                },
                 true,
             )
         } else {

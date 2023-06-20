@@ -401,6 +401,7 @@ impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
         // If all the above tests do not lead to a output we just use the first output
         // of the space (which in case of anvil will also be the output a toplevel will
         // initially be placed on)
+        #[allow(clippy::redundant_clone)]
         let mut root = surface.clone();
         while let Some(parent) = get_parent(&root) {
             root = parent;

@@ -99,9 +99,9 @@ impl Element for PixelShaderElement {
 }
 
 impl RenderElement<GlesRenderer> for PixelShaderElement {
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut GlesFrame<'a>,
+        frame: &mut GlesFrame<'_>,
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

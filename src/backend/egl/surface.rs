@@ -52,7 +52,11 @@ impl EGLSurface {
     /// - A valid `EGLConfig` (see `EGLContext::config_id()`)
     /// - A native type backing the surface matching the used platform
     /// - An (optional) Logger
-    pub fn new<N>(
+    ///
+    /// # Safety
+    ///
+    /// - `config_id` has to represent a valid config
+    pub unsafe fn new<N>(
         display: &EGLDisplay,
         pixel_format: PixelFormat,
         config: ffi::egl::types::EGLConfig,
@@ -70,7 +74,7 @@ impl EGLSurface {
             span.record("native", value);
         }
 
-        let surface = native.create(&display.get_display_handle(), config)?;
+        let surface = unsafe { native.create(&display.get_display_handle(), config)? };
         if surface == ffi::egl::NO_SURFACE {
             return Err(EGLError::BadSurface);
         }
@@ -170,9 +174,11 @@ impl EGLSurface {
                 .surface
                 .compare_exchange(
                     surface,
-                    self.native
-                        .create(&self.display, self.config_id)
-                        .map_err(SwapBuffersError::EGLCreateSurface)? as *mut _,
+                    unsafe {
+                        self.native
+                            .create(&self.display, self.config_id)
+                            .map_err(SwapBuffersError::EGLCreateSurface)? as *mut _
+                    },
                     Ordering::SeqCst,
                     Ordering::SeqCst,
                 )

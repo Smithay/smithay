@@ -91,9 +91,9 @@ impl<E: Element> Element for RescaleRenderElement<E> {
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement<E> {
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'_>,
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
@@ -269,9 +269,9 @@ impl<E: Element> Element for CropRenderElement<E> {
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E> {
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'_>,
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],
@@ -365,9 +365,9 @@ impl<E: Element> Element for RelocateRenderElement<E> {
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RelocateRenderElement<E> {
-    fn draw<'a>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'a>,
+        frame: &mut <R as Renderer>::Frame<'_>,
         src: crate::utils::Rectangle<f64, crate::utils::Buffer>,
         dst: crate::utils::Rectangle<i32, crate::utils::Physical>,
         damage: &[crate::utils::Rectangle<i32, crate::utils::Physical>],

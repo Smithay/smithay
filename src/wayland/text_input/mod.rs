@@ -150,7 +150,7 @@ where
                     },
                 );
 
-                handle.add_instance::<D>(&instance);
+                handle.add_instance(&instance);
             }
             zwp_text_input_manager_v3::Request::Destroy => {
                 // Nothing to do

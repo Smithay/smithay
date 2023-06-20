@@ -187,8 +187,9 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
 ///
 /// It is stored inside of WlSurface,
 /// and can be accessed using [`ResizeSurfaceState::with`]
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 enum ResizeSurfaceState {
+    #[default]
     Idle,
     Resizing {
         edges: ResizeEdge,
@@ -201,12 +202,6 @@ enum ResizeSurfaceState {
         /// The initial window size and location.
         initial_rect: Rectangle<i32, Logical>,
     },
-}
-
-impl Default for ResizeSurfaceState {
-    fn default() -> Self {
-        ResizeSurfaceState::Idle
-    }
 }
 
 impl ResizeSurfaceState {
