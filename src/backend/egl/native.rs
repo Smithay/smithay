@@ -251,7 +251,10 @@ pub unsafe trait EGLNativeSurface: Send {
     /// Must be able to deal with re-creation of existing resources,
     /// if `needs_recreation` can return `true`.
     ///
-    fn create(
+    /// # Safety
+    ///
+    /// - `config_id` has to represent a valid config
+    unsafe fn create(
         &self,
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
@@ -335,7 +338,7 @@ pub struct XlibWindow(pub std::os::raw::c_ulong);
 
 #[cfg(feature = "backend_winit")]
 unsafe impl EGLNativeSurface for XlibWindow {
-    fn create(
+    unsafe fn create(
         &self,
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
@@ -358,7 +361,7 @@ unsafe impl EGLNativeSurface for XlibWindow {
 
 #[cfg(feature = "backend_winit")]
 unsafe impl EGLNativeSurface for wegl::WlEglSurface {
-    fn create(
+    unsafe fn create(
         &self,
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,

@@ -39,9 +39,9 @@ impl<R> RenderElement<R> for HolepunchRenderElement
 where
     R: Renderer,
 {
-    fn draw<'frame>(
+    fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'frame>,
+        frame: &mut <R as Renderer>::Frame<'_>,
         _src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -147,9 +147,9 @@ where
     E: Element,
     R: Renderer,
 {
-    fn draw<'draw>(
+    fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'draw>,
+        _frame: &mut <R as Renderer>::Frame<'_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],

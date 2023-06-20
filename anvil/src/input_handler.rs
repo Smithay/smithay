@@ -567,7 +567,7 @@ impl AnvilState<UdevData> {
                         let new_scale = scale + 0.25;
                         output.change_current_state(None, None, Some(Scale::Fractional(new_scale)), None);
 
-                        let rescale = scale as f64 / new_scale as f64;
+                        let rescale = scale / new_scale;
                         let output_location = output_location.to_f64();
                         let mut pointer_output_location = self.pointer_location - output_location;
                         pointer_output_location.x *= rescale;
@@ -606,7 +606,7 @@ impl AnvilState<UdevData> {
                         let new_scale = f64::max(1.0, scale - 0.25);
                         output.change_current_state(None, None, Some(Scale::Fractional(new_scale)), None);
 
-                        let rescale = scale as f64 / new_scale as f64;
+                        let rescale = scale / new_scale;
                         let output_location = output_location.to_f64();
                         let mut pointer_output_location = self.pointer_location - output_location;
                         pointer_output_location.x *= rescale;

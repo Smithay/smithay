@@ -221,12 +221,7 @@ impl GlesTarget {
 
     fn make_current(&self, gl: &ffi::Gles2, egl: &EGLContext) -> Result<(), MakeCurrentError> {
         unsafe {
-            if let &GlesTarget::Surface {
-                ref surface,
-                ref shadow,
-                ..
-            } = self
-            {
+            if let GlesTarget::Surface { surface, shadow, .. } = self {
                 egl.make_current_with_surface(surface)?;
                 if let Some(shadow) = shadow.as_ref() {
                     gl.BindFramebuffer(ffi::FRAMEBUFFER, shadow.fbo);
@@ -275,7 +270,7 @@ impl GlesTarget {
         stencil: Option<(ffi::types::GLuint, ffi::types::GLuint)>,
     ) -> Result<(), GlesError> {
         unsafe {
-            if let &GlesTarget::Surface { ref surface, .. } = self {
+            if let GlesTarget::Surface { surface, .. } = self {
                 egl.make_current_with_surface(surface)?;
                 let size = surface.get_size().ok_or(GlesError::UnexpectedSize)?;
 
@@ -622,7 +617,7 @@ impl GlesRenderer {
         gl.BindBuffer(ffi::ARRAY_BUFFER, vbos[0]);
         gl.BufferData(
             ffi::ARRAY_BUFFER,
-            (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
+            std::mem::size_of_val(vertices) as isize,
             vertices.as_ptr() as *const _,
             ffi::STATIC_DRAW,
         );
@@ -755,10 +750,10 @@ impl ImportMemWl for GlesRenderer {
         with_buffer_contents(buffer, |ptr, len, data| {
             self.make_current()?;
 
-            let offset = data.offset as i32;
-            let width = data.width as i32;
-            let height = data.height as i32;
-            let stride = data.stride as i32;
+            let offset = data.offset;
+            let width = data.width;
+            let height = data.height;
+            let stride = data.stride;
             let fourcc =
                 shm_format_to_fourcc(data.format).ok_or(GlesError::UnsupportedWlPixelFormat(data.format))?;
 
@@ -967,7 +962,7 @@ impl ImportMem for GlesRenderer {
                     size.h,
                     0,
                     format,
-                    layout as u32,
+                    layout,
                     data.as_ptr() as *const _,
                 );
                 self.gl.BindTexture(ffi::TEXTURE_2D, 0);
@@ -1029,8 +1024,8 @@ impl ImportMem for GlesRenderer {
                 region.loc.y,
                 region.size.w,
                 region.size.h,
-                read_format as u32,
-                type_ as u32,
+                read_format,
+                type_,
                 data.as_ptr() as *const _,
             );
             self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, 0);
@@ -1797,16 +1792,13 @@ impl GlesRenderer {
         }
 
         match (src_target, dst_target) {
-            (
-                &GlesTarget::Surface { surface: ref src, .. },
-                &GlesTarget::Surface { surface: ref dst, .. },
-            ) => unsafe {
+            (GlesTarget::Surface { surface: src, .. }, GlesTarget::Surface { surface: dst, .. }) => unsafe {
                 self.egl.make_current_with_draw_and_read_surface(dst, src)?;
             },
-            (&GlesTarget::Surface { surface: ref src, .. }, _) => unsafe {
+            (GlesTarget::Surface { surface: src, .. }, _) => unsafe {
                 self.egl.make_current_with_surface(src)?;
             },
-            (_, &GlesTarget::Surface { surface: ref dst, .. }) => unsafe {
+            (_, GlesTarget::Surface { surface: dst, .. }) => unsafe {
                 self.egl.make_current_with_surface(dst)?;
             },
             (_, _) => unsafe {

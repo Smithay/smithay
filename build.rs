@@ -6,7 +6,7 @@ fn gl_generate() {
     let dest = PathBuf::from(&env::var("OUT_DIR").unwrap());
 
     if env::var_os("CARGO_FEATURE_BACKEND_EGL").is_some() {
-        let mut file = File::create(&dest.join("egl_bindings.rs")).unwrap();
+        let mut file = File::create(dest.join("egl_bindings.rs")).unwrap();
         Registry::new(
             Api::Egl,
             (1, 5),
@@ -50,7 +50,7 @@ fn gl_generate() {
     }
 
     if env::var_os("CARGO_FEATURE_RENDERER_GL").is_some() {
-        let mut file = File::create(&dest.join("gl_bindings.rs")).unwrap();
+        let mut file = File::create(dest.join("gl_bindings.rs")).unwrap();
         Registry::new(
             Api::Gles2,
             (3, 2),

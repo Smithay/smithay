@@ -143,9 +143,9 @@ impl<R> RenderElement<R> for ImportMemRenderElement
 where
     R: Renderer + ImportMem,
 {
-    fn draw<'a>(
+    fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'a>,
+        _frame: &mut <R as Renderer>::Frame<'_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
@@ -180,9 +180,9 @@ impl<R> RenderElement<R> for Empty
 where
     R: Renderer,
 {
-    fn draw<'a>(
+    fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'a>,
+        _frame: &mut <R as Renderer>::Frame<'_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
@@ -226,9 +226,9 @@ impl<R> RenderElement<R> for TestRenderElement2<R>
 where
     R: Renderer,
 {
-    fn draw<'a>(
+    fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'a>,
+        _frame: &mut <R as Renderer>::Frame<'_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],
@@ -271,9 +271,9 @@ impl<'a, R> RenderElement<R> for TestRenderElement<'a, R>
 where
     R: Renderer,
 {
-    fn draw<'b>(
+    fn draw(
         &self,
-        _frame: &mut <R as Renderer>::Frame<'b>,
+        _frame: &mut <R as Renderer>::Frame<'_>,
         _src: Rectangle<f64, Buffer>,
         _dst: Rectangle<i32, Physical>,
         _damage: &[Rectangle<i32, Physical>],

@@ -42,7 +42,7 @@ pub struct InputMethodHandle {
 }
 
 impl InputMethodHandle {
-    pub(super) fn add_instance<D>(&self, instance: &ZwpInputMethodV2) {
+    pub(super) fn add_instance(&self, instance: &ZwpInputMethodV2) {
         let mut inner = self.inner.lock().unwrap();
         if inner.instance.is_some() {
             instance.unavailable()

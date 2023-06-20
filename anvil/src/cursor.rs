@@ -86,7 +86,7 @@ enum Error {
 
 fn load_icon(theme: &CursorTheme) -> Result<Vec<Image>, Error> {
     let icon_path = theme.load_icon("default").ok_or(Error::NoDefaultCursor)?;
-    let mut cursor_file = std::fs::File::open(&icon_path)?;
+    let mut cursor_file = std::fs::File::open(icon_path)?;
     let mut cursor_data = Vec::new();
     cursor_file.read_to_end(&mut cursor_data)?;
     parse_xcursor(&cursor_data).ok_or(Error::Parse)

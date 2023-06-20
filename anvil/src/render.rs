@@ -140,9 +140,9 @@ where
         })
 }
 
-pub fn output_elements<'a, R>(
+pub fn output_elements<R>(
     output: &Output,
-    space: &'a Space<WindowElement>,
+    space: &Space<WindowElement>,
     custom_elements: impl IntoIterator<Item = CustomRenderElements<R>>,
     renderer: &mut R,
     show_window_preview: bool,
@@ -194,9 +194,9 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn render_output<'a, R>(
+pub fn render_output<R>(
     output: &Output,
-    space: &'a Space<WindowElement>,
+    space: &Space<WindowElement>,
     custom_elements: impl IntoIterator<Item = CustomRenderElements<R>>,
     renderer: &mut R,
     damage_tracker: &mut OutputDamageTracker,

@@ -137,9 +137,10 @@ pub struct ResizeData {
 }
 
 /// State of the resize operation.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub enum ResizeState {
     /// The surface is not being resized.
+    #[default]
     NotResizing,
     /// The surface is currently being resized.
     Resizing(ResizeData),
@@ -147,12 +148,6 @@ pub enum ResizeState {
     WaitingForFinalAck(ResizeData, Serial),
     /// The resize has finished, and the surface needs to commit its final state.
     WaitingForCommit(ResizeData),
-}
-
-impl Default for ResizeState {
-    fn default() -> Self {
-        ResizeState::NotResizing
-    }
 }
 
 pub struct ResizeSurfaceGrab<B: Backend + 'static> {

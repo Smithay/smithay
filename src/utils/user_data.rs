@@ -72,7 +72,7 @@ impl UserData {
     ///   is attempted from an other thread than the one it was created on
     pub fn get<T: 'static>(&self) -> Option<&T> {
         match self.inner.get() {
-            Some(&UserDataInner::ThreadSafe(ref val)) => <dyn Any>::downcast_ref::<T>(&**val),
+            Some(UserDataInner::ThreadSafe(val)) => <dyn Any>::downcast_ref::<T>(&**val),
             Some(&UserDataInner::NonThreadSafe(ref val, threadid)) => {
                 // only give access if we are on the right thread
                 if threadid == current_thread_id() {
