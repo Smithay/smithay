@@ -720,12 +720,15 @@ pub fn buffer_type(buffer: &wl_buffer::WlBuffer) -> Option<BufferType> {
 /// with a format that supports alpha.
 #[cfg(feature = "wayland_frontend")]
 pub fn buffer_has_alpha(buffer: &wl_buffer::WlBuffer) -> Option<bool> {
+    use super::allocator::format::has_alpha;
+    use crate::wayland::shm::shm_format_to_fourcc;
+
     if let Ok(dmabuf) = crate::wayland::dmabuf::get_dmabuf(buffer) {
         return Some(crate::backend::allocator::format::has_alpha(dmabuf.0.format));
     }
 
     if let Ok(has_alpha) = crate::wayland::shm::with_buffer_contents(buffer, |_, _, data| {
-        crate::wayland::shm::has_alpha(data.format)
+        shm_format_to_fourcc(data.format).map_or(false, has_alpha)
     }) {
         return Some(has_alpha);
     }
