@@ -2,7 +2,7 @@
 
 WLCS_SHA=34e4804574324fa9f09fe85c19037bcc1444c465
 
-if [ -f "./wlcs/wlcs" ]; then
+if [ -f "./wlcs/wlcs" ] && [ "$(cd wlcs; git rev-parse HEAD)" = "${WLCS_SHA}" ] ; then
     echo "Using cached WLCS."
 else
     echo "Compiling WLCS."
