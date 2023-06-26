@@ -222,6 +222,7 @@ impl GlesTarget {
         }
     }
 
+    #[profiling::function]
     fn make_current(&self, gl: &ffi::Gles2, egl: &EGLContext) -> Result<(), MakeCurrentError> {
         unsafe {
             if let GlesTarget::Surface { surface, shadow, .. } = self {
@@ -266,6 +267,7 @@ impl GlesTarget {
         }
     }
 
+    #[profiling::function]
     fn make_current_no_shadow(
         &self,
         gl: &ffi::Gles2,
@@ -763,6 +765,7 @@ impl GlesRenderer {
         Ok(renderer)
     }
 
+    #[profiling::function]
     pub(crate) fn make_current(&mut self) -> Result<(), MakeCurrentError> {
         if let Some(target) = self.target.as_ref() {
             target.make_current(&self.gl, &self.egl)?;
@@ -774,6 +777,7 @@ impl GlesRenderer {
         Ok(())
     }
 
+    #[profiling::function]
     fn cleanup(&mut self) {
         #[cfg(feature = "wayland_frontend")]
         self.dmabuf_cache.retain(|entry, _tex| entry.upgrade().is_some());
@@ -830,6 +834,7 @@ impl GlesRenderer {
 #[cfg(feature = "wayland_frontend")]
 impl ImportMemWl for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -1000,6 +1005,7 @@ const SUPPORTED_MEM_FORMATS_3: &[Fourcc] = &[
 
 impl ImportMem for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn import_memory(
         &mut self,
         data: &[u8],
@@ -1079,6 +1085,7 @@ impl ImportMem for GlesRenderer {
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn update_memory(
         &mut self,
         texture: &<Self as Renderer>::TextureId,
@@ -1164,6 +1171,7 @@ impl ImportEgl for GlesRenderer {
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn import_egl_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -1217,6 +1225,7 @@ impl ImportEgl for GlesRenderer {
 
 impl ImportDma for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn import_dmabuf(
         &mut self,
         buffer: &Dmabuf,
@@ -1272,6 +1281,7 @@ impl ImportDma for GlesRenderer {
 impl ImportDmaWl for GlesRenderer {}
 
 impl GlesRenderer {
+    #[profiling::function]
     fn existing_dmabuf_texture(&self, buffer: &Dmabuf) -> Result<Option<GlesTexture>, GlesError> {
         let existing_texture = self
             .dmabuf_cache
@@ -1294,6 +1304,7 @@ impl GlesRenderer {
         }
     }
 
+    #[profiling::function]
     fn import_egl_image(
         &self,
         image: EGLImage,
@@ -1324,6 +1335,7 @@ impl ExportMem for GlesRenderer {
     type TextureMapping = GlesMapping;
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, BufferCoord>,
@@ -1385,6 +1397,7 @@ impl ExportMem for GlesRenderer {
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn copy_texture(
         &mut self,
         texture: &Self::TextureId,
@@ -1448,6 +1461,7 @@ impl ExportMem for GlesRenderer {
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn map_texture<'a>(
         &mut self,
         texture_mapping: &'a Self::TextureMapping,
@@ -1481,6 +1495,7 @@ impl ExportMem for GlesRenderer {
 }
 
 impl GlesRenderer {
+    #[profiling::function]
     fn create_shadow_buffer(&self, size: Size<i32, BufferCoord>) -> Result<Option<ShadowBuffer>, GlesError> {
         trace!(?size, "Creating shadow framebuffer");
 
@@ -1562,6 +1577,7 @@ impl GlesRenderer {
 
 impl Bind<Rc<EGLSurface>> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), GlesError> {
         self.unbind()?;
         self.target = Some(GlesTarget::Surface {
@@ -1588,6 +1604,7 @@ impl Bind<Rc<EGLSurface>> for GlesRenderer {
 
 impl Bind<Dmabuf> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn bind(&mut self, dmabuf: Dmabuf) -> Result<(), GlesError> {
         self.unbind()?;
         self.make_current()?;
@@ -1663,6 +1680,7 @@ impl Bind<Dmabuf> for GlesRenderer {
 
 impl Bind<GlesTexture> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn bind(&mut self, texture: GlesTexture) -> Result<(), GlesError> {
         self.unbind()?;
         self.make_current()?;
@@ -1702,6 +1720,7 @@ impl Bind<GlesTexture> for GlesRenderer {
 
 impl Offscreen<GlesTexture> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn create_buffer(
         &mut self,
         format: Fourcc,
@@ -1744,6 +1763,7 @@ impl Offscreen<GlesTexture> for GlesRenderer {
 
 impl Bind<GlesRenderbuffer> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn bind(&mut self, renderbuffer: GlesRenderbuffer) -> Result<(), GlesError> {
         self.unbind()?;
         self.make_current()?;
@@ -1783,6 +1803,7 @@ impl Bind<GlesRenderbuffer> for GlesRenderer {
 
 impl Offscreen<GlesRenderbuffer> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn create_buffer(
         &mut self,
         format: Fourcc,
@@ -1829,6 +1850,7 @@ where
     Self: Bind<Target>,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self, to))]
+    #[profiling::function]
     fn blit_to(
         &mut self,
         to: Target,
@@ -1850,6 +1872,7 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self, from))]
+    #[profiling::function]
     fn blit_from(
         &mut self,
         from: Target,
@@ -1873,6 +1896,7 @@ where
 }
 
 impl GlesRenderer {
+    #[profiling::function]
     fn blit(
         &mut self,
         src_target: &GlesTarget,
@@ -1961,6 +1985,7 @@ impl GlesRenderer {
 }
 
 impl Unbind for GlesRenderer {
+    #[profiling::function]
     fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
         unsafe {
             self.egl.make_current()?;
@@ -2234,6 +2259,7 @@ impl Renderer for GlesRenderer {
         Ok(())
     }
 
+    #[profiling::function]
     fn render(
         &mut self,
         mut output_size: Size<i32, Physical>,
@@ -2313,6 +2339,7 @@ impl Renderer for GlesRenderer {
         self.debug_flags
     }
 
+    #[profiling::function]
     fn wait(&mut self, sync: &super::sync::SyncPoint) -> Result<(), Self::Error> {
         self.make_current()?;
 
@@ -2411,6 +2438,7 @@ impl<'frame> Frame for GlesFrame<'frame> {
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), GlesError> {
         if at.is_empty() {
             return Ok(());
@@ -2430,6 +2458,7 @@ impl<'frame> Frame for GlesFrame<'frame> {
     }
 
     #[instrument(level = "trace", skip(self), parent = &self.span)]
+    #[profiling::function]
     fn draw_solid(
         &mut self,
         dst: Rectangle<i32, Physical>,
@@ -2461,6 +2490,7 @@ impl<'frame> Frame for GlesFrame<'frame> {
     }
 
     #[instrument(level = "trace", skip(self), parent = &self.span)]
+    #[profiling::function]
     fn render_texture_from_to(
         &mut self,
         texture: &GlesTexture,
@@ -2477,16 +2507,19 @@ impl<'frame> Frame for GlesFrame<'frame> {
         self.transform
     }
 
+    #[profiling::function]
     fn finish(mut self) -> Result<SyncPoint, Self::Error> {
         self.finish_internal()
     }
 
+    #[profiling::function]
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
         self.renderer.wait(sync)
     }
 }
 
 impl<'frame> GlesFrame<'frame> {
+    #[profiling::function]
     fn finish_internal(&mut self) -> Result<SyncPoint, GlesError> {
         let _guard = self.span.enter();
 
@@ -2595,6 +2628,7 @@ impl<'frame> GlesFrame<'frame> {
 
     /// Draw a solid color to the current target at the specified destination with the specified color.
     #[instrument(skip(self), parent = &self.span)]
+    #[profiling::function]
     pub fn draw_solid(
         &mut self,
         dest: Rectangle<i32, Physical>,
@@ -2733,6 +2767,7 @@ impl<'frame> GlesFrame<'frame> {
     ///
     /// Optionally allows a custom texture program and matching additional uniforms to be passed in.
     #[instrument(level = "trace", skip(self), parent = &self.span)]
+    #[profiling::function]
     #[allow(clippy::too_many_arguments)]
     pub fn render_texture_from_to(
         &mut self,
@@ -2843,6 +2878,7 @@ impl<'frame> GlesFrame<'frame> {
     ///
     /// Optionally allows a custom texture program and matching additional uniforms to be passed in.
     #[instrument(level = "trace", skip(self), parent = &self.span)]
+    #[profiling::function]
     #[allow(clippy::too_many_arguments)]
     pub fn render_texture(
         &mut self,
@@ -3008,6 +3044,7 @@ impl<'frame> GlesFrame<'frame> {
     }
 
     /// Render a pixel shader into the current target at a given `dest`-region.
+    #[profiling::function]
     pub fn render_pixel_shader_to(
         &mut self,
         pixel_shader: &GlesPixelProgram,

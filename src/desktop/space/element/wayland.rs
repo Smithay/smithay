@@ -33,6 +33,7 @@ where
 {
     type RenderElement = WaylandSurfaceRenderElement<R>;
 
+    #[profiling::function]
     fn render_elements<C: From<WaylandSurfaceRenderElement<R>>>(
         &self,
         renderer: &mut R,

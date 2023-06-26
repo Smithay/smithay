@@ -227,6 +227,7 @@ use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
 
 /// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
 #[instrument(level = "trace", skip(renderer, location, scale))]
+#[profiling::function]
 pub fn render_elements_from_surface_tree<R, E>(
     renderer: &mut R,
     surface: &wl_surface::WlSurface,
@@ -314,6 +315,7 @@ impl<R> fmt::Debug for WaylandSurfaceRenderElement<R> {
 
 impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
     /// Create a render element from a surface
+    #[profiling::function]
     pub fn from_surface(
         renderer: &mut R,
         surface: &wl_surface::WlSurface,
@@ -496,6 +498,7 @@ where
     }
 
     #[instrument(level = "trace", skip(frame))]
+    #[profiling::function]
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,

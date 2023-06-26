@@ -69,6 +69,7 @@ impl X11Surface {
     /// This function will return the same buffer until [`submit`](Self::submit) is called
     /// or [`reset_buffers`](Self::reset_buffers) is used to reset the buffers.
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     pub fn buffer(&mut self) -> Result<(Dmabuf, u8), AllocateBuffersError> {
         if let Some(new_size) = self.resize.try_iter().last() {
             self.resize(new_size);
@@ -90,6 +91,7 @@ impl X11Surface {
 
     /// Consume and submit the buffer to the window.
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     pub fn submit(&mut self) -> Result<(), X11Error> {
         if let Some(connection) = self.connection.upgrade() {
             // Get a new buffer

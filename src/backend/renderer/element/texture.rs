@@ -874,6 +874,7 @@ where
     T: Texture,
 {
     #[instrument(level = "trace", skip(self, frame))]
+    #[profiling::function]
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,

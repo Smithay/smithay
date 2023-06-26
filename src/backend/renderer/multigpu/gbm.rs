@@ -222,6 +222,7 @@ where
         self.render.renderer().egl_reader()
     }
 
+    #[profiling::function]
     fn import_egl_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -272,6 +273,7 @@ where
         + ExportMem
         + 'static,
 {
+    #[profiling::function]
     fn try_import_egl(
         renderer: &mut R,
         buffer: &wl_buffer::WlBuffer,

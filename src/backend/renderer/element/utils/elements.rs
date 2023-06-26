@@ -433,6 +433,7 @@ bitflags::bitflags! {
 /// Convenience function to constrain something that implements [`AsRenderElements`]
 ///
 /// See [`constrain_render_elements`] for more information
+#[profiling::function]
 #[allow(clippy::too_many_arguments)]
 pub fn constrain_as_render_elements<R, E, C>(
     element: &E,
@@ -479,6 +480,7 @@ where
 /// * `behavior` - Defines the behavior for scaling the elements reference in the constrain
 /// * `align` - Defines how the scaled elements should be aligned within the constrain
 /// * `scale` - The scale that was used to create the original elements
+#[profiling::function]
 pub fn constrain_render_elements<E>(
     elements: impl IntoIterator<Item = E>,
     origin: impl Into<Point<i32, Physical>>,

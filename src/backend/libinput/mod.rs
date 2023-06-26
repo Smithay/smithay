@@ -631,6 +631,7 @@ impl EventSource for LibinputInputBackend {
     type Ret = ();
     type Error = io::Error;
 
+    #[profiling::function]
     fn process_events<F>(&mut self, _: Readiness, token: Token, mut callback: F) -> io::Result<PostAction>
     where
         F: FnMut(Self::Event, &mut ()) -> Self::Ret,

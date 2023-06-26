@@ -158,6 +158,7 @@ where
     /// The swapchain has an internal maximum of four re-usable buffers.
     /// This function returns the first free one.
     #[instrument(level = "trace", skip_all, err)]
+    #[profiling::function]
     pub fn acquire(&mut self) -> Result<Option<Slot<A::Buffer>>, A::Error> {
         if let Some(free_slot) = self
             .slots

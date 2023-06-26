@@ -554,6 +554,7 @@ impl SurfaceComposition {
         }
     }
 
+    #[profiling::function]
     fn queue_frame(
         &mut self,
         sync: Option<SyncPoint>,
@@ -570,6 +571,7 @@ impl SurfaceComposition {
         }
     }
 
+    #[profiling::function]
     fn render_frame<R, E, Target>(
         &mut self,
         renderer: &mut R,
@@ -1249,6 +1251,10 @@ impl AnvilState<UdevData> {
     }
 
     fn render_surface(&mut self, node: DrmNode, crtc: crtc::Handle) {
+        profiling::scope!(
+            "render_surface",
+            &format!("{:?}:{crtc:?}", node.dev_path().unwrap())
+        );
         let device = if let Some(device) = self.backend_data.backends.get_mut(&node) {
             device
         } else {
@@ -1387,6 +1393,8 @@ impl AnvilState<UdevData> {
             let elapsed = start.elapsed();
             tracing::trace!(?elapsed, "rendered surface");
         }
+
+        profiling::finish_frame!();
     }
 
     fn schedule_initial_render(
@@ -1430,6 +1438,7 @@ impl AnvilState<UdevData> {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[profiling::function]
 fn render_surface<'a, 'b>(
     surface: &'a mut SurfaceData,
     renderer: &mut UdevRenderer<'a, 'b>,

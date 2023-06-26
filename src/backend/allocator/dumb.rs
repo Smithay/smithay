@@ -34,6 +34,7 @@ impl Allocator for DrmDevice {
     type Error = drm::SystemError;
 
     #[instrument(level = "trace", err)]
+    #[profiling::function]
     fn create_buffer(
         &mut self,
         width: u32,
@@ -92,6 +93,8 @@ impl DumbBuffer {
 
 impl AsDmabuf for DumbBuffer {
     type Error = drm::SystemError;
+
+    #[profiling::function]
     fn export(&self) -> Result<Dmabuf, Self::Error> {
         let fd = unsafe { OwnedFd::from_raw_fd(self.fd.buffer_to_prime_fd(self.handle.handle(), 0)?) };
         let mut builder = Dmabuf::builder(self.size(), self.format.code, DmabufFlags::empty());

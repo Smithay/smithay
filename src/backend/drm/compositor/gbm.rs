@@ -14,6 +14,7 @@ impl<A: AsFd + 'static, T> ExportFramebuffer<BufferObject<T>> for gbm::Device<A>
     type Framebuffer = GbmFramebuffer;
     type Error = Error;
 
+    #[profiling::function]
     fn add_framebuffer(
         &self,
         drm: &DrmDeviceFd,

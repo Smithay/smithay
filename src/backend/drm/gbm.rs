@@ -54,6 +54,7 @@ impl AsRef<framebuffer::Handle> for GbmFramebuffer {
 /// Returns `Ok(None)` for unknown buffer types and buffer types that do not
 /// support attaching a framebuffer (e.g. shm-buffers)
 #[cfg(feature = "wayland_frontend")]
+#[profiling::function]
 pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
     drm: &DrmDeviceFd,
     gbm: &gbm::Device<A>,
@@ -123,6 +124,7 @@ pub enum Error {
 ///
 /// This tries to import the [`Dmabuf`] using gbm and attach
 /// a [`framebuffer::Handle`] for the imported [`BufferObject`]
+#[profiling::function]
 pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
     drm: &DrmDeviceFd,
     gbm: &gbm::Device<A>,
@@ -198,6 +200,7 @@ impl TryFrom<super::DrmError> for AccessError {
 }
 
 /// Attach a [`framebuffer::Handle`] to an [`BufferObject`]
+#[profiling::function]
 pub fn framebuffer_from_bo<T>(
     drm: &DrmDeviceFd,
     bo: &BufferObject<T>,
@@ -282,6 +285,7 @@ where
     }
 }
 
+#[profiling::function]
 fn framebuffer_from_bo_internal<D, T>(
     drm: &D,
     bo: BufferObjectInternal<'_, T>,

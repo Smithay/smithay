@@ -245,6 +245,7 @@ where
     /// *Note*: This function can be called multiple times and
     /// will return the same buffer until it is queued (see [`GbmBufferedSurface::queue_buffer`]).
     #[instrument(level = "trace", skip_all, parent = &self.span, err)]
+    #[profiling::function]
     pub fn next_buffer(&mut self) -> Result<(Dmabuf, u8), Error<A::Error>> {
         if self.next_fb.is_none() {
             let slot = self
@@ -277,6 +278,7 @@ where
     /// Otherwise the underlying swapchain will eventually run out of buffers.
     ///
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`GbmBufferedSurface::frame_submitted`]
+    #[profiling::function]
     pub fn queue_buffer(
         &mut self,
         sync: Option<SyncPoint>,
@@ -307,6 +309,7 @@ where
     ///
     /// Returns the user data that was stored with [`GbmBufferedSurface::queue_buffer`] if a buffer was pending, otherwise
     /// `None` is returned.
+    #[profiling::function]
     pub fn frame_submitted(&mut self) -> Result<Option<U>, Error<A::Error>> {
         if let Some((mut pending, user_data)) = self.pending_fb.take() {
             std::mem::swap(&mut pending, &mut self.current_fb);
@@ -319,6 +322,7 @@ where
         }
     }
 
+    #[profiling::function]
     fn submit(&mut self) -> Result<(), Error<A::Error>> {
         // yes it does not look like it, but both of these lines should be safe in all cases.
         let QueuedFb {

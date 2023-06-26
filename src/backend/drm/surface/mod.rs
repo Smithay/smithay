@@ -319,6 +319,7 @@ impl DrmSurface {
     ///
     /// *Note*: This will always return `Ok` for legacy devices if `allow_modeset = false`.
     /// The legacy drm api has no way to test a buffer without triggering a modeset.
+    #[profiling::function]
     pub fn test_state<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
@@ -351,6 +352,7 @@ impl DrmSurface {
     /// but will trigger a `vblank` event once done.
     /// Make sure to have the device registered in your event loop prior to invoking this, to not miss
     /// any generated event.
+    #[profiling::function]
     pub fn commit<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
@@ -372,6 +374,7 @@ impl DrmSurface {
     ///
     /// This operation is not blocking and will produce a `vblank` event once swapping is done.
     /// Make sure to have the device registered in your event loop to not miss the event.
+    #[profiling::function]
     pub fn page_flip<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,

@@ -206,6 +206,7 @@ impl EventSource for LibSeatSessionNotifier {
     type Ret = ();
     type Error = Error;
 
+    #[profiling::function]
     fn process_events<F>(
         &mut self,
         readiness: Readiness,

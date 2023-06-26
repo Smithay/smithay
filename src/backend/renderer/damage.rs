@@ -371,6 +371,7 @@ impl OutputDamageTracker {
     ///
     /// - `elements` for this output in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip(renderer, elements))]
+    #[profiling::function]
     pub fn render_output<E, R>(
         &mut self,
         renderer: &mut R,
@@ -509,6 +510,7 @@ impl OutputDamageTracker {
     ///
     /// - `elements` for this output in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip(elements))]
+    #[profiling::function]
     pub fn damage_output<E>(
         &mut self,
         age: usize,
@@ -545,6 +547,7 @@ impl OutputDamageTracker {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[profiling::function]
     fn damage_output_internal<'a, E>(
         &mut self,
         age: usize,

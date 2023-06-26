@@ -128,6 +128,7 @@ impl EventSource for UdevBackend {
     type Ret = ();
     type Error = io::Error;
 
+    #[profiling::function]
     fn process_events<F>(
         &mut self,
         _: Readiness,

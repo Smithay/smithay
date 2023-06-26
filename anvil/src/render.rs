@@ -140,6 +140,7 @@ where
         })
 }
 
+#[profiling::function]
 pub fn output_elements<R>(
     output: &Output,
     space: &Space<WindowElement>,

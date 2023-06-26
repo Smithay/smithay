@@ -290,6 +290,7 @@ impl VulkanAllocator {
     /// - The size of the buffer is too large for the `usage`, `fourcc` format or `modifiers`.
     /// - The `fourcc` format and `modifiers` do not support the specified usage.
     #[instrument(level = "trace", err)]
+    #[profiling::function]
     pub fn create_buffer_with_usage(
         &mut self,
         width: u32,
@@ -415,6 +416,7 @@ impl Buffer for VulkanImage {
 impl AsDmabuf for VulkanImage {
     type Error = ExportError;
 
+    #[profiling::function]
     fn export(&self) -> Result<Dmabuf, Self::Error> {
         let device = self.device.upgrade().ok_or(ExportError::AllocatorDestroyed)?;
 

@@ -62,6 +62,7 @@ impl SyncPoint {
     /// Blocks the current thread until the sync point is signaled
     ///
     /// If the sync point does not contain a fence this will never block.
+    #[profiling::function]
     pub fn wait(&self) {
         if let Some(fence) = self.fence.as_ref() {
             fence.wait();
@@ -78,6 +79,7 @@ impl SyncPoint {
     /// Export this [`SyncPoint`] as a native fence fd
     ///
     /// Will always return `None` in case the sync point does not contain a fence
+    #[profiling::function]
     pub fn export(&self) -> Option<OwnedFd> {
         self.fence.as_ref().and_then(|f| f.export())
     }

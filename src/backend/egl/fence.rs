@@ -35,6 +35,7 @@ impl EGLFence {
     }
 
     /// Import a native fence fd
+    #[profiling::function]
     pub fn import(display: &EGLDisplay, native: OwnedFd) -> Result<Self, Error> {
         // SAFETY: we do not have to test for EGL_KHR_fence_sync as EGL_ANDROID_native_fence_sync
         // requires it already
@@ -84,6 +85,7 @@ impl EGLFence {
     ///
     /// Note: It is the callers responsibility to make sure the current bound client API supports
     /// fences. For OpenglES the `GL_OES_EGL_sync` extension indicates support for fences.
+    #[profiling::function]
     pub fn create(display: &EGLDisplay) -> Result<Self, Error> {
         if !display.has_fences {
             return Err(Error::EglExtensionNotSupported(&["EGL_KHR_fence_sync"]));
@@ -113,6 +115,7 @@ impl EGLFence {
     }
 
     /// Export this [`EGLFence`] as a native fence fd
+    #[profiling::function]
     pub fn export(&self) -> Result<OwnedFd, Error> {
         if !self.0.native {
             return Err(Error::EglExtensionNotSupported(&[
@@ -133,6 +136,7 @@ impl EGLFence {
     ///
     /// Returns `Err` if the supplied display does not match the display
     /// used at creation time of the fence.
+    #[profiling::function]
     pub fn wait(&self, display: &EGLDisplay) -> Result<(), Error> {
         if **display.get_display_handle() != **self.0.display_handle {
             return Err(Error::DisplayNotSupported);
@@ -147,6 +151,7 @@ impl EGLFence {
     /// timeout is reached.
     ///
     /// If the timeout is reached `false` is returned
+    #[profiling::function]
     pub fn client_wait(&self, timeout: Option<Duration>, flush: bool) -> bool {
         let timeout = timeout
             .map(|t| t.as_nanos() as ffi::egl::types::EGLuint64KHR)

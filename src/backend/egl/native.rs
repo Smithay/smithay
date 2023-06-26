@@ -287,6 +287,7 @@ pub unsafe trait EGLNativeSurface: Send {
     /// [EGLSurface::swap_buffers](crate::backend::egl::surface::EGLSurface::swap_buffers)
     ///
     /// Only implement if required by the backend.
+    #[profiling::function]
     fn swap_buffers(
         &self,
         display: &Arc<EGLDisplayHandle>,
