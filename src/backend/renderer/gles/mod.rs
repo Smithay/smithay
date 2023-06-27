@@ -369,6 +369,8 @@ pub enum Capability {
     ColorTransformations,
     /// GlesRenderer supports fencing,
     Fencing,
+    /// GlesRenderer supports GL debug
+    Debug,
 }
 
 /// A renderer utilizing OpenGL ES
@@ -488,7 +490,92 @@ extern "system" fn gl_debug_log(
 }
 
 impl GlesRenderer {
-    /// Creates a new OpenGL ES renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
+    /// Get the supported [`Capabilities`](Capability) of the renderer
+    ///
+    /// # Safety
+    ///
+    /// This operation will cause undefined behavior if the given EGLContext is active in another thread.
+    pub unsafe fn supported_capabilities(context: &EGLContext) -> Result<Vec<Capability>, GlesError> {
+        context.make_current()?;
+
+        let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
+        let ext_ptr = gl.GetString(ffi::EXTENSIONS) as *const c_char;
+        if ext_ptr.is_null() {
+            return Err(GlesError::GLFunctionLoaderError);
+        }
+
+        let exts = {
+            let p = CStr::from_ptr(ext_ptr);
+            let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
+            list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
+        };
+
+        let gl_version = version::GlVersion::try_from(&gl).unwrap_or_else(|_| {
+            warn!("Failed to detect GLES version, defaulting to 2.0");
+            version::GLES_2_0
+        });
+
+        let mut capabilities = Vec::new();
+        // required for more optimized rendering, otherwise we render in batches
+        if gl_version >= version::GLES_3_0
+            || (exts.iter().any(|ext| ext == "GL_EXT_instanced_arrays")
+                && exts.iter().any(|ext| ext == "GL_EXT_draw_instanced"))
+        {
+            capabilities.push(Capability::Instancing);
+            debug!("Instancing is supported");
+        }
+        // required to use 8-bit color formats in renderbuffers, we don't deal with anything lower as a render target
+        if gl_version >= version::GLES_3_0 || exts.iter().any(|ext| ext == "GL_OES_rgb8_rgba8") {
+            capabilities.push(Capability::Renderbuffer);
+            debug!("Rgba8 Renderbuffers are supported");
+        }
+        // required for blit operations
+        if gl_version >= version::GLES_3_0 {
+            capabilities.push(Capability::Blit);
+            debug!("Blitting is supported");
+            // required to bind the 16F-buffer we want to use for blending.
+            //
+            // Note: We could technically also have a 16F shadow buffer on 2.0 with GL_OES_texture_half_float.
+            // The problem is, that the main output format we are interested in for this `ABGR2101010` is not renderable on 2.0,
+            // and as far as I know there is no extension to change that. So we could pradoxically not copy the shadow buffer
+            // to our output buffer, *except* if we scanout 16F directly...
+            //
+            // So lets not go down that route and attempt to support color-transformations and HDR stuff with ES 2.0.
+            if exts.iter().any(|ext| ext == "GL_EXT_color_buffer_half_float") {
+                capabilities.push(Capability::ColorTransformations);
+                debug!("Color Transformations are supported");
+            }
+        }
+
+        if exts.iter().any(|ext| ext == "GL_OES_EGL_sync") {
+            debug!("Fencing is supported");
+            capabilities.push(Capability::Fencing);
+        }
+
+        if exts.iter().any(|ext| ext == "GL_KHR_debug") {
+            capabilities.push(Capability::Debug);
+            debug!("GL Debug is supported");
+        }
+
+        Ok(capabilities)
+    }
+
+    /// Creates a new OpenGL ES renderer from a given [`EGLContext`](crate::backend::egl::EGLContext)
+    /// with all [`supported capabilities`](Self::supported_capabilities).
+    ///
+    /// # Safety
+    ///
+    /// This operation will cause undefined behavior if the given EGLContext is active in another thread.
+    ///
+    /// See: [`with_capabilities`](Self::with_capabilities) for more information
+    pub unsafe fn new(context: EGLContext) -> Result<GlesRenderer, GlesError> {
+        let supported_capabilities = Self::supported_capabilities(&context)?;
+        Self::with_capabilities(context, supported_capabilities)
+    }
+
+    /// Creates a new OpenGL ES renderer from a given [`EGLContext`](crate::backend::egl::EGLContext)
+    /// with the specified [`Capabilities`](Capability). If a requested [`Capability`] is not supported an
+    /// error will be returned.
     ///
     /// # Safety
     ///
@@ -506,11 +593,46 @@ impl GlesRenderer {
     /// - The renderer might use two-pass rendering internally to facilitate color space transformations.
     ///   As such it reserves any stencil buffer for internal use and makes no guarantee about previous framebuffer
     ///   contents being accessible during the lifetime of a `GlesFrame`.
-    pub unsafe fn new(context: EGLContext) -> Result<GlesRenderer, GlesError> {
+    pub unsafe fn with_capabilities(
+        context: EGLContext,
+        capabilities: impl IntoIterator<Item = Capability>,
+    ) -> Result<GlesRenderer, GlesError> {
         let span = info_span!(parent: &context.span, "renderer_gles2");
         let _guard = span.enter();
 
         context.make_current()?;
+
+        let supported_capabilities = Self::supported_capabilities(&context)?;
+        let mut requested_capabilities = capabilities.into_iter().collect::<Vec<_>>();
+
+        // Color transform requires blit
+        if requested_capabilities.contains(&Capability::ColorTransformations)
+            && !requested_capabilities.contains(&Capability::Blit)
+        {
+            requested_capabilities.push(Capability::Blit);
+        }
+
+        let unsupported_capabilities = requested_capabilities
+            .iter()
+            .copied()
+            .filter(|c| !supported_capabilities.contains(c))
+            .collect::<Vec<_>>();
+
+        if let Some(missing_capability) = unsupported_capabilities.first() {
+            let err = match missing_capability {
+                Capability::Instancing => {
+                    GlesError::GLExtensionNotSupported(&["GL_EXT_instanced_arrays", "GL_EXT_draw_instanced"])
+                }
+                Capability::Blit => GlesError::GLVersionNotSupported(version::GLES_3_0),
+                Capability::Renderbuffer => GlesError::GLExtensionNotSupported(&["GL_OES_rgb8_rgba8"]),
+                Capability::ColorTransformations => {
+                    GlesError::GLExtensionNotSupported(&["GL_EXT_color_buffer_half_float"])
+                }
+                Capability::Fencing => GlesError::GLExtensionNotSupported(&["GL_OES_EGL_sync"]),
+                Capability::Debug => GlesError::GLExtensionNotSupported(&["GL_KHR_debug"]),
+            };
+            return Err(err);
+        };
 
         let (gl, gl_version, exts, capabilities, gl_debug_span) = {
             let gl = ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _);
@@ -557,43 +679,7 @@ impl GlesRenderer {
                 return Err(GlesError::GLExtensionNotSupported(&["GL_EXT_unpack_subimage"]));
             }
 
-            let mut capabilities = Vec::new();
-            // required for more optimized rendering, otherwise we render in batches
-            if gl_version >= version::GLES_3_0
-                || (exts.iter().any(|ext| ext == "GL_EXT_instanced_arrays")
-                    && exts.iter().any(|ext| ext == "GL_EXT_draw_instanced"))
-            {
-                capabilities.push(Capability::Instancing);
-                debug!("Instancing is supported");
-            }
-            // required to use 8-bit color formats in renderbuffers, we don't deal with anything lower as a render target
-            if gl_version >= version::GLES_3_0 || exts.iter().any(|ext| ext == "GL_OES_rgb8_rgba8") {
-                capabilities.push(Capability::Renderbuffer);
-                debug!("Rgba8 Renderbuffers are supported");
-            }
-            // required for blit operations
-            if gl_version >= version::GLES_3_0 {
-                capabilities.push(Capability::Blit);
-                debug!("Blitting is supported");
-                // required to bind the 16F-buffer we want to use for blending.
-                //
-                // Note: We could technically also have a 16F shadow buffer on 2.0 with GL_OES_texture_half_float.
-                // The problem is, that the main output format we are interested in for this `ABGR2101010` is not renderable on 2.0,
-                // and as far as I know there is no extension to change that. So we could pradoxically not copy the shadow buffer
-                // to our output buffer, *except* if we scanout 16F directly...
-                //
-                // So lets not go down that route and attempt to support color-transformations and HDR stuff with ES 2.0.
-                if exts.iter().any(|ext| ext == "GL_EXT_color_buffer_half_float") {
-                    capabilities.push(Capability::ColorTransformations);
-                    debug!("Color Transformations are supported");
-                }
-            }
-            if exts.iter().any(|ext| ext == "GL_OES_EGL_sync") {
-                debug!("Fencing is supported");
-                capabilities.push(Capability::Fencing);
-            }
-
-            let gl_debug_span = if exts.iter().any(|ext| ext == "GL_KHR_debug") {
+            let gl_debug_span = if requested_capabilities.contains(&Capability::Debug) {
                 gl.Enable(ffi::DEBUG_OUTPUT);
                 gl.Enable(ffi::DEBUG_OUTPUT_SYNCHRONOUS);
                 let span = Box::into_raw(Box::new(span.clone()));
@@ -603,7 +689,7 @@ impl GlesRenderer {
                 None
             };
 
-            (gl, gl_version, exts, capabilities, gl_debug_span)
+            (gl, gl_version, exts, requested_capabilities, gl_debug_span)
         };
 
         let (tx, rx) = channel();

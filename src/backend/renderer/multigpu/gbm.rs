@@ -55,23 +55,45 @@ impl From<Error> for SwapBuffersError {
     }
 }
 
+type Factory = Box<dyn Fn(&EGLDisplay) -> Result<GlesRenderer, Error>>;
+
 /// A [`GraphicsApi`] utilizing user-provided GBM Devices and OpenGL ES for rendering.
-#[derive(Debug)]
 pub struct GbmGlesBackend<R> {
     devices: HashMap<DrmNode, EGLDisplay>,
+    factory: Option<Factory>,
     _renderer: std::marker::PhantomData<R>,
+}
+
+impl<R> std::fmt::Debug for GbmGlesBackend<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GbmGlesBackend")
+            .field("devices", &self.devices)
+            .finish()
+    }
 }
 
 impl<R> Default for GbmGlesBackend<R> {
     fn default() -> Self {
         GbmGlesBackend {
             devices: HashMap::new(),
+            factory: None,
             _renderer: std::marker::PhantomData,
         }
     }
 }
 
 impl<R> GbmGlesBackend<R> {
+    /// Initialize a new [`GbmGlesBackend`] with a factory for instantiating [`GlesRenderer`]s
+    pub fn with_factory<F>(factory: F) -> Self
+    where
+        F: Fn(&EGLDisplay) -> Result<GlesRenderer, Error> + 'static,
+    {
+        Self {
+            factory: Some(Box::new(factory)),
+            ..Default::default()
+        }
+    }
+
     /// Add a new GBM device for a given node to the api
     pub fn add_node<T: AsFd + Send + 'static>(
         &mut self,
@@ -110,8 +132,12 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for GbmGle
                     .any(|renderer| renderer.node.dev_id() == node.dev_id())
             })
             .map(|(node, display)| {
-                let context = EGLContext::new(display).map_err(Error::Egl)?;
-                let renderer = unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into();
+                let renderer = if let Some(factory) = self.factory.as_ref() {
+                    factory(display)?.into()
+                } else {
+                    let context = EGLContext::new(display).map_err(Error::Egl)?;
+                    unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into()
+                };
 
                 Ok(GbmGlesDevice {
                     node: *node,
