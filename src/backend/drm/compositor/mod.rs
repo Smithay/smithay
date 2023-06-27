@@ -123,7 +123,7 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    os::unix::io::AsFd,
+    os::unix::io::{AsFd, OwnedFd},
     rc::Rc,
     sync::{Arc, Mutex},
 };
@@ -143,7 +143,7 @@ use crate::{
             gbm::{GbmAllocator, GbmDevice},
             Allocator, Buffer, Slot, Swapchain,
         },
-        drm::{DrmError, PlaneDamageClips},
+        drm::{plane_has_property, DrmError, PlaneDamageClips},
         renderer::{
             buffer_y_inverted,
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker, OutputNoMode},
@@ -151,6 +151,7 @@ use crate::{
                 Element, Id, RenderElement, RenderElementPresentationState, RenderElementState,
                 RenderElementStates, RenderingReason, UnderlyingStorage,
             },
+            sync::SyncPoint,
             utils::{CommitCounter, DamageBag, DamageSnapshot},
             Bind, Blit, DebugFlags, ExportMem, Frame as RendererFrame, Offscreen, Renderer, Texture,
         },
@@ -331,6 +332,7 @@ struct PlaneConfig<B> {
     pub alpha: f32,
     pub buffer: Owned<B>,
     pub plane_claim: PlaneClaim,
+    pub sync: Option<(SyncPoint, Option<Arc<OwnedFd>>)>,
 }
 
 impl<B> Clone for PlaneConfig<B> {
@@ -343,6 +345,7 @@ impl<B> Clone for PlaneConfig<B> {
             alpha: self.alpha,
             buffer: self.buffer.clone(),
             plane_claim: self.plane_claim.clone(),
+            sync: self.sync.clone(),
         }
     }
 }
@@ -481,6 +484,7 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
     fn test_state(
         &mut self,
         surface: &DrmSurface,
+        supports_fencing: bool,
         plane: plane::Handle,
         state: PlaneState<B>,
         allow_modeset: bool,
@@ -492,24 +496,7 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
         let backup = current_config.clone();
         *current_config = state;
 
-        let res = surface.test_state(
-            self.planes
-                .iter()
-                // Filter out any skipped planes
-                .filter(|(_, state)| !state.skip)
-                .map(|(handle, state)| super::surface::PlaneState {
-                    handle: *handle,
-                    config: state.config.as_ref().map(|config| super::PlaneConfig {
-                        src: config.src,
-                        dst: config.dst,
-                        transform: config.transform,
-                        alpha: config.alpha,
-                        damage_clips: config.damage_clips.as_ref().map(|d| d.blob()),
-                        fb: *config.buffer.as_ref(),
-                    }),
-                }),
-            allow_modeset,
-        );
+        let res = surface.test_state(self.build_planes(supports_fencing, true), allow_modeset);
 
         if res.is_err() {
             // test failed, restore previous state
@@ -519,46 +506,66 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
         res
     }
 
-    fn commit(&self, surface: &DrmSurface, event: bool) -> Result<(), crate::backend::drm::error::Error> {
-        surface.commit(
-            self.planes
-                .iter()
-                // Filter out any skipped planes
-                .filter(|(_, state)| !state.skip)
-                .map(|(handle, state)| super::surface::PlaneState {
-                    handle: *handle,
-                    config: state.config.as_ref().map(|config| super::PlaneConfig {
-                        src: config.src,
-                        dst: config.dst,
-                        alpha: config.alpha,
-                        transform: config.transform,
-                        damage_clips: config.damage_clips.as_ref().map(|d| d.blob()),
-                        fb: *config.buffer.as_ref(),
-                    }),
-                }),
-            event,
-        )
+    fn commit(
+        &mut self,
+        surface: &DrmSurface,
+        supports_fencing: bool,
+        event: bool,
+    ) -> Result<(), crate::backend::drm::error::Error> {
+        surface.commit(self.build_planes(supports_fencing, false), event)
     }
 
-    fn page_flip(&self, surface: &DrmSurface, event: bool) -> Result<(), crate::backend::drm::error::Error> {
-        surface.page_flip(
-            self.planes
-                .iter()
-                // Filter out any skipped planes
-                .filter(|(_, state)| !state.skip)
-                .map(|(handle, state)| super::surface::PlaneState {
-                    handle: *handle,
-                    config: state.config.as_ref().map(|config| super::PlaneConfig {
-                        src: config.src,
-                        dst: config.dst,
-                        alpha: config.alpha,
-                        transform: config.transform,
-                        damage_clips: config.damage_clips.as_ref().map(|d| d.blob()),
-                        fb: *config.buffer.as_ref(),
-                    }),
+    fn page_flip(
+        &mut self,
+        surface: &DrmSurface,
+        supports_fencing: bool,
+        event: bool,
+    ) -> Result<(), crate::backend::drm::error::Error> {
+        surface.page_flip(self.build_planes(supports_fencing, false), event)
+    }
+
+    fn build_planes(
+        &mut self,
+        supports_fencing: bool,
+        test_only: bool,
+    ) -> impl IntoIterator<Item = super::PlaneState<'_>> {
+        for (_, state) in self.planes.iter_mut().filter(|(_, state)| !state.skip) {
+            if let Some(config) = state.config.as_mut() {
+                // Try to extract a native fence out of the supplied sync point if any
+                // If the sync point has no native fence or the surface does not support
+                // fencing force a wait
+                if let Some((sync, fence)) = config.sync.as_mut() {
+                    if supports_fencing && fence.is_none() {
+                        *fence = sync.export().map(Arc::new);
+                    }
+
+                    // Don't wait if we are only testing the state
+                    if !test_only && fence.is_none() {
+                        sync.wait();
+                    }
+                }
+            }
+        }
+
+        self.planes
+            .iter_mut()
+            // Filter out any skipped planes
+            .filter(|(_, state)| !state.skip)
+            .map(move |(handle, state)| super::surface::PlaneState {
+                handle: *handle,
+                config: state.config.as_mut().map(|config| super::PlaneConfig {
+                    src: config.src,
+                    dst: config.dst,
+                    alpha: config.alpha,
+                    transform: config.transform,
+                    damage_clips: config.damage_clips.as_ref().map(|d| d.blob()),
+                    fb: *config.buffer.as_ref(),
+                    fence: config
+                        .sync
+                        .as_ref()
+                        .and_then(|(_, fence)| fence.as_ref().map(|fence| fence.as_fd())),
                 }),
-            event,
-        )
+            })
     }
 }
 
@@ -663,6 +670,8 @@ type RenderFrameErrorType<A, F, R> = RenderFrameError<
 pub struct PrimarySwapchainElement<B: Buffer, F: AsRef<framebuffer::Handle>> {
     /// The slot from the swapchain
     slot: Owned<DrmScanoutBuffer<B, F>>,
+    /// Sync point
+    pub sync: SyncPoint,
     /// The transform applied during rendering
     pub transform: Transform,
     /// The damage on the primary plane
@@ -720,6 +729,18 @@ pub struct RenderFrameResult<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
     pub cursor_element: Option<&'a E>,
 
     primary_plane_element_id: Id,
+    supports_fencing: bool,
+}
+
+impl<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> RenderFrameResult<'a, B, F, E> {
+    /// Returns whether the frame would block the current thread when queued
+    pub fn would_block(&self) -> bool {
+        if let PrimaryPlaneElement::Swapchain(ref element) = self.primary_element {
+            !element.sync.is_reached() && (!self.supports_fencing || !element.sync.is_exportable())
+        } else {
+            false
+        }
+    }
 }
 
 struct SwapchainElement<'a, 'b, B: Buffer> {
@@ -892,6 +913,7 @@ where
                 slot,
                 transform,
                 damage,
+                ..
             }) => FrameResultDamageElement::Swapchain(SwapchainElement {
                 id: self.primary_plane_element_id.clone(),
                 transform: *transform,
@@ -926,7 +948,7 @@ where
         renderer: &mut R,
         damage: impl IntoIterator<Item = Rectangle<i32, Physical>>,
         filter: impl IntoIterator<Item = Id>,
-    ) -> Result<(), BlitFrameResultError<<R as Renderer>::Error, <B as AsDmabuf>::Error>>
+    ) -> Result<SyncPoint, BlitFrameResultError<<R as Renderer>::Error, <B as AsDmabuf>::Error>>
     where
         R: Renderer + Blit<Dmabuf>,
         <R as Renderer>::TextureId: 'static,
@@ -939,7 +961,7 @@ where
 
         // If we have no damage we can exit early
         if damage.is_empty() {
-            return Ok(());
+            return Ok(SyncPoint::signaled());
         }
 
         let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
@@ -964,7 +986,7 @@ where
         }
 
         let primary_dmabuf = match &self.primary_element {
-            PrimaryPlaneElement::Swapchain(PrimarySwapchainElement { slot, .. }) => {
+            PrimaryPlaneElement::Swapchain(PrimarySwapchainElement { slot, sync, .. }) => {
                 let dmabuf = match &slot.0.buffer {
                     ScanoutBuffer::Swapchain(slot) => slot.export().map_err(BlitFrameResultError::Export)?,
                     _ => unreachable!(),
@@ -975,7 +997,7 @@ where
                     size.to_logical(1, Transform::Normal).to_physical(1),
                 );
                 opaque_regions.push(geometry);
-                Some((dmabuf, geometry))
+                Some((sync.clone(), dmabuf, geometry))
             }
             PrimaryPlaneElement::Element(e) => {
                 elements_to_render.push(*e);
@@ -991,6 +1013,7 @@ where
                 .collect::<Vec<_>>()
         });
 
+        let mut sync: Option<SyncPoint> = None;
         if !clear_damage.is_empty() {
             trace!("clearing frame damage {:#?}", clear_damage);
 
@@ -1002,11 +1025,11 @@ where
                 .clear([0f32, 0f32, 0f32, 1f32], &clear_damage)
                 .map_err(BlitFrameResultError::Rendering)?;
 
-            frame.finish().map_err(BlitFrameResultError::Rendering)?;
+            sync = Some(frame.finish().map_err(BlitFrameResultError::Rendering)?);
         }
 
         // first do the potential blit
-        if let Some((dmabuf, geometry)) = primary_dmabuf {
+        if let Some((sync, dmabuf, geometry)) = primary_dmabuf {
             let blit_damage = damage
                 .iter()
                 .filter_map(|d| d.intersection(geometry))
@@ -1014,6 +1037,7 @@ where
 
             trace!("blitting frame with damage: {:#?}", blit_damage);
 
+            renderer.wait(&sync).map_err(BlitFrameResultError::Rendering)?;
             for rect in blit_damage {
                 renderer
                     .blit_from(
@@ -1059,9 +1083,9 @@ where
                     .map_err(BlitFrameResultError::Rendering)?;
             }
 
-            frame.finish().map_err(BlitFrameResultError::Rendering)
+            Ok(frame.finish().map_err(BlitFrameResultError::Rendering)?)
         } else {
-            Ok(())
+            Ok(sync.unwrap_or_default())
         }
     }
 }
@@ -1189,6 +1213,7 @@ where
     damage_tracker: OutputDamageTracker,
     primary_plane_element_id: Id,
     primary_plane_damage_bag: DamageBag<i32, BufferCoords>,
+    supports_fencing: bool,
 
     framebuffer_exporter: F,
 
@@ -1271,11 +1296,14 @@ where
 
         let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
         let damage_tracker = OutputDamageTracker::from_output(output);
+        let supports_fencing =
+            !surface.is_legacy() && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?;
 
         for format in color_formats {
             debug!("Testing color format: {}", format);
             match Self::find_supported_format(
                 surface.clone(),
+                supports_fencing,
                 &planes,
                 allocator,
                 &framebuffer_exporter,
@@ -1315,6 +1343,7 @@ where
                         planes,
                         overlay_plane_element_ids,
                         element_states: IndexMap::new(),
+                        supports_fencing,
                         debug_flags: DebugFlags::empty(),
                         span,
                     };
@@ -1333,6 +1362,7 @@ where
 
     fn find_supported_format(
         drm: Arc<DrmSurface>,
+        supports_fencing: bool,
         planes: &Planes,
         allocator: A,
         framebuffer_exporter: &F,
@@ -1478,10 +1508,12 @@ where
                     fb: handle,
                 }),
                 plane_claim,
+                sync: None,
             }),
         };
 
-        match current_frame_state.test_state(&drm, planes.primary.handle, plane_state, true) {
+        match current_frame_state.test_state(&drm, supports_fencing, planes.primary.handle, plane_state, true)
+        {
             Ok(_) => {
                 debug!("Chosen format: {:?}", dmabuf.format());
                 Ok((swapchain, current_frame_state))
@@ -1630,6 +1662,7 @@ where
                     fb,
                 }),
                 plane_claim,
+                sync: None,
             }),
         };
 
@@ -1640,6 +1673,7 @@ where
         next_frame_state
             .test_state(
                 &self.surface,
+                self.supports_fencing,
                 self.planes.primary.handle,
                 primary_plane_state,
                 self.surface.commit_pending(),
@@ -1920,8 +1954,8 @@ where
             renderer.set_debug_flags(renderer_debug_flags);
 
             match render_res {
-                Ok((render_damage, states)) => {
-                    for (id, state) in states.states.into_iter() {
+                Ok(render_output_result) => {
+                    for (id, state) in render_output_result.states.states.into_iter() {
                         // Skip the state for our fake elements
                         if self.overlay_plane_element_ids.contains_plane_id(&id) {
                             continue;
@@ -1955,7 +1989,7 @@ where
                     let config = primary_plane_state.config.as_mut().unwrap();
 
                     if !had_direct_scan_out {
-                        if let Some(render_damage) = render_damage {
+                        if let Some(render_damage) = render_output_result.damage {
                             trace!("rendering damage: {:?}", render_damage);
 
                             self.primary_plane_damage_bag.add(render_damage.iter().map(|d| {
@@ -1974,6 +2008,7 @@ where
                             )
                             .ok()
                             .flatten();
+                            config.sync = Some((render_output_result.sync.clone(), None));
                         } else {
                             trace!("skipping primary plane, no damage");
 
@@ -1994,6 +2029,8 @@ where
                                 Transform::Normal,
                                 &output_geometry.size.to_logical(1),
                             )]);
+
+                        config.sync = Some((render_output_result.sync.clone(), None));
                     }
                 }
                 Err(err) => {
@@ -2008,7 +2045,7 @@ where
         self.next_frame = Some(next_frame_state);
 
         let primary_plane_element = if render {
-            let slot = {
+            let (slot, sync) = {
                 let primary_plane_state = self
                     .next_frame
                     .as_ref()
@@ -2016,12 +2053,21 @@ where
                     .plane_state(self.planes.primary.handle)
                     .unwrap();
                 let config = primary_plane_state.config.as_ref().unwrap();
-                config.buffer.clone()
+                (
+                    config.buffer.clone(),
+                    config
+                        .sync
+                        .as_ref()
+                        .map(|(sync, _)| sync.clone())
+                        .unwrap_or_default(),
+                )
             };
+
             PrimaryPlaneElement::Swapchain(PrimarySwapchainElement {
                 slot,
                 transform: output_transform,
                 damage: self.primary_plane_damage_bag.snapshot(),
+                sync,
             })
         } else {
             PrimaryPlaneElement::Element(primary_plane_scanout_element.unwrap())
@@ -2039,6 +2085,7 @@ where
             cursor_element: cursor_plane_element,
             states: render_element_states,
             primary_plane_element_id: self.primary_plane_element_id.clone(),
+            supports_fencing: self.supports_fencing,
         };
 
         Ok(frame_reference)
@@ -2085,12 +2132,12 @@ where
     }
 
     fn submit(&mut self) -> FrameResult<(), A, F> {
-        let (state, user_data) = self.queued_frame.take().unwrap();
+        let (mut state, user_data) = self.queued_frame.take().unwrap();
 
         let flip = if self.surface.commit_pending() {
-            state.commit(&self.surface, true)
+            state.commit(&self.surface, self.supports_fencing, true)
         } else {
-            state.page_flip(&self.surface, true)
+            state.page_flip(&self.surface, self.supports_fencing, true)
         };
         if flip.is_ok() {
             self.pending_frame = Some((state, user_data));
@@ -2456,7 +2503,13 @@ where
             let mut plane_state = previous_state.plane_state(plane_info.handle).unwrap().clone();
             plane_state.skip = true;
 
-            let res = frame_state.test_state(&self.surface, plane_info.handle, plane_state, false);
+            let res = frame_state.test_state(
+                &self.surface,
+                self.supports_fencing,
+                plane_info.handle,
+                plane_state,
+                false,
+            );
 
             if res.is_ok() {
                 return Some(*plane_info);
@@ -2472,7 +2525,13 @@ where
             plane_state.skip = false;
             let config = plane_state.config.as_mut().unwrap();
             config.dst.loc = cursor_plane_location;
-            let res = frame_state.test_state(&self.surface, plane_info.handle, plane_state, false);
+            let res = frame_state.test_state(
+                &self.surface,
+                self.supports_fencing,
+                plane_info.handle,
+                plane_state,
+                false,
+            );
 
             if res.is_ok() {
                 return Some(*plane_info);
@@ -2570,7 +2629,7 @@ where
             let dst = Rectangle::from_loc_and_size((0, 0), element_geometry.size);
             element.draw(&mut frame, src, dst, &[dst])?;
 
-            frame.finish()?;
+            frame.finish()?.wait();
 
             Ok::<(), <R as Renderer>::Error>(())
         };
@@ -2620,6 +2679,7 @@ where
                 fb: OwnedFramebuffer::new(DrmFramebuffer::Gbm(framebuffer)),
             }),
             plane_claim,
+            sync: None,
         });
 
         let plane_state = PlaneState {
@@ -2628,7 +2688,13 @@ where
             config,
         };
 
-        let res = frame_state.test_state(&self.surface, plane_info.handle, plane_state, false);
+        let res = frame_state.test_state(
+            &self.surface,
+            self.supports_fencing,
+            plane_info.handle,
+            plane_state,
+            false,
+        );
 
         if res.is_ok() {
             cursor_state.previous_output_scale = Some(scale);
@@ -2994,10 +3060,17 @@ where
                     buffer: ScanoutBuffer::from(underlying_storage.clone()),
                 }),
                 plane_claim,
+                sync: None,
             }),
         };
 
-        let res = frame_state.test_state(&self.surface, plane.handle, plane_state, false);
+        let res = frame_state.test_state(
+            &self.surface,
+            self.supports_fencing,
+            plane.handle,
+            plane_state,
+            false,
+        );
 
         if res.is_ok() {
             output_damage.extend(element_output_damage);

@@ -42,10 +42,12 @@ use nix::libc::c_void;
 
 #[allow(non_camel_case_types, dead_code, unused_mut, non_upper_case_globals)]
 pub mod ffi;
+use self::display::EGLDisplayHandle;
 #[cfg(feature = "wayland_frontend")]
-use self::{display::EGLDisplayHandle, ffi::egl::types::EGLImage};
+use self::ffi::egl::types::EGLImage;
 
 pub mod display;
+pub mod fence;
 pub mod native;
 pub mod surface;
 pub use self::device::EGLDevice;

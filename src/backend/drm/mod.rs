@@ -223,3 +223,28 @@ fn plane_zpos(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Res
     }
     Ok(None)
 }
+
+#[cfg(feature = "backend_gbm")]
+fn plane_has_property(
+    dev: &(impl drm::control::Device + DevPath),
+    plane: plane::Handle,
+    name: &str,
+) -> Result<bool, DrmError> {
+    let props = dev.get_properties(plane).map_err(|source| DrmError::Access {
+        errmsg: "Failed to get properties of plane",
+        dev: dev.dev_path(),
+        source,
+    })?;
+    let (ids, _) = props.as_props_and_values();
+    for &id in ids {
+        let info = dev.get_property(id).map_err(|source| DrmError::Access {
+            errmsg: "Failed to get property info",
+            dev: dev.dev_path(),
+            source,
+        })?;
+        if info.name().to_str().map(|x| x == name).unwrap_or(false) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}

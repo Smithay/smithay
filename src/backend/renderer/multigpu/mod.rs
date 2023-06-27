@@ -56,6 +56,7 @@ use crate::{
     backend::{
         allocator::{dmabuf::AnyError, Allocator, Buffer as BufferTrait, Format, Fourcc},
         drm::DrmNode,
+        renderer::sync,
         SwapBuffersError,
     },
     utils::{Buffer as BufferCoords, Physical, Size},
@@ -1083,6 +1084,10 @@ where
             span,
         })
     }
+
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        self.render.renderer_mut().wait(sync).map_err(Error::Render)
+    }
 }
 
 impl<'render, 'target, 'alloc, 'frame, R: GraphicsApi, T: GraphicsApi>
@@ -1097,9 +1102,9 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
-    fn finish_internal(&mut self) -> Result<(), Error<R, T>> {
+    fn finish_internal(&mut self) -> Result<sync::SyncPoint, Error<R, T>> {
         if let Some(frame) = self.frame.take() {
-            frame.finish().map_err(Error::Render)?;
+            let sync = frame.finish().map_err(Error::Render)?;
 
             // now the frame is gone, lets use our unholy ptr till the end of this call:
             // SAFETY:
@@ -1142,9 +1147,9 @@ where
                             1.0,
                         )
                         .map_err(Error::Target)?;
-                    frame.finish().map_err(Error::Target)?;
+                    let sync = frame.finish().map_err(Error::Target)?;
 
-                    return Ok(());
+                    return Ok(sync);
                 }
 
                 let format = if target
@@ -1193,6 +1198,7 @@ where
                     mappings.push(mapping);
                 }
 
+                let mut sync: Option<sync::SyncPoint> = None;
                 for (mapping, rect) in mappings {
                     let slice = ExportMem::map_texture(render.renderer_mut(), &mapping)
                         .map_err(Error::Render::<R, T>)?;
@@ -1218,12 +1224,15 @@ where
                             .render_texture_from_to(&texture, src, dst, damage, Transform::Normal, 1.0)
                             .map_err(Error::Target)?;
                     }
-                    frame.finish().map_err(Error::Target)?;
+                    sync = Some(frame.finish().map_err(Error::Target)?);
                 }
+                return Ok(sync.unwrap_or_default());
             }
+
+            return Ok(sync);
         }
 
-        Ok(())
+        Ok(sync::SyncPoint::signaled())
     }
 }
 
@@ -1519,8 +1528,12 @@ where
         self.frame.as_ref().unwrap().transformation()
     }
 
-    fn finish(mut self) -> Result<(), Self::Error> {
+    fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
         self.finish_internal()
+    }
+
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().wait(sync).map_err(Error::Render)
     }
 }
 

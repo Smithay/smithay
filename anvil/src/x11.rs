@@ -404,7 +404,7 @@ pub fn run_x11() {
             );
 
             match render_res {
-                Ok((damage, states)) => {
+                Ok(render_output_result) => {
                     trace!("Finished rendering");
                     if let Err(err) = backend_data.surface.submit() {
                         backend_data.surface.reset_buffers();
@@ -414,7 +414,7 @@ pub fn run_x11() {
                     };
 
                     #[cfg(feature = "debug")]
-                    if damage.is_some() {
+                    if render_output_result.damage.is_some() {
                         if let Some(renderdoc) = state.renderdoc.as_mut() {
                             renderdoc.end_frame_capture(
                                 state.backend_data.renderer.egl_context().get_context_handle(),
@@ -430,11 +430,11 @@ pub fn run_x11() {
 
                     // Send frame events so that client start drawing their next frame
                     let time = state.clock.now();
-                    post_repaint(&output, &states, &state.space, None, time);
+                    post_repaint(&output, &render_output_result.states, &state.space, None, time);
 
-                    if damage.is_some() {
+                    if render_output_result.damage.is_some() {
                         let mut output_presentation_feedback =
-                            take_presentation_feedback(&output, &state.space, &states);
+                            take_presentation_feedback(&output, &state.space, &render_output_result.states);
                         output_presentation_feedback.presented(
                             time,
                             output

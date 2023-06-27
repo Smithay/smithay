@@ -79,6 +79,8 @@ pub struct EGLDisplay {
     dmabuf_import_formats: HashSet<DrmFormat>,
     dmabuf_render_formats: HashSet<DrmFormat>,
     surface_type: ffi::EGLint,
+    pub(super) has_fences: bool,
+    pub(super) supports_native_fences: bool,
     pub(super) span: tracing::Span,
 }
 
@@ -193,6 +195,9 @@ impl EGLDisplay {
             .map_err(|source| Error::OpenGlesNotSupported(Some(source)))?;
 
         let surface_type = native.surface_type();
+        let has_fences = extensions.iter().any(|s| s == "EGL_KHR_fence_sync");
+        let supports_native_fences =
+            has_fences && extensions.iter().any(|s| s == "EGL_ANDROID_native_fence_sync");
 
         Ok(EGLDisplay {
             display: Arc::new(EGLDisplayHandle {
@@ -204,6 +209,8 @@ impl EGLDisplay {
             extensions,
             dmabuf_import_formats,
             dmabuf_render_formats,
+            has_fences,
+            supports_native_fences,
             span,
         })
     }
@@ -277,6 +284,9 @@ impl EGLDisplay {
 
             surface_type.assume_init()
         };
+        let has_fences = extensions.iter().any(|s| s == "EGL_KHR_fence_sync");
+        let supports_native_fences =
+            has_fences && extensions.iter().any(|s| s == "EGL_ANDROID_native_fence_sync");
 
         Ok(EGLDisplay {
             display: Arc::new(EGLDisplayHandle {
@@ -288,6 +298,8 @@ impl EGLDisplay {
             extensions,
             dmabuf_import_formats,
             dmabuf_render_formats,
+            has_fences,
+            supports_native_fences,
             span,
         })
     }

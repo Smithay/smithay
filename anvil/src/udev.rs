@@ -6,7 +6,7 @@ use std::{
     os::unix::io::FromRawFd,
     path::Path,
     sync::{atomic::Ordering, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crate::state::SurfaceDmabufFeedback;
@@ -39,6 +39,7 @@ use smithay::{
             element::{texture::TextureBuffer, AsRenderElements, RenderElement, RenderElementStates},
             gles::{GlesRenderer, GlesTexture},
             multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer, MultiTexture},
+            sync::SyncPoint,
             Bind, DebugFlags, ExportMem, ImportDma, ImportMemWl, Offscreen, Renderer,
         },
         session::{
@@ -75,7 +76,7 @@ use smithay::{
         },
         wayland_server::{backend::GlobalId, protocol::wl_surface, Display, DisplayHandle},
     },
-    utils::{Clock, DeviceFd, IsAlive, Logical, Monotonic, Point, Scale, Transform},
+    utils::{Clock, DeviceFd, IsAlive, Logical, Monotonic, Physical, Point, Rectangle, Scale, Transform},
     wayland::{
         compositor,
         dmabuf::{
@@ -515,6 +516,13 @@ enum SurfaceComposition {
     Compositor(GbmDrmCompositor),
 }
 
+struct SurfaceCompositorRenderResult {
+    rendered: bool,
+    states: RenderElementStates,
+    sync: Option<SyncPoint>,
+    damage: Option<Vec<Rectangle<i32, Physical>>>,
+}
+
 impl SurfaceComposition {
     fn frame_submitted(&mut self) -> Result<Option<Option<OutputPresentationFeedback>>, SwapBuffersError> {
         match self {
@@ -546,10 +554,15 @@ impl SurfaceComposition {
         }
     }
 
-    fn queue_frame(&mut self, user_data: Option<OutputPresentationFeedback>) -> Result<(), SwapBuffersError> {
+    fn queue_frame(
+        &mut self,
+        sync: Option<SyncPoint>,
+        damage: Option<Vec<Rectangle<i32, Physical>>>,
+        user_data: Option<OutputPresentationFeedback>,
+    ) -> Result<(), SwapBuffersError> {
         match self {
             SurfaceComposition::Surface { surface, .. } => surface
-                .queue_buffer(None, user_data)
+                .queue_buffer(sync, damage, user_data)
                 .map_err(Into::<SwapBuffersError>::into),
             SurfaceComposition::Compositor(c) => {
                 c.queue_frame(user_data).map_err(Into::<SwapBuffersError>::into)
@@ -562,7 +575,7 @@ impl SurfaceComposition {
         renderer: &mut R,
         elements: &[E],
         clear_color: [f32; 4],
-    ) -> Result<(bool, RenderElementStates), SwapBuffersError>
+    ) -> Result<SurfaceCompositorRenderResult, SwapBuffersError>
     where
         R: Renderer + Bind<Dmabuf> + Bind<Target> + Offscreen<Target> + ExportMem,
         <R as Renderer>::TextureId: 'static,
@@ -581,7 +594,15 @@ impl SurfaceComposition {
                 renderer.set_debug_flags(*debug_flags);
                 let res = damage_tracker
                     .render_output(renderer, age.into(), elements, clear_color)
-                    .map(|(damage, states)| (damage.is_some(), states))
+                    .map(|res| {
+                        let rendered = res.damage.is_some();
+                        SurfaceCompositorRenderResult {
+                            rendered,
+                            damage: res.damage,
+                            states: res.states,
+                            sync: rendered.then_some(res.sync),
+                        }
+                    })
                     .map_err(|err| match err {
                         OutputDamageTrackerError::Rendering(err) => err.into(),
                         _ => unreachable!(),
@@ -591,7 +612,12 @@ impl SurfaceComposition {
             }
             SurfaceComposition::Compositor(compositor) => compositor
                 .render_frame(renderer, elements, clear_color)
-                .map(|render_frame_result| (render_frame_result.damage.is_some(), render_frame_result.states))
+                .map(|render_frame_result| SurfaceCompositorRenderResult {
+                    rendered: render_frame_result.damage.is_some(),
+                    damage: None,
+                    states: render_frame_result.states,
+                    sync: None,
+                })
                 .map_err(|err| match err {
                     smithay::backend::drm::compositor::RenderFrameError::PrepareFrame(err) => err.into(),
                     smithay::backend::drm::compositor::RenderFrameError::RenderFrame(
@@ -1235,6 +1261,8 @@ impl AnvilState<UdevData> {
             return;
         };
 
+        let start = Instant::now();
+
         // TODO get scale from the rendersurface when supporting HiDPI
         let frame = self
             .backend_data
@@ -1355,6 +1383,9 @@ impl AnvilState<UdevData> {
                     TimeoutAction::Drop
                 })
                 .expect("failed to schedule frame timer");
+        } else {
+            let elapsed = start.elapsed();
+            tracing::trace!(?elapsed, "rendered surface");
         }
     }
 
@@ -1494,14 +1525,13 @@ fn render_surface<'a, 'b>(
 
     let (elements, clear_color) =
         output_elements(output, space, custom_elements, renderer, show_window_preview);
-    let (rendered, states) =
-        surface
-            .compositor
-            .render_frame::<_, _, GlesTexture>(renderer, &elements, clear_color)?;
+    let res = surface
+        .compositor
+        .render_frame::<_, _, GlesTexture>(renderer, &elements, clear_color)?;
 
     post_repaint(
         output,
-        &states,
+        &res.states,
         space,
         surface
             .dmabuf_feedback
@@ -1513,15 +1543,15 @@ fn render_surface<'a, 'b>(
         clock.now(),
     );
 
-    if rendered {
-        let output_presentation_feedback = take_presentation_feedback(output, space, &states);
+    if res.rendered {
+        let output_presentation_feedback = take_presentation_feedback(output, space, &res.states);
         surface
             .compositor
-            .queue_frame(Some(output_presentation_feedback))
+            .queue_frame(res.sync, res.damage, Some(output_presentation_feedback))
             .map_err(Into::<SwapBuffersError>::into)?;
     }
 
-    Ok(rendered)
+    Ok(res.rendered)
 }
 
 fn initial_render(
@@ -1531,7 +1561,7 @@ fn initial_render(
     surface
         .compositor
         .render_frame::<_, CustomRenderElements<_>, GlesTexture>(renderer, &[], CLEAR_COLOR)?;
-    surface.compositor.queue_frame(None)?;
+    surface.compositor.queue_frame(None, None, None)?;
     surface.compositor.reset_buffers();
 
     Ok(())

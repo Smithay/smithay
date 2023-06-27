@@ -43,6 +43,8 @@ pub mod element;
 
 pub mod damage;
 
+pub mod sync;
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Texture filtering methods
 pub enum TextureFilter {
@@ -216,6 +218,12 @@ pub trait Frame {
     /// Output transformation that is applied to this frame
     fn transformation(&self) -> Transform;
 
+    /// Wait for a [`SyncPoint`](sync::SyncPoint) to be signaled
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        sync.wait();
+        Ok(())
+    }
+
     /// Finish this [`Frame`] returning any error that may happen during any cleanup.
     ///
     /// Dropping the frame instead may result in any of the following and is implementation dependent:
@@ -226,7 +234,7 @@ pub trait Frame {
     /// Leaking the frame instead will leak resources and can cause any of the previous effects.
     /// Leaking might make the renderer return Errors and force it's recreation.
     /// Leaking may not cause otherwise undefined behavior and program execution will always continue normally.
-    fn finish(self) -> Result<(), Self::Error>;
+    fn finish(self) -> Result<sync::SyncPoint, Self::Error>;
 }
 
 bitflags::bitflags! {
@@ -277,6 +285,12 @@ pub trait Renderer {
         output_size: Size<i32, Physical>,
         dst_transform: Transform,
     ) -> Result<Self::Frame<'_>, Self::Error>;
+
+    /// Wait for a [`SyncPoint`](sync::SyncPoint) to be signaled
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        sync.wait();
+        Ok(())
+    }
 }
 
 /// Trait for renderers that support creating offscreen framebuffers to render into.

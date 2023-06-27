@@ -4,8 +4,8 @@ use smithay::{
     backend::{
         allocator::{dmabuf::Dmabuf, Fourcc},
         renderer::{
-            DebugFlags, Frame, ImportDma, ImportDmaWl, ImportEgl, ImportMem, ImportMemWl, Renderer, Texture,
-            TextureFilter,
+            sync::SyncPoint, DebugFlags, Frame, ImportDma, ImportDmaWl, ImportEgl, ImportMem, ImportMemWl,
+            Renderer, Texture, TextureFilter,
         },
         SwapBuffersError,
     },
@@ -195,8 +195,8 @@ impl Frame for DummyFrame {
         Transform::Normal
     }
 
-    fn finish(self) -> Result<(), Self::Error> {
-        Ok(())
+    fn finish(self) -> Result<SyncPoint, Self::Error> {
+        Ok(SyncPoint::default())
     }
 }
 

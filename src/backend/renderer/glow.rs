@@ -16,8 +16,8 @@ use crate::{
         renderer::{
             element::UnderlyingStorage,
             gles::{element::*, *},
-            Bind, Blit, DebugFlags, ExportMem, ImportDma, ImportMem, Offscreen, Renderer, TextureFilter,
-            Unbind,
+            sync, Bind, Blit, DebugFlags, ExportMem, ImportDma, ImportMem, Offscreen, Renderer,
+            TextureFilter, Unbind,
         },
     },
     utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform},
@@ -202,6 +202,10 @@ impl Renderer for GlowRenderer {
             glow,
         })
     }
+
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        self.gl.wait(sync)
+    }
 }
 
 impl<'frame> Frame for GlowFrame<'frame> {
@@ -270,17 +274,21 @@ impl<'frame> Frame for GlowFrame<'frame> {
         )
     }
 
-    fn finish(mut self) -> Result<(), Self::Error> {
+    fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
         self.finish_internal()
+    }
+
+    fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
+        self.frame.as_mut().unwrap().wait(sync)
     }
 }
 
 impl<'frame> GlowFrame<'frame> {
-    fn finish_internal(&mut self) -> Result<(), GlesError> {
+    fn finish_internal(&mut self) -> Result<sync::SyncPoint, GlesError> {
         if let Some(frame) = self.frame.take() {
             frame.finish()
         } else {
-            Ok(())
+            Ok(sync::SyncPoint::default())
         }
     }
 }
