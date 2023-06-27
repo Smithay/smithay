@@ -52,7 +52,31 @@ pub struct GlowFrame<'a> {
 }
 
 impl GlowRenderer {
-    /// Creates a new OpenGL ES 2 + Glow renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
+    /// Get the supported [`Capabilities`](Capability) of the renderer
+    ///
+    /// # Safety
+    ///
+    /// This operation will cause undefined behavior if the given EGLContext is active in another thread.
+    pub unsafe fn supported_capabilities(context: &EGLContext) -> Result<Vec<Capability>, GlesError> {
+        GlesRenderer::supported_capabilities(context)
+    }
+
+    /// Creates a new OpenGL ES 2 + Glow renderer from a given [`EGLContext`](crate::backend::egl::EGLContext)
+    /// with all [`supported capabilities`](Self::supported_capabilities).
+    ///
+    /// # Safety
+    ///
+    /// This operation will cause undefined behavior if the given EGLContext is active in another thread.
+    ///
+    /// See: [`with_capabilities`](Self::with_capabilities) for more information
+    pub unsafe fn new(context: EGLContext) -> Result<GlowRenderer, GlesError> {
+        let supported_capabilities = Self::supported_capabilities(&context)?;
+        Self::with_capabilities(context, supported_capabilities)
+    }
+
+    /// Creates a new OpenGL ES 2 + Glow renderer from a given [`EGLContext`](crate::backend::egl::EGLContext)
+    /// with the specified [`Capabilities`](Capability). If a requested [`Capability`] is not supported an
+    /// error will be returned.
     ///
     /// # Safety
     ///
@@ -67,13 +91,15 @@ impl GlowRenderer {
     /// - Binding a new target, while another one is already bound, will replace the current target.
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
     /// - Texture filtering starts with Linear-downscaling and Linear-upscaling
-
-    pub unsafe fn new(context: EGLContext) -> Result<GlowRenderer, GlesError> {
+    pub unsafe fn with_capabilities(
+        context: EGLContext,
+        capabilities: impl IntoIterator<Item = Capability>,
+    ) -> Result<GlowRenderer, GlesError> {
         let glow = {
             context.make_current()?;
             Context::from_loader_function(|s| crate::backend::egl::get_proc_address(s) as *const _)
         };
-        let gl = GlesRenderer::new(context)?;
+        let gl = GlesRenderer::with_capabilities(context, capabilities)?;
 
         Ok(GlowRenderer {
             gl,

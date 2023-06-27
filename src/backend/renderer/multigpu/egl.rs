@@ -53,13 +53,39 @@ impl From<Error> for SwapBuffersError {
     }
 }
 
+type Factory = Box<dyn Fn(&EGLDisplay) -> Result<GlesRenderer, Error>>;
+
 /// A [`GraphicsApi`] utilizing EGL for device enumeration and OpenGL ES for rendering.
-#[derive(Debug)]
-pub struct EglGlesBackend<R>(std::marker::PhantomData<R>);
+pub struct EglGlesBackend<R> {
+    factory: Option<Factory>,
+    _renderer: std::marker::PhantomData<R>,
+}
+
+impl<R> std::fmt::Debug for EglGlesBackend<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EglGlesBackend").finish()
+    }
+}
 
 impl<R> Default for EglGlesBackend<R> {
     fn default() -> Self {
-        EglGlesBackend(std::marker::PhantomData)
+        EglGlesBackend {
+            factory: None,
+            _renderer: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<R> EglGlesBackend<R> {
+    /// Initialize a new [`EglGlesBackend`] with a factory for instantiating [`GlesRenderer`]s
+    pub fn with_factory<F>(factory: F) -> Self
+    where
+        F: Fn(&EGLDisplay) -> Result<GlesRenderer, Error> + 'static,
+    {
+        Self {
+            factory: Some(Box::new(factory)),
+            ..Default::default()
+        }
     }
 }
 
@@ -84,8 +110,12 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for EglGle
             .map(|(device, node)| {
                 info!("Trying to initialize {:?} from {}", device, node);
                 let display = EGLDisplay::new(device).map_err(Error::Egl)?;
-                let context = EGLContext::new(&display).map_err(Error::Egl)?;
-                let renderer = unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into();
+                let renderer = if let Some(factory) = self.factory.as_ref() {
+                    factory(&display)?.into()
+                } else {
+                    let context = EGLContext::new(&display).map_err(Error::Egl)?;
+                    unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into()
+                };
 
                 Ok(EglGlesDevice {
                     node,
