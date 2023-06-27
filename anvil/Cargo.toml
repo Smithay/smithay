@@ -59,3 +59,4 @@ x11 = ["smithay/backend_x11", "x11rb", "smithay/renderer_gl", "smithay/backend_v
 xwayland = ["smithay/xwayland", "x11rb", "smithay/x11rb_event_source", "xcursor"]
 profile-with-puffin = ["profiling/profile-with-puffin", "puffin_http"]
 profile-with-tracy = ["profiling/profile-with-tracy"]
+renderer_sync = []
