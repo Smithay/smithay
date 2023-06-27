@@ -237,7 +237,7 @@ where
     }));
 
     let egl = Rc::new(surface);
-    let renderer = unsafe { GlesRenderer::new(context)?.into() };
+    let renderer = unsafe { GlesRenderer::new(context, None)?.into() };
     let resize_notification = Rc::new(Cell::new(None));
     let damage_tracking = display.supports_damage();
 

@@ -1,5 +1,6 @@
 //! Implementation of the rendering traits using OpenGL ES 2
 
+use bitflags::bitflags;
 use cgmath::{prelude::*, Matrix3, Vector2};
 use core::slice;
 use std::{
@@ -50,6 +51,7 @@ use crate::backend::egl::{
     ffi::egl::{self as ffi_egl, types::EGLImage},
     EGLContext, EGLSurface, MakeCurrentError,
 };
+use crate::backend::renderer::gles::ffi::Gles2;
 use crate::utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
@@ -366,6 +368,106 @@ pub enum Capability {
     ColorTransformations,
 }
 
+impl Capability {
+    /// Find all capabilities supported by the driver.
+    pub fn supported_capabilities() -> Vec<Capability> {
+        // Ensure OpenGL is initialized.
+        let gl = unsafe { ffi::Gles2::load_with(|s| crate::backend::egl::get_proc_address(s) as *const _) };
+
+        // Get available extensions.
+        let extensions = match GlExtensions::new(&gl) {
+            Ok(extensions) => extensions,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut capabilities = Vec::with_capacity(4);
+
+        // Get maximum supported OpenGL version.
+        let gl_version = version::GlVersion::try_from(&gl).unwrap_or(version::GLES_2_0);
+
+        // Required to avoid the slower batched rendering.
+        if gl_version >= version::GLES_3_0
+            || (extensions.contains(GlExtensions::GL_EXT_INSTANCED_ARRAYS)
+                && extensions.contains(GlExtensions::GL_EXT_DRAW_INSTANCED))
+        {
+            capabilities.push(Capability::Instancing);
+        }
+
+        // Required for 8-bit color renderbuffer formats.
+        if gl_version >= version::GLES_3_0 || extensions.contains(GlExtensions::GL_OES_RGB8_RGBA8) {
+            capabilities.push(Capability::Renderbuffer);
+        }
+
+        // Required for framebuffer blitting.
+        if gl_version >= version::GLES_3_0 {
+            capabilities.push(Capability::Blit);
+
+            // Required to bind the 16F-buffer we want to use for blending.
+            //
+            // Note: We could technically also have a 16F shadow buffer on 2.0 with
+            // GL_OES_texture_half_float. The problem is, that the main output format we are
+            // interested in for this `ABGR2101010` is not renderable on 2.0, and as far as
+            // I know there is no extension to change that. So we could pradoxically not
+            // copy the shadow buffer to our output buffer, *except* if we scanout 16F
+            // directly...
+            //
+            // So lets not go down that route and attempt to support color-transformations
+            // and HDR stuff with ES 2.0.
+            if extensions.contains(GlExtensions::GL_EXT_COLOR_BUFFER_HALF_FLOAT) {
+                capabilities.push(Capability::ColorTransformations);
+            }
+        }
+
+        capabilities
+    }
+}
+
+bitflags! {
+    /// OpenGL driver extensions.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    struct GlExtensions: u8 {
+        const GL_EXT_COLOR_BUFFER_HALF_FLOAT = 0b0000_0001;
+        const GL_EXT_INSTANCED_ARRAYS        = 0b0000_0010;
+        const GL_EXT_DRAW_INSTANCED          = 0b0000_0100;
+        const GL_OES_RGB8_RGBA8              = 0b0000_1000;
+        const GL_KHR_DEBUG                   = 0b0001_0000;
+    }
+}
+
+impl GlExtensions {
+    /// Get OpenGL extensions supported by the driver.
+    fn new(gl: &Gles2) -> Result<Self, GlesError> {
+        let ext_ptr = unsafe { gl.GetString(ffi::EXTENSIONS) as *const c_char };
+        if ext_ptr.is_null() {
+            return Err(GlesError::GLFunctionLoaderError);
+        }
+
+        let mut supported_extensions = GlExtensions::empty();
+
+        // Parse OpenGL extension string.
+        let extensions = unsafe {
+            let ptr = CStr::from_ptr(ext_ptr);
+            let list = String::from_utf8(ptr.to_bytes().to_vec()).unwrap_or_default();
+            list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>()
+        };
+
+        // Convert extension names to our enum variants.
+        for extension in extensions {
+            let supported_extension = match extension.as_str() {
+                "GL_EXT_color_buffer_half_float" => Self::GL_EXT_COLOR_BUFFER_HALF_FLOAT,
+                "GL_EXT_instanced_arrays" => Self::GL_EXT_INSTANCED_ARRAYS,
+                "GL_EXT_draw_instanced" => Self::GL_EXT_DRAW_INSTANCED,
+                "GL_OES_rgb8_rgba8" => Self::GL_OES_RGB8_RGBA8,
+                "GL_KHR_debug" => Self::GL_KHR_DEBUG,
+                _ => continue,
+            };
+            supported_extensions.insert(supported_extension);
+        }
+
+        Ok(supported_extensions)
+    }
+}
+
 /// A renderer utilizing OpenGL ES
 pub struct GlesRenderer {
     // state
@@ -485,6 +587,8 @@ extern "system" fn gl_debug_log(
 impl GlesRenderer {
     /// Creates a new OpenGL ES renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
     ///
+    /// If `capabilities` is [`None`], all capabilities supported by the driver will be used.
+    ///
     /// # Safety
     ///
     /// This operation will cause undefined behavior if the given EGLContext is active in another thread.
@@ -501,7 +605,10 @@ impl GlesRenderer {
     /// - The renderer might use two-pass rendering internally to facilitate color space transformations.
     ///   As such it reserves any stencil buffer for internal use and makes no guarantee about previous framebuffer
     ///   contents being accessible during the lifetime of a `GlesFrame`.
-    pub unsafe fn new(context: EGLContext) -> Result<GlesRenderer, GlesError> {
+    pub unsafe fn new<C>(context: EGLContext, capabilities: C) -> Result<GlesRenderer, GlesError>
+    where
+        C: Into<Option<Vec<Capability>>>,
+    {
         let span = info_span!(parent: &context.span, "renderer_gles2");
         let _guard = span.enter();
 
@@ -513,6 +620,12 @@ impl GlesRenderer {
             if ext_ptr.is_null() {
                 return Err(GlesError::GLFunctionLoaderError);
             }
+
+            // Determine driver capabilities.
+            let capabilities = capabilities
+                .into()
+                .unwrap_or_else(|| Capability::supported_capabilities());
+            info!("Supported capabilities: {:?}", capabilities);
 
             let exts = {
                 let p = CStr::from_ptr(ext_ptr);
@@ -550,38 +663,6 @@ impl GlesRenderer {
             // required for buffers without linear memory layout
             if gl_version < version::GLES_3_0 && !exts.iter().any(|ext| ext == "GL_EXT_unpack_subimage") {
                 return Err(GlesError::GLExtensionNotSupported(&["GL_EXT_unpack_subimage"]));
-            }
-
-            let mut capabilities = Vec::new();
-            // required for more optimized rendering, otherwise we render in batches
-            if gl_version >= version::GLES_3_0
-                || (exts.iter().any(|ext| ext == "GL_EXT_instanced_arrays")
-                    && exts.iter().any(|ext| ext == "GL_EXT_draw_instanced"))
-            {
-                capabilities.push(Capability::Instancing);
-                debug!("Instancing is supported");
-            }
-            // required to use 8-bit color formats in renderbuffers, we don't deal with anything lower as a render target
-            if gl_version >= version::GLES_3_0 || exts.iter().any(|ext| ext == "GL_OES_rgb8_rgba8") {
-                capabilities.push(Capability::Renderbuffer);
-                debug!("Rgba8 Renderbuffers are supported");
-            }
-            // required for blit operations
-            if gl_version >= version::GLES_3_0 {
-                capabilities.push(Capability::Blit);
-                debug!("Blitting is supported");
-                // required to bind the 16F-buffer we want to use for blending.
-                //
-                // Note: We could technically also have a 16F shadow buffer on 2.0 with GL_OES_texture_half_float.
-                // The problem is, that the main output format we are interested in for this `ABGR2101010` is not renderable on 2.0,
-                // and as far as I know there is no extension to change that. So we could pradoxically not copy the shadow buffer
-                // to our output buffer, *except* if we scanout 16F directly...
-                //
-                // So lets not go down that route and attempt to support color-transformations and HDR stuff with ES 2.0.
-                if exts.iter().any(|ext| ext == "GL_EXT_color_buffer_half_float") {
-                    capabilities.push(Capability::ColorTransformations);
-                    debug!("Color Transformations are supported");
-                }
             }
 
             let gl_debug_span = if exts.iter().any(|ext| ext == "GL_KHR_debug") {

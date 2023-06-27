@@ -5,6 +5,7 @@ use tracing::{info, warn};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use wayland_server::protocol::wl_buffer;
 
+use crate::backend::renderer::gles::Capability;
 use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode},
     egl::{EGLContext, EGLDevice, EGLDisplay, Error as EGLError},
@@ -67,7 +68,11 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for EglGle
     type Device = EglGlesDevice<R>;
     type Error = Error;
 
-    fn enumerate(&self, list: &mut Vec<Self::Device>) -> Result<(), Self::Error> {
+    fn enumerate(
+        &self,
+        list: &mut Vec<Self::Device>,
+        capabilities: &Option<Vec<Capability>>,
+    ) -> Result<(), Self::Error> {
         let devices = EGLDevice::enumerate()
             .map_err(Error::Egl)?
             .flat_map(|device| {
@@ -85,7 +90,8 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for EglGle
                 info!("Trying to initialize {:?} from {}", device, node);
                 let display = EGLDisplay::new(device).map_err(Error::Egl)?;
                 let context = EGLContext::new(&display).map_err(Error::Egl)?;
-                let renderer = unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into();
+                let renderer =
+                    unsafe { GlesRenderer::new(context, capabilities.clone()).map_err(Error::Gl)? }.into();
 
                 Ok(EglGlesDevice {
                     node,

@@ -5,6 +5,7 @@ use tracing::warn;
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use wayland_server::protocol::wl_buffer;
 
+use crate::backend::renderer::gles::Capability;
 use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode},
     egl::{EGLContext, EGLDisplay, Error as EGLError},
@@ -92,7 +93,11 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for GbmGle
     type Device = GbmGlesDevice<R>;
     type Error = Error;
 
-    fn enumerate(&self, list: &mut Vec<Self::Device>) -> Result<(), Self::Error> {
+    fn enumerate(
+        &self,
+        list: &mut Vec<Self::Device>,
+        capabilities: &Option<Vec<Capability>>,
+    ) -> Result<(), Self::Error> {
         // remove old stuff
         list.retain(|renderer| {
             self.devices
@@ -111,7 +116,7 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for GbmGle
             })
             .map(|(node, display)| {
                 let context = EGLContext::new(display).map_err(Error::Egl)?;
-                let renderer = unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into();
+                let renderer = unsafe { GlesRenderer::new(context, capabilities.clone()).map_err(Error::Gl)? }.into();
 
                 Ok(GbmGlesDevice {
                     node: *node,

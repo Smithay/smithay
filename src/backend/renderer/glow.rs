@@ -54,6 +54,8 @@ pub struct GlowFrame<'a> {
 impl GlowRenderer {
     /// Creates a new OpenGL ES 2 + Glow renderer from a given [`EGLContext`](crate::backend::egl::EGLContext).
     ///
+    /// If `capabilities` is [`None`], all capabilities supported by the driver will be used.
+    ///
     /// # Safety
     ///
     /// This operation will cause undefined behavior if the given EGLContext is active in another thread.
@@ -68,12 +70,15 @@ impl GlowRenderer {
     /// - Shm buffers can be released after a successful import, without the texture handle becoming invalid.
     /// - Texture filtering starts with Linear-downscaling and Linear-upscaling
 
-    pub unsafe fn new(context: EGLContext) -> Result<GlowRenderer, GlesError> {
+    pub unsafe fn new(context: EGLContext, capabilities: C) -> Result<GlowRenderer, GlesError>
+    where
+        C: Into<Option<Vec<Capability>>>,
+    {
         let glow = {
             context.make_current()?;
             Context::from_loader_function(|s| crate::backend::egl::get_proc_address(s) as *const _)
         };
-        let gl = GlesRenderer::new(context)?;
+        let gl = GlesRenderer::new(context, capabilities)?;
 
         Ok(GlowRenderer {
             gl,
