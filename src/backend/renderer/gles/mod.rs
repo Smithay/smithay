@@ -2497,7 +2497,6 @@ impl<'frame> GlesFrame<'frame> {
         unsafe {
             self.renderer.gl.Disable(ffi::SCISSOR_TEST);
             self.renderer.gl.Disable(ffi::BLEND);
-            self.renderer.gl.Flush();
         }
 
         if let Some(target) = self.renderer.target.as_ref() {
@@ -2733,7 +2732,7 @@ impl<'frame> GlesFrame<'frame> {
     /// (Meaning `src_transform` should match the orientation of surface being rendered).
     ///
     /// Optionally allows a custom texture program and matching additional uniforms to be passed in.
-    #[instrument(skip(self), parent = &self.span)]
+    #[instrument(level = "trace", skip(self), parent = &self.span)]
     #[allow(clippy::too_many_arguments)]
     pub fn render_texture_from_to(
         &mut self,
@@ -2761,8 +2760,7 @@ impl<'frame> GlesFrame<'frame> {
             transform.matrix()
         };
 
-        if src_size.w == 0. || src_size.h == 0. || tex_size.w == 0. || tex_size.h == 0. {
-            warn!("Texture/Src is zero sized");
+        if src_size.is_empty() || tex_size.is_empty() {
             return Ok(());
         }
 
