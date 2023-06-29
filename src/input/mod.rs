@@ -98,7 +98,6 @@
 //!
 
 use std::{
-    fmt,
     hash::Hash,
     sync::{Arc, Mutex},
 };
@@ -131,18 +130,9 @@ pub trait SeatHandler: Sized {
 /// Delegate type for all [Seat] globals.
 ///
 /// Events will be forwarded to an instance of the Seat global.
+#[derive(Debug)]
 pub struct SeatState<D: SeatHandler> {
     pub(crate) seats: Vec<Seat<D>>,
-}
-
-impl<D: SeatHandler> fmt::Debug for SeatState<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SeatState").field("seats", &self.seats).finish()
-    }
 }
 
 /// A Seat handle
@@ -153,18 +143,9 @@ where
 /// This is an handle to the inner logic, it can be cloned.
 ///
 /// See module-level documentation for details of use.
+#[derive(Debug)]
 pub struct Seat<D: SeatHandler> {
     pub(crate) arc: Arc<SeatRc<D>>,
-}
-
-impl<D: SeatHandler> fmt::Debug for Seat<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Seat").field("arc", &self.arc).finish()
-    }
 }
 
 impl<D: SeatHandler> PartialEq for Seat<D> {
@@ -180,6 +161,7 @@ impl<D: SeatHandler> Hash for Seat<D> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct Inner<D: SeatHandler> {
     pub(crate) pointer: Option<PointerHandle<D>>,
     pub(crate) keyboard: Option<KeyboardHandle<D>>,
@@ -192,57 +174,13 @@ pub(crate) struct Inner<D: SeatHandler> {
     pub(crate) known_seats: Vec<wayland_server::Weak<wayland_server::protocol::wl_seat::WlSeat>>,
 }
 
-#[cfg(not(feature = "wayland_frontend"))]
-impl<D: SeatHandler> fmt::Debug for Inner<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Inner")
-            .field("pointer", &self.pointer)
-            .field("keyboard", &self.keyboard)
-            .finish()
-    }
-}
-
-#[cfg(feature = "wayland_frontend")]
-impl<D: SeatHandler> fmt::Debug for Inner<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Inner")
-            .field("pointer", &self.pointer)
-            .field("keyboard", &self.keyboard)
-            .field("touch", &self.touch)
-            .field("global", &self.global)
-            .field("known_seats", &self.known_seats)
-            .finish()
-    }
-}
-
+#[derive(Debug)]
 pub(crate) struct SeatRc<D: SeatHandler> {
     #[allow(dead_code)]
     pub(crate) name: String,
     pub(crate) inner: Mutex<Inner<D>>,
     span: tracing::Span,
     user_data_map: UserDataMap,
-}
-
-impl<D: SeatHandler> fmt::Debug for SeatRc<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SeatRc")
-            .field("name", &self.name)
-            .field("inner", &self.inner)
-            .field("user_data_map", &self.user_data_map)
-            .finish()
-    }
 }
 
 impl<D: SeatHandler> Clone for Seat<D> {

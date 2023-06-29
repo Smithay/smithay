@@ -10,7 +10,7 @@
 //! #     },
 //! #     utils::{Buffer, Physical, Rectangle, Transform},
 //! # };
-//! # #[derive(Clone)]
+//! # #[derive(Clone, Debug)]
 //! # struct FakeTexture;
 //! #
 //! # impl Texture for FakeTexture {
@@ -64,6 +64,7 @@
 //! #     }
 //! # }
 //! #
+//! # #[derive(Debug)]
 //! # struct FakeRenderer;
 //! #
 //! # impl Renderer for FakeRenderer {

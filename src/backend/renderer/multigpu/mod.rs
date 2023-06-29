@@ -637,7 +637,7 @@ pub trait GraphicsApi {
 }
 
 /// A device produced by a [`GraphicsApi`].
-pub trait ApiDevice {
+pub trait ApiDevice: fmt::Debug {
     /// The [`Renderer`](super::Renderer) this devices contains
     type Renderer: Renderer;
 
@@ -660,10 +660,6 @@ pub struct MultiRenderer<'render, 'target, 'alloc, R: GraphicsApi, T: GraphicsAp
 
 impl<'render, 'target, 'alloc, R: GraphicsApi, T: GraphicsApi> fmt::Debug
     for MultiRenderer<'render, 'target, 'alloc, R, T>
-where
-    <<T::Device as ApiDevice>::Renderer as Renderer>::TextureId: fmt::Debug,
-    R::Device: fmt::Debug,
-    T::Device: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MultiRenderer")

@@ -27,7 +27,7 @@ mod xkb_config;
 pub use xkb_config::XkbConfig;
 
 /// Trait representing object that can receive keyboard interactions
-pub trait KeyboardTarget<D>: IsAlive + PartialEq + Clone + Send
+pub trait KeyboardTarget<D>: IsAlive + PartialEq + Clone + fmt::Debug + Send
 where
     D: SeatHandler,
 {
@@ -69,10 +69,7 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
 }
 
 // focus_hook does not implement debug, so we have to impl Debug manually
-impl<D: SeatHandler> fmt::Debug for KbdInternal<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-{
+impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KbdInternal")
             .field("focus", &self.focus)
@@ -194,20 +191,14 @@ pub(crate) struct KbdRc<D: SeatHandler> {
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
-impl<D: SeatHandler> fmt::Debug for KbdRc<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-{
+impl<D: SeatHandler> fmt::Debug for KbdRc<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KbdRc").field("internal", &self.internal).finish()
     }
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl<D: SeatHandler> fmt::Debug for KbdRc<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-{
+impl<D: SeatHandler> fmt::Debug for KbdRc<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KbdRc")
             .field("internal", &self.internal)
@@ -273,10 +264,7 @@ pub struct GrabStartData<D: SeatHandler> {
     pub focus: Option<<D as SeatHandler>::KeyboardFocus>,
 }
 
-impl<D: SeatHandler + 'static> fmt::Debug for GrabStartData<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-{
+impl<D: SeatHandler + 'static> fmt::Debug for GrabStartData<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GrabStartData")
             .field("focus", &self.focus)
@@ -349,10 +337,7 @@ pub struct KeyboardHandle<D: SeatHandler> {
     pub(crate) arc: Arc<KbdRc<D>>,
 }
 
-impl<D: SeatHandler> fmt::Debug for KeyboardHandle<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-{
+impl<D: SeatHandler> fmt::Debug for KeyboardHandle<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KeyboardHandle").field("arc", &self.arc).finish()
     }
@@ -642,10 +627,7 @@ pub struct KeyboardInnerHandle<'a, D: SeatHandler> {
     seat: &'a Seat<D>,
 }
 
-impl<'a, D: SeatHandler> fmt::Debug for KeyboardInnerHandle<'a, D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-{
+impl<'a, D: SeatHandler> fmt::Debug for KeyboardInnerHandle<'a, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KeyboardInnerHandle")
             .field("inner", &self.inner)

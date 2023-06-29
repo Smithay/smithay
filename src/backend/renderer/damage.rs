@@ -31,7 +31,7 @@
 //! #     utils::{Buffer, Physical, Rectangle, Size},
 //! # };
 //! #
-//! # #[derive(Clone)]
+//! # #[derive(Clone, Debug)]
 //! # struct FakeTexture;
 //! #
 //! # impl Texture for FakeTexture {
@@ -81,6 +81,7 @@
 //! #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
 //! # }
 //! #
+//! # #[derive(Debug)]
 //! # struct FakeRenderer;
 //! #
 //! # impl Renderer for FakeRenderer {

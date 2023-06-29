@@ -2,7 +2,6 @@ use std::fs::File;
 use std::io::Read;
 use std::os::unix::io::{FromRawFd, OwnedFd};
 use std::{
-    fmt::Debug,
     os::unix::io::AsRawFd,
     sync::{Arc, Mutex},
 };
@@ -58,22 +57,10 @@ impl VirtualKeyboardHandle {
 }
 
 /// User data of ZwpVirtualKeyboardV1 object
+#[derive(Debug)]
 pub struct VirtualKeyboardUserData<D: SeatHandler> {
     pub(super) handle: VirtualKeyboardHandle,
     pub(crate) seat: Seat<D>,
-}
-
-impl<D: SeatHandler> Debug for VirtualKeyboardUserData<D>
-where
-    <D as SeatHandler>::KeyboardFocus: Debug,
-    <D as SeatHandler>::PointerFocus: Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("VirtualKeyboardUserData")
-            .field("handle", &self.handle)
-            .field("seat", &self.seat.arc)
-            .finish()
-    }
 }
 
 impl<D> Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>, D> for VirtualKeyboardManagerState

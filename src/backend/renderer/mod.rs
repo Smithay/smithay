@@ -9,6 +9,7 @@
 
 use std::collections::HashSet;
 use std::error::Error;
+use std::fmt;
 
 use crate::utils::{Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform};
 use cgmath::Matrix3;
@@ -111,7 +112,7 @@ pub trait Unbind: Renderer {
 }
 
 /// A two dimensional texture
-pub trait Texture {
+pub trait Texture: fmt::Debug {
     /// Size of the texture plane
     fn size(&self) -> Size<i32, BufferCoord> {
         Size::from((self.width() as i32, self.height() as i32))
@@ -246,7 +247,7 @@ bitflags::bitflags! {
     }
 }
 /// Abstraction of commonly used rendering operations for compositors.
-pub trait Renderer {
+pub trait Renderer: fmt::Debug {
     /// Error type returned by the rendering operations of this renderer.
     type Error: Error;
     /// Texture Handle type used by this renderer.
