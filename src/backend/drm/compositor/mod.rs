@@ -496,7 +496,7 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
         let backup = current_config.clone();
         *current_config = state;
 
-        let res = surface.test_state(self.build_planes(supports_fencing, true), allow_modeset);
+        let res = surface.test_state(self.build_planes(supports_fencing), allow_modeset);
 
         if res.is_err() {
             // test failed, restore previous state
@@ -512,7 +512,7 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
         supports_fencing: bool,
         event: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
-        surface.commit(self.build_planes(supports_fencing, false), event)
+        surface.commit(self.build_planes(supports_fencing), event)
     }
 
     fn page_flip(
@@ -521,14 +521,10 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
         supports_fencing: bool,
         event: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
-        surface.page_flip(self.build_planes(supports_fencing, false), event)
+        surface.page_flip(self.build_planes(supports_fencing), event)
     }
 
-    fn build_planes(
-        &mut self,
-        supports_fencing: bool,
-        test_only: bool,
-    ) -> impl IntoIterator<Item = super::PlaneState<'_>> {
+    fn build_planes(&mut self, supports_fencing: bool) -> impl IntoIterator<Item = super::PlaneState<'_>> {
         for (_, state) in self.planes.iter_mut().filter(|(_, state)| !state.skip) {
             if let Some(config) = state.config.as_mut() {
                 // Try to extract a native fence out of the supplied sync point if any
@@ -537,11 +533,6 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
                 if let Some((sync, fence)) = config.sync.as_mut() {
                     if supports_fencing && fence.is_none() {
                         *fence = sync.export().map(Arc::new);
-                    }
-
-                    // Don't wait if we are only testing the state
-                    if !test_only && fence.is_none() {
-                        sync.wait();
                     }
                 }
             }
@@ -733,8 +724,8 @@ pub struct RenderFrameResult<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
 }
 
 impl<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> RenderFrameResult<'a, B, F, E> {
-    /// Returns whether the frame would block the current thread when queued
-    pub fn would_block(&self) -> bool {
+    /// Returns if synchronization with kms submission can't be guaranteed through the available apis.
+    pub fn needs_sync(&self) -> bool {
         if let PrimaryPlaneElement::Swapchain(ref element) = self.primary_element {
             !element.sync.is_reached() && (!self.supports_fencing || !element.sync.is_exportable())
         } else {
@@ -2098,6 +2089,9 @@ where
     /// is the callers responsibility to re-schedule the frame. A simple strategy for frame
     /// re-scheduling is to queue a one-shot timer that will trigger after approximately one
     /// retrace duration.
+    ///
+    /// *Note*: It is your responsibility to synchronize rendering if the [`RenderFrameResult`]
+    /// returned by the previous [`render_frame`] call returns `true` on [`RenderFrameResult::needs_sync`].
     ///
     /// *Note*: This function needs to be followed up with [`DrmCompositor::frame_submitted`]
     /// when a vblank event is received, that denotes successful scan-out of the frame.
