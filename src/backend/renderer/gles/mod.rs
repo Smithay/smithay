@@ -1738,7 +1738,7 @@ impl Offscreen<GlesTexture> for GlesRenderer {
             tex
         };
 
-        Ok(unsafe { GlesTexture::from_raw(self, Some(internal), has_alpha, tex, size) })
+        Ok(unsafe { GlesTexture::from_raw(self, Some(internal), !has_alpha, tex, size) })
     }
 }
 
