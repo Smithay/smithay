@@ -1134,6 +1134,7 @@ where
                         .renderer_mut()
                         .render(self.size, Transform::Normal)
                         .map_err(Error::Target)?;
+                    frame.wait(&sync).map_err(Error::Target)?;
                     frame
                         .clear([0.0, 0.0, 0.0, 0.0], &damage)
                         .map_err(Error::Target)?;
