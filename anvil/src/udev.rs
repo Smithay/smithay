@@ -1467,21 +1467,6 @@ fn render_surface<'a, 'b>(
     let scale = Scale::from(output.current_scale().fractional_scale());
 
     let mut custom_elements: Vec<CustomRenderElements<_>> = Vec::new();
-    // draw input method surface if any
-    let rectangle = input_method.coordinates();
-    let position = Point::from((
-        rectangle.loc.x + rectangle.size.w,
-        rectangle.loc.y + rectangle.size.h,
-    ));
-    input_method.with_surface(|surface| {
-        custom_elements.extend(AsRenderElements::<UdevRenderer<'a, 'b>>::render_elements(
-            &SurfaceTree::from_surface(surface),
-            renderer,
-            position.to_physical_precise_round(scale),
-            scale,
-            1.0,
-        ));
-    });
 
     if output_geometry.to_f64().contains(pointer_location) {
         let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = cursor_status {

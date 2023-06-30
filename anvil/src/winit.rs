@@ -311,22 +311,6 @@ pub fn run_winit() {
 
                 elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale, 1.0));
 
-                // draw input method surface if any
-                let rectangle = input_method.coordinates();
-                let position = Point::from((
-                    rectangle.loc.x + rectangle.size.w,
-                    rectangle.loc.y + rectangle.size.h,
-                ));
-                input_method.with_surface(|surface| {
-                    elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
-                        &smithay::desktop::space::SurfaceTree::from_surface(surface),
-                        renderer,
-                        position.to_physical_precise_round(scale),
-                        scale,
-                        1.0,
-                    ));
-                });
-
                 // draw the dnd icon if any
                 if let Some(surface) = dnd_icon {
                     if surface.alive() {

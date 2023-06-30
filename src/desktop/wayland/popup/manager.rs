@@ -88,6 +88,9 @@ impl PopupManager {
                     return Err(PopupGrabError::InvalidGrab);
                 }
             }
+            PopupKind::InputMethod(_) => {
+                return Err(PopupGrabError::InvalidGrab); // TODO?
+            }
         }
 
         // The primary store for the grab is the seat, additional we store it

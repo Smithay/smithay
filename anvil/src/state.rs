@@ -20,7 +20,7 @@ use smithay::{
             surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
             update_surface_primary_scanout_output, OutputPresentationFeedback,
         },
-        PopupManager, Space,
+        PopupKind, PopupManager, Space,
     },
     input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
     output::Output,
@@ -44,7 +44,7 @@ use smithay::{
         },
         dmabuf::DmabufFeedback,
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
-        input_method::InputMethodManagerState,
+        input_method::{InputMethodHandler, InputMethodManagerState, InputMethodPopupSurfaceHandle},
         keyboard_shortcuts_inhibit::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
@@ -269,6 +269,14 @@ delegate_seat!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 delegate_tablet_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_text_input_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
+    fn new_popup(&mut self, surface: InputMethodPopupSurfaceHandle) {
+        if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
+            warn!("Failed to track popup: {}", err);
+        }
+    }
+}
 
 delegate_input_method_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 

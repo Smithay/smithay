@@ -4,7 +4,7 @@ use wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::{self, Zw
 use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::{protocol::wl_surface::WlSurface, Dispatch, Resource};
 
-use crate::utils::IsAlive;
+use crate::utils::{IsAlive, Rectangle};
 use crate::wayland::input_method::InputMethodHandle;
 
 use super::TextInputManagerState;
@@ -61,6 +61,10 @@ impl TextInputHandle {
                 ti.serial += 1;
             }
         }
+    }
+
+    pub(crate) fn focus(&self) -> Option<WlSurface> {
+        self.inner.lock().unwrap().focus.clone()
     }
 
     /// Sets text input focus to a surface, the hook can be used to e.g.
@@ -122,6 +126,7 @@ where
                     .with_instance(|input_method| input_method.activate());
             }
             zwp_text_input_v3::Request::Disable => {
+                // TODO hide popup?
                 data.input_method_handle
                     .with_instance(|input_method| input_method.deactivate());
             }
@@ -142,10 +147,11 @@ where
             }
             zwp_text_input_v3::Request::SetCursorRectangle { x, y, width, height } => {
                 let input_method = data.input_method_handle.inner.lock().unwrap();
-                input_method.popup.add_coordinates(x, y, width, height);
-                let popup_surface = &input_method.popup.inner.lock().unwrap();
-                if let Some(popup) = &popup_surface.surface_role {
-                    popup.text_input_rectangle(x, y, width, height);
+                // XXX Race if surface not created yet?
+                if let Some(popup) = &input_method.popup {
+                    *popup.inner.rectangle.lock().unwrap() =
+                        Rectangle::from_loc_and_size((x, y), (width, height));
+                    popup.inner.surface_role.text_input_rectangle(x, y, width, height);
                 }
             }
             zwp_text_input_v3::Request::Commit => {

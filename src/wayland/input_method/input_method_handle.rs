@@ -7,20 +7,19 @@ use wayland_protocols_misc::zwp_input_method_v2::server::{
 };
 use wayland_server::backend::{ClientId, ObjectId};
 use wayland_server::{
-    protocol::{wl_keyboard::KeymapFormat, wl_surface::WlSurface},
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
+    protocol::wl_keyboard::KeymapFormat, Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::{
     input::{keyboard::KeyboardHandle, SeatHandler},
-    utils::{IsAlive, Logical, Physical, Point, Rectangle, SERIAL_COUNTER},
+    utils::{alive_tracker::AliveTracker, SERIAL_COUNTER},
     wayland::{compositor, seat::WaylandFocus, text_input::TextInputHandle},
 };
 
 use super::{
     input_method_keyboard_grab::InputMethodKeyboardGrab,
-    input_method_popup_surface::InputMethodPopupSurfaceHandle, InputMethodKeyboardUserData,
-    InputMethodManagerState, InputMethodPopupSurfaceUserData,
+    input_method_popup_surface::InputMethodPopupSurfaceHandle, InputMethodHandler,
+    InputMethodKeyboardUserData, InputMethodManagerState, InputMethodPopupSurfaceUserData,
 };
 
 const INPUT_POPUP_SURFACE_ROLE: &str = "zwp_input_popup_surface_v2";
@@ -28,7 +27,7 @@ const INPUT_POPUP_SURFACE_ROLE: &str = "zwp_input_popup_surface_v2";
 #[derive(Default, Debug)]
 pub(crate) struct InputMethod {
     pub instance: Option<ZwpInputMethodV2>,
-    pub popup: InputMethodPopupSurfaceHandle,
+    pub popup: Option<InputMethodPopupSurfaceHandle>,
     pub keyboard_grab: InputMethodKeyboardGrab,
 }
 
@@ -66,39 +65,11 @@ impl InputMethodHandle {
         keyboard.grab.is_some()
     }
 
-    /// Convenience function to draw surfaces
-    pub fn with_surface<F>(&self, mut f: F)
-    where
-        F: FnMut(&WlSurface),
-    {
-        let inner = self.inner.lock().unwrap();
-        let popup = inner.popup.inner.lock().unwrap();
-        if popup.surface_role.is_some() {
-            if let Some(surface) = &popup.surface {
-                if surface.alive() {
-                    f(surface);
-                }
-            }
-        }
-    }
-
     /// Convenience function to close popup surfaces
     pub(crate) fn close_popup(&self) {
-        let inner = self.inner.lock().unwrap();
-        let mut popup = inner.popup.inner.lock().unwrap();
-        popup.surface_role = None;
-    }
-
-    /// Used to access the relative location of an input popup surface
-    pub fn coordinates(&self) -> Rectangle<i32, Physical> {
-        let inner = self.inner.lock().unwrap();
-        inner.popup.coordinates()
-    }
-
-    /// Sets the point of the upper left corner of the surface in focus
-    pub fn set_point(&self, point: &Point<i32, Logical>) {
         let mut inner = self.inner.lock().unwrap();
-        inner.popup.set_point(point);
+        // TODO flag as closed so it won't be shown
+        inner.popup = None;
     }
 }
 
@@ -116,11 +87,12 @@ where
     D: Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData>,
     D: Dispatch<ZwpInputMethodKeyboardGrabV2, InputMethodKeyboardUserData<D>>,
     D: SeatHandler,
+    D: InputMethodHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         _client: &Client,
         seat: &ZwpInputMethodV2,
         request: zwp_input_method_v2::Request,
@@ -162,16 +134,25 @@ where
                     seat.post_error(0u32, "Surface already has a role.");
                     return;
                 }
-                let input_method = data.handle.inner.lock().unwrap();
+
+                let parent = if let Some(parent) = data.text_input_handle.focus() {
+                    parent
+                } else {
+                    return;
+                };
+
+                let mut input_method = data.handle.inner.lock().unwrap();
+
                 let instance = data_init.init(
                     id,
                     InputMethodPopupSurfaceUserData {
-                        handle: input_method.popup.clone(),
+                        alive_tracker: AliveTracker::default(),
                     },
                 );
-                let mut popup = input_method.popup.inner.lock().unwrap();
-                popup.surface_role = Some(instance);
-                popup.surface = Some(surface);
+                // TODO close if there already is one
+                let popup = InputMethodPopupSurfaceHandle::new(instance, surface, parent);
+                input_method.popup = Some(popup.clone());
+                state.new_popup(popup);
             }
             zwp_input_method_v2::Request::GrabKeyboard { keyboard } => {
                 let input_method = data.handle.inner.lock().unwrap();
@@ -187,7 +168,8 @@ where
                 let mut keyboard = input_method.keyboard_grab.inner.lock().unwrap();
                 keyboard.grab = Some(instance.clone());
                 keyboard.text_input_handle = data.text_input_handle.clone();
-                keyboard.popup_handle = input_method.popup.clone();
+                // Is this needed to keep something from being freed? Or just unused?
+                // keyboard.popup_handle = input_method.popup.clone();
                 let guard = data.keyboard_handle.arc.internal.lock().unwrap();
                 instance.repeat_info(guard.repeat_rate, guard.repeat_delay);
                 let keymap_file = data.keyboard_handle.arc.keymap.lock().unwrap();

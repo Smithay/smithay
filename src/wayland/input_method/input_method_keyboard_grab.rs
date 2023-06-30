@@ -16,14 +16,12 @@ use crate::input::{
 };
 use crate::wayland::{seat::WaylandFocus, text_input::TextInputHandle};
 
-use super::input_method_popup_surface::InputMethodPopupSurfaceHandle;
 use super::InputMethodManagerState;
 
 #[derive(Default, Debug)]
 pub(crate) struct InputMethodKeyboard {
     pub grab: Option<ZwpInputMethodKeyboardGrabV2>,
     pub text_input_handle: TextInputHandle,
-    pub popup_handle: InputMethodPopupSurfaceHandle,
 }
 
 /// Handle to an input method instance

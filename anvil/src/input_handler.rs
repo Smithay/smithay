@@ -273,7 +273,6 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                         self.pointer_location - output_geo.loc.to_f64(),
                         WindowSurfaceType::ALL,
                     ) {
-                        input_method.set_point(&point);
                         #[cfg(feature = "xwayland")]
                         if let WindowElement::X11(surf) = &window {
                             self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
@@ -295,7 +294,6 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                                 - layers.layer_geometry(layer).unwrap().loc.to_f64(),
                             WindowSurfaceType::ALL,
                         ) {
-                            input_method.set_point(&point);
                             keyboard.set_focus(self, Some(layer.clone().into()), serial);
                             return;
                         }
@@ -309,7 +307,6 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 .map(|(w, p)| (w.clone(), p))
             {
                 self.space.raise_element(&window, true);
-                input_method.set_point(&point);
                 keyboard.set_focus(self, Some(window.clone().into()), serial);
                 #[cfg(feature = "xwayland")]
                 if let WindowElement::X11(surf) = &window {
@@ -332,7 +329,6 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                                 - layers.layer_geometry(layer).unwrap().loc.to_f64(),
                             WindowSurfaceType::ALL,
                         ) {
-                            input_method.set_point(&point);
                             keyboard.set_focus(self, Some(layer.clone().into()), serial);
                         }
                     }

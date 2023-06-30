@@ -363,23 +363,6 @@ pub fn run_x11() {
                 1.0,
             ));
 
-            // draw input method surface if any
-            let input_method = state.seat.input_method();
-            let rectangle = input_method.coordinates();
-            let position = Point::from((
-                rectangle.loc.x + rectangle.size.w,
-                rectangle.loc.y + rectangle.size.h,
-            ));
-            input_method.with_surface(|surface| {
-                elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
-                    &smithay::desktop::space::SurfaceTree::from_surface(surface),
-                    &mut backend_data.renderer,
-                    position.to_physical_precise_round(scale),
-                    scale,
-                    1.0,
-                ));
-            });
-
             // draw the dnd icon if any
             if let Some(surface) = state.dnd_icon.as_ref() {
                 if surface.alive() {

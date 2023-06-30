@@ -263,7 +263,14 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
     }
 
     if let Some(popup) = popups.find_popup(surface) {
-        let PopupKind::Xdg(ref popup) = popup;
+        let popup = match popup {
+            PopupKind::Xdg(ref popup) => popup,
+            // Doesn't require configure
+            PopupKind::InputMethod(_) => {
+                return;
+            }
+        };
+
         let initial_configure_sent = with_states(surface, |states| {
             states
                 .data_map
