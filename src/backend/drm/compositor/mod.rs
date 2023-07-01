@@ -2648,7 +2648,7 @@ where
         }
 
         let copy_rect = Rectangle::from_loc_and_size((0, 0), cursor_buffer_size);
-        let mapping = match renderer.copy_framebuffer(copy_rect, DrmFourcc::Abgr8888) {
+        let mapping = match renderer.copy_framebuffer(copy_rect, DrmFourcc::Argb8888) {
             Ok(mapping) => mapping,
             Err(err) => {
                 info!("failed to export cursor offscreen buffer: {}", err);
