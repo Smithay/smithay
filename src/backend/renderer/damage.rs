@@ -731,7 +731,7 @@ impl OutputDamageTracker {
             trace!("age of {} recent enough, using old damage", age);
             // We do not need even older states anymore
             self.last_state.old_damage.truncate(age);
-            damage.extend(self.last_state.old_damage.iter().flatten().copied());
+            damage.extend(self.last_state.old_damage.iter().take(age - 1).flatten().copied());
         } else {
             trace!(
                 "no old damage available, re-render everything. age: {} old_damage len: {}",
