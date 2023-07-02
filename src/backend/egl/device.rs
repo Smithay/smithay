@@ -1,8 +1,8 @@
-use std::{ffi::CStr, mem::MaybeUninit, os::raw::c_void, path::PathBuf, ptr};
+use std::{ffi::CStr, os::raw::c_void, path::PathBuf, ptr};
 
 use super::{
     ffi::{self, egl::types::EGLDeviceEXT},
-    wrap_egl_call, EGLDisplay, EGLError, Error,
+    wrap_egl_call_bool, wrap_egl_call_ptr, EGLDisplay, EGLError, Error,
 };
 
 #[cfg(feature = "backend_drm")]
@@ -42,27 +42,17 @@ impl EGLDevice {
 
         // Yes, this is marked as `mut` even though the value is never mutated. EGL expects a mutable pointer
         // for num_devices and will not modify the value if we are asking for pointers to some EGLDeviceEXT.
-        let mut device_amount = match wrap_egl_call(|| {
-            let mut amount: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
-
+        let mut device_amount = 0;
+        wrap_egl_call_bool(|| unsafe {
             // Passing 0 for max devices and a null-pointer for devices is safe because we indicate we only
             // want the number of devices.
-            if unsafe { ffi::egl::QueryDevicesEXT(0, ptr::null_mut(), amount.as_mut_ptr()) }
-                == ffi::egl::FALSE
-            {
-                0
-            } else {
-                // SAFETY: Success
-                unsafe { amount.assume_init() }
-            }
-        }) {
-            Ok(number) => number,
-            Err(err) => return Err(Error::QueryDevices(err)),
-        };
+            ffi::egl::QueryDevicesEXT(0, ptr::null_mut(), &mut device_amount)
+        })
+        .map_err(Error::QueryDevices)?;
 
         let mut devices = Vec::with_capacity(device_amount as usize);
 
-        wrap_egl_call(|| unsafe {
+        wrap_egl_call_bool(|| unsafe {
             // SAFETY:
             // - Vector used as pointer is correct size.
             // - Device amount will accommodate all available devices because we have checked the size earlier.
@@ -151,7 +141,7 @@ impl EGLDevice {
         if !self.extensions().contains(&"EGL_EXT_device_drm".to_owned()) {
             Err(Error::EglExtensionNotSupported(&["EGL_EXT_device_drm"]))
         } else {
-            let raw_path = wrap_egl_call(|| unsafe {
+            let raw_path = wrap_egl_call_ptr(|| unsafe {
                 ffi::egl::QueryDeviceStringEXT(
                     self.inner,
                     ffi::egl::DRM_DEVICE_FILE_EXT as ffi::egl::types::EGLint,
@@ -189,7 +179,7 @@ impl EGLDevice {
                 "EGL_EXT_device_drm_render_node",
             ]))
         } else {
-            let raw_path = wrap_egl_call(|| unsafe {
+            let raw_path = wrap_egl_call_ptr(|| unsafe {
                 ffi::egl::QueryDeviceStringEXT(
                     self.inner,
                     ffi::egl::DRM_RENDER_NODE_FILE_EXT as ffi::egl::types::EGLint,
@@ -261,7 +251,7 @@ impl EGLDevice {
 ///     - [`EGL_EXT_device_base`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_device_base.txt)
 ///     - [`EGL_EXT_device_query`](https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_device_query.txt)
 unsafe fn device_extensions(device: EGLDeviceEXT) -> Result<Vec<String>, EGLError> {
-    let raw_extensions = wrap_egl_call(|| {
+    let raw_extensions = wrap_egl_call_ptr(|| {
         ffi::egl::QueryDeviceStringEXT(device, ffi::egl::EXTENSIONS as ffi::egl::types::EGLint)
     })?;
 

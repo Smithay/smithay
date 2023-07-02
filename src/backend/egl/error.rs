@@ -152,8 +152,32 @@ impl EGLError {
     }
 }
 
-/// Wraps a raw egl call and returns error codes from `eglGetError`, if it fails.
-pub fn wrap_egl_call<R, F: FnOnce() -> R>(call: F) -> Result<R, EGLError> {
+/// Wraps a raw egl call and returns error codes from `eglGetError()`, only if the result of the
+/// call is different from the `err` value.
+pub fn wrap_egl_call<R: PartialEq, F: FnOnce() -> R>(call: F, err: R) -> Result<R, EGLError> {
     let res = call();
-    EGLError::from_last_call().map(|()| res)
+    if res != err {
+        Ok(res)
+    } else {
+        EGLError::from_last_call().map(|()| res)
+    }
+}
+
+/// Wraps a raw egl call and returns error codes from `eglGetError()`, only if the pointer returned
+/// is null.
+pub fn wrap_egl_call_ptr<R, F: FnOnce() -> *const R>(call: F) -> Result<*const R, EGLError> {
+    let res = call();
+    if !res.is_null() {
+        Ok(res)
+    } else {
+        EGLError::from_last_call().map(|()| res)
+    }
+}
+
+/// Wraps a raw egl call and returns error codes from `eglGetError()`, only if the `EGLBoolean`
+/// returned is `EGL_FALSE`.
+pub fn wrap_egl_call_bool<F: FnOnce() -> ffi::egl::types::EGLBoolean>(
+    call: F,
+) -> Result<ffi::egl::types::EGLBoolean, EGLError> {
+    wrap_egl_call(call, ffi::egl::FALSE)
 }

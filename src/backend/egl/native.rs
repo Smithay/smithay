@@ -1,8 +1,10 @@
 //! Type safe native types for safe context/surface creation
 
+#[cfg(feature = "backend_winit")]
+use super::wrap_egl_call_ptr;
 use super::{
     display::{DamageSupport, EGLDisplayHandle},
-    ffi, wrap_egl_call, EGLDevice, SwapBuffersError,
+    ffi, wrap_egl_call_bool, EGLDevice, SwapBuffersError,
 };
 #[cfg(feature = "backend_gbm")]
 use crate::utils::DevPath;
@@ -294,7 +296,7 @@ pub unsafe trait EGLNativeSurface: Send {
         damage: Option<&mut [Rectangle<i32, Physical>]>,
         damage_impl: DamageSupport,
     ) -> Result<(), SwapBuffersError> {
-        wrap_egl_call(|| unsafe {
+        wrap_egl_call_bool(|| unsafe {
             if let Some(damage) = damage {
                 match damage_impl {
                     DamageSupport::KHR => ffi::egl::SwapBuffersWithDamageKHR(
@@ -310,12 +312,13 @@ pub unsafe trait EGLNativeSurface: Send {
                         damage.len() as i32,
                     ),
                     DamageSupport::No => ffi::egl::SwapBuffers(***display, surface as *const _),
-                };
+                }
             } else {
-                ffi::egl::SwapBuffers(***display, surface as *const _);
+                ffi::egl::SwapBuffers(***display, surface as *const _)
             }
         })
         .map_err(SwapBuffersError::EGLSwapBuffers)
+        .map(|_| ())
     }
 
     /// String identifying this native surface from its counterparts of the same platform, if applicable.
@@ -343,7 +346,7 @@ unsafe impl EGLNativeSurface for XlibWindow {
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
     ) -> Result<*const c_void, super::EGLError> {
-        wrap_egl_call(|| unsafe {
+        wrap_egl_call_ptr(|| unsafe {
             let mut id = self.0;
             ffi::egl::CreatePlatformWindowSurfaceEXT(
                 display.handle,
@@ -366,7 +369,7 @@ unsafe impl EGLNativeSurface for wegl::WlEglSurface {
         display: &Arc<EGLDisplayHandle>,
         config_id: ffi::egl::types::EGLConfig,
     ) -> Result<*const c_void, super::EGLError> {
-        wrap_egl_call(|| unsafe {
+        wrap_egl_call_ptr(|| unsafe {
             ffi::egl::CreatePlatformWindowSurfaceEXT(
                 display.handle,
                 config_id,

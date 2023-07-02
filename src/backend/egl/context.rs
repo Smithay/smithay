@@ -7,7 +7,7 @@ use std::{
 
 use libc::c_void;
 
-use super::{ffi, wrap_egl_call, Error, MakeCurrentError};
+use super::{ffi, wrap_egl_call_bool, wrap_egl_call_ptr, Error, MakeCurrentError};
 use crate::{
     backend::{
         allocator::Format as DrmFormat,
@@ -179,7 +179,7 @@ impl EGLContext {
         context_attributes.push(ffi::egl::NONE as i32);
 
         trace!("Creating EGL context...");
-        let context = wrap_egl_call(|| unsafe {
+        let context = wrap_egl_call_ptr(|| unsafe {
             ffi::egl::CreateContext(
                 **display.get_display_handle(),
                 config_id,
@@ -218,7 +218,7 @@ impl EGLContext {
     /// being unbound again (see [`EGLContext::unbind`]).
     #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub unsafe fn make_current(&self) -> Result<(), MakeCurrentError> {
-        wrap_egl_call(|| {
+        wrap_egl_call_bool(|| {
             ffi::egl::MakeCurrent(
                 **self.display.get_display_handle(),
                 ffi::egl::NO_SURFACE,
@@ -256,7 +256,7 @@ impl EGLContext {
     ) -> Result<(), MakeCurrentError> {
         let draw_surface_ptr = draw_surface.surface.load(Ordering::SeqCst);
         let read_surface_ptr = read_surface.surface.load(Ordering::SeqCst);
-        wrap_egl_call(|| {
+        wrap_egl_call_bool(|| {
             ffi::egl::MakeCurrent(
                 **self.display.get_display_handle(),
                 draw_surface_ptr,
@@ -289,7 +289,7 @@ impl EGLContext {
     #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     pub fn unbind(&self) -> Result<(), MakeCurrentError> {
         if self.is_current() {
-            wrap_egl_call(|| unsafe {
+            wrap_egl_call_bool(|| unsafe {
                 ffi::egl::MakeCurrent(
                     **self.display.get_display_handle(),
                     ffi::egl::NO_SURFACE,
