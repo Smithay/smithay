@@ -1910,7 +1910,7 @@ where
             // This is used to transport the opaque regions for elements that
             // have been assigned to planes and to realize hole punching for
             // underlays. We use an Id per plane/element combination to not
-            // interfer with the element damage state in the output damage tracker.
+            // interfere with the element damage state in the output damage tracker.
             // Using the original element id would store the commit in the
             // OutputDamageTracker without actual rendering anything -> bad
             // Using a id per plane could result in an issue when a different
@@ -1920,7 +1920,7 @@ where
             // on that plane.
             let mut elements = overlay_plane_elements
                 .iter()
-                .map(|(p, element)| {
+                .filter_map(|(p, element)| {
                     let id = self
                         .overlay_plane_element_ids
                         .plane_id_for_element_id(p, element.id());
@@ -1928,9 +1928,10 @@ where
                     let is_underlay = overlay_plane_lookup.get(p).unwrap().zpos.unwrap_or_default()
                         < self.planes.primary.zpos.unwrap_or_default();
                     if is_underlay {
-                        HolepunchRenderElement::from_render_element(id, element, output_scale).into()
+                        Some(HolepunchRenderElement::from_render_element(id, element, output_scale).into())
                     } else {
-                        OverlayPlaneElement::from_render_element(id, *element).into()
+                        OverlayPlaneElement::from_render_element(id, *element, output_scale)
+                            .map(DrmRenderElements::from)
                     }
                 })
                 .collect::<Vec<_>>();
