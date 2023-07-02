@@ -242,6 +242,7 @@ struct RendererState {
     size: Option<Size<i32, Physical>>,
     elements: IndexMap<Id, ElementState>,
     old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
+    opaque_regions: Vec<Rectangle<i32, Physical>>,
 }
 
 /// Mode for the [`OutputDamageTracker`] output
@@ -714,6 +715,17 @@ impl OutputDamageTracker {
             }
         }
 
+        // damage regions no longer covered by opaque regions
+        let opaque_regions_gone = opaque_regions.iter().flat_map(|(_, r)| r.iter()).fold(
+            self.last_state.opaque_regions.clone(),
+            |acc, item| {
+                acc.into_iter()
+                    .flat_map(|region| region.subtract_rect(*item))
+                    .collect::<Vec<_>>()
+            },
+        );
+        damage.extend(opaque_regions_gone);
+
         if self
             .last_state
             .size
@@ -811,6 +823,11 @@ impl OutputDamageTracker {
         self.last_state.size = Some(output_geo.size);
         self.last_state.elements = new_elements_state;
         self.last_state.old_damage.push_front(new_damage);
+        self.last_state.opaque_regions.clear();
+        self.last_state
+            .opaque_regions
+            .extend(opaque_regions.iter().flat_map(|(_, r)| r.iter().copied()));
+        self.last_state.opaque_regions.shrink_to_fit();
 
         element_render_states
     }
