@@ -208,6 +208,8 @@ use super::{
 
 use super::{Renderer, Texture};
 
+const MAX_AGE: usize = 4;
+
 #[derive(Debug, Clone, Copy)]
 struct ElementInstanceState {
     last_geometry: Rectangle<i32, Physical>,
@@ -738,6 +740,10 @@ impl OutputDamageTracker {
                 age,
                 self.last_state.old_damage.len(),
             );
+            // we still truncate the old damage to prevent growing
+            // indefinitely in case we are continuously called with
+            // an age of 0
+            self.last_state.old_damage.truncate(MAX_AGE);
             // just damage everything, if we have no damage
             *damage = vec![output_geo];
         };
