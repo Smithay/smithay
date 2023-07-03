@@ -208,6 +208,8 @@ use super::{
 
 use super::{Renderer, Texture};
 
+const MAX_AGE: usize = 4;
+
 #[derive(Debug, Clone, Copy)]
 struct ElementInstanceState {
     last_geometry: Rectangle<i32, Physical>,
@@ -240,6 +242,7 @@ struct RendererState {
     size: Option<Size<i32, Physical>>,
     elements: IndexMap<Id, ElementState>,
     old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
+    opaque_regions: Vec<Rectangle<i32, Physical>>,
 }
 
 /// Mode for the [`OutputDamageTracker`] output
@@ -712,6 +715,17 @@ impl OutputDamageTracker {
             }
         }
 
+        // damage regions no longer covered by opaque regions
+        let opaque_regions_gone = opaque_regions.iter().flat_map(|(_, r)| r.iter()).fold(
+            self.last_state.opaque_regions.clone(),
+            |acc, item| {
+                acc.into_iter()
+                    .flat_map(|region| region.subtract_rect(*item))
+                    .collect::<Vec<_>>()
+            },
+        );
+        damage.extend(opaque_regions_gone);
+
         if self
             .last_state
             .size
@@ -731,13 +745,17 @@ impl OutputDamageTracker {
             trace!("age of {} recent enough, using old damage", age);
             // We do not need even older states anymore
             self.last_state.old_damage.truncate(age);
-            damage.extend(self.last_state.old_damage.iter().flatten().copied());
+            damage.extend(self.last_state.old_damage.iter().take(age - 1).flatten().copied());
         } else {
             trace!(
                 "no old damage available, re-render everything. age: {} old_damage len: {}",
                 age,
                 self.last_state.old_damage.len(),
             );
+            // we still truncate the old damage to prevent growing
+            // indefinitely in case we are continuously called with
+            // an age of 0
+            self.last_state.old_damage.truncate(MAX_AGE);
             // just damage everything, if we have no damage
             *damage = vec![output_geo];
         };
@@ -805,6 +823,11 @@ impl OutputDamageTracker {
         self.last_state.size = Some(output_geo.size);
         self.last_state.elements = new_elements_state;
         self.last_state.old_damage.push_front(new_damage);
+        self.last_state.opaque_regions.clear();
+        self.last_state
+            .opaque_regions
+            .extend(opaque_regions.iter().flat_map(|(_, r)| r.iter().copied()));
+        self.last_state.opaque_regions.shrink_to_fit();
 
         element_render_states
     }

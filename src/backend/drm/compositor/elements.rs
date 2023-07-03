@@ -13,7 +13,7 @@ pub const COLOR_TRANSPARENT: [f32; 4] = [0f32, 0f32, 0f32, 0f32];
 render_elements! {
     pub DrmRenderElements<'a, R, E>;
     Holepunch=HolepunchRenderElement,
-    Overlay=OverlayPlaneElement<'a, E>,
+    Overlay=OverlayPlaneElement,
     Other=&'a E,
 }
 
@@ -86,65 +86,89 @@ impl Element for HolepunchRenderElement {
     }
 }
 
-pub struct OverlayPlaneElement<'a, E> {
+pub struct OverlayPlaneElement {
     id: Id,
-    element: &'a E,
+    geometry: Rectangle<i32, Physical>,
+    opaque_regions: Vec<Rectangle<i32, Physical>>,
 }
 
-impl<'a, E> OverlayPlaneElement<'a, E> {
-    pub fn from_render_element<R>(id: Id, element: &'a E) -> Self
+impl OverlayPlaneElement {
+    pub fn from_render_element<R, E>(id: Id, element: &E, scale: impl Into<Scale<f64>>) -> Option<Self>
     where
         R: Renderer,
         E: RenderElement<R>,
     {
-        OverlayPlaneElement { id, element }
+        let scale = scale.into();
+        let mut opaque_regions = element.opaque_regions(scale);
+        let geometry = element.geometry(scale);
+
+        // We use the opaque regions to create a bounding box around them to
+        // create a fake geometry that only includes the opaque regions.
+        // If the element is not fully opaque this can save the renderer
+        // from some damage when the element is moved.
+        let mut opaque_geometry = opaque_regions
+            .iter()
+            .fold(Rectangle::default(), |acc, item| acc.merge(*item));
+
+        if opaque_geometry.is_empty() {
+            return None;
+        }
+
+        // Because we will move the geometry by the top-left corner of
+        // the opaque geometry we calculated we have to subtract
+        // that from the element local opaque regions.
+        opaque_regions.iter_mut().for_each(|region| {
+            region.loc -= opaque_geometry.loc;
+        });
+
+        // Move the opaque geometry relative to the original
+        // element location
+        opaque_geometry.loc += geometry.loc;
+
+        Some(OverlayPlaneElement {
+            id,
+            geometry: opaque_geometry,
+            opaque_regions,
+        })
     }
 }
 
-impl<'a, E> Element for OverlayPlaneElement<'a, E>
-where
-    E: Element,
-{
+impl Element for OverlayPlaneElement {
     fn id(&self) -> &Id {
         &self.id
     }
 
     fn current_commit(&self) -> CommitCounter {
-        self.element.current_commit()
+        CommitCounter::default()
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        self.element.src()
+        Rectangle::default()
     }
 
-    fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        self.element.geometry(scale)
+    fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
+        self.geometry
     }
 
     fn transform(&self) -> Transform {
-        self.element.transform()
+        Transform::Normal
     }
 
     fn damage_since(
         &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
+        _scale: Scale<f64>,
+        _commit: Option<CommitCounter>,
     ) -> Vec<Rectangle<i32, Physical>> {
-        self.element.damage_since(scale, commit)
+        vec![]
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        self.element.opaque_regions(scale)
-    }
-
-    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
-        self.element.location(scale)
+    fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
+        self.opaque_regions.clone()
     }
 }
 
-impl<'a, E, R> RenderElement<R> for OverlayPlaneElement<'a, E>
+impl<R> RenderElement<R> for OverlayPlaneElement
 where
-    E: Element,
     R: Renderer,
 {
     fn draw(
