@@ -102,7 +102,7 @@ pub fn make_sure_egl_is_loaded() -> Result<Vec<String>, Error> {
     });
 
     let extensions = unsafe {
-        let p = super::wrap_egl_call(|| egl::QueryString(egl::NO_DISPLAY, egl::EXTENSIONS as i32))
+        let p = super::wrap_egl_call_ptr(|| egl::QueryString(egl::NO_DISPLAY, egl::EXTENSIONS as i32))
             .map_err(Error::InitFailed)?; //TODO EGL_EXT_client_extensions not supported
 
         // this possibility is available only with EGL 1.5 or EGL_EXT_platform_base, otherwise

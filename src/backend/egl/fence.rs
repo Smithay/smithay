@@ -4,7 +4,9 @@ use std::os::unix::io::{FromRawFd, IntoRawFd, OwnedFd};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::backend::egl::{ffi, wrap_egl_call, EGLDisplay, EGLDisplayHandle, Error};
+use crate::backend::egl::{
+    ffi, wrap_egl_call, wrap_egl_call_bool, wrap_egl_call_ptr, EGLDisplay, EGLDisplayHandle, Error,
+};
 
 #[derive(Debug)]
 struct InnerEGLFence {
@@ -53,7 +55,7 @@ impl EGLFence {
             ffi::egl::NONE as ffi::egl::types::EGLAttrib,
         ];
 
-        let res = wrap_egl_call(|| unsafe {
+        let res = wrap_egl_call_ptr(|| unsafe {
             ffi::egl::CreateSync(
                 **display_handle,
                 ffi::egl::SYNC_NATIVE_FENCE_ANDROID,
@@ -99,7 +101,7 @@ impl EGLFence {
 
         let display_handle = display.get_display_handle();
         let handle =
-            wrap_egl_call(|| unsafe { ffi::egl::CreateSync(**display_handle, type_, std::ptr::null()) })
+            wrap_egl_call_ptr(|| unsafe { ffi::egl::CreateSync(**display_handle, type_, std::ptr::null()) })
                 .map_err(Error::CreationFailed)?;
 
         Ok(Self(Arc::new(InnerEGLFence {
@@ -123,9 +125,10 @@ impl EGLFence {
             ]));
         }
 
-        let fd = wrap_egl_call(|| unsafe {
-            ffi::egl::DupNativeFenceFDANDROID(**self.0.display_handle, self.0.handle)
-        })
+        let fd = wrap_egl_call(
+            || unsafe { ffi::egl::DupNativeFenceFDANDROID(**self.0.display_handle, self.0.handle) },
+            ffi::egl::NO_NATIVE_FENCE_FD_ANDROID,
+        )
         .map_err(Error::CreationFailed)?;
         // SAFETY: eglDupNativeFenceFDANDROID generates EGL_BAD_PARAMETER in case of an error, so fd should always
         // contain a valid fd
@@ -142,7 +145,7 @@ impl EGLFence {
             return Err(Error::DisplayNotSupported);
         }
 
-        wrap_egl_call(|| unsafe { ffi::egl::WaitSync(**self.0.display_handle, self.0.handle, 0) })
+        wrap_egl_call_bool(|| unsafe { ffi::egl::WaitSync(**self.0.display_handle, self.0.handle, 0) })
             .map_err(Error::CreationFailed)?;
         Ok(())
     }
@@ -165,9 +168,10 @@ impl EGLFence {
         // 1. If <sync> is not a valid sync object for <dpy>, EGL_FALSE is returned and an EGL_BAD_PARAMETER error is generated.
         // 2. If <dpy> does not match the EGLDisplay passed to eglCreateSyncKHR when <sync> was created, the behaviour is undefined.
         // Both should not be possible as we own both, the handle and the display the handle was created on
-        let status = wrap_egl_call(|| unsafe {
-            ffi::egl::ClientWaitSync(**self.0.display_handle, self.0.handle, flags, timeout)
-        })
+        let status = wrap_egl_call(
+            || unsafe { ffi::egl::ClientWaitSync(**self.0.display_handle, self.0.handle, flags, timeout) },
+            ffi::egl::FALSE as ffi::egl::types::EGLint,
+        )
         .unwrap();
 
         status == ffi::egl::CONDITION_SATISFIED as ffi::EGLint

@@ -28,7 +28,7 @@ use crate::{
             ffi,
             ffi::egl::types::EGLImage,
             native::EGLNativeDisplay,
-            wrap_egl_call, EGLError, Error,
+            wrap_egl_call_bool, wrap_egl_call_ptr, EGLError, Error,
         },
     },
     utils::{Buffer as BufferCoords, Size},
@@ -104,7 +104,7 @@ unsafe fn select_platform_display<N: EGLNativeDisplay + 'static>(
             continue;
         }
 
-        let display = wrap_egl_call(|| {
+        let display = wrap_egl_call_ptr(|| {
             ffi::egl::GetPlatformDisplayEXT(
                 platform.platform,
                 platform.native_display,
@@ -166,7 +166,7 @@ impl EGLDisplay {
             let mut major: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
             let mut minor: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
-            wrap_egl_call(|| ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr()))
+            wrap_egl_call_bool(|| ffi::egl::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr()))
                 .map_err(Error::InitFailed)?;
 
             let major = major.assume_init();
@@ -191,7 +191,7 @@ impl EGLDisplay {
         if egl_version <= (1, 2) {
             return Err(Error::OpenGlesNotSupported(None));
         }
-        wrap_egl_call(|| unsafe { ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) })
+        wrap_egl_call_bool(|| unsafe { ffi::egl::BindAPI(ffi::egl::OPENGL_ES_API) })
             .map_err(|source| Error::OpenGlesNotSupported(Some(source)))?;
 
         let surface_type = native.surface_type();
@@ -232,7 +232,7 @@ impl EGLDisplay {
 
         let egl_version = {
             let p = CStr::from_ptr(
-                wrap_egl_call(|| ffi::egl::QueryString(display, ffi::egl::VERSION as i32))
+                wrap_egl_call_ptr(|| ffi::egl::QueryString(display, ffi::egl::VERSION as i32))
                     .map_err(|_| Error::DisplayQueryResultInvalid)?,
             );
 
@@ -263,8 +263,7 @@ impl EGLDisplay {
         let (dmabuf_import_formats, dmabuf_render_formats) =
             get_dmabuf_formats(&display, &extensions).map_err(Error::DisplayCreationError)?;
 
-        let egl_api =
-            wrap_egl_call(|| ffi::egl::QueryAPI()).map_err(|_| Error::OpenGlesNotSupported(None))?;
+        let egl_api = ffi::egl::QueryAPI();
         if egl_api != ffi::egl::OPENGL_ES_API {
             return Err(Error::OpenGlesNotSupported(None));
         }
@@ -272,7 +271,7 @@ impl EGLDisplay {
         let surface_type = {
             let mut surface_type: MaybeUninit<ffi::egl::types::EGLint> = MaybeUninit::uninit();
 
-            wrap_egl_call(|| {
+            wrap_egl_call_bool(|| {
                 ffi::egl::GetConfigAttrib(
                     display,
                     config_id,
@@ -308,7 +307,7 @@ impl EGLDisplay {
         if egl_version >= (1, 2) {
             let p = unsafe {
                 CStr::from_ptr(
-                    wrap_egl_call(|| ffi::egl::QueryString(display, ffi::egl::EXTENSIONS as i32))
+                    wrap_egl_call_ptr(|| ffi::egl::QueryString(display, ffi::egl::EXTENSIONS as i32))
                         .map_err(Error::InitFailed)?,
                 )
             };
@@ -376,7 +375,7 @@ impl EGLDisplay {
 
         // Try to find configs that match out criteria
         let mut num_configs = 0;
-        wrap_egl_call(|| unsafe {
+        wrap_egl_call_bool(|| unsafe {
             ffi::egl::ChooseConfig(
                 **self.display,
                 descriptor.as_ptr(),
@@ -391,7 +390,7 @@ impl EGLDisplay {
         }
 
         let mut config_ids: Vec<ffi::egl::types::EGLConfig> = Vec::with_capacity(num_configs as usize);
-        wrap_egl_call(|| unsafe {
+        wrap_egl_call_bool(|| unsafe {
             ffi::egl::ChooseConfig(
                 **self.display,
                 descriptor.as_ptr(),
@@ -417,7 +416,7 @@ impl EGLDisplay {
             .copied()
             .map(|config| unsafe {
                 let mut min_swap_interval = 0;
-                wrap_egl_call(|| {
+                wrap_egl_call_bool(|| {
                     ffi::egl::GetConfigAttrib(
                         **self.display,
                         config,
@@ -431,7 +430,7 @@ impl EGLDisplay {
                 }
 
                 let mut max_swap_interval = 0;
-                wrap_egl_call(|| {
+                wrap_egl_call_bool(|| {
                     ffi::egl::GetConfigAttrib(
                         **self.display,
                         config,
@@ -466,7 +465,7 @@ impl EGLDisplay {
         macro_rules! attrib {
             ($display:expr, $config:expr, $attr:expr) => {{
                 let mut value = MaybeUninit::uninit();
-                wrap_egl_call(|| {
+                wrap_egl_call_bool(|| {
                     ffi::egl::GetConfigAttrib(
                         **$display,
                         $config,
@@ -763,8 +762,10 @@ impl EGLDisplay {
         if !self.extensions.iter().any(|s| s == "EGL_WL_bind_wayland_display") {
             return Err(Error::EglExtensionNotSupported(&["EGL_WL_bind_wayland_display"]));
         }
-        wrap_egl_call(|| unsafe { ffi::egl::BindWaylandDisplayWL(**self.display, display_ptr as *mut _) })
-            .map_err(Error::OtherEGLDisplayAlreadyBound)?;
+        wrap_egl_call_bool(|| unsafe {
+            ffi::egl::BindWaylandDisplayWL(**self.display, display_ptr as *mut _)
+        })
+        .map_err(Error::OtherEGLDisplayAlreadyBound)?;
         let reader = EGLBufferReader::new(self.display.clone(), display_ptr);
         let mut global = BUFFER_READER.lock().unwrap();
         if global.as_ref().and_then(|x| x.upgrade()).is_some() {
@@ -799,14 +800,14 @@ fn get_dmabuf_formats(
             vec![Fourcc::Argb8888, Fourcc::Xrgb8888]
         } else {
             let mut num = 0i32;
-            wrap_egl_call(|| unsafe {
+            wrap_egl_call_bool(|| unsafe {
                 ffi::egl::QueryDmaBufFormatsEXT(*display, 0, std::ptr::null_mut(), &mut num as *mut _)
             })?;
             if num == 0 {
                 return Ok((HashSet::new(), HashSet::new()));
             }
             let mut formats: Vec<u32> = Vec::with_capacity(num as usize);
-            wrap_egl_call(|| unsafe {
+            wrap_egl_call_bool(|| unsafe {
                 ffi::egl::QueryDmaBufFormatsEXT(
                     *display,
                     num,
@@ -839,7 +840,7 @@ fn get_dmabuf_formats(
         // as unsupported by explicit modifiers.
         // Which is probably what the error is suppose to indicate
         // although the spec doesn't seem to demand it...
-        match wrap_egl_call(|| unsafe {
+        match wrap_egl_call_bool(|| unsafe {
             ffi::egl::QueryDmaBufModifiersEXT(
                 *display,
                 fourcc as i32,
@@ -875,7 +876,7 @@ fn get_dmabuf_formats(
             let mut mods: Vec<u64> = Vec::with_capacity(num as usize);
             let mut external: Vec<ffi::egl::types::EGLBoolean> = Vec::with_capacity(num as usize);
 
-            wrap_egl_call(|| unsafe {
+            wrap_egl_call_bool(|| unsafe {
                 ffi::egl::QueryDmaBufModifiersEXT(
                     *display,
                     fourcc as i32,
@@ -961,7 +962,7 @@ impl EGLBufferReader {
         }
 
         let mut format: i32 = 0;
-        let query = wrap_egl_call(|| unsafe {
+        let query = wrap_egl_call_bool(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
                 buffer.id().as_ptr() as _,
@@ -991,7 +992,7 @@ impl EGLBufferReader {
         };
 
         let mut width: i32 = 0;
-        wrap_egl_call(|| unsafe {
+        wrap_egl_call_bool(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
                 buffer.id().as_ptr() as _,
@@ -1002,7 +1003,7 @@ impl EGLBufferReader {
         .map_err(BufferAccessError::NotManaged)?;
 
         let mut height: i32 = 0;
-        wrap_egl_call(|| unsafe {
+        wrap_egl_call_bool(|| unsafe {
             ffi::egl::QueryWaylandBufferWL(
                 **self.display,
                 buffer.id().as_ptr() as _,
@@ -1023,7 +1024,7 @@ impl EGLBufferReader {
             // if EGL_FALSE is returned the value of inverted should be assumed as EGL_TRUE.
             //
             // see: https://www.khronos.org/registry/EGL/extensions/WL/EGL_WL_bind_wayland_display.txt
-            match wrap_egl_call(|| unsafe {
+            match wrap_egl_call_bool(|| unsafe {
                 ffi::egl::QueryWaylandBufferWL(
                     **self.display,
                     buffer.id().as_ptr() as _,
@@ -1044,7 +1045,7 @@ impl EGLBufferReader {
             let out = [ffi::egl::WAYLAND_PLANE_WL as i32, i as i32, ffi::egl::NONE as i32];
 
             images.push({
-                wrap_egl_call(|| unsafe {
+                wrap_egl_call_ptr(|| unsafe {
                     ffi::egl::CreateImageKHR(
                         **self.display,
                         ffi::egl::NO_CONTEXT,
