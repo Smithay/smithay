@@ -234,6 +234,11 @@ impl Renderer for GlowRenderer {
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
         self.gl.wait(sync)
     }
+
+    #[profiling::function]
+    fn cleanup_texture_cache(&mut self) {
+        self.gl.cleanup_texture_cache()
+    }
 }
 
 impl<'frame> Frame for GlowFrame<'frame> {

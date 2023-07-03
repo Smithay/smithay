@@ -1094,6 +1094,11 @@ where
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
         self.render.renderer_mut().wait(sync).map_err(Error::Render)
     }
+
+    #[profiling::function]
+    fn cleanup_texture_cache(&mut self) {
+        self.render.renderer_mut().cleanup_texture_cache()
+    }
 }
 
 impl<'render, 'target, 'alloc, 'frame, R: GraphicsApi, T: GraphicsApi>
