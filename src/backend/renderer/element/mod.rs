@@ -1203,7 +1203,7 @@ macro_rules! render_elements_internal {
 /// #     utils::{Buffer, Physical, Rectangle, Size, Transform},
 /// # };
 /// #
-/// # #[derive(Clone)]
+/// # #[derive(Clone, Debug)]
 /// # struct MyRendererTextureId;
 /// #
 /// # impl Texture for MyRendererTextureId {
@@ -1253,6 +1253,7 @@ macro_rules! render_elements_internal {
 /// #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
 /// # }
 /// #
+/// # #[derive(Debug)]
 /// # struct MyRenderer;
 /// #
 /// # impl Renderer for MyRenderer {

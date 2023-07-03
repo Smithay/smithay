@@ -61,7 +61,7 @@ pub(crate) mod keyboard;
 mod pointer;
 mod touch;
 
-use std::{fmt, sync::Arc};
+use std::sync::Arc;
 
 use crate::input::{Inner, Seat, SeatHandler, SeatRc, SeatState};
 
@@ -133,18 +133,9 @@ impl<D: SeatHandler> Inner<D> {
 }
 
 /// Global data of WlSeat
+#[derive(Debug)]
 pub struct SeatGlobalData<D: SeatHandler> {
     arc: Arc<SeatRc<D>>,
-}
-
-impl<D: SeatHandler> fmt::Debug for SeatGlobalData<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SeatGlobalData").field("arc", &self.arc).finish()
-    }
 }
 
 impl<D: SeatHandler + 'static> SeatState<D> {
@@ -261,18 +252,9 @@ impl<D: SeatHandler + 'static> Seat<D> {
 }
 
 /// User data for seat
+#[derive(Debug)]
 pub struct SeatUserData<D: SeatHandler> {
     arc: Arc<SeatRc<D>>,
-}
-
-impl<D: SeatHandler> fmt::Debug for SeatUserData<D>
-where
-    <D as SeatHandler>::KeyboardFocus: fmt::Debug,
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SeatUserData").field("arc", &self.arc).finish()
-    }
 }
 
 #[allow(missing_docs)] // TODO

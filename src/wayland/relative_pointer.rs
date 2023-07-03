@@ -61,7 +61,6 @@
 //! delegate_relative_pointer!(State);
 //! ```
 
-use std::fmt;
 use wayland_protocols::wp::relative_pointer::zv1::server::{
     zwp_relative_pointer_manager_v1::{self, ZwpRelativePointerManagerV1},
     zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
@@ -79,19 +78,9 @@ use crate::{
 const MANAGER_VERSION: u32 = 1;
 
 /// User data of ZwpRelativePointerV1 object
+#[derive(Debug)]
 pub struct RelativePointerUserData<D: SeatHandler> {
     handle: Option<PointerHandle<D>>,
-}
-
-impl<D: SeatHandler> fmt::Debug for RelativePointerUserData<D>
-where
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RelativePointerUserData")
-            .field("handle", &self.handle)
-            .finish()
-    }
 }
 
 /// State of the relative pointer manager

@@ -14,6 +14,7 @@ use smithay::{
     wayland::compositor::SurfaceData,
 };
 
+#[derive(Debug)]
 pub struct DummyRenderer {}
 
 impl DummyRenderer {
@@ -200,7 +201,7 @@ impl Frame for DummyFrame {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DummyTexture {
     width: u32,
     height: u32,

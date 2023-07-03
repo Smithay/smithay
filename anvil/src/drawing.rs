@@ -57,10 +57,7 @@ render_elements! {
     Texture=TextureRenderElement<<R as Renderer>::TextureId>,
 }
 
-impl<R: Renderer> std::fmt::Debug for PointerRenderElement<R>
-where
-    <R as Renderer>::TextureId: std::fmt::Debug,
-{
+impl<R: Renderer> std::fmt::Debug for PointerRenderElement<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Surface(arg0) => f.debug_tuple("Surface").field(arg0).finish(),

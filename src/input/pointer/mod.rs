@@ -41,10 +41,7 @@ pub struct PointerHandle<D: SeatHandler> {
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
-impl<D: SeatHandler> fmt::Debug for PointerHandle<D>
-where
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
+impl<D: SeatHandler> fmt::Debug for PointerHandle<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerHandle")
             .field("inner", &self.inner)
@@ -53,10 +50,7 @@ where
 }
 
 #[cfg(feature = "wayland_frontend")]
-impl<D: SeatHandler> fmt::Debug for PointerHandle<D>
-where
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
+impl<D: SeatHandler> fmt::Debug for PointerHandle<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerHandle")
             .field("inner", &self.inner)
@@ -89,7 +83,7 @@ impl<D: SeatHandler> ::std::cmp::PartialEq for PointerHandle<D> {
 }
 
 /// Trait representing object that can receive pointer interactions
-pub trait PointerTarget<D>: IsAlive + PartialEq + Clone + Send
+pub trait PointerTarget<D>: IsAlive + PartialEq + Clone + fmt::Debug + Send
 where
     D: SeatHandler,
 {
@@ -278,10 +272,7 @@ pub struct PointerInnerHandle<'a, D: SeatHandler> {
     seat: &'a Seat<D>,
 }
 
-impl<'a, D: SeatHandler> fmt::Debug for PointerInnerHandle<'a, D>
-where
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
+impl<'a, D: SeatHandler> fmt::Debug for PointerInnerHandle<'a, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerInnerHandle")
             .field("inner", &self.inner)
@@ -393,10 +384,7 @@ pub(crate) struct PointerInternal<D: SeatHandler> {
 }
 
 // image_callback does not implement debug, so we have to impl Debug manually
-impl<D: SeatHandler> fmt::Debug for PointerInternal<D>
-where
-    <D as SeatHandler>::PointerFocus: fmt::Debug,
-{
+impl<D: SeatHandler> fmt::Debug for PointerInternal<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PointerInternal")
             .field("focus", &self.focus)

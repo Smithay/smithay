@@ -467,7 +467,7 @@ render_elements!(
     Decoration=SolidColorRenderElement,
 );
 
-impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for WindowRenderElement<R> {
+impl<R: Renderer> std::fmt::Debug for WindowRenderElement<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Window(arg0) => f.debug_tuple("Window").field(arg0).finish(),

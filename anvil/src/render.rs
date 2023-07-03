@@ -38,10 +38,7 @@ smithay::backend::renderer::element::render_elements! {
     Fps=FpsElement<<R as Renderer>::TextureId>,
 }
 
-impl<R: Renderer + std::fmt::Debug> std::fmt::Debug for CustomRenderElements<R>
-where
-    <R as Renderer>::TextureId: std::fmt::Debug,
-{
+impl<R: Renderer> std::fmt::Debug for CustomRenderElements<R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Pointer(arg0) => f.debug_tuple("Pointer").field(arg0).finish(),
@@ -61,10 +58,8 @@ smithay::backend::renderer::element::render_elements! {
     Preview=CropRenderElement<RelocateRenderElement<RescaleRenderElement<WindowRenderElement<R>>>>,
 }
 
-impl<R: Renderer + ImportAll + ImportMem + std::fmt::Debug, E: RenderElement<R> + std::fmt::Debug>
-    std::fmt::Debug for OutputRenderElements<R, E>
-where
-    <R as Renderer>::TextureId: std::fmt::Debug,
+impl<R: Renderer + ImportAll + ImportMem, E: RenderElement<R> + std::fmt::Debug> std::fmt::Debug
+    for OutputRenderElements<R, E>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
