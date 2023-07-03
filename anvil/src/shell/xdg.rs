@@ -392,7 +392,11 @@ impl<BackendData: Backend> AnvilState<BackendData> {
 
         let start_data = pointer.grab_start_data().unwrap();
 
-        let window = self.window_for_surface(surface.wl_surface()).unwrap();
+        // If the client disconnects after requesting a move
+        // we can just ignore the request
+        let Some(window) = self.window_for_surface(surface.wl_surface()) else {
+            return;
+        };
 
         // If the focus was for a different surface, ignore the request.
         if start_data.focus.is_none()
