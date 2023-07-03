@@ -216,6 +216,7 @@ impl Renderer for GlowRenderer {
         self.gl.debug_flags()
     }
 
+    #[profiling::function]
     fn render(
         &mut self,
         output_size: Size<i32, Physical>,
@@ -229,6 +230,7 @@ impl Renderer for GlowRenderer {
         })
     }
 
+    #[profiling::function]
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
         self.gl.wait(sync)
     }
@@ -242,10 +244,12 @@ impl<'frame> Frame for GlowFrame<'frame> {
         self.frame.as_ref().unwrap().id()
     }
 
+    #[profiling::function]
     fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Self::Error> {
         self.frame.as_mut().unwrap().clear(color, at)
     }
 
+    #[profiling::function]
     fn draw_solid(
         &mut self,
         dst: Rectangle<i32, Physical>,
@@ -255,6 +259,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
         self.frame.as_mut().unwrap().draw_solid(dst, damage, color)
     }
 
+    #[profiling::function]
     fn render_texture_from_to(
         &mut self,
         texture: &Self::TextureId,
@@ -279,6 +284,7 @@ impl<'frame> Frame for GlowFrame<'frame> {
         self.frame.as_ref().unwrap().transformation()
     }
 
+    #[profiling::function]
     fn render_texture_at(
         &mut self,
         texture: &Self::TextureId,
@@ -300,16 +306,19 @@ impl<'frame> Frame for GlowFrame<'frame> {
         )
     }
 
+    #[profiling::function]
     fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
         self.finish_internal()
     }
 
+    #[profiling::function]
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
         self.frame.as_mut().unwrap().wait(sync)
     }
 }
 
 impl<'frame> GlowFrame<'frame> {
+    #[profiling::function]
     fn finish_internal(&mut self) -> Result<sync::SyncPoint, GlesError> {
         if let Some(frame) = self.frame.take() {
             frame.finish()
@@ -329,6 +338,7 @@ impl<'frame> Drop for GlowFrame<'frame> {
 
 #[cfg(feature = "wayland_frontend")]
 impl ImportMemWl for GlowRenderer {
+    #[profiling::function]
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -344,6 +354,7 @@ impl ImportMemWl for GlowRenderer {
 }
 
 impl ImportMem for GlowRenderer {
+    #[profiling::function]
     fn import_memory(
         &mut self,
         data: &[u8],
@@ -354,6 +365,7 @@ impl ImportMem for GlowRenderer {
         self.gl.import_memory(data, format, size, flipped)
     }
 
+    #[profiling::function]
     fn update_memory(
         &mut self,
         texture: &<Self as Renderer>::TextureId,
@@ -389,6 +401,7 @@ impl ImportEgl for GlowRenderer {
         self.gl.egl_reader()
     }
 
+    #[profiling::function]
     fn import_egl_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -400,6 +413,7 @@ impl ImportEgl for GlowRenderer {
 }
 
 impl ImportDma for GlowRenderer {
+    #[profiling::function]
     fn import_dmabuf(
         &mut self,
         buffer: &Dmabuf,
@@ -418,6 +432,7 @@ impl ImportDmaWl for GlowRenderer {}
 impl ExportMem for GlowRenderer {
     type TextureMapping = GlesMapping;
 
+    #[profiling::function]
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, BufferCoord>,
@@ -426,6 +441,7 @@ impl ExportMem for GlowRenderer {
         self.gl.copy_framebuffer(region, format)
     }
 
+    #[profiling::function]
     fn copy_texture(
         &mut self,
         texture: &Self::TextureId,
@@ -435,6 +451,7 @@ impl ExportMem for GlowRenderer {
         self.gl.copy_texture(texture, region, format)
     }
 
+    #[profiling::function]
     fn map_texture<'a>(
         &mut self,
         texture_mapping: &'a Self::TextureMapping,
@@ -447,6 +464,7 @@ impl<T> Bind<T> for GlowRenderer
 where
     GlesRenderer: Bind<T>,
 {
+    #[profiling::function]
     fn bind(&mut self, target: T) -> Result<(), GlesError> {
         self.gl.bind(target)
     }
@@ -459,6 +477,7 @@ impl<T> Offscreen<T> for GlowRenderer
 where
     GlesRenderer: Offscreen<T>,
 {
+    #[profiling::function]
     fn create_buffer(&mut self, format: Fourcc, size: Size<i32, BufferCoord>) -> Result<T, GlesError> {
         self.gl.create_buffer(format, size)
     }
@@ -468,6 +487,7 @@ impl<Target> Blit<Target> for GlowRenderer
 where
     GlesRenderer: Blit<Target>,
 {
+    #[profiling::function]
     fn blit_to(
         &mut self,
         to: Target,
@@ -478,6 +498,7 @@ where
         self.gl.blit_to(to, src, dst, filter)
     }
 
+    #[profiling::function]
     fn blit_from(
         &mut self,
         from: Target,
@@ -496,6 +517,7 @@ impl Unbind for GlowRenderer {
 }
 
 impl RenderElement<GlowRenderer> for PixelShaderElement {
+    #[profiling::function]
     fn draw(
         &self,
         frame: &mut GlowFrame<'_>,

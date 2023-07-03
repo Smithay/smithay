@@ -377,6 +377,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     /// this will not contain layer surfaces.
     /// Use [`Space::render_elements_for_output`], if you care about this.
     #[instrument(level = "trace", skip(self, renderer, scale), parent = &self.span)]
+    #[profiling::function]
     pub fn render_elements_for_region<'a, R: Renderer, S: Into<Scale<f64>>>(
         &'a self,
         renderer: &mut R,
@@ -413,6 +414,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
 
     /// Retrieve the render elements for an output
     #[instrument(level = "trace", skip(self, renderer), parent = &self.span)]
+    #[profiling::function]
     pub fn render_elements_for_output<
         'a,
         #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
@@ -571,6 +573,7 @@ crate::backend::renderer::element::render_elements! {
 /// this will include layer-shell surfaces added to this
 /// outputs [`LayerMap`].
 #[instrument(level = "trace", skip(spaces, renderer))]
+#[profiling::function]
 pub fn space_render_elements<
     'a,
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
@@ -659,6 +662,7 @@ where
 /// If multiple spaces are given their elements will be stacked
 /// the same way.
 #[allow(clippy::too_many_arguments)]
+#[profiling::function]
 pub fn render_output<
     'a,
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,

@@ -165,6 +165,7 @@ where
 {
     type RenderElement = SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>;
 
+    #[profiling::function]
     fn render_elements<C: From<Self::RenderElement>>(
         &self,
         renderer: &mut R,

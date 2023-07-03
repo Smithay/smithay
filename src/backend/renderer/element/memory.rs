@@ -320,6 +320,7 @@ impl MemoryRenderBufferInner {
     }
 
     #[instrument(level = "trace", skip(renderer))]
+    #[profiling::function]
     fn import_texture<R>(&mut self, renderer: &mut R) -> Result<(), <R as Renderer>::Error>
     where
         R: Renderer + ImportMem,
@@ -662,6 +663,7 @@ where
     <R as Renderer>::TextureId: 'static,
 {
     #[instrument(level = "trace", skip(self, frame))]
+    #[profiling::function]
     fn draw<'a>(
         &self,
         frame: &mut <R as Renderer>::Frame<'a>,

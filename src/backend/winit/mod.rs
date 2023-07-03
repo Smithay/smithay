@@ -310,6 +310,7 @@ where
 
     /// Bind the underlying window to the underlying renderer
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     pub fn bind(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
         // apparently the nvidia-driver doesn't like `wl_egl_window_resize`, if the surface is not current.
         // So the order here is important.
@@ -350,6 +351,7 @@ where
 
     /// Submits the back buffer to the window by swapping, requires the window to be previously bound (see [`WinitGraphicsBackend::bind`]).
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     pub fn submit(
         &mut self,
         damage: Option<&[Rectangle<i32, Physical>]>,
@@ -398,6 +400,7 @@ impl WinitEventLoop {
     /// The linked [`WinitGraphicsBackend`] will error with a lost context and should
     /// not be used anymore as well.
     #[instrument(level = "trace", parent = &self.span, skip_all)]
+    #[profiling::function]
     pub fn dispatch_new_events<F>(&mut self, mut callback: F) -> Result<(), WinitError>
     where
         F: FnMut(WinitEvent),

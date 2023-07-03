@@ -99,6 +99,7 @@ impl Element for PixelShaderElement {
 }
 
 impl RenderElement<GlesRenderer> for PixelShaderElement {
+    #[profiling::function]
     fn draw(
         &self,
         frame: &mut GlesFrame<'_>,

@@ -194,6 +194,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     /// This a convenience function to deal with the same types even, if you only need one device.
     /// Because no copies are necessary in these cases, all extra arguments can be omitted.
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     pub fn single_renderer<'api>(
         &'api mut self,
         device: &DrmNode,
@@ -231,6 +232,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     ///
     /// It is valid to pass the same devices for both, but you *should* use [`GraphicsApi::single_renderer`] in those cases.
     #[instrument(level = "trace", parent = &self.span, skip(self, allocator))]
+    #[profiling::function]
     pub fn renderer<'api, 'alloc>(
         &'api mut self,
         render_device: &DrmNode,
@@ -300,6 +302,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     ///     also work on the `target_device`.
     /// - `copy_format` denotes the format buffers will be allocated in for offscreen rendering.
     #[instrument(level = "trace", skip(render_api, target_api, allocator), follows_from = [&render_api.span, &target_api.span])]
+    #[profiling::function]
     pub fn cross_renderer<'render, 'target, 'alloc, B: GraphicsApi, Alloc: Allocator>(
         render_api: &'render mut Self,
         target_api: &'target mut GpuManager<B>,
@@ -399,6 +402,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     /// to let smithay handle buffer management.
     #[cfg(feature = "wayland_frontend")]
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     pub fn early_import(
         &mut self,
         source: Option<DrmNode>,
@@ -474,6 +478,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     }
 
     #[cfg(feature = "wayland_frontend")]
+    #[profiling::function]
     fn early_import_buffer(
         &mut self,
         source: Option<DrmNode>,
@@ -819,6 +824,7 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn unbind(&mut self) -> Result<(), <Self as Renderer>::Error> {
         if let Some(target) = self.target.as_mut() {
             target.device.renderer_mut().unbind().map_err(Error::Target)
@@ -849,6 +855,7 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn create_buffer(
         &mut self,
         format: Fourcc,
@@ -887,6 +894,7 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self, bind))]
+    #[profiling::function]
     fn bind(&mut self, bind: Target) -> Result<(), <Self as Renderer>::Error> {
         if let Some(target) = self.target.as_mut() {
             target.device.renderer_mut().bind(bind).map_err(Error::Target)
@@ -946,6 +954,7 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn render<'frame>(
         &'frame mut self,
         size: Size<i32, Physical>,
@@ -1085,6 +1094,7 @@ where
         })
     }
 
+    #[profiling::function]
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
         self.render.renderer_mut().wait(sync).map_err(Error::Render)
     }
@@ -1102,6 +1112,7 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn finish_internal(&mut self) -> Result<sync::SyncPoint, Error<R, T>> {
         if let Some(frame) = self.frame.take() {
             let sync = frame.finish().map_err(Error::Render)?;
@@ -1274,6 +1285,7 @@ struct GpuSingleTexture {
 
 impl MultiTexture {
     #[cfg(feature = "wayland_frontend")]
+    #[profiling::function]
     fn from_surface(
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         size: Size<i32, BufferCoords>,
@@ -1467,6 +1479,7 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn clear(&mut self, color: [f32; 4], at: &[Rectangle<i32, Physical>]) -> Result<(), Error<R, T>> {
         self.damage.extend(at);
         self.frame
@@ -1477,6 +1490,7 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn draw_solid(
         &mut self,
         dst: Rectangle<i32, Physical>,
@@ -1495,6 +1509,7 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn render_texture_from_to(
         &mut self,
         texture: &MultiTexture,
@@ -1529,10 +1544,12 @@ where
         self.frame.as_ref().unwrap().transformation()
     }
 
+    #[profiling::function]
     fn finish(mut self) -> Result<sync::SyncPoint, Self::Error> {
         self.finish_internal()
     }
 
+    #[profiling::function]
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
         self.frame.as_mut().unwrap().wait(sync).map_err(Error::Render)
     }
@@ -1553,6 +1570,7 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn import_shm_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -1590,6 +1608,7 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn import_memory(
         &mut self,
         data: &[u8],
@@ -1608,6 +1627,7 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn update_memory(
         &mut self,
         texture: &<Self as Renderer>::TextureId,
@@ -1645,6 +1665,7 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn import_dma_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -1684,6 +1705,7 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn import_dmabuf(
         &mut self,
         dmabuf: &Dmabuf,
@@ -1708,6 +1730,7 @@ where
     <<R::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
+    #[profiling::function]
     fn import_missing(
         &mut self,
         new_damage: Vec<Rectangle<i32, BufferCoords>>,
@@ -1799,6 +1822,7 @@ where
         Err(Error::ImportFailed)
     }
 
+    #[profiling::function]
     fn import_dmabuf_internal(
         &mut self,
         source: Option<DrmNode>,
@@ -2109,6 +2133,7 @@ where
     type TextureMapping = MultiTextureMapping<T, R>;
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn copy_framebuffer(
         &mut self,
         region: Rectangle<i32, BufferCoords>,
@@ -2131,6 +2156,7 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
     fn copy_texture(
         &mut self,
         texture: &Self::TextureId,
@@ -2148,6 +2174,7 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self, texture_mapping))]
+    #[profiling::function]
     fn map_texture<'c>(
         &mut self,
         texture_mapping: &'c Self::TextureMapping,
@@ -2185,6 +2212,7 @@ where
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
     #[instrument(level = "trace", parent = &self.span, skip(self, to))]
+    #[profiling::function]
     fn blit_to(
         &mut self,
         to: BlitTarget,
@@ -2207,6 +2235,7 @@ where
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self, from))]
+    #[profiling::function]
     fn blit_from(
         &mut self,
         from: BlitTarget,

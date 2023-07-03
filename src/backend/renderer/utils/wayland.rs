@@ -93,6 +93,7 @@ impl PartialEq<WlBuffer> for &Buffer {
 }
 
 impl RendererSurfaceState {
+    #[profiling::function]
     pub(crate) fn update_buffer(&mut self, states: &SurfaceData) {
         let mut attrs = states.cached_state.current::<SurfaceAttributes>();
         self.buffer_delta = attrs.buffer_delta.take();
@@ -319,6 +320,7 @@ impl RendererSurfaceState {
 /// not be accessible anymore, but [`draw_surface_tree`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
+#[profiling::function]
 pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
     if !is_sync_subsurface(surface) {
         let mut new_surfaces = Vec::new();
@@ -429,6 +431,7 @@ where
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 #[instrument(level = "trace", skip_all)]
+#[profiling::function]
 pub fn import_surface<R>(renderer: &mut R, states: &SurfaceData) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
@@ -471,6 +474,7 @@ where
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 #[instrument(level = "trace", skip_all)]
+#[profiling::function]
 pub fn import_surface_tree<R>(renderer: &mut R, surface: &WlSurface) -> Result<(), <R as Renderer>::Error>
 where
     R: Renderer + ImportAll,
@@ -525,6 +529,7 @@ where
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
 /// to let smithay handle buffer management.
 #[instrument(level = "trace", skip(frame, scale, elements))]
+#[profiling::function]
 pub fn draw_render_elements<'a, R, S, E>(
     frame: &mut <R as Renderer>::Frame<'a>,
     scale: S,

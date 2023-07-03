@@ -37,6 +37,7 @@ pub struct ConstrainBehavior {
 /// Constrain the render elements of a [`SpaceElement`]
 ///
 /// see [`constrain_as_render_elements`]
+#[profiling::function]
 pub fn constrain_space_element<R, E, C>(
     renderer: &mut R,
     element: &E,

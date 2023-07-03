@@ -551,6 +551,7 @@ impl EGLDisplay {
     /// Exports an [`EGLImage`] as a [`Dmabuf`]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
     #[instrument(level = "trace", skip(self), parent = &self.span, err)]
+    #[profiling::function]
     pub fn create_dmabuf_from_image(
         &self,
         image: EGLImage,
@@ -634,6 +635,7 @@ impl EGLDisplay {
 
     /// Imports a [`Dmabuf`] as an [`EGLImage`]
     #[instrument(level = "trace", skip(self), parent = &self.span, err)]
+    #[profiling::function]
     pub fn create_image_from_dmabuf(&self, dmabuf: &Dmabuf) -> Result<EGLImage, Error> {
         if !self.extensions.iter().any(|s| s == "EGL_KHR_image_base")
             && !self
@@ -949,6 +951,7 @@ impl EGLBufferReader {
     ///
     /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](crate::wayland::shm))
     /// a [`BufferAccessError::NotManaged`](crate::backend::egl::BufferAccessError::NotManaged) is returned.
+    #[profiling::function]
     pub fn egl_buffer_contents(
         &self,
         buffer: &WlBuffer,
@@ -1069,6 +1072,7 @@ impl EGLBufferReader {
     ///
     /// In case the buffer is not managed by EGL (but e.g. the [`wayland::shm` module](crate::wayland::shm)) or the
     /// context has been lost, `None` is returned.
+    #[profiling::function]
     pub fn egl_buffer_dimensions(
         &self,
         buffer: &WlBuffer,

@@ -91,6 +91,7 @@ impl EGLSurface {
     }
 
     /// Returns the buffer age of the underlying back buffer
+    #[profiling::function]
     pub fn buffer_age(&self) -> Option<i32> {
         let surface = self.surface.load(Ordering::SeqCst);
         let mut age = 0;
@@ -115,6 +116,7 @@ impl EGLSurface {
     }
 
     /// Returns the size of the underlying back buffer
+    #[profiling::function]
     pub fn get_size(&self) -> Option<Size<i32, Physical>> {
         let surface = self.surface.load(Ordering::SeqCst);
         let mut height = 0;
@@ -150,6 +152,7 @@ impl EGLSurface {
 
     /// Swaps buffers at the end of a frame.
     #[instrument(level = "trace", parent = &self.span, skip(self), err)]
+    #[profiling::function]
     pub fn swap_buffers(
         &self,
         damage: Option<&mut [Rectangle<i32, Physical>]>,
@@ -199,6 +202,7 @@ impl EGLSurface {
     }
 
     /// Returns true if the OpenGL surface is the current one in the thread.
+    #[profiling::function]
     pub fn is_current(&self) -> bool {
         let surface = self.surface.load(Ordering::SeqCst);
         unsafe {

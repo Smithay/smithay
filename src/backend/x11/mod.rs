@@ -545,6 +545,7 @@ impl EventSource for X11Backend {
     type Ret = ();
     type Error = X11Error;
 
+    #[profiling::function]
     fn process_events<F>(
         &mut self,
         readiness: Readiness,
@@ -616,6 +617,7 @@ impl X11Inner {
         inner.windows.get(id).cloned()
     }
 
+    #[profiling::function]
     fn process_event<F>(inner: &Arc<Mutex<X11Inner>>, event: x11::Event, callback: &mut F)
     where
         F: FnMut(X11Event, &mut ()),

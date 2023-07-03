@@ -172,6 +172,7 @@ impl AtomicDrmSurface {
 
     // we need a framebuffer to do test commits, which we use to verify our pending state.
     // here we create a dumbbuffer for that purpose.
+    #[profiling::function]
     fn create_test_buffer(&self, size: (u16, u16), plane: plane::Handle) -> Result<TestBuffer, Error> {
         let (w, h) = size;
         let needs_alpha = plane_type(&*self.fd, plane)? != PlaneType::Primary;
@@ -479,6 +480,7 @@ impl AtomicDrmSurface {
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self, planes))]
+    #[profiling::function]
     pub fn test_state<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
@@ -513,6 +515,7 @@ impl AtomicDrmSurface {
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self, planes))]
+    #[profiling::function]
     pub fn commit<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
@@ -625,6 +628,7 @@ impl AtomicDrmSurface {
     }
 
     #[instrument(level = "trace", parent = &self.span, skip(self, planes))]
+    #[profiling::function]
     pub fn page_flip<'a>(
         &self,
         planes: impl IntoIterator<Item = PlaneState<'a>>,
@@ -675,6 +679,7 @@ impl AtomicDrmSurface {
 
     // If a mode is set a matching blob needs to be set (the inverse is not true)
     #[allow(clippy::too_many_arguments)]
+    #[profiling::function]
     pub fn build_request<'a>(
         &self,
         new_connectors: &mut dyn Iterator<Item = &connector::Handle>,

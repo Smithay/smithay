@@ -292,6 +292,7 @@ impl Element for SolidColorRenderElement {
 }
 
 impl<R: Renderer> RenderElement<R> for SolidColorRenderElement {
+    #[profiling::function]
     fn draw(
         &self,
         frame: &mut <R as Renderer>::Frame<'_>,

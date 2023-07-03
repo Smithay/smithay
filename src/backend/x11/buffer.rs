@@ -73,6 +73,7 @@ impl<'c, C> PixmapWrapperExt<'c, C> for PixmapWrapper<'c, C>
 where
     C: Connection,
 {
+    #[profiling::function]
     fn with_dmabuf(
         connection: &'c C,
         window: &Window,
@@ -164,6 +165,7 @@ where
         Ok(PixmapWrapper::for_pixmap(connection, xid))
     }
 
+    #[profiling::function]
     fn present(self, connection: &C, window: &Window) -> Result<u32, X11Error> {
         let next_serial = window.0.next_serial.fetch_add(1, Ordering::SeqCst);
         // We want to present as soon as possible, so wait 1ms so the X server will present when next convenient.

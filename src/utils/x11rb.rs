@@ -97,6 +97,7 @@ impl EventSource for X11Source {
     type Ret = ();
     type Error = ChannelError;
 
+    #[profiling::function]
     fn process_events<C>(
         &mut self,
         readiness: Readiness,
