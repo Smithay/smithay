@@ -851,6 +851,11 @@ impl Renderer for PixmanRenderer {
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
         sync.wait().map_err(|_| PixmanError::SyncInterrupted)
     }
+
+    fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
+        self.cleanup();
+        Ok(())
+    }
 }
 
 impl ImportMem for PixmanRenderer {
