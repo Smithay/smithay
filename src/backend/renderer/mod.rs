@@ -156,6 +156,9 @@ pub trait TextureMapping: Texture {
 }
 
 /// Helper trait for [`Renderer`], which defines a rendering api for a currently in-progress frame during [`Renderer::render`].
+///
+/// Dropping the [`Frame`] or explicitly calling [`Frame::finish`] will free any unused resources. If you need explicit control
+/// over resource clean-up take a look at [`Renderer::cleanup_texture_cache`].
 pub trait Frame {
     /// Error type returned by the rendering operations of this renderer.
     type Error: Error;
@@ -300,6 +303,17 @@ pub trait Renderer: fmt::Debug {
 
     /// Wait for a [`SyncPoint`](sync::SyncPoint) to be signaled
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error>;
+
+    /// Forcibly clean up the renderer internal texture cache
+    ///
+    /// Note: Resources used by the renderer will be implicitly cleaned-up after finishing
+    /// a [`Frame`] by either dropping the [`Frame`] or explicitly calling [`Frame::finish`].
+    /// This call can be used to clean-up resources in cases where either no [`Frame`] is used
+    /// at all to prevent resource pile-up or in case of only infrequent access to lower
+    /// system resource usage.
+    fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 /// Trait for renderers that support creating offscreen framebuffers to render into.

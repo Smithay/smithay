@@ -1098,6 +1098,22 @@ where
     fn wait(&mut self, sync: &sync::SyncPoint) -> Result<(), Self::Error> {
         self.render.renderer_mut().wait(sync).map_err(Error::Render)
     }
+
+    #[profiling::function]
+    fn cleanup_texture_cache(&mut self) -> Result<(), Self::Error> {
+        if let Some(target) = self.target.as_mut() {
+            target
+                .device
+                .renderer_mut()
+                .cleanup_texture_cache()
+                .map_err(Error::Target)?;
+        }
+        self.render
+            .renderer_mut()
+            .cleanup_texture_cache()
+            .map_err(Error::Render)?;
+        Ok(())
+    }
 }
 
 fn create_shared_dma_framebuffer<R, T: GraphicsApi>(
