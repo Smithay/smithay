@@ -593,11 +593,23 @@ impl X11Surface {
 
     fn update_motif_hints(&self) -> Result<(), ConnectionError> {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
-        let Some(hints) = (match conn.get_property(false, self.window, self.atoms._MOTIF_WM_HINTS, AtomEnum::ANY, 0, 2048)?.reply_unchecked() {
+        let Some(hints) = (match conn
+            .get_property(
+                false,
+                self.window,
+                self.atoms._MOTIF_WM_HINTS,
+                AtomEnum::ANY,
+                0,
+                2048,
+            )?
+            .reply_unchecked()
+        {
             Ok(Some(reply)) => reply.value32().map(|vals| vals.collect::<Vec<_>>()),
             Ok(None) | Err(ConnectionError::ParseError(_)) => return Ok(()),
             Err(err) => return Err(err),
-        }) else { return Ok(()) };
+        }) else {
+            return Ok(());
+        };
 
         if hints.len() < 5 {
             return Ok(());
@@ -624,7 +636,9 @@ impl X11Surface {
             Ok(Some(reply)) => reply.value32().map(|vals| vals.collect::<Vec<_>>()),
             Ok(None) | Err(ConnectionError::ParseError(_)) => return Ok(()),
             Err(err) => return Err(err),
-        }) else { return Ok(()) };
+        }) else {
+            return Ok(());
+        };
 
         let mut state = self.state.lock().unwrap();
         state.protocols = protocols
@@ -711,7 +725,9 @@ impl X11Surface {
             Ok(None) | Err(ConnectionError::ParseError(_)) => return Ok(None),
             Err(err) => return Err(err),
         };
-        let Some(bytes) = reply.value8() else { return Ok(None) };
+        let Some(bytes) = reply.value8() else {
+            return Ok(None);
+        };
         let bytes = bytes.collect::<Vec<u8>>();
 
         match reply.type_ {

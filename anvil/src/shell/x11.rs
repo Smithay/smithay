@@ -54,7 +54,9 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
         let window = WindowElement::X11(window);
         place_new_window(&mut self.state.space, self.state.pointer_location, &window, true);
         let bbox = self.state.space.element_bbox(&window).unwrap();
-        let WindowElement::X11(xsurface) = &window else { unreachable!() };
+        let WindowElement::X11(xsurface) = &window else {
+            unreachable!()
+        };
         xsurface.configure(Some(bbox)).unwrap();
         window.set_ssd(!xsurface.is_decorated());
     }
@@ -116,7 +118,9 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .elements()
             .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
             .cloned()
-        else { return };
+        else {
+            return;
+        };
         self.state.space.map_element(elem, geometry.loc, false);
         // TODO: We don't properly handle the order of override-redirect windows here,
         //       they are always mapped top and then never reordered.
@@ -133,7 +137,9 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .elements()
             .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
             .cloned()
-        else { return };
+        else {
+            return;
+        };
 
         window.set_maximized(false).unwrap();
         if let Some(old_geo) = window
@@ -208,7 +214,10 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e, WindowElement::X11(w) if w == &window)) else { return };
+            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
+        else {
+            return;
+        };
 
         let geometry = element.geometry();
         let loc = self.state.space.element_location(element).unwrap();
@@ -309,7 +318,9 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             .elements()
             .find(|e| matches!(e, WindowElement::X11(w) if w == window))
             .cloned()
-        else { return };
+        else {
+            return;
+        };
 
         let old_geo = self.space.element_bbox(&elem).unwrap();
         let outputs_for_window = self.space.outputs_for_element(&elem);
@@ -331,12 +342,17 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     pub fn move_request_x11(&mut self, window: &X11Surface) {
         let seat = &self.seat; // luckily anvil only supports one seat anyway...
         let pointer = seat.get_pointer().unwrap();
-        let Some(start_data) = pointer.grab_start_data() else { return };
+        let Some(start_data) = pointer.grab_start_data() else {
+            return;
+        };
 
         let Some(element) = self
             .space
             .elements()
-            .find(|e| matches!(e, WindowElement::X11(w) if w == window)) else { return };
+            .find(|e| matches!(e, WindowElement::X11(w) if w == window))
+        else {
+            return;
+        };
 
         let mut initial_window_location = self.space.element_location(element).unwrap();
 

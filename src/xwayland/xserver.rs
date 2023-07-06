@@ -402,9 +402,7 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
     info!("XWayland ready");
     // instance should never be None at this point
     let Some(instance) = guard.instance.as_mut() else {
-        error!(
-            "XWayland crashed at startup, will not try to restart it."
-        );
+        error!("XWayland crashed at startup, will not try to restart it.");
         return;
     };
     // neither the child_stdout

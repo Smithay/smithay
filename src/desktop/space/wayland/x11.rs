@@ -58,7 +58,9 @@ impl SpaceElement for X11Surface {
 
         let mut surface_list = output_surfaces(output);
         let state = self.state.lock().unwrap();
-        let Some(surface) = state.wl_surface.as_ref() else { return; };
+        let Some(surface) = state.wl_surface.as_ref() else {
+            return;
+        };
         with_surface_tree_downward(
             surface,
             (),
@@ -75,7 +77,9 @@ impl SpaceElement for X11Surface {
         let wo_state = self.user_data().get::<WindowOutputUserData>().unwrap().borrow();
 
         let state = self.state.lock().unwrap();
-        let Some(surface) = state.wl_surface.as_ref() else { return };
+        let Some(surface) = state.wl_surface.as_ref() else {
+            return;
+        };
         for (weak, overlap) in wo_state.output_overlap.iter() {
             if let Some(output) = weak.upgrade() {
                 output_update(&output, *overlap, surface);
@@ -108,7 +112,9 @@ where
         alpha: f32,
     ) -> Vec<C> {
         let state = self.state.lock().unwrap();
-        let Some(surface) = state.wl_surface.as_ref() else { return Vec::new() };
+        let Some(surface) = state.wl_surface.as_ref() else {
+            return Vec::new();
+        };
         render_elements_from_surface_tree(renderer, surface, location, scale, alpha)
     }
 }
