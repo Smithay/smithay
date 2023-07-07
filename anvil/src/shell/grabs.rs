@@ -330,7 +330,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
 
                     let Some(surface) = self.window.wl_surface() else {
                         // X11 Window got unmapped, abort
-                        return
+                        return;
                     };
                     with_states(&surface, |states| {
                         let mut data = states

@@ -1073,7 +1073,8 @@ impl X11Wm {
             .map(|f| f.id)
             .next()
         else {
-            return Err(ReplyOrIdError::ConnectionError(ConnectionError::UnknownError)); // TODO proper error type
+            return Err(ReplyOrIdError::ConnectionError(ConnectionError::UnknownError));
+            // TODO proper error type
         };
         let picture = PictureWrapper::create_picture(
             &*self.conn,
@@ -1174,9 +1175,12 @@ impl X11Wm {
                     .filter_map(|atom| {
                         let cookie = self.conn.get_atom_name(atom).ok()?;
                         let reply = cookie.reply_unchecked().ok()?;
-                        std::str::from_utf8(&reply?.name).ok().map(|name| (atom, name.to_string()))
+                        std::str::from_utf8(&reply?.name)
+                            .ok()
+                            .map(|name| (atom, name.to_string()))
                     })
-                    .find_map(|(atom, name)| if name == x { Some(atom) } else { None }) else {
+                    .find_map(|(atom, name)| if name == x { Some(atom) } else { None })
+                else {
                     return Err(SelectionError::UnableToDetermineAtom);
                 };
 
@@ -1724,8 +1728,9 @@ fn handle_event<D: XwmHandler + 'static>(
                     }
                 }
                 _ => {
-                    let Some(transfer) = selection.incoming.iter_mut().find(|t| t.window == n.requestor) else {
-                        return Ok(())
+                    let Some(transfer) = selection.incoming.iter_mut().find(|t| t.window == n.requestor)
+                    else {
+                        return Ok(());
                     };
 
                     if let Some(prop) = conn
@@ -1857,7 +1862,11 @@ fn handle_event<D: XwmHandler + 'static>(
                             x if x == xwm.atoms.TEXT => "text/plain".to_string(),
                             x if x == xwm.atoms.UTF8_STRING => "text/plain;charset=utf-8".to_string(),
                             x => {
-                                let Some(mime) = conn.get_atom_name(x)?.reply_unchecked()?.and_then(|reply| String::from_utf8(reply.name).ok()) else {
+                                let Some(mime) = conn
+                                    .get_atom_name(x)?
+                                    .reply_unchecked()?
+                                    .and_then(|reply| String::from_utf8(reply.name).ok())
+                                else {
                                     debug!("Unable to determine mime type from atom: {}", x);
                                     send_selection_notify_resp(&conn, &n, false)?;
                                     return Ok(());
@@ -2263,7 +2272,10 @@ fn read_selection_callback(
 ) -> Result<OutgoingAction, ReplyOrIdError> {
     let mut buf = [0; INCR_CHUNK_SIZE];
     let Ok(len) = nix::unistd::read(fd.as_raw_fd(), &mut buf) else {
-        debug!(requestor = transfer.request.requestor, "File descriptor closed, aborting transfer.");
+        debug!(
+            requestor = transfer.request.requestor,
+            "File descriptor closed, aborting transfer."
+        );
         send_selection_notify_resp(conn, &transfer.request, false)?;
         return Ok(OutgoingAction::Done);
     };
