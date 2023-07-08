@@ -3043,6 +3043,17 @@ where
         // Try to assign the element to a plane
         trace!("testing direct scan-out for element {:?} on {:?} with zpos {:?}: fb: {:?}, underlying storage: {:?}, element_geometry: {:?}", element_id, plane.handle, plane.zpos, &fb, &underlying_storage, element_geometry);
 
+        if !plane.formats.contains(&fb.format()) {
+            trace!(
+                "skipping direct scan-out on plane {:?} with zpos {:?} for element {:?}, format {:?} not supported",
+                plane.handle,
+                plane.zpos,
+                element_id,
+                fb.format(),
+            );
+            return Ok(Err(Some(RenderingReason::FormatUnsupported)));
+        }
+
         let transform = apply_output_transform(
             apply_underlying_storage_transform(element.transform(), underlying_storage),
             output_transform,
