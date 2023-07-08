@@ -1223,6 +1223,20 @@ impl OverlayPlaneElementIds {
     }
 }
 
+struct PlaneAssignment {
+    handle: plane::Handle,
+    type_: PlaneType,
+}
+
+impl From<&PlaneInfo> for PlaneAssignment {
+    fn from(value: &PlaneInfo) -> Self {
+        PlaneAssignment {
+            handle: value.handle,
+            type_: value.type_,
+        }
+    }
+}
+
 /// Composite an output using a combination of planes and rendering
 ///
 /// see the [`module docs`](crate::backend::drm::compositor) for more information
@@ -1765,9 +1779,6 @@ where
             opaque_regions.extend(element_opaque_regions);
         }
 
-        let overlay_plane_lookup: HashMap<plane::Handle, PlaneInfo> =
-            self.planes.overlay.iter().map(|p| (p.handle, *p)).collect();
-
         // This will hold the element that has been selected for direct scan-out on
         // the primary plane if any
         let mut primary_plane_scanout_element: Option<&'a E> = None;
@@ -1949,6 +1960,8 @@ where
             // commit -> unlikely but possible
             // So we use an Id per plane for as long as we have the same element
             // on that plane.
+            let overlay_plane_lookup: HashMap<plane::Handle, &PlaneInfo> =
+                self.planes.overlay.iter().map(|p| (p.handle, p)).collect();
             let mut elements = overlay_plane_elements
                 .iter()
                 .filter_map(|(p, element)| {
@@ -2348,7 +2361,7 @@ where
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
         try_assign_primary_plane: bool,
-    ) -> Result<PlaneInfo, Option<RenderingReason>>
+    ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
         E: RenderElement<R>,
@@ -2433,7 +2446,7 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-    ) -> Option<PlaneInfo>
+    ) -> Option<PlaneAssignment>
     where
         R: Renderer + Offscreen<Target> + ExportMem,
         E: RenderElement<R>,
@@ -2558,7 +2571,7 @@ where
             );
 
             if res.is_ok() {
-                return Some(*plane_info);
+                return Some(plane_info.into());
             } else {
                 return None;
             }
@@ -2580,7 +2593,7 @@ where
             );
 
             if res.is_ok() {
-                return Some(*plane_info);
+                return Some(plane_info.into());
             } else {
                 return None;
             }
@@ -2746,7 +2759,7 @@ where
             cursor_state.previous_output_scale = Some(scale);
             cursor_state.previous_output_transform = Some(output_transform);
             output_damage.push(dst);
-            Some(*plane_info)
+            Some(plane_info.into())
         } else {
             info!("failed to test cursor {:?} state", plane_info.handle);
             None
@@ -2770,7 +2783,7 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-    ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
+    ) -> Result<Result<PlaneAssignment, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
         E: RenderElement<R>,
@@ -2897,7 +2910,7 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-    ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
+    ) -> Result<Result<PlaneAssignment, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
         E: RenderElement<R>,
@@ -2949,7 +2962,7 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-    ) -> Result<Result<PlaneInfo, Option<RenderingReason>>, ExportBufferError>
+    ) -> Result<Result<PlaneAssignment, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
         E: RenderElement<R>,
@@ -3131,7 +3144,7 @@ where
                 plane.zpos,
             );
 
-            Ok(Ok(*plane))
+            Ok(Ok(plane.into()))
         } else {
             trace!(
                 "skipping direct scan-out on {:?} with zpos {:?} for element {:?}, test failed",
