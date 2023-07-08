@@ -91,7 +91,13 @@ pub use node::{CreateDrmNodeError, DrmNode, NodeType};
 pub use surface::gbm::{Error as GbmBufferedSurfaceError, GbmBufferedSurface};
 pub use surface::{DrmSurface, PlaneConfig, PlaneDamageClips, PlaneState};
 
-use drm::control::{crtc, plane, Device as ControlDevice, PlaneType};
+use drm::control::{crtc, framebuffer, plane, Device as ControlDevice, PlaneType};
+
+/// Common framebuffer operations
+pub trait Framebuffer: AsRef<framebuffer::Handle> {
+    /// Retrieve the format of the framebuffer
+    fn format(&self) -> drm_fourcc::DrmFormat;
+}
 
 /// A set of planes as supported by a crtc
 #[derive(Debug, Clone)]

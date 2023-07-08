@@ -162,7 +162,7 @@ use crate::{
     utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{DrmDeviceFd, DrmSurface, PlaneClaim, PlaneInfo, Planes};
+use super::{DrmDeviceFd, DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes};
 
 mod elements;
 pub mod gbm;
@@ -200,14 +200,14 @@ impl<B: Buffer> From<UnderlyingStorage> for ScanoutBuffer<B> {
     }
 }
 
-enum DrmFramebuffer<F: AsRef<framebuffer::Handle>> {
+enum DrmFramebuffer<F: Framebuffer> {
     Exporter(F),
     Gbm(super::gbm::GbmFramebuffer),
 }
 
 impl<F> AsRef<framebuffer::Handle> for DrmFramebuffer<F>
 where
-    F: AsRef<framebuffer::Handle>,
+    F: Framebuffer,
 {
     fn as_ref(&self) -> &framebuffer::Handle {
         match self {
@@ -217,9 +217,21 @@ where
     }
 }
 
+impl<F> Framebuffer for DrmFramebuffer<F>
+where
+    F: Framebuffer,
+{
+    fn format(&self) -> drm_fourcc::DrmFormat {
+        match self {
+            DrmFramebuffer::Exporter(e) => e.format(),
+            DrmFramebuffer::Gbm(g) => g.format(),
+        }
+    }
+}
+
 impl<F> std::fmt::Debug for DrmFramebuffer<F>
 where
-    F: AsRef<framebuffer::Handle> + std::fmt::Debug,
+    F: Framebuffer + std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -229,7 +241,7 @@ where
     }
 }
 
-struct DrmScanoutBuffer<B: Buffer, F: AsRef<framebuffer::Handle>> {
+struct DrmScanoutBuffer<B: Buffer, F: Framebuffer> {
     buffer: ScanoutBuffer<B>,
     fb: OwnedFramebuffer<DrmFramebuffer<F>>,
 }
@@ -237,7 +249,7 @@ struct DrmScanoutBuffer<B: Buffer, F: AsRef<framebuffer::Handle>> {
 impl<B, F> std::fmt::Debug for DrmScanoutBuffer<B, F>
 where
     B: Buffer + std::fmt::Debug,
-    F: AsRef<framebuffer::Handle> + std::fmt::Debug,
+    F: Framebuffer + std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DrmScanoutBuffer")
@@ -247,9 +259,15 @@ where
     }
 }
 
-impl<B: Buffer, F: AsRef<framebuffer::Handle>> AsRef<framebuffer::Handle> for DrmScanoutBuffer<B, F> {
+impl<B: Buffer, F: Framebuffer> AsRef<framebuffer::Handle> for DrmScanoutBuffer<B, F> {
     fn as_ref(&self) -> &drm::control::framebuffer::Handle {
         self.fb.as_ref()
+    }
+}
+
+impl<B: Buffer, F: Framebuffer> Framebuffer for DrmScanoutBuffer<B, F> {
+    fn format(&self) -> drm_fourcc::DrmFormat {
+        self.fb.format()
     }
 }
 
@@ -277,7 +295,7 @@ impl From<&UnderlyingStorage> for ElementFramebufferCacheKey {
 #[derive(Debug)]
 struct ElementFramebufferCache<B>
 where
-    B: AsRef<framebuffer::Handle>,
+    B: Framebuffer,
 {
     /// Cache for framebuffer handles per cache key (e.g. wayland buffer)
     fb_cache: HashMap<ElementFramebufferCacheKey, Result<OwnedFramebuffer<B>, ExportBufferError>>,
@@ -285,7 +303,7 @@ where
 
 impl<B> ElementFramebufferCache<B>
 where
-    B: AsRef<framebuffer::Handle>,
+    B: Framebuffer,
 {
     fn get(&self, buffer: &UnderlyingStorage) -> Option<Result<OwnedFramebuffer<B>, ExportBufferError>> {
         self.fb_cache
@@ -304,7 +322,7 @@ where
 
 impl<B> Clone for ElementFramebufferCache<B>
 where
-    B: AsRef<framebuffer::Handle>,
+    B: Framebuffer,
 {
     fn clone(&self) -> Self {
         Self {
@@ -315,7 +333,7 @@ where
 
 impl<B> Default for ElementFramebufferCache<B>
 where
-    B: AsRef<framebuffer::Handle>,
+    B: Framebuffer,
 {
     fn default() -> Self {
         Self {
@@ -449,10 +467,19 @@ impl<B> From<B> for Owned<B> {
 
 impl<B> AsRef<framebuffer::Handle> for Owned<B>
 where
-    B: AsRef<framebuffer::Handle>,
+    B: Framebuffer,
 {
     fn as_ref(&self) -> &framebuffer::Handle {
         (*self.0).as_ref()
+    }
+}
+
+impl<B> Framebuffer for Owned<B>
+where
+    B: Framebuffer,
+{
+    fn format(&self) -> drm_fourcc::DrmFormat {
+        (*self.0).format()
     }
 }
 
@@ -462,7 +489,7 @@ impl<B> Clone for Owned<B> {
     }
 }
 
-impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
+impl<B: Framebuffer> FrameState<B> {
     fn from_planes(planes: &Planes) -> Self {
         let cursor_plane_count = usize::from(planes.cursor.is_some());
         let mut tmp = HashMap::with_capacity(planes.overlay.len() + cursor_plane_count + 1);
@@ -481,7 +508,7 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
     }
 }
 
-impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
+impl<B: Framebuffer> FrameState<B> {
     #[profiling::function]
     fn set_state(&mut self, plane: plane::Handle, state: PlaneState<B>) {
         let current_config = match self.planes.get_mut(&plane) {
@@ -597,7 +624,7 @@ where
     B: Buffer,
 {
     /// Type of the framebuffer
-    type Framebuffer: AsRef<framebuffer::Handle>;
+    type Framebuffer: Framebuffer;
 
     /// Type of the error
     type Error: std::error::Error;
@@ -672,7 +699,7 @@ type RenderFrameErrorType<A, F, R> = RenderFrameError<
 
 #[derive(Debug)]
 /// Defines the element for the primary plane in cases where a composited buffer was used.
-pub struct PrimarySwapchainElement<B: Buffer, F: AsRef<framebuffer::Handle>> {
+pub struct PrimarySwapchainElement<B: Buffer, F: Framebuffer> {
     /// The slot from the swapchain
     slot: Owned<DrmScanoutBuffer<B, F>>,
     /// Sync point
@@ -683,7 +710,7 @@ pub struct PrimarySwapchainElement<B: Buffer, F: AsRef<framebuffer::Handle>> {
     pub damage: DamageSnapshot<i32, BufferCoords>,
 }
 
-impl<B: Buffer, F: AsRef<framebuffer::Handle>> PrimarySwapchainElement<B, F> {
+impl<B: Buffer, F: Framebuffer> PrimarySwapchainElement<B, F> {
     /// Access the underlying swapchain buffer
     pub fn buffer(&self) -> &B {
         match &self.slot.0.buffer {
@@ -695,7 +722,7 @@ impl<B: Buffer, F: AsRef<framebuffer::Handle>> PrimarySwapchainElement<B, F> {
 
 #[derive(Debug)]
 /// Defines the element for the primary plane
-pub enum PrimaryPlaneElement<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
+pub enum PrimaryPlaneElement<'a, B: Buffer, F: Framebuffer, E> {
     /// A slot from the swapchain was used for rendering
     /// the primary plane
     Swapchain(PrimarySwapchainElement<B, F>),
@@ -719,7 +746,7 @@ pub enum PrimaryPlaneElement<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
 /// on rendering until buffers are freed again. The exact amount of images in a
 /// swapchain is an implementation detail, but should generally be expect to be
 /// large enough to hold onto at least one `RenderFrameResult`.
-pub struct RenderFrameResult<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
+pub struct RenderFrameResult<'a, B: Buffer, F: Framebuffer, E> {
     /// Damage of this frame
     pub damage: Option<Vec<Rectangle<i32, Physical>>>,
     /// The render element states of this frame
@@ -737,7 +764,7 @@ pub struct RenderFrameResult<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> {
     supports_fencing: bool,
 }
 
-impl<'a, B: Buffer, F: AsRef<framebuffer::Handle>, E> RenderFrameResult<'a, B, F, E> {
+impl<'a, B: Buffer, F: Framebuffer, E> RenderFrameResult<'a, B, F, E> {
     /// Returns if synchronization with kms submission can't be guaranteed through the available apis.
     pub fn needs_sync(&self) -> bool {
         if let PrimaryPlaneElement::Swapchain(ref element) = self.primary_element {
@@ -884,7 +911,7 @@ pub enum BlitFrameResultError<R: std::error::Error, E: std::error::Error> {
 impl<'a, B, F, E> RenderFrameResult<'a, B, F, E>
 where
     B: Buffer,
-    F: AsRef<framebuffer::Handle>,
+    F: Framebuffer,
 {
     /// Get the damage of this frame for the specified dtr and age
     pub fn damage_from_age(
@@ -941,7 +968,7 @@ impl<'a, B, F, E> RenderFrameResult<'a, B, F, E>
 where
     B: Buffer + AsDmabuf,
     <B as AsDmabuf>::Error: std::fmt::Debug,
-    F: AsRef<framebuffer::Handle>,
+    F: Framebuffer,
 {
     /// Blit the frame result into a currently bound buffer
     #[allow(clippy::too_many_arguments)]
@@ -1095,12 +1122,8 @@ where
     }
 }
 
-impl<
-        'a,
-        B: Buffer + std::fmt::Debug,
-        F: AsRef<framebuffer::Handle> + std::fmt::Debug,
-        E: std::fmt::Debug,
-    > std::fmt::Debug for RenderFrameResult<'a, B, F, E>
+impl<'a, B: Buffer + std::fmt::Debug, F: Framebuffer + std::fmt::Debug, E: std::fmt::Debug> std::fmt::Debug
+    for RenderFrameResult<'a, B, F, E>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RenderFrameResult")
@@ -3230,35 +3253,41 @@ fn element_is_opaque<E: Element>(element: &E, scale: Scale<f64>) -> bool {
         .is_empty()
 }
 
-struct OwnedFramebuffer<B: AsRef<framebuffer::Handle>>(Arc<B>);
+struct OwnedFramebuffer<B: Framebuffer>(Arc<B>);
 
-impl<B: AsRef<framebuffer::Handle>> PartialEq for OwnedFramebuffer<B> {
+impl<B: Framebuffer> PartialEq for OwnedFramebuffer<B> {
     fn eq(&self, other: &Self) -> bool {
         AsRef::<framebuffer::Handle>::as_ref(&self) == AsRef::<framebuffer::Handle>::as_ref(&other)
     }
 }
 
-impl<B: AsRef<framebuffer::Handle> + std::fmt::Debug> std::fmt::Debug for OwnedFramebuffer<B> {
+impl<B: Framebuffer + std::fmt::Debug> std::fmt::Debug for OwnedFramebuffer<B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("OwnedFramebuffer").field(&self.0).finish()
     }
 }
 
-impl<B: AsRef<framebuffer::Handle>> OwnedFramebuffer<B> {
+impl<B: Framebuffer> OwnedFramebuffer<B> {
     fn new(buffer: B) -> Self {
         OwnedFramebuffer(Arc::new(buffer))
     }
 }
 
-impl<B: AsRef<framebuffer::Handle>> Clone for OwnedFramebuffer<B> {
+impl<B: Framebuffer> Clone for OwnedFramebuffer<B> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<B: AsRef<framebuffer::Handle>> AsRef<framebuffer::Handle> for OwnedFramebuffer<B> {
+impl<B: Framebuffer> AsRef<framebuffer::Handle> for OwnedFramebuffer<B> {
     fn as_ref(&self) -> &framebuffer::Handle {
         (*self.0).as_ref()
+    }
+}
+
+impl<B: Framebuffer> Framebuffer for OwnedFramebuffer<B> {
+    fn format(&self) -> drm_fourcc::DrmFormat {
+        (*self.0).format()
     }
 }
 
