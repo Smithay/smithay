@@ -483,6 +483,15 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
 
 impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
     #[profiling::function]
+    fn set_state(&mut self, plane: plane::Handle, state: PlaneState<B>) {
+        let current_config = match self.planes.get_mut(&plane) {
+            Some(config) => config,
+            None => return,
+        };
+        *current_config = state;
+    }
+
+    #[profiling::function]
     fn test_state(
         &mut self,
         surface: &DrmSurface,
@@ -1671,19 +1680,9 @@ where
             }),
         };
 
-        // test that we can scan-out the primary plane
-        //
-        // Note: this should only fail if the device has been
-        // deactivated or we lost access (like during a vt switch)
-        next_frame_state
-            .test_state(
-                &self.surface,
-                self.supports_fencing,
-                self.planes.primary.handle,
-                primary_plane_state,
-                self.surface.commit_pending(),
-            )
-            .map_err(FrameError::DrmError)?;
+        // unconditionally set the primary plane state
+        // if this would fail the test we are screwed anyway
+        next_frame_state.set_state(self.planes.primary.handle, primary_plane_state);
 
         // This holds all elements that are visible on the output
         // A element is considered visible if it intersects with the output geometry
