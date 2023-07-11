@@ -248,7 +248,10 @@ impl LayerMap {
     /// Force re-arranging the layer surfaces, e.g. when the output size changes.
     ///
     /// Note: Mapping or unmapping a layer surface will automatically cause a re-arrangement.
-    pub fn arrange(&mut self) {
+    ///
+    /// Return whenever any position or size changes of existing surfaces were necessary.
+    pub fn arrange(&mut self) -> bool {
+        let mut changed = false;
         if let Some(output) = self.output() {
             let span = debug_span!("layer_map", output = output.name());
             let _guard = span.enter();
@@ -409,6 +412,7 @@ impl LayerMap {
                 let size_changed = layer.0.surface.with_pending_state(|state| {
                     state.size.replace(size).map(|old| old != size).unwrap_or(true)
                 });
+                changed = changed || size_changed;
                 let initial_configure_sent = with_states(surface, |states| {
                     states
                         .data_map
@@ -429,12 +433,20 @@ impl LayerMap {
                     layer.0.surface.send_pending_configure();
                 }
 
-                layer_state(layer).location = location;
+                {
+                    let mut layer_state = layer_state(layer);
+                    if layer_state.location != location {
+                        layer_state.location = location;
+                        changed = true;
+                    }
+                }
             }
 
             trace!("Remaining zone {:?}", zone);
             self.zone = zone;
         }
+
+        changed
     }
 
     fn output(&self) -> Option<Output> {
