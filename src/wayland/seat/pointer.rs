@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{fmt, sync::Mutex};
 
 use wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1;
 use wayland_server::{
@@ -180,9 +180,16 @@ where
 }
 
 /// User data for pointer
-#[derive(Debug)]
 pub struct PointerUserData<D: SeatHandler> {
     pub(crate) handle: Option<PointerHandle<D>>,
+}
+
+impl<D: SeatHandler> fmt::Debug for PointerUserData<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PointerUserData")
+            .field("handle", &self.handle)
+            .finish()
+    }
 }
 
 impl<D> Dispatch<WlPointer, PointerUserData<D>, D> for SeatState<D>

@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+};
 
 use wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2,
@@ -103,11 +106,20 @@ impl InputMethodHandle {
 }
 
 /// User data of ZwpInputMethodV2 object
-#[derive(Debug)]
 pub struct InputMethodUserData<D: SeatHandler> {
     pub(super) handle: InputMethodHandle,
     pub(crate) text_input_handle: TextInputHandle,
     pub(crate) keyboard_handle: KeyboardHandle<D>,
+}
+
+impl<D: SeatHandler> fmt::Debug for InputMethodUserData<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InputMethodUserData")
+            .field("handle", &self.handle)
+            .field("text_input_handle", &self.text_input_handle)
+            .field("keyboard_handle", &self.keyboard_handle)
+            .finish()
+    }
 }
 
 impl<D> Dispatch<ZwpInputMethodV2, InputMethodUserData<D>, D> for InputMethodManagerState
