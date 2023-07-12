@@ -59,7 +59,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
     drm: &DrmDeviceFd,
     gbm: &gbm::Device<A>,
     buffer: &WlBuffer,
-    allow_opaque_fallback: bool,
+    use_opaque: bool,
 ) -> Result<Option<GbmFramebuffer>, Error> {
     if let Ok(dmabuf) = crate::wayland::dmabuf::get_dmabuf(buffer) {
         // From weston:
@@ -71,12 +71,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
          * not knowing its layout can result in garbage being displayed. In
          * short, importing a buffer to KMS requires explicit modifiers. */
         if dmabuf.format().modifier != DrmModifier::Invalid {
-            return Ok(Some(framebuffer_from_dmabuf(
-                drm,
-                gbm,
-                &dmabuf,
-                allow_opaque_fallback,
-            )?));
+            return Ok(Some(framebuffer_from_dmabuf(drm, gbm, &dmabuf, use_opaque)?));
         }
     }
 
@@ -95,7 +90,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
                 offsets: None,
                 pitches: None,
             },
-            allow_opaque_fallback,
+            use_opaque,
         )
         .map_err(Error::Drm)?;
 
@@ -129,7 +124,7 @@ pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
     drm: &DrmDeviceFd,
     gbm: &gbm::Device<A>,
     dmabuf: &Dmabuf,
-    allow_opaque_fallback: bool,
+    use_opaque: bool,
 ) -> Result<GbmFramebuffer, Error> {
     let bo: BufferObject<()> = dmabuf
         .import_to(gbm, gbm::BufferObjectFlags::SCANOUT)
@@ -156,7 +151,7 @@ pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
             offsets: Some(offsets),
             pitches: Some(pitches),
         },
-        allow_opaque_fallback,
+        use_opaque,
     )
     .map_err(Error::Drm)
     .map(|fb| GbmFramebuffer {
@@ -204,7 +199,7 @@ impl TryFrom<super::DrmError> for AccessError {
 pub fn framebuffer_from_bo<T>(
     drm: &DrmDeviceFd,
     bo: &BufferObject<T>,
-    allow_opaque_fallback: bool,
+    use_opaque: bool,
 ) -> Result<GbmFramebuffer, AccessError> {
     framebuffer_from_bo_internal(
         drm,
@@ -213,7 +208,7 @@ pub fn framebuffer_from_bo<T>(
             offsets: None,
             pitches: None,
         },
-        allow_opaque_fallback,
+        use_opaque,
     )
     .map(|fb| GbmFramebuffer {
         _bo: None,
@@ -289,7 +284,7 @@ where
 fn framebuffer_from_bo_internal<D, T>(
     drm: &D,
     bo: BufferObjectInternal<'_, T>,
-    allow_opaque_fallback: bool,
+    use_opaque: bool,
 ) -> Result<framebuffer::Handle, AccessError>
 where
     D: drm::control::Device + DevPath,
@@ -307,27 +302,19 @@ where
             if num > 2 { modifier } else { None },
             if num > 3 { modifier } else { None },
         ];
-        drm.add_planar_framebuffer(&bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
-            .or_else(|err| {
-                if allow_opaque_fallback {
-                    drm.add_planar_framebuffer(
-                        &OpaqueBufferWrapper(&bo),
-                        &modifiers,
-                        drm_ffi::DRM_MODE_FB_MODIFIERS,
-                    )
-                } else {
-                    Err(err)
-                }
-            })
+        if use_opaque {
+            drm.add_planar_framebuffer(
+                &OpaqueBufferWrapper(&bo),
+                &modifiers,
+                drm_ffi::DRM_MODE_FB_MODIFIERS,
+            )
+        } else {
+            drm.add_planar_framebuffer(&bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
+        }
+    } else if use_opaque {
+        drm.add_planar_framebuffer(&OpaqueBufferWrapper(&bo), &[None, None, None, None], 0)
     } else {
         drm.add_planar_framebuffer(&bo, &[None, None, None, None], 0)
-            .or_else(|err| {
-                if allow_opaque_fallback {
-                    drm.add_planar_framebuffer(&OpaqueBufferWrapper(&bo), &[None, None, None, None], 0)
-                } else {
-                    Err(err)
-                }
-            })
     } {
         Ok(fb) => fb,
         Err(source) => {

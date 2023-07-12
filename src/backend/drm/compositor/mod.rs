@@ -597,7 +597,7 @@ where
         &self,
         drm: &DrmDeviceFd,
         buffer: ExportBuffer<'_, B>,
-        allow_opaque_fallback: bool,
+        use_opaque: bool,
     ) -> Result<Option<Self::Framebuffer>, Self::Error>;
 }
 
@@ -613,10 +613,10 @@ where
         &self,
         drm: &DrmDeviceFd,
         buffer: ExportBuffer<'_, B>,
-        allow_opaque_fallback: bool,
+        use_opaque: bool,
     ) -> Result<Option<Self::Framebuffer>, Self::Error> {
         let guard = self.lock().unwrap();
-        guard.add_framebuffer(drm, buffer, allow_opaque_fallback)
+        guard.add_framebuffer(drm, buffer, use_opaque)
     }
 }
 
@@ -632,9 +632,9 @@ where
         &self,
         drm: &DrmDeviceFd,
         buffer: ExportBuffer<'_, B>,
-        allow_opaque_fallback: bool,
+        use_opaque: bool,
     ) -> Result<Option<Self::Framebuffer>, Self::Error> {
-        self.borrow().add_framebuffer(drm, buffer, allow_opaque_fallback)
+        self.borrow().add_framebuffer(drm, buffer, use_opaque)
     }
 }
 
@@ -1206,6 +1206,7 @@ where
     planes: Planes,
     overlay_plane_element_ids: OverlayPlaneElementIds,
     damage_tracker: OutputDamageTracker,
+    primary_is_opaque: bool,
     primary_plane_element_id: Id,
     primary_plane_damage_bag: DamageBag<i32, BufferCoords>,
     supports_fencing: bool,
@@ -1305,7 +1306,7 @@ where
                 renderer_formats.clone(),
                 *format,
             ) {
-                Ok((swapchain, current_frame)) => {
+                Ok((swapchain, current_frame, is_opaque)) => {
                     let cursor_state = gbm.map(|gbm| {
                         let cursor_allocator = GbmAllocator::new(
                             gbm.clone(),
@@ -1324,6 +1325,7 @@ where
                     let drm_renderer = DrmCompositor {
                         primary_plane_element_id: Id::new(),
                         primary_plane_damage_bag: DamageBag::new(4),
+                        primary_is_opaque: is_opaque,
                         current_frame,
                         pending_frame: None,
                         queued_frame: None,
@@ -1363,7 +1365,7 @@ where
         framebuffer_exporter: &F,
         mut renderer_formats: HashSet<DrmFormat>,
         code: DrmFourcc,
-    ) -> Result<(Swapchain<A>, Frame<A, F>), (A, FrameErrorType<A, F>)> {
+    ) -> Result<(Swapchain<A>, Frame<A, F>, bool), (A, FrameErrorType<A, F>)> {
         // select a format
         let mut plane_formats = match drm.supported_formats(drm.plane()) {
             Ok(formats) => formats.iter().cloned().collect::<HashSet<_>>(),
@@ -1458,10 +1460,11 @@ where
             }
         };
 
+        let use_opaque = !plane_formats.iter().any(|f| f.code == code);
         let fb_buffer = match framebuffer_exporter.add_framebuffer(
             drm.device_fd(),
             ExportBuffer::Allocator(&buffer),
-            true,
+            use_opaque,
         ) {
             Ok(Some(fb_buffer)) => fb_buffer,
             Ok(None) => return Err((swapchain.allocator, FrameError::NoFramebuffer)),
@@ -1511,7 +1514,7 @@ where
         {
             Ok(_) => {
                 debug!("Chosen format: {:?}", dmabuf.format());
-                Ok((swapchain, current_frame_state))
+                Ok((swapchain, current_frame_state, use_opaque))
             }
             Err(err) => {
                 warn!(
@@ -1583,7 +1586,7 @@ where
                 .add_framebuffer(
                     self.surface.device_fd(),
                     ExportBuffer::Allocator(&primary_plane_buffer),
-                    true,
+                    self.primary_is_opaque,
                 )
                 .map_err(FrameError::FramebufferExport)?
                 .ok_or(FrameError::NoFramebuffer)?;
@@ -2779,9 +2782,9 @@ where
             // test if the plane represents an underlay
             let is_underlay = self.planes.primary.zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
 
-            if is_underlay && !element_is_opaque(element, scale) {
+            if is_underlay && (!element_is_opaque(element, scale) || self.primary_is_opaque) {
                 trace!(
-                    "skipping direct scan-out on plane plane {:?} with zpos {:?}, element {:?} is not opaque",
+                    "skipping direct scan-out on underlay-plane plane {:?} with zpos {:?}, element {:?} is not opaque or primary plane has no alpha channel",
                     plane.handle,
                     plane.zpos,
                     element_id
@@ -2939,7 +2942,11 @@ where
                 .add_framebuffer(
                     self.surface.device_fd(),
                     ExportBuffer::from(underlying_storage),
-                    plane.type_ == PlaneType::Primary,
+                    if plane.type_ == PlaneType::Primary {
+                        self.primary_is_opaque
+                    } else {
+                        false // TODO: Check if element_is_opaque and allow fallback for underlays
+                    },
                 )
                 .map_err(|err| {
                     trace!("failed to add framebuffer: {:?}", err);
