@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+};
 
 use wayland_server::{protocol::wl_surface::WlSurface, Resource};
 
@@ -216,7 +219,6 @@ impl PopupGrabInner {
 /// timeout.
 ///
 /// The grab is obtained by calling [`PopupManager::grap_popup`](super::PopupManager::grab_popup).
-#[derive(Debug)]
 pub struct PopupGrab<D>
 where
     D: SeatHandler + 'static,
@@ -230,6 +232,24 @@ where
     keyboard_handle: Option<KeyboardHandle<D>>,
     keyboard_grab_start_data: KeyboardGrabStartData<D>,
     pointer_grab_start_data: PointerGrabStartData<D>,
+}
+
+impl<D> fmt::Debug for PopupGrab<D>
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PopupGrab")
+            .field("root", &self.root)
+            .field("serial", &self.serial)
+            .field("previous_serial", &self.previous_serial)
+            .field("keyboard_handle", &self.keyboard_handle)
+            .field("keyboard_grab_start_data", &self.keyboard_grab_start_data)
+            .field("pointer_grab_start_data", &self.pointer_grab_start_data)
+            .finish()
+    }
 }
 
 impl<D> Clone for PopupGrab<D>
@@ -373,7 +393,6 @@ where
 /// on the topmost popup until the grab has ended. If the
 /// grab has ended it will restore the focus on the root of the grab
 /// and unset the [`KeyboardGrab`]
-#[derive(Debug)]
 pub struct PopupKeyboardGrab<D>
 where
     D: SeatHandler + 'static,
@@ -381,6 +400,19 @@ where
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     popup_grab: PopupGrab<D>,
+}
+
+impl<D> fmt::Debug for PopupKeyboardGrab<D>
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PopupKeyboardGrab")
+            .field("popup_grab", &self.popup_grab)
+            .finish()
+    }
 }
 
 impl<D> PopupKeyboardGrab<D>
@@ -467,7 +499,6 @@ where
 /// [`PointerGrab`] is unset. Additional it will unset an active
 /// [`KeyboardGrab`] that matches the [`Serial`] of this grab and
 /// restore the keyboard focus like described in [`PopupKeyboardGrab`]
-#[derive(Debug)]
 pub struct PopupPointerGrab<D>
 where
     D: SeatHandler + 'static,
@@ -475,6 +506,19 @@ where
     <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
 {
     popup_grab: PopupGrab<D>,
+}
+
+impl<D> fmt::Debug for PopupPointerGrab<D>
+where
+    D: SeatHandler + 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: From<<D as SeatHandler>::KeyboardFocus> + WaylandFocus,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PopupPointerGrab")
+            .field("popup_grab", &self.popup_grab)
+            .finish()
+    }
 }
 
 impl<D> PopupPointerGrab<D>
