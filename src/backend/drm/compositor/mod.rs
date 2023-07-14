@@ -146,7 +146,7 @@ use crate::{
         drm::{plane_has_property, DrmError, PlaneDamageClips},
         renderer::{
             buffer_y_inverted,
-            damage::{Error as OutputDamageTrackerError, OutputDamageTracker, OutputNoMode},
+            damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::{
                 Element, Id, RenderElement, RenderElementPresentationState, RenderElementState,
                 RenderElementStates, RenderingReason, UnderlyingStorage,
@@ -157,7 +157,7 @@ use crate::{
         },
         SwapBuffersError,
     },
-    output::Output,
+    output::{Output, OutputModeSource, OutputNoMode},
     utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
@@ -1201,7 +1201,7 @@ where
     <F as ExportFramebuffer<A::Buffer>>::Framebuffer: std::fmt::Debug + 'static,
     G: AsFd + 'static,
 {
-    output: Output,
+    output_mode_source: OutputModeSource,
     surface: Arc<DrmSurface>,
     planes: Planes,
     overlay_plane_element_ids: OverlayPlaneElementIds,
@@ -1263,6 +1263,34 @@ where
         output: &Output,
         surface: DrmSurface,
         planes: Option<Planes>,
+        allocator: A,
+        framebuffer_exporter: F,
+        color_formats: &[DrmFourcc],
+        renderer_formats: HashSet<DrmFormat>,
+        cursor_size: Size<u32, BufferCoords>,
+        gbm: Option<GbmDevice<G>>,
+    ) -> FrameResult<Self, A, F> {
+        let output_mode_source = OutputModeSource::Auto(output.clone());
+        Self::new_with_output_mode_source(
+            output_mode_source,
+            surface,
+            planes,
+            allocator,
+            framebuffer_exporter,
+            color_formats,
+            renderer_formats,
+            cursor_size,
+            gbm,
+        )
+    }
+
+    /// TODO
+    #[allow(clippy::too_many_arguments)]
+    #[instrument(skip(allocator, framebuffer_exporter))]
+    pub fn new_with_output_mode_source(
+        output_mode_source: OutputModeSource,
+        surface: DrmSurface,
+        planes: Option<Planes>,
         mut allocator: A,
         framebuffer_exporter: F,
         color_formats: &[DrmFourcc],
@@ -1273,7 +1301,6 @@ where
         let span = info_span!(
             parent: None,
             "drm_compositor",
-            output = output.name(),
             device = ?surface.dev_path(),
             crtc = ?surface.crtc(),
         );
@@ -1291,7 +1318,7 @@ where
             .sort_by_key(|p| std::cmp::Reverse(p.zpos.unwrap_or_default()));
 
         let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
-        let damage_tracker = OutputDamageTracker::from_output(output);
+        let damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
         let supports_fencing =
             !surface.is_legacy() && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?;
 
@@ -1336,7 +1363,7 @@ where
                         cursor_state,
                         surface,
                         damage_tracker,
-                        output: output.clone(),
+                        output_mode_source,
                         planes,
                         overlay_plane_element_ids,
                         element_states: IndexMap::new(),
@@ -1547,9 +1574,9 @@ where
         // any already acquired slot back to the swapchain
         self.next_frame.take();
 
-        let current_size = self.output.current_mode().unwrap().size;
-        let output_scale = self.output.current_scale().fractional_scale().into();
-        let output_transform = self.output.current_transform();
+        let (current_size, output_scale, output_transform) = (&self.output_mode_source)
+            .try_into()
+            .map_err(OutputDamageTrackerError::OutputNoMode)?;
 
         // Output transform is specified in surface-rotation, so inversion gives us the
         // render transform for the output itself.
@@ -2221,7 +2248,7 @@ where
     }
 
     /// Tries to mark a [`connector`](drm::control::connector)
-    /// for removal on the next commit.    
+    /// for removal on the next commit.
     pub fn remove_connector(&self, connector: connector::Handle) -> FrameResult<(), A, F> {
         self.surface
             .remove_connector(connector)
@@ -2233,7 +2260,7 @@ where
     /// Fails if one new `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
     /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
-    /// [`Mode`](drm::control::Mode).    
+    /// [`Mode`](drm::control::Mode).
     pub fn set_connectors(&self, connectors: &[connector::Handle]) -> FrameResult<(), A, F> {
         self.surface
             .set_connectors(connectors)
@@ -2241,13 +2268,13 @@ where
     }
 
     /// Returns the currently active [`Mode`](drm::control::Mode)
-    /// of the underlying [`crtc`](drm::control::crtc)    
+    /// of the underlying [`crtc`](drm::control::crtc)
     pub fn current_mode(&self) -> Mode {
         self.surface.current_mode()
     }
 
     /// Returns the currently pending [`Mode`](drm::control::Mode)
-    /// to be used after the next commit.    
+    /// to be used after the next commit.
     pub fn pending_mode(&self) -> Mode {
         self.surface.pending_mode()
     }
@@ -2289,6 +2316,17 @@ where
     /// Get the format of the underlying swapchain
     pub fn format(&self) -> DrmFourcc {
         self.swapchain.format()
+    }
+
+    /// Change the output mode source.
+    pub fn set_output_mode_source(&mut self, output_mode_source: OutputModeSource) {
+        // Avoid clearing damage if mode source did not change.
+        if output_mode_source == self.output_mode_source {
+            return;
+        }
+
+        self.damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
+        self.output_mode_source = output_mode_source;
     }
 
     #[allow(clippy::too_many_arguments)]

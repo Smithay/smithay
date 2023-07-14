@@ -197,7 +197,7 @@ use tracing::{info_span, instrument, trace};
 
 use crate::{
     backend::renderer::{element::RenderElementPresentationState, Frame},
-    output::Output,
+    output::{Output, OutputModeSource, OutputNoMode},
     utils::{Physical, Rectangle, Scale, Size, Transform},
 };
 
@@ -246,50 +246,10 @@ struct RendererState {
     opaque_regions: Vec<Rectangle<i32, Physical>>,
 }
 
-/// Mode for the [`OutputDamageTracker`] output
-#[derive(Debug, Clone)]
-pub enum OutputDamageTrackerMode {
-    /// Automatic mode based on a [`Output`]
-    Auto(Output),
-    /// Static output mode
-    Static {
-        /// Size of the static output
-        size: Size<i32, Physical>,
-        /// Scale of the static output
-        scale: Scale<f64>,
-        /// Transform of the static output
-        transform: Transform,
-    },
-}
-
-/// Output has no active mode
-#[derive(Debug, thiserror::Error)]
-#[error("Output has no active mode")]
-pub struct OutputNoMode;
-
-impl TryInto<(Size<i32, Physical>, Scale<f64>, Transform)> for OutputDamageTrackerMode {
-    type Error = OutputNoMode;
-
-    fn try_into(self) -> Result<(Size<i32, Physical>, Scale<f64>, Transform), Self::Error> {
-        match self {
-            OutputDamageTrackerMode::Auto(output) => Ok((
-                output.current_mode().ok_or(OutputNoMode)?.size,
-                output.current_scale().fractional_scale().into(),
-                output.current_transform(),
-            )),
-            OutputDamageTrackerMode::Static {
-                size,
-                scale,
-                transform,
-            } => Ok((size, scale, transform)),
-        }
-    }
-}
-
 /// Damage tracker for a single output
 #[derive(Debug)]
 pub struct OutputDamageTracker {
-    mode: OutputDamageTrackerMode,
+    mode: OutputModeSource,
     last_state: RendererState,
     span: tracing::Span,
 }
@@ -343,7 +303,7 @@ impl OutputDamageTracker {
         transform: Transform,
     ) -> Self {
         Self {
-            mode: OutputDamageTrackerMode::Static {
+            mode: OutputModeSource::Static {
                 size: size.into(),
                 scale: scale.into(),
                 transform,
@@ -360,14 +320,27 @@ impl OutputDamageTracker {
     /// next call to [`render_output`](OutputDamageTracker::render_output)
     pub fn from_output(output: &Output) -> Self {
         Self {
-            mode: OutputDamageTrackerMode::Auto(output.clone()),
+            mode: OutputModeSource::Auto(output.clone()),
             last_state: Default::default(),
             span: info_span!("renderer_damage", output = output.name()),
         }
     }
 
+    /// Initialize a new [`OutputDamageTracker`] from an [`OutputModeSource`].
+    ///
+    /// This should only be used when trying to support both static and automatic output mode
+    /// sources. For known modes use [`OutputDamageTracker::new`] or
+    /// [`OutputDamageTracker::from_output`] instead.
+    pub fn from_mode_source(output_mode_source: OutputModeSource) -> Self {
+        Self {
+            mode: output_mode_source,
+            last_state: Default::default(),
+            span: info_span!("render_damage"),
+        }
+    }
+
     /// Get the [`OutputDamageTrackerMode`] of the [`OutputDamageTracker`]
-    pub fn mode(&self) -> &OutputDamageTrackerMode {
+    pub fn mode(&self) -> &OutputModeSource {
         &self.mode
     }
 
