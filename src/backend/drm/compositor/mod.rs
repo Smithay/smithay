@@ -1284,7 +1284,13 @@ where
         )
     }
 
-    /// TODO
+    /// Initialize a new [`DrmCompositor`] with custom output mode source.
+    ///
+    /// This method should only be used when trying to create a [`DrmCompositor`] that manually
+    /// updates its output mode through [`DrmCompositor::set_output_mode_source`]. If you want the
+    /// mode changes to be handled automatically, use [`DrmCompositor::new`] instead.
+    ///
+    /// See also: [`DrmCompositor::new`]
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip(allocator, framebuffer_exporter))]
     pub fn new_with_output_mode_source(
