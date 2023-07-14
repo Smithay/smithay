@@ -203,10 +203,6 @@ impl LayerMap {
         surface: &WlSurface,
         surface_type: WindowSurfaceType,
     ) -> Option<&LayerSurface> {
-        if !surface.alive() {
-            return None;
-        }
-
         if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
             if let Some(layer) = self.layers.iter().find(|l| l.wl_surface() == surface) {
                 return Some(layer);
