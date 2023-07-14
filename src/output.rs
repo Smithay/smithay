@@ -457,6 +457,12 @@ pub enum OutputModeSource {
     },
 }
 
+impl From<&Output> for OutputModeSource {
+    fn from(output: &Output) -> Self {
+        Self::Auto(output.clone())
+    }
+}
+
 impl TryFrom<&OutputModeSource> for (Size<i32, Physical>, utils::Scale<f64>, Transform) {
     type Error = OutputNoMode;
 

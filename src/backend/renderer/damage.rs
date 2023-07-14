@@ -331,9 +331,9 @@ impl OutputDamageTracker {
     /// This should only be used when trying to support both static and automatic output mode
     /// sources. For known modes use [`OutputDamageTracker::new`] or
     /// [`OutputDamageTracker::from_output`] instead.
-    pub fn from_mode_source(output_mode_source: OutputModeSource) -> Self {
+    pub fn from_mode_source(output_mode_source: impl Into<OutputModeSource>) -> Self {
         Self {
-            mode: output_mode_source,
+            mode: output_mode_source.into(),
             last_state: Default::default(),
             span: info_span!("render_damage"),
         }

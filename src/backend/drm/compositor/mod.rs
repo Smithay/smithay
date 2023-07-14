@@ -123,6 +123,7 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    fmt::Debug,
     os::unix::io::{AsFd, OwnedFd},
     rc::Rc,
     sync::{Arc, Mutex},
@@ -157,7 +158,7 @@ use crate::{
         },
         SwapBuffersError,
     },
-    output::{Output, OutputModeSource, OutputNoMode},
+    output::{OutputModeSource, OutputNoMode},
     utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
@@ -1243,9 +1244,13 @@ where
     <F as ExportFramebuffer<A::Buffer>>::Error: std::error::Error + Send + Sync,
     G: AsFd + Clone,
 {
-    /// Initialize a new [`DrmCompositor`]
+    /// Initialize a new [`DrmCompositor`].
     ///
-    /// - `output` is used to determine the current mode, scale and transform
+    /// The [`OutputModeSource`] can be created from an [`&Output`], which will automatically track
+    /// the output's mode changes. An [`OutputModeSource::Static`] variant should only be used when
+    /// manually updating modes using [`DrmCompositor::set_output_mode_source`].
+    ///
+    /// - `output_mode_source` is used to determine the current mode, scale and transform
     /// - `surface` for the compositor to use
     /// - `planes` defines which planes the compositor is allowed to use for direct scan-out.
     ///           `None` will result in the compositor to use all planes as specified by [`DrmSurface::planes`]
@@ -1260,41 +1265,7 @@ where
     #[allow(clippy::too_many_arguments)]
     #[instrument(skip(allocator, framebuffer_exporter))]
     pub fn new(
-        output: &Output,
-        surface: DrmSurface,
-        planes: Option<Planes>,
-        allocator: A,
-        framebuffer_exporter: F,
-        color_formats: &[DrmFourcc],
-        renderer_formats: HashSet<DrmFormat>,
-        cursor_size: Size<u32, BufferCoords>,
-        gbm: Option<GbmDevice<G>>,
-    ) -> FrameResult<Self, A, F> {
-        let output_mode_source = OutputModeSource::Auto(output.clone());
-        Self::new_with_output_mode_source(
-            output_mode_source,
-            surface,
-            planes,
-            allocator,
-            framebuffer_exporter,
-            color_formats,
-            renderer_formats,
-            cursor_size,
-            gbm,
-        )
-    }
-
-    /// Initialize a new [`DrmCompositor`] with custom output mode source.
-    ///
-    /// This method should only be used when trying to create a [`DrmCompositor`] that manually
-    /// updates its output mode through [`DrmCompositor::set_output_mode_source`]. If you want the
-    /// mode changes to be handled automatically, use [`DrmCompositor::new`] instead.
-    ///
-    /// See also: [`DrmCompositor::new`]
-    #[allow(clippy::too_many_arguments)]
-    #[instrument(skip(allocator, framebuffer_exporter))]
-    pub fn new_with_output_mode_source(
-        output_mode_source: OutputModeSource,
+        output_mode_source: impl Into<OutputModeSource> + Debug,
         surface: DrmSurface,
         planes: Option<Planes>,
         mut allocator: A,
@@ -1310,6 +1281,8 @@ where
             device = ?surface.dev_path(),
             crtc = ?surface.crtc(),
         );
+
+        let output_mode_source = output_mode_source.into();
 
         let mut error = None;
         let surface = Arc::new(surface);
