@@ -4,7 +4,7 @@
 //! Provides an [`X11Wm`] type, which will register itself as a window manager for a previously spawned Xwayland instances,
 //! allowing backwards-compatibility by seemlessly integrating X11 windows into a wayland compositor.
 //!
-//! To use this functionality you must first spawn an [`XWayland`](super::XWayland) instance to attach a [`X11Wm`] to.
+//! To use this functionality you must first spawn an [`XWayland`](super::XWayland) instance to attach an [`X11Wm`] to.
 //!
 //! ```no_run
 //! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder, SelectionType}};
@@ -107,29 +107,29 @@ mod surface;
 pub use self::surface::*;
 use super::xserver::XWaylandClientData;
 
-/// X11 wl_surface role
+/// X11 wl_surface role.
 pub const X11_SURFACE_ROLE: &str = "x11_surface";
-// copied from wlroots - docs say "maximum size can vary widely depending on the implementation"
+// Copied from wlroots - docs say "maximum size can vary widely depending on the implementation"
 // and there is no way to query the maximum size, you just get a non-descriptive `Length` error...
 const INCR_CHUNK_SIZE: usize = 64 * 1024;
 
 #[allow(missing_docs)]
 mod atoms {
     x11rb::atom_manager! {
-        /// Atoms used by the XWM and X11Surface types
+        /// Atoms used by the XWM and X11Surface types.
         pub Atoms:
         AtomsCookie {
-            // wayland-stuff
+            // Wayland-stuff.
             WL_SURFACE_ID,
 
-            // private
+            // Private.
             _SMITHAY_CLOSE_CONNECTION,
 
-            // data formats
+            // Data formats.
             UTF8_STRING,
             TEXT,
 
-            // client -> server
+            // Client -> server
             WM_HINTS,
             WM_PROTOCOLS,
             WM_TAKE_FOCUS,
@@ -152,7 +152,7 @@ mod atoms {
             _NET_WM_STATE_MODAL,
             _MOTIF_WM_HINTS,
 
-            // server -> client
+            // Server -> client
             WM_S0,
             WM_STATE,
             _NET_WM_CM_S0,
@@ -169,7 +169,7 @@ mod atoms {
             _NET_WM_STATE_FOCUSED,
             _NET_SUPPORTING_WM_CHECK,
 
-            // selection
+            // Selection.
             _WL_SELECTION,
             CLIPBOARD_MANAGER,
             CLIPBOARD,
@@ -185,20 +185,20 @@ pub use self::atoms::Atoms;
 
 crate::utils::ids::id_gen!(next_xwm_id, XWM_ID, XWM_IDS);
 
-/// Id of an X11 WM
+/// ID of an X11 WM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct XwmId(usize);
 
-/// Window asks to be re-stacked
+/// Window asks to be re-stacked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Reorder {
-    /// to the top of the stack
+    /// to the top of the stack.
     Top,
-    /// directly above the given window id
+    /// directly above the given window id.
     Above(X11Window),
-    /// directly below the given window id
+    /// directly below the given window id.
     Below(X11Window),
-    /// to the bottom of the stack
+    /// to the bottom of the stack.
     Bottom,
 }
 
@@ -223,16 +223,16 @@ impl StackingDirection {
     }
 }
 
-/// Type of a given Selection
+/// Type of a given Selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SelectionType {
-    /// Clipboard selection
+    /// Clipboard selection.
     Clipboard,
-    /// Primary selection
+    /// Primary selection.
     Primary,
 }
 
-/// Handler trait for X11Wm interactions
+/// Handler trait for X11Wm interactions.
 pub trait XwmHandler {
     /// [`X11Wm`] getter for a given ID.
     fn xwm_state(&mut self, xwm: XwmId) -> &mut X11Wm;
@@ -337,18 +337,18 @@ pub trait XwmHandler {
         false
     }
 
-    /// The given selection is being read by an X client and needs to be written to the provided file descriptor
+    /// The given selection is being read by an X client and needs to be written to the provided file descriptor.
     fn send_selection(&mut self, xwm: XwmId, selection: SelectionType, mime_type: String, fd: OwnedFd) {
         let _ = (xwm, selection, mime_type, fd);
         panic!("`allow_selection_access` returned true without `send_selection` implementation to handle transfers.");
     }
 
-    /// A new selection was set by an X client with provided mime_types
+    /// A new selection was set by an X client with provided mime_types.
     fn new_selection(&mut self, xwm: XwmId, selection: SelectionType, mime_types: Vec<String>) {
         let _ = (xwm, selection, mime_types);
     }
 
-    /// A proviously set selection of an X client got cleared
+    /// A proviously set selection of an X client got cleared.
     fn cleared_selection(&mut self, xwm: XwmId, selection: SelectionType) {
         let _ = (xwm, selection);
     }
@@ -368,15 +368,15 @@ pub struct X11Wm {
     unpaired_surfaces: HashMap<u32, X11Window>,
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
 
-    // selections
+    // Selections.
     _xfixes_data: QueryExtensionReply,
     clipboard: XWmSelection,
     primary: XWmSelection,
 
     windows: Vec<X11Surface>,
-    // oldest mapped -> newest
+    // Oldest mapped -> newest
     client_list: Vec<X11Window>,
-    // bottom -> top
+    // Bottom -> top
     client_list_stacking: Vec<X11Window>,
 
     span: tracing::Span,
@@ -625,7 +625,7 @@ impl<D: XwmHandler> X11Injector<D> {
     }
 }
 
-/// Edge values for resizing
+/// Edge values for resizing.
 ///
 // These values are used to indicate which edge of a surface is being dragged in a resize operation.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -641,16 +641,16 @@ pub enum ResizeEdge {
     BottomRight,
 }
 
-/// Errors generated working with Xwm Selections
+/// Errors generated working with Xwm Selections.
 #[derive(thiserror::Error, Debug)]
 pub enum SelectionError {
-    /// X11 Error occured setting the selection
+    /// X11 Error occured setting the selection.
     #[error(transparent)]
     X11Error(#[from] ReplyOrIdError),
-    /// Calloop error occured trying to register transfer with event loop
+    /// Calloop error occured trying to register transfer with event loop.
     #[error(transparent)]
     Calloop(#[from] calloop::Error),
-    /// Unable to determine internal Atom for given mime-type
+    /// Unable to determine internal Atom for given mime-type.
     #[error("Unable to determine ATOM matching mime-type")]
     UnableToDetermineAtom,
 }
@@ -662,7 +662,7 @@ impl From<ConnectionError> for SelectionError {
 }
 
 impl X11Wm {
-    /// Start a new window manager for a given Xwayland connection
+    /// Start a new window manager for a given Xwayland connection.
     ///
     /// ## Arguments
     /// - `handle` is an eventloop handle used to queue up and handle incoming X11 events
@@ -706,7 +706,7 @@ impl X11Wm {
                 u16::MAX,
             )?;
 
-            // Actually become the WM by redirecting some operations
+            // Actually become the WM by redirecting some operations.
             conn.change_window_attributes(
                 screen.root,
                 &ChangeWindowAttributesAux::default()
@@ -716,7 +716,7 @@ impl X11Wm {
                             | EventMask::PROPERTY_CHANGE
                             | EventMask::FOCUS_CHANGE,
                     )
-                    // and also set a default root cursor in case downstream doesn't
+                    // And also set a default root cursor in case downstream doesn't.
                     .cursor(cursor.cursor()),
             )?;
         }
@@ -741,7 +741,7 @@ impl X11Wm {
         conn.set_selection_owner(win, atoms._NET_WM_CM_S0, x11rb::CURRENT_TIME)?;
         conn.composite_redirect_subwindows(screen.root, Redirect::MANUAL)?;
 
-        // Set some EWMH properties
+        // Set some EWMH properties.
         conn.change_property32(
             PropMode::REPLACE,
             screen.root,
@@ -860,12 +860,12 @@ impl X11Wm {
         Ok(wm)
     }
 
-    /// Id of this X11 WM
+    /// ID of this X11 WM.
     pub fn id(&self) -> XwmId {
         self.id
     }
 
-    /// Raises a window in the internal X11 state
+    /// Raises a window in the internal X11 state.
     ///
     /// Needs to be called to match raising of windows inside the compositor to keep the stacking order
     /// in sync with the compositor to avoid erroneous behavior.
@@ -1040,7 +1040,7 @@ impl X11Wm {
             "Matched X11 surface to wayland surface",
         );
         if give_role(&wl_surface, X11_SURFACE_ROLE).is_err() {
-            // It makes no sense to post a protocol error here since that would only kill Xwayland
+            // It makes no sense to post a protocol error here since that would only kill Xwayland.
             error!(surface = ?wl_surface, "Surface already has a role?!");
             return;
         }
@@ -1074,7 +1074,7 @@ impl X11Wm {
             .next()
         else {
             return Err(ReplyOrIdError::ConnectionError(ConnectionError::UnknownError));
-            // TODO proper error type
+            // TODO: Proper error type.
         };
         let picture = PictureWrapper::create_picture(
             &*self.conn,
@@ -1356,7 +1356,7 @@ fn handle_event<D: XwmHandler + 'static>(
         }
         Event::MapRequest(r) => {
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
-                // we reparent windows, because a lot of stuff expects, that we do
+                // We reparent windows because a lot of stuff expects that we do.
                 let geo = conn.get_geometry(r.window)?.reply()?;
                 let win = r.window;
                 let frame_win = conn.generate_id()?;
@@ -1409,7 +1409,7 @@ fn handle_event<D: XwmHandler + 'static>(
                 .windows
                 .iter()
                 .find(|x|
-                      // don't include the reparenting windows
+                      // Don't include the reparenting windows.
                       (x.window_id() == n.window && n.override_redirect) ||
                       x.mapped_window_id() == Some(n.window))
                 .cloned()
@@ -1439,7 +1439,7 @@ fn handle_event<D: XwmHandler + 'static>(
         Event::ConfigureRequest(r) => {
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
                 drop(_guard);
-                // Pass the request to downstream to decide
+                // Pass the request to downstream to decide.
                 state.configure_request(
                     xwm_id,
                     surface.clone(),
@@ -1485,7 +1485,7 @@ fn handle_event<D: XwmHandler + 'static>(
                         None
                     },
                 );
-                // Synthetic event
+                // Synthetic event.
                 surface.configure(None).map_err(|err| match err {
                     X11SurfaceError::Connection(err) => err,
                     X11SurfaceError::UnsupportedForOverrideRedirect => unreachable!(),
@@ -1636,14 +1636,14 @@ fn handle_event<D: XwmHandler + 'static>(
             }
 
             if n.owner == x11rb::NONE && selection.owner != selection.window {
-                // A real X clients selection went away, not our proxy
+                // A real X clients selection went away, not our proxy.
                 let selection = selection.type_;
                 drop(_guard);
                 state.cleared_selection(xwm_id, selection);
                 return Ok(());
             }
 
-            // Actually query the new selection, which will give us a SelectioNotify event
+            // Actually query the new selection, which will give us a SelectioNotify event.
             conn.convert_selection(
                 selection.window,
                 selection.atom,
@@ -1722,7 +1722,7 @@ fn handle_event<D: XwmHandler + 'static>(
                     }
                 }
                 x if x == AtomEnum::NONE.into() => {
-                    // transfer failed
+                    // Transfer failed.
                     if let Some(pos) = selection.incoming.iter().position(|t| t.window == n.requestor) {
                         selection.incoming.remove(pos).destroy(loop_handle);
                     }
@@ -1774,7 +1774,7 @@ fn handle_event<D: XwmHandler + 'static>(
                 }
             };
 
-            // work around borrowing
+            // Work around borrowing.
             drop(_guard);
             let allow_access = state.allow_selection_access(xwm_id, selection_type);
             let xwm = state.xwm_state(xwm_id);
@@ -1800,7 +1800,7 @@ fn handle_event<D: XwmHandler + 'static>(
                     send_selection_notify_resp(&conn, &n, false)?;
                 }
 
-                // dont fail requests, when we are not the owner anymore
+                // Don't fail requests when we are not the owner anymore.
                 return Ok(());
             }
 
@@ -1888,11 +1888,11 @@ fn handle_event<D: XwmHandler + 'static>(
                             })?;
 
                         // It seems that if we ever try to reply to a selection request after
-                        // another has been sent by the same requestor, the requestor never reads
+                        // another has been sent by the same requester, the requester never reads
                         // from it. It appears to only ever read from the latest, so purge stale
                         // transfers to prevent clipboard hangs.
 
-                        // TODO: Drain filter
+                        // TODO: Drain filter.
                         let mut i = 0;
                         while i < selection.outgoing.len() {
                             let transfer = &mut selection.outgoing[i];
@@ -1931,7 +1931,7 @@ fn handle_event<D: XwmHandler + 'static>(
                                     {
                                         Ok(OutgoingAction::WaitForReadable) => {
                                             return Ok(PostAction::Continue);
-                                        } // transfer ongoing
+                                        } // Transfer ongoing.
                                         Ok(_) => {}
                                         Err(err) => {
                                             warn!(?err, "Transfer aborted");
@@ -1980,7 +1980,7 @@ fn handle_event<D: XwmHandler + 'static>(
                     }
                 }
             } else {
-                // selection was denied
+                // Selection was denied.
                 send_selection_notify_resp(&conn, &n, false)?;
             }
         }
@@ -2073,14 +2073,14 @@ fn handle_event<D: XwmHandler + 'static>(
 
                         if transfer.token.is_none() {
                             if len > 0 {
-                                // Transfer is done, but we still have bytes left
+                                // Transfer is done, but we still have bytes left.
                                 transfer.flush_property_on_delete = true;
                             } else if let Some(pos) = selection
                                 .outgoing
                                 .iter()
                                 .position(|t| t.request.requestor == requestor)
                             {
-                                // done
+                                // Done.
                                 selection.outgoing.remove(pos);
                             }
                         }
@@ -2237,7 +2237,7 @@ fn handle_event<D: XwmHandler + 'static>(
                                 state.resize_request(xwm_id, surface, data[3], resize_edge);
                             }
                             8 => state.move_request(xwm_id, surface, data[3]),
-                            _ => {} // ignore keyboard moves/resizes for now
+                            _ => {} // Ignore keyboard moves/resizes for now.
                         }
                     }
                 }
@@ -2288,7 +2288,7 @@ fn read_selection_callback(
     transfer.source_data.extend_from_slice(&buf[..len]);
     if transfer.source_data.len() >= INCR_CHUNK_SIZE {
         if !transfer.incr {
-            // start incr transfer
+            // Start INCR transfer.
             trace!(
                 requestor = transfer.request.requestor,
                 "Transfer became incremental",
@@ -2306,10 +2306,10 @@ fn read_selection_callback(
             transfer.flush_property_on_delete = true;
             send_selection_notify_resp(conn, &transfer.request, true)?;
         } else if transfer.property_set {
-            // got more bytes, waiting for property delete
+            // Got more bytes, waiting for property delete.
             transfer.flush_property_on_delete = true;
         } else {
-            // got more bytes, property deleted
+            // Got more bytes, property deleted.
             let len = transfer.flush_data()?;
             trace!(
                 requestor = transfer.request.requestor,
@@ -2340,7 +2340,7 @@ fn read_selection_callback(
         }
     } else {
         Ok(OutgoingAction::WaitForReadable)
-    } // nothing to be done, buffered the bytes
+    } // Nothing to be done, buffered the bytes.
 }
 
 enum IncomingAction {
@@ -2369,7 +2369,7 @@ fn write_selection_callback(
         Err(err) => {
             warn!(?err, "Transfer errored");
             if transfer.incr {
-                // even if it failed, we still need to drain the incr transfer
+                // Even if it failed, we still need to drain the INCR transfer.
                 conn.delete_property(transfer.window, atoms._WL_SELECTION)?;
             }
             Ok(IncomingAction::Done)
