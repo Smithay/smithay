@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use drm::control::{connector, crtc, Device as ControlDevice};
 
-/// CRTC Mapper trait
+/// CRTC Mapper trait.
 ///
 /// It exists to allow custom mappers in [`super::DrmScanner`].
 ///
 /// It is responsible for mapping CRTCs to connectors.
-/// For each connector it has to pick suitable CRTC.
+/// For each connector it has to pick a suitable CRTC.
 pub trait CrtcMapper {
-    /// Request mapping of CRTCs to supplied connectors
+    /// Request mapping of CRTCs to supplied connectors.
     ///
     /// Usually called in response to udev device changed event,
     /// or on device init.
@@ -19,15 +19,15 @@ pub trait CrtcMapper {
         connectors: impl Iterator<Item = &'a connector::Info> + Clone,
     );
 
-    /// Query CRTC mapped to supplied connector
+    /// Query CRTC mapped to supplied connector.
     fn crtc_for_connector(&self, connector: &connector::Handle) -> Option<crtc::Handle>;
 }
 
-/// Simple CRTC Mapper
+/// Simple CRTC Mapper.
 ///
 /// This is basic mapper that simply chooses one CRTC for every connector.
 ///
-/// It is also capable of recovering mappings that were used by display manger or tty
+/// It is also capable of recovering mappings that were used by display manger or TTY
 /// before the compositor was started up.
 #[derive(Debug, Default)]
 pub struct SimpleCrtcMapper {
@@ -102,7 +102,7 @@ impl super::CrtcMapper for SimpleCrtcMapper {
             if let Some(crtc) = self.restored_for_connector(drm, connector) {
                 self.crtcs.insert(connector.handle(), crtc);
 
-                // This connector no longer needs crtc so let's remove it
+                // This connector no longer needs the CRTC, so let's remove it.
                 false
             } else {
                 true

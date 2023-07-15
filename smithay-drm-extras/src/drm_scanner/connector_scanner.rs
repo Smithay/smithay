@@ -32,7 +32,7 @@ impl ConnectorScanner {
         Default::default()
     }
 
-    /// Should be called on every device changed event
+    /// Should be called on every device changed event.
     pub fn scan(&mut self, drm: &impl ControlDevice) -> ConnectorScanResult {
         let res_handles = drm.resource_handles().unwrap();
         let connector_handles = res_handles.connectors();
@@ -69,7 +69,7 @@ impl ConnectorScanner {
         }
     }
 
-    /// Get map of all connectors, connected and disconnected ones.
+    /// Get a map of all connectors, connected and disconnected ones.
     pub fn connectors(&self) -> &HashMap<connector::Handle, connector::Info> {
         &self.connectors
     }
@@ -82,23 +82,23 @@ impl ConnectorScanner {
 /// over this result to get [`ConnectorScanEvent`].
 #[derive(Debug, Default, Clone)]
 pub struct ConnectorScanResult {
-    /// Connectors that got plugged in since last scan
+    /// Connectors that got plugged in since the last scan.
     pub connected: Vec<connector::Info>,
-    /// Connectors that got unplugged since last scan
+    /// Connectors that got unplugged since the last scan.
     pub disconnected: Vec<connector::Info>,
 }
 
 /// Created from [`ConnectorScanResult`], informs about connector events.
 #[derive(Debug, Clone)]
 pub enum ConnectorScanEvent {
-    /// A new connector got plugged in since last scan
+    /// A new connector got plugged in since the last scan.
     Connected(connector::Info),
-    /// A connector got unplugged in since last scan
+    /// A connector got unplugged since the last scan.
     Disconnected(connector::Info),
 }
 
 impl ConnectorScanResult {
-    /// Creates event iterator for this result
+    /// Creates event iterator for this result.
     ///
     /// Internally this clones the data so it is equivalent to [`IntoIterator`]
     pub fn iter(&self) -> impl Iterator<Item = ConnectorScanEvent> {

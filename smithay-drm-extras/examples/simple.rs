@@ -33,7 +33,7 @@ struct Device {
 
 #[derive(Clone)]
 struct Surface {
-    // Your gbm surface stuff goes here
+    // Your GBM surface stuff goes here.
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

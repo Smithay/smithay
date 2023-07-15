@@ -33,7 +33,7 @@ pub use connector_scanner::{ConnectorScanEvent, ConnectorScanResult, ConnectorSc
 mod crtc_mapper;
 pub use crtc_mapper::{CrtcMapper, SimpleCrtcMapper};
 
-/// Drm Scanner
+/// Drm Scanner.
 ///
 /// Wrapper over [`ConnectorScanner`] and [`CrtcMapper`]
 #[derive(Debug, Default)]
@@ -59,7 +59,7 @@ impl<M> DrmScanner<M>
 where
     M: CrtcMapper,
 {
-    /// Create new DrmScanner with custom CRTC mapper
+    /// Create new DrmScanner with custom CRTC mapper.
     pub fn new_with_mapper(mapper: M) -> Self {
         Self {
             connectors: Default::default(),
@@ -67,12 +67,12 @@ where
         }
     }
 
-    /// [`CrtcMapper`] getter
+    /// [`CrtcMapper`] getter.
     pub fn crtc_mapper(&self) -> &M {
         &self.crtc_mapper
     }
 
-    /// Muttable [`CrtcMapper`] getter
+    /// Muttable [`CrtcMapper`] getter.
     pub fn crtc_mapper_mut(&mut self) -> &mut M {
         &mut self.crtc_mapper
     }
@@ -82,7 +82,7 @@ where
     /// Returns [`DrmScanResult`] that contains added and removed connectors,
     /// and CRTCs that got assigned to them.
     ///
-    /// Should be called on every device changed event
+    /// Should be called on every device changed event.
     ///
     /// ```no_run
     /// # mod helpers { include!("./docs/doctest_helpers.rs"); };
@@ -92,11 +92,11 @@ where
     /// let mut scanner: DrmScanner = DrmScanner::new();
     /// let res = scanner.scan_connectors(&drm_device);
     ///
-    /// // You can extract scan info manually
+    /// // You can extract scan info manually.
     /// println!("Plugged {} connectors", res.added.len());
     /// println!("Unplugged {} connectors", res.removed.len());
     ///
-    /// // Or simply iterate over it
+    /// // Or simply iterate over it.
     /// for event in res {
     ///     match event {
     ///         DrmScanEvent::Connected { .. } => {},
@@ -139,14 +139,14 @@ where
         self.connectors.connectors()
     }
 
-    /// Get CRTC that is mapped to supplied connector
+    /// Get the CRTC that is mapped to supplied connector.
     ///
     /// This will query underlying [`CrtcMapper`]
     pub fn crtc_for_connector(&self, connector: &connector::Handle) -> Option<crtc::Handle> {
         self.crtc_mapper.crtc_for_connector(connector)
     }
 
-    /// Get iterator over all `connector -> CRTC` mappings
+    /// Get iterator over all `connector -> CRTC` mappings.
     pub fn crtcs(&self) -> impl Iterator<Item = (&connector::Info, crtc::Handle)> {
         self.connectors()
             .iter()
@@ -163,14 +163,14 @@ type DrmScanItem = (connector::Info, Option<crtc::Handle>);
 /// over this result to get [`DrmScanEvent`].
 #[derive(Debug, Default, Clone)]
 pub struct DrmScanResult {
-    /// Connectors that got plugged in since last scan
+    /// Connectors that got plugged in since the last scan.
     pub connected: Vec<DrmScanItem>,
-    /// Connectors that got unplugged since last scan
+    /// Connectors that got unplugged since the last scan.
     pub disconnected: Vec<DrmScanItem>,
 }
 
 impl DrmScanResult {
-    /// Creates event iterator for this result
+    /// Creates event iterator for this result.
     ///
     /// Internally this clones the data so it is equivalent to [`IntoIterator`]
     pub fn iter(&self) -> impl Iterator<Item = DrmScanEvent> {
@@ -181,18 +181,18 @@ impl DrmScanResult {
 /// Created from [`DrmScanResult`], informs about connector events.
 #[derive(Debug, Clone)]
 pub enum DrmScanEvent {
-    /// A new connector got plugged in since last scan
+    /// A new connector got plugged in since the last scan.
     Connected {
-        /// Info about connected connector
+        /// Info about connected connector.
         connector: connector::Info,
-        /// Crtc that got mapped to this connector
+        /// CRTC that got mapped to this connector.
         crtc: Option<crtc::Handle>,
     },
-    /// A connector got unplugged in since last scan
+    /// A connector got unplugged since the last scan.
     Disconnected {
         /// Info about disconnected connector
         connector: connector::Info,
-        /// Crtc that is no longer mapped to this connector
+        /// CRTC that is no longer mapped to this connector
         crtc: Option<crtc::Handle>,
     },
 }
