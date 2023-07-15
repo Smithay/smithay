@@ -53,11 +53,11 @@ impl XdgShellHandler for App {
     }
 
     fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
-        // Handle popup creation here
+        // Handle popup creation here.
     }
 
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
-        // Handle popup grab here
+        // Handle popup grab here.
     }
 }
 
@@ -202,7 +202,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         let mut frame = backend.renderer().render(size, Transform::Flipped180).unwrap();
         frame.clear([0.1, 0.0, 0.0, 1.0], &[damage]).unwrap();
         draw_render_elements(&mut frame, 1.0, &elements, &[damage]).unwrap();
-        // We rely on the nested compositor to do the sync for us
+        // We rely on the nested compositor to do the sync for us.
         let _ = frame.finish().unwrap();
 
         for surface in state.xdg_shell_state.toplevel_surfaces() {
@@ -223,7 +223,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         display.flush_clients()?;
 
         // It is important that all events on the display have been dispatched and flushed to clients before
-        // swapping buffers because this operation may block.
+        // swapping buffers, because this operation may block.
         backend.submit(Some(&[damage])).unwrap();
     }
 }
@@ -234,8 +234,8 @@ pub fn send_frames_surface_tree(surface: &wl_surface::WlSurface, time: u32) {
         (),
         |_, _, &()| TraversalAction::DoChildren(()),
         |_surf, states, &()| {
-            // the surface may not have any user_data if it is a subsurface and has not
-            // yet been commited
+            // The surface may not have any user_data if it is a subsurface and has not
+            // yet been committed.
             for callback in states
                 .cached_state
                 .current::<SurfaceAttributes>()

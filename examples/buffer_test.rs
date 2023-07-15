@@ -30,36 +30,36 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Subcommands {
-    /// Intersect formats to find usable combinations
+    /// Intersect formats to find usable combinations.
     #[command(arg_required_else_help = true)]
     Formats {
-        /// Devices that should be able to render a format
+        /// Devices that should be able to render a format.
         #[arg(short, long)]
         render: Vec<String>,
-        /// Devices that should be able to sample from a format
+        /// Devices that should be able to sample from a format.
         #[arg(short, long)]
         sample: Vec<String>,
     },
-    /// Test exporting and importing buffers with various apis and devices
+    /// Test exporting and importing buffers with various APIs and devices.
     Test(TestArgs),
 }
 
 #[derive(Args, Debug)]
 struct TestArgs {
-    /// Allocator used for creating the buffer
+    /// Allocator used for creating the buffer.
     #[arg(short, long)]
     allocator: AllocatorType,
-    /// Usage flags for allocating the image, when using the vulkan api
+    /// Usage flags for allocating the image, when using the Vulkan API.
     #[arg(short, long, value_parser = usage_flags_from_string, required_if_eq("allocator", "vulkan"))]
     usage_flags: Option<ImageUsageFlags>,
 
-    /// Exporting device node
+    /// Exporting device node.
     #[arg(short, long, required_if_eq_any([("allocator", "dumb"), ("allocator", "gbm"), ("allocator", "vulkan")]))]
     export: Option<String>,
     /// Importing device node (may be equal to export)
     #[arg(short, long)]
     import: String,
-    /// Renderer used to draw into buffer before exporting
+    /// Renderer used to draw into buffer before exporting.
     #[arg(short = 'r', long)]
     export_renderer: Option<RendererType>,
     #[arg(short = 't', long)]
@@ -156,7 +156,7 @@ fn format_test(render: Vec<String>, sample: Vec<String>) {
 }
 
 fn buffer_test(args: TestArgs) {
-    // 1. create allocator
+    // 1. Create allocator.
     let path = args
         .export
         .expect("Dumb buffer allocator requires an export device");
@@ -198,12 +198,12 @@ fn buffer_test(args: TestArgs) {
         }
     };
 
-    // 2. alloc buffer
+    // 2. Allocate buffer.
     let buffer = allocator
         .create_buffer(args.width, args.height, args.fourcc, &[args.modifier])
         .expect("Failed to allocate buffer");
 
-    // 3. render into buffer on src device
+    // 3. Render into buffer on source device.
     match args.export_renderer {
         None => {}
         Some(RendererType::Gles) => {
@@ -229,7 +229,7 @@ fn buffer_test(args: TestArgs) {
         }
     }
 
-    // 4. import / render buffer on dst device
+    // 4. Import / render buffer on destination device.
     let path = PathBuf::from(args.import);
     info!("Import device: {}", path.display());
     match args.import_renderer {
@@ -275,7 +275,7 @@ fn render_into<R, T>(renderer: &mut R, buffer: T, w: i32, h: i32)
 where
     R: Renderer + Bind<T>,
 {
-    // Bind it as a framebuffer
+    // Bind it as a framebuffer.
     renderer.bind(buffer).expect("Failed to bind dmabuf");
 
     let mut frame = renderer
