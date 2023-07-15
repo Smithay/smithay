@@ -3,14 +3,11 @@
 
 use crate::{
     backend::renderer::{
-        damage::{
-            Error as OutputDamageTrackerError, OutputDamageTracker, OutputDamageTrackerMode, OutputNoMode,
-            RenderOutputResult,
-        },
+        damage::{Error as OutputDamageTrackerError, OutputDamageTracker, RenderOutputResult},
         element::{AsRenderElements, RenderElement, Wrap},
         Renderer, Texture,
     },
-    output::Output,
+    output::{Output, OutputModeSource, OutputNoMode},
     utils::{IsAlive, Logical, Point, Rectangle, Scale, Transform},
 };
 #[cfg(feature = "wayland_frontend")]
@@ -686,7 +683,7 @@ where
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
-    if let OutputDamageTrackerMode::Auto(renderer_output) = damage_tracker.mode() {
+    if let OutputModeSource::Auto(renderer_output) = damage_tracker.mode() {
         assert!(renderer_output == output);
     }
 

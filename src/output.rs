@@ -63,7 +63,7 @@ use drm::control::{Mode as DrmMode, ModeFlags};
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{backend::WeakHandle, protocol::wl_output::WlOutput};
 
-use crate::utils::{user_data::UserDataMap, Logical, Physical, Point, Raw, Size, Transform};
+use crate::utils::{self, user_data::UserDataMap, Logical, Physical, Point, Raw, Size, Transform};
 
 /// An output mode
 ///
@@ -440,3 +440,57 @@ impl PartialEq<Output> for WeakOutput {
         self.upgrade().map(|o| &o == other).unwrap_or(false)
     }
 }
+
+/// Source for determining output mode information.
+#[derive(PartialEq, Clone, Debug)]
+pub enum OutputModeSource {
+    /// Automatic mode based on an [`Output`].
+    Auto(Output),
+    /// Static output mode.
+    Static {
+        /// Size of the static output
+        size: Size<i32, Physical>,
+        /// Scale of the static output
+        scale: utils::Scale<f64>,
+        /// Transform of the static output
+        transform: Transform,
+    },
+}
+
+impl From<&Output> for OutputModeSource {
+    fn from(output: &Output) -> Self {
+        Self::Auto(output.clone())
+    }
+}
+
+impl TryFrom<&OutputModeSource> for (Size<i32, Physical>, utils::Scale<f64>, Transform) {
+    type Error = OutputNoMode;
+
+    fn try_from(mode: &OutputModeSource) -> Result<Self, Self::Error> {
+        match mode {
+            OutputModeSource::Auto(output) => Ok((
+                output.current_mode().ok_or(OutputNoMode)?.size,
+                output.current_scale().fractional_scale().into(),
+                output.current_transform(),
+            )),
+            OutputModeSource::Static {
+                size,
+                scale,
+                transform,
+            } => Ok((*size, *scale, *transform)),
+        }
+    }
+}
+
+impl TryFrom<OutputModeSource> for (Size<i32, Physical>, utils::Scale<f64>, Transform) {
+    type Error = OutputNoMode;
+
+    fn try_from(mode: OutputModeSource) -> Result<Self, Self::Error> {
+        Self::try_from(&mode)
+    }
+}
+
+/// Output has no active mode
+#[derive(Debug, thiserror::Error)]
+#[error("Output has no active mode")]
+pub struct OutputNoMode;
