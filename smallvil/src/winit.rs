@@ -97,7 +97,7 @@ pub fn winit_dispatch(
     });
 
     if let Err(WinitError::WindowClosed) = res {
-        // Stop the loop
+        // Stop the loop.
         state.loop_signal.stop();
 
         return Ok(());

@@ -38,7 +38,7 @@ impl XdgShellHandler for Smallvil {
     }
 
     fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {
-        // TODO: Popup handling using PopupManager
+        // TODO: Popup handling using PopupManager.
     }
 
     fn move_request(&mut self, surface: ToplevelSurface, seat: wl_seat::WlSeat, serial: Serial) {

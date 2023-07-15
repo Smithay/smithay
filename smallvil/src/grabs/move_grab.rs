@@ -23,7 +23,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         _focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
-        // While the grab is active, no client has pointer focus
+        // While the grab is active, no client has pointer focus.
         handle.motion(data, None, event);
 
         let delta = event.location - self.start_data.location;
