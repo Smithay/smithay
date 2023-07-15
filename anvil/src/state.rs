@@ -96,9 +96,9 @@ pub struct ClientState {
     pub compositor_state: CompositorClientState,
 }
 impl ClientData for ClientState {
-    /// Notification that a client was initialized
+    /// Notification that a client was initialized.
     fn initialized(&self, _client_id: ClientId) {}
-    /// Notification that a client is disconnected
+    /// Notification that a client was disconnected.
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
 
@@ -110,11 +110,11 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub running: Arc<AtomicBool>,
     pub handle: LoopHandle<'static, CalloopData<BackendData>>,
 
-    // desktop
+    // Desktop
     pub space: Space<WindowElement>,
     pub popups: PopupManager,
 
-    // smithay state
+    // Smithay state
     pub compositor_state: CompositorState,
     pub data_device_state: DataDeviceState,
     pub layer_shell_state: WlrLayerShellState,
@@ -132,7 +132,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
 
     pub dnd_icon: Option<WlSurface>,
 
-    // input-related fields
+    // Input-related fields
     pub suppressed_keys: Vec<u32>,
     pub pointer_location: Point<f64, Logical>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
@@ -303,7 +303,7 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
         surface: WlSurface,
     ) {
         if token_data.timestamp.elapsed().as_secs() < 10 {
-            // Just grant the wish
+            // Just grant the wish.
             let w = self
                 .space
                 .elements()
@@ -313,7 +313,7 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
                 self.space.raise_element(&window, true);
             }
         } else {
-            // Discard the request
+            // Discard the request.
             self.xdg_activation_state.remove_request(&token);
         }
     }
@@ -324,7 +324,7 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
         _token_data: XdgActivationTokenData,
         _surface: WlSurface,
     ) {
-        // The request is cancelled
+        // The request was cancelled.
     }
 }
 delegate_xdg_activation!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
@@ -332,7 +332,7 @@ delegate_xdg_activation!(@<BackendData: Backend + 'static> AnvilState<BackendDat
 impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
     fn new_decoration(&mut self, toplevel: ToplevelSurface) {
         use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
-        // Set the default to client side
+        // Set the default to client side.
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ClientSide);
         });
@@ -392,14 +392,14 @@ impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
     ) {
         // Here we can set the initial fractional scale
         //
-        // First we look if the surface already has a primary scan-out output, if not
+        // First we see if the surface already has a primary scan-out output, if not
         // we test if the surface is a subsurface and try to use the primary scan-out output
-        // of the root surface. If the root also has no primary scan-out output we just try
+        // of the root surface. If the root also has no primary scan-out output, we just try
         // to use the first output of the toplevel.
         // If the surface is the root we also try to use the first output of the toplevel.
         //
         // If all the above tests do not lead to a output we just use the first output
-        // of the space (which in case of anvil will also be the output a toplevel will
+        // of the space (which, in case of anvil, will also be the output a toplevel will
         // initially be placed on)
         #[allow(clippy::redundant_clone)]
         let mut root = surface.clone();
@@ -443,7 +443,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     ) -> AnvilState<BackendData> {
         let clock = Clock::new().expect("failed to initialize clock");
 
-        // init wayland clients
+        // Init wayland clients.
         let socket_name = if listen_on_socket {
             let source = ListeningSocketSource::new_auto().unwrap();
             let socket_name = source.socket_name().to_string_lossy().into_owned();
@@ -478,7 +478,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             )
             .expect("Failed to init wayland server source");
 
-        // init globals
+        // Init globals.
         let dh = display.handle();
         let compositor_state = CompositorState::new::<Self>(&dh);
         let data_device_state = DataDeviceState::new::<Self>(&dh);
@@ -496,12 +496,12 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self>(&dh);
         VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
-        // Expose global only if backend supports relative motion events
+        // Expose global only if backend supports relative motion events.
         if BackendData::HAS_RELATIVE_MOTION {
             RelativePointerManagerState::new::<Self>(&dh);
         }
 
-        // init input
+        // Init input.
         let seat_name = backend_data.seat_name();
         let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone());
 
@@ -512,7 +512,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         let cursor_status2 = cursor_status.clone();
         seat.tablet_seat().on_cursor_surface(move |_tool, new_status| {
-            // TODO: tablet tools should have their own cursors
+            // TODO: Tablet tools should have their own cursors.
             *cursor_status2.lock().unwrap() = new_status;
         });
 

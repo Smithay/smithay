@@ -155,8 +155,8 @@ pub fn run_winit() {
         }
     };
 
-    // if we failed to build dmabuf feedback we fall back to dmabuf v3
-    // Note: egl on Mesa requires either v4 or wl_drm (initialized with bind_wl_display)
+    // If we failed to build dmabuf feedback, we fall back to dmabuf v3.
+    // Note: EGL on Mesa requires either v4 or wl_drm (initialized with bind_wl_display)
     let dmabuf_state = if let Some(default_feedback) = dmabuf_default_feedback {
         let mut dmabuf_state = DmabufState::new();
         let dmabuf_global = dmabuf_state.create_global_with_default_feedback::<AnvilState<WinitData>>(
@@ -214,7 +214,7 @@ pub fn run_winit() {
         if winit
             .dispatch_new_events(|event| match event {
                 WinitEvent::Resized { size, .. } => {
-                    // We only have one output
+                    // We only have one output.
                     let output = state.space.outputs().next().unwrap().clone();
                     state.space.map_output(&output, (0, 0));
                     let mode = Mode {
@@ -236,14 +236,14 @@ pub fn run_winit() {
             break;
         }
 
-        // drawing logic
+        // Drawing logic.
         {
             let backend = &mut state.backend_data.backend;
 
             let mut cursor_guard = state.cursor_status.lock().unwrap();
 
-            // draw the cursor as relevant
-            // reset the cursor if the surface is no longer alive
+            // Draw the cursor if relevant
+            // Reset the cursor if the surface is no longer alive
             let mut reset = false;
             if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 reset = !surface.alive();
@@ -311,7 +311,7 @@ pub fn run_winit() {
 
                 elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale, 1.0));
 
-                // draw input method surface if any
+                // Draw input method surface, if any.
                 let rectangle = input_method.coordinates();
                 let position = Point::from((
                     rectangle.loc.x + rectangle.size.w,
@@ -327,7 +327,7 @@ pub fn run_winit() {
                     ));
                 });
 
-                // draw the dnd icon if any
+                // Draw the drag-and-drop icon if applicable.
                 if let Some(surface) = dnd_icon {
                     if surface.alive() {
                         elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
@@ -380,7 +380,7 @@ pub fn run_winit() {
 
                     backend.window().set_cursor_visible(cursor_visible);
 
-                    // Send frame events so that client start drawing their next frame
+                    // Send frame events so that the client starts drawing their next frame.
                     let time = state.clock.now();
                     post_repaint(&output, &render_output_result.states, &state.space, None, time);
 

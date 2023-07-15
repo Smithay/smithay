@@ -35,7 +35,7 @@ impl Cursor {
                     yhot: 1,
                     delay: 1,
                     pixels_rgba: Vec::from(FALLBACK_CURSOR_DATA),
-                    pixels_argb: vec![], //unused
+                    pixels_argb: vec![], // Unused.
                 }]
             });
 
@@ -49,7 +49,7 @@ impl Cursor {
 }
 
 fn nearest_images(size: u32, images: &[Image]) -> impl Iterator<Item = &Image> {
-    // Follow the nominal size of the cursor to choose the nearest
+    // Follow the nominal size of the cursor to choose the nearest.
     let nearest_image = images
         .iter()
         .min_by_key(|image| (size as i32 - image.size as i32).abs())

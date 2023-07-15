@@ -106,11 +106,11 @@ pub fn run_x11() {
         .drm_node()
         .expect("Could not get DRM node used by X server");
 
-    // Create the gbm device for buffer allocation.
+    // Create the GBM device for buffer allocation.
     let device = gbm::Device::new(DeviceFd::from(fd)).expect("Failed to create gbm device");
     // Initialize EGL using the GBM device.
     let egl = EGLDisplay::new(device.clone()).expect("Failed to create EGLDisplay");
-    // Create the OpenGL context
+    // Create the OpenGL context.
     let context = EGLContext::new(&egl).expect("Failed to create EGLContext");
 
     let window = WindowBuilder::new()
@@ -302,7 +302,7 @@ pub fn run_x11() {
             profiling::scope!("render_frame");
 
             let backend_data = &mut state.backend_data;
-            // We need to borrow everything we want to refer to inside the renderer callback otherwise rustc is unhappy.
+            // We need to borrow everything we want to refer to inside the renderer callback, otherwise rustc is unhappy.
             let cursor_status = &state.cursor_status;
             #[cfg(feature = "debug")]
             let fps = backend_data.fps.avg().round() as u32;
@@ -327,8 +327,8 @@ pub fn run_x11() {
             let mut cursor_guard = cursor_status.lock().unwrap();
             let mut elements: Vec<CustomRenderElements<GlesRenderer>> = Vec::new();
 
-            // draw the cursor as relevant
-            // reset the cursor if the surface is no longer alive
+            // Draw the cursor if relevant.
+            // Reset the cursor if the surface is no longer alive.
             let mut reset = false;
             if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 reset = !surface.alive();
@@ -363,7 +363,7 @@ pub fn run_x11() {
                 1.0,
             ));
 
-            // draw input method surface if any
+            // Draw input method surface, if any.
             let input_method = state.seat.input_method();
             let rectangle = input_method.coordinates();
             let position = Point::from((
@@ -380,7 +380,7 @@ pub fn run_x11() {
                 ));
             });
 
-            // draw the dnd icon if any
+            // Draw the drag-and-drop icon if applicable.
             if let Some(surface) = state.dnd_icon.as_ref() {
                 if surface.alive() {
                     elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
@@ -431,7 +431,7 @@ pub fn run_x11() {
                         );
                     }
 
-                    // Send frame events so that client start drawing their next frame
+                    // Send frame events so that the client starts drawing their next frame.
                     let time = state.clock.now();
                     post_repaint(&output, &render_output_result.states, &state.space, None, time);
 
@@ -460,7 +460,7 @@ pub fn run_x11() {
 
                     backend_data.surface.reset_buffers();
                     error!("Rendering error: {}", err);
-                    // TODO: convert RenderError into SwapBuffersError and skip temporary (will retry) and panic on ContextLost or recreate
+                    // TODO: Convert RenderError into SwapBuffersError, skip temporary (will retry), and panic on ContextLost or recreate.
                 }
             }
 
