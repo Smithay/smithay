@@ -32,7 +32,7 @@ pub static wlcs_server_integration: WlcsServerIntegration = WlcsServerIntegratio
 };
 
 unsafe extern "C" fn create_server(_argc: c_int, _argv: *mut *const c_char) -> *mut WlcsDisplayServer {
-    // block the SIGPIPE signal here, we are a cdylib so Rust does not do it for us
+    // Block the SIGPIPE signal here, we are a cdylib so Rust does not do it for us.
     match std::panic::catch_unwind(|| {
         use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
         sigaction(
