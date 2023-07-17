@@ -1,4 +1,4 @@
-//! Module for [DumbBuffer](https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#dumb-buffer-objects) buffers
+//! Module for [DumbBuffer](https://docs.kernel.org/gpu/drm-kms.html#dumb-buffer-objects) buffers
 
 use std::fmt;
 use std::os::unix::io::{FromRawFd, OwnedFd};
