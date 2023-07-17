@@ -1,4 +1,4 @@
-//! Module for [dmabuf](https://01.org/linuxgraphics/gfx-docs/drm/driver-api/dma-buf.html) buffers.
+//! Module for [dmabuf](https://docs.kernel.org/driver-api/dma-buf.html) buffers.
 //!
 //! `Dmabuf`s act alike to smart pointers and can be freely cloned and passed around.
 //! Once the last `Dmabuf` reference is dropped, its file descriptor is closed and
