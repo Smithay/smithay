@@ -195,6 +195,19 @@ impl EGLNativeDisplay for Arc<WinitWindow> {
                 egl_platform!(PLATFORM_X11_KHR, display, &["EGL_KHR_platform_x11"]),
                 // see: https://www.khronos.org/registry/EGL/extensions/EXT/EGL_EXT_platform_x11.txt
                 egl_platform!(PLATFORM_X11_EXT, display, &["EGL_EXT_platform_x11"]),
+                // see: https://raw.githubusercontent.com/google/angle/main/extensions/EGL_ANGLE_platform_angle.txt
+                egl_platform!(
+                    PLATFORM_ANGLE_ANGLE,
+                    display,
+                    &["EGL_ANGLE_platform_angle", "EGL_ANGLE_platform_angle_vulkan"],
+                    vec![
+                        ffi::egl::PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE,
+                        ffi::egl::PLATFORM_X11_EXT as _,
+                        ffi::egl::PLATFORM_ANGLE_TYPE_ANGLE,
+                        ffi::egl::PLATFORM_ANGLE_TYPE_VULKAN_ANGLE,
+                        ffi::egl::NONE as ffi::EGLint
+                    ]
+                ),
             ]
         } else {
             unreachable!("No backends for winit other then Wayland and X11 are supported")
