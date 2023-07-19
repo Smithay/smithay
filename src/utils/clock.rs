@@ -69,9 +69,9 @@ pub struct Time<Kind> {
 }
 
 impl<Kind> Time<Kind> {
-    /// Gets the duration between self and a later time
-    pub fn duration_since(&self, later: Time<Kind>) -> Duration {
-        saturating_sub_timespec(later.tp, self.tp).unwrap_or(Duration::ZERO)
+    /// Gets the duration from self until a later time
+    pub fn elapsed(elapsed: &Time<Kind>, later: Time<Kind>) -> Duration {
+        saturating_sub_timespec(later.tp, elapsed.tp).unwrap_or(Duration::ZERO)
     }
 }
 
@@ -201,6 +201,6 @@ mod test {
         let clock_source: Clock<Monotonic> = Clock::new().unwrap();
         let now = clock_source.now();
         let zero = Time::<Monotonic>::from(Duration::ZERO);
-        assert_eq!(zero.duration_since(now), now.into());
+        assert_eq!(Time::<Monotonic>::elapsed(&zero, now), now.into());
     }
 }
