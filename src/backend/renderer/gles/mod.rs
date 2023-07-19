@@ -1735,7 +1735,9 @@ impl Offscreen<GlesTexture> for GlesRenderer {
             get_transparent(format).ok_or(GlesError::UnsupportedPixelFormat(format))?
         })
         .ok_or(GlesError::UnsupportedPixelFormat(format))?;
-        if internal != ffi::RGBA8 && !self.capabilities.contains(&Capability::ColorTransformations) {
+        if (internal != ffi::RGBA8 && internal != ffi::BGRA_EXT)
+            && !self.capabilities.contains(&Capability::ColorTransformations)
+        {
             return Err(GlesError::UnsupportedPixelLayout);
         }
 
