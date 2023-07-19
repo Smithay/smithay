@@ -356,4 +356,9 @@ pub mod egl {
     // Accepted in the <attribute> parameter of eglQueryWaylandBufferWL:
     pub const EGL_TEXTURE_FORMAT: i32 = 0x3080;
     pub const WAYLAND_Y_INVERTED_WL: i32 = 0x31DB;
+
+    pub const PLATFORM_ANGLE_ANGLE: u32 = 0x3202;
+    pub const PLATFORM_ANGLE_TYPE_ANGLE: i32 = 0x3203;
+    pub const PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE: i32 = 0x348F;
+    pub const PLATFORM_ANGLE_TYPE_VULKAN_ANGLE: i32 = 0x3450;
 }
