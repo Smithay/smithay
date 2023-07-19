@@ -89,13 +89,13 @@ pub fn run(channel: Channel<WlcsEvent>) {
     let mut pointer_element = PointerElement::default();
 
     while state.running.load(Ordering::SeqCst) {
-        // pretend to draw something
+        // Pretend to draw something.
         {
             let scale = Scale::from(output.current_scale().fractional_scale());
             let mut cursor_guard = state.cursor_status.lock().unwrap();
             let mut elements: Vec<CustomRenderElements<_>> = Vec::new();
 
-            // draw input method square if any
+            // Draw input method square, if any.
             let input_method = state.seat.input_method();
             let rectangle = input_method.coordinates();
             let position = Point::from((
@@ -112,8 +112,8 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 ));
             });
 
-            // draw the cursor as relevant
-            // reset the cursor if the surface is no longer alive
+            // Draw the cursor if relevant.
+            // Reset the cursor if the surface is no longer alive.
             let mut reset = false;
             if let CursorImageStatus::Surface(ref surface) = *cursor_guard {
                 reset = !surface.alive();
@@ -141,7 +141,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
             pointer_element.set_status(cursor_guard.clone());
             elements.extend(pointer_element.render_elements(&mut renderer, cursor_pos_scaled, scale, 1.0));
 
-            // draw the dnd icon if any
+            // Draw the drag-and-drop icon if applicable.
             if let Some(surface) = state.dnd_icon.as_ref() {
                 if surface.alive() {
                     elements.extend(AsRenderElements::<DummyRenderer>::render_elements(
@@ -165,7 +165,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
             );
         }
 
-        // Send frame events so that client start drawing their next frame
+        // Send frame events so that the client starts drawing their next frame.
         state.space.elements().for_each(|window| {
             window.send_frame(&output, state.clock.now(), Some(Duration::ZERO), |_, _| {
                 Some(output.clone())
@@ -205,7 +205,7 @@ fn handle_event(
             surface_id,
             location,
         } => {
-            // find the surface
+            // Find the surface.
             let client = state.backend_data.clients.get(&client_id);
             let toplevel = state.space.elements().find(|w| {
                 if let Some(surface) = w.wl_surface() {
@@ -216,11 +216,11 @@ fn handle_event(
                 }
             });
             if let Some(toplevel) = toplevel.cloned() {
-                // set its location
+                // Set its location.
                 state.space.map_element(toplevel, location, false);
             }
         }
-        // pointer inputs
+        // Pointer inputs.
         WlcsEvent::NewPointer { .. } => {}
         WlcsEvent::PointerMoveAbsolute { location, .. } => {
             state.pointer_location = location;
@@ -305,7 +305,7 @@ fn handle_event(
             );
         }
         WlcsEvent::PointerRemoved { .. } => {}
-        // touch inputs
+        // Touch inputs.
         WlcsEvent::NewTouch { .. } => {}
         WlcsEvent::TouchDown { .. } => {}
         WlcsEvent::TouchMove { .. } => {}

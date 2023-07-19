@@ -94,7 +94,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
         h: Option<u32>,
         _reorder: Option<Reorder>,
     ) {
-        // we just set the new size, but don't let windows move themselves around freely
+        // We just set the new size, but don't let windows move themselves around freely.
         let mut geo = window.geometry();
         if let Some(w) = w {
             geo.size.w = w as i32;
@@ -123,7 +123,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
         };
         self.state.space.map_element(elem, geometry.loc, false);
         // TODO: We don't properly handle the order of override-redirect windows here,
-        //       they are always mapped top and then never reordered.
+        //       they're always mapped to the top and then never reordered.
     }
 
     fn maximize_request(&mut self, _xwm: XwmId, window: X11Surface) {
@@ -162,9 +162,9 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             let outputs_for_window = self.state.space.outputs_for_element(elem);
             let output = outputs_for_window
                 .first()
-                // The window hasn't been mapped yet, use the primary output instead
+                // The window hasn't been mapped yet, use the primary output instead.
                 .or_else(|| self.state.space.outputs().next())
-                // Assumes that at least one output exists
+                // Assumes that at least one output exists.
                 .expect("No outputs found");
             let geometry = self.state.space.output_geometry(output).unwrap();
 
@@ -206,7 +206,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
     }
 
     fn resize_request(&mut self, _xwm: XwmId, window: X11Surface, _button: u32, edges: X11ResizeEdge) {
-        let seat = &self.state.seat; // luckily anvil only supports one seat anyway...
+        let seat = &self.state.seat; // Luckily anvil only supports one seat anyway...
         let pointer = seat.get_pointer().unwrap();
         let start_data = pointer.grab_start_data().unwrap();
 
@@ -254,7 +254,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
 
     fn allow_selection_access(&mut self, xwm: XwmId, _selection: SelectionType) -> bool {
         if let Some(keyboard) = self.state.seat.get_keyboard() {
-            // check that an X11 window is focused
+            // Check that an X11 window is focused.
             if let Some(FocusTarget::Window(WindowElement::X11(surface))) = keyboard.current_focus() {
                 if surface.xwm_id().unwrap() == xwm {
                     return true;
@@ -284,7 +284,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
 
     fn new_selection(&mut self, _xwm: XwmId, selection: SelectionType, mime_types: Vec<String>) {
         trace!(?selection, ?mime_types, "Got Selection from X11",);
-        // TODO check, that focused windows is X11 window before doing this
+        // TODO: Check that the focused window is X11 window before doing this.
         match selection {
             SelectionType::Clipboard => {
                 set_data_device_selection(&self.state.display_handle, &self.state.seat, mime_types, ())
@@ -326,9 +326,9 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let outputs_for_window = self.space.outputs_for_element(&elem);
         let output = outputs_for_window
             .first()
-            // The window hasn't been mapped yet, use the primary output instead
+            // The window hasn't been mapped yet, use the primary output instead.
             .or_else(|| self.space.outputs().next())
-            // Assumes that at least one output exists
+            // Assumes that at least one output exists.
             .expect("No outputs found");
         let geometry = self.space.output_geometry(output).unwrap();
 
@@ -340,7 +340,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     }
 
     pub fn move_request_x11(&mut self, window: &X11Surface) {
-        let seat = &self.seat; // luckily anvil only supports one seat anyway...
+        let seat = &self.seat; // Luckily anvil only supports one seat anyway...
         let pointer = seat.get_pointer().unwrap();
         let Some(start_data) = pointer.grab_start_data() else {
             return;
@@ -356,7 +356,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
 
         let mut initial_window_location = self.space.element_location(element).unwrap();
 
-        // If surface is maximized then unmaximize it
+        // If surface is maximized then unmaximize it.
         if window.is_maximized() {
             window.set_maximized(false).unwrap();
             let pos = pointer.current_location();

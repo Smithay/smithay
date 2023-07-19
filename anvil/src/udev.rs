@@ -93,12 +93,12 @@ use smithay_drm_extras::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-// we cannot simply pick the first supported format of the intersection of *all* formats, because:
-// - we do not want something like Abgr4444, which looses color information, if something better is available
-// - some formats might perform terribly
-// - we might need some work-arounds, if one supports modifiers, but the other does not
+// We cannot simply pick the first supported format of the intersection of *all* formats, because:
+// - We do not want something like Abgr4444, which loses color information, if something better is available
+// - Some formats might perform terribly
+// - We might need some workarounds if one supports modifiers, but the other does not
 //
-// So lets just pick `ARGB2101010` (10-bit) or `ARGB8888` (8-bit) for now, they are widely supported.
+// So lets just pick `ARGB2101010` (10-bit) or `ARGB8888` (8-bit) for now, since they are widely supported.
 const SUPPORTED_FORMATS: &[Fourcc] = &[
     Fourcc::Abgr2101010,
     Fourcc::Argb2101010,
@@ -197,9 +197,7 @@ pub fn run_udev() {
     let mut event_loop = EventLoop::try_new().unwrap();
     let mut display = Display::new().unwrap();
 
-    /*
-     * Initialize session
-     */
+    // Initialize session.
     let (session, notifier) = match LibSeatSession::new() {
         Ok(ret) => ret,
         Err(err) => {
@@ -208,9 +206,7 @@ pub fn run_udev() {
         }
     };
 
-    /*
-     * Initialize the compositor
-     */
+    // Initialize the compositor.
     let primary_gpu = if let Ok(var) = std::env::var("ANVIL_DRM_DEVICE") {
         DrmNode::from_path(var).expect("Invalid drm device path")
     } else {
@@ -246,9 +242,7 @@ pub fn run_udev() {
     };
     let mut state = AnvilState::init(&mut display, event_loop.handle(), data, true);
 
-    /*
-     * Initialize the udev backend
-     */
+    // Initialize the udev backend.
     let udev_backend = match UdevBackend::new(&state.seat_name) {
         Ok(ret) => ret,
         Err(err) => {
@@ -257,18 +251,14 @@ pub fn run_udev() {
         }
     };
 
-    /*
-     * Initialize libinput backend
-     */
+    // Initialize libinput backend.
     let mut libinput_context = Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(
         state.backend_data.session.clone().into(),
     );
     libinput_context.udev_assign_seat(&state.seat_name).unwrap();
     let libinput_backend = LibinputInputBackend::new(libinput_context.clone());
 
-    /*
-     * Bind all our objects that get driven by the event loop
-     */
+    // Bind all our objects that get driven by the event loop.
     event_loop
         .handle()
         .insert_source(libinput_backend, move |event, _, data| {
@@ -307,10 +297,10 @@ pub fn run_udev() {
                         if let Err(err) = surface.compositor.surface().reset_state() {
                             warn!("Failed to reset drm surface state: {}", err);
                         }
-                        // reset the buffers after resume to trigger a full redraw
-                        // this is important after a vt switch as the primary plane
-                        // has no content and damage tracking may prevent a redraw
-                        // otherwise
+                        // Reset the buffers after resume to trigger a full redraw.
+                        // This is important after a vt switch as the primary plane
+                        // has no content, and damage tracking may prevent a redraw
+                        // otherwise.
                         surface.compositor.reset_buffers();
                     }
                     handle.insert_idle(move |data| data.state.render(node, None));
@@ -374,9 +364,9 @@ pub fn run_udev() {
             .backend_data
             .backends
             .get(&primary_gpu)
-            // If the primary_gpu failed to initialize, we likely have a kmsro device
+            // If the primary_gpu failed to initialize, we likely have a kmsro device.
             .or_else(|| state.backend_data.backends.values().next())
-            // Don't fail, if there is no allocator. There is a chance, that this a single gpu system and we don't need one.
+            // Don't fail if there is no allocator. There is a chance that this a single-GPU system and we don't need one.
             .map(|backend| backend.gbm.clone());
         state.backend_data.allocator = gbm.map(|gbm| {
             Box::new(DmabufAllocator(GbmAllocator::new(gbm, GbmBufferFlags::RENDERING))) as Box<_>
@@ -418,7 +408,7 @@ pub fn run_udev() {
         }
     }
 
-    // init dmabuf support with format list from our primary gpu
+    // Init dmabuf support with format list from our primary GPU.
     let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
     let default_feedback = DmabufFeedbackBuilder::new(primary_gpu.dev_id(), dmabuf_formats)
         .build()
@@ -430,7 +420,7 @@ pub fn run_udev() {
 
     let gpus = &mut state.backend_data.gpus;
     state.backend_data.backends.values_mut().for_each(|backend_data| {
-        // Update the per drm surface dmabuf feedback
+        // Update the per-drm-surface dmabuf feedback.
         backend_data.surfaces.values_mut().for_each(|surface_data| {
             surface_data.dmabuf_feedback = surface_data.dmabuf_feedback.take().or_else(|| {
                 get_surface_dmabuf_feedback(
@@ -467,9 +457,7 @@ pub fn run_udev() {
         })
         .unwrap();
 
-    /*
-     * Start XWayland if supported
-     */
+    // Start XWayland if supported.
     #[cfg(feature = "xwayland")]
     if let Err(e) = state.xwayland.start(
         state.handle.clone(),
@@ -481,10 +469,7 @@ pub fn run_udev() {
         error!("Failed to start XWayland: {}", e);
     }
 
-    /*
-     * And run our loop
-     */
-
+    // And run our loop.
     while state.running.load(Ordering::SeqCst) {
         let mut calloop_data = CalloopData { state, display };
         let result = event_loop.dispatch(Some(Duration::from_millis(16)), &mut calloop_data);
@@ -730,7 +715,7 @@ fn get_surface_dmabuf_feedback(
     let planes = surface.planes().unwrap();
     // We limit the scan-out trache to formats we can also render from
     // so that there is always a fallback render path available in case
-    // the supplied buffer can not be scanned out directly
+    // the supplied buffer can not be scanned out directly.
     let planes_formats = surface
         .supported_formats(planes.primary.handle)
         .unwrap()
@@ -771,7 +756,7 @@ fn get_surface_dmabuf_feedback(
 
 impl AnvilState<UdevData> {
     fn device_added(&mut self, node: DrmNode, path: &Path) -> Result<(), DeviceAddError> {
-        // Try to open the device
+        // Try to open the device.
         let fd = self
             .backend_data
             .session
@@ -1052,7 +1037,7 @@ impl AnvilState<UdevData> {
             }
         }
 
-        // fixup window coordinates
+        // Fixup window coordinates.
         crate::shell::fixup_positions(&mut self.space, self.pointer_location);
     }
 
@@ -1075,7 +1060,7 @@ impl AnvilState<UdevData> {
 
         debug!("Surfaces dropped");
 
-        // drop the backends on this side
+        // Drop the backends on this side.
         if let Some(backend_data) = self.backend_data.backends.remove(&node) {
             self.backend_data
                 .gpus
@@ -1116,7 +1101,7 @@ impl AnvilState<UdevData> {
         }) {
             output.clone()
         } else {
-            // somehow we got called with an invalid output
+            // Somehow we got called with an invalid output.
             return;
         };
 
@@ -1161,8 +1146,8 @@ impl AnvilState<UdevData> {
                 warn!("Error during rendering: {:?}", err);
                 match err {
                     SwapBuffersError::AlreadySwapped => true,
-                    // If the device has been deactivated do not reschedule, this will be done
-                    // by session resume
+                    // If the device has been deactivated does not reschedule, this will be done
+                    // by session resume.
                     SwapBuffersError::TemporaryFailure(err)
                         if matches!(err.downcast_ref::<DrmError>(), Some(&DrmError::DeviceInactive)) =>
                     {
@@ -1218,7 +1203,7 @@ impl AnvilState<UdevData> {
 
             let timer = if self.backend_data.primary_gpu != surface.render_node {
                 // However, if we need to do a copy, that might not be enough.
-                // (And without actual comparision to previous frames we cannot really know.)
+                // (And without an actual comparison to previous frames we cannot really know.)
                 // So lets ignore that in those cases to avoid thrashing performance.
                 trace!("scheduling repaint timer immediately on {:?}", crtc);
                 Timer::immediate()
@@ -1240,7 +1225,7 @@ impl AnvilState<UdevData> {
         }
     }
 
-    // If crtc is `Some()`, render it, else render all crtcs
+    // If crtc is `Some()`, render it, else render all crtcs.
     fn render(&mut self, node: DrmNode, crtc: Option<crtc::Handle>) {
         let device_backend = match self.backend_data.backends.get_mut(&node) {
             Some(backend) => backend,
@@ -1279,7 +1264,7 @@ impl AnvilState<UdevData> {
 
         let start = Instant::now();
 
-        // TODO get scale from the rendersurface when supporting HiDPI
+        // TODO: Get scale from the rendersurface when supporting HiDPI.
         let frame = self
             .backend_data
             .pointer_image
@@ -1297,8 +1282,8 @@ impl AnvilState<UdevData> {
                 self.backend_data
                     .allocator
                     .as_mut()
-                    // TODO: We could build some kind of `GLAllocator` using Renderbuffers in theory for this case.
-                    //  That would work for memcpy's of offscreen contents.
+                    // TODO: In theory, we could build some kind of `GLAllocator` using Renderbuffers for this case.
+                    // That would work for memcpy's of offscreen contents.
                     .expect("We need an allocator for multigpu systems")
                     .as_mut(),
                 format,
@@ -1341,7 +1326,7 @@ impl AnvilState<UdevData> {
         }) {
             output.clone()
         } else {
-            // somehow we got called with an invalid output
+            // Somehow we got called with an invalid output.
             return;
         };
 
@@ -1435,7 +1420,7 @@ impl AnvilState<UdevData> {
             match err {
                 SwapBuffersError::AlreadySwapped => {}
                 SwapBuffersError::TemporaryFailure(err) => {
-                    // TODO dont reschedule after 3(?) retries
+                    // TODO: Don't reschedule after 3(?) retries.
                     warn!("Failed to submit page_flip: {}", err);
                     let handle = evt_handle.clone();
                     evt_handle
@@ -1467,7 +1452,7 @@ fn render_surface<'a, 'b>(
     let scale = Scale::from(output.current_scale().fractional_scale());
 
     let mut custom_elements: Vec<CustomRenderElements<_>> = Vec::new();
-    // draw input method surface if any
+    // Draw input method surface, if any.
     let rectangle = input_method.coordinates();
     let position = Point::from((
         rectangle.loc.x + rectangle.size.w,
@@ -1500,12 +1485,12 @@ fn render_surface<'a, 'b>(
         let cursor_pos = pointer_location - output_geometry.loc.to_f64() - cursor_hotspot.to_f64();
         let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
-        // set cursor
+        // Set the cursor.
         pointer_element.set_texture(pointer_image.clone());
 
-        // draw the cursor as relevant
+        // Draw the cursor if relevant.
         {
-            // reset the cursor if the surface is no longer alive
+            // Reset the cursor if the surface is no longer alive.
             let mut reset = false;
             if let CursorImageStatus::Surface(ref surface) = *cursor_status {
                 reset = !surface.alive();
@@ -1519,7 +1504,7 @@ fn render_surface<'a, 'b>(
 
         custom_elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale, 1.0));
 
-        // draw the dnd icon if applicable
+        // Draw the drag-and-drop icon if applicable.
         {
             if let Some(wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.alive() {

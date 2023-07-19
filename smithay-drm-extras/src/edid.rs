@@ -1,6 +1,6 @@
 //! # EDID - Extended Display Identification Data
 //!
-//! This module is meant to help with extraction of EDID data from connectors
+//! This module is meant to help with extraction of EDID data from connectors.
 //!
 //! ```no_run
 //! # mod helpers { include!("./docs/doctest_helpers.rs"); };
@@ -19,17 +19,17 @@ use edid_rs::MonitorDescriptor;
 
 use super::hwdata;
 
-/// Information about monitor, acquired from EDID
+/// Information about monitor, acquired from EDID.
 #[derive(Debug, Clone)]
 pub struct EdidInfo {
-    /// Monitor name
+    /// Monitor name.
     pub model: String,
-    /// Name of manufacturer of this monitor
+    /// Name of manufacturer of this monitor.
     pub manufacturer: String,
 }
 
 impl EdidInfo {
-    /// Get EDID info from supplied connector
+    /// Get EDID info from supplied connector.
     pub fn for_connector(device: &impl ControlDevice, connector: connector::Handle) -> Option<EdidInfo> {
         device
             .get_properties(connector)

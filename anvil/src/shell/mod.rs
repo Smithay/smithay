@@ -60,8 +60,8 @@ fn fullscreen_output_geometry(
     wl_output: Option<&wl_output::WlOutput>,
     space: &mut Space<WindowElement>,
 ) -> Option<Rectangle<i32, Logical>> {
-    // First test if a specific output has been requested
-    // if the requested output is not found ignore the request
+    // First test if a specific output has been requested.
+    // If the requested output is not found, ignore the request.
     wl_output
         .and_then(Output::from_resource)
         .or_else(|| {
@@ -229,7 +229,7 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
         .find(|window| window.wl_surface().map(|s| s == *surface).unwrap_or(false))
         .cloned()
     {
-        // send the initial configure if relevant
+        // Send the initial configure if relevant.
         #[cfg_attr(not(feature = "xwayland"), allow(irrefutable_let_patterns))]
         if let WindowElement::Wayland(ref toplevel) = window {
             let initial_configure_sent = with_states(surface, |states| {
@@ -299,10 +299,10 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
 
         let mut map = layer_map_for_output(output);
 
-        // arrange the layers before sending the initial configure
-        // to respect any size the client may have sent
+        // Arrange the layers before sending the initial configure
+        // to respect any size the client may have sent.
         map.arrange();
-        // send the initial configure if relevant
+        // Send the initial configure if relevant.
         if !initial_configure_sent {
             let layer = map
                 .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
@@ -319,8 +319,8 @@ fn place_new_window(
     window: &WindowElement,
     activate: bool,
 ) {
-    // place the window at a random location on same output as pointer
-    // or if there is not output in a [0;800]x[0;800] square
+    // Place the window at a random location on same output as pointer,
+    // or if there is not output in a [0;800]x[0;800] square.
     use rand::distributions::{Distribution, Uniform};
 
     let output = space
@@ -337,7 +337,7 @@ fn place_new_window(
         })
         .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (800, 800)));
 
-    // set the initial toplevel bounds
+    // Set the initial toplevel bounds.
     #[allow(irrefutable_let_patterns)]
     if let WindowElement::Wayland(window) = window {
         window.toplevel().with_pending_state(|state| {
@@ -357,7 +357,7 @@ fn place_new_window(
 }
 
 pub fn fixup_positions(space: &mut Space<WindowElement>, pointer_location: Point<f64, Logical>) {
-    // fixup outputs
+    // Fixup outputs.
     let mut offset = Point::<i32, Logical>::from((0, 0));
     for output in space.outputs().cloned().collect::<Vec<_>>().into_iter() {
         let size = space
@@ -369,7 +369,7 @@ pub fn fixup_positions(space: &mut Space<WindowElement>, pointer_location: Point
         offset.x += size.w;
     }
 
-    // fixup windows
+    // Fixup windows.
     let mut orphaned_windows = Vec::new();
     let outputs = space
         .outputs()

@@ -11,7 +11,7 @@ fn generate_hwdata() {
     };
 
     let pkg_path = pkg_config::get_variable("hwdata", "pkgdatadir");
-    // Old versions of hwdata don't have .pc file, so let's guess
+    // Old versions of hwdata don't have .pc file, so let's guess.
     let pkg_path = pkg_path.as_deref().unwrap_or("/usr/share/hwdata");
 
     let pnp_ids_path = PathBuf::from(pkg_path).join("pnp.ids");

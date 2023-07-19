@@ -77,7 +77,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
         _focus: Option<(WlSurface, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
-        // While the grab is active, no client has pointer focus
+        // While the grab is active, no client has pointer focus.
         handle.motion(data, None, event);
 
         let mut delta = event.location - self.start_data.location;
@@ -196,7 +196,7 @@ enum ResizeSurfaceState {
         /// The initial window size and location.
         initial_rect: Rectangle<i32, Logical>,
     },
-    /// Resize is done, we are now waiting for last commit, to do the final move
+    /// Resize is done, we are now waiting for last commit, so we can do the final move.
     WaitingForLastCommit {
         edges: ResizeEdge,
         /// The initial window size and location.
@@ -221,7 +221,7 @@ impl ResizeSurfaceState {
         match *self {
             Self::Resizing { edges, initial_rect } => Some((edges, initial_rect)),
             Self::WaitingForLastCommit { edges, initial_rect } => {
-                // The resize is done, let's go back to idle
+                // The resize is done, let's go back to idle.
                 *self = Self::Idle;
 
                 Some((edges, initial_rect))
@@ -270,7 +270,7 @@ pub fn handle_commit(space: &mut Space<Window>, surface: &WlSurface) -> Option<(
     }
 
     if new_loc.x.is_some() || new_loc.y.is_some() {
-        // If TOP or LEFT side of the window got resized, we have to move it
+        // If TOP or LEFT side of the window got resized, we have to move it.
         space.map_element(window, window_loc, false);
     }
 

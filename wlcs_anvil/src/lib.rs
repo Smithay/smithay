@@ -38,67 +38,69 @@ static DESCRIPTOR: WlcsIntegrationDescriptor = WlcsIntegrationDescriptor {
     supported_extensions: SUPPORTED_EXTENSIONS.as_ptr(),
 };
 
-/// Event sent by WLCS to control the compositor
+/// Event sent by WLCS to control the compositor.
 #[derive(Debug)]
 pub enum WlcsEvent {
-    /// Stop the running server
+    /// Stop the running server.
     Exit,
-    /// Create a new client from given RawFd
+    /// Create a new client from given RawFd.
     NewClient {
         stream: UnixStream,
         client_id: i32,
     },
-    /// Position this window from the client associated with this Fd on the global space
+    /// Position this window from the client associated with this Fd on the global space.
     PositionWindow {
         client_id: i32,
         surface_id: u32,
         location: Point<i32, Logical>,
     },
-    /* Pointer related events */
-    /// A new pointer device is available
+
+    // Pointer related events.
+    /// A new pointer device is available.
     NewPointer {
         device_id: u32,
     },
-    /// Move the pointer in absolute coordinate space
+    /// Move the pointer in absolute coordinate space.
     PointerMoveAbsolute {
         device_id: u32,
         location: Point<f64, Logical>,
     },
-    /// Move the pointer in relative coordinate space
+    /// Move the pointer in relative coordinate space.
     PointerMoveRelative {
         device_id: u32,
         delta: Point<f64, Logical>,
     },
-    /// Press a pointer button
+    /// Press a pointer button.
     PointerButtonDown {
         device_id: u32,
         button_id: i32,
     },
-    /// Release a pointer button
+    /// Release a pointer button.
     PointerButtonUp {
         device_id: u32,
         button_id: i32,
     },
-    /// A pointer device is removed
+    /// A pointer device is removed.
     PointerRemoved {
         device_id: u32,
     },
-    /* Touch related events */
-    /// A new touch device is available
+
+    // Touch related events.
+    /// A new touch device is available.
     NewTouch {
         device_id: u32,
     },
-    /// A touch point is down
+    /// A touch point is down.
     TouchDown {
         device_id: u32,
         location: Point<f64, Logical>,
     },
-    /// A touch point moved
+    /// A touch point moved.
     TouchMove {
         device_id: u32,
         location: Point<f64, Logical>,
     },
-    /// A touch point is up
+    /// A touch point is up.
     TouchUp {
         device_id: u32,
     },

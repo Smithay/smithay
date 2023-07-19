@@ -31,7 +31,7 @@ pub struct Smallvil {
     pub space: Space<Window>,
     pub loop_signal: LoopSignal,
 
-    // Smithay State
+    // Smithay State.
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
     pub shm_state: ShmState,
@@ -64,7 +64,7 @@ impl Smallvil {
         seat.add_keyboard(Default::default(), 200, 200).unwrap();
 
         // Notify clients that we have a pointer (mouse)
-        // Here we assume that there is always pointer plugged in
+        // Here we assume that there is always pointer plugged in.
         seat.add_pointer();
 
         // A space represents a two-dimensional plane. Windows and Outputs can be mapped onto it.
@@ -75,7 +75,7 @@ impl Smallvil {
 
         let socket_name = Self::init_wayland_listener(display, event_loop);
 
-        // Get the loop signal, used to stop the event loop
+        // Get the loop signal, used to stop the event loop.
         let loop_signal = event_loop.get_signal();
 
         Self {

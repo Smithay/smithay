@@ -42,9 +42,8 @@ pub struct WlcsServerIntegration {
     pub destroy_server: unsafe extern "C" fn(*mut WlcsDisplayServer),
 }
 
-/*
- * WlcsPointer
- */
+
+// WlcsPointer
 
 #[repr(C)]
 pub struct WlcsPointer {
@@ -56,9 +55,7 @@ pub struct WlcsPointer {
     pub destroy: unsafe extern "C" fn(*mut WlcsPointer),
 }
 
-/*
- * WlcsTouch
- */
+// WlcsTouch
 
 #[repr(C)]
 pub struct WlcsTouch {

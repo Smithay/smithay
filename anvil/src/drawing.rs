@@ -195,7 +195,7 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
-        // FIXME: respect the src for cropping
+        // FIXME: Respect the src for cropping
         let scale = dst.size.to_f64() / self.src().size;
         let value_str = std::cmp::min(self.value, 999).to_string();
         let mut offset: Point<f64, Physical> = Point::from((0.0, 0.0));
