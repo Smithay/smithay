@@ -225,7 +225,9 @@ where
                 }
             }
             if let Some(ref source) = self.data_source {
-                source.dnd_drop_performed();
+                if source.version() >= 3 {
+                    source.dnd_drop_performed();
+                }
                 if !validated {
                     source.cancelled();
                 }
