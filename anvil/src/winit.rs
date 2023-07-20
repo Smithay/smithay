@@ -34,13 +34,12 @@ use smithay::{
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
         wayland_server::{protocol::wl_surface, Display},
     },
-    utils::{IsAlive, Point, Scale, Transform},
+    utils::{IsAlive, Scale, Transform},
     wayland::{
         compositor,
         dmabuf::{
             DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportError,
         },
-        input_method::InputMethodSeat,
     },
 };
 use tracing::{error, info, warn};
@@ -266,7 +265,6 @@ pub fn run_winit() {
             let damage_tracker = &mut state.backend_data.damage_tracker;
             let show_window_preview = state.show_window_preview;
 
-            let input_method = state.seat.input_method();
             let dnd_icon = state.dnd_icon.as_ref();
 
             let scale = Scale::from(output.current_scale().fractional_scale());

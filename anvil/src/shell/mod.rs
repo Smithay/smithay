@@ -266,7 +266,8 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
         let popup = match popup {
             PopupKind::Xdg(ref popup) => popup,
             // Doesn't require configure
-            PopupKind::InputMethod(_) => {
+            PopupKind::InputMethod(ref input_popup) => {
+                println!("Shell: {:?}", input_popup);
                 return;
             }
         };

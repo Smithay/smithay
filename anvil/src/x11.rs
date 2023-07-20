@@ -40,13 +40,12 @@ use smithay::{
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
         wayland_server::{protocol::wl_surface, Display},
     },
-    utils::{DeviceFd, IsAlive, Point, Scale},
+    utils::{DeviceFd, IsAlive, Scale},
     wayland::{
         compositor,
         dmabuf::{
             DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportError,
         },
-        input_method::InputMethodSeat,
     },
 };
 use tracing::{error, info, trace, warn};

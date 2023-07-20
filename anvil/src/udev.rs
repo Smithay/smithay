@@ -84,7 +84,6 @@ use smithay::{
         dmabuf::{
             DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportError,
         },
-        input_method::{InputMethodHandle, InputMethodSeat},
     },
 };
 use smithay_drm_extras::{
@@ -1350,7 +1349,6 @@ impl AnvilState<UdevData> {
             &mut renderer,
             &self.space,
             &output,
-            self.seat.input_method(),
             self.pointer_location,
             &pointer_image,
             &mut self.backend_data.pointer_element,
@@ -1454,7 +1452,6 @@ fn render_surface<'a, 'b>(
     renderer: &mut UdevRenderer<'a, 'b>,
     space: &Space<WindowElement>,
     output: &Output,
-    input_method: &InputMethodHandle,
     pointer_location: Point<f64, Logical>,
     pointer_image: &TextureBuffer<MultiTexture>,
     pointer_element: &mut PointerElement<MultiTexture>,
