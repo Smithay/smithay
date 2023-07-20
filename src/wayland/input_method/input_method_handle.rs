@@ -17,9 +17,9 @@ use crate::{
 };
 
 use super::{
-    input_method_keyboard_grab::InputMethodKeyboardGrab,
-    input_method_popup_surface::InputMethodPopupSurfaceHandle, InputMethodHandler,
-    InputMethodKeyboardUserData, InputMethodManagerState, InputMethodPopupSurfaceUserData,
+    input_method_keyboard_grab::InputMethodKeyboardGrab, input_method_popup_surface::PopupSurface,
+    InputMethodHandler, InputMethodKeyboardUserData, InputMethodManagerState,
+    InputMethodPopupSurfaceUserData,
 };
 
 const INPUT_POPUP_SURFACE_ROLE: &str = "zwp_input_popup_surface_v2";
@@ -27,7 +27,7 @@ const INPUT_POPUP_SURFACE_ROLE: &str = "zwp_input_popup_surface_v2";
 #[derive(Default, Debug)]
 pub(crate) struct InputMethod {
     pub instance: Option<ZwpInputMethodV2>,
-    pub popup: Option<InputMethodPopupSurfaceHandle>,
+    pub popup: Option<PopupSurface>,
     pub keyboard_grab: InputMethodKeyboardGrab,
 }
 
@@ -63,6 +63,13 @@ impl InputMethodHandle {
         let inner = self.inner.lock().unwrap();
         let keyboard = inner.keyboard_grab.inner.lock().unwrap();
         keyboard.grab.is_some()
+    }
+
+    pub(crate) fn set_text_input_rectangle(&self, x: i32, y: i32, width: i32, height: i32) {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(popup) = &mut inner.popup {
+            popup.set_rectangle(x, y, width, height);
+        }
     }
 
     /// Convenience function to close popup surfaces
@@ -150,7 +157,7 @@ where
                     },
                 );
                 // TODO close if there already is one
-                let popup = InputMethodPopupSurfaceHandle::new(instance, surface, parent);
+                let popup = PopupSurface::new(instance, surface, parent);
                 input_method.popup = Some(popup.clone());
                 state.new_popup(popup);
             }

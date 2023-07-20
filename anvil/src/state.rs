@@ -44,7 +44,7 @@ use smithay::{
         },
         dmabuf::DmabufFeedback,
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
-        input_method::{InputMethodHandler, InputMethodManagerState, InputMethodPopupSurfaceHandle},
+        input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface},
         keyboard_shortcuts_inhibit::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
@@ -271,7 +271,7 @@ delegate_tablet_manager!(@<BackendData: Backend + 'static> AnvilState<BackendDat
 delegate_text_input_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
-    fn new_popup(&mut self, surface: InputMethodPopupSurfaceHandle) {
+    fn new_popup(&mut self, surface: PopupSurface) {
         if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
             warn!("Failed to track popup: {}", err);
         }

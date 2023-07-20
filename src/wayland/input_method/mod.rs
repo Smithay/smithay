@@ -75,10 +75,10 @@ const MANAGER_VERSION: u32 = 1;
 mod input_method_handle;
 mod input_method_keyboard_grab;
 mod input_method_popup_surface;
-pub use input_method_popup_surface::InputMethodPopupSurfaceHandle;
+pub use input_method_popup_surface::PopupSurface;
 
 pub trait InputMethodHandler {
-    fn new_popup(&mut self, surface: InputMethodPopupSurfaceHandle);
+    fn new_popup(&mut self, surface: PopupSurface);
 }
 
 /// Extends [Seat] with input method functionality
