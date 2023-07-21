@@ -269,7 +269,7 @@ pub fn run_x11() {
                 output.delete_mode(output.current_mode().unwrap());
                 output.change_current_state(Some(data.state.backend_data.mode), None, None, None);
                 output.set_preferred(data.state.backend_data.mode);
-                crate::shell::fixup_positions(&mut data.state.space, data.state.pointer_location);
+                crate::shell::fixup_positions(&mut data.state.space, data.state.pointer.current_location());
 
                 data.state.backend_data.render = true;
             }
@@ -352,7 +352,7 @@ pub fn run_x11() {
             } else {
                 (0, 0).into()
             };
-            let cursor_pos = state.pointer_location - cursor_hotspot.to_f64();
+            let cursor_pos = state.pointer.current_location() - cursor_hotspot.to_f64();
             let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
             pointer_element.set_status(cursor_guard.clone());
