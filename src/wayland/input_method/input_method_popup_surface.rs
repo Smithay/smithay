@@ -11,6 +11,23 @@ use crate::utils::{
 
 use super::InputMethodManagerState;
 
+/// Handle to a popup surface
+#[derive(Debug, Clone, Default)]
+pub struct PopupHandle {
+    pub surface: Option<PopupSurface>,
+    pub rectangle: Rectangle<i32, Physical>,
+}
+
+impl PopupHandle {
+    /// Set relative location of text cursor
+    pub fn set_rectangle(&mut self, x: i32, y: i32, width: i32, height: i32) {
+        self.rectangle = Rectangle::from_loc_and_size((x, y), (width, height));
+        if let Some(ref mut popup) = self.surface {
+            popup.set_rectangle(x, y, width, height);
+        }
+    }
+}
+
 /// A handle to an input method popup surface
 #[derive(Debug, Clone)]
 pub struct PopupSurface {
@@ -27,12 +44,17 @@ impl std::cmp::PartialEq for PopupSurface {
 }
 
 impl PopupSurface {
-    pub(crate) fn new(surface_role: ZwpInputPopupSurfaceV2, surface: WlSurface, parent: WlSurface) -> Self {
+    pub(crate) fn new(
+        surface_role: ZwpInputPopupSurfaceV2,
+        surface: WlSurface,
+        parent: WlSurface,
+        rectangle: Rectangle<i32, Physical>,
+    ) -> Self {
         Self {
             surface_role,
             surface,
             parent,
-            rectangle: Default::default(),
+            rectangle,
         }
     }
 
