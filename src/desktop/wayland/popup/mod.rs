@@ -94,10 +94,7 @@ impl PopupKind {
                 .loc
             }
             // TODO
-            PopupKind::InputMethod(ref t) => {
-                println!("manager: {:?}", t.rectangle());
-                t.rectangle().loc.to_logical(1)
-            } // XXX
+            PopupKind::InputMethod(ref t) => t.rectangle().loc.to_logical(1), // XXX
         }
     }
 }

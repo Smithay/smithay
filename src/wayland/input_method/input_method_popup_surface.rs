@@ -31,9 +31,11 @@ impl PopupHandle {
 /// A handle to an input method popup surface
 #[derive(Debug, Clone)]
 pub struct PopupSurface {
+    /// The surface role for the input method popup
     pub surface_role: ZwpInputPopupSurfaceV2,
     surface: WlSurface,
     parent: WlSurface,
+    /// Rectangle with position and size of  text cursor, used for placement of popup surface
     pub rectangle: Rectangle<i32, Physical>,
 }
 
@@ -58,16 +60,19 @@ impl PopupSurface {
         }
     }
 
+    /// Is the input method popup surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         // TODO other things to check? This may not sufice.
         let role_data: &InputMethodPopupSurfaceUserData = self.surface_role.data().unwrap();
         self.surface.alive() && role_data.alive_tracker.alive()
     }
 
+    /// Access to the underlying `wl_surface` of this popup
     pub fn wl_surface(&self) -> &WlSurface {
         &self.surface
     }
 
+    /// Access to the parent surface associated with this popup
     pub fn get_parent_surface(&self) -> WlSurface {
         self.parent.clone()
     }

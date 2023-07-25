@@ -77,7 +77,9 @@ mod input_method_keyboard_grab;
 mod input_method_popup_surface;
 pub use input_method_popup_surface::PopupSurface;
 
+/// Adds input method popup to compositor state
 pub trait InputMethodHandler {
+    /// Add a popup surface to compositor state
     fn new_popup(&mut self, surface: PopupSurface);
 }
 
