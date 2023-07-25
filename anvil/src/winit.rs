@@ -223,7 +223,7 @@ pub fn run_winit() {
                     };
                     output.change_current_state(Some(mode), None, None, None);
                     output.set_preferred(mode);
-                    crate::shell::fixup_positions(&mut state.space, state.pointer_location);
+                    crate::shell::fixup_positions(&mut state.space, state.pointer.current_location());
                 }
                 WinitEvent::Input(event) => {
                     state.process_input_event_windowed(&display.handle(), event, OUTPUT_NAME)
@@ -283,7 +283,7 @@ pub fn run_winit() {
             } else {
                 (0, 0).into()
             };
-            let cursor_pos = state.pointer_location - cursor_hotspot.to_f64();
+            let cursor_pos = state.pointer.current_location() - cursor_hotspot.to_f64();
             let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
             #[cfg(feature = "debug")]

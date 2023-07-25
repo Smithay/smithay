@@ -47,7 +47,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         // of a xdg_surface has to be sent during the commit if
         // the surface is not already configured
         let window = WindowElement::Wayland(Window::new(surface));
-        place_new_window(&mut self.space, self.pointer_location, &window, true);
+        place_new_window(&mut self.space, self.pointer.current_location(), &window, true);
     }
 
     fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {

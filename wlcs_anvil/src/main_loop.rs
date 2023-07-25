@@ -135,7 +135,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
             } else {
                 (0, 0).into()
             };
-            let cursor_pos = state.pointer_location - cursor_hotspot.to_f64();
+            let cursor_pos = state.pointer.current_location() - cursor_hotspot.to_f64();
             let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
             pointer_element.set_status(cursor_guard.clone());
@@ -223,11 +223,11 @@ fn handle_event(
         // pointer inputs
         WlcsEvent::NewPointer { .. } => {}
         WlcsEvent::PointerMoveAbsolute { location, .. } => {
-            state.pointer_location = location;
             let serial = SCOUNTER.next_serial();
-            let under = state.surface_under();
+            let under = state.surface_under(location);
             let time = Duration::from(state.clock.now()).as_millis() as u32;
-            state.seat.get_pointer().unwrap().motion(
+            let ptr = state.pointer.clone();
+            ptr.motion(
                 state,
                 under,
                 &MotionEvent {
@@ -238,17 +238,17 @@ fn handle_event(
             );
         }
         WlcsEvent::PointerMoveRelative { delta, .. } => {
-            state.pointer_location += delta;
+            let pointer_location = state.pointer.current_location() + delta;
             let serial = SCOUNTER.next_serial();
-            let under = state.surface_under();
+            let under = state.surface_under(pointer_location);
             let time = Duration::from(state.clock.now()).as_millis() as u32;
             let utime = Duration::from(state.clock.now()).as_micros() as u64;
-            let ptr = state.seat.get_pointer().unwrap();
+            let ptr = state.pointer.clone();
             ptr.motion(
                 state,
                 under.clone(),
                 &MotionEvent {
-                    location: state.pointer_location,
+                    location: pointer_location,
                     serial,
                     time,
                 },

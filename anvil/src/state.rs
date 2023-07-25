@@ -22,7 +22,11 @@ use smithay::{
         },
         PopupManager, Space,
     },
-    input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
+    input::{
+        keyboard::XkbConfig,
+        pointer::{CursorImageStatus, PointerHandle},
+        Seat, SeatHandler, SeatState,
+    },
     output::Output,
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
@@ -35,7 +39,7 @@ use smithay::{
             Display, DisplayHandle, Resource,
         },
     },
-    utils::{Clock, Logical, Monotonic, Point},
+    utils::{Clock, Monotonic},
     wayland::{
         compositor::{get_parent, with_states, CompositorClientState, CompositorState},
         data_device::{
@@ -78,7 +82,7 @@ use crate::{focus::FocusTarget, shell::WindowElement};
 #[cfg(feature = "xwayland")]
 use smithay::{
     reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1,
-    utils::Size,
+    utils::{Point, Size},
     wayland::{
         data_device::with_source_metadata as with_data_device_source_metadata,
         primary_selection::with_source_metadata as with_primary_source_metadata,
@@ -134,11 +138,11 @@ pub struct AnvilState<BackendData: Backend + 'static> {
 
     // input-related fields
     pub suppressed_keys: Vec<u32>,
-    pub pointer_location: Point<f64, Logical>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
     pub seat_name: String,
     pub seat: Seat<AnvilState<BackendData>>,
     pub clock: Clock<Monotonic>,
+    pub pointer: PointerHandle<AnvilState<BackendData>>,
 
     #[cfg(feature = "xwayland")]
     pub xwayland: XWayland,
@@ -506,7 +510,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone());
 
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
-        seat.add_pointer();
+        let pointer = seat.add_pointer();
         seat.add_keyboard(XkbConfig::default(), 200, 25)
             .expect("Failed to initialize the keyboard");
 
@@ -576,10 +580,10 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             fractional_scale_manager_state,
             dnd_icon: None,
             suppressed_keys: Vec::new(),
-            pointer_location: (0.0, 0.0).into(),
             cursor_status,
             seat_name,
             seat,
+            pointer,
             clock,
             #[cfg(feature = "xwayland")]
             xwayland,
