@@ -295,11 +295,12 @@ fn handle_server_dnd<D>(
     let mut data = offer_data.lock().unwrap();
     match request {
         Request::Accept { mime_type, .. } => {
-            if let Some(mtype) = mime_type {
-                data.accepted = metadata.mime_types.contains(&mtype);
+            if let Some(mtype) = &mime_type {
+                data.accepted = metadata.mime_types.contains(mtype);
             } else {
                 data.accepted = false;
             }
+            handler.accept(mime_type, seat)
         }
         Request::Receive { mime_type, fd } => {
             // check if the source and associated mime type is still valid
