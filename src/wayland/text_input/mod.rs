@@ -149,7 +149,6 @@ where
                         input_method_handle: input_method_handle.clone(),
                     },
                 );
-
                 handle.add_instance(&instance);
             }
             zwp_text_input_manager_v3::Request::Destroy => {

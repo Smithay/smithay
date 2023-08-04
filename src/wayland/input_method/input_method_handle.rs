@@ -129,9 +129,9 @@ where
                     ti.delete_surrounding_text(before_length, after_length);
                 });
             }
-            zwp_input_method_v2::Request::Commit { serial } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface, _| {
-                    ti.done(serial);
+            zwp_input_method_v2::Request::Commit { serial: _ } => {
+                data.text_input_handle.with_focused_text_input(|ti, _surface, serial| {
+                    ti.done(*serial);
                 });
             }
             zwp_input_method_v2::Request::GetInputPopupSurface { id, surface } => {

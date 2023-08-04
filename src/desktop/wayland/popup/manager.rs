@@ -88,8 +88,7 @@ impl PopupManager {
                     return Err(PopupGrabError::InvalidGrab);
                 }
             }
-            PopupKind::InputMethod(ref input_method) => {
-                println!("Kind: {:?}", input_method);
+            PopupKind::InputMethod(ref _input_method) => {
                 return Err(PopupGrabError::InvalidGrab); // TODO?
             }
         }

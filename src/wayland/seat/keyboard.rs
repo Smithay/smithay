@@ -144,14 +144,16 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
             )
         });
         let text_input = seat.text_input();
-        text_input.set_focus(Some(self), || {});
+        // text_input.set_focus(Some(self), || {});
+        text_input.enter(self);
     }
 
     fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial) {
         for_each_focused_kbds(seat, self, |kbd| kbd.leave(serial.into(), self));
         let text_input = seat.text_input();
         let input_method = seat.input_method();
-        text_input.set_focus(None, || input_method.close_popup());
+        input_method.close_popup();
+        text_input.leave(self);
     }
 
     fn key(

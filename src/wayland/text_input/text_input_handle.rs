@@ -67,28 +67,25 @@ impl TextInputHandle {
         self.inner.lock().unwrap().focus.clone()
     }
 
-    /// Sets text input focus to a surface, the hook can be used to e.g.
-    /// delete the popup surface role so it does not flicker between focused surfaces
-    pub(crate) fn set_focus<F>(&self, focus: Option<&WlSurface>, focus_changed_hook: F)
-    where
-        F: Fn(),
-    {
-        let mut inner = self.inner.lock().unwrap();
-        let same = inner.focus.as_ref() == focus;
-        if !same {
-            focus_changed_hook();
-            inner.with_focused_text_input(|ti, surface, _serial| {
-                ti.leave(surface);
-            });
-
-            inner.focus = focus.cloned();
-
-            inner.with_focused_text_input(|ti, surface, _serial| {
-                ti.enter(surface);
-            });
+    pub(crate) fn leave(&self, surface: &WlSurface) {
+        let inner = self.inner.lock().unwrap();
+        for ti in inner.instances.iter() {
+            if ti.instance.id().same_client_as(&surface.id()){
+                ti.instance.leave(surface);
+            }
         }
     }
 
+    pub(crate) fn enter(&self, surface: &WlSurface) {
+        let  mut inner = self.inner.lock().unwrap();
+        inner.focus = Some(surface.clone());
+        for ti in inner.instances.iter() {
+            if ti.instance.id().same_client_as(&surface.id()){
+                ti.instance.enter(surface);
+            }
+        }
+    }
+    
     /// Callback function to use on the current focused text input surface
     pub fn with_focused_text_input<F>(&self, f: F)
     where
