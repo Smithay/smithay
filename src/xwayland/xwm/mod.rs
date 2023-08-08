@@ -1414,25 +1414,26 @@ fn handle_event<D: XwmHandler + 'static>(
                       x.mapped_window_id() == Some(n.window))
                 .cloned()
             {
-                xwm.client_list.push(surface.window_id());
-                xwm.client_list_stacking.push(surface.window_id());
-                conn.change_property32(
-                    PropMode::APPEND,
-                    xwm.screen.root,
-                    xwm.atoms._NET_CLIENT_LIST,
-                    AtomEnum::WINDOW,
-                    &[surface.window_id()],
-                )?;
-                conn.change_property32(
-                    PropMode::APPEND,
-                    xwm.screen.root,
-                    xwm.atoms._NET_CLIENT_LIST_STACKING,
-                    AtomEnum::WINDOW,
-                    &[surface.window_id()],
-                )?;
                 if surface.is_override_redirect() {
                     drop(_guard);
                     state.mapped_override_redirect_window(xwm_id, surface);
+                } else {
+                    xwm.client_list.push(surface.window_id());
+                    xwm.client_list_stacking.push(surface.window_id());
+                    conn.change_property32(
+                        PropMode::APPEND,
+                        xwm.screen.root,
+                        xwm.atoms._NET_CLIENT_LIST,
+                        AtomEnum::WINDOW,
+                        &[surface.window_id()],
+                    )?;
+                    conn.change_property32(
+                        PropMode::APPEND,
+                        xwm.screen.root,
+                        xwm.atoms._NET_CLIENT_LIST_STACKING,
+                        AtomEnum::WINDOW,
+                        &[surface.window_id()],
+                    )?;
                 }
             }
         }
