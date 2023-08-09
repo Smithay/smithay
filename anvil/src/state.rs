@@ -81,11 +81,13 @@ use crate::cursor::Cursor;
 use crate::{focus::FocusTarget, shell::WindowElement};
 #[cfg(feature = "xwayland")]
 use smithay::{
+    delegate_xwayland_keyboard_grab,
     reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1,
     utils::{Point, Size},
     wayland::{
         data_device::with_source_metadata as with_data_device_source_metadata,
         primary_selection::with_source_metadata as with_primary_source_metadata,
+        xwayland_keyboard_grab::{XWaylandKeyboardGrabHandler, XWaylandKeyboardGrabState},
     },
     xwayland::{xwm::SelectionType, X11Wm, XWayland, XWaylandEvent},
 };
@@ -438,6 +440,19 @@ impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
 }
 delegate_fractional_scale!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+#[cfg(feature = "xwayland")]
+impl<BackendData: Backend + 'static> XWaylandKeyboardGrabHandler for AnvilState<BackendData> {
+    fn keyboard_focus_for_xsurface(&self, surface: &WlSurface) -> Option<FocusTarget> {
+        let elem = self
+            .space
+            .elements()
+            .find(|elem| elem.wl_surface().as_ref() == Some(surface))?;
+        Some(FocusTarget::Window(elem.clone()))
+    }
+}
+#[cfg(feature = "xwayland")]
+delegate_xwayland_keyboard_grab!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: &mut Display<AnvilState<BackendData>>,
@@ -525,6 +540,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         #[cfg(feature = "xwayland")]
         let xwayland = {
+            XWaylandKeyboardGrabState::new::<Self>(&dh);
+
             let (xwayland, channel) = XWayland::new(&dh);
             let ret = handle.insert_source(channel, move |event, _, data| match event {
                 XWaylandEvent::Ready {
