@@ -41,7 +41,7 @@ impl Smallvil {
 
                 let pointer = self.seat.get_pointer().unwrap();
 
-                let under = self.surface_under_pointer(&pointer);
+                let under = self.surface_under(pos);
 
                 pointer.motion(
                     self,

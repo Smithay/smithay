@@ -2,7 +2,7 @@ use std::{ffi::OsString, os::unix::io::AsRawFd, sync::Arc};
 
 use smithay::{
     desktop::{Space, Window, WindowSurfaceType},
-    input::{pointer::PointerHandle, Seat, SeatState},
+    input::{Seat, SeatState},
     reexports::{
         calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
         wayland_server::{
@@ -140,11 +140,7 @@ impl Smallvil {
         socket_name
     }
 
-    pub fn surface_under_pointer(
-        &self,
-        pointer: &PointerHandle<Self>,
-    ) -> Option<(WlSurface, Point<i32, Logical>)> {
-        let pos = pointer.current_location();
+    pub fn surface_under(&self, pos: Point<f64, Logical>) -> Option<(WlSurface, Point<i32, Logical>)> {
         self.space.element_under(pos).and_then(|(window, location)| {
             window
                 .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
