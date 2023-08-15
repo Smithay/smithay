@@ -8,7 +8,7 @@ use smithay::{
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason},
             protocol::wl_surface::WlSurface,
-            Display,
+            Display, DisplayHandle,
         },
     },
     utils::{Logical, Point},
@@ -27,6 +27,7 @@ use crate::CalloopData;
 pub struct Smallvil {
     pub start_time: std::time::Instant,
     pub socket_name: OsString,
+    pub display_handle: DisplayHandle,
 
     pub space: Space<Window>,
     pub loop_signal: LoopSignal,
@@ -80,6 +81,7 @@ impl Smallvil {
 
         Self {
             start_time,
+            display_handle: dh,
 
             space,
             loop_signal,
