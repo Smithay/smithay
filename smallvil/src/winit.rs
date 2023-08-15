@@ -120,6 +120,7 @@ pub fn winit_dispatch(
     });
 
     state.space.refresh();
+    state.popups.cleanup();
     display.flush_clients()?;
 
     Ok(())

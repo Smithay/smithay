@@ -1,14 +1,14 @@
 use std::{ffi::OsString, os::unix::io::AsRawFd, sync::Arc};
 
 use smithay::{
-    desktop::{Space, Window, WindowSurfaceType},
+    desktop::{PopupManager, Space, Window, WindowSurfaceType},
     input::{Seat, SeatState},
     reexports::{
         calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason},
             protocol::wl_surface::WlSurface,
-            Display,
+            Display, DisplayHandle,
         },
     },
     utils::{Logical, Point},
@@ -27,6 +27,7 @@ use crate::CalloopData;
 pub struct Smallvil {
     pub start_time: std::time::Instant,
     pub socket_name: OsString,
+    pub display_handle: DisplayHandle,
 
     pub space: Space<Window>,
     pub loop_signal: LoopSignal,
@@ -38,6 +39,7 @@ pub struct Smallvil {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Smallvil>,
     pub data_device_state: DataDeviceState,
+    pub popups: PopupManager,
 
     pub seat: Seat<Self>,
 }
@@ -54,6 +56,7 @@ impl Smallvil {
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let popups = PopupManager::default();
 
         // A seat is a group of keyboards, pointer and touch devices.
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
@@ -80,6 +83,7 @@ impl Smallvil {
 
         Self {
             start_time,
+            display_handle: dh,
 
             space,
             loop_signal,
@@ -91,6 +95,7 @@ impl Smallvil {
             output_manager_state,
             seat_state,
             data_device_state,
+            popups,
             seat,
         }
     }
