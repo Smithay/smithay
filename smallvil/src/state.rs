@@ -1,7 +1,7 @@
 use std::{ffi::OsString, os::unix::io::AsRawFd, sync::Arc};
 
 use smithay::{
-    desktop::{Space, Window, WindowSurfaceType},
+    desktop::{PopupManager, Space, Window, WindowSurfaceType},
     input::{Seat, SeatState},
     reexports::{
         calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
@@ -39,6 +39,7 @@ pub struct Smallvil {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Smallvil>,
     pub data_device_state: DataDeviceState,
+    pub popups: PopupManager,
 
     pub seat: Seat<Self>,
 }
@@ -55,6 +56,7 @@ impl Smallvil {
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let popups = PopupManager::default();
 
         // A seat is a group of keyboards, pointer and touch devices.
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
@@ -93,6 +95,7 @@ impl Smallvil {
             output_manager_state,
             seat_state,
             data_device_state,
+            popups,
             seat,
         }
     }
