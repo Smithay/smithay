@@ -2814,7 +2814,7 @@ where
             // we can not assign it to any overlay plane
             if overlaps_with_primary_plane_element && !is_underlay {
                 trace!(
-                    "skipping direct scan-out on plane plane {:?} with zpos {:?}, element {:?} overlaps with element on primary plane", plane.handle, plane.zpos, element_id,
+                    "skipping direct scan-out on plane {:?} with zpos {:?}, element {:?} overlaps with element on primary plane", plane.handle, plane.zpos, element_id,
                 );
                 return Ok(Err(None));
             }
