@@ -1868,14 +1868,14 @@ where
 
                     if let Some(next_config) = next_state {
                         trace!(
-                            "damaging move plane {:?}: {:?} -> {:?}",
+                            "damaging move {:?}: {:?} -> {:?}",
                             handle,
                             previous_config.dst,
                             next_config.dst
                         );
                         output_damage.push(next_config.dst);
                     } else {
-                        trace!("damaging removed plane {:?}: {:?}", handle, previous_config.dst);
+                        trace!("damaging removed {:?}: {:?}", handle, previous_config.dst);
                     }
                 }
             }
@@ -1888,7 +1888,7 @@ where
 
         if render {
             trace!(
-                "rendering {} elements on the primary plane {:?}",
+                "rendering {} elements on the primary {:?}",
                 primary_plane_elements.len(),
                 self.planes.primary.handle,
             );
@@ -2346,7 +2346,7 @@ where
             )? {
                 Ok(plane) => {
                     trace!(
-                        "assigned element {:?} to primary plane {:?}",
+                        "assigned element {:?} to primary {:?}",
                         element.id(),
                         self.planes.primary.handle
                     );
@@ -2367,7 +2367,7 @@ where
             output_geometry,
         ) {
             trace!(
-                "assigned element {:?} to cursor plane {:?}",
+                "assigned element {:?} to cursor {:?}",
                 element.id(),
                 self.planes.cursor.as_ref().map(|p| p.handle)
             );
@@ -2424,7 +2424,7 @@ where
         // something is already assigned to our cursor plane
         if frame_state.is_assigned(plane_info.handle) {
             trace!(
-                "skipping element {:?} on cursor plane {:?}, plane already has element assigned",
+                "skipping element {:?} on cursor {:?}, plane already has element assigned",
                 element.id(),
                 plane_info.handle
             );
@@ -2438,7 +2438,7 @@ where
         // use the cursor plane to scan out the element
         if element_size.w > self.cursor_size.w || element_size.h > self.cursor_size.h {
             trace!(
-                "element {:?} too big for cursor plane {:?}, skipping",
+                "element {:?} too big for cursor {:?}, skipping",
                 element.id(),
                 plane_info.handle,
             );
@@ -2449,7 +2449,7 @@ where
         // direct scan-out
         if let Some(underlying_storage) = element.underlying_storage(renderer) {
             trace!(
-                "trying to assign element {:?} for direct scan-out on cursor plane {:?}",
+                "trying to assign element {:?} for direct scan-out on cursor {:?}",
                 element.id(),
                 plane_info.handle,
             );
@@ -2466,7 +2466,7 @@ where
                 output_geometry,
             ) {
                 trace!(
-                    "assigned element {:?} for direct scan-out on cursor plane {:?}",
+                    "assigned element {:?} for direct scan-out on cursor {:?}",
                     element.id(),
                     plane_info.handle,
                 );
@@ -2565,7 +2565,7 @@ where
         }
 
         trace!(
-            "trying to render element {:?} on cursor plane {:?}",
+            "trying to render element {:?} on cursor {:?}",
             element.id(),
             plane_info.handle
         );
@@ -2594,14 +2594,14 @@ where
             Ok(Some(fb)) => fb,
             Ok(None) => {
                 debug!(
-                    "failed to export framebuffer for cursor plane {:?}: no framebuffer available",
+                    "failed to export framebuffer for cursor {:?}: no framebuffer available",
                     plane_info.handle
                 );
                 return None;
             }
             Err(err) => {
                 debug!(
-                    "failed to export framebuffer for cursor plane {:?}: {}",
+                    "failed to export framebuffer for cursor {:?}: {}",
                     plane_info.handle, err
                 );
                 return None;
@@ -2613,7 +2613,7 @@ where
             Ok(buffer) => buffer,
             Err(err) => {
                 debug!(
-                    "failed to create offscreen buffer for cursor plane {:?}: {}",
+                    "failed to create offscreen buffer for cursor {:?}: {}",
                     plane_info.handle, err
                 );
                 return None;
@@ -2622,7 +2622,7 @@ where
 
         if let Err(err) = renderer.bind(offscreen_buffer) {
             debug!(
-                "failed to bind cursor buffer for cursor plane {:?}: {}",
+                "failed to bind cursor buffer for cursor {:?}: {}",
                 plane_info.handle, err
             );
             return None;
@@ -2632,7 +2632,7 @@ where
         let plane_claim = match self.surface.claim_plane(plane_info.handle) {
             Some(claim) => claim,
             None => {
-                trace!("failed to claim plane {:?}", plane_info.handle);
+                trace!("failed to claim {:?}", plane_info.handle);
                 return None;
             }
         };
@@ -2726,7 +2726,7 @@ where
             output_damage.push(dst);
             Some(*plane_info)
         } else {
-            info!("failed to test cursor plane {:?} state", plane_info.handle);
+            info!("failed to test cursor {:?} state", plane_info.handle);
             None
         }
     }
@@ -2788,7 +2788,7 @@ where
             // something is already assigned to our overlay plane
             if frame_state.is_assigned(plane.handle) {
                 trace!(
-                    "skipping plane {:?} with zpos {:?} for element {:?}, already has element assigned, skipping",
+                    "skipping {:?} with zpos {:?} for element {:?}, already has element assigned, skipping",
                     plane.handle,
                     plane.zpos,
                     element_id,
@@ -2801,7 +2801,7 @@ where
 
             if is_underlay && (!element_is_opaque(element, scale) || self.primary_is_opaque) {
                 trace!(
-                    "skipping direct scan-out on underlay-plane plane {:?} with zpos {:?}, element {:?} is not opaque or primary plane has no alpha channel",
+                    "skipping direct scan-out on underlay {:?} with zpos {:?}, element {:?} is not opaque or primary plane has no alpha channel",
                     plane.handle,
                     plane.zpos,
                     element_id
@@ -2814,7 +2814,7 @@ where
             // we can not assign it to any overlay plane
             if overlaps_with_primary_plane_element && !is_underlay {
                 trace!(
-                    "skipping direct scan-out on plane {:?} with zpos {:?}, element {:?} overlaps with element on primary plane", plane.handle, plane.zpos, element_id,
+                    "skipping direct scan-out on {:?} with zpos {:?}, element {:?} overlaps with element on primary plane", plane.handle, plane.zpos, element_id,
                 );
                 return Ok(Err(None));
             }
@@ -2834,7 +2834,7 @@ where
             // plane for direct scan-out
             if overlaps_with_plane_underneath {
                 trace!(
-                    "skipping direct scan-out on plane {:?} with zpos {:?}, element {:?} geometry {:?} overlaps with plane underneath", plane.handle, plane.zpos, element_id, element_geometry,
+                    "skipping direct scan-out on {:?} with zpos {:?}, element {:?} geometry {:?} overlaps with plane underneath", plane.handle, plane.zpos, element_id, element_geometry,
                 );
                 continue;
             }
@@ -2888,7 +2888,7 @@ where
         // TODO: We should check if there is already an element assigned to the primary plane for completeness here
 
         trace!(
-            "trying to assign element {:?} to primary plane {:?}",
+            "trying to assign element {:?} to primary {:?}",
             element.id(),
             self.planes.primary.handle
         );
@@ -2997,17 +2997,13 @@ where
         let plane_claim = match self.surface.claim_plane(plane.handle) {
             Some(claim) => claim,
             None => {
-                trace!(
-                    "failed to claim plane {:?} for element {:?}",
-                    plane.handle,
-                    element_id
-                );
+                trace!("failed to claim {:?} for element {:?}", plane.handle, element_id);
                 return Ok(Err(None));
             }
         };
 
         // Try to assign the element to a plane
-        trace!("testing direct scan-out for element {:?} on plane {:?} with zpos {:?}: fb: {:?}, underlying storage: {:?}, element_geometry: {:?}", element_id, plane.handle, plane.zpos, &fb, &underlying_storage, element_geometry);
+        trace!("testing direct scan-out for element {:?} on {:?} with zpos {:?}: fb: {:?}, underlying storage: {:?}, element_geometry: {:?}", element_id, plane.handle, plane.zpos, &fb, &underlying_storage, element_geometry);
 
         let transform = apply_output_transform(
             apply_underlying_storage_transform(element.transform(), underlying_storage),
@@ -3107,7 +3103,7 @@ where
             output_damage.extend(element_output_damage);
 
             trace!(
-                "successfully assigned element {:?} to plane {:?} with zpos {:?} for direct scan-out",
+                "successfully assigned element {:?} to {:?} with zpos {:?} for direct scan-out",
                 element_id,
                 plane.handle,
                 plane.zpos,
@@ -3116,7 +3112,7 @@ where
             Ok(Ok(*plane))
         } else {
             trace!(
-                "skipping direct scan-out on plane {:?} with zpos {:?} for element {:?}, test failed",
+                "skipping direct scan-out on {:?} with zpos {:?} for element {:?}, test failed",
                 plane.handle,
                 plane.zpos,
                 element_id
