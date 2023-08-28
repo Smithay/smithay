@@ -12,8 +12,8 @@ use smithay::{
     },
     delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_input_method_manager,
     delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_presentation,
-    delegate_primary_selection, delegate_relative_pointer, delegate_seat, delegate_shm,
-    delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
+    delegate_primary_selection, delegate_relative_pointer, delegate_seat, delegate_security_context,
+    delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
     delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{
         utils::{
@@ -57,6 +57,9 @@ use smithay::{
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         relative_pointer::RelativePointerManagerState,
         seat::WaylandFocus,
+        security_context::{
+            SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
+        },
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{
@@ -100,6 +103,7 @@ pub struct CalloopData<BackendData: Backend + 'static> {
 #[derive(Debug, Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
+    pub security_context: Option<SecurityContext>,
 }
 impl ClientData for ClientState {
     /// Notification that a client was initialized
@@ -440,6 +444,27 @@ impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
 }
 delegate_fractional_scale!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+impl<BackendData: Backend + 'static> SecurityContextHandler for AnvilState<BackendData> {
+    fn context_created(&mut self, source: SecurityContextListenerSource, security_context: SecurityContext) {
+        self.handle
+            .insert_source(source, move |client_stream, _, data| {
+                let client_state = ClientState {
+                    security_context: Some(security_context.clone()),
+                    ..ClientState::default()
+                };
+                if let Err(err) = data
+                    .display
+                    .handle()
+                    .insert_client(client_stream, Arc::new(client_state))
+                {
+                    warn!("Error adding wayland client: {}", err);
+                };
+            })
+            .expect("Failed to init wayland socket source");
+    }
+}
+delegate_security_context!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 #[cfg(feature = "xwayland")]
 impl<BackendData: Backend + 'static> XWaylandKeyboardGrabHandler for AnvilState<BackendData> {
     fn keyboard_focus_for_xsurface(&self, surface: &WlSurface) -> Option<FocusTarget> {
@@ -519,6 +544,11 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         if BackendData::HAS_RELATIVE_MOTION {
             RelativePointerManagerState::new::<Self>(&dh);
         }
+        SecurityContextState::new::<Self, _>(&dh, |client| {
+            client
+                .get_data::<ClientState>()
+                .map_or(true, |client_state| client_state.security_context.is_none())
+        });
 
         // init input
         let seat_name = backend_data.seat_name();
