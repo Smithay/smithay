@@ -1,6 +1,13 @@
 use std::{fmt, sync::Mutex};
 
-use wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1;
+use wayland_protocols::wp::{
+    pointer_gestures::zv1::server::{
+        zwp_pointer_gesture_hold_v1::ZwpPointerGestureHoldV1,
+        zwp_pointer_gesture_pinch_v1::ZwpPointerGesturePinchV1,
+        zwp_pointer_gesture_swipe_v1::ZwpPointerGestureSwipeV1,
+    },
+    relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1,
+};
 use wayland_server::{
     backend::{ClientId, ObjectId},
     protocol::{
@@ -37,6 +44,21 @@ impl<D: SeatHandler> PointerHandle<D> {
     pub(crate) fn new_relative_pointer(&self, pointer: ZwpRelativePointerV1) {
         let mut guard = self.known_relative_pointers.lock().unwrap();
         guard.push(pointer);
+    }
+
+    pub(crate) fn new_swipe_gesture(&self, gesture: ZwpPointerGestureSwipeV1) {
+        let mut guard = self.known_swipe_gestures.lock().unwrap();
+        guard.push(gesture);
+    }
+
+    pub(crate) fn new_pinch_gesture(&self, gesture: ZwpPointerGesturePinchV1) {
+        let mut guard = self.known_pinch_gestures.lock().unwrap();
+        guard.push(gesture);
+    }
+
+    pub(crate) fn new_hold_gesture(&self, gesture: ZwpPointerGestureHoldV1) {
+        let mut guard = self.known_hold_gestures.lock().unwrap();
+        guard.push(gesture);
     }
 }
 
