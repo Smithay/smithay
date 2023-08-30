@@ -73,12 +73,12 @@
 #[cfg(all(feature = "wayland_frontend", feature = "backend_gbm"))]
 pub mod compositor;
 pub(crate) mod device;
-pub(self) mod error;
+mod error;
 #[cfg(feature = "backend_gbm")]
 pub mod gbm;
 pub mod node;
 
-pub(self) mod surface;
+mod surface;
 
 use crate::utils::DevPath;
 pub use device::{

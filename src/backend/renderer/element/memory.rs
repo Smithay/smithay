@@ -204,9 +204,10 @@
 
 use std::{
     any::TypeId,
+    cell::{RefCell, RefMut},
     collections::{hash_map::Entry, HashMap},
     marker::PhantomData,
-    sync::{Arc, Mutex, MutexGuard},
+    rc::Rc,
 };
 
 use tracing::{instrument, trace, warn};
@@ -370,7 +371,7 @@ impl MemoryRenderBufferInner {
 #[derive(Debug, Clone)]
 pub struct MemoryRenderBuffer {
     id: Id,
-    inner: Arc<Mutex<MemoryRenderBufferInner>>,
+    inner: Rc<RefCell<MemoryRenderBufferInner>>,
 }
 
 impl Default for MemoryRenderBuffer {
@@ -394,7 +395,7 @@ impl MemoryRenderBuffer {
         let inner = MemoryRenderBufferInner::new(format, size, scale, transform, opaque_regions);
         MemoryRenderBuffer {
             id: Id::new(),
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Rc::new(RefCell::new(inner)),
         }
     }
 
@@ -410,13 +411,13 @@ impl MemoryRenderBuffer {
         let inner = MemoryRenderBufferInner::from_memory(mem, format, size, scale, transform, opaque_regions);
         MemoryRenderBuffer {
             id: Id::new(),
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Rc::new(RefCell::new(inner)),
         }
     }
 
     /// Render to the memory buffer
     pub fn render(&mut self) -> RenderContext<'_> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.borrow_mut();
         RenderContext {
             buffer: guard,
             damage: Vec::new(),
@@ -425,11 +426,11 @@ impl MemoryRenderBuffer {
     }
 
     fn current_commit(&self) -> CommitCounter {
-        self.inner.lock().unwrap().damage_bag.current_commit()
+        self.inner.borrow_mut().damage_bag.current_commit()
     }
 
     fn size(&self) -> Size<i32, Logical> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.borrow_mut();
         guard.size.to_logical(guard.scale, guard.transform)
     }
 }
@@ -437,7 +438,7 @@ impl MemoryRenderBuffer {
 /// A render context for [`MemoryRenderBuffer`]
 #[derive(Debug)]
 pub struct RenderContext<'a> {
-    buffer: MutexGuard<'a, MemoryRenderBufferInner>,
+    buffer: RefMut<'a, MemoryRenderBufferInner>,
     damage: Vec<Rectangle<i32, Buffer>>,
     opaque_regions: Option<Option<Vec<Rectangle<i32, Buffer>>>>,
 }
@@ -505,7 +506,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         R: ImportMem,
         <R as Renderer>::TextureId: 'static,
     {
-        buffer.inner.lock().unwrap().import_texture(renderer)?;
+        buffer.inner.borrow_mut().import_texture(renderer)?;
         Ok(MemoryRenderBufferRenderElement {
             location: location.into(),
             buffer: buffer.clone(),
@@ -541,7 +542,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         let logical_size = self.logical_size();
         let physical_size = self.physical_size(scale);
         let logical_scale = self.scale();
-        let guard = self.buffer.inner.lock().unwrap();
+        let guard = self.buffer.inner.borrow_mut();
 
         guard
             .damage_bag
@@ -577,7 +578,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         let logical_size = self.logical_size();
         let physical_size = self.physical_size(scale);
         let logical_scale = self.scale();
-        let guard = self.buffer.inner.lock().unwrap();
+        let guard = self.buffer.inner.borrow_mut();
 
         guard
             .opaque_regions
@@ -626,12 +627,12 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
     }
 
     fn transform(&self) -> Transform {
-        self.buffer.inner.lock().unwrap().transform
+        self.buffer.inner.borrow_mut().transform
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
         let logical_size = self.logical_size();
-        let guard = self.buffer.inner.lock().unwrap();
+        let guard = self.buffer.inner.borrow_mut();
         self.src
             .map(|src| src.to_buffer(guard.scale as f64, guard.transform, &logical_size.to_f64()))
             .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), guard.size).to_f64())
@@ -672,7 +673,7 @@ where
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
     ) -> Result<(), <R as Renderer>::Error> {
-        let mut guard = self.buffer.inner.lock().unwrap();
+        let mut guard = self.buffer.inner.borrow_mut();
         let transform = guard.transform;
         let Some(texture) = guard.get_texture::<R>(frame.id()) else {
             warn!("trying to render texture from different renderer");

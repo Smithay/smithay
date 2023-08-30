@@ -942,6 +942,7 @@ unsafe impl Send for EGLBufferReader {}
 #[cfg(feature = "use_system_lib")]
 impl EGLBufferReader {
     fn new(display: Arc<EGLDisplayHandle>, wayland: *mut wl_display) -> Self {
+        #[allow(clippy::arc_with_non_send_sync)]
         Self {
             display,
             wayland: Some(Arc::new(wayland)),

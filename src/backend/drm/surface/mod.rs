@@ -463,7 +463,9 @@ impl DrmSurface {
                             .cast::<u8>()
                             .offset(fmt_mod_blob.modifiers_offset as isize)
                             as *const _;
+                        #[allow(clippy::unnecessary_cast)]
                         let formats_ptr = formats_ptr as *const u32;
+                        #[allow(clippy::unnecessary_cast)]
                         let modifiers_ptr = modifiers_ptr as *const drm_ffi::drm_format_modifier;
 
                         for i in 0..fmt_mod_blob.count_modifiers {
