@@ -39,7 +39,7 @@ impl Drop for InstanceInner {
                     .debug_utils
                     .destroy_debug_utils_messenger(debug.debug_messenger, None);
             }
-            Some(unsafe { Box::from_raw(debug.span_ptr as *mut tracing::Span) })
+            Some(unsafe { Box::from_raw(debug.span_ptr) })
         } else {
             None
         };

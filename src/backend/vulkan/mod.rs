@@ -335,6 +335,7 @@ impl Instance {
         info!("Created new instance");
         info!("Enabled instance extensions: {:?}", inner.enabled_extensions);
 
+        #[allow(clippy::arc_with_non_send_sync)]
         Ok(Instance(Arc::new(inner)))
     }
 

@@ -77,10 +77,7 @@ impl<Kind> Time<Kind> {
 
 impl<Kind> Clone for Time<Kind> {
     fn clone(&self) -> Self {
-        Self {
-            tp: self.tp,
-            _kind: self._kind,
-        }
+        *self
     }
 }
 
