@@ -104,11 +104,7 @@ where
         code: Fourcc,
     ) -> Result<(Slot<BufferObject<()>>, Swapchain<A>, bool), (A, Error<A::Error>)> {
         // select a format
-        let mut plane_formats = match drm.supported_formats(drm.plane()) {
-            Ok(formats) => formats.iter().cloned().collect::<HashSet<_>>(),
-            Err(err) => return Err((allocator, err.into())),
-        };
-
+        let mut plane_formats = drm.planes().primary.formats.clone();
         let opaque_code = get_opaque(code).unwrap_or(code);
         if !plane_formats
             .iter()

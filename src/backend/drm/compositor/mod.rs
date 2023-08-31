@@ -1334,8 +1334,14 @@ where
         let surface = Arc::new(surface);
         let mut planes = match planes {
             Some(planes) => planes,
-            None => surface.planes()?,
+            None => surface.planes().clone(),
         };
+
+        // We do not support direct scan-out on legacy
+        if surface.is_legacy() {
+            planes.cursor = None;
+            planes.overlay.clear();
+        }
 
         // The selection algorithm expects the planes to be ordered form front to back
         planes
@@ -1419,10 +1425,7 @@ where
         code: DrmFourcc,
     ) -> Result<(Swapchain<A>, Frame<A, F>, bool), (A, FrameErrorType<A, F>)> {
         // select a format
-        let mut plane_formats = match drm.supported_formats(drm.plane()) {
-            Ok(formats) => formats.iter().cloned().collect::<HashSet<_>>(),
-            Err(err) => return Err((allocator, err.into())),
-        };
+        let mut plane_formats = planes.primary.formats.clone();
 
         let opaque_code = get_opaque(code).unwrap_or(code);
         if !plane_formats

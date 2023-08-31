@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd};
 use std::sync::Arc;
 
@@ -12,11 +11,10 @@ pub(super) mod atomic;
 pub(super) mod gbm;
 pub(super) mod legacy;
 use super::{
-    device::PlaneClaimStorage, error::Error, plane_formats, plane_type, planes, DrmDeviceFd, PlaneClaim,
-    PlaneType, Planes,
+    device::PlaneClaimStorage, error::Error, plane_type, DrmDeviceFd, PlaneClaim, PlaneType, Planes,
 };
+use crate::utils::DevPath;
 use crate::utils::{Buffer, Physical, Point, Rectangle, Transform};
-use crate::{backend::allocator::Format, utils::DevPath};
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
 
@@ -27,9 +25,8 @@ pub struct DrmSurface {
     #[allow(dead_code)]
     pub(super) dev_id: dev_t,
     pub(super) crtc: crtc::Handle,
-    pub(super) primary: plane::Handle,
+    pub(super) planes: Planes,
     pub(super) internal: Arc<DrmSurfaceInternal>,
-    pub(super) has_universal_planes: bool,
     pub(super) plane_claim_storage: PlaneClaimStorage,
 }
 
@@ -194,7 +191,7 @@ impl DrmSurface {
 
     /// Returns the underlying primary [`plane`](drm::control::plane) of this surface
     pub fn plane(&self) -> plane::Handle {
-        self.primary
+        self.planes.primary.handle
     }
 
     /// Currently used [`connector`](drm::control::connector)s of this surface
@@ -384,27 +381,29 @@ impl DrmSurface {
         }
     }
 
-    /// Returns a set of supported pixel formats for attached buffers
-    pub fn supported_formats(&self, plane: plane::Handle) -> Result<HashSet<Format>, Error> {
-        plane_formats(self, plane)
-    }
-
     /// Returns a set of available planes for this surface
-    pub fn planes(&self) -> Result<Planes, Error> {
-        let has_universal_planes = match &*self.internal {
-            DrmSurfaceInternal::Atomic(_) => self.has_universal_planes,
-            // Disable the planes on legacy, we do not support them on legacy anyway
-            DrmSurfaceInternal::Legacy(_) => false,
-        };
-
-        planes(self, &self.crtc, has_universal_planes)
+    pub fn planes(&self) -> &Planes {
+        &self.planes
     }
 
     /// Claim a plane so that it won't be used by a different crtc
     ///  
     /// Returns `None` if the plane could not be claimed
     pub fn claim_plane(&self, plane: plane::Handle) -> Option<PlaneClaim> {
-        self.plane_claim_storage.claim(plane, self.crtc)
+        // Validate that we are called with an plane that belongs to us
+        if self.planes.primary.handle == plane
+            || self
+                .planes
+                .cursor
+                .as_ref()
+                .map(|p| p.handle == plane)
+                .unwrap_or(false)
+            || self.planes.overlay.iter().any(|p| p.handle == plane)
+        {
+            self.plane_claim_storage.claim(plane, self.crtc)
+        } else {
+            None
+        }
     }
 
     /// Re-evaluates the current state of the crtc.
