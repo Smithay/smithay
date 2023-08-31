@@ -323,15 +323,7 @@ xdg_role!(
         ///
         /// For D-Bus activatable applications, the app ID is used as the D-Bus
         /// service name.
-        pub app_id: Option<String>,
-        /// Minimum size requested for this surface
-        ///
-        /// A value of 0 on an axis means this axis is not constrained
-        pub min_size: Size<i32, Logical>,
-        /// Maximum size requested for this surface
-        ///
-        /// A value of 0 on an axis means this axis is not constrained
-        pub max_size: Size<i32, Logical>
+        pub app_id: Option<String>
     }
 );
 
