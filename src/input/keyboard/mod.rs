@@ -26,6 +26,23 @@ pub use modifiers_state::ModifiersState;
 mod xkb_config;
 pub use xkb_config::XkbConfig;
 
+const MODIFIER_KEYSYMS: [Keysym; 14] = [
+    xkb::KEY_Shift_L,
+    xkb::KEY_Shift_R,
+    xkb::KEY_Control_L,
+    xkb::KEY_Control_R,
+    xkb::KEY_Caps_Lock,
+    xkb::KEY_Shift_Lock,
+    xkb::KEY_Meta_L,
+    xkb::KEY_Meta_R,
+    xkb::KEY_Alt_L,
+    xkb::KEY_Alt_R,
+    xkb::KEY_Super_L,
+    xkb::KEY_Super_R,
+    xkb::KEY_Hyper_L,
+    xkb::KEY_Hyper_R,
+];
+
 /// Trait representing object that can receive keyboard interactions
 pub trait KeyboardTarget<D>: IsAlive + PartialEq + Clone + fmt::Debug + Send
 where
@@ -751,14 +768,16 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
                     .inner
                     .pressed_keys
                     .iter()
-                    .map(|keycode| {
-                        KeysymHandle {
-                            // Offset the keycode by 8, as the evdev XKB rules reflect X's
-                            // broken keycode system, which starts at 8.
-                            keycode: keycode + 8,
-                            state: &self.inner.state,
-                            keymap: &self.inner.keymap,
-                        }
+                    .filter_map(|keycode| {
+                        MODIFIER_KEYSYMS.contains(keycode).then(|| {
+                            KeysymHandle {
+                                // Offset the keycode by 8, as the evdev XKB rules reflect X's
+                                // broken keycode system, which starts at 8.
+                                keycode: keycode + 8,
+                                state: &self.inner.state,
+                                keymap: &self.inner.keymap,
+                            }
+                        })
                     })
                     .collect();
                 focus.enter(self.seat, data, keys, serial);
