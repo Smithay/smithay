@@ -88,7 +88,7 @@ use x11rb::{
     protocol::{
         composite::{ConnectionExt as _, Redirect},
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
-        xfixes::{ConnectionExt as _, SelectionEventMask},
+        xfixes::{ConnectionExt as _, CursorNotifyMask, SelectionEventMask},
         xproto::{
             Atom, AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureWindowAux, ConnectionExt as _,
             CreateGCAux, CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper,
@@ -352,6 +352,9 @@ pub trait XwmHandler {
     fn cleared_selection(&mut self, xwm: XwmId, selection: SelectionType) {
         let _ = (xwm, selection);
     }
+
+    /// The current cursor has changed
+    fn cursor_changed(&mut self, xwm: XwmId, serial: u32);
 }
 
 /// The runtime state of an reparenting XWayland window manager.
@@ -367,6 +370,8 @@ pub struct X11Wm {
     wl_client: Client,
     unpaired_surfaces: HashMap<u32, X11Window>,
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
+
+    cursor: XWmCursor,
 
     // selections
     _xfixes_data: QueryExtensionReply,
@@ -388,6 +393,12 @@ impl Drop for X11Wm {
         let _ = self.conn.destroy_window(self.wm_window);
         XWM_IDS.lock().unwrap().remove(&self.id.0);
     }
+}
+
+#[derive(Debug)]
+struct XWmCursor {
+    conn: Arc<RustConnection>,
+    window: X11Window,
 }
 
 #[derive(Debug)]
@@ -525,6 +536,42 @@ impl Drop for OutgoingTransfer {
                 "OutgoingTransfer freed before being removed from EventLoop"
             );
         }
+    }
+}
+
+impl XWmCursor {
+    fn new(
+        conn: &Arc<RustConnection>,
+        screen: &Screen,
+    ) -> Result<Self, ReplyOrIdError> {
+        let window = conn.generate_id()?;
+        conn.create_window(
+            screen.root_depth,
+            window,
+            screen.root,
+            0,
+            0,
+            10,
+            10,
+            0,
+            WindowClass::INPUT_OUTPUT,
+            screen.root_visual,
+            &CreateWindowAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+        )?;
+
+        conn.xfixes_select_cursor_input(window, CursorNotifyMask::DISPLAY_CURSOR)?;
+        conn.flush()?;
+
+        Ok(XWmCursor {
+            conn: conn.clone(),
+            window,
+        })
+    }
+}
+
+impl Drop for XWmCursor {
+    fn drop(&mut self) {
+        let _ = self.conn.destroy_window(self.window);
     }
 }
 
@@ -828,6 +875,7 @@ impl X11Wm {
         }
         conn.xfixes_query_version(1, 0)?.reply_unchecked()?; // we just need version 1 for clipboard monitoring
 
+        let cursor = XWmCursor::new(&conn, &screen)?;
         let clipboard = XWmSelection::new(&conn, &screen, &atoms, atoms.CLIPBOARD)?;
         let primary = XWmSelection::new(&conn, &screen, &atoms, atoms.PRIMARY)?;
 
@@ -840,6 +888,7 @@ impl X11Wm {
             atoms,
             wm_window: win,
             wl_client: client,
+            cursor,
             _xfixes_data,
             clipboard,
             primary,
@@ -858,6 +907,11 @@ impl X11Wm {
             }
         })?;
         Ok(wm)
+    }
+
+    pub fn get_cursor_image(&self) -> Result<(u16, u16, u16, u16, Vec<u32>), ConnectionError> {
+        let reply = self.conn.xfixes_get_cursor_image()?.reply().unwrap();
+        Ok((reply.width, reply.height, reply.xhot, reply.yhot, reply.cursor_image))
     }
 
     /// Id of this X11 WM
@@ -1622,6 +1676,10 @@ fn handle_event<D: XwmHandler + 'static>(
                 drop(_guard);
                 state.destroyed_window(xwm_id, surface);
             }
+        }
+        Event::XfixesCursorNotify(n) => {
+            drop(_guard);
+            state.cursor_changed(xwm_id, n.cursor_serial);
         }
         Event::XfixesSelectionNotify(n) => {
             let selection = match n.selection {
