@@ -13,7 +13,11 @@ use smithay::{
     desktop::{space::SpaceElement, utils::OutputPresentationFeedback, Window, WindowSurfaceType},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget, RelativeMotionEvent},
+        pointer::{
+            AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
+            GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
+            GestureSwipeUpdateEvent, MotionEvent, PointerTarget, RelativeMotionEvent,
+        },
         Seat,
     },
     output::Output,
@@ -323,6 +327,126 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
                 WindowElement::X11(w) => PointerTarget::leave(w, seat, data, serial, time),
             };
             state.ptr_entered_window = false;
+        }
+    }
+    fn gesture_swipe_begin(
+        &self,
+        seat: &Seat<AnvilState<Backend>>,
+        data: &mut AnvilState<Backend>,
+        event: &GestureSwipeBeginEvent,
+    ) {
+        let state = self.decoration_state();
+        if !state.is_ssd || state.ptr_entered_window {
+            match self {
+                WindowElement::Wayland(w) => PointerTarget::gesture_swipe_begin(w, seat, data, event),
+                #[cfg(feature = "xwayland")]
+                WindowElement::X11(w) => PointerTarget::gesture_swipe_begin(w, seat, data, event),
+            }
+        }
+    }
+    fn gesture_swipe_update(
+        &self,
+        seat: &Seat<AnvilState<Backend>>,
+        data: &mut AnvilState<Backend>,
+        event: &GestureSwipeUpdateEvent,
+    ) {
+        let state = self.decoration_state();
+        if !state.is_ssd || state.ptr_entered_window {
+            match self {
+                WindowElement::Wayland(w) => PointerTarget::gesture_swipe_update(w, seat, data, event),
+                #[cfg(feature = "xwayland")]
+                WindowElement::X11(w) => PointerTarget::gesture_swipe_update(w, seat, data, event),
+            }
+        }
+    }
+    fn gesture_swipe_end(
+        &self,
+        seat: &Seat<AnvilState<Backend>>,
+        data: &mut AnvilState<Backend>,
+        event: &GestureSwipeEndEvent,
+    ) {
+        let state = self.decoration_state();
+        if !state.is_ssd || state.ptr_entered_window {
+            match self {
+                WindowElement::Wayland(w) => PointerTarget::gesture_swipe_end(w, seat, data, event),
+                #[cfg(feature = "xwayland")]
+                WindowElement::X11(w) => PointerTarget::gesture_swipe_end(w, seat, data, event),
+            }
+        }
+    }
+    fn gesture_pinch_begin(
+        &self,
+        seat: &Seat<AnvilState<Backend>>,
+        data: &mut AnvilState<Backend>,
+        event: &GesturePinchBeginEvent,
+    ) {
+        let state = self.decoration_state();
+        if !state.is_ssd || state.ptr_entered_window {
+            match self {
+                WindowElement::Wayland(w) => PointerTarget::gesture_pinch_begin(w, seat, data, event),
+                #[cfg(feature = "xwayland")]
+                WindowElement::X11(w) => PointerTarget::gesture_pinch_begin(w, seat, data, event),
+            }
+        }
+    }
+    fn gesture_pinch_update(
+        &self,
+        seat: &Seat<AnvilState<Backend>>,
+        data: &mut AnvilState<Backend>,
+        event: &GesturePinchUpdateEvent,
+    ) {
+        let state = self.decoration_state();
+        if !state.is_ssd || state.ptr_entered_window {
+            match self {
+                WindowElement::Wayland(w) => PointerTarget::gesture_pinch_update(w, seat, data, event),
+                #[cfg(feature = "xwayland")]
+                WindowElement::X11(w) => PointerTarget::gesture_pinch_update(w, seat, data, event),
+            }
+        }
+    }
+    fn gesture_pinch_end(
+        &self,
+        seat: &Seat<AnvilState<Backend>>,
+        data: &mut AnvilState<Backend>,
+        event: &GesturePinchEndEvent,
+    ) {
+        let state = self.decoration_state();
+        if !state.is_ssd || state.ptr_entered_window {
+            match self {
+                WindowElement::Wayland(w) => PointerTarget::gesture_pinch_end(w, seat, data, event),
+                #[cfg(feature = "xwayland")]
+                WindowElement::X11(w) => PointerTarget::gesture_pinch_end(w, seat, data, event),
+            }
+        }
+    }
+    fn gesture_hold_begin(
+        &self,
+        seat: &Seat<AnvilState<Backend>>,
+        data: &mut AnvilState<Backend>,
+        event: &GestureHoldBeginEvent,
+    ) {
+        let state = self.decoration_state();
+        if !state.is_ssd || state.ptr_entered_window {
+            match self {
+                WindowElement::Wayland(w) => PointerTarget::gesture_hold_begin(w, seat, data, event),
+                #[cfg(feature = "xwayland")]
+                WindowElement::X11(w) => PointerTarget::gesture_hold_begin(w, seat, data, event),
+            }
+        }
+    }
+    fn gesture_hold_end(
+        &self,
+        seat: &Seat<AnvilState<Backend>>,
+        data: &mut AnvilState<Backend>,
+        event: &GestureHoldEndEvent,
+    ) {
+        let state = self.decoration_state();
+        if !state.is_ssd || state.ptr_entered_window {
+            match self {
+                WindowElement::Wayland(w) => PointerTarget::gesture_hold_end(w, seat, data, event),
+                #[cfg(feature = "xwayland")]
+                WindowElement::X11(w) => PointerTarget::gesture_hold_end(w, seat, data, event),
+            }
         }
     }
 }
