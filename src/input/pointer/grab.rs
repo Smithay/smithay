@@ -7,7 +7,11 @@ use crate::{
     utils::{Logical, Point},
 };
 
-use super::{AxisFrame, ButtonEvent, Focus, MotionEvent, PointerInnerHandle, RelativeMotionEvent};
+use super::{
+    AxisFrame, ButtonEvent, Focus, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
+    GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
+    GestureSwipeUpdateEvent, MotionEvent, PointerInnerHandle, RelativeMotionEvent,
+};
 
 /// A trait to implement a pointer grab
 ///
@@ -69,6 +73,94 @@ pub trait PointerGrab<D: SeatHandler>: Send {
     /// You generally will want to invoke `PointerInnerHandle::axis()` as part of your processing. If you
     /// don't, the rest of the compositor will behave as if the axis event never occurred.
     fn axis(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, details: AxisFrame);
+    /// A pointer of a given seat started a swipe gesture
+    ///
+    /// This method allows you attach additional behavior to a swipe gesture begin event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::gesture_swipe_begin()` as part of your processing.
+    /// If you don't, the rest of the compositor will behave as if the event never occurred.
+    fn gesture_swipe_begin(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureSwipeBeginEvent,
+    );
+    /// A pointer of a given seat updated a swipe gesture
+    ///
+    /// This method allows you attach additional behavior to a swipe gesture update event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::gesture_swipe_update()` as part of your processing.
+    /// If you don't, the rest of the compositor will behave as if the event never occurred.
+    fn gesture_swipe_update(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureSwipeUpdateEvent,
+    );
+    /// A pointer of a given seat ended a swipe gesture
+    ///
+    /// This method allows you attach additional behavior to a swipe gesture end event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::gesture_swipe_end()` as part of your processing.
+    /// If you don't, the rest of the compositor will behave as if the event never occurred.
+    fn gesture_swipe_end(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureSwipeEndEvent,
+    );
+    /// A pointer of a given seat started a pinch gesture
+    ///
+    /// This method allows you attach additional behavior to a pinch gesture begin event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::gesture_pinch_begin()` as part of your processing.
+    /// If you don't, the rest of the compositor will behave as if the event never occurred.
+    fn gesture_pinch_begin(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GesturePinchBeginEvent,
+    );
+    /// A pointer of a given seat updated a pinch gesture
+    ///
+    /// This method allows you attach additional behavior to a pinch gesture update event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::gesture_pinch_update()` as part of your processing.
+    /// If you don't, the rest of the compositor will behave as if the event never occurred.
+    fn gesture_pinch_update(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GesturePinchUpdateEvent,
+    );
+    /// A pointer of a given seat ended a pinch gesture
+    ///
+    /// This method allows you attach additional behavior to a pinch gesture end event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::gesture_pinch_end()` as part of your processing.
+    /// If you don't, the rest of the compositor will behave as if the event never occurred.
+    fn gesture_pinch_end(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GesturePinchEndEvent,
+    );
+    /// A pointer of a given seat started a hold gesture
+    ///
+    /// This method allows you attach additional behavior to a hold gesture begin event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::gesture_hold_begin()` as part of your processing.
+    /// If you don't, the rest of the compositor will behave as if the event never occurred.
+    fn gesture_hold_begin(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureHoldBeginEvent,
+    );
+    /// A pointer of a given seat ended a hold gesture
+    ///
+    /// This method allows you attach additional behavior to a hold gesture end event, possibly altering it.
+    /// You generally will want to invoke `PointerInnerHandle::gesture_hold_end()` as part of your processing.
+    /// If you don't, the rest of the compositor will behave as if the event never occurred.
+    fn gesture_hold_end(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureHoldEndEvent,
+    );
     /// The data about the event that started the grab.
     fn start_data(&self) -> &GrabStartData<D>;
 }
@@ -168,6 +260,78 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
         handle.axis(data, details);
     }
 
+    fn gesture_swipe_begin(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureSwipeBeginEvent,
+    ) {
+        handle.gesture_swipe_begin(data, event);
+    }
+
+    fn gesture_swipe_update(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureSwipeUpdateEvent,
+    ) {
+        handle.gesture_swipe_update(data, event);
+    }
+
+    fn gesture_swipe_end(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureSwipeEndEvent,
+    ) {
+        handle.gesture_swipe_end(data, event);
+    }
+
+    fn gesture_pinch_begin(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GesturePinchBeginEvent,
+    ) {
+        handle.gesture_pinch_begin(data, event);
+    }
+
+    fn gesture_pinch_update(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GesturePinchUpdateEvent,
+    ) {
+        handle.gesture_pinch_update(data, event);
+    }
+
+    fn gesture_pinch_end(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GesturePinchEndEvent,
+    ) {
+        handle.gesture_pinch_end(data, event);
+    }
+
+    fn gesture_hold_begin(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureHoldBeginEvent,
+    ) {
+        handle.gesture_hold_begin(data, event);
+    }
+
+    fn gesture_hold_end(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureHoldEndEvent,
+    ) {
+        handle.gesture_hold_end(data, event);
+    }
+
     fn start_data(&self) -> &GrabStartData<D> {
         unreachable!()
     }
@@ -213,6 +377,78 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
 
     fn axis(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, details: AxisFrame) {
         handle.axis(data, details);
+    }
+
+    fn gesture_swipe_begin(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureSwipeBeginEvent,
+    ) {
+        handle.gesture_swipe_begin(data, event);
+    }
+
+    fn gesture_swipe_update(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureSwipeUpdateEvent,
+    ) {
+        handle.gesture_swipe_update(data, event);
+    }
+
+    fn gesture_swipe_end(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureSwipeEndEvent,
+    ) {
+        handle.gesture_swipe_end(data, event);
+    }
+
+    fn gesture_pinch_begin(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GesturePinchBeginEvent,
+    ) {
+        handle.gesture_pinch_begin(data, event);
+    }
+
+    fn gesture_pinch_update(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GesturePinchUpdateEvent,
+    ) {
+        handle.gesture_pinch_update(data, event);
+    }
+
+    fn gesture_pinch_end(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GesturePinchEndEvent,
+    ) {
+        handle.gesture_pinch_end(data, event);
+    }
+
+    fn gesture_hold_begin(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureHoldBeginEvent,
+    ) {
+        handle.gesture_hold_begin(data, event);
+    }
+
+    fn gesture_hold_end(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        event: &GestureHoldEndEvent,
+    ) {
+        handle.gesture_hold_end(data, event);
     }
 
     fn start_data(&self) -> &GrabStartData<D> {

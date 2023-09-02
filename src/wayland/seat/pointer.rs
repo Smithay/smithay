@@ -24,13 +24,15 @@ use crate::{
     backend::input::{Axis, AxisSource, ButtonState},
     input::{
         pointer::{
-            AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus, MotionEvent, PointerHandle,
-            PointerInternal, PointerTarget, RelativeMotionEvent,
+            AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus, GestureHoldBeginEvent,
+            GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
+            GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent,
+            PointerHandle, PointerInternal, PointerTarget, RelativeMotionEvent,
         },
         Seat,
     },
-    utils::Serial,
-    wayland::compositor,
+    utils::{Serial, SERIAL_COUNTER},
+    wayland::{compositor, pointer_gestures::PointerGestureUserData},
 };
 
 use super::{SeatHandler, SeatState, WaylandFocus};
@@ -95,6 +97,51 @@ fn for_each_focused_relative_pointers<D: SeatHandler + 'static>(
     }
 }
 
+fn for_each_focused_swipe_gestures<D: SeatHandler + 'static>(
+    seat: &Seat<D>,
+    surface: &WlSurface,
+    mut f: impl FnMut(ZwpPointerGestureSwipeV1),
+) {
+    if let Some(pointer) = seat.get_pointer() {
+        let inner = pointer.known_swipe_gestures.lock().unwrap();
+        for ptr in &*inner {
+            if ptr.id().same_client_as(&surface.id()) {
+                f(ptr.clone())
+            }
+        }
+    }
+}
+
+fn for_each_focused_pinch_gestures<D: SeatHandler + 'static>(
+    seat: &Seat<D>,
+    surface: &WlSurface,
+    mut f: impl FnMut(ZwpPointerGesturePinchV1),
+) {
+    if let Some(pointer) = seat.get_pointer() {
+        let inner = pointer.known_pinch_gestures.lock().unwrap();
+        for ptr in &*inner {
+            if ptr.id().same_client_as(&surface.id()) {
+                f(ptr.clone())
+            }
+        }
+    }
+}
+
+fn for_each_focused_hold_gestures<D: SeatHandler + 'static>(
+    seat: &Seat<D>,
+    surface: &WlSurface,
+    mut f: impl FnMut(ZwpPointerGestureHoldV1),
+) {
+    if let Some(pointer) = seat.get_pointer() {
+        let inner = pointer.known_hold_gestures.lock().unwrap();
+        for ptr in &*inner {
+            if ptr.id().same_client_as(&surface.id()) {
+                f(ptr.clone())
+            }
+        }
+    }
+}
+
 #[cfg(feature = "wayland_frontend")]
 impl<D> PointerTarget<D> for WlSurface
 where
@@ -112,7 +159,31 @@ where
             }
         })
     }
-    fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial, _time: u32) {
+    fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial, time: u32) {
+        for_each_focused_swipe_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let ongoing = data.in_progress_on.lock().unwrap().take();
+            if ongoing.is_some() {
+                // Cancel the ongoing gesture.
+                gesture.end(serial.into(), time, 1);
+            }
+        });
+        for_each_focused_pinch_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let ongoing = data.in_progress_on.lock().unwrap().take();
+            if ongoing.is_some() {
+                // Cancel the ongoing gesture.
+                gesture.end(serial.into(), time, 1);
+            }
+        });
+        for_each_focused_hold_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let ongoing = data.in_progress_on.lock().unwrap().take();
+            if ongoing.is_some() {
+                // Cancel the ongoing gesture.
+                gesture.end(serial.into(), time, 1);
+            }
+        });
         for_each_focused_pointers(seat, self, |ptr| {
             ptr.leave(serial.into(), self);
             if ptr.version() >= 5 {
@@ -196,6 +267,127 @@ where
                 }
                 // frame
                 ptr.frame();
+            }
+        })
+    }
+
+    fn gesture_swipe_begin(&self, seat: &Seat<D>, _data: &mut D, event: &GestureSwipeBeginEvent) {
+        for_each_focused_swipe_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let ongoing = data.in_progress_on.lock().unwrap().replace(self.clone());
+            if ongoing.is_some() {
+                // Cancel an ongoing gesture for a different surface.
+                gesture.end(event.serial.into(), event.time, 1);
+            }
+            gesture.begin(event.serial.into(), event.time, self, event.fingers);
+        })
+    }
+
+    fn gesture_swipe_update(&self, seat: &Seat<D>, _data: &mut D, event: &GestureSwipeUpdateEvent) {
+        for_each_focused_swipe_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let mut ongoing = data.in_progress_on.lock().unwrap();
+            // Check that the ongoing gesture is for this surface.
+            if ongoing.as_ref() == Some(self) {
+                gesture.update(event.time, event.delta.x, event.delta.y);
+            } else if ongoing.take().is_some() {
+                // If it was for a different surface, cancel it.
+                gesture.end(SERIAL_COUNTER.next_serial().into(), event.time, 1);
+            }
+        })
+    }
+
+    fn gesture_swipe_end(&self, seat: &Seat<D>, _data: &mut D, event: &GestureSwipeEndEvent) {
+        for_each_focused_swipe_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let ongoing = data.in_progress_on.lock().unwrap().take();
+            // Check if the gesture was ongoing.
+            if ongoing.is_some() {
+                let cancelled = if ongoing.as_ref() == Some(self) {
+                    event.cancelled
+                } else {
+                    // If the gesture was ongoing for any other surface then cancel it.
+                    true
+                };
+                gesture.end(event.serial.into(), event.time, cancelled.into());
+            }
+        })
+    }
+
+    fn gesture_pinch_begin(&self, seat: &Seat<D>, _data: &mut D, event: &GesturePinchBeginEvent) {
+        for_each_focused_pinch_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let ongoing = data.in_progress_on.lock().unwrap().replace(self.clone());
+            if ongoing.is_some() {
+                // Cancel an ongoing gesture for a different surface.
+                gesture.end(event.serial.into(), event.time, 1);
+            }
+            gesture.begin(event.serial.into(), event.time, self, event.fingers);
+        })
+    }
+
+    fn gesture_pinch_update(&self, seat: &Seat<D>, _data: &mut D, event: &GesturePinchUpdateEvent) {
+        for_each_focused_pinch_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let mut ongoing = data.in_progress_on.lock().unwrap();
+            // Check that the ongoing gesture is for this surface.
+            if ongoing.as_ref() == Some(self) {
+                gesture.update(
+                    event.time,
+                    event.delta.x,
+                    event.delta.y,
+                    event.scale,
+                    event.rotation,
+                );
+            } else if ongoing.take().is_some() {
+                // If it was for a different surface, cancel it.
+                gesture.end(SERIAL_COUNTER.next_serial().into(), event.time, 1);
+            }
+        })
+    }
+
+    fn gesture_pinch_end(&self, seat: &Seat<D>, _data: &mut D, event: &GesturePinchEndEvent) {
+        for_each_focused_pinch_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let ongoing = data.in_progress_on.lock().unwrap().take();
+            // Check if the gesture was ongoing.
+            if ongoing.is_some() {
+                let cancelled = if ongoing.as_ref() == Some(self) {
+                    event.cancelled
+                } else {
+                    // If the gesture was ongoing for any other surface then cancel it.
+                    true
+                };
+                gesture.end(event.serial.into(), event.time, cancelled.into());
+            }
+        })
+    }
+
+    fn gesture_hold_begin(&self, seat: &Seat<D>, _data: &mut D, event: &GestureHoldBeginEvent) {
+        for_each_focused_hold_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let ongoing = data.in_progress_on.lock().unwrap().replace(self.clone());
+            if ongoing.is_some() {
+                // Cancel an ongoing gesture for a different surface.
+                gesture.end(event.serial.into(), event.time, 1);
+            }
+            gesture.begin(event.serial.into(), event.time, self, event.fingers);
+        })
+    }
+
+    fn gesture_hold_end(&self, seat: &Seat<D>, _data: &mut D, event: &GestureHoldEndEvent) {
+        for_each_focused_hold_gestures(seat, self, |gesture| {
+            let data = gesture.data::<PointerGestureUserData<D>>().unwrap();
+            let ongoing = data.in_progress_on.lock().unwrap().take();
+            // Check if the gesture was ongoing.
+            if ongoing.is_some() {
+                let cancelled = if ongoing.as_ref() == Some(self) {
+                    event.cancelled
+                } else {
+                    // If the gesture was ongoing for any other surface then cancel it.
+                    true
+                };
+                gesture.end(event.serial.into(), event.time, cancelled.into());
             }
         })
     }

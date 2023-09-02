@@ -1,4 +1,90 @@
 //! Utilities for pointer gestures support
+//!
+//! This protocol allows clients to receive touchpad gestures. Use the following methods to send
+//! gesture events to any respective objects created by the client:
+//!
+//! 1. Swipe gestures
+//!     - [`PointerHandle::gesture_swipe_begin`]
+//!     - [`PointerHandle::gesture_swipe_update`]
+//!     - [`PointerHandle::gesture_swipe_end`]
+//! 2. Pinch gesture:
+//!     - [`PointerHandle::gesture_pinch_begin`]
+//!     - [`PointerHandle::gesture_pinch_update`]
+//!     - [`PointerHandle::gesture_pinch_end`]
+//! 3. Hold gesture:
+//!     - [`PointerHandle::gesture_hold_begin`]
+//!     - [`PointerHandle::gesture_hold_end`]
+//!
+//! ```
+//! extern crate wayland_server;
+//! extern crate smithay;
+//!
+//! use smithay::wayland::pointer_gestures::PointerGesturesState;
+//! use smithay::delegate_pointer_gestures;
+//! # use smithay::backend::input::KeyState;
+//! # use smithay::input::{
+//! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
+//! #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
+//! #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
+//! #             GestureHoldBeginEvent, GestureHoldEndEvent},
+//! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+//! #   Seat, SeatHandler, SeatState,
+//! # };
+//! # use smithay::utils::{IsAlive, Serial};
+//!
+//! # #[derive(Debug, Clone, PartialEq)]
+//! # struct Target;
+//! # impl IsAlive for Target {
+//! #   fn alive(&self) -> bool { true }
+//! # }
+//! # impl PointerTarget<State> for Target {
+//! #   fn enter(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &MotionEvent) {}
+//! #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
+//! #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
+//! #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
+//! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
+//! #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
+//! #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}
+//! #   fn gesture_swipe_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeEndEvent) {}
+//! #   fn gesture_pinch_begin(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchBeginEvent) {}
+//! #   fn gesture_pinch_update(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchUpdateEvent) {}
+//! #   fn gesture_pinch_end(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchEndEvent) {}
+//! #   fn gesture_hold_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldBeginEvent) {}
+//! #   fn gesture_hold_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldEndEvent) {}
+//! # }
+//! # impl KeyboardTarget<State> for Target {
+//! #   fn enter(&self, seat: &Seat<State>, data: &mut State, keys: Vec<KeysymHandle<'_>>, serial: Serial) {}
+//! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial) {}
+//! #   fn key(
+//! #       &self,
+//! #       seat: &Seat<State>,
+//! #       data: &mut State,
+//! #       key: KeysymHandle<'_>,
+//! #       state: KeyState,
+//! #       serial: Serial,
+//! #       time: u32,
+//! #   ) {}
+//! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
+//! # }
+//! # struct State {
+//! #     seat_state: SeatState<Self>,
+//! # };
+//! # let mut display = wayland_server::Display::<State>::new().unwrap();
+//! # impl SeatHandler for State {
+//! #     type KeyboardFocus = Target;
+//! #     type PointerFocus = Target;
+//! #
+//! #     fn seat_state(&mut self) -> &mut SeatState<Self> {
+//! #         &mut self.seat_state
+//! #     }
+//! # }
+//! let state = PointerGesturesState::new::<State>(&display.handle());
+//!
+//! delegate_pointer_gestures!(State);
+//! ```
+
+use std::sync::Mutex;
 
 use wayland_protocols::wp::pointer_gestures::zv1::server::{
     zwp_pointer_gesture_hold_v1::{self, ZwpPointerGestureHoldV1},
@@ -8,6 +94,7 @@ use wayland_protocols::wp::pointer_gestures::zv1::server::{
 };
 use wayland_server::{
     backend::{ClientId, GlobalId, ObjectId},
+    protocol::wl_surface::WlSurface,
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
@@ -22,6 +109,8 @@ const MANAGER_VERSION: u32 = 3;
 #[derive(Debug)]
 pub struct PointerGestureUserData<D: SeatHandler> {
     handle: Option<PointerHandle<D>>,
+    /// This gesture is in the middle between its begin() and end() on this surface.
+    pub(crate) in_progress_on: Mutex<Option<WlSurface>>,
 }
 
 /// State of the pointer gestures
@@ -76,6 +165,7 @@ where
                 let handle = &pointer.data::<PointerUserData<D>>().unwrap().handle;
                 let user_data = PointerGestureUserData {
                     handle: handle.clone(),
+                    in_progress_on: Mutex::new(None),
                 };
                 let gesture = data_init.init(id, user_data);
                 if let Some(handle) = handle {
@@ -86,6 +176,7 @@ where
                 let handle = &pointer.data::<PointerUserData<D>>().unwrap().handle;
                 let user_data = PointerGestureUserData {
                     handle: handle.clone(),
+                    in_progress_on: Mutex::new(None),
                 };
                 let gesture = data_init.init(id, user_data);
                 if let Some(handle) = handle {
@@ -96,6 +187,7 @@ where
                 let handle = &pointer.data::<PointerUserData<D>>().unwrap().handle;
                 let user_data = PointerGestureUserData {
                     handle: handle.clone(),
+                    in_progress_on: Mutex::new(None),
                 };
                 let gesture = data_init.init(id, user_data);
                 if let Some(handle) = handle {

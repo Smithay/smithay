@@ -112,6 +112,22 @@ where
     fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent);
     /// A pointer of a given seat scrolled on an axis
     fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame);
+    /// A pointer of a given seat started a swipe gesture
+    fn gesture_swipe_begin(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeBeginEvent);
+    /// A pointer of a given seat updated a swipe gesture
+    fn gesture_swipe_update(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeUpdateEvent);
+    /// A pointer of a given seat ended a swipe gesture
+    fn gesture_swipe_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeEndEvent);
+    /// A pointer of a given seat started a pinch gesture
+    fn gesture_pinch_begin(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchBeginEvent);
+    /// A pointer of a given seat updated a pinch gesture
+    fn gesture_pinch_update(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchUpdateEvent);
+    /// A pointer of a given seat ended a pinch gesture
+    fn gesture_pinch_end(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchEndEvent);
+    /// A pointer of a given seat started a hold gesture
+    fn gesture_hold_begin(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldBeginEvent);
+    /// A pointer of a given seat ended a hold gesture
+    fn gesture_hold_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldEndEvent);
     /// A pointer of a given seat left this handler
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32);
 }
@@ -259,6 +275,134 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         });
     }
 
+    /// Notify about swipe gesture begin
+    ///
+    /// This will internally send the appropriate event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the relative pointer protocol.
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
+    pub fn gesture_swipe_begin(&self, data: &mut D, event: &GestureSwipeBeginEvent) {
+        let seat = self.get_seat(data);
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(&seat, move |mut handle, grab| {
+                grab.gesture_swipe_begin(data, &mut handle, event);
+            });
+    }
+
+    /// Notify about swipe gesture update
+    ///
+    /// This will internally send the appropriate event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the relative pointer protocol.
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
+    pub fn gesture_swipe_update(&self, data: &mut D, event: &GestureSwipeUpdateEvent) {
+        let seat = self.get_seat(data);
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(&seat, move |mut handle, grab| {
+                grab.gesture_swipe_update(data, &mut handle, event);
+            });
+    }
+
+    /// Notify about swipe gesture end
+    ///
+    /// This will internally send the appropriate event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the relative pointer protocol.
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
+    pub fn gesture_swipe_end(&self, data: &mut D, event: &GestureSwipeEndEvent) {
+        let seat = self.get_seat(data);
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(&seat, move |mut handle, grab| {
+                grab.gesture_swipe_end(data, &mut handle, event);
+            });
+    }
+
+    /// Notify about pinch gesture begin
+    ///
+    /// This will internally send the appropriate event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the relative pointer protocol.
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
+    pub fn gesture_pinch_begin(&self, data: &mut D, event: &GesturePinchBeginEvent) {
+        let seat = self.get_seat(data);
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(&seat, move |mut handle, grab| {
+                grab.gesture_pinch_begin(data, &mut handle, event);
+            });
+    }
+
+    /// Notify about pinch gesture update
+    ///
+    /// This will internally send the appropriate event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the relative pointer protocol.
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
+    pub fn gesture_pinch_update(&self, data: &mut D, event: &GesturePinchUpdateEvent) {
+        let seat = self.get_seat(data);
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(&seat, move |mut handle, grab| {
+                grab.gesture_pinch_update(data, &mut handle, event);
+            });
+    }
+
+    /// Notify about pinch gesture end
+    ///
+    /// This will internally send the appropriate event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the relative pointer protocol.
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
+    pub fn gesture_pinch_end(&self, data: &mut D, event: &GesturePinchEndEvent) {
+        let seat = self.get_seat(data);
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(&seat, move |mut handle, grab| {
+                grab.gesture_pinch_end(data, &mut handle, event);
+            });
+    }
+
+    /// Notify about hold gesture begin
+    ///
+    /// This will internally send the appropriate event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the relative pointer protocol.
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
+    pub fn gesture_hold_begin(&self, data: &mut D, event: &GestureHoldBeginEvent) {
+        let seat = self.get_seat(data);
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(&seat, move |mut handle, grab| {
+                grab.gesture_hold_begin(data, &mut handle, event);
+            });
+    }
+
+    /// Notify about hold gesture end
+    ///
+    /// This will internally send the appropriate event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the relative pointer protocol.
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
+    pub fn gesture_hold_end(&self, data: &mut D, event: &GestureHoldEndEvent) {
+        let seat = self.get_seat(data);
+        self.inner
+            .lock()
+            .unwrap()
+            .with_grab(&seat, move |mut handle, grab| {
+                grab.gesture_hold_end(data, &mut handle, event);
+            });
+    }
+
     /// Access the current location of this pointer in the global space
     pub fn current_location(&self) -> Point<f64, Logical> {
         self.inner.lock().unwrap().location
@@ -393,6 +537,78 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
         if let Some((focused, _)) = self.inner.focus.as_mut() {
             focused.axis(self.seat, data, details);
         }
+    }
+
+    /// Notify about swipe gesture begin
+    ///
+    /// This will internally send the appropriate button event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the pointer gestures protocol.
+    pub fn gesture_swipe_begin(&mut self, data: &mut D, event: &GestureSwipeBeginEvent) {
+        self.inner.gesture_swipe_begin(data, self.seat, event);
+    }
+
+    /// Notify about swipe gesture update
+    ///
+    /// This will internally send the appropriate button event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the pointer gestures protocol.
+    pub fn gesture_swipe_update(&mut self, data: &mut D, event: &GestureSwipeUpdateEvent) {
+        self.inner.gesture_swipe_update(data, self.seat, event);
+    }
+
+    /// Notify about swipe gesture end
+    ///
+    /// This will internally send the appropriate button event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the pointer gestures protocol.
+    pub fn gesture_swipe_end(&mut self, data: &mut D, event: &GestureSwipeEndEvent) {
+        self.inner.gesture_swipe_end(data, self.seat, event);
+    }
+
+    /// Notify about pinch gesture begin
+    ///
+    /// This will internally send the appropriate button event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the pointer gestures protocol.
+    pub fn gesture_pinch_begin(&mut self, data: &mut D, event: &GesturePinchBeginEvent) {
+        self.inner.gesture_pinch_begin(data, self.seat, event);
+    }
+
+    /// Notify about pinch gesture update
+    ///
+    /// This will internally send the appropriate button event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the pointer gestures protocol.
+    pub fn gesture_pinch_update(&mut self, data: &mut D, event: &GesturePinchUpdateEvent) {
+        self.inner.gesture_pinch_update(data, self.seat, event);
+    }
+
+    /// Notify about pinch gesture end
+    ///
+    /// This will internally send the appropriate button event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the pointer gestures protocol.
+    pub fn gesture_pinch_end(&mut self, data: &mut D, event: &GesturePinchEndEvent) {
+        self.inner.gesture_pinch_end(data, self.seat, event);
+    }
+
+    /// Notify about hold gesture begin
+    ///
+    /// This will internally send the appropriate button event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the pointer gestures protocol.
+    pub fn gesture_hold_begin(&mut self, data: &mut D, event: &GestureHoldBeginEvent) {
+        self.inner.gesture_hold_begin(data, self.seat, event);
+    }
+
+    /// Notify about hold gesture end
+    ///
+    /// This will internally send the appropriate button event to the client
+    /// objects matching with the currently focused surface, if the client uses
+    /// the pointer gestures protocol.
+    pub fn gesture_hold_end(&mut self, data: &mut D, event: &GestureHoldEndEvent) {
+        self.inner.gesture_hold_end(data, self.seat, event);
     }
 }
 
@@ -529,6 +745,54 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         }
     }
 
+    fn gesture_swipe_begin(&mut self, data: &mut D, seat: &Seat<D>, event: &GestureSwipeBeginEvent) {
+        if let Some((focused, _)) = self.focus.as_mut() {
+            focused.gesture_swipe_begin(seat, data, event);
+        }
+    }
+
+    fn gesture_swipe_update(&mut self, data: &mut D, seat: &Seat<D>, event: &GestureSwipeUpdateEvent) {
+        if let Some((focused, _)) = self.focus.as_mut() {
+            focused.gesture_swipe_update(seat, data, event);
+        }
+    }
+
+    fn gesture_swipe_end(&mut self, data: &mut D, seat: &Seat<D>, event: &GestureSwipeEndEvent) {
+        if let Some((focused, _)) = self.focus.as_mut() {
+            focused.gesture_swipe_end(seat, data, event);
+        }
+    }
+
+    fn gesture_pinch_begin(&mut self, data: &mut D, seat: &Seat<D>, event: &GesturePinchBeginEvent) {
+        if let Some((focused, _)) = self.focus.as_mut() {
+            focused.gesture_pinch_begin(seat, data, event);
+        }
+    }
+
+    fn gesture_pinch_update(&mut self, data: &mut D, seat: &Seat<D>, event: &GesturePinchUpdateEvent) {
+        if let Some((focused, _)) = self.focus.as_mut() {
+            focused.gesture_pinch_update(seat, data, event);
+        }
+    }
+
+    fn gesture_pinch_end(&mut self, data: &mut D, seat: &Seat<D>, event: &GesturePinchEndEvent) {
+        if let Some((focused, _)) = self.focus.as_mut() {
+            focused.gesture_pinch_end(seat, data, event);
+        }
+    }
+
+    fn gesture_hold_begin(&mut self, data: &mut D, seat: &Seat<D>, event: &GestureHoldBeginEvent) {
+        if let Some((focused, _)) = self.focus.as_mut() {
+            focused.gesture_hold_begin(seat, data, event);
+        }
+    }
+
+    fn gesture_hold_end(&mut self, data: &mut D, seat: &Seat<D>, event: &GestureHoldEndEvent) {
+        if let Some((focused, _)) = self.focus.as_mut() {
+            focused.gesture_hold_end(seat, data, event);
+        }
+    }
+
     fn with_grab<F>(&mut self, seat: &Seat<D>, f: F)
     where
         F: FnOnce(PointerInnerHandle<'_, D>, &mut dyn PointerGrab<D>),
@@ -637,6 +901,94 @@ pub struct AxisFrame {
     ///
     /// Only useful in conjunction of AxisSource::Finger events
     pub stop: (bool, bool),
+}
+
+/// Gesture swipe begin event
+#[derive(Debug, Clone)]
+pub struct GestureSwipeBeginEvent {
+    /// Serial of the event
+    pub serial: Serial,
+    /// Timestamp of the event, with millisecond granularity
+    pub time: u32,
+    /// Number of fingers of the event
+    pub fingers: u32,
+}
+
+/// Gesture swipe update event
+#[derive(Debug, Clone)]
+pub struct GestureSwipeUpdateEvent {
+    /// Timestamp of the event, with millisecond granularity
+    pub time: u32,
+    /// Offset of the logical center of the gesture relative to the previous event
+    pub delta: Point<f64, Logical>,
+}
+
+/// Gesture swipe end event
+#[derive(Debug, Clone)]
+pub struct GestureSwipeEndEvent {
+    /// Serial of the event
+    pub serial: Serial,
+    /// Timestamp of the event, with millisecond granularity
+    pub time: u32,
+    /// Whether the gesture was cancelled
+    pub cancelled: bool,
+}
+
+/// Gesture pinch begin event
+#[derive(Debug, Clone)]
+pub struct GesturePinchBeginEvent {
+    /// Serial of the event
+    pub serial: Serial,
+    /// Timestamp of the event, with millisecond granularity
+    pub time: u32,
+    /// Number of fingers of the event
+    pub fingers: u32,
+}
+
+/// Gesture pinch update event
+#[derive(Debug, Clone)]
+pub struct GesturePinchUpdateEvent {
+    /// Timestamp of the event, with millisecond granularity
+    pub time: u32,
+    /// Offset of the logical center of the gesture relative to the previous event
+    pub delta: Point<f64, Logical>,
+    /// Absolute scale compared to the begin event
+    pub scale: f64,
+    /// Relative angle in degrees clockwise compared to the previous event
+    pub rotation: f64,
+}
+
+/// Gesture pinch end event
+#[derive(Debug, Clone)]
+pub struct GesturePinchEndEvent {
+    /// Serial of the event
+    pub serial: Serial,
+    /// Timestamp of the event, with millisecond granularity
+    pub time: u32,
+    /// Whether the gesture was cancelled
+    pub cancelled: bool,
+}
+
+/// Gesture hold begin event
+#[derive(Debug, Clone)]
+pub struct GestureHoldBeginEvent {
+    /// Serial of the event
+    pub serial: Serial,
+    /// Timestamp of the event, with millisecond granularity
+    pub time: u32,
+    /// Number of fingers of the event
+    pub fingers: u32,
+}
+
+/// Gesture hold end event
+#[derive(Debug, Clone)]
+pub struct GestureHoldEndEvent {
+    /// Serial of the event
+    pub serial: Serial,
+    /// Timestamp of the event, with millisecond granularity
+    pub time: u32,
+    /// Whether the gesture was cancelled
+    pub cancelled: bool,
 }
 
 impl AxisFrame {
