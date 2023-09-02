@@ -6,7 +6,7 @@ use std::{
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::{
     self, ZwpInputMethodKeyboardGrabV2,
 };
-use wayland_server::backend::{ClientId, ObjectId};
+use wayland_server::backend::ClientId;
 use wayland_server::Dispatch;
 
 use crate::backend::input::KeyState;
@@ -99,7 +99,12 @@ impl<D: SeatHandler> fmt::Debug for InputMethodKeyboardUserData<D> {
 impl<D: SeatHandler + 'static> Dispatch<ZwpInputMethodKeyboardGrabV2, InputMethodKeyboardUserData<D>, D>
     for InputMethodManagerState
 {
-    fn destroyed(_state: &mut D, _client: ClientId, _id: ObjectId, data: &InputMethodKeyboardUserData<D>) {
+    fn destroyed(
+        _state: &mut D,
+        _client: ClientId,
+        _object: &ZwpInputMethodKeyboardGrabV2,
+        data: &InputMethodKeyboardUserData<D>,
+    ) {
         data.handle.inner.lock().unwrap().grab = None;
         data.keyboard_handle.unset_grab();
     }

@@ -7,7 +7,7 @@ use std::{
     ffi::CString,
     fs::File,
     io::Write,
-    os::unix::io::{AsRawFd, FromRawFd, RawFd},
+    os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd},
 };
 
 #[derive(Debug)]
@@ -34,7 +34,7 @@ impl SealedFile {
             MemFdCreateFlag::MFD_CLOEXEC | MemFdCreateFlag::MFD_ALLOW_SEALING,
         )?;
 
-        let mut file = unsafe { File::from_raw_fd(fd) };
+        let mut file: File = fd.into();
         file.write_all(data)?;
         file.flush()?;
 
@@ -110,5 +110,11 @@ impl SealedFile {
 impl AsRawFd for SealedFile {
     fn as_raw_fd(&self) -> RawFd {
         self.file.as_raw_fd()
+    }
+}
+
+impl AsFd for SealedFile {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.file.as_fd()
     }
 }

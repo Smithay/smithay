@@ -1,6 +1,6 @@
 use std::{
     cell::RefCell,
-    os::unix::io::{AsRawFd, OwnedFd},
+    os::unix::io::{AsFd, OwnedFd},
     sync::{Arc, Mutex},
 };
 
@@ -370,7 +370,14 @@ where
         None
     }
 
-    fn destroyed(&self, _data: &mut D, _client_id: ClientId, _object_id: ObjectId) {}
+    fn destroyed(
+        self: Arc<Self>,
+        _handle: &Handle,
+        _data: &mut D,
+        _client_id: ClientId,
+        _object_id: ObjectId,
+    ) {
+    }
 }
 
 fn handle_dnd<D>(handler: &mut D, offer: &WlDataOffer, request: wl_data_offer::Request, data: &DndDataOffer)
@@ -400,7 +407,7 @@ where
                 && source.alive()
                 && data.active;
             if valid {
-                source.send(mime_type, fd.as_raw_fd());
+                source.send(mime_type, fd.as_fd());
             }
         }
         Request::Destroy => {}

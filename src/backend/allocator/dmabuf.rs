@@ -396,12 +396,10 @@ impl DmabufSource {
             Subsource::Empty,
         ];
         for (idx, handle) in dmabuf.handles().enumerate() {
-            // SAFETY: This is stored together with the Dmabuf holding the owned file descriptors
-            let fd = handle.as_raw_fd();
             if matches!(
                 poll::poll(
                     &mut [poll::PollFd::new(
-                        fd,
+                        &handle,
                         if interest.writable {
                             poll::PollFlags::POLLOUT
                         } else {
@@ -414,7 +412,7 @@ impl DmabufSource {
             ) {
                 continue;
             }
-            sources[idx] = Subsource::Active(Generic::new(fd, interest, Mode::OneShot));
+            sources[idx] = Subsource::Active(Generic::new(handle.as_raw_fd(), interest, Mode::OneShot));
         }
         if sources
             .iter()

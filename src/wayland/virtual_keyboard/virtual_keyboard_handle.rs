@@ -12,7 +12,7 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboar
     self, ZwpVirtualKeyboardV1,
 };
 use wayland_server::{
-    backend::{ClientId, ObjectId},
+    backend::ClientId,
     protocol::wl_keyboard::{KeyState, KeymapFormat},
     Client, DataInit, Dispatch, DisplayHandle,
 };
@@ -140,7 +140,7 @@ where
     fn destroyed(
         _state: &mut D,
         _client: ClientId,
-        _virtual_keyboard: ObjectId,
+        _virtual_keyboard: &ZwpVirtualKeyboardV1,
         data: &VirtualKeyboardUserData<D>,
     ) {
         let mut inner = data.handle.inner.lock().unwrap();

@@ -366,13 +366,13 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &SeatUserData<D>) {
+    fn destroyed(_state: &mut D, _: ClientId, seat: &WlSeat, data: &SeatUserData<D>) {
         data.arc
             .inner
             .lock()
             .unwrap()
             .known_seats
-            .retain(|s| s.id() != object_id);
+            .retain(|s| s.id() != seat.id());
     }
 }
 

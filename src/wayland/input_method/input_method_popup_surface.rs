@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::{
     self, ZwpInputPopupSurfaceV2,
 };
-use wayland_server::backend::{ClientId, ObjectId};
+use wayland_server::backend::ClientId;
 use wayland_server::{protocol::wl_surface::WlSurface, Dispatch};
 
 use crate::utils::{Logical, Physical, Point, Rectangle};
@@ -74,7 +74,12 @@ impl<D> Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData, D> for
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, _id: ObjectId, data: &InputMethodPopupSurfaceUserData) {
+    fn destroyed(
+        _state: &mut D,
+        _client: ClientId,
+        _object: &ZwpInputPopupSurfaceV2,
+        data: &InputMethodPopupSurfaceUserData,
+    ) {
         data.handle.inner.lock().unwrap().surface_role = None;
     }
 }

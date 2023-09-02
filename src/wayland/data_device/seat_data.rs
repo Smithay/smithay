@@ -1,5 +1,5 @@
 use std::{
-    os::unix::io::{AsRawFd, OwnedFd},
+    os::unix::io::{AsFd, OwnedFd},
     sync::Arc,
 };
 
@@ -224,7 +224,14 @@ where
         None
     }
 
-    fn destroyed(&self, _data: &mut D, _client_id: ClientId, _object_id: ObjectId) {}
+    fn destroyed(
+        self: Arc<Self>,
+        _handle: &Handle,
+        _data: &mut D,
+        _client_id: ClientId,
+        _object_id: ObjectId,
+    ) {
+    }
 }
 
 fn handle_client_selection(request: wl_data_offer::Request, source: &WlDataSource) {
@@ -239,7 +246,7 @@ fn handle_client_selection(request: wl_data_offer::Request, source: &WlDataSourc
             // deny the receive
             debug!("Denying a wl_data_offer.receive with invalid source.");
         } else {
-            source.send(mime_type, fd.as_raw_fd());
+            source.send(mime_type, fd.as_fd());
         }
     }
 }
@@ -274,7 +281,14 @@ where
         None
     }
 
-    fn destroyed(&self, _data: &mut D, _client_id: ClientId, _object_id: ObjectId) {}
+    fn destroyed(
+        self: Arc<Self>,
+        _handle: &Handle,
+        _data: &mut D,
+        _client_id: ClientId,
+        _object_id: ObjectId,
+    ) {
+    }
 }
 
 pub fn handle_server_selection<D>(

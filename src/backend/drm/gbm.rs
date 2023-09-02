@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use drm::{
     buffer::PlanarBuffer,
-    control::{framebuffer, Device},
+    control::{framebuffer, Device, FbCmd2Flags},
 };
 use drm_fourcc::DrmModifier;
 use gbm::BufferObject;
@@ -256,6 +256,13 @@ impl<'a, T: 'static> PlanarBuffer for BufferObjectInternal<'a, T> {
         PlanarBuffer::format(self.bo)
     }
 
+    fn modifier(&self) -> Option<DrmModifier> {
+        match self.bo.modifier().unwrap() {
+            DrmModifier::Invalid => None,
+            x => Some(x),
+        }
+    }
+
     fn pitches(&self) -> [u32; 4] {
         self.pitches.unwrap_or_else(|| PlanarBuffer::pitches(self.bo))
     }
@@ -281,6 +288,10 @@ where
     fn format(&self) -> Fourcc {
         let fmt = self.0.format();
         get_opaque(fmt).unwrap_or(fmt)
+    }
+
+    fn modifier(&self) -> Option<DrmModifier> {
+        self.0.modifier()
     }
 
     fn pitches(&self) -> [u32; 4] {
@@ -310,62 +321,36 @@ where
         x => Some(x),
     };
 
-    let (fb, format) = match if modifier.is_some() {
-        let num = bo.plane_count().unwrap();
-        let modifiers = [
-            modifier,
-            if num > 1 { modifier } else { None },
-            if num > 2 { modifier } else { None },
-            if num > 3 { modifier } else { None },
-        ];
-        if use_opaque {
-            let opaque_wrapper = OpaqueBufferWrapper(&bo);
-            drm.add_planar_framebuffer(&opaque_wrapper, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
-                .map(|fb| {
-                    (
-                        fb,
-                        drm_fourcc::DrmFormat {
-                            code: opaque_wrapper.format(),
-                            modifier: modifier.unwrap(),
-                        },
-                    )
-                })
-        } else {
-            drm.add_planar_framebuffer(&bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
-                .map(|fb| {
-                    (
-                        fb,
-                        drm_fourcc::DrmFormat {
-                            code: bo.format(),
-                            modifier: modifier.unwrap(),
-                        },
-                    )
-                })
-        }
-    } else if use_opaque {
-        let opaque_wrapper = OpaqueBufferWrapper(&bo);
-        drm.add_planar_framebuffer(&opaque_wrapper, &[None, None, None, None], 0)
-            .map(|fb| {
-                (
-                    fb,
-                    drm_fourcc::DrmFormat {
-                        code: opaque_wrapper.format(),
-                        modifier: drm_fourcc::DrmModifier::Invalid,
-                    },
-                )
-            })
+    let flags = if bo.modifier().is_some() {
+        FbCmd2Flags::MODIFIERS
     } else {
-        drm.add_planar_framebuffer(&bo, &[None, None, None, None], 0)
-            .map(|fb| {
-                (
-                    fb,
-                    drm_fourcc::DrmFormat {
-                        code: bo.format(),
-                        modifier: drm_fourcc::DrmModifier::Invalid,
-                    },
-                )
-            })
-    } {
+        FbCmd2Flags::empty()
+    };
+
+    let ret = if use_opaque {
+        let opaque_wrapper = OpaqueBufferWrapper(&bo);
+        drm.add_planar_framebuffer(&opaque_wrapper, flags).map(|fb| {
+            (
+                fb,
+                drm_fourcc::DrmFormat {
+                    code: opaque_wrapper.format(),
+                    modifier: modifier.unwrap_or(DrmModifier::Invalid),
+                },
+            )
+        })
+    } else {
+        drm.add_planar_framebuffer(&bo, flags).map(|fb| {
+            (
+                fb,
+                drm_fourcc::DrmFormat {
+                    code: bo.format(),
+                    modifier: modifier.unwrap_or(DrmModifier::Invalid),
+                },
+            )
+        })
+    };
+
+    let (fb, format) = match ret {
         Ok(fb) => fb,
         Err(source) => {
             // We only support this as a fallback of last resort like xf86-video-modesetting does.

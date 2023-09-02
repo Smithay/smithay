@@ -10,10 +10,7 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_tool_v2::{self, ZwpTabletToolV2},
 };
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{
-    backend::{ClientId, ObjectId},
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
-};
+use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource};
 
 use crate::{utils::Serial, wayland::compositor};
 
@@ -501,12 +498,12 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, resource: ObjectId, data: &TabletToolUserData) {
+    fn destroyed(_state: &mut D, _client: ClientId, resource: &ZwpTabletToolV2, data: &TabletToolUserData) {
         data.handle
             .inner
             .lock()
             .unwrap()
             .instances
-            .retain(|i| i.id() != resource);
+            .retain(|i| i.id() != resource.id());
     }
 }

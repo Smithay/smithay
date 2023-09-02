@@ -9,7 +9,7 @@ use wayland_protocols::wp::{
     relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1,
 };
 use wayland_server::{
-    backend::{ClientId, ObjectId},
+    backend::ClientId,
     protocol::{
         wl_pointer::{
             self, Axis as WlAxis, AxisSource as WlAxisSource, ButtonState as WlButtonState, Request,
@@ -506,13 +506,13 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &PointerUserData<D>) {
+    fn destroyed(_state: &mut D, _: ClientId, pointer: &WlPointer, data: &PointerUserData<D>) {
         if let Some(ref handle) = data.handle {
             handle
                 .known_pointers
                 .lock()
                 .unwrap()
-                .retain(|p| p.id() != object_id);
+                .retain(|p| p.id() != pointer.id());
         }
     }
 }

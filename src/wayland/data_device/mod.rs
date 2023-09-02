@@ -66,7 +66,7 @@
 
 use std::{
     cell::{Ref, RefCell},
-    os::unix::io::{AsRawFd, OwnedFd},
+    os::unix::io::{AsFd, OwnedFd},
 };
 
 use tracing::instrument;
@@ -335,7 +335,7 @@ where
             {
                 Err(SelectionRequestError::InvalidMimetype)
             } else {
-                source.send(mime_type, fd.as_raw_fd());
+                source.send(mime_type, fd.as_fd());
                 Ok(())
             }
         }
