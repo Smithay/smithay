@@ -331,11 +331,12 @@ impl SurfacePresentationFeedback {
         output: &Output,
         clk_id: u32,
         time: impl Into<Duration>,
-        refresh: u32,
+        refresh: impl Into<Duration>,
         seq: u64,
         flags: wp_presentation_feedback::Kind,
     ) {
         let time = time.into();
+        let refresh = refresh.into();
 
         for callback in self.callbacks.drain(..) {
             if callback.clk_id() == clk_id {
@@ -392,7 +393,7 @@ impl OutputPresentationFeedback {
     pub fn presented<T, Kind>(
         &mut self,
         time: T,
-        refresh: u32,
+        refresh: impl Into<Duration>,
         seq: u64,
         flags: wp_presentation_feedback::Kind,
     ) where
@@ -400,6 +401,7 @@ impl OutputPresentationFeedback {
         Kind: crate::utils::NonNegativeClockSource,
     {
         let time = time.into();
+        let refresh = refresh.into();
         let clk_id = Kind::id() as u32;
         if let Some(output) = self.output.upgrade() {
             for mut callback in self.callbacks.drain(..) {
