@@ -2434,6 +2434,7 @@ where
     /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`](super::super::DrmDevice)
     /// was received after calling [`DrmCompositor::queue_frame`] on this surface.
     /// Otherwise the underlying swapchain will run out of buffers eventually.
+    #[profiling::function]
     pub fn frame_submitted(&mut self) -> FrameResult<Option<U>, A, F> {
         if let Some((mut pending, user_data)) = self.pending_frame.take() {
             std::mem::swap(&mut pending, &mut self.current_frame);
