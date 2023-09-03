@@ -1,4 +1,5 @@
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use drm::control::{connector, crtc, framebuffer, plane, Device as ControlDevice, Mode};
@@ -418,6 +419,14 @@ impl DrmSurface {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.reset_state::<Self>(None),
             DrmSurfaceInternal::Legacy(surf) => surf.reset_state::<Self>(None),
+        }
+    }
+
+    /// Returns if the underlying device is currently paused or not.
+    pub fn is_active(&self) -> bool {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.active.load(Ordering::SeqCst),
+            DrmSurfaceInternal::Legacy(surf) => surf.active.load(Ordering::SeqCst),
         }
     }
 
