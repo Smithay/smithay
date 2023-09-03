@@ -246,6 +246,10 @@ where
     #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     #[profiling::function]
     pub fn next_buffer(&mut self) -> Result<(Dmabuf, u8), Error<A::Error>> {
+        if !self.drm.is_active() {
+            return Err(Error::<A::Error>::DrmError(DrmError::DeviceInactive));
+        }
+
         if self.next_fb.is_none() {
             let slot = self
                 .swapchain
@@ -284,6 +288,10 @@ where
         damage: Option<Vec<Rectangle<i32, Physical>>>,
         user_data: U,
     ) -> Result<(), Error<A::Error>> {
+        if !self.drm.is_active() {
+            return Err(Error::<A::Error>::DrmError(DrmError::DeviceInactive));
+        }
+
         let next_fb = self.next_fb.take().ok_or(Error::<A::Error>::NoBuffer)?;
 
         self.swapchain.submitted(&next_fb);

@@ -1598,6 +1598,12 @@ where
         R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
         <R as Renderer>::TextureId: Texture + 'static,
     {
+        if !self.surface.is_active() {
+            return Err(RenderFrameErrorType::<A, F, R>::PrepareFrame(
+                FrameError::DrmError(DrmError::DeviceInactive),
+            ));
+        }
+
         // Just reset any next state, this will put
         // any already acquired slot back to the swapchain
         self.next_frame.take();
@@ -2153,6 +2159,10 @@ where
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`DrmCompositor::frame_submitted`]
     #[profiling::function]
     pub fn queue_frame(&mut self, user_data: U) -> FrameResult<(), A, F> {
+        if !self.surface.is_active() {
+            return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
+        }
+
         let next_frame = self.next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
 
         if next_frame.is_empty() {
