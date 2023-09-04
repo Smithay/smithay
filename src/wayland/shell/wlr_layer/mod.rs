@@ -321,7 +321,7 @@ impl LayerSurface {
     /// Send a pending configure event to this layer surface to suggest it a new configuration
     ///
     /// If changes have occurred a configure event will be send to the clients and the serial will be returned
-    /// (for tracking the configure in [`LayerShellHandler::ack_configure`] if desired).
+    /// (for tracking the configure in [`WlrLayerShellHandler::ack_configure`] if desired).
     /// If no changes occurred no event will be send and `None` will be returned.
     ///
     /// See [`send_configure`](LayerSurface::send_configure) and [`has_pending_changes`](LayerSurface::has_pending_changes)

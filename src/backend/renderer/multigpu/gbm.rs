@@ -177,7 +177,7 @@ where
     }
 }
 
-/// [`ApiDevice`] of the [`EglGlesBackend`]
+/// [`ApiDevice`] of the [`GbmGlesBackend`]
 #[derive(Debug)]
 pub struct GbmGlesDevice<R> {
     node: DrmNode,

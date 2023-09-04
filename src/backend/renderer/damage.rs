@@ -339,7 +339,7 @@ impl OutputDamageTracker {
         }
     }
 
-    /// Get the [`OutputDamageTrackerMode`] of the [`OutputDamageTracker`]
+    /// Get the [`OutputModeSource`] of the [`OutputDamageTracker`]
     pub fn mode(&self) -> &OutputModeSource {
         &self.mode
     }

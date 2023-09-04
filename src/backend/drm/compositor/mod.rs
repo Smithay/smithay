@@ -1431,7 +1431,7 @@ where
 {
     /// Initialize a new [`DrmCompositor`].
     ///
-    /// The [`OutputModeSource`] can be created from an [`&Output`], which will automatically track
+    /// The [`OutputModeSource`] can be created from an [`Output`](crate::output::Output), which will automatically track
     /// the output's mode changes. An [`OutputModeSource::Static`] variant should only be used when
     /// manually updating modes using [`DrmCompositor::set_output_mode_source`].
     ///
@@ -2374,7 +2374,7 @@ where
     /// retrace duration.
     ///
     /// *Note*: It is your responsibility to synchronize rendering if the [`RenderFrameResult`]
-    /// returned by the previous [`render_frame`] call returns `true` on [`RenderFrameResult::needs_sync`].
+    /// returned by the previous [`render_frame`](DrmCompositor::render_frame) call returns `true` on [`RenderFrameResult::needs_sync`].
     ///
     /// *Note*: This function needs to be followed up with [`DrmCompositor::frame_submitted`]
     /// when a vblank event is received, that denotes successful scan-out of the frame.
@@ -2431,7 +2431,7 @@ where
 
     /// Marks the current frame as submitted.
     ///
-    /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`](super::super::DrmDevice)
+    /// *Note*: Needs to be called, after the vblank event of the matching [`DrmDevice`](super::DrmDevice)
     /// was received after calling [`DrmCompositor::queue_frame`] on this surface.
     /// Otherwise the underlying swapchain will run out of buffers eventually.
     #[profiling::function]

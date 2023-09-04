@@ -975,8 +975,8 @@ impl X11Wm {
     /// So if windows `A -> C` are given in order and the internal stack is `A -> B -> C`,
     /// no reordering will occur.
     ///
-    /// See [`X11Surface::update_stacking_order_upwards`] for a variant of this algorithm,
-    /// which works from the bottom up or [`X11Surface::raise_window`] for an easier but
+    /// See [`X11Wm::update_stacking_order_upwards`] for a variant of this algorithm,
+    /// which works from the bottom up or [`X11Wm::raise_window`] for an easier but
     /// much more limited way to reorder.
     pub fn update_stacking_order_downwards<'a, W: X11Relatable + 'a>(
         &mut self,
@@ -1008,8 +1008,8 @@ impl X11Wm {
     /// So if windows `A -> C` are given in order and the internal stack is `C -> B -> A`,
     /// no reordering will occur.
     ///  
-    /// See [`X11Surface::update_stacking_order_downwards`] for a variant of this algorithm,
-    /// which works from the top down or [`X11Surface::raise_window`] for an easier but
+    /// See [`X11Wm::update_stacking_order_downwards`] for a variant of this algorithm,
+    /// which works from the top down or [`X11Wm::raise_window`] for an easier but
     /// much more limited way to reorder.
     pub fn update_stacking_order_upwards<'a, W: X11Relatable + 'a>(
         &mut self,
@@ -1018,7 +1018,7 @@ impl X11Wm {
         self.update_stacking_order_impl(order, StackingDirection::Upwards)
     }
 
-    /// This function has to be called on [`CompositorState::commit`] to correctly
+    /// This function has to be called on [`CompositorHandler::commit`](crate::wayland::compositor::CompositorHandler::commit) to correctly
     /// update the internal state of Xwayland WMs.
     pub fn commit_hook<D: XwmHandler + 'static>(surface: &WlSurface) {
         if let Some(client) = surface.client() {

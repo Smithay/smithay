@@ -88,7 +88,7 @@ pub struct PresentationState {
 }
 
 impl PresentationState {
-    /// Create new [`wp_presentation`](wayland_protocols::wp_presentation::server::wp_presentation) global.
+    /// Create new [`WpPresentation`](wp_presentation::WpPresentation) global.
     ///
     /// It returns the presentation state, which you can drop to remove these global from
     /// the event loop in the future.

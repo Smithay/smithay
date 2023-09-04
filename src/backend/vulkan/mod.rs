@@ -536,7 +536,7 @@ impl PhysicalDevice {
     /// - All valid usage requirements for [`vkGetPhysicalDeviceFormatProperties2`] apply. Read the specification
     ///   for more information.
     ///
-    /// [`vkGetPhysicalDeviceProperties2`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkGetPhysicalDeviceFormatProperties2.html
+    /// [`vkGetPhysicalDeviceFormatProperties2`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkGetPhysicalDeviceFormatProperties2.html
     pub unsafe fn get_format_properties(&self, format: vk::Format, props: &mut vk::FormatProperties2) {
         let instance = self.instance().handle();
         // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceFormatProperties2

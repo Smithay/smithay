@@ -672,7 +672,7 @@ impl LayerSurface {
         }
     }
 
-    /// Takes the [`PresentationFeedbackCallback`]s from all subsurfaces in this layer
+    /// Takes the [`PresentationFeedbackCallback`](crate::wayland::presentation::PresentationFeedbackCallback)s from all subsurfaces in this layer
     ///
     /// see [`take_presentation_feedback_surface_tree`] for more information
     pub fn take_presentation_feedback<F1, F2>(

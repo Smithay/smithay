@@ -568,7 +568,7 @@ crate::backend::renderer::element::render_elements! {
 ///
 /// *Note*: If the `wayland_frontend`-feature is enabled
 /// this will include layer-shell surfaces added to this
-/// outputs [`LayerMap`].
+/// outputs [`LayerMap`](crate::desktop::LayerMap).
 #[instrument(level = "trace", skip(spaces, renderer))]
 #[profiling::function]
 pub fn space_render_elements<

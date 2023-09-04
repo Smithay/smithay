@@ -409,7 +409,7 @@ impl DrmSurface {
 
     /// Re-evaluates the current state of the crtc.
     ///
-    /// It is recommended to call this function after this used [`Session`]
+    /// It is recommended to call this function after this used [`Session`](crate::backend::session::Session)
     /// gets re-activated / VT switched to.
     ///
     /// Usually you do not need to call this in other circumstances, but if

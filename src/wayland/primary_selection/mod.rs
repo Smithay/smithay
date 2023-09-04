@@ -116,7 +116,7 @@ pub struct PrimarySelectionState {
 }
 
 impl PrimarySelectionState {
-    /// Regiseter new [ZwpPrimarySelectionDeviceManagerV1] global
+    /// Regiseter new [`PrimaryDeviceManager`] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
         D: GlobalDispatch<PrimaryDeviceManager, ()> + 'static,
@@ -127,7 +127,7 @@ impl PrimarySelectionState {
         Self { manager_global }
     }
 
-    /// [ZwpPrimarySelectionDeviceManagerV1] GlobalId getter
+    /// [`PrimaryDeviceManager`] GlobalId getter
     pub fn global(&self) -> GlobalId {
         self.manager_global.clone()
     }

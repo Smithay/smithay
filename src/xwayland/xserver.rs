@@ -210,7 +210,7 @@ struct Inner {
 #[derive(Debug)]
 pub struct XWaylandClientData {
     inner: Arc<Mutex<Inner>>,
-    /// client state of the [`wayland::compsitor`] module
+    /// client state of the [`crate::wayland::compositor`] module
     #[cfg(feature = "wayland_frontend")]
     pub compositor_state: CompositorClientState,
     data_map: UserDataMap,

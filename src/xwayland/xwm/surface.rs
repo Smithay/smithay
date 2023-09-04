@@ -120,7 +120,7 @@ pub enum WmWindowType {
 }
 
 impl X11Surface {
-    /// Create a new [`X11Surface`] usually handled by an [`X11Wm`]
+    /// Create a new [`X11Surface`] usually handled by an [`X11Wm`](super::X11Wm)
     ///
     /// ## Arguments
     ///
