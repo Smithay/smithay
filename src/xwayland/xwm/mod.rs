@@ -1356,51 +1356,53 @@ fn handle_event<D: XwmHandler + 'static>(
         }
         Event::MapRequest(r) => {
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
-                // we reparent windows, because a lot of stuff expects, that we do
-                let geo = conn.get_geometry(r.window)?.reply()?;
-                let win = r.window;
-                let frame_win = conn.generate_id()?;
-                let win_aux = CreateWindowAux::new().event_mask(
-                    EventMask::SUBSTRUCTURE_NOTIFY
-                        | EventMask::SUBSTRUCTURE_REDIRECT
-                        | EventMask::PROPERTY_CHANGE,
-                );
+                if !surface.state.lock().unwrap().mapped_onto.is_some() {
+                    // we reparent windows, because a lot of stuff expects, that we do
+                    let geo = conn.get_geometry(r.window)?.reply()?;
+                    let win = r.window;
+                    let frame_win = conn.generate_id()?;
+                    let win_aux = CreateWindowAux::new().event_mask(
+                        EventMask::SUBSTRUCTURE_NOTIFY
+                            | EventMask::SUBSTRUCTURE_REDIRECT
+                            | EventMask::PROPERTY_CHANGE,
+                    );
 
-                {
-                    let _guard = scopeguard::guard((), |_| {
-                        let _ = conn.ungrab_server();
-                    });
+                    {
+                        let _guard = scopeguard::guard((), |_| {
+                            let _ = conn.ungrab_server();
+                        });
 
-                    conn.grab_server()?;
-                    let cookie1 = conn.create_window(
-                        COPY_DEPTH_FROM_PARENT,
-                        frame_win,
-                        xwm.screen.root,
-                        geo.x,
-                        geo.y,
-                        geo.width,
-                        geo.height,
-                        0,
-                        WindowClass::INPUT_OUTPUT,
-                        x11rb::COPY_FROM_PARENT,
-                        &win_aux,
-                    )?;
-                    let cookie2 = conn.reparent_window(win, frame_win, 0, 0)?;
-                    conn.map_window(win)?;
+                        conn.grab_server()?;
+                        let cookie1 = conn.create_window(
+                            COPY_DEPTH_FROM_PARENT,
+                            frame_win,
+                            xwm.screen.root,
+                            geo.x,
+                            geo.y,
+                            geo.width,
+                            geo.height,
+                            0,
+                            WindowClass::INPUT_OUTPUT,
+                            x11rb::COPY_FROM_PARENT,
+                            &win_aux,
+                        )?;
+                        let cookie2 = conn.reparent_window(win, frame_win, 0, 0)?;
+                        conn.map_window(win)?;
 
-                    // Ignore all events caused by reparent_window(). All those events have the sequence number
-                    // of the reparent_window() request, thus remember its sequence number. The
-                    // grab_server()/ungrab_server() is done so that the server does not handle other clients
-                    // in-between, which could cause other events to get the same sequence number.
-                    xwm.sequences_to_ignore
-                        .push(Reverse(cookie1.sequence_number() as u16));
-                    xwm.sequences_to_ignore
-                        .push(Reverse(cookie2.sequence_number() as u16));
+                        // Ignore all events caused by reparent_window(). All those events have the sequence number
+                        // of the reparent_window() request, thus remember its sequence number. The
+                        // grab_server()/ungrab_server() is done so that the server does not handle other clients
+                        // in-between, which could cause other events to get the same sequence number.
+                        xwm.sequences_to_ignore
+                           .push(Reverse(cookie1.sequence_number() as u16));
+                        xwm.sequences_to_ignore
+                           .push(Reverse(cookie2.sequence_number() as u16));
+                    }
+
+                    surface.state.lock().unwrap().mapped_onto = Some(frame_win);
+                    drop(_guard);
+                    state.map_window_request(xwm_id, surface);
                 }
-
-                surface.state.lock().unwrap().mapped_onto = Some(frame_win);
-                drop(_guard);
-                state.map_window_request(xwm_id, surface);
             }
         }
         Event::MapNotify(n) => {
