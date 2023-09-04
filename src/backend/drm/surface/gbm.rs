@@ -104,11 +104,7 @@ where
         code: Fourcc,
     ) -> Result<(Slot<BufferObject<()>>, Swapchain<A>, bool), (A, Error<A::Error>)> {
         // select a format
-        let mut plane_formats = match drm.supported_formats(drm.plane()) {
-            Ok(formats) => formats.iter().cloned().collect::<HashSet<_>>(),
-            Err(err) => return Err((allocator, err.into())),
-        };
-
+        let mut plane_formats = drm.planes().primary.formats.clone();
         let opaque_code = get_opaque(code).unwrap_or(code);
         if !plane_formats
             .iter()
@@ -250,6 +246,10 @@ where
     #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     #[profiling::function]
     pub fn next_buffer(&mut self) -> Result<(Dmabuf, u8), Error<A::Error>> {
+        if !self.drm.is_active() {
+            return Err(Error::<A::Error>::DrmError(DrmError::DeviceInactive));
+        }
+
         if self.next_fb.is_none() {
             let slot = self
                 .swapchain
@@ -288,6 +288,10 @@ where
         damage: Option<Vec<Rectangle<i32, Physical>>>,
         user_data: U,
     ) -> Result<(), Error<A::Error>> {
+        if !self.drm.is_active() {
+            return Err(Error::<A::Error>::DrmError(DrmError::DeviceInactive));
+        }
+
         let next_fb = self.next_fb.take().ok_or(Error::<A::Error>::NoBuffer)?;
 
         self.swapchain.submitted(&next_fb);

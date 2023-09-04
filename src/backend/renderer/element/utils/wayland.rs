@@ -22,7 +22,9 @@ pub fn select_dmabuf_feedback<'a>(
 
     match state.presentation_state {
         RenderElementPresentationState::Rendering { reason } => match reason {
-            Some(RenderingReason::ScanoutFailed) => scanout_feedback,
+            Some(RenderingReason::FormatUnsupported) | Some(RenderingReason::ScanoutFailed) => {
+                scanout_feedback
+            }
             None => default_feedback,
         },
         RenderElementPresentationState::ZeroCopy => scanout_feedback,

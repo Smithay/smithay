@@ -80,18 +80,31 @@ pub mod node;
 
 mod surface;
 
+use std::collections::HashSet;
+
 use crate::utils::DevPath;
 pub use device::{
     DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmEvent, EventMetadata as DrmEventMetadata, PlaneClaim,
     Time as DrmEventTime,
 };
+use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 pub use error::Error as DrmError;
 pub use node::{CreateDrmNodeError, DrmNode, NodeType};
 #[cfg(feature = "backend_gbm")]
 pub use surface::gbm::{Error as GbmBufferedSurfaceError, GbmBufferedSurface};
 pub use surface::{DrmSurface, PlaneConfig, PlaneDamageClips, PlaneState};
 
-use drm::control::{crtc, plane, Device as ControlDevice, PlaneType};
+use drm::{
+    control::{crtc, framebuffer, plane, Device as ControlDevice, PlaneType},
+    DriverCapability,
+};
+use tracing::trace;
+
+/// Common framebuffer operations
+pub trait Framebuffer: AsRef<framebuffer::Handle> {
+    /// Retrieve the format of the framebuffer
+    fn format(&self) -> drm_fourcc::DrmFormat;
+}
 
 /// A set of planes as supported by a crtc
 #[derive(Debug, Clone)]
@@ -105,7 +118,7 @@ pub struct Planes {
 }
 
 /// Info about a single plane
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct PlaneInfo {
     /// Handle of the plane
     pub handle: plane::Handle,
@@ -113,6 +126,8 @@ pub struct PlaneInfo {
     pub type_: PlaneType,
     /// z-position of the plane if available
     pub zpos: Option<i32>,
+    /// Formats supported by this plane
+    pub formats: HashSet<DrmFormat>,
 }
 
 fn planes(
@@ -146,10 +161,12 @@ fn planes(
         if resources.filter_crtcs(filter).contains(crtc) {
             let zpos = plane_zpos(dev, plane).ok().flatten();
             let type_ = plane_type(dev, plane)?;
+            let formats = plane_formats(dev, plane)?;
             let plane_info = PlaneInfo {
                 handle: plane,
                 type_,
                 zpos,
+                formats,
             };
             match type_ {
                 PlaneType::Primary => {
@@ -222,6 +239,134 @@ fn plane_zpos(dev: &(impl ControlDevice + DevPath), plane: plane::Handle) -> Res
         }
     }
     Ok(None)
+}
+
+fn plane_formats(
+    dev: &(impl ControlDevice + DevPath),
+    plane: plane::Handle,
+) -> Result<HashSet<DrmFormat>, DrmError> {
+    // get plane formats
+    let plane_info = dev.get_plane(plane).map_err(|source| DrmError::Access {
+        errmsg: "Error loading plane info",
+        dev: dev.dev_path(),
+        source,
+    })?;
+    let mut formats = HashSet::new();
+    for code in plane_info
+        .formats()
+        .iter()
+        .flat_map(|x| DrmFourcc::try_from(*x).ok())
+    {
+        formats.insert(DrmFormat {
+            code,
+            modifier: DrmModifier::Invalid,
+        });
+    }
+
+    if let Ok(1) = dev.get_driver_capability(DriverCapability::AddFB2Modifiers) {
+        let set = dev.get_properties(plane).map_err(|source| DrmError::Access {
+            errmsg: "Failed to query properties",
+            dev: dev.dev_path(),
+            source,
+        })?;
+        let (handles, _) = set.as_props_and_values();
+        // for every handle ...
+        let prop = handles
+            .iter()
+            .find(|handle| {
+                // get information of that property
+                if let Ok(info) = dev.get_property(**handle) {
+                    // to find out, if we got the handle of the "IN_FORMATS" property ...
+                    if info.name().to_str().map(|x| x == "IN_FORMATS").unwrap_or(false) {
+                        // so we can use that to get formats
+                        return true;
+                    }
+                }
+                false
+            })
+            .copied();
+        if let Some(prop) = prop {
+            let prop_info = dev.get_property(prop).map_err(|source| DrmError::Access {
+                errmsg: "Failed to query property",
+                dev: dev.dev_path(),
+                source,
+            })?;
+            let (handles, raw_values) = set.as_props_and_values();
+            let raw_value = raw_values[handles
+                .iter()
+                .enumerate()
+                .find_map(|(i, handle)| if *handle == prop { Some(i) } else { None })
+                .unwrap()];
+            if let drm::control::property::Value::Blob(blob) = prop_info.value_type().convert_value(raw_value)
+            {
+                let data = dev.get_property_blob(blob).map_err(|source| DrmError::Access {
+                    errmsg: "Failed to query property blob data",
+                    dev: dev.dev_path(),
+                    source,
+                })?;
+                // be careful here, we have no idea about the alignment inside the blob, so always copy using `read_unaligned`,
+                // although slice::from_raw_parts would be so much nicer to iterate and to read.
+                unsafe {
+                    let fmt_mod_blob_ptr = data.as_ptr() as *const drm_ffi::drm_format_modifier_blob;
+                    let fmt_mod_blob = &*fmt_mod_blob_ptr;
+
+                    let formats_ptr: *const u32 = fmt_mod_blob_ptr
+                        .cast::<u8>()
+                        .offset(fmt_mod_blob.formats_offset as isize)
+                        as *const _;
+                    let modifiers_ptr: *const drm_ffi::drm_format_modifier = fmt_mod_blob_ptr
+                        .cast::<u8>()
+                        .offset(fmt_mod_blob.modifiers_offset as isize)
+                        as *const _;
+                    #[allow(clippy::unnecessary_cast)]
+                    let formats_ptr = formats_ptr as *const u32;
+                    #[allow(clippy::unnecessary_cast)]
+                    let modifiers_ptr = modifiers_ptr as *const drm_ffi::drm_format_modifier;
+
+                    for i in 0..fmt_mod_blob.count_modifiers {
+                        let mod_info = modifiers_ptr.offset(i as isize).read_unaligned();
+                        for j in 0..64 {
+                            if mod_info.formats & (1u64 << j) != 0 {
+                                let code = DrmFourcc::try_from(
+                                    formats_ptr
+                                        .offset((j + mod_info.offset) as isize)
+                                        .read_unaligned(),
+                                )
+                                .ok();
+                                let modifier = DrmModifier::from(mod_info.modifier);
+                                if let Some(code) = code {
+                                    formats.insert(DrmFormat { code, modifier });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else if plane_type(dev, plane)? == PlaneType::Cursor {
+        // Force a LINEAR layout for the cursor if the driver doesn't support modifiers
+        for format in formats.clone() {
+            formats.insert(DrmFormat {
+                code: format.code,
+                modifier: DrmModifier::Linear,
+            });
+        }
+    }
+
+    if formats.is_empty() {
+        formats.insert(DrmFormat {
+            code: DrmFourcc::Argb8888,
+            modifier: DrmModifier::Invalid,
+        });
+    }
+
+    trace!(
+        "Supported scan-out formats for plane ({:?}): {:?}",
+        plane,
+        formats
+    );
+
+    Ok(formats)
 }
 
 #[cfg(feature = "backend_gbm")]

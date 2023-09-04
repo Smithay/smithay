@@ -26,11 +26,14 @@ use crate::backend::{
 };
 use crate::utils::DevPath;
 
+use super::Framebuffer;
+
 /// A GBM backed framebuffer
 #[derive(Debug)]
 pub struct GbmFramebuffer {
     _bo: Option<BufferObject<()>>,
     fb: framebuffer::Handle,
+    format: drm_fourcc::DrmFormat,
     drm: DrmDeviceFd,
 }
 
@@ -43,6 +46,12 @@ impl Drop for GbmFramebuffer {
 impl AsRef<framebuffer::Handle> for GbmFramebuffer {
     fn as_ref(&self) -> &framebuffer::Handle {
         &self.fb
+    }
+}
+
+impl Framebuffer for GbmFramebuffer {
+    fn format(&self) -> drm_fourcc::DrmFormat {
+        self.format
     }
 }
 
@@ -83,7 +92,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
         let bo = gbm
             .import_buffer_object_from_wayland::<()>(buffer, gbm::BufferObjectFlags::SCANOUT)
             .map_err(Error::Import)?;
-        let fb = framebuffer_from_bo_internal(
+        let (fb, format) = framebuffer_from_bo_internal(
             drm,
             BufferObjectInternal {
                 bo: &bo,
@@ -97,6 +106,7 @@ pub fn framebuffer_from_wayland_buffer<A: AsFd + 'static>(
         return Ok(Some(GbmFramebuffer {
             _bo: Some(bo),
             fb,
+            format,
             drm: drm.clone(),
         }));
     }
@@ -154,9 +164,10 @@ pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
         use_opaque,
     )
     .map_err(Error::Drm)
-    .map(|fb| GbmFramebuffer {
+    .map(|(fb, format)| GbmFramebuffer {
         _bo: Some(bo),
         fb,
+        format,
         drm: drm.clone(),
     })
 }
@@ -210,9 +221,10 @@ pub fn framebuffer_from_bo<T>(
         },
         use_opaque,
     )
-    .map(|fb| GbmFramebuffer {
+    .map(|(fb, format)| GbmFramebuffer {
         _bo: None,
         fb,
+        format,
         drm: drm.clone(),
     })
 }
@@ -285,7 +297,7 @@ fn framebuffer_from_bo_internal<D, T>(
     drm: &D,
     bo: BufferObjectInternal<'_, T>,
     use_opaque: bool,
-) -> Result<framebuffer::Handle, AccessError>
+) -> Result<(framebuffer::Handle, drm_fourcc::DrmFormat), AccessError>
 where
     D: drm::control::Device + DevPath,
 {
@@ -294,7 +306,7 @@ where
         x => Some(x),
     };
 
-    let fb = match if modifier.is_some() {
+    let (fb, format) = match if modifier.is_some() {
         let num = bo.plane_count().unwrap();
         let modifiers = [
             modifier,
@@ -303,18 +315,52 @@ where
             if num > 3 { modifier } else { None },
         ];
         if use_opaque {
-            drm.add_planar_framebuffer(
-                &OpaqueBufferWrapper(&bo),
-                &modifiers,
-                drm_ffi::DRM_MODE_FB_MODIFIERS,
-            )
+            let opaque_wrapper = OpaqueBufferWrapper(&bo);
+            drm.add_planar_framebuffer(&opaque_wrapper, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
+                .map(|fb| {
+                    (
+                        fb,
+                        drm_fourcc::DrmFormat {
+                            code: opaque_wrapper.format(),
+                            modifier: modifier.unwrap(),
+                        },
+                    )
+                })
         } else {
             drm.add_planar_framebuffer(&bo, &modifiers, drm_ffi::DRM_MODE_FB_MODIFIERS)
+                .map(|fb| {
+                    (
+                        fb,
+                        drm_fourcc::DrmFormat {
+                            code: bo.format(),
+                            modifier: modifier.unwrap(),
+                        },
+                    )
+                })
         }
     } else if use_opaque {
-        drm.add_planar_framebuffer(&OpaqueBufferWrapper(&bo), &[None, None, None, None], 0)
+        let opaque_wrapper = OpaqueBufferWrapper(&bo);
+        drm.add_planar_framebuffer(&opaque_wrapper, &[None, None, None, None], 0)
+            .map(|fb| {
+                (
+                    fb,
+                    drm_fourcc::DrmFormat {
+                        code: opaque_wrapper.format(),
+                        modifier: drm_fourcc::DrmModifier::Invalid,
+                    },
+                )
+            })
     } else {
         drm.add_planar_framebuffer(&bo, &[None, None, None, None], 0)
+            .map(|fb| {
+                (
+                    fb,
+                    drm_fourcc::DrmFormat {
+                        code: bo.format(),
+                        modifier: drm_fourcc::DrmModifier::Invalid,
+                    },
+                )
+            })
     } {
         Ok(fb) => fb,
         Err(source) => {
@@ -336,13 +382,21 @@ where
                     source,
                 })?;
 
-            drm.add_framebuffer(&*bo, depth as u32, bpp as u32)
+            let fb = drm
+                .add_framebuffer(&*bo, depth as u32, bpp as u32)
                 .map_err(|source| AccessError {
                     errmsg: "Failed to add framebuffer",
                     dev: drm.dev_path(),
                     source,
-                })?
+                })?;
+            (
+                fb,
+                drm_fourcc::DrmFormat {
+                    code: fourcc,
+                    modifier: drm_fourcc::DrmModifier::Invalid,
+                },
+            )
         }
     };
-    Ok(fb)
+    Ok((fb, format))
 }

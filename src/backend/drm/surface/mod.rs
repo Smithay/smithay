@@ -1,10 +1,9 @@
-use std::collections::HashSet;
-use std::convert::TryFrom;
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use drm::control::{connector, crtc, framebuffer, plane, property, Device as ControlDevice, Mode};
-use drm::{Device as BasicDevice, DriverCapability};
+use drm::control::{connector, crtc, framebuffer, plane, Device as ControlDevice, Mode};
+use drm::Device as BasicDevice;
 
 use nix::libc::dev_t;
 
@@ -13,17 +12,12 @@ pub(super) mod atomic;
 pub(super) mod gbm;
 pub(super) mod legacy;
 use super::{
-    device::PlaneClaimStorage, error::Error, plane_type, planes, DrmDeviceFd, PlaneClaim, PlaneType, Planes,
+    device::PlaneClaimStorage, error::Error, plane_type, DrmDeviceFd, PlaneClaim, PlaneType, Planes,
 };
+use crate::utils::DevPath;
 use crate::utils::{Buffer, Physical, Point, Rectangle, Transform};
-use crate::{
-    backend::allocator::{Format, Fourcc, Modifier},
-    utils::DevPath,
-};
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
-
-use tracing::trace;
 
 /// An open crtc + plane combination that can be used for scan-out
 #[derive(Debug)]
@@ -32,9 +26,8 @@ pub struct DrmSurface {
     #[allow(dead_code)]
     pub(super) dev_id: dev_t,
     pub(super) crtc: crtc::Handle,
-    pub(super) primary: plane::Handle,
+    pub(super) planes: Planes,
     pub(super) internal: Arc<DrmSurfaceInternal>,
-    pub(super) has_universal_planes: bool,
     pub(super) plane_claim_storage: PlaneClaimStorage,
 }
 
@@ -199,7 +192,7 @@ impl DrmSurface {
 
     /// Returns the underlying primary [`plane`](drm::control::plane) of this surface
     pub fn plane(&self) -> plane::Handle {
-        self.primary
+        self.planes.primary.handle
     }
 
     /// Currently used [`connector`](drm::control::connector)s of this surface
@@ -389,147 +382,29 @@ impl DrmSurface {
         }
     }
 
-    /// Returns a set of supported pixel formats for attached buffers
-    pub fn supported_formats(&self, plane: plane::Handle) -> Result<HashSet<Format>, Error> {
-        // get plane formats
-        let plane_info = self.get_plane(plane).map_err(|source| Error::Access {
-            errmsg: "Error loading plane info",
-            dev: self.dev_path(),
-            source,
-        })?;
-        let mut formats = HashSet::new();
-        for code in plane_info
-            .formats()
-            .iter()
-            .flat_map(|x| Fourcc::try_from(*x).ok())
-        {
-            formats.insert(Format {
-                code,
-                modifier: Modifier::Invalid,
-            });
-        }
-
-        if let Ok(1) = self.get_driver_capability(DriverCapability::AddFB2Modifiers) {
-            let set = self.get_properties(plane).map_err(|source| Error::Access {
-                errmsg: "Failed to query properties",
-                dev: self.dev_path(),
-                source,
-            })?;
-            let (handles, _) = set.as_props_and_values();
-            // for every handle ...
-            let prop = handles
-                .iter()
-                .find(|handle| {
-                    // get information of that property
-                    if let Ok(info) = self.get_property(**handle) {
-                        // to find out, if we got the handle of the "IN_FORMATS" property ...
-                        if info.name().to_str().map(|x| x == "IN_FORMATS").unwrap_or(false) {
-                            // so we can use that to get formats
-                            return true;
-                        }
-                    }
-                    false
-                })
-                .copied();
-            if let Some(prop) = prop {
-                let prop_info = self.get_property(prop).map_err(|source| Error::Access {
-                    errmsg: "Failed to query property",
-                    dev: self.dev_path(),
-                    source,
-                })?;
-                let (handles, raw_values) = set.as_props_and_values();
-                let raw_value = raw_values[handles
-                    .iter()
-                    .enumerate()
-                    .find_map(|(i, handle)| if *handle == prop { Some(i) } else { None })
-                    .unwrap()];
-                if let property::Value::Blob(blob) = prop_info.value_type().convert_value(raw_value) {
-                    let data = self.get_property_blob(blob).map_err(|source| Error::Access {
-                        errmsg: "Failed to query property blob data",
-                        dev: self.dev_path(),
-                        source,
-                    })?;
-                    // be careful here, we have no idea about the alignment inside the blob, so always copy using `read_unaligned`,
-                    // although slice::from_raw_parts would be so much nicer to iterate and to read.
-                    unsafe {
-                        let fmt_mod_blob_ptr = data.as_ptr() as *const drm_ffi::drm_format_modifier_blob;
-                        let fmt_mod_blob = &*fmt_mod_blob_ptr;
-
-                        let formats_ptr: *const u32 = fmt_mod_blob_ptr
-                            .cast::<u8>()
-                            .offset(fmt_mod_blob.formats_offset as isize)
-                            as *const _;
-                        let modifiers_ptr: *const drm_ffi::drm_format_modifier = fmt_mod_blob_ptr
-                            .cast::<u8>()
-                            .offset(fmt_mod_blob.modifiers_offset as isize)
-                            as *const _;
-                        #[allow(clippy::unnecessary_cast)]
-                        let formats_ptr = formats_ptr as *const u32;
-                        #[allow(clippy::unnecessary_cast)]
-                        let modifiers_ptr = modifiers_ptr as *const drm_ffi::drm_format_modifier;
-
-                        for i in 0..fmt_mod_blob.count_modifiers {
-                            let mod_info = modifiers_ptr.offset(i as isize).read_unaligned();
-                            for j in 0..64 {
-                                if mod_info.formats & (1u64 << j) != 0 {
-                                    let code = Fourcc::try_from(
-                                        formats_ptr
-                                            .offset((j + mod_info.offset) as isize)
-                                            .read_unaligned(),
-                                    )
-                                    .ok();
-                                    let modifier = Modifier::from(mod_info.modifier);
-                                    if let Some(code) = code {
-                                        formats.insert(Format { code, modifier });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else if plane_type(self, plane)? == PlaneType::Cursor {
-            // Force a LINEAR layout for the cursor if the driver doesn't support modifiers
-            for format in formats.clone() {
-                formats.insert(Format {
-                    code: format.code,
-                    modifier: Modifier::Linear,
-                });
-            }
-        }
-
-        if formats.is_empty() {
-            formats.insert(Format {
-                code: Fourcc::Argb8888,
-                modifier: Modifier::Invalid,
-            });
-        }
-
-        trace!(
-            "Supported scan-out formats for plane ({:?}): {:?}",
-            plane,
-            formats
-        );
-
-        Ok(formats)
-    }
-
     /// Returns a set of available planes for this surface
-    pub fn planes(&self) -> Result<Planes, Error> {
-        let has_universal_planes = match &*self.internal {
-            DrmSurfaceInternal::Atomic(_) => self.has_universal_planes,
-            // Disable the planes on legacy, we do not support them on legacy anyway
-            DrmSurfaceInternal::Legacy(_) => false,
-        };
-
-        planes(self, &self.crtc, has_universal_planes)
+    pub fn planes(&self) -> &Planes {
+        &self.planes
     }
 
     /// Claim a plane so that it won't be used by a different crtc
     ///  
     /// Returns `None` if the plane could not be claimed
     pub fn claim_plane(&self, plane: plane::Handle) -> Option<PlaneClaim> {
-        self.plane_claim_storage.claim(plane, self.crtc)
+        // Validate that we are called with an plane that belongs to us
+        if self.planes.primary.handle == plane
+            || self
+                .planes
+                .cursor
+                .as_ref()
+                .map(|p| p.handle == plane)
+                .unwrap_or(false)
+            || self.planes.overlay.iter().any(|p| p.handle == plane)
+        {
+            self.plane_claim_storage.claim(plane, self.crtc)
+        } else {
+            None
+        }
     }
 
     /// Re-evaluates the current state of the crtc.
@@ -544,6 +419,14 @@ impl DrmSurface {
         match &*self.internal {
             DrmSurfaceInternal::Atomic(surf) => surf.reset_state::<Self>(None),
             DrmSurfaceInternal::Legacy(surf) => surf.reset_state::<Self>(None),
+        }
+    }
+
+    /// Returns if the underlying device is currently paused or not.
+    pub fn is_active(&self) -> bool {
+        match &*self.internal {
+            DrmSurfaceInternal::Atomic(surf) => surf.active.load(Ordering::SeqCst),
+            DrmSurfaceInternal::Legacy(surf) => surf.active.load(Ordering::SeqCst),
         }
     }
 
