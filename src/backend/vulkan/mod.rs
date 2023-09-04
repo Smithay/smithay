@@ -335,6 +335,7 @@ impl Instance {
         info!("Created new instance");
         info!("Enabled instance extensions: {:?}", inner.enabled_extensions);
 
+        #[allow(clippy::arc_with_non_send_sync)]
         Ok(Instance(Arc::new(inner)))
     }
 
@@ -383,10 +384,6 @@ impl Instance {
         &self.0.instance
     }
 }
-
-// SAFETY: Destruction is externally synchronized (using an internal Arc).
-unsafe impl Send for Instance {}
-unsafe impl Sync for Instance {}
 
 /// A Vulkan physical device.
 ///

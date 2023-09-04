@@ -443,7 +443,7 @@ jobs:
       - name: Build Documentation
         env: 
           RUSTDOCFLAGS: --cfg=docsrs
-        run: cargo doc --no-deps --features "test_all_features" -p smithay -p calloop:0.10.6 -p drm -p gbm -p input -p nix:0.26.2 -p udev -p slog -p wayland-server -p wayland-backend -p wayland-protocols:0.30.1 -p winit -p x11rb
+        run: cargo doc --no-deps --features "test_all_features" -p smithay -p calloop:0.10.6 -p drm -p gbm -p input -p nix:0.26.4 -p udev -p slog -p wayland-server -p wayland-backend -p wayland-protocols:0.30.1 -p winit -p x11rb
         
       - name: Setup index
         run: cp ./doc_index.html ./target/doc/index.html

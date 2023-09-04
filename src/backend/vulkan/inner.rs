@@ -17,6 +17,11 @@ pub struct InstanceInner {
     pub enabled_extensions: Vec<&'static CStr>,
 }
 
+// SAFETY: Destruction is externally synchronized (`InstanceInner` owns the
+// `Instance`, and is held by a single thread when `Drop` is called).
+unsafe impl Send for InstanceInner {}
+unsafe impl Sync for InstanceInner {}
+
 pub struct DebugState {
     pub debug_utils: DebugUtils,
     pub debug_messenger: vk::DebugUtilsMessengerEXT,
@@ -39,7 +44,7 @@ impl Drop for InstanceInner {
                     .debug_utils
                     .destroy_debug_utils_messenger(debug.debug_messenger, None);
             }
-            Some(unsafe { Box::from_raw(debug.span_ptr as *mut tracing::Span) })
+            Some(unsafe { Box::from_raw(debug.span_ptr) })
         } else {
             None
         };
