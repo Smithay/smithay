@@ -7,7 +7,7 @@ use libseat::{Seat, SeatEvent};
 use std::{
     cell::RefCell,
     collections::HashMap,
-    os::unix::io::RawFd,
+    os::unix::io::{AsFd, AsRawFd, RawFd},
     path::Path,
     rc::{Rc, Weak},
     sync::{
@@ -31,7 +31,7 @@ use tracing::{debug, error, info_span, instrument};
 struct LibSeatSessionImpl {
     seat: RefCell<Seat>,
     active: Arc<AtomicBool>,
-    devices: RefCell<HashMap<RawFd, i32>>,
+    devices: RefCell<HashMap<RawFd, libseat::Device>>,
 }
 
 impl Drop for LibSeatSessionImpl {
@@ -65,20 +65,16 @@ impl LibSeatSession {
         let (tx, rx) = calloop::channel::channel();
 
         let seat = {
-            Seat::open(
-                move |_seat, event| match event {
-                    SeatEvent::Enable => {
-                        debug!("Enable callback called");
-                        tx.send(event).unwrap();
-                    }
-                    SeatEvent::Disable => {
-                        debug!("Disable callback called");
-                        tx.send(event).unwrap();
-                    }
-                },
-                // TODO: libseat has a hard dependency on slog
-                None,
-            )
+            Seat::open(move |_seat, event| match event {
+                SeatEvent::Enable => {
+                    debug!("Enable callback called");
+                    tx.send(event).unwrap();
+                }
+                SeatEvent::Disable => {
+                    debug!("Disable callback called");
+                    tx.send(event).unwrap();
+                }
+            })
         };
 
         drop(_guard);
@@ -127,9 +123,12 @@ impl Session for LibSeatSession {
                 .seat
                 .borrow_mut()
                 .open_device(&path)
-                .map(|(id, fd)| {
-                    session.devices.borrow_mut().insert(fd, id);
-                    fd
+                .map(|device| {
+                    let raw_fd = device.as_fd().as_raw_fd();
+
+                    session.devices.borrow_mut().insert(raw_fd, device);
+
+                    raw_fd
                 })
                 .map_err(|err| Error::FailedToOpenDevice(Errno::from_i32(err.into())))
         } else {
@@ -142,9 +141,7 @@ impl Session for LibSeatSession {
         if let Some(session) = self.internal.upgrade() {
             debug!("Closing device: {:?}", fd);
 
-            let dev = session.devices.borrow().get(&fd).copied();
-
-            let out = if let Some(dev) = dev {
+            let out = if let Some(dev) = session.devices.borrow_mut().remove(&fd) {
                 session
                     .seat
                     .borrow_mut()
@@ -246,7 +243,7 @@ impl EventSource for LibSeatSessionNotifier {
 
         self.token = Some(factory.token());
         poll.register(
-            self.internal.seat.borrow_mut().get_fd().unwrap(),
+            self.internal.seat.borrow_mut().get_fd().unwrap().as_raw_fd(),
             calloop::Interest::READ,
             calloop::Mode::Level,
             self.token.unwrap(),
@@ -258,7 +255,7 @@ impl EventSource for LibSeatSessionNotifier {
 
         self.token = Some(factory.token());
         poll.reregister(
-            self.internal.seat.borrow_mut().get_fd().unwrap(),
+            self.internal.seat.borrow_mut().get_fd().unwrap().as_raw_fd(),
             calloop::Interest::READ,
             calloop::Mode::Level,
             self.token.unwrap(),
@@ -269,7 +266,7 @@ impl EventSource for LibSeatSessionNotifier {
         self.rx.unregister(poll)?;
 
         self.token = None;
-        poll.unregister(self.internal.seat.borrow_mut().get_fd().unwrap())
+        poll.unregister(self.internal.seat.borrow_mut().get_fd().unwrap().as_raw_fd())
     }
 }
 
