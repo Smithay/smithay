@@ -63,7 +63,7 @@
 //! // ... send frame callbacks and present frame
 //!
 //! # let time = Duration::ZERO;
-//! # let refresh = 60_000;
+//! # let refresh = Duration::from_secs_f64(1_000f64 / 60_000f64);
 //! # let seq = 0;
 //! for feedback in presentation_feedbacks {
 //!     feedback.presented(&output, time, refresh, seq, wp_presentation_feedback::Kind::Vsync);
@@ -206,7 +206,7 @@ impl PresentationFeedbackCallback {
         self,
         output: &Output,
         time: impl Into<Duration>,
-        refresh: u32,
+        refresh: impl Into<Duration>,
         seq: u64,
         flags: wp_presentation_feedback::Kind,
     ) {
@@ -236,6 +236,7 @@ impl PresentationFeedbackCallback {
         let tv_sec_hi = (time.as_secs() >> 32) as u32;
         let tv_sec_lo = (time.as_secs() & 0xFFFFFFFF) as u32;
         let tv_nsec = time.subsec_nanos();
+        let refresh = refresh.into().as_nanos() as u32;
         let seq_hi = (seq >> 32) as u32;
         let seq_lo = (seq & 0xFFFFFFFF) as u32;
 
