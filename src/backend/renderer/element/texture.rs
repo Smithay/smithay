@@ -684,7 +684,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
 
 impl<T: Texture> TextureRenderElement<T> {
     /// Create a [`TextureRenderElement`] from an
-    /// existing texture and a [`DamageTrackerSnapshot`]
+    /// existing texture and a [`DamageSnapshot`]
     #[allow(clippy::too_many_arguments)]
     pub fn from_texture_with_damage(
         id: Id,

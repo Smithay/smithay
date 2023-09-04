@@ -1,5 +1,5 @@
 //!
-//! Implementation of the [`Session`](::backend::session::Session) trait through the libseat.
+//! Implementation of the [`Session`](super::Session) trait through the libseat.
 //!
 //! This requires libseat to be available on the system.
 
@@ -48,7 +48,7 @@ pub struct LibSeatSession {
     span: tracing::Span,
 }
 
-/// [`SessionNotifier`] via the libseat
+/// `SessionNotifier` via the libseat
 #[derive(Debug)]
 pub struct LibSeatSessionNotifier {
     internal: Rc<LibSeatSessionImpl>,

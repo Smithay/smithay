@@ -230,7 +230,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     ///     also work on the `target_device`.
     /// - `copy_format` denotes the format buffers will be allocated in for offscreen rendering.
     ///
-    /// It is valid to pass the same devices for both, but you *should* use [`GraphicsApi::single_renderer`] in those cases.
+    /// It is valid to pass the same devices for both, but you *should* use [`GpuManager::single_renderer`] in those cases.
     #[instrument(level = "trace", parent = &self.span, skip(self, allocator))]
     #[profiling::function]
     pub fn renderer<'api, 'alloc>(

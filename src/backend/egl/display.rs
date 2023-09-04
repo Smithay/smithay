@@ -755,7 +755,7 @@ impl EGLDisplay {
     /// if binding is not supported by the EGL implementation.
     ///
     /// This might return [`OtherEGLDisplayAlreadyBound`](Error::OtherEGLDisplayAlreadyBound)
-    /// if called for the same [`Display`] multiple times, as only one egl display may be bound at any given time.
+    /// if called for the same [`DisplayHandle`] multiple times, as only one egl display may be bound at any given time.
     #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
     pub fn bind_wl_display(&self, display: &DisplayHandle) -> Result<EGLBufferReader, Error> {
         let display_ptr = display.backend_handle().display_ptr();

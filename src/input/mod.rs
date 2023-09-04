@@ -5,7 +5,7 @@
 //! It is however not directly tied to wayland and can be used to multiplex various input operations
 //! between different handlers.
 //!
-//! If the [`wayland_frontend`]-feature is enabled the `smithay::wayland::seat`-module provides additional
+//! If the `wayland_frontend`-feature is enabled the `smithay::wayland::seat`-module provides additional
 //! functionality for the provided types of this module to map them to advertised wayland globals and objects.
 //!
 //! ## How to use it
@@ -87,9 +87,9 @@
 //! Once the seat is initialized, you can add capabilities to it.
 //!
 //! Currently, pointer and keyboard capabilities are supported by this module.
-//! [`smithay::wayland::seat`] also provides an abstraction to send touch-events to client,
+//! [`seat`](crate::wayland::seat) also provides an abstraction to send touch-events to client,
 //! further helpers are not provided at this point.
-//! [`smithay::wayland::tablet_manager`] also provides client interaction for drawing tablets.
+//! [`tablet_manager`](crate::wayland::tablet_manager) also provides client interaction for drawing tablets.
 //!
 //! You can add these capabilities via methods of the [`Seat`] struct:
 //! [`Seat::add_keyboard`] and [`Seat::add_pointer`].

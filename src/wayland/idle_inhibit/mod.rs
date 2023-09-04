@@ -52,7 +52,7 @@ pub struct IdleInhibitManagerState {
 }
 
 impl IdleInhibitManagerState {
-    /// Create new [`zwp_idle_inhibit_manager`](wayland_protocols::idle_inhibit::zv1::server::zwp_idle_inhibit_manager_v1) global.
+    /// Create new [`zwp_idle_inhibit_manager`](ZwpIdleInhibitManagerV1) global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
         D: GlobalDispatch<ZwpIdleInhibitManagerV1, ()>,

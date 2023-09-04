@@ -1065,7 +1065,7 @@ impl ShellClient {
 
     /// Send a ping request to this shell client
     ///
-    /// You'll receive the reply as a [`XdgRequest::ClientPong`] request.
+    /// You'll receive the reply as a [`XdgShellHandler::client_pong`] request.
     ///
     /// A typical use is to start a timer at the same time you send this ping
     /// request, and cancel it when you receive the pong. If the timer runs
