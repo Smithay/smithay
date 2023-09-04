@@ -11,10 +11,11 @@ use smithay::{
         default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
     },
     delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_input_method_manager,
-    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_presentation,
-    delegate_primary_selection, delegate_relative_pointer, delegate_seat, delegate_security_context,
-    delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_pointer_gestures,
+    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_security_context, delegate_shm, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration,
+    delegate_xdg_shell,
     desktop::{
         utils::{
             surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
@@ -53,6 +54,7 @@ use smithay::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
         output::OutputManagerState,
+        pointer_gestures::PointerGesturesState,
         presentation::PresentationState,
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         relative_pointer::RelativePointerManagerState,
@@ -296,6 +298,8 @@ impl<BackendData: Backend> KeyboardShortcutsInhibitHandler for AnvilState<Backen
 delegate_keyboard_shortcuts_inhibit!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_virtual_keyboard_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+delegate_pointer_gestures!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_relative_pointer!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
@@ -544,6 +548,9 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         if BackendData::HAS_RELATIVE_MOTION {
             RelativePointerManagerState::new::<Self>(&dh);
         }
+        if BackendData::HAS_GESTURES {
+            PointerGesturesState::new::<Self>(&dh);
+        }
         SecurityContextState::new::<Self, _>(&dh, |client| {
             client
                 .get_data::<ClientState>()
@@ -756,6 +763,7 @@ pub fn take_presentation_feedback(
 
 pub trait Backend {
     const HAS_RELATIVE_MOTION: bool = false;
+    const HAS_GESTURES: bool = false;
     fn seat_name(&self) -> String;
     fn reset_buffers(&mut self, output: &Output);
     fn early_import(&mut self, surface: &WlSurface);

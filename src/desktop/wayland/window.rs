@@ -3,7 +3,11 @@ use crate::{
     desktop::{space::RenderZindex, utils::*, PopupManager},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget, RelativeMotionEvent},
+        pointer::{
+            AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
+            GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
+            GestureSwipeUpdateEvent, MotionEvent, PointerTarget, RelativeMotionEvent,
+        },
         Seat, SeatHandler,
     },
     output::Output,
@@ -321,6 +325,54 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
         if let Some(surface) = self.0.focused_surface.lock().unwrap().take() {
             PointerTarget::<D>::leave(&surface, seat, data, serial, time)
+        }
+    }
+
+    fn gesture_swipe_begin(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeBeginEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_swipe_begin(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_swipe_update(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeUpdateEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_swipe_update(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_swipe_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeEndEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_swipe_end(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_pinch_begin(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchBeginEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_pinch_begin(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_pinch_update(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchUpdateEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_pinch_update(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_pinch_end(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchEndEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_pinch_end(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_hold_begin(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldBeginEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_hold_begin(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_hold_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldEndEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_hold_end(surface, seat, data, event)
         }
     }
 }

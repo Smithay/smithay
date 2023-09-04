@@ -55,6 +55,7 @@ pub mod idle_inhibit;
 pub mod input_method;
 pub mod keyboard_shortcuts_inhibit;
 pub mod output;
+pub mod pointer_gestures;
 pub mod presentation;
 pub mod primary_selection;
 pub mod relative_pointer;

@@ -50,12 +50,17 @@ use crate::state::Backend;
 use smithay::{
     backend::{
         input::{
-            Device, DeviceCapability, PointerMotionEvent, ProximityState, TabletToolButtonEvent,
+            Device, DeviceCapability, GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _,
+            GestureSwipeUpdateEvent as _, PointerMotionEvent, ProximityState, TabletToolButtonEvent,
             TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
         },
         session::Session,
     },
-    input::pointer::RelativeMotionEvent,
+    input::pointer::{
+        GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
+        GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
+        RelativeMotionEvent,
+    },
     wayland::{
         seat::WaylandFocus,
         tablet_manager::{TabletDescriptor, TabletSeatTrait},
@@ -686,6 +691,14 @@ impl AnvilState<UdevData> {
             InputEvent::TabletToolProximity { event, .. } => self.on_tablet_tool_proximity::<B>(dh, event),
             InputEvent::TabletToolTip { event, .. } => self.on_tablet_tool_tip::<B>(event),
             InputEvent::TabletToolButton { event, .. } => self.on_tablet_button::<B>(event),
+            InputEvent::GestureSwipeBegin { event, .. } => self.on_gesture_swipe_begin::<B>(event),
+            InputEvent::GestureSwipeUpdate { event, .. } => self.on_gesture_swipe_update::<B>(event),
+            InputEvent::GestureSwipeEnd { event, .. } => self.on_gesture_swipe_end::<B>(event),
+            InputEvent::GesturePinchBegin { event, .. } => self.on_gesture_pinch_begin::<B>(event),
+            InputEvent::GesturePinchUpdate { event, .. } => self.on_gesture_pinch_update::<B>(event),
+            InputEvent::GesturePinchEnd { event, .. } => self.on_gesture_pinch_end::<B>(event),
+            InputEvent::GestureHoldBegin { event, .. } => self.on_gesture_hold_begin::<B>(event),
+            InputEvent::GestureHoldEnd { event, .. } => self.on_gesture_hold_end::<B>(event),
             InputEvent::DeviceAdded { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
                     self.seat
@@ -925,6 +938,108 @@ impl AnvilState<UdevData> {
                 evt.time_msec(),
             );
         }
+    }
+
+    fn on_gesture_swipe_begin<B: InputBackend>(&mut self, evt: B::GestureSwipeBeginEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_swipe_begin(
+            self,
+            &GestureSwipeBeginEvent {
+                serial,
+                time: evt.time_msec(),
+                fingers: evt.fingers(),
+            },
+        );
+    }
+
+    fn on_gesture_swipe_update<B: InputBackend>(&mut self, evt: B::GestureSwipeUpdateEvent) {
+        let pointer = self.pointer.clone();
+        pointer.gesture_swipe_update(
+            self,
+            &GestureSwipeUpdateEvent {
+                time: evt.time_msec(),
+                delta: evt.delta(),
+            },
+        );
+    }
+
+    fn on_gesture_swipe_end<B: InputBackend>(&mut self, evt: B::GestureSwipeEndEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_swipe_end(
+            self,
+            &GestureSwipeEndEvent {
+                serial,
+                time: evt.time_msec(),
+                cancelled: evt.cancelled(),
+            },
+        );
+    }
+
+    fn on_gesture_pinch_begin<B: InputBackend>(&mut self, evt: B::GesturePinchBeginEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_pinch_begin(
+            self,
+            &GesturePinchBeginEvent {
+                serial,
+                time: evt.time_msec(),
+                fingers: evt.fingers(),
+            },
+        );
+    }
+
+    fn on_gesture_pinch_update<B: InputBackend>(&mut self, evt: B::GesturePinchUpdateEvent) {
+        let pointer = self.pointer.clone();
+        pointer.gesture_pinch_update(
+            self,
+            &GesturePinchUpdateEvent {
+                time: evt.time_msec(),
+                delta: evt.delta(),
+                scale: evt.scale(),
+                rotation: evt.rotation(),
+            },
+        );
+    }
+
+    fn on_gesture_pinch_end<B: InputBackend>(&mut self, evt: B::GesturePinchEndEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_pinch_end(
+            self,
+            &GesturePinchEndEvent {
+                serial,
+                time: evt.time_msec(),
+                cancelled: evt.cancelled(),
+            },
+        );
+    }
+
+    fn on_gesture_hold_begin<B: InputBackend>(&mut self, evt: B::GestureHoldBeginEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_hold_begin(
+            self,
+            &GestureHoldBeginEvent {
+                serial,
+                time: evt.time_msec(),
+                fingers: evt.fingers(),
+            },
+        );
+    }
+
+    fn on_gesture_hold_end<B: InputBackend>(&mut self, evt: B::GestureHoldEndEvent) {
+        let serial = SCOUNTER.next_serial();
+        let pointer = self.pointer.clone();
+        pointer.gesture_hold_end(
+            self,
+            &GestureHoldEndEvent {
+                serial,
+                time: evt.time_msec(),
+                cancelled: evt.cancelled(),
+            },
+        );
     }
 
     fn clamp_coords(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {

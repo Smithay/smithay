@@ -168,6 +168,7 @@ delegate_dmabuf!(AnvilState<UdevData>);
 
 impl Backend for UdevData {
     const HAS_RELATIVE_MOTION: bool = true;
+    const HAS_GESTURES: bool = true;
 
     fn seat_name(&self) -> String {
         self.session.seat()
