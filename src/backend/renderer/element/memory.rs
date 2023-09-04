@@ -393,6 +393,7 @@ impl MemoryRenderBuffer {
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Self {
         let inner = MemoryRenderBufferInner::new(format, size, scale, transform, opaque_regions);
+        #[allow(clippy::arc_with_non_send_sync)]
         MemoryRenderBuffer {
             id: Id::new(),
             inner: Rc::new(RefCell::new(inner)),
@@ -409,6 +410,7 @@ impl MemoryRenderBuffer {
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Self {
         let inner = MemoryRenderBufferInner::from_memory(mem, format, size, scale, transform, opaque_regions);
+        #[allow(clippy::arc_with_non_send_sync)]
         MemoryRenderBuffer {
             id: Id::new(),
             inner: Rc::new(RefCell::new(inner)),
