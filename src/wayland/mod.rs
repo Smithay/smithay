@@ -50,6 +50,8 @@ pub mod compositor;
 pub mod content_type;
 pub mod data_device;
 pub mod dmabuf;
+#[cfg(feature = "backend_drm")]
+pub mod drm_lease;
 pub mod fractional_scale;
 pub mod idle_inhibit;
 pub mod input_method;
