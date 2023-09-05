@@ -666,6 +666,7 @@ impl<B: Framebuffer> FrameState<B> {
         });
 
         if is_fully_compatible {
+            trace!("skipping fully compatible state test");
             self.planes
                 .iter_mut()
                 .for_each(|(_, state)| state.needs_test = false);
@@ -3711,6 +3712,12 @@ where
         };
 
         let res = if is_compatible {
+            trace!(
+                "skipping atomic test for compatible element {:?} on {:?} with zpos {:?}",
+                element_id,
+                plane.handle,
+                plane.zpos,
+            );
             frame_state.set_state(plane.handle, plane_state);
             true
         } else {
