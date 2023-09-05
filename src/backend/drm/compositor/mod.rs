@@ -657,15 +657,16 @@ impl<B: Framebuffer> FrameState<B> {
         supports_fencing: bool,
         allow_modeset: bool,
     ) -> Result<(), DrmError> {
+        let needs_test = self.planes.iter().any(|(_, state)| state.needs_test);
         let is_fully_compatible = self.planes.iter().all(|(handle, state)| {
-            !state.needs_test
-                || previous_frame
-                    .plane_state(*handle)
-                    .map(|other| state.is_compatible(other))
-                    .unwrap_or(false)
+            previous_frame
+                .plane_state(*handle)
+                .map(|other| state.is_compatible(other))
+                .unwrap_or(false)
         });
 
-        if is_fully_compatible {
+        if !needs_test || is_fully_compatible {
+            trace!("skipping fully compatible state test");
             self.planes
                 .iter_mut()
                 .for_each(|(_, state)| state.needs_test = false);
@@ -3711,6 +3712,12 @@ where
         };
 
         let res = if is_compatible {
+            trace!(
+                "skipping atomic test for compatible element {:?} on {:?} with zpos {:?}",
+                element_id,
+                plane.handle,
+                plane.zpos,
+            );
             frame_state.set_state(plane.handle, plane_state);
             true
         } else {
