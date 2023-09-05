@@ -278,7 +278,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     .get::<FullscreenSurface>()
                     .and_then(|f| f.get())
                 {
-                    if let Some((_, point)) = window.surface_under(
+                    if let Some((_, _)) = window.surface_under(
                         self.pointer.current_location() - output_geo.loc.to_f64(),
                         WindowSurfaceType::ALL,
                     ) {
@@ -297,7 +297,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     .or_else(|| layers.layer_under(WlrLayer::Top, self.pointer.current_location()))
                 {
                     if layer.can_receive_keyboard_focus() {
-                        if let Some((_, point)) = layer.surface_under(
+                        if let Some((_, _)) = layer.surface_under(
                             self.pointer.current_location()
                                 - output_geo.loc.to_f64()
                                 - layers.layer_geometry(layer).unwrap().loc.to_f64(),
@@ -332,7 +332,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     .or_else(|| layers.layer_under(WlrLayer::Background, self.pointer.current_location()))
                 {
                     if layer.can_receive_keyboard_focus() {
-                        if let Some((_, point)) = layer.surface_under(
+                        if let Some((_, _)) = layer.surface_under(
                             self.pointer.current_location()
                                 - output_geo.loc.to_f64()
                                 - layers.layer_geometry(layer).unwrap().loc.to_f64(),

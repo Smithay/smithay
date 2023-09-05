@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use tracing::warn;
 use wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2,
     zwp_input_method_v2::{self, ZwpInputMethodV2},
@@ -184,16 +185,18 @@ where
                 let mut keyboard = input_method.keyboard_grab.inner.lock().unwrap();
                 keyboard.grab = Some(instance.clone());
                 keyboard.text_input_handle = data.text_input_handle.clone();
-                // Is this needed to keep something from being freed? Or just unused?
-                // keyboard.popup_handle = input_method.popup.clone();
                 let guard = data.keyboard_handle.arc.internal.lock().unwrap();
                 instance.repeat_info(guard.repeat_rate, guard.repeat_delay);
                 let keymap_file = data.keyboard_handle.arc.keymap.lock().unwrap();
-                keymap_file
-                    .with_fd(false, |fd, size| {
-                        instance.keymap(KeymapFormat::XkbV1, fd, size as u32);
-                    })
-                    .unwrap(); //TODO: log some kind of error here
+                let res = keymap_file.with_fd(false, |fd, size| {
+                    instance.keymap(KeymapFormat::XkbV1, fd, size as u32);
+                });
+                if let Err(e) = res {
+                    warn!(
+                        err = ?e,
+                        "Failed to send keymap to client"
+                    );
+                }
             }
             zwp_input_method_v2::Request::Destroy => {
                 // Nothing to do
