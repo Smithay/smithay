@@ -1356,7 +1356,7 @@ fn handle_event<D: XwmHandler + 'static>(
         }
         Event::MapRequest(r) => {
             if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == r.window).cloned() {
-                if !surface.state.lock().unwrap().mapped_onto.is_some() {
+                if surface.state.lock().unwrap().mapped_onto.is_none() {
                     // we reparent windows, because a lot of stuff expects, that we do
                     let geo = conn.get_geometry(r.window)?.reply()?;
                     let win = r.window;
@@ -1394,9 +1394,9 @@ fn handle_event<D: XwmHandler + 'static>(
                         // grab_server()/ungrab_server() is done so that the server does not handle other clients
                         // in-between, which could cause other events to get the same sequence number.
                         xwm.sequences_to_ignore
-                           .push(Reverse(cookie1.sequence_number() as u16));
+                            .push(Reverse(cookie1.sequence_number() as u16));
                         xwm.sequences_to_ignore
-                           .push(Reverse(cookie2.sequence_number() as u16));
+                            .push(Reverse(cookie2.sequence_number() as u16));
                     }
 
                     surface.state.lock().unwrap().mapped_onto = Some(frame_win);
