@@ -13,6 +13,7 @@ use super::TextInputManagerState;
 struct Instance {
     instance: ZwpTextInputV3,
     serial: u32,
+    ready: bool,
 }
 
 #[derive(Default, Debug)]
@@ -22,17 +23,17 @@ pub(crate) struct TextInput {
 }
 
 impl TextInput {
-    fn with_focused_text_input<F>(&self, mut f: F)
+    fn with_focused_text_input<F>(&mut self, mut f: F)
     where
-        F: FnMut(&ZwpTextInputV3, &WlSurface, &u32),
+        F: FnMut(&ZwpTextInputV3, &WlSurface, u32, &mut bool),
     {
         if let Some(ref surface) = self.focus {
             if !surface.alive() {
                 return;
             }
-            for ti in self.instances.iter() {
+            for ti in self.instances.iter_mut() {
                 if ti.instance.id().same_client_as(&surface.id()) {
-                    f(&ti.instance, surface, &ti.serial);
+                    f(&ti.instance, surface, ti.serial, &mut ti.ready);
                 }
             }
         }
@@ -51,6 +52,7 @@ impl TextInputHandle {
         inner.instances.push(Instance {
             instance: instance.clone(),
             serial: 0,
+            ready: false,
         });
     }
 
@@ -58,6 +60,7 @@ impl TextInputHandle {
         let mut inner = self.inner.lock().unwrap();
         for ti in inner.instances.iter_mut() {
             if &ti.instance == text_input {
+                ti.ready = true;
                 ti.serial += 1;
             }
         }
@@ -70,29 +73,51 @@ impl TextInputHandle {
     pub(crate) fn leave(&self, surface: &WlSurface) {
         let inner = self.inner.lock().unwrap();
         for ti in inner.instances.iter() {
-            if ti.instance.id().same_client_as(&surface.id()){
+            if ti.instance.id().same_client_as(&surface.id()) {
                 ti.instance.leave(surface);
             }
         }
     }
 
     pub(crate) fn enter(&self, surface: &WlSurface) {
-        let  mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap();
         inner.focus = Some(surface.clone());
         for ti in inner.instances.iter() {
-            if ti.instance.id().same_client_as(&surface.id()){
+            if ti.instance.id().same_client_as(&surface.id()) {
                 ti.instance.enter(surface);
             }
         }
     }
-    
+
+    pub(crate) fn done(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.with_focused_text_input(|ti, _, serial, ready| {
+            if *ready {
+                *ready = false;
+                ti.done(serial);
+            }
+        });
+    }
+
     /// Callback function to use on the current focused text input surface
-    pub fn with_focused_text_input<F>(&self, f: F)
+    pub(crate) fn with_focused_text_input<F>(&self, mut f: F)
     where
-        F: FnMut(&ZwpTextInputV3, &WlSurface, &u32),
+        F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
-        let inner = self.inner.lock().unwrap();
-        inner.with_focused_text_input(f);
+        let mut inner = self.inner.lock().unwrap();
+        inner.with_focused_text_input(|ti, surface, _, _| {
+            f(ti, surface);
+        });
+    }
+
+    pub(crate) fn focused_text_input_serial<F>(&self, mut f: F)
+    where
+        F: FnMut(u32),
+    {
+        let mut inner = self.inner.lock().unwrap();
+        inner.with_focused_text_input(|_, _, serial, _| {
+            f(serial);
+        });
     }
 }
 
@@ -119,13 +144,12 @@ where
     ) {
         match request {
             zwp_text_input_v3::Request::Enable => {
-                data.input_method_handle
-                    .with_instance(|input_method| input_method.activate());
+                // To avoid keeping uneccessary state in the compositor the events are not double buffered,
+                // hence this request is unused
             }
             zwp_text_input_v3::Request::Disable => {
-                // TODO hide popup?
-                data.input_method_handle
-                    .with_instance(|input_method| input_method.deactivate());
+                // To avoid keeping uneccessary state in the compositor the events are not double buffered,
+                // hence this request is unused
             }
             zwp_text_input_v3::Request::SetSurroundingText { text, cursor, anchor } => {
                 data.input_method_handle.with_instance(|input_method| {

@@ -143,8 +143,11 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
                 serialize_pressed_keys(keys.iter().map(|h| h.raw_code() - 8).collect()),
             )
         });
+        let input_method = seat.input_method();
+        input_method.with_instance(|im| {
+            im.activate();
+        });
         let text_input = seat.text_input();
-        // text_input.set_focus(Some(self), || {});
         text_input.enter(self);
     }
 
@@ -153,6 +156,9 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         let text_input = seat.text_input();
         let input_method = seat.input_method();
         input_method.close_popup();
+        input_method.with_instance(|im| {
+            im.deactivate();
+        });
         text_input.leave(self);
     }
 

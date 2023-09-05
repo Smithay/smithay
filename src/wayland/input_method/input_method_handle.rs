@@ -108,7 +108,7 @@ where
     ) {
         match request {
             zwp_input_method_v2::Request::CommitString { text } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface, _| {
+                data.text_input_handle.with_focused_text_input(|ti, _surface| {
                     ti.commit_string(Some(text.clone()));
                 });
             }
@@ -117,7 +117,7 @@ where
                 cursor_begin,
                 cursor_end,
             } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface, _| {
+                data.text_input_handle.with_focused_text_input(|ti, _surface| {
                     ti.preedit_string(Some(text.clone()), cursor_begin, cursor_end);
                 });
             }
@@ -125,14 +125,12 @@ where
                 before_length,
                 after_length,
             } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface, _| {
+                data.text_input_handle.with_focused_text_input(|ti, _surface| {
                     ti.delete_surrounding_text(before_length, after_length);
                 });
             }
             zwp_input_method_v2::Request::Commit { serial: _ } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface, serial| {
-                    ti.done(*serial);
-                });
+                data.text_input_handle.done();
             }
             zwp_input_method_v2::Request::GetInputPopupSurface { id, surface } => {
                 if compositor::give_role(&surface, INPUT_POPUP_SURFACE_ROLE).is_err() {
@@ -194,7 +192,7 @@ where
 
     fn destroyed(_state: &mut D, _client: ClientId, _input_method: ObjectId, data: &InputMethodUserData<D>) {
         data.handle.inner.lock().unwrap().instance = None;
-        data.text_input_handle.with_focused_text_input(|ti, surface, _| {
+        data.text_input_handle.with_focused_text_input(|ti, surface| {
             ti.leave(surface);
         });
     }
