@@ -11,10 +11,11 @@ use smithay::{
         default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
     },
     delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_input_method_manager,
-    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_presentation,
-    delegate_primary_selection, delegate_relative_pointer, delegate_seat, delegate_shm,
-    delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
-    delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_pointer_gestures,
+    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_security_context, delegate_shm, delegate_tablet_manager, delegate_text_input_manager,
+    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration,
+    delegate_xdg_shell,
     desktop::{
         utils::{
             surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
@@ -22,7 +23,11 @@ use smithay::{
         },
         PopupKind, PopupManager, Space,
     },
-    input::{keyboard::XkbConfig, pointer::CursorImageStatus, Seat, SeatHandler, SeatState},
+    input::{
+        keyboard::XkbConfig,
+        pointer::{CursorImageStatus, PointerHandle},
+        Seat, SeatHandler, SeatState,
+    },
     output::Output,
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
@@ -35,7 +40,7 @@ use smithay::{
             Display, DisplayHandle, Resource,
         },
     },
-    utils::{Clock, Logical, Monotonic, Point},
+    utils::{Clock, Monotonic},
     wayland::{
         compositor::{get_parent, with_states, CompositorClientState, CompositorState},
         data_device::{
@@ -49,10 +54,14 @@ use smithay::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
         output::OutputManagerState,
+        pointer_gestures::PointerGesturesState,
         presentation::PresentationState,
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         relative_pointer::RelativePointerManagerState,
         seat::WaylandFocus,
+        security_context::{
+            SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
+        },
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{
@@ -77,11 +86,13 @@ use crate::cursor::Cursor;
 use crate::{focus::FocusTarget, shell::WindowElement};
 #[cfg(feature = "xwayland")]
 use smithay::{
+    delegate_xwayland_keyboard_grab,
     reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1,
-    utils::Size,
+    utils::{Point, Size},
     wayland::{
         data_device::with_source_metadata as with_data_device_source_metadata,
         primary_selection::with_source_metadata as with_primary_source_metadata,
+        xwayland_keyboard_grab::{XWaylandKeyboardGrabHandler, XWaylandKeyboardGrabState},
     },
     xwayland::{xwm::SelectionType, X11Wm, XWayland, XWaylandEvent},
 };
@@ -94,6 +105,7 @@ pub struct CalloopData<BackendData: Backend + 'static> {
 #[derive(Debug, Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
+    pub security_context: Option<SecurityContext>,
 }
 impl ClientData for ClientState {
     /// Notification that a client was initialized
@@ -134,11 +146,11 @@ pub struct AnvilState<BackendData: Backend + 'static> {
 
     // input-related fields
     pub suppressed_keys: Vec<u32>,
-    pub pointer_location: Point<f64, Logical>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
     pub seat_name: String,
     pub seat: Seat<AnvilState<BackendData>>,
     pub clock: Clock<Monotonic>,
+    pub pointer: PointerHandle<AnvilState<BackendData>>,
 
     #[cfg(feature = "xwayland")]
     pub xwayland: XWayland,
@@ -295,6 +307,8 @@ delegate_keyboard_shortcuts_inhibit!(@<BackendData: Backend + 'static> AnvilStat
 
 delegate_virtual_keyboard_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+delegate_pointer_gestures!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 delegate_relative_pointer!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_viewporter!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
@@ -442,6 +456,40 @@ impl<BackendData: Backend> FractionalScaleHandler for AnvilState<BackendData> {
 }
 delegate_fractional_scale!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+impl<BackendData: Backend + 'static> SecurityContextHandler for AnvilState<BackendData> {
+    fn context_created(&mut self, source: SecurityContextListenerSource, security_context: SecurityContext) {
+        self.handle
+            .insert_source(source, move |client_stream, _, data| {
+                let client_state = ClientState {
+                    security_context: Some(security_context.clone()),
+                    ..ClientState::default()
+                };
+                if let Err(err) = data
+                    .display
+                    .handle()
+                    .insert_client(client_stream, Arc::new(client_state))
+                {
+                    warn!("Error adding wayland client: {}", err);
+                };
+            })
+            .expect("Failed to init wayland socket source");
+    }
+}
+delegate_security_context!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+#[cfg(feature = "xwayland")]
+impl<BackendData: Backend + 'static> XWaylandKeyboardGrabHandler for AnvilState<BackendData> {
+    fn keyboard_focus_for_xsurface(&self, surface: &WlSurface) -> Option<FocusTarget> {
+        let elem = self
+            .space
+            .elements()
+            .find(|elem| elem.wl_surface().as_ref() == Some(surface))?;
+        Some(FocusTarget::Window(elem.clone()))
+    }
+}
+#[cfg(feature = "xwayland")]
+delegate_xwayland_keyboard_grab!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: &mut Display<AnvilState<BackendData>>,
@@ -508,13 +556,21 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         if BackendData::HAS_RELATIVE_MOTION {
             RelativePointerManagerState::new::<Self>(&dh);
         }
+        if BackendData::HAS_GESTURES {
+            PointerGesturesState::new::<Self>(&dh);
+        }
+        SecurityContextState::new::<Self, _>(&dh, |client| {
+            client
+                .get_data::<ClientState>()
+                .map_or(true, |client_state| client_state.security_context.is_none())
+        });
 
         // init input
         let seat_name = backend_data.seat_name();
         let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone());
 
         let cursor_status = Arc::new(Mutex::new(CursorImageStatus::Default));
-        seat.add_pointer();
+        let pointer = seat.add_pointer();
         seat.add_keyboard(XkbConfig::default(), 200, 25)
             .expect("Failed to initialize the keyboard");
 
@@ -529,6 +585,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         #[cfg(feature = "xwayland")]
         let xwayland = {
+            XWaylandKeyboardGrabState::new::<Self>(&dh);
+
             let (xwayland, channel) = XWayland::new(&dh);
             let ret = handle.insert_source(channel, move |event, _, data| match event {
                 XWaylandEvent::Ready {
@@ -584,10 +642,10 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             fractional_scale_manager_state,
             dnd_icon: None,
             suppressed_keys: Vec::new(),
-            pointer_location: (0.0, 0.0).into(),
             cursor_status,
             seat_name,
             seat,
+            pointer,
             clock,
             #[cfg(feature = "xwayland")]
             xwayland,
@@ -713,6 +771,7 @@ pub fn take_presentation_feedback(
 
 pub trait Backend {
     const HAS_RELATIVE_MOTION: bool = false;
+    const HAS_GESTURES: bool = false;
     fn seat_name(&self) -> String;
     fn reset_buffers(&mut self, output: &Output);
     fn early_import(&mut self, surface: &WlSurface);

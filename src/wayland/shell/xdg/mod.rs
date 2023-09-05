@@ -323,15 +323,7 @@ xdg_role!(
         ///
         /// For D-Bus activatable applications, the app ID is used as the D-Bus
         /// service name.
-        pub app_id: Option<String>,
-        /// Minimum size requested for this surface
-        ///
-        /// A value of 0 on an axis means this axis is not constrained
-        pub min_size: Size<i32, Logical>,
-        /// Maximum size requested for this surface
-        ///
-        /// A value of 0 on an axis means this axis is not constrained
-        pub max_size: Size<i32, Logical>
+        pub app_id: Option<String>
     }
 );
 
@@ -1073,7 +1065,7 @@ impl ShellClient {
 
     /// Send a ping request to this shell client
     ///
-    /// You'll receive the reply as a [`XdgRequest::ClientPong`] request.
+    /// You'll receive the reply as a [`XdgShellHandler::client_pong`] request.
     ///
     /// A typical use is to start a timer at the same time you send this ping
     /// request, and cancel it when you receive the pong. If the timer runs

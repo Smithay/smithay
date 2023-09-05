@@ -50,19 +50,9 @@ pub fn init_winit(
 
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 
-    let mut full_redraw = 0u8;
-
     let timer = Timer::immediate();
     event_loop.handle().insert_source(timer, move |_, _, data| {
-        winit_dispatch(
-            &mut backend,
-            &mut winit,
-            data,
-            &output,
-            &mut damage_tracker,
-            &mut full_redraw,
-        )
-        .unwrap();
+        winit_dispatch(&mut backend, &mut winit, data, &output, &mut damage_tracker).unwrap();
         TimeoutAction::ToDuration(Duration::from_millis(16))
     })?;
 
@@ -75,7 +65,6 @@ pub fn winit_dispatch(
     data: &mut CalloopData,
     output: &Output,
     damage_tracker: &mut OutputDamageTracker,
-    full_redraw: &mut u8,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let display = &mut data.display;
     let state = &mut data.state;
@@ -105,8 +94,6 @@ pub fn winit_dispatch(
         res?;
     }
 
-    *full_redraw = full_redraw.saturating_sub(1);
-
     let size = backend.window_size().physical_size;
     let damage = Rectangle::from_loc_and_size((0, 0), size);
 
@@ -133,6 +120,7 @@ pub fn winit_dispatch(
     });
 
     state.space.refresh();
+    state.popups.cleanup();
     display.flush_clients()?;
 
     Ok(())

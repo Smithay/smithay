@@ -22,7 +22,6 @@ use super::{
 
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::Deref as _;
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
@@ -79,7 +78,7 @@ impl TabletSeatHandle {
         // Notify new instance about available tools
         for (desc, tool) in inner.tools.iter_mut() {
             let inner = self.inner.clone();
-            tool.new_instance::<D, _>(client, dh, seat.deref(), desc, move |desc, status| {
+            tool.new_instance::<D, _>(client, dh, seat, desc, move |desc, status| {
                 if let Some(ref mut cursor_callback) = inner.lock().unwrap().cursor_callback {
                     cursor_callback(desc, status);
                 }

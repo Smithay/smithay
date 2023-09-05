@@ -1,3 +1,5 @@
+use std::fmt;
+
 use tracing::{error, instrument, trace, warn};
 use wayland_server::{
     backend::{ClientId, ObjectId},
@@ -81,9 +83,16 @@ where
 }
 
 /// User data for keyboard
-#[derive(Debug)]
 pub struct KeyboardUserData<D: SeatHandler> {
     pub(crate) handle: Option<KeyboardHandle<D>>,
+}
+
+impl<D: SeatHandler> fmt::Debug for KeyboardUserData<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyboardUserData")
+            .field("handle", &self.handle)
+            .finish()
+    }
 }
 
 impl<D> Dispatch<WlKeyboard, KeyboardUserData<D>, D> for SeatState<D>

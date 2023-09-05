@@ -55,10 +55,12 @@ pub mod idle_inhibit;
 pub mod input_method;
 pub mod keyboard_shortcuts_inhibit;
 pub mod output;
+pub mod pointer_gestures;
 pub mod presentation;
 pub mod primary_selection;
 pub mod relative_pointer;
 pub mod seat;
+pub mod security_context;
 pub mod shell;
 pub mod shm;
 pub mod socket;
@@ -67,3 +69,5 @@ pub mod text_input;
 pub mod viewporter;
 pub mod virtual_keyboard;
 pub mod xdg_activation;
+#[cfg(feature = "xwayland")]
+pub mod xwayland_keyboard_grab;

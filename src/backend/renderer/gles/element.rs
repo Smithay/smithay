@@ -58,7 +58,7 @@ impl PixelShaderElement {
     }
 
     /// Update the additional uniforms
-    /// (see [`GlesRenderer::compile_custom_pixel_shader`] and [`GlesRenderer::render_pixel_shader_to`]).
+    /// (see [`GlesRenderer::compile_custom_pixel_shader`] and [`GlesFrame::render_pixel_shader_to`]).
     ///
     /// This replaces the stored uniforms, you have to update all of them, partial updates are not possible.
     pub fn update_uniforms(&mut self, additional_uniforms: Vec<Uniform<'_>>) {

@@ -3,14 +3,11 @@
 
 use crate::{
     backend::renderer::{
-        damage::{
-            Error as OutputDamageTrackerError, OutputDamageTracker, OutputDamageTrackerMode, OutputNoMode,
-            RenderOutputResult,
-        },
+        damage::{Error as OutputDamageTrackerError, OutputDamageTracker, RenderOutputResult},
         element::{AsRenderElements, RenderElement, Wrap},
         Renderer, Texture,
     },
-    output::Output,
+    output::{Output, OutputModeSource, OutputNoMode},
     utils::{IsAlive, Logical, Point, Rectangle, Scale, Transform},
 };
 #[cfg(feature = "wayland_frontend")]
@@ -571,7 +568,7 @@ crate::backend::renderer::element::render_elements! {
 ///
 /// *Note*: If the `wayland_frontend`-feature is enabled
 /// this will include layer-shell surfaces added to this
-/// outputs [`LayerMap`].
+/// outputs [`LayerMap`](crate::desktop::LayerMap).
 #[instrument(level = "trace", skip(spaces, renderer))]
 #[profiling::function]
 pub fn space_render_elements<
@@ -686,7 +683,7 @@ where
     SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>:
         From<Wrap<<E as AsRenderElements<R>>::RenderElement>>,
 {
-    if let OutputDamageTrackerMode::Auto(renderer_output) = damage_tracker.mode() {
+    if let OutputModeSource::Auto(renderer_output) = damage_tracker.mode() {
         assert!(renderer_output == output);
     }
 

@@ -5,7 +5,7 @@
 //! It is however not directly tied to wayland and can be used to multiplex various input operations
 //! between different handlers.
 //!
-//! If the [`wayland_frontend`]-feature is enabled the `smithay::wayland::seat`-module provides additional
+//! If the `wayland_frontend`-feature is enabled the `smithay::wayland::seat`-module provides additional
 //! functionality for the provided types of this module to map them to advertised wayland globals and objects.
 //!
 //! ## How to use it
@@ -19,7 +19,10 @@
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! # use smithay::backend::input::KeyState;
 //! # use smithay::input::{
-//! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent},
+//! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
+//! #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
+//! #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
+//! #             GestureHoldBeginEvent, GestureHoldEndEvent},
 //! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
@@ -48,6 +51,14 @@
 //! #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
 //! #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
 //! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
+//! #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
+//! #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}
+//! #   fn gesture_swipe_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeEndEvent) {}
+//! #   fn gesture_pinch_begin(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchBeginEvent) {}
+//! #   fn gesture_pinch_update(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchUpdateEvent) {}
+//! #   fn gesture_pinch_end(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchEndEvent) {}
+//! #   fn gesture_hold_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldBeginEvent) {}
+//! #   fn gesture_hold_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldEndEvent) {}
 //! # }
 //! # impl KeyboardTarget<State> for Target {
 //! #   fn enter(&self, seat: &Seat<State>, data: &mut State, keys: Vec<KeysymHandle<'_>>, serial: Serial) {}
@@ -87,9 +98,9 @@
 //! Once the seat is initialized, you can add capabilities to it.
 //!
 //! Currently, pointer and keyboard capabilities are supported by this module.
-//! [`smithay::wayland::seat`] also provides an abstraction to send touch-events to client,
+//! [`seat`](crate::wayland::seat) also provides an abstraction to send touch-events to client,
 //! further helpers are not provided at this point.
-//! [`smithay::wayland::tablet_manager`] also provides client interaction for drawing tablets.
+//! [`tablet_manager`](crate::wayland::tablet_manager) also provides client interaction for drawing tablets.
 //!
 //! You can add these capabilities via methods of the [`Seat`] struct:
 //! [`Seat::add_keyboard`] and [`Seat::add_pointer`].
@@ -98,6 +109,7 @@
 //!
 
 use std::{
+    fmt,
     hash::Hash,
     sync::{Arc, Mutex},
 };
@@ -130,9 +142,14 @@ pub trait SeatHandler: Sized {
 /// Delegate type for all [Seat] globals.
 ///
 /// Events will be forwarded to an instance of the Seat global.
-#[derive(Debug)]
 pub struct SeatState<D: SeatHandler> {
     pub(crate) seats: Vec<Seat<D>>,
+}
+
+impl<D: SeatHandler> fmt::Debug for SeatState<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SeatState").field("seats", &self.seats).finish()
+    }
 }
 
 /// A Seat handle
@@ -143,9 +160,14 @@ pub struct SeatState<D: SeatHandler> {
 /// This is an handle to the inner logic, it can be cloned.
 ///
 /// See module-level documentation for details of use.
-#[derive(Debug)]
 pub struct Seat<D: SeatHandler> {
     pub(crate) arc: Arc<SeatRc<D>>,
+}
+
+impl<D: SeatHandler> fmt::Debug for Seat<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Seat").field("arc", &self.arc).finish()
+    }
 }
 
 impl<D: SeatHandler> PartialEq for Seat<D> {
@@ -161,7 +183,6 @@ impl<D: SeatHandler> Hash for Seat<D> {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct Inner<D: SeatHandler> {
     pub(crate) pointer: Option<PointerHandle<D>>,
     pub(crate) keyboard: Option<KeyboardHandle<D>>,
@@ -174,13 +195,45 @@ pub(crate) struct Inner<D: SeatHandler> {
     pub(crate) known_seats: Vec<wayland_server::Weak<wayland_server::protocol::wl_seat::WlSeat>>,
 }
 
-#[derive(Debug)]
+#[cfg(not(feature = "wayland_frontend"))]
+impl<D: SeatHandler> fmt::Debug for Inner<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Inner")
+            .field("pointer", &self.pointer)
+            .field("keyboard", &self.keyboard)
+            .finish()
+    }
+}
+
+#[cfg(feature = "wayland_frontend")]
+impl<D: SeatHandler> fmt::Debug for Inner<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Inner")
+            .field("pointer", &self.pointer)
+            .field("keyboard", &self.keyboard)
+            .field("touch", &self.touch)
+            .field("global", &self.global)
+            .field("known_seats", &self.known_seats)
+            .finish()
+    }
+}
+
 pub(crate) struct SeatRc<D: SeatHandler> {
     #[allow(dead_code)]
     pub(crate) name: String,
     pub(crate) inner: Mutex<Inner<D>>,
     span: tracing::Span,
     user_data_map: UserDataMap,
+}
+
+impl<D: SeatHandler> fmt::Debug for SeatRc<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SeatRc")
+            .field("name", &self.name)
+            .field("inner", &self.inner)
+            .field("user_data_map", &self.user_data_map)
+            .finish()
+    }
 }
 
 impl<D: SeatHandler> Clone for Seat<D> {
@@ -254,7 +307,10 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
     /// # use smithay::backend::input::KeyState;
     /// # use smithay::input::{
-    /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent},
+    /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
+    /// #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
+    /// #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
+    /// #             GestureHoldBeginEvent, GestureHoldEndEvent},
     /// #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
     /// # };
     /// # use smithay::utils::{IsAlive, Serial};
@@ -271,6 +327,14 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
     /// #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
     /// #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
+    /// #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
+    /// #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}
+    /// #   fn gesture_swipe_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeEndEvent) {}
+    /// #   fn gesture_pinch_begin(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchBeginEvent) {}
+    /// #   fn gesture_pinch_update(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchUpdateEvent) {}
+    /// #   fn gesture_pinch_end(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchEndEvent) {}
+    /// #   fn gesture_hold_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldBeginEvent) {}
+    /// #   fn gesture_hold_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldEndEvent) {}
     /// # }
     /// # impl KeyboardTarget<State> for Target {
     /// #   fn enter(&self, seat: &Seat<State>, data: &mut State, keys: Vec<KeysymHandle<'_>>, serial: Serial) {}
@@ -352,7 +416,10 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// # use smithay::input::{Seat, SeatState, SeatHandler, keyboard::XkbConfig, pointer::CursorImageStatus};
     /// # use smithay::backend::input::KeyState;
     /// # use smithay::input::{
-    /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent},
+    /// #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
+    /// #             GestureSwipeBeginEvent, GestureSwipeUpdateEvent, GestureSwipeEndEvent,
+    /// #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
+    /// #             GestureHoldBeginEvent, GestureHoldEndEvent},
     /// #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
     /// # };
     /// # use smithay::utils::{IsAlive, Serial};
@@ -369,6 +436,14 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
     /// #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
     /// #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
+    /// #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
+    /// #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}
+    /// #   fn gesture_swipe_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeEndEvent) {}
+    /// #   fn gesture_pinch_begin(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchBeginEvent) {}
+    /// #   fn gesture_pinch_update(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchUpdateEvent) {}
+    /// #   fn gesture_pinch_end(&self, seat: &Seat<State>, data: &mut State, event: &GesturePinchEndEvent) {}
+    /// #   fn gesture_hold_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldBeginEvent) {}
+    /// #   fn gesture_hold_end(&self, seat: &Seat<State>, data: &mut State, event: &GestureHoldEndEvent) {}
     /// # }
     /// # impl KeyboardTarget<State> for Target {
     /// #   fn enter(&self, seat: &Seat<State>, data: &mut State, keys: Vec<KeysymHandle<'_>>, serial: Serial) {}

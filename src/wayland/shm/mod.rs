@@ -306,7 +306,7 @@ macro_rules! shm_format_table {
             $fourcc: ident => $shm: ident
         ),* $(,)?
     ) => {
-        /// Convert from a [`Fourcc`](backend::allocator::Fourcc) format to a wl_shm format
+        /// Convert from a [`Fourcc`](crate::backend::allocator::Fourcc) format to a wl_shm format
         pub const fn fourcc_to_shm_format(value: $crate::backend::allocator::Fourcc) -> Option<$crate::reexports::wayland_server::protocol::wl_shm::Format> {
             match value {
                 $(
@@ -316,7 +316,7 @@ macro_rules! shm_format_table {
             }
         }
 
-        /// Convert from a wl_shm format to a [`Fourcc`](backend::allocator::Fourcc) format
+        /// Convert from a wl_shm format to a [`Fourcc`](crate::backend::allocator::Fourcc) format
         pub const fn shm_format_to_fourcc(value: $crate::reexports::wayland_server::protocol::wl_shm::Format) -> Option<$crate::backend::allocator::Fourcc> {
             match value {
                 $(

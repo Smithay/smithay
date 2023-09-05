@@ -16,7 +16,7 @@
 //!
 //! Currently it abstracts over xdg-shell toplevels and Xwayland surfaces (TODO).
 //! It provides a bunch of methods to calculate and retrieve its size, manage itself, attach additional user_data
-//! as well as a [drawing function](`draw_window`) to ease rendering it's related surfaces.
+//! as well as a [drawing function](`crate::backend::renderer::element::AsRenderElements::render_elements`) to ease rendering it's related surfaces.
 //!
 //! Note that a [`Window`] on it's own has no position. For that it needs to be placed inside a [`Space`].
 //!
@@ -35,13 +35,13 @@
 //!
 //! Each [`Output`](crate::output::Output) can be associated a [`LayerMap`] by calling [`layer_map_for_output`],
 //! which [`LayerSurface`]s can be mapped upon. Associated layer maps are automatically rendered by [`render_output`](crate::desktop::space::render_output),
-//! but a [draw function](`draw_layer_surface`) is also provided for manual layer-surface management.
+//! but a [draw function](`crate::backend::renderer::element::AsRenderElements::render_elements`) is also provided for manual layer-surface management.
 //!
 //! ### Popups
 //!
 //! Provides a [`PopupManager`], which can be used to automatically keep track of popups and their
 //! relations to one-another. Popups are then automatically rendered with their matching toplevel surfaces,
-//! when either [`draw_window`], [`draw_layer_surface`] or [`render_output`](crate::desktop::space::render_output) is called.
+//! when either [`crate::backend::renderer::element::AsRenderElements::render_elements`] or [`render_output`](crate::desktop::space::render_output) is called.
 //!
 //! ## Remarks
 //!

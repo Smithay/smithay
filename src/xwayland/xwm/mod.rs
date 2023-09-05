@@ -975,8 +975,8 @@ impl X11Wm {
     /// So if windows `A -> C` are given in order and the internal stack is `A -> B -> C`,
     /// no reordering will occur.
     ///
-    /// See [`X11Surface::update_stacking_order_upwards`] for a variant of this algorithm,
-    /// which works from the bottom up or [`X11Surface::raise_window`] for an easier but
+    /// See [`X11Wm::update_stacking_order_upwards`] for a variant of this algorithm,
+    /// which works from the bottom up or [`X11Wm::raise_window`] for an easier but
     /// much more limited way to reorder.
     pub fn update_stacking_order_downwards<'a, W: X11Relatable + 'a>(
         &mut self,
@@ -1008,8 +1008,8 @@ impl X11Wm {
     /// So if windows `A -> C` are given in order and the internal stack is `C -> B -> A`,
     /// no reordering will occur.
     ///  
-    /// See [`X11Surface::update_stacking_order_downwards`] for a variant of this algorithm,
-    /// which works from the top down or [`X11Surface::raise_window`] for an easier but
+    /// See [`X11Wm::update_stacking_order_downwards`] for a variant of this algorithm,
+    /// which works from the top down or [`X11Wm::raise_window`] for an easier but
     /// much more limited way to reorder.
     pub fn update_stacking_order_upwards<'a, W: X11Relatable + 'a>(
         &mut self,
@@ -1018,7 +1018,7 @@ impl X11Wm {
         self.update_stacking_order_impl(order, StackingDirection::Upwards)
     }
 
-    /// This function has to be called on [`CompositorState::commit`] to correctly
+    /// This function has to be called on [`CompositorHandler::commit`](crate::wayland::compositor::CompositorHandler::commit) to correctly
     /// update the internal state of Xwayland WMs.
     pub fn commit_hook<D: XwmHandler + 'static>(surface: &WlSurface) {
         if let Some(client) = surface.client() {
@@ -1073,7 +1073,8 @@ impl X11Wm {
             .map(|f| f.id)
             .next()
         else {
-            return Err(ReplyOrIdError::ConnectionError(ConnectionError::UnknownError)); // TODO proper error type
+            return Err(ReplyOrIdError::ConnectionError(ConnectionError::UnknownError));
+            // TODO proper error type
         };
         let picture = PictureWrapper::create_picture(
             &*self.conn,
@@ -1174,9 +1175,12 @@ impl X11Wm {
                     .filter_map(|atom| {
                         let cookie = self.conn.get_atom_name(atom).ok()?;
                         let reply = cookie.reply_unchecked().ok()?;
-                        std::str::from_utf8(&reply?.name).ok().map(|name| (atom, name.to_string()))
+                        std::str::from_utf8(&reply?.name)
+                            .ok()
+                            .map(|name| (atom, name.to_string()))
                     })
-                    .find_map(|(atom, name)| if name == x { Some(atom) } else { None }) else {
+                    .find_map(|(atom, name)| if name == x { Some(atom) } else { None })
+                else {
                     return Err(SelectionError::UnableToDetermineAtom);
                 };
 
@@ -1410,25 +1414,26 @@ fn handle_event<D: XwmHandler + 'static>(
                       x.mapped_window_id() == Some(n.window))
                 .cloned()
             {
-                xwm.client_list.push(surface.window_id());
-                xwm.client_list_stacking.push(surface.window_id());
-                conn.change_property32(
-                    PropMode::APPEND,
-                    xwm.screen.root,
-                    xwm.atoms._NET_CLIENT_LIST,
-                    AtomEnum::WINDOW,
-                    &[surface.window_id()],
-                )?;
-                conn.change_property32(
-                    PropMode::APPEND,
-                    xwm.screen.root,
-                    xwm.atoms._NET_CLIENT_LIST_STACKING,
-                    AtomEnum::WINDOW,
-                    &[surface.window_id()],
-                )?;
                 if surface.is_override_redirect() {
                     drop(_guard);
                     state.mapped_override_redirect_window(xwm_id, surface);
+                } else {
+                    xwm.client_list.push(surface.window_id());
+                    xwm.client_list_stacking.push(surface.window_id());
+                    conn.change_property32(
+                        PropMode::APPEND,
+                        xwm.screen.root,
+                        xwm.atoms._NET_CLIENT_LIST,
+                        AtomEnum::WINDOW,
+                        &[surface.window_id()],
+                    )?;
+                    conn.change_property32(
+                        PropMode::APPEND,
+                        xwm.screen.root,
+                        xwm.atoms._NET_CLIENT_LIST_STACKING,
+                        AtomEnum::WINDOW,
+                        &[surface.window_id()],
+                    )?;
                 }
             }
         }
@@ -1724,8 +1729,9 @@ fn handle_event<D: XwmHandler + 'static>(
                     }
                 }
                 _ => {
-                    let Some(transfer) = selection.incoming.iter_mut().find(|t| t.window == n.requestor) else {
-                        return Ok(())
+                    let Some(transfer) = selection.incoming.iter_mut().find(|t| t.window == n.requestor)
+                    else {
+                        return Ok(());
                     };
 
                     if let Some(prop) = conn
@@ -1857,7 +1863,11 @@ fn handle_event<D: XwmHandler + 'static>(
                             x if x == xwm.atoms.TEXT => "text/plain".to_string(),
                             x if x == xwm.atoms.UTF8_STRING => "text/plain;charset=utf-8".to_string(),
                             x => {
-                                let Some(mime) = conn.get_atom_name(x)?.reply_unchecked()?.and_then(|reply| String::from_utf8(reply.name).ok()) else {
+                                let Some(mime) = conn
+                                    .get_atom_name(x)?
+                                    .reply_unchecked()?
+                                    .and_then(|reply| String::from_utf8(reply.name).ok())
+                                else {
                                     debug!("Unable to determine mime type from atom: {}", x);
                                     send_selection_notify_resp(&conn, &n, false)?;
                                     return Ok(());
@@ -2263,7 +2273,10 @@ fn read_selection_callback(
 ) -> Result<OutgoingAction, ReplyOrIdError> {
     let mut buf = [0; INCR_CHUNK_SIZE];
     let Ok(len) = nix::unistd::read(fd.as_raw_fd(), &mut buf) else {
-        debug!(requestor = transfer.request.requestor, "File descriptor closed, aborting transfer.");
+        debug!(
+            requestor = transfer.request.requestor,
+            "File descriptor closed, aborting transfer."
+        );
         send_selection_notify_resp(conn, &transfer.request, false)?;
         return Ok(OutgoingAction::Done);
     };

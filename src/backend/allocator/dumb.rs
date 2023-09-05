@@ -1,4 +1,4 @@
-//! Module for [DumbBuffer](https://01.org/linuxgraphics/gfx-docs/drm/gpu/drm-kms.html#dumb-buffer-objects) buffers
+//! Module for [DumbBuffer](https://docs.kernel.org/gpu/drm-kms.html#dumb-buffer-objects) buffers
 
 use std::fmt;
 use std::os::unix::io::{FromRawFd, OwnedFd};
@@ -98,7 +98,7 @@ impl AsDmabuf for DumbBuffer {
     fn export(&self) -> Result<Dmabuf, Self::Error> {
         let fd = unsafe { OwnedFd::from_raw_fd(self.fd.buffer_to_prime_fd(self.handle.handle(), 0)?) };
         let mut builder = Dmabuf::builder(self.size(), self.format.code, DmabufFlags::empty());
-        builder.add_plane(fd, 0, 0, 0, Modifier::Linear);
+        builder.add_plane(fd, 0, 0, self.handle.pitch(), Modifier::Linear);
         builder.build().ok_or(drm::SystemError::InvalidFileDescriptor)
     }
 }

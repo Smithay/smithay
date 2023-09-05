@@ -442,10 +442,10 @@ impl AtomicDrmSurface {
             [&PlaneState {
                 handle: self.plane,
                 config: Some(PlaneConfig {
-                    src: Rectangle::from_loc_and_size(Point::default(), pending.mode.size()).to_f64(),
+                    src: Rectangle::from_loc_and_size(Point::default(), mode.size()).to_f64(),
                     dst: Rectangle::from_loc_and_size(
                         Point::default(),
-                        (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
+                        (mode.size().0 as i32, mode.size().1 as i32),
                     ),
                     transform: Transform::Normal,
                     alpha: 1.0,

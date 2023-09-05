@@ -3,7 +3,11 @@ use crate::{
     desktop::{utils::*, PopupManager},
     input::{
         keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent, PointerTarget, RelativeMotionEvent},
+        pointer::{
+            AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
+            GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
+            GestureSwipeUpdateEvent, MotionEvent, PointerTarget, RelativeMotionEvent,
+        },
         Seat, SeatHandler,
     },
     output::{Output, WeakOutput},
@@ -203,10 +207,6 @@ impl LayerMap {
         surface: &WlSurface,
         surface_type: WindowSurfaceType,
     ) -> Option<&LayerSurface> {
-        if !surface.alive() {
-            return None;
-        }
-
         if surface_type.contains(WindowSurfaceType::TOPLEVEL) {
             if let Some(layer) = self.layers.iter().find(|l| l.wl_surface() == surface) {
                 return Some(layer);
@@ -248,7 +248,10 @@ impl LayerMap {
     /// Force re-arranging the layer surfaces, e.g. when the output size changes.
     ///
     /// Note: Mapping or unmapping a layer surface will automatically cause a re-arrangement.
-    pub fn arrange(&mut self) {
+    ///
+    /// Return whenever any position or size changes of existing surfaces were necessary.
+    pub fn arrange(&mut self) -> bool {
+        let mut changed = false;
         if let Some(output) = self.output() {
             let span = debug_span!("layer_map", output = output.name());
             let _guard = span.enter();
@@ -409,6 +412,7 @@ impl LayerMap {
                 let size_changed = layer.0.surface.with_pending_state(|state| {
                     state.size.replace(size).map(|old| old != size).unwrap_or(true)
                 });
+                changed = changed || size_changed;
                 let initial_configure_sent = with_states(surface, |states| {
                     states
                         .data_map
@@ -429,12 +433,20 @@ impl LayerMap {
                     layer.0.surface.send_pending_configure();
                 }
 
-                layer_state(layer).location = location;
+                {
+                    let mut layer_state = layer_state(layer);
+                    if layer_state.location != location {
+                        layer_state.location = location;
+                        changed = true;
+                    }
+                }
             }
 
             trace!("Remaining zone {:?}", zone);
             self.zone = zone;
         }
+
+        changed
     }
 
     fn output(&self) -> Option<Output> {
@@ -660,7 +672,7 @@ impl LayerSurface {
         }
     }
 
-    /// Takes the [`PresentationFeedbackCallback`]s from all subsurfaces in this layer
+    /// Takes the [`PresentationFeedbackCallback`](crate::wayland::presentation::PresentationFeedbackCallback)s from all subsurfaces in this layer
     ///
     /// see [`take_presentation_feedback_surface_tree`] for more information
     pub fn take_presentation_feedback<F1, F2>(
@@ -748,6 +760,54 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for LayerSurface {
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
         if let Some(surface) = self.0.focused_surface.lock().unwrap().take() {
             PointerTarget::<D>::leave(&surface, seat, data, serial, time)
+        }
+    }
+
+    fn gesture_swipe_begin(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeBeginEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_swipe_begin(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_swipe_update(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeUpdateEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_swipe_update(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_swipe_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeEndEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_swipe_end(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_pinch_begin(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchBeginEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_pinch_begin(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_pinch_update(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchUpdateEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_pinch_update(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_pinch_end(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchEndEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_pinch_end(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_hold_begin(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldBeginEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_hold_begin(surface, seat, data, event)
+        }
+    }
+
+    fn gesture_hold_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldEndEvent) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::gesture_hold_end(surface, seat, data, event)
         }
     }
 }

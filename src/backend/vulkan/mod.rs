@@ -335,6 +335,7 @@ impl Instance {
         info!("Created new instance");
         info!("Enabled instance extensions: {:?}", inner.enabled_extensions);
 
+        #[allow(clippy::arc_with_non_send_sync)]
         Ok(Instance(Arc::new(inner)))
     }
 
@@ -383,10 +384,6 @@ impl Instance {
         &self.0.instance
     }
 }
-
-// SAFETY: Destruction is externally synchronized (using an internal Arc).
-unsafe impl Send for Instance {}
-unsafe impl Sync for Instance {}
 
 /// A Vulkan physical device.
 ///
@@ -539,7 +536,7 @@ impl PhysicalDevice {
     /// - All valid usage requirements for [`vkGetPhysicalDeviceFormatProperties2`] apply. Read the specification
     ///   for more information.
     ///
-    /// [`vkGetPhysicalDeviceProperties2`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkGetPhysicalDeviceFormatProperties2.html
+    /// [`vkGetPhysicalDeviceFormatProperties2`]: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkGetPhysicalDeviceFormatProperties2.html
     pub unsafe fn get_format_properties(&self, format: vk::Format, props: &mut vk::FormatProperties2) {
         let instance = self.instance().handle();
         // SAFETY: The caller has garunteed all valid usage requirements for vkGetPhysicalDeviceFormatProperties2

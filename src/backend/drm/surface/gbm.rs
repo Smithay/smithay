@@ -36,6 +36,7 @@ pub struct GbmBufferedSurface<A: Allocator<Buffer = BufferObject<()>> + 'static,
     next_fb: Option<Slot<BufferObject<()>>>,
     swapchain: Swapchain<A>,
     drm: Arc<DrmSurface>,
+    is_opaque: bool,
     supports_fencing: bool,
     span: tracing::Span,
 }
@@ -68,7 +69,7 @@ where
         for format in color_formats {
             debug!("Testing color format: {}", format);
             match Self::new_internal(drm.clone(), allocator, renderer_formats.clone(), *format) {
-                Ok((current_fb, swapchain)) => {
+                Ok((current_fb, swapchain, is_opaque)) => {
                     drop(_guard);
                     let supports_fencing =
                         !drm.is_legacy() && plane_has_property(&*drm, drm.plane(), "IN_FENCE_FD")?;
@@ -80,6 +81,7 @@ where
                         next_fb: None,
                         swapchain,
                         drm,
+                        is_opaque,
                         supports_fencing,
                         span,
                     });
@@ -100,13 +102,9 @@ where
         allocator: A,
         mut renderer_formats: HashSet<Format>,
         code: Fourcc,
-    ) -> Result<(Slot<BufferObject<()>>, Swapchain<A>), (A, Error<A::Error>)> {
+    ) -> Result<(Slot<BufferObject<()>>, Swapchain<A>, bool), (A, Error<A::Error>)> {
         // select a format
-        let mut plane_formats = match drm.supported_formats(drm.plane()) {
-            Ok(formats) => formats.iter().cloned().collect::<HashSet<_>>(),
-            Err(err) => return Err((allocator, err.into())),
-        };
-
+        let mut plane_formats = drm.planes().primary.formats.clone();
         let opaque_code = get_opaque(code).unwrap_or(code);
         if !plane_formats
             .iter()
@@ -193,7 +191,8 @@ where
                                                   // It has no further use.
         };
 
-        let fb = match framebuffer_from_bo(drm.device_fd(), &buffer, true) {
+        let use_opaque = !plane_formats.iter().any(|f| f.code == code);
+        let fb = match framebuffer_from_bo(drm.device_fd(), &buffer, use_opaque) {
             Ok(fb) => fb,
             Err(err) => return Err((swapchain.allocator, Error::DrmError(err.into()))),
         };
@@ -228,7 +227,7 @@ where
         match drm.test_state([plane_state], true) {
             Ok(_) => {
                 debug!("Choosen format: {:?}", format);
-                Ok((buffer, swapchain))
+                Ok((buffer, swapchain, use_opaque))
             }
             Err(err) => {
                 warn!(
@@ -247,6 +246,10 @@ where
     #[instrument(level = "trace", skip_all, parent = &self.span, err)]
     #[profiling::function]
     pub fn next_buffer(&mut self) -> Result<(Dmabuf, u8), Error<A::Error>> {
+        if !self.drm.is_active() {
+            return Err(Error::<A::Error>::DrmError(DrmError::DeviceInactive));
+        }
+
         if self.next_fb.is_none() {
             let slot = self
                 .swapchain
@@ -256,7 +259,7 @@ where
 
             let maybe_buffer = slot.userdata().get::<GbmFramebuffer>();
             if maybe_buffer.is_none() {
-                let fb = framebuffer_from_bo(self.drm.device_fd(), &slot, true)
+                let fb = framebuffer_from_bo(self.drm.device_fd(), &slot, self.is_opaque)
                     .map_err(|err| Error::DrmError(err.into()))?;
                 slot.userdata().insert_if_missing(|| fb);
             }
@@ -285,6 +288,10 @@ where
         damage: Option<Vec<Rectangle<i32, Physical>>>,
         user_data: U,
     ) -> Result<(), Error<A::Error>> {
+        if !self.drm.is_active() {
+            return Err(Error::<A::Error>::DrmError(DrmError::DeviceInactive));
+        }
+
         let next_fb = self.next_fb.take().ok_or(Error::<A::Error>::NoBuffer)?;
 
         self.swapchain.submitted(&next_fb);

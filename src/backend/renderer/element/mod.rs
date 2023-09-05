@@ -106,6 +106,8 @@ pub enum UnderlyingStorage {
 /// rendering instead of direct scan-out
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderingReason {
+    /// The element buffer format is unsuited for direct scan-out
+    FormatUnsupported,
     /// Element was selected for direct scan-out but failed
     ScanoutFailed,
 }

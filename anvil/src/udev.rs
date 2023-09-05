@@ -167,6 +167,7 @@ delegate_dmabuf!(AnvilState<UdevData>);
 
 impl Backend for UdevData {
     const HAS_RELATIVE_MOTION: bool = true;
+    const HAS_GESTURES: bool = true;
 
     fn seat_name(&self) -> String {
         self.session.seat()
@@ -525,6 +526,7 @@ struct SurfaceCompositorRenderResult {
 }
 
 impl SurfaceComposition {
+    #[profiling::function]
     fn frame_submitted(&mut self) -> Result<Option<Option<OutputPresentationFeedback>>, SwapBuffersError> {
         match self {
             SurfaceComposition::Compositor(c) => c.frame_submitted().map_err(Into::<SwapBuffersError>::into),
@@ -726,20 +728,16 @@ fn get_surface_dmabuf_feedback(
         .collect::<HashSet<_>>();
 
     let surface = composition.surface();
-    let planes = surface.planes().unwrap();
-    // We limit the scan-out trache to formats we can also render from
+    let planes = surface.planes().clone();
+
+    // We limit the scan-out tranche to formats we can also render from
     // so that there is always a fallback render path available in case
     // the supplied buffer can not be scanned out directly
-    let planes_formats = surface
-        .supported_formats(planes.primary.handle)
-        .unwrap()
+    let planes_formats = planes
+        .primary
+        .formats
         .into_iter()
-        .chain(
-            planes
-                .overlay
-                .iter()
-                .flat_map(|p| surface.supported_formats(p.handle).unwrap()),
-        )
+        .chain(planes.overlay.into_iter().flat_map(|p| p.formats))
         .collect::<HashSet<_>>()
         .intersection(&all_render_formats)
         .copied()
@@ -791,6 +789,7 @@ impl AnvilState<UdevData> {
                 notifier,
                 move |event, metadata, data: &mut CalloopData<_>| match event {
                     DrmEvent::VBlank(crtc) => {
+                        profiling::scope!("vblank", &format!("{:?}:{crtc:?}", node.dev_path().unwrap()));
                         data.state.frame_finish(node, crtc, metadata);
                     }
                     DrmEvent::Error(error) => {
@@ -936,13 +935,7 @@ impl AnvilState<UdevData> {
                 }
             };
 
-            let mut planes = match surface.planes() {
-                Ok(planes) => planes,
-                Err(err) => {
-                    warn!("Failed to query surface planes: {}", err);
-                    return;
-                }
-            };
+            let mut planes = surface.planes().clone();
 
             // Using an overlay plane on a nvidia card breaks
             if driver.name().to_string_lossy().to_lowercase().contains("nvidia")
@@ -1052,7 +1045,7 @@ impl AnvilState<UdevData> {
         }
 
         // fixup window coordinates
-        crate::shell::fixup_positions(&mut self.space, self.pointer_location);
+        crate::shell::fixup_positions(&mut self.space, self.pointer.current_location());
     }
 
     fn device_removed(&mut self, node: DrmNode) {
@@ -1086,10 +1079,15 @@ impl AnvilState<UdevData> {
             debug!("Dropping device");
         }
 
-        crate::shell::fixup_positions(&mut self.space, self.pointer_location);
+        crate::shell::fixup_positions(&mut self.space, self.pointer.current_location());
     }
 
     fn frame_finish(&mut self, dev_id: DrmNode, crtc: crtc::Handle, metadata: &mut Option<DrmEventMetadata>) {
+        profiling::scope!(
+            "frame_finish",
+            &format!("{:?}:{crtc:?}", dev_id.dev_path().unwrap())
+        );
+
         let device_backend = match self.backend_data.backends.get_mut(&dev_id) {
             Some(backend) => backend,
             None => {
@@ -1147,7 +1145,7 @@ impl AnvilState<UdevData> {
                         clock,
                         output
                             .current_mode()
-                            .map(|mode| mode.refresh as u32)
+                            .map(|mode| Duration::from_secs_f64(1_000f64 / mode.refresh as f64))
                             .unwrap_or_default(),
                         seq as u64,
                         flags,
@@ -1349,7 +1347,8 @@ impl AnvilState<UdevData> {
             &mut renderer,
             &self.space,
             &output,
-            self.pointer_location,
+            self.seat.input_method(),
+            self.pointer.current_location(),
             &pointer_image,
             &mut self.backend_data.pointer_element,
             &self.dnd_icon,

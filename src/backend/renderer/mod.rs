@@ -296,7 +296,7 @@ pub trait Renderer: fmt::Debug {
 
 /// Trait for renderers that support creating offscreen framebuffers to render into.
 ///
-/// Usually also implement either [`ExportMem`] and/or [`ExportDma`] to receive the framebuffers contents.
+/// Usually also implement [`ExportMem`] to receive the framebuffers contents.
 pub trait Offscreen<Target>: Renderer + Bind<Target> {
     /// Create a new instance of a framebuffer.
     ///

@@ -155,6 +155,15 @@ fn format_test(render: Vec<String>, sample: Vec<String>) {
     }
 }
 
+fn open_device(path: &str) -> DrmDeviceFd {
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .expect("Failed to open device node");
+    DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)))
+}
+
 fn buffer_test(args: TestArgs) {
     // 1. create allocator
     let path = args
@@ -163,15 +172,13 @@ fn buffer_test(args: TestArgs) {
     info!("Export device: {}", path);
     let mut allocator = match args.allocator {
         AllocatorType::DumbBuffer => {
-            let file = File::open(&path).expect("Failed to open device node");
-            let fd = DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)));
+            let fd = open_device(&path);
             Box::new(DmabufAllocator(
                 DrmDevice::new(fd, false).expect("Failed to init drm device").0,
             )) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>
         }
         AllocatorType::Gbm => {
-            let file = File::open(&path).expect("Failed to open device node");
-            let fd = DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)));
+            let fd = open_device(&path);
             let gbm = GbmDevice::new(fd).expect("Failed to init gbm device");
             let gbm_allocator = GbmAllocator::new(gbm, GbmBufferFlags::RENDERING);
             Box::new(DmabufAllocator(gbm_allocator)) as Box<_>

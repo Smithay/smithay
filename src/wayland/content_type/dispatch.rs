@@ -92,8 +92,12 @@ where
     ) {
         match request {
             wp_content_type_v1::Request::SetContentType { content_type } => {
-                let wayland_server::WEnum::Value(content_type) = content_type else { return; };
-                let Some(surface) = data.wl_surface() else { return; };
+                let wayland_server::WEnum::Value(content_type) = content_type else {
+                    return;
+                };
+                let Some(surface) = data.wl_surface() else {
+                    return;
+                };
 
                 compositor::with_states(&surface, |states| {
                     states
@@ -106,7 +110,9 @@ where
             // This is equivalent to setting the content type to none,
             // including double buffering semantics.
             wp_content_type_v1::Request::Destroy => {
-                let Some(surface) = data.wl_surface() else { return; };
+                let Some(surface) = data.wl_surface() else {
+                    return;
+                };
 
                 compositor::with_states(&surface, |states| {
                     states

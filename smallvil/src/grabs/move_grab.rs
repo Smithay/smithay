@@ -2,7 +2,9 @@ use crate::Smallvil;
 use smithay::{
     desktop::Window,
     input::pointer::{
-        AxisFrame, ButtonEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
+        AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
+        GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
+        GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
         PointerInnerHandle, RelativeMotionEvent,
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
@@ -67,6 +69,78 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         details: AxisFrame,
     ) {
         handle.axis(data, details)
+    }
+
+    fn gesture_swipe_begin(
+        &mut self,
+        data: &mut Smallvil,
+        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        event: &GestureSwipeBeginEvent,
+    ) {
+        handle.gesture_swipe_begin(data, event)
+    }
+
+    fn gesture_swipe_update(
+        &mut self,
+        data: &mut Smallvil,
+        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        event: &GestureSwipeUpdateEvent,
+    ) {
+        handle.gesture_swipe_update(data, event)
+    }
+
+    fn gesture_swipe_end(
+        &mut self,
+        data: &mut Smallvil,
+        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        event: &GestureSwipeEndEvent,
+    ) {
+        handle.gesture_swipe_end(data, event)
+    }
+
+    fn gesture_pinch_begin(
+        &mut self,
+        data: &mut Smallvil,
+        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        event: &GesturePinchBeginEvent,
+    ) {
+        handle.gesture_pinch_begin(data, event)
+    }
+
+    fn gesture_pinch_update(
+        &mut self,
+        data: &mut Smallvil,
+        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        event: &GesturePinchUpdateEvent,
+    ) {
+        handle.gesture_pinch_update(data, event)
+    }
+
+    fn gesture_pinch_end(
+        &mut self,
+        data: &mut Smallvil,
+        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        event: &GesturePinchEndEvent,
+    ) {
+        handle.gesture_pinch_end(data, event)
+    }
+
+    fn gesture_hold_begin(
+        &mut self,
+        data: &mut Smallvil,
+        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        event: &GestureHoldBeginEvent,
+    ) {
+        handle.gesture_hold_begin(data, event)
+    }
+
+    fn gesture_hold_end(
+        &mut self,
+        data: &mut Smallvil,
+        handle: &mut PointerInnerHandle<'_, Smallvil>,
+        event: &GestureHoldEndEvent,
+    ) {
+        handle.gesture_hold_end(data, event)
     }
 
     fn start_data(&self) -> &PointerGrabStartData<Smallvil> {

@@ -3,7 +3,7 @@ use crate::{
     wayland::dmabuf::DmabufFeedback,
 };
 
-/// Select a [`DmabufFeedback`] based on the [`RenderElementPresentationState`] for a single [`Element`]
+/// Select a [`DmabufFeedback`] based on the [`RenderElementPresentationState`] for a single [`Element`](crate::backend::renderer::element::Element)
 ///
 /// Returns the provided scan-out feedback if the element has been successfully assigned for scan-out or
 /// was selected for scan-out but failed the scan-out test.
@@ -22,7 +22,9 @@ pub fn select_dmabuf_feedback<'a>(
 
     match state.presentation_state {
         RenderElementPresentationState::Rendering { reason } => match reason {
-            Some(RenderingReason::ScanoutFailed) => scanout_feedback,
+            Some(RenderingReason::FormatUnsupported) | Some(RenderingReason::ScanoutFailed) => {
+                scanout_feedback
+            }
             None => default_feedback,
         },
         RenderElementPresentationState::ZeroCopy => scanout_feedback,

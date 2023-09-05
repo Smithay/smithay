@@ -210,7 +210,7 @@ struct Inner {
 #[derive(Debug)]
 pub struct XWaylandClientData {
     inner: Arc<Mutex<Inner>>,
-    /// client state of the [`wayland::compsitor`] module
+    /// client state of the [`crate::wayland::compositor`] module
     #[cfg(feature = "wayland_frontend")]
     pub compositor_state: CompositorClientState,
     data_map: UserDataMap,
@@ -402,9 +402,7 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
     info!("XWayland ready");
     // instance should never be None at this point
     let Some(instance) = guard.instance.as_mut() else {
-        error!(
-            "XWayland crashed at startup, will not try to restart it."
-        );
+        error!("XWayland crashed at startup, will not try to restart it.");
         return;
     };
     // neither the child_stdout

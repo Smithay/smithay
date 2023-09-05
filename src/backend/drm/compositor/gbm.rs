@@ -19,14 +19,14 @@ impl<A: AsFd + 'static, T> ExportFramebuffer<BufferObject<T>> for gbm::Device<A>
         &self,
         drm: &DrmDeviceFd,
         buffer: ExportBuffer<'_, BufferObject<T>>,
-        allow_opaque_fallback: bool,
+        use_opaque: bool,
     ) -> Result<Option<Self::Framebuffer>, Self::Error> {
         match buffer {
             #[cfg(feature = "wayland_frontend")]
             ExportBuffer::Wayland(wl_buffer) => {
-                framebuffer_from_wayland_buffer(drm, self, wl_buffer, allow_opaque_fallback)
+                framebuffer_from_wayland_buffer(drm, self, wl_buffer, use_opaque)
             }
-            ExportBuffer::Allocator(buffer) => framebuffer_from_bo(drm, buffer, allow_opaque_fallback)
+            ExportBuffer::Allocator(buffer) => framebuffer_from_bo(drm, buffer, use_opaque)
                 .map_err(Error::Drm)
                 .map(Some),
         }

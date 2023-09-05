@@ -317,7 +317,7 @@ impl RendererSurfaceState {
 /// [`crate::wayland::compositor::CompositorHandler::commit`].
 ///
 /// Consumes the buffer of [`SurfaceAttributes`], the buffer will
-/// not be accessible anymore, but [`draw_surface_tree`] and other
+/// not be accessible anymore, but [`draw_render_elements`] and other
 /// `draw_*` helpers of the [desktop module](`crate::desktop`) will
 /// become usable for surfaces handled this way.
 #[profiling::function]
@@ -425,7 +425,7 @@ where
 
 /// Imports buffers of a surface using a given [`Renderer`]
 ///
-/// This (or `import_surface_tree`) need to be called before`draw_surface_tree`, if used later.
+/// This (or `import_surface_tree`) need to be called before`draw_render_elements`, if used later.
 ///
 /// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]
@@ -468,7 +468,7 @@ where
 
 /// Imports buffers of a surface and its subsurfaces using a given [`Renderer`].
 ///
-/// This (or `import_surface`) need to be called before`draw_surface_tree`, if used later.
+/// This (or `import_surface`) need to be called before`draw_render_elements`, if used later.
 ///
 /// Note: This will do nothing, if you are not using
 /// [`crate::backend::renderer::utils::on_commit_buffer_handler`]

@@ -221,6 +221,11 @@ pub trait GestureSwipeUpdateEvent<B: InputBackend>: Event<B> {
 
     /// Delta of center on the y axis from last begin/update.
     fn delta_y(&self) -> f64;
+
+    /// Delta between the last and new gesture center.
+    fn delta(&self) -> Point<f64, Logical> {
+        (self.delta_x(), self.delta_y()).into()
+    }
 }
 
 impl<B: InputBackend> GestureSwipeUpdateEvent<B> for UnusedEvent {
@@ -256,6 +261,11 @@ pub trait GesturePinchUpdateEvent<B: InputBackend>: Event<B> {
 
     /// Relative angle in degrees from last begin/update.
     fn rotation(&self) -> f64;
+
+    /// Delta between the last and new gesture center.
+    fn delta(&self) -> Point<f64, Logical> {
+        (self.delta_x(), self.delta_y()).into()
+    }
 }
 
 impl<B: InputBackend> GesturePinchUpdateEvent<B> for UnusedEvent {

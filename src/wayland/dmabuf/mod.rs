@@ -747,7 +747,7 @@ impl DmabufState {
             return;
         };
 
-        let Some(mut current_feedback) = global.default_feedback.as_ref().map(|f| f.lock().unwrap()) else  {
+        let Some(mut current_feedback) = global.default_feedback.as_ref().map(|f| f.lock().unwrap()) else {
             return;
         };
 

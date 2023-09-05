@@ -312,8 +312,8 @@ impl PrivateSurfaceData {
         // debug_assert!(child.as_ref().is_alive());
         // debug_assert!(parent.as_ref().is_alive());
 
-        // ensure the child is not already a parent of the parent
-        if Self::is_ancestor(child, parent) {
+        // ensure the child is not the parent itself or its ancestor
+        if child == parent || Self::is_ancestor(child, parent) {
             return Err(AlreadyHasRole);
         }
 
@@ -326,8 +326,12 @@ impl PrivateSurfaceData {
             {
                 return Err(AlreadyHasRole);
             }
+            // ensure the child doesn't have a parent already set by a previous
+            // wl_subcompositor.get_subsurface request
+            if child_guard.parent.is_some() {
+                return Err(AlreadyHasRole);
+            }
             child_guard.public_data.role = Some(SUBSURFACE_ROLE);
-            debug_assert!(child_guard.parent.is_none());
             child_guard.parent = Some(parent.clone());
         }
         // register child to new parent
