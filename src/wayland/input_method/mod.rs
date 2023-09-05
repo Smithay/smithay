@@ -7,7 +7,6 @@
 //! use smithay::{
 //!     delegate_seat, delegate_input_method_manager, delegate_text_input_manager,
 //! };
-//! use smithay::desktop::PopupKind;
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! use smithay::wayland::input_method::{InputMethodManagerState, InputMethodHandler, PopupSurface};
 //! use smithay::wayland::text_input::TextInputManagerState;
