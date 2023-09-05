@@ -151,7 +151,10 @@
 //!         allocator::Fourcc,
 //!         renderer::{
 //!             damage::OutputDamageTracker,
-//!             element::texture::{TextureBuffer, TextureRenderElement},
+//!             element::{
+//!                 Kind,
+//!                 texture::{TextureBuffer, TextureRenderElement},
+//!             },
 //!         },
 //!     },
 //!     utils::{Point, Transform},
@@ -182,7 +185,7 @@
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
 //!     let render_element =
-//!         TextureRenderElement::from_texture_buffer(location, &texture_buffer, None, None, None);
+//!         TextureRenderElement::from_texture_buffer(location, &texture_buffer, None, None, None, Kind::Unspecified);
 //!
 //!     // Render the element(s)
 //!     damage_tracker
@@ -307,7 +310,10 @@
 //!         allocator::Fourcc,
 //!         renderer::{
 //!             damage::OutputDamageTracker,
-//!             element::texture::{TextureRenderBuffer, TextureRenderElement},
+//!             element::{
+//!                 Kind,
+//!                 texture::{TextureRenderBuffer, TextureRenderElement},
+//!             },
 //!         },
 //!     },
 //!     utils::{Point, Rectangle, Size, Transform},
@@ -382,6 +388,7 @@
 //!         None,
 //!         None,
 //!         None,
+//!         Kind::Unspecified,
 //!     );
 //!
 //!     // Render the element(s)
@@ -406,7 +413,7 @@ use crate::{
     utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{CommitCounter, Element, Id, RenderElement};
+use super::{CommitCounter, Element, Id, Kind, RenderElement};
 
 /// A single texture buffer
 #[derive(Debug, Clone)]
@@ -622,6 +629,7 @@ pub struct TextureRenderElement<T> {
     size: Option<Size<i32, Logical>>,
     opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
     snapshot: DamageSnapshot<i32, Buffer>,
+    kind: Kind,
 }
 
 impl<T: Texture> TextureRenderElement<T> {
@@ -643,6 +651,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
+        kind: Kind,
     ) -> Self {
         TextureRenderElement::from_texture_with_damage(
             buffer.id.clone(),
@@ -656,6 +665,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
             size,
             buffer.opaque_regions.clone(),
             buffer.damage_tracker.lock().unwrap().snapshot(),
+            kind,
         )
     }
 
@@ -666,6 +676,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
+        kind: Kind,
     ) -> Self {
         TextureRenderElement::from_static_texture(
             buffer.id.clone(),
@@ -678,6 +689,7 @@ impl<T: Texture + Clone> TextureRenderElement<T> {
             src,
             size,
             buffer.opaque_regions.clone(),
+            kind,
         )
     }
 }
@@ -698,6 +710,7 @@ impl<T: Texture> TextureRenderElement<T> {
         size: Option<Size<i32, Logical>>,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
         snapshot: DamageSnapshot<i32, Buffer>,
+        kind: Kind,
     ) -> Self {
         let opaque_regions = opaque_regions.map(|regions| {
             regions
@@ -717,6 +730,7 @@ impl<T: Texture> TextureRenderElement<T> {
             size,
             opaque_regions,
             snapshot,
+            kind,
         }
     }
 
@@ -734,6 +748,7 @@ impl<T: Texture> TextureRenderElement<T> {
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+        kind: Kind,
     ) -> Self {
         TextureRenderElement::from_texture_with_damage(
             id,
@@ -747,6 +762,7 @@ impl<T: Texture> TextureRenderElement<T> {
             size,
             opaque_regions,
             DamageSnapshot::empty(),
+            kind,
         )
     }
 
@@ -867,6 +883,10 @@ where
 
     fn alpha(&self) -> f32 {
         self.alpha
+    }
+
+    fn kind(&self) -> Kind {
+        self.kind
     }
 }
 

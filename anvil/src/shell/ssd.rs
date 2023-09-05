@@ -2,7 +2,7 @@ use smithay::{
     backend::renderer::{
         element::{
             solid::{SolidColorBuffer, SolidColorRenderElement},
-            AsRenderElements,
+            AsRenderElements, Kind,
         },
         Renderer,
     },
@@ -184,6 +184,7 @@ impl<R: Renderer> AsRenderElements<R> for HeaderBar {
                 location + (header_end_offset - button_offset).to_physical_precise_round(scale),
                 scale,
                 alpha,
+                Kind::Unspecified,
             )
             .into(),
             SolidColorRenderElement::from_buffer(
@@ -191,9 +192,11 @@ impl<R: Renderer> AsRenderElements<R> for HeaderBar {
                 location + (header_end_offset - button_offset.upscale(2)).to_physical_precise_round(scale),
                 scale,
                 alpha,
+                Kind::Unspecified,
             )
             .into(),
-            SolidColorRenderElement::from_buffer(&self.background, location, scale, alpha).into(),
+            SolidColorRenderElement::from_buffer(&self.background, location, scale, alpha, Kind::Unspecified)
+                .into(),
         ]
     }
 }

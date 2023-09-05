@@ -4,7 +4,10 @@ use smithay::{
     backend::{
         input::{InputEvent, KeyboardKeyEvent},
         renderer::{
-            element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+            element::{
+                surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+                Kind,
+            },
             gles::GlesRenderer,
             utils::{draw_render_elements, on_commit_buffer_handler},
             Frame, Renderer,
@@ -195,7 +198,14 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
             .toplevel_surfaces()
             .iter()
             .flat_map(|surface| {
-                render_elements_from_surface_tree(backend.renderer(), surface.wl_surface(), (0, 0), 1.0, 1.0)
+                render_elements_from_surface_tree(
+                    backend.renderer(),
+                    surface.wl_surface(),
+                    (0, 0),
+                    1.0,
+                    1.0,
+                    Kind::Unspecified,
+                )
             })
             .collect::<Vec<WaylandSurfaceRenderElement<GlesRenderer>>>();
 

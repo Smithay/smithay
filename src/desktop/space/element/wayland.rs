@@ -1,5 +1,5 @@
 use crate::{
-    backend::renderer::Renderer,
+    backend::renderer::{element::Kind, Renderer},
     desktop::space::*,
     utils::{Physical, Point, Scale},
 };
@@ -47,6 +47,7 @@ where
             location,
             scale,
             alpha,
+            Kind::Unspecified,
         )
     }
 }

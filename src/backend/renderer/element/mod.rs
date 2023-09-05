@@ -317,6 +317,22 @@ impl RenderElementStates {
     }
 }
 
+/// Defines the kind of an [`Element`]
+///
+/// This can give the backend a hint about how to handle the element
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub enum Kind {
+    /// The element represents a cursor
+    ///
+    /// An element representing a cursor is expected to change infrequently.
+    /// Not marking a cursor element as `Cursor` may result in lower performance and increased power usage.
+    /// In contrast, marking elements that change frequently as `Cursor` can degrade performance significantly.
+    Cursor,
+    /// The element kind is unspecified
+    #[default]
+    Unspecified,
+}
+
 /// A single element
 pub trait Element {
     /// Get the unique id of this element
@@ -355,6 +371,10 @@ pub trait Element {
     /// already encoded alpha in it's underlying representation.
     fn alpha(&self) -> f32 {
         1.0
+    }
+    /// Returns the [`Kind`] for this element
+    fn kind(&self) -> Kind {
+        Kind::default()
     }
 }
 
@@ -435,6 +455,10 @@ where
 
     fn alpha(&self) -> f32 {
         (*self).alpha()
+    }
+
+    fn kind(&self) -> Kind {
+        (*self).kind()
     }
 }
 
@@ -711,6 +735,19 @@ macro_rules! render_elements_internal {
                         #[$meta]
                     )*
                     Self::$body(x) => $crate::render_elements_internal!(@call alpha; x)
+                ),*,
+                Self::_GenericCatcher(_) => unreachable!(),
+            }
+        }
+
+        fn kind(&self) -> $crate::backend::renderer::element::Kind {
+            match self {
+                $(
+                    #[allow(unused_doc_comments)]
+                    $(
+                        #[$meta]
+                    )*
+                    Self::$body(x) => $crate::render_elements_internal!(@call kind; x)
                 ),*,
                 Self::_GenericCatcher(_) => unreachable!(),
             }
@@ -1411,6 +1448,10 @@ where
 
     fn alpha(&self) -> f32 {
         self.0.alpha()
+    }
+
+    fn kind(&self) -> Kind {
+        self.0.kind()
     }
 }
 

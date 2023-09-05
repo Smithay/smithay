@@ -5,7 +5,7 @@ use smithay::{
         element::{
             surface::WaylandSurfaceRenderElement,
             texture::{TextureBuffer, TextureRenderElement},
-            AsRenderElements,
+            AsRenderElements, Kind,
         },
         ImportAll, Renderer, Texture,
     },
@@ -93,6 +93,7 @@ where
                             None,
                             None,
                             None,
+                            Kind::Cursor,
                         ))
                         .into(),
                     ]
@@ -103,7 +104,12 @@ where
             CursorImageStatus::Surface(surface) => {
                 let elements: Vec<PointerRenderElement<R>> =
                     smithay::backend::renderer::element::surface::render_elements_from_surface_tree(
-                        renderer, surface, location, scale, alpha,
+                        renderer,
+                        surface,
+                        location,
+                        scale,
+                        alpha,
+                        Kind::Cursor,
                     );
                 elements.into_iter().map(E::from).collect()
             }

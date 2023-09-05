@@ -2,7 +2,7 @@
 
 use crate::{
     backend::renderer::{
-        element::{AsRenderElements, Element, Id, RenderElement, UnderlyingStorage},
+        element::{AsRenderElements, Element, Id, Kind, RenderElement, UnderlyingStorage},
         Renderer,
     },
     utils::{Buffer, Physical, Point, Rectangle, Scale},
@@ -87,6 +87,10 @@ impl<E: Element> Element for RescaleRenderElement<E> {
 
     fn alpha(&self) -> f32 {
         self.element.alpha()
+    }
+
+    fn kind(&self) -> Kind {
+        self.element.kind()
     }
 }
 
@@ -266,6 +270,10 @@ impl<E: Element> Element for CropRenderElement<E> {
     fn alpha(&self) -> f32 {
         self.element.alpha()
     }
+
+    fn kind(&self) -> Kind {
+        self.element.kind()
+    }
 }
 
 impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for CropRenderElement<E> {
@@ -361,6 +369,10 @@ impl<E: Element> Element for RelocateRenderElement<E> {
 
     fn alpha(&self) -> f32 {
         self.element.alpha()
+    }
+
+    fn kind(&self) -> Kind {
+        self.element.kind()
     }
 }
 

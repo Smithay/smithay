@@ -187,7 +187,10 @@
 //! use smithay::{
 //!     backend::renderer::{
 //!         damage::OutputDamageTracker,
-//!         element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+//!         element::{
+//!             Kind,
+//!             surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+//!         },
 //!     },
 //!     utils::{Point, Rectangle, Size, Transform},
 //! };
@@ -204,7 +207,7 @@
 //!     // Create the render elements from the surface
 //!     let location = Point::from((100, 100));
 //!     let render_elements: Vec<WaylandSurfaceRenderElement<FakeRenderer>> =
-//!         render_elements_from_surface_tree(&mut renderer, &surface, location, 1.0, 1.0);
+//!         render_elements_from_surface_tree(&mut renderer, &surface, location, 1.0, 1.0, Kind::Unspecified);
 //!
 //!     // Render the element(s)
 //!     damage_tracker
@@ -224,7 +227,7 @@ use crate::{
     wayland::compositor::{self, SurfaceData, TraversalAction},
 };
 
-use super::{CommitCounter, Element, Id, RenderElement, UnderlyingStorage};
+use super::{CommitCounter, Element, Id, Kind, RenderElement, UnderlyingStorage};
 
 /// Retrieve the [`WaylandSurfaceRenderElement`]s for a surface tree
 #[instrument(level = "trace", skip(renderer, location, scale))]
@@ -235,6 +238,7 @@ pub fn render_elements_from_surface_tree<R, E>(
     location: impl Into<Point<i32, Physical>>,
     scale: impl Into<Scale<f64>>,
     alpha: f32,
+    kind: Kind,
 ) -> Vec<E>
 where
     R: Renderer + ImportAll,
@@ -279,7 +283,7 @@ where
 
                 if has_view {
                     match WaylandSurfaceRenderElement::from_surface(
-                        renderer, surface, states, location, alpha,
+                        renderer, surface, states, location, alpha, kind,
                     ) {
                         Ok(surface) => surfaces.push(surface.into()),
                         Err(err) => {
@@ -302,6 +306,7 @@ pub struct WaylandSurfaceRenderElement<R> {
     alpha: f32,
     surface: wl_surface::WlSurface,
     renderer_type: PhantomData<R>,
+    kind: Kind,
 }
 
 impl<R> fmt::Debug for WaylandSurfaceRenderElement<R> {
@@ -323,6 +328,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         states: &SurfaceData,
         location: Point<f64, Physical>,
         alpha: f32,
+        kind: Kind,
     ) -> Result<Self, <R as Renderer>::Error>
     where
         <R as Renderer>::TextureId: 'static,
@@ -336,6 +342,7 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
             alpha,
             surface: surface.clone(),
             renderer_type: PhantomData,
+            kind,
         })
     }
 
@@ -482,6 +489,10 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
 
     fn alpha(&self) -> f32 {
         self.alpha
+    }
+
+    fn kind(&self) -> Kind {
+        self.kind
     }
 }
 

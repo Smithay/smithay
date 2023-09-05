@@ -115,7 +115,10 @@
 //! use smithay::{
 //!     backend::renderer::{
 //!         damage::OutputDamageTracker,
-//!         element::solid::{SolidColorBuffer, SolidColorRenderElement},
+//!         element::{
+//!             Kind,
+//!             solid::{SolidColorBuffer, SolidColorRenderElement},
+//!         },
 //!     },
 //!     utils::{Point, Size},
 //! };
@@ -134,7 +137,7 @@
 //! loop {
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100, 100));
-//!     let render_element = SolidColorRenderElement::from_buffer(&buffer, location, 1f64, 1.0);
+//!     let render_element = SolidColorRenderElement::from_buffer(&buffer, location, 1f64, 1.0, Kind::Unspecified);
 //!
 //!     // Render the element(s)
 //!     damage_tracker
@@ -147,7 +150,7 @@ use crate::{
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{AsRenderElements, Element, Id, RenderElement};
+use super::{AsRenderElements, Element, Id, Kind, RenderElement};
 
 /// A single color buffer
 #[derive(Debug, Clone)]
@@ -223,6 +226,7 @@ pub struct SolidColorRenderElement {
     opaque_regions: Vec<Rectangle<i32, Physical>>,
     commit: CommitCounter,
     color: [f32; 4],
+    kind: Kind,
 }
 
 impl SolidColorRenderElement {
@@ -232,11 +236,12 @@ impl SolidColorRenderElement {
         location: impl Into<Point<i32, Physical>>,
         scale: impl Into<Scale<f64>>,
         alpha: f32,
+        kind: Kind,
     ) -> Self {
         let geo = Rectangle::from_loc_and_size(location, buffer.size.to_physical_precise_round(scale));
         let mut color = buffer.color;
         color[3] *= alpha;
-        Self::new(buffer.id.clone(), geo, buffer.commit, color)
+        Self::new(buffer.id.clone(), geo, buffer.commit, color, kind)
     }
 
     /// Create a new solid color render element with the specified geometry and color
@@ -245,6 +250,7 @@ impl SolidColorRenderElement {
         geometry: Rectangle<i32, Physical>,
         commit: impl Into<CommitCounter>,
         color: [f32; 4],
+        kind: Kind,
     ) -> Self {
         let src = Rectangle::from_loc_and_size((0, 0), geometry.size)
             .to_f64()
@@ -262,6 +268,7 @@ impl SolidColorRenderElement {
             opaque_regions,
             commit: commit.into(),
             color,
+            kind,
         }
     }
 }
@@ -289,6 +296,10 @@ impl Element for SolidColorRenderElement {
 
     fn alpha(&self) -> f32 {
         1.0
+    }
+
+    fn kind(&self) -> Kind {
+        self.kind
     }
 }
 
@@ -322,6 +333,6 @@ where
         scale: crate::utils::Scale<f64>,
         alpha: f32,
     ) -> Vec<C> {
-        vec![SolidColorRenderElement::from_buffer(self, location, scale, alpha).into()]
+        vec![SolidColorRenderElement::from_buffer(self, location, scale, alpha, Kind::Unspecified).into()]
     }
 }

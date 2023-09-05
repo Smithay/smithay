@@ -149,7 +149,7 @@ use crate::{
             buffer_y_inverted,
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::{
-                Element, Id, RenderElement, RenderElementPresentationState, RenderElementState,
+                Element, Id, Kind, RenderElement, RenderElementPresentationState, RenderElementState,
                 RenderElementStates, RenderingReason, UnderlyingStorage,
             },
             sync::SyncPoint,
@@ -2816,6 +2816,15 @@ where
         if frame_state.is_assigned(plane_info.handle) {
             trace!(
                 "skipping element {:?} on cursor {:?}, plane already has element assigned",
+                element.id(),
+                plane_info.handle
+            );
+            return None;
+        }
+
+        if element.kind() != Kind::Cursor {
+            trace!(
+                "skipping element {:?} on cursor {:?}, element kind not cursor",
                 element.id(),
                 plane_info.handle
             );

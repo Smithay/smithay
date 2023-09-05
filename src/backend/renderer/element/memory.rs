@@ -135,7 +135,10 @@
 //!         allocator::Fourcc,
 //!         renderer::{
 //!             damage::OutputDamageTracker,
-//!             element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+//!             element::{
+//!                 Kind,
+//!                 memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+//!             },
 //!         },
 //!     },
 //!     utils::{Point, Rectangle, Size, Transform},
@@ -192,7 +195,7 @@
 //!
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
-//!     let render_element = MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &buffer, None, None, None)
+//!     let render_element = MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &buffer, None, None, None, Kind::Unspecified)
 //!         .expect("Failed to upload from memory to gpu");
 //!
 //!     // Render the element(s)
@@ -223,7 +226,7 @@ use crate::{
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{Element, Id, RenderElement};
+use super::{Element, Id, Kind, RenderElement};
 
 #[derive(Debug)]
 struct MemoryRenderBufferInner {
@@ -491,6 +494,7 @@ pub struct MemoryRenderBufferRenderElement<R: Renderer> {
     src: Option<Rectangle<f64, Logical>>,
     size: Option<Size<i32, Logical>>,
     renderer_type: PhantomData<R>,
+    kind: Kind,
 }
 
 impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
@@ -503,6 +507,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         alpha: Option<f32>,
         src: Option<Rectangle<f64, Logical>>,
         size: Option<Size<i32, Logical>>,
+        kind: Kind,
     ) -> Result<Self, <R as Renderer>::Error>
     where
         R: ImportMem,
@@ -516,6 +521,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
             src,
             size,
             renderer_type: PhantomData,
+            kind,
         })
     }
 
@@ -658,6 +664,10 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
 
     fn alpha(&self) -> f32 {
         self.alpha
+    }
+
+    fn kind(&self) -> Kind {
+        self.kind
     }
 }
 
