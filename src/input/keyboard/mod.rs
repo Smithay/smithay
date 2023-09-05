@@ -59,6 +59,7 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::KeyboardFocus, Serial)>,
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
     pub(crate) pressed_keys: HashSet<u32>,
+    pub(crate) forwarded_pressed_keys: HashSet<u32>,
     pub(crate) mods_state: ModifiersState,
     context: xkb::Context,
     pub(crate) keymap: xkb::Keymap,
@@ -75,6 +76,7 @@ impl<D: SeatHandler> fmt::Debug for KbdInternal<D> {
             .field("focus", &self.focus)
             .field("pending_focus", &self.pending_focus)
             .field("pressed_keys", &self.pressed_keys)
+            .field("forwarded_pressed_keys", &self.forwarded_pressed_keys)
             .field("mods_state", &self.mods_state)
             .field("keymap", &self.keymap.get_raw_ptr())
             .field("state", &self.state.get_raw_ptr())
@@ -103,6 +105,7 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             focus: None,
             pending_focus: None,
             pressed_keys: HashSet::new(),
+            forwarded_pressed_keys: HashSet::new(),
             mods_state: ModifiersState::default(),
             context,
             keymap,
@@ -518,6 +521,15 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             return Some(val);
         }
 
+        match state {
+            KeyState::Pressed => {
+                guard.forwarded_pressed_keys.insert(keycode);
+            }
+            KeyState::Released => {
+                guard.forwarded_pressed_keys.remove(&keycode);
+            }
+        };
+
         // forward to client if no keybinding is triggered
         let seat = self.get_seat(data);
         let modifiers = mods_changed.then_some(guard.mods_state);
@@ -749,7 +761,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
             if let Some((focus, _)) = self.inner.focus.as_mut() {
                 let keys = self
                     .inner
-                    .pressed_keys
+                    .forwarded_pressed_keys
                     .iter()
                     .map(|keycode| {
                         KeysymHandle {
