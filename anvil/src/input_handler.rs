@@ -400,16 +400,20 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 if let Some(discrete) = horizontal_amount_discrete {
                     frame = frame.discrete(Axis::Horizontal, discrete as i32);
                 }
-            } else if evt.source() == AxisSource::Finger {
-                frame = frame.stop(Axis::Horizontal);
             }
             if vertical_amount != 0.0 {
                 frame = frame.value(Axis::Vertical, vertical_amount);
                 if let Some(discrete) = vertical_amount_discrete {
                     frame = frame.discrete(Axis::Vertical, discrete as i32);
                 }
-            } else if evt.source() == AxisSource::Finger {
-                frame = frame.stop(Axis::Vertical);
+            }
+            if evt.source() == AxisSource::Finger {
+                if evt.amount(Axis::Horizontal) == Some(0.0) {
+                    frame = frame.stop(Axis::Horizontal);
+                }
+                if evt.amount(Axis::Vertical) == Some(0.0) {
+                    frame = frame.stop(Axis::Vertical);
+                }
             }
             let pointer = self.pointer.clone();
             pointer.axis(self, frame);
