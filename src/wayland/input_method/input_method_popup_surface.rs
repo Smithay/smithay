@@ -8,6 +8,8 @@ use crate::utils::{
     alive_tracker::{AliveTracker, IsAlive},
     Physical, Rectangle,
 };
+use crate::utils::{Logical, Point};
+use crate::wayland::compositor::with_states;
 
 use super::InputMethodManagerState;
 
@@ -37,6 +39,7 @@ pub struct PopupSurface {
     parent: WlSurface,
     /// Rectangle with position and size of  text cursor, used for placement of popup surface
     pub rectangle: Rectangle<i32, Physical>,
+    parent_location: Rectangle<i32, Logical>,
 }
 
 impl std::cmp::PartialEq for PopupSurface {
@@ -51,12 +54,14 @@ impl PopupSurface {
         surface: WlSurface,
         parent: WlSurface,
         rectangle: Rectangle<i32, Physical>,
+        parent_location: Rectangle<i32, Logical>,
     ) -> Self {
         Self {
             surface_role,
             surface,
             parent,
             rectangle,
+            parent_location,
         }
     }
 
@@ -77,9 +82,20 @@ impl PopupSurface {
         self.parent.clone()
     }
 
+    pub fn parent_location(&self) -> Rectangle<i32, Logical> {
+        self.parent_location
+    }
+
+    // pub fn rectangle(&self) -> Rectangle<i32, Physical> {
+    //     self.rectangle
+    // }
+
     /// Used to access the location of an input popup surface relative to the parent
-    pub fn rectangle(&self) -> Rectangle<i32, Physical> {
-        self.rectangle
+    pub fn location(&self) -> Point<i32, Physical> {
+        Point::from((
+            self.rectangle.loc.x - self.rectangle.size.w,
+            self.rectangle.loc.y + self.rectangle.size.h,
+        ))
     }
 
     /// Set relative location of text cursor

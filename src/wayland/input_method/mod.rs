@@ -48,14 +48,20 @@
 //!
 //! ```
 
-use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
+use wayland_server::{
+    backend::GlobalId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle,
+    GlobalDispatch, New,
+};
 
 use wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_manager_v2::{self, ZwpInputMethodManagerV2},
     zwp_input_method_v2::ZwpInputMethodV2,
 };
 
-use crate::input::{Seat, SeatHandler};
+use crate::{
+    input::{Seat, SeatHandler},
+    utils::{Logical, Rectangle},
+};
 
 pub use input_method_handle::{InputMethodHandle, InputMethodUserData};
 pub use input_method_keyboard_grab::InputMethodKeyboardUserData;
@@ -74,6 +80,9 @@ pub use input_method_popup_surface::PopupSurface;
 pub trait InputMethodHandler {
     /// Add a popup surface to compositor state
     fn new_popup(&mut self, surface: PopupSurface);
+
+    /// Sets the parent location so the popup surface can be placed correctly
+    fn parent_location(&self, parent: &WlSurface) -> Rectangle<i32, Logical>;
 }
 
 /// Extends [Seat] with input method functionality

@@ -17,6 +17,7 @@ use smithay::{
     delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration,
     delegate_xdg_shell,
     desktop::{
+        space::SpaceElement,
         utils::{
             surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
             update_surface_primary_scanout_output, OutputPresentationFeedback,
@@ -40,7 +41,7 @@ use smithay::{
             Display, DisplayHandle, Resource,
         },
     },
-    utils::{Clock, Monotonic},
+    utils::{Clock, Monotonic, Rectangle},
     wayland::{
         compositor::{get_parent, with_states, CompositorClientState, CompositorState},
         data_device::{
@@ -286,6 +287,18 @@ impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
     fn new_popup(&mut self, surface: PopupSurface) {
         if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
             warn!("Failed to track popup: {}", err);
+        }
+    }
+
+    fn parent_location(&self, parent: &WlSurface) -> Rectangle<i32, smithay::utils::Logical> {
+        let w = self
+            .space
+            .elements()
+            .find(|window| window.wl_surface().as_ref() == Some(parent));
+        if let Some(window) = w {
+            window.geometry().clone()
+        } else {
+            Rectangle::default()
         }
     }
 }

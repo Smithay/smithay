@@ -167,8 +167,13 @@ where
                     },
                 );
                 // TODO close if there already is one
-                input_method.popup_handle.surface = None;
-                let popup = PopupSurface::new(instance, surface, parent, input_method.popup_handle.rectangle);
+                let popup = PopupSurface::new(
+                    instance,
+                    surface,
+                    parent.clone(),
+                    input_method.popup_handle.rectangle,
+                    state.parent_location(&parent),
+                );
                 input_method.popup_handle.surface = Some(popup.clone());
                 state.new_popup(popup);
             }
