@@ -172,7 +172,7 @@ where
                     surface,
                     parent.clone(),
                     input_method.popup_handle.rectangle,
-                    state.parent_location(&parent),
+                    state.parent_geometry(&parent),
                 );
                 input_method.popup_handle.surface = Some(popup.clone());
                 state.new_popup(popup);

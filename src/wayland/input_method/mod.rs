@@ -11,6 +11,7 @@
 //! use smithay::wayland::input_method::{InputMethodManagerState, InputMethodHandler, PopupSurface};
 //! use smithay::wayland::text_input::TextInputManagerState;
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
+//! use smithay::utils::{Rectangle, Logical};
 //!
 //! # struct State { seat_state: SeatState<Self> };
 //!
@@ -18,6 +19,9 @@
 //!
 //! impl InputMethodHandler for State {
 //!     fn new_popup(&mut self, surface: PopupSurface) {}
+//!     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical> {
+//!         Rectangle::default()
+//!     }
 //! }
 //!
 //! // Delegate input method handling for State to InputMethodManagerState.
@@ -82,7 +86,7 @@ pub trait InputMethodHandler {
     fn new_popup(&mut self, surface: PopupSurface);
 
     /// Sets the parent location so the popup surface can be placed correctly
-    fn parent_location(&self, parent: &WlSurface) -> Rectangle<i32, Logical>;
+    fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical>;
 }
 
 /// Extends [Seat] with input method functionality

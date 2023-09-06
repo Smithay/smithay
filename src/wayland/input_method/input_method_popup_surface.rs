@@ -9,7 +9,6 @@ use crate::utils::{
     Physical, Rectangle,
 };
 use crate::utils::{Logical, Point};
-use crate::wayland::compositor::with_states;
 
 use super::InputMethodManagerState;
 
@@ -82,13 +81,10 @@ impl PopupSurface {
         self.parent.clone()
     }
 
+    /// Access to the parent surface location associated with this popup
     pub fn parent_location(&self) -> Rectangle<i32, Logical> {
         self.parent_location
     }
-
-    // pub fn rectangle(&self) -> Rectangle<i32, Physical> {
-    //     self.rectangle
-    // }
 
     /// Used to access the location of an input popup surface relative to the parent
     pub fn location(&self) -> Point<i32, Physical> {

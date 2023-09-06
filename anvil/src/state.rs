@@ -290,13 +290,13 @@ impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
         }
     }
 
-    fn parent_location(&self, parent: &WlSurface) -> Rectangle<i32, smithay::utils::Logical> {
+    fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, smithay::utils::Logical> {
         let w = self
             .space
             .elements()
             .find(|window| window.wl_surface().as_ref() == Some(parent));
         if let Some(window) = w {
-            window.geometry().clone()
+            window.geometry()
         } else {
             Rectangle::default()
         }
