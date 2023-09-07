@@ -126,7 +126,8 @@ impl RendererSurfaceState {
                     .buffer_dimensions
                     .unwrap()
                     .to_logical(self.buffer_scale, self.buffer_transform);
-                let surface_view = SurfaceView::from_states(states, surface_size);
+                let surface_view =
+                    SurfaceView::from_states(states, surface_size, self.accumulated_buffer_delta);
                 self.surface_view = Some(surface_view);
 
                 let mut buffer_damage = attrs
@@ -363,18 +364,23 @@ pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
 }
 
 impl SurfaceView {
-    fn from_states(states: &SurfaceData, surface_size: Size<i32, Logical>) -> SurfaceView {
+    fn from_states(
+        states: &SurfaceData,
+        surface_size: Size<i32, Logical>,
+        buffer_delta: Point<i32, Logical>,
+    ) -> SurfaceView {
         viewporter::ensure_viewport_valid(states, surface_size);
         let viewport = states.cached_state.current::<viewporter::ViewportCachedState>();
         let src = viewport
             .src
             .unwrap_or_else(|| Rectangle::from_loc_and_size((0.0, 0.0), surface_size.to_f64()));
         let dst = viewport.size().unwrap_or(surface_size);
-        let offset = if states.role == Some("subsurface") {
+        let mut offset = if states.role == Some("subsurface") {
             states.cached_state.current::<SubsurfaceCachedState>().location
         } else {
             Default::default()
         };
+        offset += buffer_delta;
         SurfaceView { src, dst, offset }
     }
 
