@@ -78,7 +78,6 @@ impl InputMethodHandle {
     /// Convenience function to close popup surfaces
     pub(crate) fn close_popup(&self) {
         let mut inner = self.inner.lock().unwrap();
-        // TODO flag as closed so it won't be shown
         inner.popup_handle.surface = None;
     }
 }
@@ -166,7 +165,6 @@ where
                         alive_tracker: AliveTracker::default(),
                     },
                 );
-                // TODO close if there already is one
                 let popup = PopupSurface::new(
                     instance,
                     surface,
