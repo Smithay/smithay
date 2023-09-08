@@ -226,13 +226,6 @@ where
     }
     fn axis(&self, seat: &Seat<D>, _data: &mut D, details: AxisFrame) {
         for_each_focused_pointers(seat, self, |ptr| {
-            // axis
-            if details.axis.0 != 0.0 {
-                ptr.axis(details.time, WlAxis::HorizontalScroll, details.axis.0);
-            }
-            if details.axis.1 != 0.0 {
-                ptr.axis(details.time, WlAxis::VerticalScroll, details.axis.1);
-            }
             if ptr.version() >= 5 {
                 // axis source
                 if let Some(source) = details.source {
@@ -265,6 +258,15 @@ where
                 if details.stop.1 {
                     ptr.axis_stop(details.time, WlAxis::VerticalScroll);
                 }
+            }
+            // axis
+            if details.axis.0 != 0.0 {
+                ptr.axis(details.time, WlAxis::HorizontalScroll, details.axis.0);
+            }
+            if details.axis.1 != 0.0 {
+                ptr.axis(details.time, WlAxis::VerticalScroll, details.axis.1);
+            }
+            if ptr.version() >= 5 {
                 // frame
                 ptr.frame();
             }
