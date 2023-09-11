@@ -2163,10 +2163,6 @@ where
                 (dmabuf, age)
             };
 
-            renderer
-                .bind(dmabuf)
-                .map_err(OutputDamageTrackerError::Rendering)?;
-
             // store the current renderer debug flags and replace them
             // with our own
             let renderer_debug_flags = renderer.debug_flags();
@@ -2211,9 +2207,9 @@ where
                     .map(|e| DrmRenderElements::Other(*e)),
             );
 
-            let render_res = self
-                .damage_tracker
-                .render_output(renderer, age, &elements, clear_color);
+            let render_res =
+                self.damage_tracker
+                    .render_output_with(renderer, dmabuf, age, &elements, clear_color);
 
             // restore the renderer debug flags
             renderer.set_debug_flags(renderer_debug_flags);
