@@ -2317,16 +2317,9 @@ where
             }
         }
 
-        self.next_frame = Some(next_frame_state);
-
         let primary_plane_element = if render {
             let (slot, sync) = {
-                let primary_plane_state = self
-                    .next_frame
-                    .as_ref()
-                    .unwrap()
-                    .plane_state(self.planes.primary.handle)
-                    .unwrap();
+                let primary_plane_state = next_frame_state.plane_state(self.planes.primary.handle).unwrap();
                 let config = primary_plane_state.config.as_ref().unwrap();
                 (
                     config.buffer.clone(),
@@ -2362,6 +2355,13 @@ where
             primary_plane_element_id: self.primary_plane_element_id.clone(),
             supports_fencing: self.supports_fencing,
         };
+
+        // We only store the next frame if it acutaly contains any changes
+        // Storing the (empty) frame could keep a reference to wayland buffers which
+        // could otherwise be potentially released on `frame_submitted`
+        if !next_frame_state.is_empty() {
+            self.next_frame = Some(next_frame_state);
+        }
 
         Ok(frame_reference)
     }
