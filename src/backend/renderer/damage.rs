@@ -403,14 +403,9 @@ impl OutputDamageTracker {
         let render_res = (|| {
             let mut frame = renderer.render(output_size, output_transform)?;
 
-            let clear_damage = opaque_regions.iter().flat_map(|(_, regions)| regions).fold(
+            let clear_damage = Rectangle::subtract_rects_many_in_place(
                 damage.clone(),
-                |damage, region| {
-                    damage
-                        .into_iter()
-                        .flat_map(|geo| geo.subtract_rect(*region))
-                        .collect::<Vec<_>>()
-                },
+                opaque_regions.iter().flat_map(|(_, regions)| regions).copied(),
             );
 
             trace!("clearing damage {:?}", clear_damage);
@@ -425,29 +420,20 @@ impl OutputDamageTracker {
                 let element_id = element.id();
                 let element_geometry = element.geometry(output_scale);
 
-                let element_damage = opaque_regions
-                    .iter()
-                    .filter(|(index, _)| *index < z_index)
-                    .flat_map(|(_, regions)| regions)
-                    .fold(
-                        damage
-                            .clone()
-                            .into_iter()
-                            .filter_map(|d| d.intersection(element_geometry))
-                            .collect::<Vec<_>>(),
-                        |damage, region| {
-                            damage
-                                .into_iter()
-                                .flat_map(|geo| geo.subtract_rect(*region))
-                                .collect::<Vec<_>>()
-                        },
-                    )
-                    .into_iter()
-                    .map(|mut d| {
-                        d.loc -= element_geometry.loc;
-                        d
-                    })
-                    .collect::<Vec<_>>();
+                let element_damage = Rectangle::subtract_rects_many(
+                    damage.iter().filter_map(|d| d.intersection(element_geometry)),
+                    opaque_regions
+                        .iter()
+                        .filter(|(index, _)| *index < z_index)
+                        .flat_map(|(_, regions)| regions)
+                        .copied(),
+                )
+                .into_iter()
+                .map(|mut d| {
+                    d.loc -= element_geometry.loc;
+                    d
+                })
+                .collect::<Vec<_>>();
 
                 if element_damage.is_empty() {
                     trace!(
@@ -561,15 +547,8 @@ impl OutputDamageTracker {
             };
 
             // Then test if the element is completely hidden behind opaque regions
-            let element_visible_area = opaque_regions
-                .iter()
-                .flat_map(|(_, opaque_regions)| opaque_regions)
-                .fold([element_output_geometry].to_vec(), |geometry, opaque_region| {
-                    geometry
-                        .into_iter()
-                        .flat_map(|g| g.subtract_rect(*opaque_region))
-                        .collect::<Vec<_>>()
-                })
+            let element_visible_area = element_output_geometry
+                .subtract_rects(opaque_regions.iter().flat_map(|(_, r)| r).copied())
                 .into_iter()
                 .fold(0usize, |acc, item| acc + (item.size.w * item.size.h) as usize);
 
@@ -633,23 +612,17 @@ impl OutputDamageTracker {
             .iter()
             .filter(|(id, _)| !render_elements.iter().any(|e| e.id() == *id))
             .flat_map(|(_, state)| {
-                opaque_regions
-                    .iter()
-                    .filter(|(z_index, _)| state.last_instances.iter().any(|i| *z_index < i.last_z_index))
-                    .flat_map(|(_, opaque_regions)| opaque_regions)
-                    .fold(
-                        state
-                            .last_instances
-                            .iter()
-                            .filter_map(|i| i.last_geometry.intersection(output_geo))
-                            .collect::<Vec<_>>(),
-                        |damage, opaque_region| {
-                            damage
-                                .into_iter()
-                                .flat_map(|damage| damage.subtract_rect(*opaque_region))
-                                .collect::<Vec<_>>()
-                        },
-                    )
+                Rectangle::subtract_rects_many(
+                    state
+                        .last_instances
+                        .iter()
+                        .filter_map(|i| i.last_geometry.intersection(output_geo)),
+                    opaque_regions
+                        .iter()
+                        .filter(|(z_index, _)| state.last_instances.iter().any(|i| *z_index < i.last_z_index))
+                        .flat_map(|(_, opaque_regions)| opaque_regions)
+                        .copied(),
+                )
             })
             .collect::<Vec<_>>();
         damage.extend(elements_gone);
@@ -677,31 +650,23 @@ impl OutputDamageTracker {
                             .filter_map(|i| i.last_geometry.intersection(output_geo)),
                     );
                 }
-                damage.extend(
+
+                damage.extend(Rectangle::subtract_rects_many_in_place(
+                    element_damage,
                     opaque_regions
                         .iter()
                         .filter(|(index, _)| *index < z_index)
                         .flat_map(|(_, opaque_regions)| opaque_regions)
-                        .fold(element_damage, |damage, opaque_region| {
-                            damage
-                                .into_iter()
-                                .flat_map(|damage| damage.subtract_rect(*opaque_region))
-                                .collect::<Vec<_>>()
-                        }),
-                );
+                        .copied(),
+                ));
             }
         }
 
         // damage regions no longer covered by opaque regions
-        let opaque_regions_gone = opaque_regions.iter().flat_map(|(_, r)| r.iter()).fold(
+        damage.extend(Rectangle::subtract_rects_many_in_place(
             self.last_state.opaque_regions.clone(),
-            |acc, item| {
-                acc.into_iter()
-                    .flat_map(|region| region.subtract_rect(*item))
-                    .collect::<Vec<_>>()
-            },
-        );
-        damage.extend(opaque_regions_gone);
+            opaque_regions.iter().flat_map(|(_, r)| r).copied(),
+        ));
 
         if self
             .last_state

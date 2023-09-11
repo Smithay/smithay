@@ -1180,12 +1180,8 @@ where
             }
         };
 
-        let clear_damage = opaque_regions.iter().fold(damage.clone(), |damage, region| {
-            damage
-                .into_iter()
-                .flat_map(|geo| geo.subtract_rect(*region))
-                .collect::<Vec<_>>()
-        });
+        let clear_damage =
+            Rectangle::subtract_rects_many_in_place(damage.clone(), opaque_regions.iter().copied());
 
         let mut sync: Option<SyncPoint> = None;
         if !clear_damage.is_empty() {
@@ -1896,14 +1892,8 @@ where
             };
 
             // Then test if the element is completely hidden behind opaque regions
-            let element_visible_area = opaque_regions
-                .iter()
-                .fold([element_output_geometry].to_vec(), |geometry, opaque_region| {
-                    geometry
-                        .into_iter()
-                        .flat_map(|g| g.subtract_rect(*opaque_region))
-                        .collect::<Vec<_>>()
-                })
+            let element_visible_area = element_output_geometry
+                .subtract_rects(opaque_regions.iter().copied())
                 .into_iter()
                 .fold(0usize, |acc, item| acc + (item.size.w * item.size.h) as usize);
 
@@ -3861,16 +3851,7 @@ fn apply_output_transform(transform: Transform, output_transform: Transform) -> 
 fn element_is_opaque<E: Element>(element: &E, scale: Scale<f64>) -> bool {
     let opaque_regions = element.opaque_regions(scale);
     let element_geometry = Rectangle::from_loc_and_size(Point::default(), element.geometry(scale).size);
-
-    opaque_regions
-        .iter()
-        .fold([element_geometry].to_vec(), |geometry, opaque_region| {
-            geometry
-                .into_iter()
-                .flat_map(|g| g.subtract_rect(*opaque_region))
-                .collect::<Vec<_>>()
-        })
-        .is_empty()
+    element_geometry.subtract_rects(opaque_regions).is_empty()
 }
 
 struct OwnedFramebuffer<B: Framebuffer>(Arc<B>);
