@@ -3,7 +3,7 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use tracing::{debug, instrument};
+use tracing::{instrument, trace};
 use wayland_server::{protocol::wl_surface::WlSurface, Resource, Weak as WlWeak};
 
 use crate::{
@@ -27,7 +27,7 @@ fn output_surfaces(o: &Output) -> RefMut<'_, HashSet<WlWeak<WlSurface>>> {
     surfaces
 }
 
-#[instrument(level = "debug", skip(output), fields(output = output.name()))]
+#[instrument(level = "trace", skip(output), fields(output = output.name()))]
 #[profiling::function]
 fn output_update(output: &Output, output_overlap: Rectangle<i32, Logical>, surface: &WlSurface) {
     let mut surface_list = output_surfaces(output);
@@ -86,7 +86,7 @@ fn output_update(output: &Output, output_overlap: Rectangle<i32, Logical>, surfa
 fn output_enter(output: &Output, surface_list: &mut HashSet<WlWeak<WlSurface>>, surface: &WlSurface) {
     let weak = surface.downgrade();
     if !surface_list.contains(&weak) {
-        debug!("surface entering output",);
+        trace!("surface entering output",);
         output.enter(surface);
         surface_list.insert(weak);
     }
@@ -95,7 +95,7 @@ fn output_enter(output: &Output, surface_list: &mut HashSet<WlWeak<WlSurface>>, 
 fn output_leave(output: &Output, surface_list: &mut HashSet<WlWeak<WlSurface>>, surface: &WlSurface) {
     let weak = surface.downgrade();
     if surface_list.contains(&weak) {
-        debug!("surface leaving output",);
+        trace!("surface leaving output",);
         output.leave(surface);
         surface_list.remove(&weak);
     }
