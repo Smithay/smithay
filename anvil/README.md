@@ -1,6 +1,7 @@
 # Anvil
 
-Like others, Smithay as a compositor library has its own sample compositor: anvil.
+A compositor used as a testing ground for new smithay features.
+For a simple example compositor consider reading [smallvil](https://github.com/Smithay/smithay/tree/master/smallvil)
 
 ## Dependencies
 
