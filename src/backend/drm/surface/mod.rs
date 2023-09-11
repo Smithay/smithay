@@ -61,6 +61,7 @@ impl PlaneDamageClips {
 
 impl PlaneDamageClips {
     /// Initialize damage clips for a a plane
+    #[profiling::function]
     pub fn from_damage(
         device: &DrmDeviceFd,
         src: Rectangle<f64, Buffer>,
