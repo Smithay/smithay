@@ -502,7 +502,7 @@ impl<A: GraphicsApi> GpuManager<A> {
                 let dmabuf = get_dmabuf(buffer).unwrap();
                 let format = dmabuf.format();
 
-                if target_device.renderer().dmabuf_formats().any(|f| f == format) {
+                if target_device.renderer().has_dmabuf_format(format) {
                     match target_device
                         .renderer_mut()
                         .import_dma_buffer(buffer, Some(surface), damage)
@@ -1700,6 +1700,10 @@ where
         ImportDma::dmabuf_formats(self.render.renderer())
     }
 
+    fn has_dmabuf_format(&self, format: Format) -> bool {
+        ImportDma::has_dmabuf_format(self.render.renderer(), format)
+    }
+
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
     fn import_dmabuf(
@@ -1827,7 +1831,7 @@ where
         damage: Option<&[Rectangle<i32, BufferCoords>]>,
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
         let format = dmabuf.format();
-        if ImportDma::dmabuf_formats(self.render.renderer()).any(|f| f == format) {
+        if ImportDma::has_dmabuf_format(self.render.renderer(), format) {
             match self.render.renderer_mut().import_dmabuf(dmabuf, damage) {
                 Ok(imported) => {
                     texture.insert_texture::<R>(*self.render.node(), imported);
