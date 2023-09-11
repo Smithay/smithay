@@ -790,7 +790,7 @@ impl AnvilState<UdevData> {
                 notifier,
                 move |event, metadata, data: &mut CalloopData<_>| match event {
                     DrmEvent::VBlank(crtc) => {
-                        profiling::scope!("vblank", &format!("{:?}:{crtc:?}", node.dev_path().unwrap()));
+                        profiling::scope!("vblank", &format!("{crtc:?}"));
                         data.state.frame_finish(node, crtc, metadata);
                     }
                     DrmEvent::Error(error) => {
@@ -1084,10 +1084,7 @@ impl AnvilState<UdevData> {
     }
 
     fn frame_finish(&mut self, dev_id: DrmNode, crtc: crtc::Handle, metadata: &mut Option<DrmEventMetadata>) {
-        profiling::scope!(
-            "frame_finish",
-            &format!("{:?}:{crtc:?}", dev_id.dev_path().unwrap())
-        );
+        profiling::scope!("frame_finish", &format!("{crtc:?}"));
 
         let device_backend = match self.backend_data.backends.get_mut(&dev_id) {
             Some(backend) => backend,
@@ -1259,10 +1256,7 @@ impl AnvilState<UdevData> {
     }
 
     fn render_surface(&mut self, node: DrmNode, crtc: crtc::Handle) {
-        profiling::scope!(
-            "render_surface",
-            &format!("{:?}:{crtc:?}", node.dev_path().unwrap())
-        );
+        profiling::scope!("render_surface", &format!("{crtc:?}"));
         let device = if let Some(device) = self.backend_data.backends.get_mut(&node) {
             device
         } else {
