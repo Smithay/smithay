@@ -2,7 +2,7 @@ use crate::{
     backend::renderer::{
         element::{
             surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-            AsRenderElements,
+            AsRenderElements, Kind,
         },
         ImportAll, Renderer,
     },
@@ -123,13 +123,19 @@ where
                     location + offset,
                     scale,
                     alpha,
+                    Kind::Unspecified,
                 )
             });
 
         render_elements.extend(popup_render_elements);
 
         render_elements.extend(render_elements_from_surface_tree(
-            renderer, surface, location, scale, alpha,
+            renderer,
+            surface,
+            location,
+            scale,
+            alpha,
+            Kind::Unspecified,
         ));
 
         render_elements

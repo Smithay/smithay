@@ -3,7 +3,10 @@ use wayland_server::protocol::wl_surface::WlSurface;
 use super::*;
 use crate::{
     backend::renderer::{
-        element::surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+        element::{
+            surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
+            Kind,
+        },
         ImportAll, Renderer,
     },
     desktop::{space::SpaceElement, utils::under_from_surface_tree, WindowSurfaceType},
@@ -115,6 +118,6 @@ where
         let Some(surface) = state.wl_surface.as_ref() else {
             return Vec::new();
         };
-        render_elements_from_surface_tree(renderer, surface, location, scale, alpha)
+        render_elements_from_surface_tree(renderer, surface, location, scale, alpha, Kind::Unspecified)
     }
 }

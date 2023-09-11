@@ -137,7 +137,10 @@
 //!         allocator::Fourcc,
 //!         renderer::{
 //!             damage::OutputDamageTracker,
-//!             element::memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement}
+//!             element::{
+//!                 Kind,
+//!                 memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+//!             }
 //!         },
 //!     },
 //!     utils::{Point, Transform},
@@ -175,7 +178,7 @@
 //!     // Create a render element from the buffer
 //!     let location = Point::from((100.0, 100.0));
 //!     let render_element =
-//!         MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &memory_buffer, None, None, None)
+//!         MemoryRenderBufferRenderElement::from_buffer(&mut renderer, location, &memory_buffer, None, None, None, Kind::Unspecified)
 //!         .expect("Failed to upload memory to gpu");
 //!
 //!     // Render the output
