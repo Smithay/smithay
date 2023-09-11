@@ -2645,23 +2645,10 @@ where
             };
         }
 
-        let mut element_config = self.element_config(
-            renderer,
-            element,
-            element_zindex,
-            element_states,
-            frame_state,
-            scale,
-            output_transform,
-            output_geometry,
-            false,
-        );
-
         if let Some(plane) = self.try_assign_cursor_plane(
             renderer,
             element,
             element_zindex,
-            element_config.as_mut().ok(),
             scale,
             frame_state,
             output_damage,
@@ -2676,15 +2663,17 @@ where
             return Ok(plane);
         }
 
-        let element_config = element_config?;
-
         match self.try_assign_overlay_plane(
+            renderer,
             element,
-            element_config,
+            element_zindex,
+            element_states,
             primary_plane_elements,
             scale,
             frame_state,
             output_damage,
+            output_transform,
+            output_geometry,
         )? {
             Ok(plane) => {
                 trace!("assigned element {:?} to overlay plane", element.id());
@@ -2774,15 +2763,6 @@ where
         renderer: &mut R,
         element: &E,
         element_zindex: usize,
-        element_config: Option<
-            &mut ElementPlaneConfig<
-                '_,
-                DrmScanoutBuffer<
-                    <A as Allocator>::Buffer,
-                    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
-                >,
-            >,
-        >,
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
@@ -2829,40 +2809,6 @@ where
                 plane_info.handle,
             );
             return None;
-        }
-
-        // if the element exposes the underlying storage we can try to do
-        // direct scan-out
-        if let Some(element_config) = element_config {
-            if !element_config.failed_planes.cursor {
-                trace!(
-                    "trying to assign element {:?} for direct scan-out on cursor {:?}",
-                    element.id(),
-                    plane_info.handle,
-                );
-
-                match self.try_assign_plane(
-                    element,
-                    element_config,
-                    plane_info,
-                    scale,
-                    frame_state,
-                    output_damage,
-                ) {
-                    Ok(Ok(plane)) => {
-                        trace!(
-                            "assigned element {:?} for direct scan-out on cursor {:?}",
-                            element.id(),
-                            plane_info.handle,
-                        );
-                        return Some(plane);
-                    }
-                    Ok(Err(Some(RenderingReason::ScanoutFailed))) => {
-                        element_config.failed_planes.cursor = true;
-                    }
-                    _ => {}
-                }
-            }
         }
 
         let Some(cursor_state) = self.cursor_state.as_mut() else {
@@ -3391,18 +3337,19 @@ where
     #[profiling::function]
     fn try_assign_overlay_plane<'a, R, E>(
         &self,
+        renderer: &mut R,
         element: &'a E,
-        element_config: ElementPlaneConfig<
-            '_,
-            DrmScanoutBuffer<
-                <A as Allocator>::Buffer,
-                <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
-            >,
+        element_zindex: usize,
+        element_states: &mut IndexMap<
+            Id,
+            ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
         >,
         primary_plane_elements: &[&'a E],
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
+        output_transform: Transform,
+        output_geometry: Rectangle<i32, Physical>,
     ) -> Result<Result<PlaneAssignment, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
@@ -3424,6 +3371,18 @@ where
             );
             return Ok(Err(None));
         }
+
+        let element_config = self.element_config(
+            renderer,
+            element,
+            element_zindex,
+            element_states,
+            frame_state,
+            scale,
+            output_transform,
+            output_geometry,
+            false,
+        )?;
 
         let overlaps_with_primary_plane_element = primary_plane_elements.iter().any(|e| {
             let other_geometry = e.geometry(scale);
