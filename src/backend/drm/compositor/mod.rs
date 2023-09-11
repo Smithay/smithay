@@ -2689,7 +2689,7 @@ where
     #[instrument(level = "trace", skip_all)]
     #[profiling::function]
     fn try_assign_primary_plane<'a, R, E>(
-        &self,
+        &mut self,
         renderer: &mut R,
         element: &'a E,
         element_zindex: usize,
@@ -3096,7 +3096,7 @@ where
     #[instrument(level = "trace", skip_all)]
     #[profiling::function]
     fn element_config<'a, R, E>(
-        &self,
+        &mut self,
         renderer: &mut R,
         element: &E,
         element_zindex: usize,
@@ -3137,8 +3137,10 @@ where
         if !element_states.contains_key(element_id) {
             let previous_fb_cache = self
                 .element_states
-                .get(element_id)
-                .map(|state| state.fb_cache.clone())
+                .get_mut(element_id)
+                // Note: We can mem::take the old fb_cache here here as we guarante that
+                // the element state will always overwrite the current state at the end of render_frame
+                .map(|state| std::mem::take(&mut state.fb_cache))
                 .unwrap_or_default();
             element_states.insert(
                 element_id.clone(),
@@ -3336,7 +3338,7 @@ where
     #[instrument(level = "trace", skip_all)]
     #[profiling::function]
     fn try_assign_overlay_plane<'a, R, E>(
-        &self,
+        &mut self,
         renderer: &mut R,
         element: &'a E,
         element_zindex: usize,
