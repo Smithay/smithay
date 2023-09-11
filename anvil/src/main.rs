@@ -7,7 +7,7 @@ static POSSIBLE_BACKENDS: &[&str] = &[
     "--x11 : Run anvil as an X11 client.",
 ];
 
-#[cfg(feature = "profile-with-tracy")]
+#[cfg(feature = "profile-with-tracy-mem")]
 #[global_allocator]
 static GLOBAL: profiling::tracy_client::ProfiledAllocator<std::alloc::System> =
     profiling::tracy_client::ProfiledAllocator::new(std::alloc::System, 10);
