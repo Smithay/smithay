@@ -133,6 +133,7 @@ use ::gbm::{BufferObject, BufferObjectFlags};
 use drm::control::{connector, crtc, framebuffer, plane, Mode, PlaneType};
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::IndexMap;
+use smallvec::SmallVec;
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
 
@@ -323,7 +324,7 @@ struct ElementInstanceState {
 
 #[derive(Debug)]
 struct ElementState<B: Framebuffer> {
-    instances: Vec<ElementInstanceState>,
+    instances: SmallVec<[ElementInstanceState; 1]>,
     fb_cache: ElementFramebufferCache<B>,
 }
 
@@ -3145,7 +3146,7 @@ where
             element_states.insert(
                 element_id.clone(),
                 ElementState {
-                    instances: Vec::with_capacity(1),
+                    instances: SmallVec::new(),
                     fb_cache: previous_fb_cache,
                 },
             );

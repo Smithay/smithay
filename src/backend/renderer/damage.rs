@@ -196,6 +196,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use indexmap::IndexMap;
+use smallvec::{smallvec, SmallVec};
 use tracing::{info_span, instrument, trace};
 
 use crate::{
@@ -231,7 +232,7 @@ impl ElementInstanceState {
 #[derive(Debug, Clone)]
 struct ElementState {
     last_commit: CommitCounter,
-    last_instances: Vec<ElementInstanceState>,
+    last_instances: SmallVec<[ElementInstanceState; 1]>,
 }
 
 impl ElementState {
@@ -666,7 +667,7 @@ impl OutputDamageTracker {
                         id.clone(),
                         ElementState {
                             last_commit: current_commit,
-                            last_instances: vec![ElementInstanceState {
+                            last_instances: smallvec![ElementInstanceState {
                                 last_geometry: elem_geometry,
                                 last_alpha: elem_alpha,
                                 last_z_index: z_index,
