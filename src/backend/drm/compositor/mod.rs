@@ -1806,9 +1806,10 @@ where
 
         let mut output_damage: Vec<Rectangle<i32, Physical>> = Vec::new();
         let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
-        let mut element_states = IndexMap::new();
+        let mut element_states =
+            IndexMap::with_capacity(std::cmp::min(elements.len(), self.planes.overlay.len()));
         let mut render_element_states = RenderElementStates {
-            states: Default::default(),
+            states: HashMap::with_capacity(elements.len()),
         };
 
         // So first we want to create a clean state, for that we have to reset all overlay and cursor planes
