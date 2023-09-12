@@ -1879,7 +1879,8 @@ where
         // This holds all elements that are visible on the output
         // A element is considered visible if it intersects with the output geometry
         // AND is not completely hidden behind opaque regions
-        let mut output_elements: Vec<(&'a E, usize)> = Vec::with_capacity(elements.len());
+        let mut output_elements: Vec<(&'a E, Rectangle<i32, Physical>, usize, bool)> =
+            Vec::with_capacity(elements.len());
 
         for element in elements.iter() {
             let element_id = element.id();
@@ -1913,19 +1914,22 @@ where
                 continue;
             }
 
-            output_elements.push((element, element_visible_area));
+            let element_opaque_regions = element.opaque_regions(output_scale);
+            let element_is_opaque = Rectangle::from_loc_and_size(Point::default(), element_geometry.size)
+                .subtract_rects(element_opaque_regions.iter().copied())
+                .is_empty();
 
-            let element_opaque_regions = element
-                .opaque_regions(output_scale)
-                .into_iter()
-                .map(|mut region| {
-                    region.loc += element_loc;
-                    region
-                })
-                .filter_map(|geo| geo.intersection(output_geometry))
-                .collect::<Vec<_>>();
+            opaque_regions.extend(
+                element_opaque_regions
+                    .into_iter()
+                    .map(|mut region| {
+                        region.loc += element_loc;
+                        region
+                    })
+                    .filter_map(|geo| geo.intersection(output_geometry)),
+            );
 
-            opaque_regions.extend(element_opaque_regions);
+            output_elements.push((element, element_geometry, element_visible_area, element_is_opaque));
         }
 
         // This will hold the element that has been selected for direct scan-out on
@@ -1942,10 +1946,13 @@ where
         let mut cursor_plane_element: Option<&'a E> = None;
 
         let output_elements_len = output_elements.len();
-        for (index, (element, element_visible_area)) in output_elements.iter().enumerate() {
+        for (index, (element, element_geometry, element_visible_area, element_is_opaque)) in
+            output_elements.iter().enumerate()
+        {
             let element_id = element.id();
-            let element_geometry = element.geometry(output_scale);
+            let element_geometry = *element_geometry;
             let remaining_elements = output_elements_len - index;
+            let element_is_opaque = *element_is_opaque;
 
             // Check if we found our last item, we can try to do
             // direct scan-out on the primary plane
@@ -1954,7 +1961,6 @@ where
             // on the primary plane, this will disable direct scan-out
             // on the primary plane.
             let try_assign_primary_plane = if remaining_elements == 1 && primary_plane_elements.is_empty() {
-                let element_is_opaque = element_is_opaque(element, output_scale);
                 let crtc_background_matches_clear_color =
                     (clear_color[0] == 0f32 && clear_color[1] == 0f32 && clear_color[2] == 0f32)
                         || clear_color[3] == 0f32;
@@ -1976,6 +1982,8 @@ where
                 renderer,
                 *element,
                 index,
+                element_geometry,
+                element_is_opaque,
                 &mut element_states,
                 &primary_plane_elements,
                 output_scale,
@@ -2578,6 +2586,8 @@ where
         renderer: &mut R,
         element: &'a E,
         element_zindex: usize,
+        element_geometry: Rectangle<i32, Physical>,
+        element_is_opaque: bool,
         element_states: &mut IndexMap<
             Id,
             ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
@@ -2627,6 +2637,7 @@ where
                 renderer,
                 element,
                 element_zindex,
+                element_geometry,
                 element_states,
                 scale,
                 frame_state,
@@ -2651,6 +2662,7 @@ where
             renderer,
             element,
             element_zindex,
+            element_geometry,
             scale,
             frame_state,
             output_damage,
@@ -2669,6 +2681,8 @@ where
             renderer,
             element,
             element_zindex,
+            element_geometry,
+            element_is_opaque,
             element_states,
             primary_plane_elements,
             scale,
@@ -2695,6 +2709,7 @@ where
         renderer: &mut R,
         element: &'a E,
         element_zindex: usize,
+        element_geometry: Rectangle<i32, Physical>,
         element_states: &mut IndexMap<
             Id,
             ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
@@ -2713,9 +2728,9 @@ where
             renderer,
             element,
             element_zindex,
+            element_geometry,
             element_states,
             frame_state,
-            scale,
             output_transform,
             output_geometry,
             true,
@@ -2765,6 +2780,7 @@ where
         renderer: &mut R,
         element: &E,
         element_zindex: usize,
+        element_geometry: Rectangle<i32, Physical>,
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
@@ -2799,7 +2815,6 @@ where
             return None;
         }
 
-        let element_geometry = element.geometry(scale);
         let element_size = output_transform.transform_size(element_geometry.size);
 
         // if the element is greater than the cursor size we can not
@@ -3102,12 +3117,12 @@ where
         renderer: &mut R,
         element: &E,
         element_zindex: usize,
+        element_geometry: Rectangle<i32, Physical>,
         element_states: &'a mut IndexMap<
             Id,
             ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
         >,
         frame_state: &mut Frame<A, F>,
-        scale: Scale<f64>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
         allow_opaque_fallback: bool,
@@ -3126,7 +3141,6 @@ where
         E: RenderElement<R>,
     {
         let element_id = element.id();
-        let element_geometry = element.geometry(scale);
 
         // We can only try to do direct scan-out for element that provide a underlying storage
         let underlying_storage = element
@@ -3344,6 +3358,8 @@ where
         renderer: &mut R,
         element: &'a E,
         element_zindex: usize,
+        element_geometry: Rectangle<i32, Physical>,
+        element_is_opaque: bool,
         element_states: &mut IndexMap<
             Id,
             ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
@@ -3380,9 +3396,9 @@ where
             renderer,
             element,
             element_zindex,
+            element_geometry,
             element_states,
             frame_state,
-            scale,
             output_transform,
             output_geometry,
             false,
@@ -3450,7 +3466,7 @@ where
             // test if the plane represents an underlay
             let is_underlay = self.planes.primary.zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
 
-            if is_underlay && !(element_is_opaque(element, scale) && primary_plane_has_alpha) {
+            if is_underlay && !(element_is_opaque && primary_plane_has_alpha) {
                 trace!(
                     "skipping direct scan-out on underlay {:?} with zpos {:?}, element {:?} is not opaque or primary plane has no alpha channel",
                     plane.handle,
@@ -3805,12 +3821,6 @@ fn apply_output_transform(transform: Transform, output_transform: Transform) -> 
         (Transform::Flipped270, Transform::Flipped180) => Transform::_270,
         (Transform::Flipped270, Transform::Flipped270) => Transform::Normal,
     }
-}
-
-fn element_is_opaque<E: Element>(element: &E, scale: Scale<f64>) -> bool {
-    let opaque_regions = element.opaque_regions(scale);
-    let element_geometry = Rectangle::from_loc_and_size(Point::default(), element.geometry(scale).size);
-    element_geometry.subtract_rects(opaque_regions).is_empty()
 }
 
 struct OwnedFramebuffer<B: Framebuffer>(Arc<B>);
