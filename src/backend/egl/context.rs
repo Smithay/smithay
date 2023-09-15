@@ -7,7 +7,7 @@ use std::{
 
 use libc::c_void;
 
-use super::{ffi, wrap_egl_call_bool, wrap_egl_call_ptr, Error, MakeCurrentError};
+use super::{ffi, wrap_egl_call_bool, wrap_egl_call_ptr, EGLError, Error, MakeCurrentError};
 use crate::{
     backend::{
         allocator::Format as DrmFormat,
@@ -19,7 +19,7 @@ use crate::{
     utils::user_data::UserDataMap,
 };
 
-use tracing::{info, info_span, instrument, trace};
+use tracing::{info, info_span, instrument, trace, warn};
 
 /// EGL context for rendering
 #[derive(Debug)]
@@ -31,6 +31,48 @@ pub struct EGLContext {
     user_data: Arc<UserDataMap>,
     externally_managed: bool,
     pub(crate) span: tracing::Span,
+}
+
+/// Defines the priority for an [`EGLContext`]
+///
+/// see: https://registry.khronos.org/EGL/extensions/IMG/EGL_IMG_context_priority.txt
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ContextPriority {
+    /// High priority
+    ///
+    /// Note: This might require special system privileges like `CAP_SYS_NICE` to succeed.
+    High,
+    /// Medium priority
+    ///
+    /// Default if not specified
+    #[default]
+    Medium,
+    /// Low priority
+    Low,
+}
+
+impl TryFrom<ffi::egl::types::EGLenum> for ContextPriority {
+    type Error = EGLError;
+
+    fn try_from(value: ffi::egl::types::EGLenum) -> Result<Self, Self::Error> {
+        let priority = match value {
+            ffi::egl::CONTEXT_PRIORITY_HIGH_IMG => ContextPriority::High,
+            ffi::egl::CONTEXT_PRIORITY_MEDIUM_IMG => ContextPriority::Medium,
+            ffi::egl::CONTEXT_PRIORITY_LOW_IMG => ContextPriority::Low,
+            _ => return Err(EGLError::BadParameter),
+        };
+        Ok(priority)
+    }
+}
+
+impl From<ContextPriority> for ffi::egl::types::EGLenum {
+    fn from(value: ContextPriority) -> Self {
+        match value {
+            ContextPriority::High => ffi::egl::CONTEXT_PRIORITY_HIGH_IMG,
+            ContextPriority::Medium => ffi::egl::CONTEXT_PRIORITY_MEDIUM_IMG,
+            ContextPriority::Low => ffi::egl::CONTEXT_PRIORITY_LOW_IMG,
+        }
+    }
 }
 
 // SAFETY: A context can be sent to another thread when this context is not current.
@@ -74,7 +116,16 @@ impl EGLContext {
 
     /// Creates a new configless `EGLContext` from a given `EGLDisplay`
     pub fn new(display: &EGLDisplay) -> Result<EGLContext, Error> {
-        Self::new_internal(display, None, None)
+        Self::new_internal(display, None, None, None)
+    }
+
+    /// Creates a new configless `EGLContext` with the specified priority from a given `EGLDisplay`
+    ///
+    /// Note: The priority is a hint that might be ignored by the underlying platform.
+    /// It also requires `EGL_IMG_context_priority` to be available, otherwise the priority will be
+    /// ignored.
+    pub fn new_with_priority(display: &EGLDisplay, priority: ContextPriority) -> Result<EGLContext, Error> {
+        Self::new_internal(display, None, None, Some(priority))
     }
 
     /// Create a new [`EGLContext`] from a given `EGLDisplay` and configuration requirements
@@ -83,12 +134,39 @@ impl EGLContext {
         attributes: GlAttributes,
         reqs: PixelFormatRequirements,
     ) -> Result<EGLContext, Error> {
-        Self::new_internal(display, None, Some((attributes, reqs)))
+        Self::new_internal(display, None, Some((attributes, reqs)), None)
+    }
+
+    /// Create a new [`EGLContext`] from a given `EGLDisplay`, configuration requirements and priority
+    ///
+    /// Note: The priority is a hint that might be ignored by the underlying platform.
+    /// It also requires `EGL_IMG_context_priority` to be available, otherwise the priority will be
+    /// ignored.
+    pub fn new_with_config_and_priority(
+        display: &EGLDisplay,
+        attributes: GlAttributes,
+        reqs: PixelFormatRequirements,
+        priority: ContextPriority,
+    ) -> Result<EGLContext, Error> {
+        Self::new_internal(display, None, Some((attributes, reqs)), Some(priority))
     }
 
     /// Create a new configless `EGLContext` from a given `EGLDisplay` sharing resources with another context
     pub fn new_shared(display: &EGLDisplay, share: &EGLContext) -> Result<EGLContext, Error> {
-        Self::new_internal(display, Some(share), None)
+        Self::new_internal(display, Some(share), None, None)
+    }
+
+    /// Create a new configless `EGLContext` with the specified priority from a given `EGLDisplay` sharing resources with another context
+    ///
+    /// Note: The priority is a hint that might be ignored by the underlying platform.
+    /// It also requires `EGL_IMG_context_priority` to be available, otherwise the priority will be
+    /// ignored.
+    pub fn new_shared_with_priority(
+        display: &EGLDisplay,
+        share: &EGLContext,
+        priority: ContextPriority,
+    ) -> Result<EGLContext, Error> {
+        Self::new_internal(display, Some(share), None, Some(priority))
     }
 
     /// Create a new `EGLContext` from a given `EGLDisplay` and configuration requirements sharing resources with another context
@@ -98,13 +176,29 @@ impl EGLContext {
         attributes: GlAttributes,
         reqs: PixelFormatRequirements,
     ) -> Result<EGLContext, Error> {
-        Self::new_internal(display, Some(share), Some((attributes, reqs)))
+        Self::new_internal(display, Some(share), Some((attributes, reqs)), None)
+    }
+
+    /// Create a new `EGLContext` with the specified priority from a given `EGLDisplay` and configuration requirements sharing resources with another context
+    ///
+    /// Note: The priority is a hint that might be ignored by the underlying platform.
+    /// It also requires `EGL_IMG_context_priority` to be available, otherwise the priority will be
+    /// ignored.
+    pub fn new_shared_with_config_and_priority(
+        display: &EGLDisplay,
+        share: &EGLContext,
+        attributes: GlAttributes,
+        reqs: PixelFormatRequirements,
+        priority: ContextPriority,
+    ) -> Result<EGLContext, Error> {
+        Self::new_internal(display, Some(share), Some((attributes, reqs)), Some(priority))
     }
 
     fn new_internal(
         display: &EGLDisplay,
         shared: Option<&EGLContext>,
         config: Option<(GlAttributes, PixelFormatRequirements)>,
+        priority: Option<ContextPriority>,
     ) -> Result<EGLContext, Error> {
         let span = info_span!(parent: &display.span, "egl_context", ptr = tracing::field::Empty, shared = tracing::field::Empty);
         let _guard = span.enter();
@@ -142,7 +236,7 @@ impl EGLContext {
             }
         };
 
-        let mut context_attributes = Vec::with_capacity(10);
+        let mut context_attributes = Vec::with_capacity(12);
 
         if let Some((attributes, _)) = config {
             let version = attributes.version;
@@ -176,6 +270,22 @@ impl EGLContext {
             context_attributes.push(2);
         }
 
+        let has_context_priority = display
+            .extensions()
+            .iter()
+            .any(|x| x == "EGL_IMG_context_priority");
+        if let Some(priority) = priority {
+            if !has_context_priority {
+                warn!(
+                    ?priority,
+                    "ignoring requested context priority, EGL_IMG_context_priority not supported"
+                );
+            } else {
+                context_attributes.push(ffi::egl::CONTEXT_PRIORITY_LEVEL_IMG as i32);
+                context_attributes.push(Into::<ffi::egl::types::EGLenum>::into(priority) as i32);
+            }
+        }
+
         context_attributes.push(ffi::egl::NONE as i32);
 
         trace!("Creating EGL context...");
@@ -192,7 +302,38 @@ impl EGLContext {
         .map_err(Error::CreationFailed)?;
         span.record("ptr", context as usize);
 
-        info!("EGL context created");
+        let context_priority = if has_context_priority {
+            let mut context_priority = 0;
+            let res = wrap_egl_call_bool(|| unsafe {
+                ffi::egl::QueryContext(
+                    **display.get_display_handle(),
+                    context,
+                    ffi::egl::CONTEXT_PRIORITY_LEVEL_IMG as ffi::egl::types::EGLint,
+                    &mut context_priority,
+                )
+            });
+
+            if res.is_ok() {
+                match ContextPriority::try_from(context_priority as ffi::egl::types::EGLenum) {
+                    Ok(context_priority) => Some(context_priority),
+                    Err(_) => {
+                        warn!(context_priority, "failed to parse context priority");
+                        None
+                    }
+                }
+            } else {
+                warn!("failed to query context priority");
+                None
+            }
+        } else {
+            None
+        };
+
+        if priority.is_some() && has_context_priority && priority != context_priority {
+            warn!(requested = ?priority, got = ?context_priority, "failed to set context priority");
+        }
+
+        info!(priority = ?context_priority, "EGL context created");
 
         drop(_guard);
         Ok(EGLContext {
