@@ -34,7 +34,7 @@ use smithay::{
             compositor::DrmCompositor, CreateDrmNodeError, DrmDevice, DrmDeviceFd, DrmError, DrmEvent,
             DrmEventMetadata, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
         },
-        egl::{self, EGLDevice, EGLDisplay},
+        egl::{self, context::ContextPriority, EGLDevice, EGLDisplay},
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
@@ -228,7 +228,7 @@ pub fn run_udev() {
     };
     info!("Using {} as primary gpu.", primary_gpu);
 
-    let gpus = GpuManager::new(GbmGlesBackend::default()).unwrap();
+    let gpus = GpuManager::new(GbmGlesBackend::with_context_priority(ContextPriority::High)).unwrap();
 
     let data = UdevData {
         dh: display.handle(),
