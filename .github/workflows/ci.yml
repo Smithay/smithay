@@ -354,8 +354,11 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-
 
       - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
+        # nightly changed no_coverage to coverage(off) which breaks the build
+        # see: https://github.com/rust-lang/rust/pull/114656
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2023-06-17
           components: llvm-tools-preview
 
       - name: grcov cache
