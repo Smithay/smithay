@@ -22,6 +22,7 @@ use tracing::{debug, error, info, info_span, instrument, span, span::EnteredSpan
 pub mod element;
 mod error;
 pub mod format;
+mod profiler;
 mod shaders;
 mod texture;
 mod uniform;
@@ -399,6 +400,9 @@ pub struct GlesRenderer {
     // debug
     span: tracing::Span,
     gl_debug_span: Option<*mut tracing::Span>,
+
+    // profiling
+    profiler: profiler::GpuProfiler,
 }
 
 /// Handle to the currently rendered frame during [`GlesRenderer::render`](Renderer::render).
@@ -418,6 +422,8 @@ pub struct GlesFrame<'frame, 'buffer> {
     finished: AtomicBool,
 
     span: EnteredSpan,
+
+    gpu_span: Option<profiler::EnteredGpuTracepoint>,
 }
 
 impl fmt::Debug for GlesFrame<'_, '_> {
@@ -703,6 +709,8 @@ impl GlesRenderer {
 
         drop(_guard);
 
+        let profiler = profiler::GpuProfiler::new(&gl);
+
         let renderer = GlesRenderer {
             gl,
             egl: context,
@@ -730,6 +738,8 @@ impl GlesRenderer {
             _not_send: PhantomData,
             span,
             gl_debug_span,
+
+            profiler,
         };
         renderer.egl.unbind()?;
         Ok(renderer)
@@ -740,10 +750,14 @@ impl GlesRenderer {
             self.egl.make_current()?;
         }
 
-        let bind = || {
+        let mut bind = || {
             let mut sync_lock = texture.0.sync.write().unwrap();
             let mut fbo = 0;
             unsafe {
+                let _scope = self
+                    .profiler
+                    .scope(tracy_client::span_location!("bind texture"), &self.gl);
+
                 sync_lock.wait_for_all(&self.gl);
                 self.gl.GenFramebuffers(1, &mut fbo as *mut _);
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
@@ -797,7 +811,12 @@ impl GlesRenderer {
     fn cleanup(&mut self) {
         self.dmabuf_cache.retain(|entry, _tex| !entry.is_gone());
         self.buffers.retain(|buffer| !buffer.0.dmabuf.is_gone());
+
+        let scope = self
+            .profiler
+            .enter(tracy_client::span_location!("cleanup resources"), &self.gl);
         self.gles_cleanup().cleanup(&self.egl, &self.gl);
+        self.profiler.exit(&self.gl, scope);
     }
 
     /// Returns the supported [`Capabilities`](Capability) of this renderer.
@@ -915,6 +934,10 @@ impl ImportMemWl for GlesRenderer {
                         new
                     }),
             );
+
+            let _scope = self
+                .profiler
+                .scope(tracy_client::span_location!("import_shm_buffer"), &self.gl);
 
             let mut sync_lock = texture.0.sync.write().unwrap();
             unsafe {
@@ -1037,6 +1060,9 @@ impl ImportMem for GlesRenderer {
             let mut tex = 0;
             unsafe {
                 self.egl.make_current()?;
+                let _scope = self
+                    .profiler
+                    .scope(tracy_client::span_location!("import_memory"), &self.gl);
                 self.gl.GenTextures(1, &mut tex);
                 self.gl.BindTexture(ffi::TEXTURE_2D, tex);
                 self.gl
@@ -1106,6 +1132,10 @@ impl ImportMem for GlesRenderer {
         {
             return Err(GlesError::UnexpectedSize);
         }
+
+        let _scope = self
+            .profiler
+            .scope(tracy_client::span_location!("update_memory"), &self.gl);
 
         let mut sync_lock = texture.0.sync.write().unwrap();
         unsafe {
@@ -1310,6 +1340,11 @@ impl GlesRenderer {
         unsafe {
             self.egl.make_current()?;
         }
+
+        let _scope = self
+            .profiler
+            .scope(tracy_client::span_location!("import_egl_image"), &self.gl);
+
         let tex = tex.unwrap_or_else(|| unsafe {
             let mut tex = 0;
             self.gl.GenTextures(1, &mut tex);
@@ -1348,6 +1383,9 @@ impl ExportMem for GlesRenderer {
 
         let mut pbo = 0;
         let err = unsafe {
+            let _scope = self
+                .profiler
+                .scope(tracy_client::span_location!("copy_framebuffer"), &self.gl);
             self.gl.GetError(); // clear errors
             self.gl.GenBuffers(1, &mut pbo);
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
@@ -1410,6 +1448,9 @@ impl ExportMem for GlesRenderer {
         let (_, format, layout) = fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnknownPixelFormat)?;
         let bpp = gl_bpp(format, layout).expect("We check the format before") / 8;
 
+        let gpu_span = self
+            .profiler
+            .scope(tracy_client::span_location!("copy_texture"), &self.gl);
         let err = unsafe {
             self.gl.GetError(); // clear errors
             self.gl.GenBuffers(1, &mut pbo);
@@ -1434,6 +1475,7 @@ impl ExportMem for GlesRenderer {
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, 0);
             self.gl.GetError()
         };
+        std::mem::drop(gpu_span);
 
         match err {
             ffi::NO_ERROR => Ok(GlesMapping {
@@ -1466,6 +1508,9 @@ impl ExportMem for GlesRenderer {
         let mapping_ptr = texture_mapping.mapping.load(Ordering::SeqCst);
         let ptr = if mapping_ptr.is_null() {
             unsafe {
+                let _scope = self
+                    .profiler
+                    .scope(tracy_client::span_location!("map_texture"), &self.gl);
                 self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, texture_mapping.pbo);
                 let ptr = self
                     .gl
@@ -1512,6 +1557,10 @@ impl Bind<Dmabuf> for GlesRenderer {
                         self.egl.make_current()?;
                     }
 
+                    let scope = self
+                        .profiler
+                        .scope(tracy_client::span_location!("bind dmabuf"), &self.gl);
+
                     trace!("Creating EGLImage for Dmabuf: {:?}", dmabuf);
                     let image = self
                         .egl
@@ -1545,6 +1594,7 @@ impl Bind<Dmabuf> for GlesRenderer {
                             ffi_egl::DestroyImageKHR(**self.egl.display().get_display_handle(), image);
                             return Err(GlesError::FramebufferBindingError);
                         }
+                        drop(scope);
                         let buf = GlesBuffer(Rc::new(GlesBufferInner {
                             dmabuf: dmabuf.weak(),
                             image,
@@ -1586,9 +1636,13 @@ impl Bind<GlesRenderbuffer> for GlesRenderer {
             self.egl.make_current()?;
         }
 
-        let bind = |renderbuffer: &'a mut GlesRenderbuffer| {
+        let mut bind = |renderbuffer: &'a mut GlesRenderbuffer| {
             let mut fbo = 0;
             unsafe {
+                let _scope = self
+                    .profiler
+                    .scope(tracy_client::span_location!("bind renderbuffer"), &self.gl);
+
                 self.gl.GenFramebuffers(1, &mut fbo as *mut _);
                 self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
                 self.gl.BindRenderbuffer(ffi::RENDERBUFFER, renderbuffer.0.rbo);
@@ -1641,6 +1695,9 @@ impl Offscreen<GlesTexture> for GlesRenderer {
 
         let tex = unsafe {
             self.egl.make_current()?;
+            let _scope = self
+                .profiler
+                .scope(tracy_client::span_location!("create texture buffer"), &self.gl);
             let mut tex = 0;
             self.gl.GenTextures(1, &mut tex);
             self.gl.BindTexture(ffi::TEXTURE_2D, tex);
@@ -1685,11 +1742,17 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
             self.egl.make_current()?;
 
             let mut rbo = 0;
-            self.gl.GenRenderbuffers(1, &mut rbo);
-            self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
-            self.gl
-                .RenderbufferStorage(ffi::RENDERBUFFER, internal, size.w, size.h);
-            self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+            {
+                let _scope = self.profiler.scope(
+                    tracy_client::span_location!("create renderbuffer buffer"),
+                    &self.gl,
+                );
+                self.gl.GenRenderbuffers(1, &mut rbo);
+                self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
+                self.gl
+                    .RenderbufferStorage(ffi::RENDERBUFFER, internal, size.w, size.h);
+                self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
+            }
 
             Ok(GlesRenderbuffer(Rc::new(GlesRenderbufferInternal {
                 rbo,
@@ -1766,6 +1829,10 @@ impl Blit for GlesRenderer {
             },
         }
 
+        let scope = self
+            .profiler
+            .scope(tracy_client::span_location!("blit"), &self.gl);
+
         match &src_target.0 {
             GlesTargetInternal::Image { ref buf, .. } => unsafe {
                 self.gl.BindFramebuffer(ffi::READ_FRAMEBUFFER, buf.0.fbo)
@@ -1793,6 +1860,7 @@ impl Blit for GlesRenderer {
 
         let status = unsafe { self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER) };
         if status != ffi::FRAMEBUFFER_COMPLETE {
+            drop(scope);
             let _ = self.unbind();
             return Err(GlesError::FramebufferBindingError);
         }
@@ -1816,6 +1884,7 @@ impl Blit for GlesRenderer {
             );
             self.gl.GetError()
         };
+        drop(scope);
 
         if errno == ffi::INVALID_OPERATION {
             Err(GlesError::BlitError)
@@ -1919,10 +1988,15 @@ impl GlesRenderer {
             self.egl.make_current()?;
         }
 
+        let scope = self.profiler.scope(
+            tracy_client::span_location!("compile_custom_pixel_shader"),
+            &self.gl,
+        );
         let shader = format!("#version 100\n{}", src.as_ref());
         let program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &shader)? };
         let debug_shader = format!("#version 100\n#define {}\n{}", shaders::DEBUG_FLAGS, src.as_ref());
         let debug_program = unsafe { link_program(&self.gl, shaders::VERTEX_SHADER, &debug_shader)? };
+        drop(scope);
 
         let vert = c"vert";
         let vert_position = c"vert_position";
@@ -2125,7 +2199,17 @@ impl Renderer for GlesRenderer {
     {
         target.0.make_current(&self.gl, &self.egl)?;
 
+        // Collect last frame's timestamps.
+        self.profiler.collect(&self.gl);
+
+        let gpu_span = self
+            .profiler
+            .enter(tracy_client::span_location!("render"), &self.gl);
+
         unsafe {
+            let _scope = self
+                .profiler
+                .scope(tracy_client::span_location!("setup"), &self.gl);
             self.gl.Viewport(0, 0, output_size.w, output_size.h);
 
             self.gl.Scissor(0, 0, output_size.w, output_size.h);
@@ -2174,6 +2258,8 @@ impl Renderer for GlesRenderer {
             finished: AtomicBool::new(false),
 
             span,
+
+            gpu_span: Some(gpu_span),
         })
     }
 
@@ -2217,6 +2303,10 @@ impl Renderer for GlesRenderer {
         unsafe {
             self.egl.make_current()?;
         }
+
+        // Collect last frame's timestamps.
+        self.profiler.collect(&self.gl);
+
         self.cleanup();
         Ok(())
     }
@@ -2292,6 +2382,10 @@ impl Frame for GlesFrame<'_, '_> {
             return Ok(());
         }
 
+        let scope = self
+            .renderer
+            .profiler
+            .enter(tracy_client::span_location!("clear"), &self.renderer.gl);
         unsafe {
             self.renderer.gl.Disable(ffi::BLEND);
         }
@@ -2302,6 +2396,8 @@ impl Frame for GlesFrame<'_, '_> {
             self.renderer.gl.Enable(ffi::BLEND);
             self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
         }
+        self.renderer.profiler.exit(&self.renderer.gl, scope);
+
         res
     }
 
@@ -2319,6 +2415,10 @@ impl Frame for GlesFrame<'_, '_> {
 
         let is_opaque = color.is_opaque();
 
+        let scope = self
+            .renderer
+            .profiler
+            .enter(tracy_client::span_location!("draw_solid"), &self.renderer.gl);
         if is_opaque {
             unsafe {
                 self.renderer.gl.Disable(ffi::BLEND);
@@ -2333,6 +2433,7 @@ impl Frame for GlesFrame<'_, '_> {
                 self.renderer.gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
             }
         }
+        self.renderer.profiler.exit(&self.renderer.gl, scope);
 
         res
     }
@@ -2386,6 +2487,10 @@ impl GlesFrame<'_, '_> {
             return Ok(SyncPoint::signaled());
         }
 
+        let finish_gpu_span = self
+            .renderer
+            .profiler
+            .enter(tracy_client::span_location!("finish_internal"), &self.renderer.gl);
         unsafe {
             self.renderer.gl.Disable(ffi::SCISSOR_TEST);
             self.renderer.gl.Disable(ffi::BLEND);
@@ -2397,6 +2502,12 @@ impl GlesFrame<'_, '_> {
 
         // delayed destruction until the next frame rendering.
         self.renderer.cleanup();
+
+        self.renderer.profiler.exit(&self.renderer.gl, finish_gpu_span);
+        if let Some(span) = self.gpu_span.take() {
+            self.renderer.profiler.exit(&self.renderer.gl, span);
+        }
+        self.renderer.profiler.sync_gpu(&self.renderer.gl);
 
         // if we support egl fences we should use it
         if let Some(sync_point) = self.renderer.export_sync_point() {
@@ -2487,6 +2598,10 @@ impl GlesFrame<'_, '_> {
         }
 
         let gl = &self.renderer.gl;
+        let _scope = self
+            .renderer
+            .profiler
+            .scope(tracy_client::span_location!("draw_solid"), &self.renderer.gl);
         unsafe {
             gl.UseProgram(self.renderer.solid_program.program);
             gl.Uniform4f(
@@ -2782,9 +2897,17 @@ impl GlesFrame<'_, '_> {
 
         // render
         let gl = &self.renderer.gl;
+        let scope = self
+            .renderer
+            .profiler
+            .enter(tracy_client::span_location!("render_texture"), gl);
         let sync_lock = tex.0.sync.read().unwrap();
         unsafe {
             sync_lock.wait_for_upload(gl);
+            let scope = self
+                .renderer
+                .profiler
+                .scope(tracy_client::span_location!("setup"), gl);
             gl.ActiveTexture(ffi::TEXTURE0);
             gl.BindTexture(target, tex.0.texture);
             gl.TexParameteri(
@@ -2850,13 +2973,23 @@ impl GlesFrame<'_, '_> {
                 0,
                 self.renderer.vertices.as_ptr() as *const _,
             );
+            drop(scope);
 
             if self.renderer.capabilities.contains(&Capability::Instancing) {
+                let _scope = self
+                    .renderer
+                    .profiler
+                    .scope(tracy_client::span_location!("draw instanced"), gl);
                 gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
                 gl.VertexAttribDivisor(program.attrib_vert_position as u32, 1);
 
                 gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len as i32);
             } else {
+                let _scope = self
+                    .renderer
+                    .profiler
+                    .scope(tracy_client::span_location!("draw batched"), gl);
+
                 // When we have more than 10 rectangles, draw them in batches of 10.
                 for i in 0..(damage_len - 1) / 10 {
                     gl.DrawArrays(ffi::TRIANGLES, 0, 60);
@@ -2877,6 +3010,10 @@ impl GlesFrame<'_, '_> {
                 gl.DrawArrays(ffi::TRIANGLES, 0, count as i32);
             }
 
+            let _scope = self
+                .renderer
+                .profiler
+                .scope(tracy_client::span_location!("cleanup"), gl);
             gl.BindTexture(target, 0);
             gl.DisableVertexAttribArray(program.attrib_vert as u32);
             gl.DisableVertexAttribArray(program.attrib_vert_position as u32);
@@ -2887,6 +3024,7 @@ impl GlesFrame<'_, '_> {
                 gl.Finish();
             };
         }
+        self.renderer.profiler.exit(gl, scope);
 
         Ok(())
     }
@@ -2969,6 +3107,10 @@ impl GlesFrame<'_, '_> {
 
         // render
         let gl = &self.renderer.gl;
+        let _scope = self
+            .renderer
+            .profiler
+            .scope(tracy_client::span_location!("render_pixel_shader_to"), gl);
         unsafe {
             gl.UseProgram(program.program);
 
