@@ -19,7 +19,7 @@ xkbcommon = "0.5.0"
 renderdoc = {version = "0.11.0", optional = true}
 smithay-drm-extras = {path = "../smithay-drm-extras", optional = true}
 puffin_http = { version = "0.9", optional = true }
-profiling = { version = "1.0" }
+profiling = "1.0.11"
 
 [dependencies.smithay]
 default-features = false
