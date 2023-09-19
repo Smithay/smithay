@@ -156,9 +156,6 @@ where
         }
         for_each_focused_pointers(seat, self, |ptr| {
             ptr.enter(serial.into(), self, event.location.x, event.location.y);
-            if ptr.version() >= 5 {
-                ptr.frame();
-            }
         })
     }
     fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial, time: u32) {
@@ -188,9 +185,7 @@ where
         });
         for_each_focused_pointers(seat, self, |ptr| {
             ptr.leave(serial.into(), self);
-            if ptr.version() >= 5 {
-                ptr.frame();
-            }
+            ptr.frame();
         });
         if let Some(pointer) = seat.get_pointer() {
             *pointer.last_enter.lock().unwrap() = None;
@@ -204,9 +199,6 @@ where
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
         for_each_focused_pointers(seat, self, |ptr| {
             ptr.motion(event.time, event.location.x, event.location.y);
-            if ptr.version() >= 5 {
-                ptr.frame();
-            }
         })
     }
     fn relative_motion(&self, seat: &Seat<D>, _data: &mut D, event: &RelativeMotionEvent) {
@@ -226,9 +218,6 @@ where
     fn button(&self, seat: &Seat<D>, _data: &mut D, event: &ButtonEvent) {
         for_each_focused_pointers(seat, self, |ptr| {
             ptr.button(event.serial.into(), event.time, event.button, event.state.into());
-            if ptr.version() >= 5 {
-                ptr.frame();
-            }
         })
     }
     fn axis(&self, seat: &Seat<D>, _data: &mut D, details: AxisFrame) {
@@ -273,11 +262,15 @@ where
             if details.axis.1 != 0.0 {
                 ptr.axis(details.time, WlAxis::VerticalScroll, details.axis.1);
             }
+        })
+    }
+
+    fn frame(&self, seat: &Seat<D>, _data: &mut D) {
+        for_each_focused_pointers(seat, self, |ptr| {
             if ptr.version() >= 5 {
-                // frame
                 ptr.frame();
             }
-        })
+        });
     }
 
     fn gesture_swipe_begin(&self, seat: &Seat<D>, _data: &mut D, event: &GestureSwipeBeginEvent) {

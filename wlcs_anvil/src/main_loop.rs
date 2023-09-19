@@ -236,6 +236,7 @@ fn handle_event(
                     time,
                 },
             );
+            ptr.frame(state);
         }
         WlcsEvent::PointerMoveRelative { delta, .. } => {
             let pointer_location = state.pointer.current_location() + delta;
@@ -261,15 +262,16 @@ fn handle_event(
                     delta_unaccel: delta,
                     utime,
                 },
-            )
+            );
+            ptr.frame(state);
         }
         WlcsEvent::PointerButtonDown { button_id, .. } => {
             let serial = SCOUNTER.next_serial();
-            let pointer = state.seat.get_pointer().unwrap();
-            if !pointer.is_grabbed() {
+            let ptr = state.seat.get_pointer().unwrap();
+            if !ptr.is_grabbed() {
                 let under = state
                     .space
-                    .element_under(pointer.current_location())
+                    .element_under(ptr.current_location())
                     .map(|(w, _)| w.clone());
                 if let Some(window) = under.as_ref() {
                     state.space.raise_element(window, true);
@@ -281,7 +283,7 @@ fn handle_event(
                     .set_focus(state, under.map(Into::into), serial);
             }
             let time = Duration::from(state.clock.now()).as_millis() as u32;
-            pointer.button(
+            ptr.button(
                 state,
                 &ButtonEvent {
                     button: button_id as u32,
@@ -290,11 +292,13 @@ fn handle_event(
                     time,
                 },
             );
+            ptr.frame(state);
         }
         WlcsEvent::PointerButtonUp { button_id, .. } => {
             let serial = SCOUNTER.next_serial();
             let time = Duration::from(state.clock.now()).as_millis() as u32;
-            state.seat.get_pointer().unwrap().button(
+            let ptr = state.seat.get_pointer().unwrap();
+            ptr.button(
                 state,
                 &ButtonEvent {
                     button: button_id as u32,
@@ -303,6 +307,7 @@ fn handle_event(
                     time,
                 },
             );
+            ptr.frame(state);
         }
         WlcsEvent::PointerRemoved { .. } => {}
         // touch inputs

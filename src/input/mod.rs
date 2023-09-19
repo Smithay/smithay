@@ -50,6 +50,7 @@
 //! #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
 //! #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
 //! #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
+//! #   fn frame(&self, seat: &Seat<State>, data: &mut State) {}
 //! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
 //! #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
 //! #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}
@@ -326,6 +327,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
     /// #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
     /// #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
+    /// #   fn frame(&self, seat: &Seat<State>, data: &mut State) {}
     /// #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
     /// #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
     /// #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}
@@ -435,6 +437,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
     /// #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
     /// #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
+    /// #   fn frame(&self, seat: &Seat<State>, data: &mut State) {}
     /// #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
     /// #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
     /// #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}

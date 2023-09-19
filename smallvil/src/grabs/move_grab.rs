@@ -71,6 +71,10 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         handle.axis(data, details)
     }
 
+    fn frame(&mut self, data: &mut Smallvil, handle: &mut PointerInnerHandle<'_, Smallvil>) {
+        handle.frame(data);
+    }
+
     fn gesture_swipe_begin(
         &mut self,
         data: &mut Smallvil,
