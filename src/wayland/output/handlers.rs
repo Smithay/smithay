@@ -62,7 +62,7 @@ where
             if Some(mode) == inner.preferred_mode {
                 flags |= WMode::Preferred;
             }
-            output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
+            output.mode(flags, mode.size.width, mode.size.height, mode.refresh);
         }
 
         if output.version() >= 4 {

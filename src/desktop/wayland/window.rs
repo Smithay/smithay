@@ -98,7 +98,7 @@ impl Window {
         Window(Arc::new(WindowInner {
             id,
             toplevel,
-            bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
+            bbox: Mutex::new(Rectangle::new((0, 0).into(), (0, 0).into())),
             z_index: AtomicU8::new(RenderZindex::Shell as u8),
             focused_surface: Mutex::new(None),
             user_data: UserDataMap::new(),
@@ -128,7 +128,7 @@ impl Window {
         let surface = self.0.toplevel.wl_surface();
         for (popup, location) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
-            let offset = self.geometry().loc + location - popup.geometry().loc;
+            let offset = self.geometry().origin + location - popup.geometry().origin;
             bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset));
         }
 
@@ -260,7 +260,7 @@ impl Window {
         let surface = self.0.toplevel.wl_surface();
         if surface_type.contains(WindowSurfaceType::POPUP) {
             for (popup, location) in PopupManager::popups_for_surface(surface) {
-                let offset = self.geometry().loc + location - popup.geometry().loc;
+                let offset = self.geometry().origin + location - popup.geometry().origin;
                 if let Some(result) = under_from_surface_tree(popup.wl_surface(), point, offset, surface_type)
                 {
                     return Some(result);

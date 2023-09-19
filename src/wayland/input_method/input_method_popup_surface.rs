@@ -28,18 +28,18 @@ impl InputMethodPopupSurfaceHandle {
     /// Used to store surface coordinates
     pub fn add_coordinates(&self, x: i32, y: i32, width: i32, height: i32) {
         let mut inner = self.inner.lock().unwrap();
-        inner.rectangle.loc.x = x;
-        inner.rectangle.loc.y = y;
-        inner.rectangle.size.w = width;
-        inner.rectangle.size.h = height;
+        inner.rectangle.origin.x = x;
+        inner.rectangle.origin.y = y;
+        inner.rectangle.size.width = width;
+        inner.rectangle.size.height = height;
     }
 
     /// Used to access the relative location of an input popup surface
     pub fn coordinates(&self) -> Rectangle<i32, Physical> {
         let inner = self.inner.lock().unwrap();
         let mut rectangle = inner.rectangle;
-        rectangle.loc.x += inner.point.x;
-        rectangle.loc.y += inner.point.y;
+        rectangle.origin.x += inner.point.x;
+        rectangle.origin.y += inner.point.y;
         rectangle
     }
 

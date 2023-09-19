@@ -1,6 +1,6 @@
 //! Various utilities functions and types
 
-mod geometry;
+pub mod geometry;
 pub mod signaling;
 
 #[cfg(feature = "x11rb_event_source")]

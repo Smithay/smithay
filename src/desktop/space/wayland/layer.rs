@@ -30,10 +30,10 @@ where
         let mut render_elements: Vec<C> = Vec::new();
         let popup_render_elements =
             PopupManager::popups_for_surface(surface).flat_map(|(popup, popup_offset)| {
-                let offset = (popup_offset - popup.geometry().loc)
+                let offset = (popup_offset - popup.geometry().origin)
                     .to_f64()
                     .to_physical(scale)
-                    .to_i32_round();
+                    .round().to_i32();
 
                 render_elements_from_surface_tree(
                     renderer,

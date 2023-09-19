@@ -78,8 +78,8 @@ pub trait TabletToolEvent<B: InputBackend> {
     /// Tool position converted into the target coordinate space.
     fn position_transformed(&self, coordinate_space: Size<i32, Logical>) -> Point<f64, Logical> {
         (
-            self.x_transformed(coordinate_space.w),
-            self.y_transformed(coordinate_space.h),
+            self.x_transformed(coordinate_space.width),
+            self.y_transformed(coordinate_space.height),
         )
             .into()
     }

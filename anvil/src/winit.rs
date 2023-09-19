@@ -284,7 +284,7 @@ pub fn run_winit() {
                 (0, 0).into()
             };
             let cursor_pos = state.pointer.current_location() - cursor_hotspot.to_f64();
-            let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
+            let cursor_pos_scaled = cursor_pos.to_physical(scale).round().to_i32();
 
             #[cfg(feature = "debug")]
             let mut renderdoc = state.renderdoc.as_mut();
@@ -314,8 +314,8 @@ pub fn run_winit() {
                 // draw input method surface if any
                 let rectangle = input_method.coordinates();
                 let position = Point::from((
-                    rectangle.loc.x + rectangle.size.w,
-                    rectangle.loc.y + rectangle.size.h,
+                    rectangle.origin.x + rectangle.size.w,
+                    rectangle.origin.y + rectangle.size.h,
                 ));
                 input_method.with_surface(|surface| {
                     elements.extend(AsRenderElements::<GlesRenderer>::render_elements(

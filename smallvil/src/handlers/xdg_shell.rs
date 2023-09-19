@@ -113,7 +113,7 @@ impl XdgShellHandler for Smallvil {
                 start_data,
                 window,
                 edges.into(),
-                Rectangle::from_loc_and_size(initial_window_location, initial_window_size),
+                Rectangle::new(initial_window_location, initial_window_size),
             );
 
             pointer.set_grab(self, grab, serial, Focus::Clear);

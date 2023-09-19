@@ -91,7 +91,7 @@ impl SpaceElement for Window {
                 output_update(&output, *overlap, surface);
                 for (popup, location) in PopupManager::popups_for_surface(surface) {
                     let mut overlap = *overlap;
-                    overlap.loc -= location;
+                    overlap.origin -= location;
                     output_update(&output, overlap, popup.wl_surface());
                 }
             }
@@ -119,7 +119,7 @@ where
         let mut render_elements: Vec<C> = Vec::new();
         let popup_render_elements =
             PopupManager::popups_for_surface(surface).flat_map(|(popup, popup_offset)| {
-                let offset = (self.geometry().loc + popup_offset - popup.geometry().loc)
+                let offset = (self.geometry().origin + popup_offset - popup.geometry().origin)
                     .to_physical_precise_round(scale);
 
                 render_elements_from_surface_tree(

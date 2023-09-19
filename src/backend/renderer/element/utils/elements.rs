@@ -5,7 +5,7 @@ use crate::{
         element::{AsRenderElements, Element, Id, Kind, RenderElement, UnderlyingStorage},
         Renderer,
     },
-    utils::{Buffer, Physical, Point, Rectangle, Scale},
+    utils::{geometry::prelude::*, Buffer, Physical, Point, Rectangle, Scale},
 };
 
 /// A element that allows to re-scale another element
@@ -50,11 +50,11 @@ impl<E: Element> Element for RescaleRenderElement<E> {
     ) -> crate::utils::Rectangle<i32, crate::utils::Physical> {
         let mut element_geometry = self.element.geometry(scale);
         // First we make the element relative to the origin
-        element_geometry.loc -= self.origin;
+        element_geometry.origin -= self.origin;
         // Then we scale it by our scale
-        element_geometry = element_geometry.to_f64().upscale(self.scale).to_i32_round();
+        element_geometry = element_geometry.to_f64().upscale(self.scale).round().to_i32();
         // At last we move it back to the origin
-        element_geometry.loc += self.origin;
+        element_geometry.origin += self.origin;
         element_geometry
     }
 
@@ -81,7 +81,7 @@ impl<E: Element> Element for RescaleRenderElement<E> {
         self.element
             .opaque_regions(scale)
             .into_iter()
-            .map(|rect| rect.to_f64().upscale(self.scale).to_i32_round())
+            .map(|rect| rect.to_f64().upscale(self.scale).round().to_i32())
             .collect::<Vec<_>>()
     }
 
@@ -139,7 +139,7 @@ impl<E: Element> CropRenderElement<E> {
 
         let element_geometry = element.geometry(scale);
 
-        if let Some(intersection) = element_geometry.intersection(crop_rect) {
+        if let Some(intersection) = element_geometry.intersection(&crop_rect) {
             // FIXME: intersection sometimes return a 0 size element
             if intersection.is_empty() {
                 return None;
@@ -147,7 +147,7 @@ impl<E: Element> CropRenderElement<E> {
 
             // We need to know how much we should crop from the element
             let mut element_relative_intersection = intersection;
-            element_relative_intersection.loc -= element_geometry.loc;
+            element_relative_intersection.origin -= element_geometry.origin;
 
             // Now we calculate the scale from the original element geometry to the
             // original element src. We need that scale to bring our intersection
@@ -169,7 +169,7 @@ impl<E: Element> CropRenderElement<E> {
             );
 
             // Ensure cropping of the existing element is respected.
-            src.loc += element_src.loc;
+            src.origin += element_src.origin;
 
             Some(CropRenderElement {
                 element,
@@ -184,13 +184,13 @@ impl<E: Element> CropRenderElement<E> {
     fn element_crop_rect(&self, scale: Scale<f64>) -> Option<Rectangle<i32, Physical>> {
         let element_geometry = self.element.geometry(scale);
 
-        if let Some(mut intersection) = element_geometry.intersection(self.crop_rect) {
+        if let Some(mut intersection) = element_geometry.intersection(&self.crop_rect) {
             // FIXME: intersection sometimes return a 0 size element
             if intersection.is_empty() {
                 return None;
             }
 
-            intersection.loc -= element_geometry.loc;
+            intersection.origin -= element_geometry.origin;
             Some(intersection)
         } else {
             None
@@ -213,7 +213,7 @@ impl<E: Element> Element for CropRenderElement<E> {
 
     fn geometry(&self, scale: Scale<f64>) -> crate::utils::Rectangle<i32, Physical> {
         let element_geometry = self.element.geometry(scale);
-        if let Some(intersection) = element_geometry.intersection(self.crop_rect) {
+        if let Some(intersection) = element_geometry.intersection(&self.crop_rect) {
             // FIXME: intersection sometimes return a 0 size element
             if intersection.is_empty() {
                 return Default::default();
@@ -239,8 +239,8 @@ impl<E: Element> Element for CropRenderElement<E> {
                 .damage_since(scale, commit)
                 .into_iter()
                 .flat_map(|rect| {
-                    rect.intersection(element_crop_rect).map(|mut rect| {
-                        rect.loc -= element_crop_rect.loc;
+                    rect.intersection(&element_crop_rect).map(|mut rect| {
+                        rect.origin -= element_crop_rect.origin;
                         rect
                     })
                 })
@@ -256,8 +256,8 @@ impl<E: Element> Element for CropRenderElement<E> {
                 .opaque_regions(scale)
                 .into_iter()
                 .flat_map(|rect| {
-                    rect.intersection(element_crop_rect).map(|mut rect| {
-                        rect.loc -= element_crop_rect.loc;
+                    rect.intersection(&element_crop_rect).map(|mut rect| {
+                        rect.origin -= element_crop_rect.origin;
                         rect
                     })
                 })
@@ -338,8 +338,8 @@ impl<E: Element> Element for RelocateRenderElement<E> {
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
         let mut geo = self.element.geometry(scale);
         match self.relocate {
-            Relocate::Absolute => geo.loc = self.location,
-            Relocate::Relative => geo.loc += self.location,
+            Relocate::Absolute => geo.origin = self.location,
+            Relocate::Relative => geo.origin += self.location,
         }
         geo
     }
@@ -533,17 +533,17 @@ where
 
     // Calculate the align offset
     let top_offset: f64 = if align.contains(ConstrainAlign::TOP | ConstrainAlign::BOTTOM) {
-        (constrain.size.h as f64 - scaled_reference.size.h) / 2f64
+        (constrain.size.height as f64 - scaled_reference.size.height) / 2f64
     } else if align.contains(ConstrainAlign::BOTTOM) {
-        constrain.size.h as f64 - scaled_reference.size.h
+        constrain.size.height as f64 - scaled_reference.size.height
     } else {
         0f64
     };
 
     let left_offset: f64 = if align.contains(ConstrainAlign::LEFT | ConstrainAlign::RIGHT) {
-        (constrain.size.w as f64 - scaled_reference.size.w) / 2f64
+        (constrain.size.width as f64 - scaled_reference.size.width) / 2f64
     } else if align.contains(ConstrainAlign::RIGHT) {
-        constrain.size.w as f64 - scaled_reference.size.w
+        constrain.size.width as f64 - scaled_reference.size.width
     } else {
         0f64
     };
@@ -553,10 +553,10 @@ where
     // We need to offset the elements by the reference loc or otherwise
     // the element could be positioned outside of our constrain rect.
     let reference_offset =
-        reference.loc.to_f64() - Point::from((scaled_reference.loc.x, scaled_reference.loc.y));
+        reference.origin.to_f64() - Point::from((scaled_reference.origin.x, scaled_reference.origin.y));
 
     // Final offset
-    let offset = (reference_offset + align_offset).to_i32_round();
+    let offset = (reference_offset + align_offset).round().to_i32();
 
     elements
         .into_iter()

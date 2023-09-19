@@ -291,25 +291,25 @@ where
     frame
         .clear(
             [1.0, 0.0, 0.0, 1.0],
-            &[Rectangle::from_loc_and_size((0, 0), (w / 2, h / 2))],
+            &[Rectangle::new((0, 0), (w / 2, h / 2))],
         )
         .expect("Render error");
     frame
         .clear(
             [0.0, 1.0, 0.0, 1.0],
-            &[Rectangle::from_loc_and_size((w / 2, 0), (w / 2, h / 2))],
+            &[Rectangle::new((w / 2, 0), (w / 2, h / 2))],
         )
         .expect("Render error");
     frame
         .clear(
             [0.0, 0.0, 1.0, 1.0],
-            &[Rectangle::from_loc_and_size((0, h / 2), (w / 2, h / 2))],
+            &[Rectangle::new((0, h / 2), (w / 2, h / 2))],
         )
         .expect("Render error");
     frame
         .clear(
             [1.0, 1.0, 0.0, 1.0],
-            &[Rectangle::from_loc_and_size((w / 2, h / 2), (w / 2, h / 2))],
+            &[Rectangle::new((w / 2, h / 2), (w / 2, h / 2))],
         )
         .expect("Render error");
     frame.finish().expect("Failed to finish render frame").wait();
@@ -335,7 +335,7 @@ where
             1,
             1.,
             Transform::Normal,
-            &[Rectangle::from_loc_and_size((0, 0), (w, h))],
+            &[Rectangle::new((0, 0), (w, h))],
             1.0,
         )
         .expect("Failed to sample dmabuf");
@@ -343,7 +343,7 @@ where
 
     if let Some(path) = dump {
         let mapping = renderer
-            .copy_framebuffer(Rectangle::from_loc_and_size((0, 0), (w, h)), Fourcc::Abgr8888)
+            .copy_framebuffer(Rectangle::new((0, 0), (w, h)), Fourcc::Abgr8888)
             .expect("Failed to map framebuffer");
         let copy = renderer.map_texture(&mapping).expect("Failed to read mapping");
         image::save_buffer(path, copy, w as u32, h as u32, image::ColorType::Rgba8)

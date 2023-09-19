@@ -135,7 +135,7 @@ where
                 output_location,
             } => {
                 let mut bbox = surface.bbox();
-                bbox.loc += *output_location;
+                bbox.origin += *output_location;
                 bbox
             }
             SpaceElements::Element(inner) => inner.bbox(),
@@ -145,7 +145,7 @@ where
     pub(super) fn render_location(&self) -> Point<i32, Logical> {
         match self {
             #[cfg(feature = "wayland_frontend")]
-            SpaceElements::Layer { .. } => self.bbox().loc,
+            SpaceElements::Layer { .. } => self.bbox().origin,
             SpaceElements::Element(inner) => inner.render_location(),
         }
     }

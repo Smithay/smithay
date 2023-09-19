@@ -128,8 +128,8 @@ impl Inner {
         output.geometry(
             self.location.x,
             self.location.y,
-            self.physical.size.w,
-            self.physical.size.h,
+            self.physical.size.width,
+            self.physical.size.height,
             self.physical.subpixel.into(),
             self.physical.make.clone(),
             self.physical.model.clone(),
@@ -203,7 +203,7 @@ impl Output {
 
         for output in &inner.instances {
             if let Some(mode) = new_mode {
-                output.mode(flags, mode.size.w, mode.size.h, mode.refresh);
+                output.mode(flags, mode.size.width, mode.size.height, mode.refresh);
             }
             if new_transform.is_some() || new_location.is_some() {
                 inner.send_geometry_to(output);

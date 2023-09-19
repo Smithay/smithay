@@ -567,10 +567,10 @@ impl PositionerState {
         //  example if the anchor of the anchor rectangle is at (x, y), the surface
         //  has the gravity bottom|right, and the offset is (ox, oy), the calculated
         //  surface position will be (x + ox, y + oy)
-        let mut geometry = Rectangle {
-            loc: self.offset,
-            size: self.rect_size,
-        };
+        let mut geometry = Rectangle::new(
+            self.offset,
+            self.rect_size,
+        );
 
         // Defines the anchor point for the anchor rectangle. The specified anchor
         // is used derive an anchor point that the child surface will be
@@ -579,19 +579,19 @@ impl PositionerState {
         // otherwise, the derived anchor point will be centered on the specified
         // edge, or in the center of the anchor rectangle if no edge is specified.
         if self.anchor_has_edge(xdg_positioner::Anchor::Top) {
-            geometry.loc.y += self.anchor_rect.loc.y;
+            geometry.origin.y += self.anchor_rect.origin.y;
         } else if self.anchor_has_edge(xdg_positioner::Anchor::Bottom) {
-            geometry.loc.y += self.anchor_rect.loc.y + self.anchor_rect.size.h;
+            geometry.origin.y += self.anchor_rect.origin.y + self.anchor_rect.size.height;
         } else {
-            geometry.loc.y += self.anchor_rect.loc.y + self.anchor_rect.size.h / 2;
+            geometry.origin.y += self.anchor_rect.origin.y + self.anchor_rect.size.height / 2;
         }
 
         if self.anchor_has_edge(xdg_positioner::Anchor::Left) {
-            geometry.loc.x += self.anchor_rect.loc.x;
+            geometry.origin.x += self.anchor_rect.origin.x;
         } else if self.anchor_has_edge(xdg_positioner::Anchor::Right) {
-            geometry.loc.x += self.anchor_rect.loc.x + self.anchor_rect.size.w;
+            geometry.origin.x += self.anchor_rect.origin.x + self.anchor_rect.size.width;
         } else {
-            geometry.loc.x += self.anchor_rect.loc.x + self.anchor_rect.size.w / 2;
+            geometry.origin.x += self.anchor_rect.origin.x + self.anchor_rect.size.width / 2;
         }
 
         // Defines in what direction a surface should be positioned, relative to
@@ -601,15 +601,15 @@ impl PositionerState {
         // surface will be centered over the anchor point on any axis that had no
         // gravity specified.
         if self.gravity_has_edge(xdg_positioner::Gravity::Top) {
-            geometry.loc.y -= geometry.size.h;
+            geometry.origin.y -= geometry.size.height;
         } else if !self.gravity_has_edge(xdg_positioner::Gravity::Bottom) {
-            geometry.loc.y -= geometry.size.h / 2;
+            geometry.origin.y -= geometry.size.height / 2;
         }
 
         if self.gravity_has_edge(xdg_positioner::Gravity::Left) {
-            geometry.loc.x -= geometry.size.w;
+            geometry.origin.x -= geometry.size.width;
         } else if !self.gravity_has_edge(xdg_positioner::Gravity::Right) {
-            geometry.loc.x -= geometry.size.w / 2;
+            geometry.origin.x -= geometry.size.width / 2;
         }
 
         geometry

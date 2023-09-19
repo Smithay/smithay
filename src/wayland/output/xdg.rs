@@ -9,7 +9,7 @@ use tracing::trace;
 use wayland_protocols::xdg::xdg_output::zv1::server::zxdg_output_v1::ZxdgOutputV1;
 use wayland_server::{protocol::wl_output::WlOutput, Resource};
 
-use crate::utils::{Logical, Physical, Point, Size, Transform};
+use crate::utils::{geometry::prelude::*, Logical, Physical, Point, Size, Transform};
 
 use super::{Mode, Scale};
 
@@ -61,9 +61,9 @@ impl XdgOutput {
             let logical_size = size
                 .to_f64()
                 .to_logical(inner.scale.fractional_scale())
-                .to_i32_round();
+                .round().to_i32();
             let transformed_size = inner.transform.transform_size(logical_size);
-            xdg_output.logical_size(transformed_size.w, transformed_size.h);
+            xdg_output.logical_size(transformed_size.width, transformed_size.height);
         }
 
         if xdg_output.version() >= 2 {
@@ -109,9 +109,9 @@ impl XdgOutput {
                     let logical_size = size
                         .to_f64()
                         .to_logical(output.scale.fractional_scale())
-                        .to_i32_round();
+                        .round().to_i32();
                     let transformed_size = output.transform.transform_size(logical_size);
-                    instance.logical_size(transformed_size.w, transformed_size.h);
+                    instance.logical_size(transformed_size.width, transformed_size.height);
                 }
             }
 

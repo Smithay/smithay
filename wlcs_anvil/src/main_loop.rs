@@ -99,8 +99,8 @@ pub fn run(channel: Channel<WlcsEvent>) {
             let input_method = state.seat.input_method();
             let rectangle = input_method.coordinates();
             let position = Point::from((
-                rectangle.loc.x + rectangle.size.w,
-                rectangle.loc.y + rectangle.size.h,
+                rectangle.origin.x + rectangle.size.w,
+                rectangle.origin.y + rectangle.size.h,
             ));
             input_method.with_surface(|surface| {
                 elements.extend(AsRenderElements::<DummyRenderer>::render_elements(
@@ -136,7 +136,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 (0, 0).into()
             };
             let cursor_pos = state.pointer.current_location() - cursor_hotspot.to_f64();
-            let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
+            let cursor_pos_scaled = cursor_pos.to_physical(scale).round().to_i32();
 
             pointer_element.set_status(cursor_guard.clone());
             elements.extend(pointer_element.render_elements(&mut renderer, cursor_pos_scaled, scale, 1.0));

@@ -354,7 +354,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     pub fn surface_under(&self, pos: Point<f64, Logical>) -> Option<(FocusTarget, Point<i32, Logical>)> {
         let output = self.space.outputs().find(|o| {
             let geometry = self.space.output_geometry(o).unwrap();
-            geometry.contains(pos.to_i32_round())
+            geometry.contains(pos.round().to_i32())
         })?;
         let output_geo = self.space.output_geometry(output).unwrap();
         let layers = layer_map_for_output(output);
@@ -371,7 +371,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             .or_else(|| layers.layer_under(WlrLayer::Top, pos))
         {
             let layer_loc = layers.layer_geometry(layer).unwrap().loc;
-            under = Some((layer.clone().into(), output_geo.loc + layer_loc))
+            under = Some((layer.clone().into(), output_geo.origin + layer_loc))
         } else if let Some((window, location)) = self.space.element_under(pos) {
             under = Some((window.clone().into(), location));
         } else if let Some(layer) = layers
@@ -379,7 +379,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             .or_else(|| layers.layer_under(WlrLayer::Background, pos))
         {
             let layer_loc = layers.layer_geometry(layer).unwrap().loc;
-            under = Some((layer.clone().into(), output_geo.loc + layer_loc));
+            under = Some((layer.clone().into(), output_geo.origin + layer_loc));
         };
         under
     }
@@ -560,7 +560,7 @@ impl AnvilState<UdevData> {
                         .map(|o| self.space.output_geometry(o).unwrap());
 
                     if let Some(geometry) = geometry {
-                        let x = geometry.loc.x as f64 + geometry.size.w as f64 / 2.0;
+                        let x = geometry.origin.x as f64 + geometry.size.w as f64 / 2.0;
                         let y = geometry.size.h as f64 / 2.0;
                         let location = (x, y).into();
                         let pointer = self.pointer.clone();
@@ -577,7 +577,7 @@ impl AnvilState<UdevData> {
                     }
                 }
                 KeyAction::ScaleUp => {
-                    let pos = self.pointer.current_location().to_i32_round();
+                    let pos = self.pointer.current_location().round().to_i32();
                     let output = self
                         .space
                         .outputs()
@@ -615,7 +615,7 @@ impl AnvilState<UdevData> {
                     }
                 }
                 KeyAction::ScaleDown => {
-                    let pos = self.pointer.current_location().to_i32_round();
+                    let pos = self.pointer.current_location().round().to_i32();
                     let output = self
                         .space
                         .outputs()
@@ -653,7 +653,7 @@ impl AnvilState<UdevData> {
                     }
                 }
                 KeyAction::RotateOutput => {
-                    let pos = self.pointer.current_location().to_i32_round();
+                    let pos = self.pointer.current_location().round().to_i32();
                     let output = self
                         .space
                         .outputs()
@@ -747,7 +747,7 @@ impl AnvilState<UdevData> {
                 Some(constraint) if constraint.is_active() => {
                     // Constraint does not apply if not within region
                     if !constraint.region().map_or(true, |x| {
-                        x.contains(pointer_location.to_i32_round() - *surface_loc)
+                        x.contains(pointer_location.round().to_i32() - *surface_loc)
                     }) {
                         return;
                     }
@@ -795,7 +795,7 @@ impl AnvilState<UdevData> {
                     return;
                 }
                 if let Some(region) = confine_region {
-                    if !region.contains(pointer_location.to_i32_round() - *surface_loc) {
+                    if !region.contains(pointer_location.round().to_i32() - *surface_loc) {
                         return;
                     }
                 }
@@ -819,7 +819,7 @@ impl AnvilState<UdevData> {
         {
             with_pointer_constraint(&under, &pointer, |constraint| match constraint {
                 Some(constraint) if !constraint.is_active() => {
-                    let point = pointer_location.to_i32_round() - surface_location;
+                    let point = pointer_location.round().to_i32() - surface_location;
                     if constraint.region().map_or(true, |region| region.contains(point)) {
                         constraint.activate();
                     }
@@ -878,7 +878,7 @@ impl AnvilState<UdevData> {
             .map(|o| self.space.output_geometry(o).unwrap());
 
         if let Some(rect) = output_geometry {
-            let pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
+            let pointer_location = evt.position_transformed(rect.size) + rect.origin.to_f64();
 
             let pointer = self.pointer.clone();
             let under = self.surface_under(pointer_location);
@@ -943,7 +943,7 @@ impl AnvilState<UdevData> {
             let tool = evt.tool();
             tablet_seat.add_tool::<Self>(dh, &tool);
 
-            let pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
+            let pointer_location = evt.position_transformed(rect.size) + rect.origin.to_f64();
 
             let pointer = self.pointer.clone();
             let under = self.surface_under(pointer_location);

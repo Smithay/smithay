@@ -24,7 +24,7 @@ impl WaylandFocus for X11Surface {
 impl SpaceElement for X11Surface {
     fn bbox(&self) -> Rectangle<i32, Logical> {
         let geo = X11Surface::geometry(self);
-        Rectangle::from_loc_and_size((0, 0), geo.size)
+        Rectangle::new((0, 0).into(), geo.size)
     }
 
     fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {

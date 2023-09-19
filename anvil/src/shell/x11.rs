@@ -126,7 +126,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
         else {
             return;
         };
-        self.state.space.map_element(elem, geometry.loc, false);
+        self.state.space.map_element(elem, geometry.origin, false);
         // TODO: We don't properly handle the order of override-redirect windows here,
         //       they are always mapped top and then never reordered.
     }
@@ -341,7 +341,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         window.configure(geometry).unwrap();
         window.user_data().insert_if_missing(OldGeometry::default);
         window.user_data().get::<OldGeometry>().unwrap().save(old_geo);
-        self.space.map_element(elem, geometry.loc, false);
+        self.space.map_element(elem, geometry.origin, false);
     }
 
     pub fn move_request_x11(&mut self, window: &X11Surface) {
@@ -371,7 +371,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 .and_then(|data| data.restore())
             {
                 window
-                    .configure(Rectangle::from_loc_and_size(
+                    .configure(Rectangle::new(
                         initial_window_location,
                         old_geo.size,
                     ))

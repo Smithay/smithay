@@ -223,7 +223,7 @@ use wayland_server::protocol::wl_surface;
 
 use crate::{
     backend::renderer::{utils::RendererSurfaceStateUserData, Frame, ImportAll, Renderer, Texture},
-    utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{geometry::prelude::*, Buffer, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::compositor::{self, SurfaceData, TraversalAction},
 };
 
@@ -350,8 +350,8 @@ impl<R: Renderer + ImportAll> WaylandSurfaceRenderElement<R> {
         compositor::with_states(&self.surface, |states| {
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
             data.and_then(|d| d.borrow().view()).map(|surface_view| {
-                ((surface_view.dst.to_f64().to_physical(scale).to_point() + self.location).to_i32_round()
-                    - self.location.to_i32_round())
+                ((surface_view.dst.to_f64().to_physical(scale).to_point() + self.location).round().to_i32()
+                    - self.location.round().to_i32())
                 .to_size()
             })
         })
@@ -373,7 +373,7 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(self.location.to_i32_round(), self.size(scale))
+        Rectangle::new(self.location.round().to_i32(), self.size(scale))
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
@@ -433,7 +433,7 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
                                     &data.buffer_dimensions.unwrap().to_f64(),
                                 )
                                 // then crop by the surface view (viewporter for example could define a src rect)
-                                .intersection(surface_view.src)
+                                .intersection(&surface_view.src)
                                 // move and scale the cropped rect (viewporter could define a dst size)
                                 .map(|rect| surface_view.rect_to_global(rect).to_i32_up::<i32>())
                                 // now bring the damage to physical space
@@ -472,12 +472,12 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
                     .map(|r| {
                         r.iter()
                             .map(|r| {
-                                let loc = r.loc.to_physical_precise_round(scale);
+                                let loc = r.origin.to_physical_precise_round(scale);
                                 let size = ((r.size.to_f64().to_physical(scale).to_point() + self.location)
-                                    .to_i32_round()
-                                    - self.location.to_i32_round())
+                                    .round().to_i32()
+                                    - self.location.round().to_i32())
                                 .to_size();
-                                Rectangle::from_loc_and_size(loc, size)
+                                Rectangle::new(loc, size)
                             })
                             .collect::<Vec<_>>()
                     })

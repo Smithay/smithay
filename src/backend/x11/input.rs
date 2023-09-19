@@ -212,11 +212,11 @@ impl AbsolutePositionEvent<X11Input> for X11MouseMovedEvent {
     }
 
     fn x_transformed(&self, width: i32) -> f64 {
-        f64::max(self.x * width as f64 / self.size.w as f64, 0.0)
+        f64::max(self.x * width as f64 / self.size.width as f64, 0.0)
     }
 
     fn y_transformed(&self, height: i32) -> f64 {
-        f64::max(self.y * height as f64 / self.size.h as f64, 0.0)
+        f64::max(self.y * height as f64 / self.size.height as f64, 0.0)
     }
 }
 

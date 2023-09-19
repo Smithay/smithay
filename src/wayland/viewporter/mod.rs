@@ -233,7 +233,7 @@ where
                     let src = if is_unset {
                         None
                     } else {
-                        let src = Rectangle::from_loc_and_size((x, y), (width, height));
+                        let src = Rectangle::new((x, y).into(), (width, height).into());
                         trace!(surface = ?surface, src = ?src, "setting surface viewport src");
                         Some(src)
                     };
@@ -307,7 +307,7 @@ fn viewport_commit_hook<D: 'static>(_state: &mut D, _dh: &DisplayHandle, surface
             // the bad_size protocol error is raised when the surface state is applied.
             let src_size = viewport_state.src.map(|src| src.size);
             if viewport_state.dst.is_none()
-                && src_size != src_size.map(|s| Size::from((s.w as i32, s.h as i32)).to_f64())
+                && src_size != src_size.map(|s| Size::from((s.width as i32, s.height as i32)).to_f64())
             {
                 if let Ok(viewport) = viewport.0.upgrade() {
                     viewport.post_error(
@@ -337,9 +337,9 @@ pub fn ensure_viewport_valid(states: &SurfaceData, buffer_size: Size<i32, Logica
     if let Some(viewport) = &*viewport {
         let state = states.cached_state.pending::<ViewportCachedState>();
 
-        let buffer_rect = Rectangle::from_loc_and_size((0.0, 0.0), buffer_size.to_f64());
+        let buffer_rect = Rectangle::new((0.0, 0.0).into(), buffer_size.to_f64());
         let src = state.src.unwrap_or(buffer_rect);
-        let valid = buffer_rect.contains_rect(src);
+        let valid = buffer_rect.contains_rect(&src);
         if !valid {
             if let Ok(viewport) = viewport.0.upgrade() {
                 viewport.post_error(
@@ -375,7 +375,7 @@ impl ViewportCachedState {
     pub fn size(&self) -> Option<Size<i32, Logical>> {
         self.dst.or_else(|| {
             self.src
-                .map(|src| Size::from((src.size.w as i32, src.size.h as i32)))
+                .map(|src| Size::from((src.size.width as i32, src.size.height as i32)))
         })
     }
 }

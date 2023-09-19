@@ -341,7 +341,7 @@ pub trait Element {
     fn current_commit(&self) -> CommitCounter;
     /// Get the location relative to the output
     fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
-        self.geometry(scale).loc
+        self.geometry(scale).origin
     }
     /// Get the src of the underlying buffer
     fn src(&self) -> Rectangle<f64, BufferCoords>;
@@ -358,7 +358,7 @@ pub trait Element {
         commit: Option<CommitCounter>,
     ) -> Vec<Rectangle<i32, Physical>> {
         if commit != Some(self.current_commit()) {
-            vec![Rectangle::from_loc_and_size((0, 0), self.geometry(scale).size)]
+            vec![Rectangle::new((0, 0).into(), self.geometry(scale).size)]
         } else {
             vec![]
         }

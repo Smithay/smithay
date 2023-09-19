@@ -125,7 +125,7 @@ where
 
                             let pending = states.cached_state.pending::<LayerSurfaceCachedState>();
 
-                            if pending.size.w == 0 && !pending.anchor.anchored_horizontally() {
+                            if pending.size.width == 0 && !pending.anchor.anchored_horizontally() {
                                 guard.surface.post_error(
                                     zwlr_layer_surface_v1::Error::InvalidSize,
                                     "width 0 requested without setting left and right anchors",
@@ -133,7 +133,7 @@ where
                                 return;
                             }
 
-                            if pending.size.h == 0 && !pending.anchor.anchored_vertically() {
+                            if pending.size.height == 0 && !pending.anchor.anchored_vertically() {
                                 guard.surface.post_error(
                                     zwlr_layer_surface_v1::Error::InvalidSize,
                                     "height 0 requested without setting top and bottom anchors",

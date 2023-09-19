@@ -113,13 +113,13 @@ impl AbsolutePositionEvent<WinitInput> for WinitMouseMovedEvent {
 
     fn x_transformed(&self, width: i32) -> f64 {
         let wsize = self.size.borrow();
-        let w_width = wsize.logical_size().w;
+        let w_width = wsize.logical_size().width;
         f64::max(self.logical_position.x * width as f64 / w_width, 0.0)
     }
 
     fn y_transformed(&self, height: i32) -> f64 {
         let wsize = self.size.borrow();
-        let w_height = wsize.logical_size().h;
+        let w_height = wsize.logical_size().height;
         f64::max(self.logical_position.y * height as f64 / w_height, 0.0)
     }
 }
@@ -246,13 +246,13 @@ impl AbsolutePositionEvent<WinitInput> for WinitTouchStartedEvent {
 
     fn x_transformed(&self, width: i32) -> f64 {
         let wsize = self.size.borrow();
-        let w_width = wsize.logical_size().w;
+        let w_width = wsize.logical_size().width;
         f64::max(self.location.x * width as f64 / w_width, 0.0)
     }
 
     fn y_transformed(&self, height: i32) -> f64 {
         let wsize = self.size.borrow();
-        let w_height = wsize.logical_size().h;
+        let w_height = wsize.logical_size().height;
         f64::max(self.location.y * height as f64 / w_height, 0.0)
     }
 }
@@ -297,13 +297,13 @@ impl AbsolutePositionEvent<WinitInput> for WinitTouchMovedEvent {
 
     fn x_transformed(&self, width: i32) -> f64 {
         let wsize = self.size.borrow();
-        let w_width = wsize.logical_size().w;
+        let w_width = wsize.logical_size().width;
         f64::max(self.location.x * width as f64 / w_width, 0.0)
     }
 
     fn y_transformed(&self, height: i32) -> f64 {
         let wsize = self.size.borrow();
-        let w_height = wsize.logical_size().h;
+        let w_height = wsize.logical_size().height;
         f64::max(self.location.y * height as f64 / w_height, 0.0)
     }
 }

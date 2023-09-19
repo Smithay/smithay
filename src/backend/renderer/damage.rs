@@ -169,7 +169,7 @@
 //!             // Update the changed parts of the buffer
 //!
 //!             // Return the updated parts
-//!             Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))])
+//!             Result::<_, ()>::Ok(vec![Rectangle::new(Point::default(), (WIDTH, HEIGHT))])
 //!         });
 //!
 //!         last_update = now;
@@ -407,7 +407,7 @@ impl OutputDamageTracker {
         // We have to apply to output transform to the output size so that the intersection
         // tests in damage_output_internal produces the correct results and do not crop
         // damage with the wrong size
-        let output_geo = Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(output_size));
+        let output_geo = Rectangle::new((0, 0).into(), output_transform.transform_size(output_size));
 
         // This will hold all the damage we need for this rendering step
         let mut damage: Vec<Rectangle<i32, Physical>> = Vec::new();
@@ -455,11 +455,11 @@ impl OutputDamageTracker {
         let mut z_index = 0;
         for element in elements.iter() {
             let element_id = element.id();
-            let element_loc = element.geometry(output_scale).loc;
+            let element_loc = element.geometry(output_scale).origin;
 
             // First test if the element overlaps with the output
             // if not we can skip it
-            let element_output_geometry = match element.geometry(output_scale).intersection(output_geo) {
+            let element_output_geometry = match element.geometry(output_scale).intersection(&output_geo) {
                 Some(geo) => geo,
                 None => continue,
             };
@@ -468,7 +468,7 @@ impl OutputDamageTracker {
             let element_visible_area = element_output_geometry
                 .subtract_rects(opaque_regions.iter().flat_map(|(_, r)| r).copied())
                 .into_iter()
-                .fold(0usize, |acc, item| acc + (item.size.w * item.size.h) as usize);
+                .fold(0usize, |acc, item| acc + (item.size.width * item.size.height) as usize);
 
             // No need to draw a completely hidden element
             if element_visible_area == 0 {
@@ -489,10 +489,10 @@ impl OutputDamageTracker {
                 )
                 .into_iter()
                 .map(|mut d| {
-                    d.loc += element_loc;
+                    d.origin += element_loc;
                     d
                 })
-                .filter_map(|geo| geo.intersection(output_geo))
+                .filter_map(|geo| geo.intersection(&output_geo))
                 .collect::<Vec<_>>();
             damage.extend(element_output_damage);
 
@@ -500,10 +500,10 @@ impl OutputDamageTracker {
                 .opaque_regions(output_scale)
                 .into_iter()
                 .map(|mut region| {
-                    region.loc += element_loc;
+                    region.origin += element_loc;
                     region
                 })
-                .filter_map(|geo| geo.intersection(output_geo))
+                .filter_map(|geo| geo.intersection(&output_geo))
                 .collect::<Vec<_>>();
             opaque_regions.push((z_index, element_opaque_regions));
             render_elements.push(element);
@@ -534,7 +534,7 @@ impl OutputDamageTracker {
                     state
                         .last_instances
                         .iter()
-                        .filter_map(|i| i.last_geometry.intersection(output_geo)),
+                        .filter_map(|i| i.last_geometry.intersection(&output_geo)),
                     opaque_regions
                         .iter()
                         .filter(|(z_index, _)| state.last_instances.iter().any(|i| *z_index < i.last_z_index))
@@ -555,7 +555,7 @@ impl OutputDamageTracker {
                 .map(|s| !s.instance_matches(element_geometry, element_alpha, z_index))
                 .unwrap_or(true)
             {
-                let mut element_damage = if let Some(damage) = element_geometry.intersection(output_geo) {
+                let mut element_damage = if let Some(damage) = element_geometry.intersection(&output_geo) {
                     vec![damage]
                 } else {
                     vec![]
@@ -565,7 +565,7 @@ impl OutputDamageTracker {
                         state
                             .last_instances
                             .iter()
-                            .filter_map(|i| i.last_geometry.intersection(output_geo)),
+                            .filter_map(|i| i.last_geometry.intersection(&output_geo)),
                     );
                 }
 
@@ -627,7 +627,7 @@ impl OutputDamageTracker {
         // filter damage outside of the output gep and merge overlapping rectangles
         *damage = damage
             .drain(..)
-            .filter_map(|rect| rect.intersection(output_geo))
+            .filter_map(|rect| rect.intersection(&output_geo))
             .fold(Vec::new(), |new_damage, mut rect| {
                 // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
                 let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
@@ -715,7 +715,7 @@ impl OutputDamageTracker {
         // We have to apply to output transform to the output size so that the intersection
         // tests in damage_output_internal produces the correct results and do not crop
         // damage with the wrong size
-        let output_geo = Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(output_size));
+        let output_geo = Rectangle::new((0, 0).into(), output_transform.transform_size(output_size));
 
         // This will hold all the damage we need for this rendering step
         let mut damage: Vec<Rectangle<i32, Physical>> = Vec::new();
@@ -765,7 +765,7 @@ impl OutputDamageTracker {
                 let element_geometry = element.geometry(output_scale);
 
                 let element_damage = Rectangle::subtract_rects_many(
-                    damage.iter().filter_map(|d| d.intersection(element_geometry)),
+                    damage.iter().filter_map(|d| d.intersection(&element_geometry)),
                     opaque_regions
                         .iter()
                         .filter(|(index, _)| *index < z_index)
@@ -774,7 +774,7 @@ impl OutputDamageTracker {
                 )
                 .into_iter()
                 .map(|mut d| {
-                    d.loc -= element_geometry.loc;
+                    d.origin -= element_geometry.origin;
                     d
                 })
                 .collect::<Vec<_>>();

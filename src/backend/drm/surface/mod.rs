@@ -15,7 +15,7 @@ use super::{
     device::PlaneClaimStorage, error::Error, plane_type, DrmDeviceFd, PlaneClaim, PlaneType, Planes,
 };
 use crate::utils::DevPath;
-use crate::utils::{Buffer, Physical, Point, Rectangle, Transform};
+use crate::utils::{geometry::prelude::*, Buffer, Physical, Point, Rectangle, Transform};
 use atomic::AtomicDrmSurface;
 use legacy::LegacyDrmSurface;
 
@@ -82,14 +82,14 @@ impl PlaneDamageClips {
                         &src.size.to_logical(1f64, Transform::Normal),
                     )
                     .upscale(scale);
-                rect.loc += src.loc;
+                rect.origin += src.origin;
                 let rect = rect.to_i32_up();
 
                 drm_ffi::drm_mode_rect {
-                    x1: rect.loc.x,
-                    y1: rect.loc.y,
-                    x2: rect.loc.x.saturating_add(rect.size.w),
-                    y2: rect.loc.y.saturating_add(rect.size.h),
+                    x1: rect.origin.x,
+                    y1: rect.origin.y,
+                    x2: rect.origin.x.saturating_add(rect.size.width),
+                    y2: rect.origin.y.saturating_add(rect.size.height),
                 }
             })
             .collect::<Vec<_>>();
@@ -455,14 +455,14 @@ fn ensure_legacy_planes<'a>(
         return Err(Error::NoFramebuffer(state.handle));
     };
 
-    if config.dst.loc != Point::default() {
+    if config.dst.origin != Point::default() {
         // legacy does not support crtc position (technically we could do it,
         // but the position can only be changed by commit, not by page-flip,
         // so we just not allow it)
         return Err(Error::UnsupportedPlaneConfiguration(state.handle));
     }
 
-    if config.src.loc != Point::default()
+    if config.src.origin != Point::default()
         || config
             .src
             .size

@@ -147,7 +147,7 @@
 //! ```
 use crate::{
     backend::renderer::{utils::CommitCounter, Frame, Renderer},
-    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{geometry::prelude::*, Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
 use super::{AsRenderElements, Element, Id, Kind, RenderElement};
@@ -238,7 +238,7 @@ impl SolidColorRenderElement {
         alpha: f32,
         kind: Kind,
     ) -> Self {
-        let geo = Rectangle::from_loc_and_size(location, buffer.size.to_physical_precise_round(scale));
+        let geo = Rectangle::new(location.into(), buffer.size.to_physical_precise_round(scale));
         let mut color = buffer.color;
         color[3] *= alpha;
         Self::new(buffer.id.clone(), geo, buffer.commit, color, kind)
@@ -252,12 +252,12 @@ impl SolidColorRenderElement {
         color: [f32; 4],
         kind: Kind,
     ) -> Self {
-        let src = Rectangle::from_loc_and_size((0, 0), geometry.size)
+        let src = Rectangle::new((0, 0).into(), geometry.size)
             .to_f64()
             .to_logical(1f64)
             .to_buffer(1f64, Transform::Normal, &geometry.size.to_f64().to_logical(1f64));
         let opaque_regions = if color[3] == 1f32 {
-            vec![Rectangle::from_loc_and_size((0, 0), geometry.size)]
+            vec![Rectangle::new((0, 0).into(), geometry.size)]
         } else {
             vec![]
         };

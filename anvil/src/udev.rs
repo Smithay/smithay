@@ -1462,8 +1462,8 @@ fn render_surface<'a, 'b>(
     // draw input method surface if any
     let rectangle = input_method.coordinates();
     let position = Point::from((
-        rectangle.loc.x + rectangle.size.w,
-        rectangle.loc.y + rectangle.size.h,
+        rectangle.origin.x + rectangle.size.w,
+        rectangle.origin.y + rectangle.size.h,
     ));
     input_method.with_surface(|surface| {
         custom_elements.extend(AsRenderElements::<UdevRenderer<'a, 'b>>::render_elements(
@@ -1489,8 +1489,8 @@ fn render_surface<'a, 'b>(
         } else {
             (0, 0).into()
         };
-        let cursor_pos = pointer_location - output_geometry.loc.to_f64() - cursor_hotspot.to_f64();
-        let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
+        let cursor_pos = pointer_location - output_geometry.origin.to_f64() - cursor_hotspot.to_f64();
+        let cursor_pos_scaled = cursor_pos.to_physical(scale).round().to_i32();
 
         // set cursor
         pointer_element.set_texture(pointer_image.clone());

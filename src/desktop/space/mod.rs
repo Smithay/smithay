@@ -8,7 +8,7 @@ use crate::{
         Renderer, Texture,
     },
     output::{Output, OutputModeSource, OutputNoMode},
-    utils::{IsAlive, Logical, Point, Rectangle, Scale, Transform},
+    utils::{geometry::prelude::*, IsAlive, Logical, Point, Rectangle, Scale, Transform},
 };
 #[cfg(feature = "wayland_frontend")]
 use crate::{
@@ -292,13 +292,13 @@ impl<E: SpaceElement + PartialEq> Space<E> {
         let transform: Transform = o.current_transform();
         let state = output_state(self.id, o);
         o.current_mode().map(|mode| {
-            Rectangle::from_loc_and_size(
+            Rectangle::new(
                 state.location,
                 transform
                     .transform_size(mode.size)
                     .to_f64()
                     .to_logical(o.current_scale().fractional_scale())
-                    .to_i32_ceil(),
+                    .ceil().to_i32(),
             )
         })
     }
@@ -336,7 +336,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             .map(|o| {
                 let geo = self
                     .output_geometry(&o)
-                    .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (0, 0)));
+                    .unwrap_or_else(|| Rectangle::new((0, 0).into(), (0, 0).into()));
                 (o, geo)
             })
             .collect::<Vec<_>>();
@@ -345,9 +345,9 @@ impl<E: SpaceElement + PartialEq> Space<E> {
 
             for (output, output_geometry) in &outputs {
                 // Check if the bounding box of the toplevel intersects with the output
-                if let Some(mut overlap) = output_geometry.intersection(bbox) {
+                if let Some(mut overlap) = output_geometry.intersection(&bbox) {
                     // output_enter expects the overlap to be relative to the element
-                    overlap.loc -= bbox.loc;
+                    overlap.origin -= bbox.origin;
                     let old = e.outputs.insert(output.clone(), overlap);
                     if old.is_none() || matches!(old, Some(old_overlap) if old_overlap != overlap) {
                         e.element.output_enter(output, overlap);
@@ -398,7 +398,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
                 region.overlaps(geometry)
             })
             .flat_map(|e| {
-                let location = e.render_location() - region.loc;
+                let location = e.render_location() - region.origin;
                 e.element
                     .render_elements::<<E as AsRenderElements<R>>::RenderElement>(
                         renderer,
@@ -446,7 +446,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
             let layer_map = layer_map_for_output(output);
             space_elements.extend(layer_map.layers().rev().cloned().map(|l| SpaceElements::Layer {
                 surface: l,
-                output_location: output_geo.loc,
+                output_location: output_geo.origin,
             }));
         }
 
@@ -459,7 +459,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
                 output_geo.overlaps(geometry)
             })
             .flat_map(|e| {
-                let location = e.render_location() - output_geo.loc;
+                let location = e.render_location() - output_geo.origin;
                 e.render_elements::<SpaceRenderElements<R, <E as AsRenderElements<R>>::RenderElement>>(
                     renderer,
                     location.to_physical_precise_round(output_scale),
@@ -492,19 +492,19 @@ impl<E: SpaceElement> InnerElement<E> {
     // the inner geometry of the element in space coordinates
     fn geometry(&self) -> Rectangle<i32, Logical> {
         let mut geo = self.element.geometry();
-        geo.loc = self.location;
+        geo.origin = self.location;
         geo
     }
 
     // the bounding box of the element in space coordinates
     fn bbox(&self) -> Rectangle<i32, Logical> {
         let mut bbox = self.element.bbox();
-        bbox.loc += self.location - self.element.geometry().loc;
+        bbox.origin += self.location - self.element.geometry().origin;
         bbox
     }
 
     fn render_location(&self) -> Point<i32, Logical> {
-        self.location - self.element.geometry().loc
+        self.location - self.element.geometry().origin
     }
 }
 
@@ -605,7 +605,7 @@ where
         render_elements.extend(
             upper
                 .into_iter()
-                .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.loc, surface)))
+                .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.origin, surface)))
                 .flat_map(|(loc, surface)| {
                     AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
                         surface,
@@ -638,7 +638,7 @@ where
     render_elements.extend(
         lower
             .into_iter()
-            .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.loc, surface)))
+            .filter_map(|surface| layer_map.layer_geometry(surface).map(|geo| (geo.origin, surface)))
             .flat_map(|(loc, surface)| {
                 AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
                     surface,

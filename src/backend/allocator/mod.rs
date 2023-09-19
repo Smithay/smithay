@@ -43,11 +43,11 @@ pub use drm_fourcc::{
 pub trait Buffer {
     /// Width of the two-dimensional buffer
     fn width(&self) -> u32 {
-        self.size().w as u32
+        self.size().width as u32
     }
     /// Height of the two-dimensional buffer
     fn height(&self) -> u32 {
-        self.size().h as u32
+        self.size().height as u32
     }
     /// Size of the two-dimensional buffer
     fn size(&self) -> Size<i32, BufferCoords>;

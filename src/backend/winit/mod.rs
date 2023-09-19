@@ -34,7 +34,7 @@ use crate::{
             Bind,
         },
     },
-    utils::{Logical, Physical, Rectangle, Size},
+    utils::{geometry::prelude::*, Logical, Physical, Rectangle, Size},
 };
 use std::{cell::RefCell, rc::Rc, sync::Arc, time::Instant};
 use wayland_egl as wegl;
@@ -318,7 +318,7 @@ where
 
         // Were we told to resize?
         if let Some(size) = self.resize_notification.take() {
-            self.egl.resize(size.w, size.h, 0, 0);
+            self.egl.resize(size.width, size.height, 0, 0);
         }
 
         Ok(())
@@ -362,8 +362,8 @@ where
                 let damage = damage
                     .iter()
                     .map(|rect| {
-                        Rectangle::from_loc_and_size(
-                            (rect.loc.x, size.h - rect.loc.y - rect.size.h),
+                        Rectangle::new(
+                            (rect.origin.x, size.height - rect.origin.y - rect.size.height).into(),
                             rect.size,
                         )
                     })

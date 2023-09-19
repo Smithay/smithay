@@ -11,7 +11,7 @@ use crate::{
         Seat, SeatHandler,
     },
     output::{Output, WeakOutput},
-    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle, Serial},
+    utils::{geometry::prelude::*, user_data::UserDataMap, IsAlive, Logical, Point, Rectangle, Serial},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, SurfaceData, TraversalAction},
         dmabuf::DmabufFeedback,
@@ -68,15 +68,15 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
         RefCell::new(LayerMap {
             layers: IndexSet::new(),
             output: o.downgrade(),
-            zone: Rectangle::from_loc_and_size(
-                (0, 0),
+            zone: Rectangle::new(
+                (0, 0).into(),
                 o.current_mode()
                     .map(|mode| {
                         let logical_size = mode
                             .size
                             .to_f64()
                             .to_logical(o.current_scale().fractional_scale())
-                            .to_i32_round();
+                            .round().to_i32();
                         o.current_transform().transform_size(logical_size)
                     })
                     .unwrap_or_else(|| (0, 0).into()),
@@ -167,7 +167,7 @@ impl LayerMap {
         }
         let mut bbox = layer.bbox();
         let state = layer_state(layer);
-        bbox.loc += state.location;
+        bbox.origin += state.location;
         Some(bbox)
     }
 
@@ -182,7 +182,7 @@ impl LayerMap {
             let bbox_with_popups = {
                 let mut bbox = l.bbox_with_popups();
                 let state = layer_state(l);
-                bbox.loc += state.location;
+                bbox.origin += state.location;
                 bbox
             };
             bbox_with_popups.to_f64().contains(point)
@@ -256,8 +256,8 @@ impl LayerMap {
             let span = debug_span!("layer_map", output = output.name());
             let _guard = span.enter();
 
-            let output_rect = Rectangle::from_loc_and_size(
-                (0, 0),
+            let output_rect = Rectangle::new(
+                (0, 0).into(),
                 output
                     .current_mode()
                     .map(|mode| {
@@ -265,7 +265,7 @@ impl LayerMap {
                             .size
                             .to_f64()
                             .to_logical(output.current_scale().fractional_scale())
-                            .to_i32_round();
+                            .round().to_i32();
                         output.current_transform().transform_size(logical_size)
                     })
                     .unwrap_or_else(|| (0, 0).into()),
@@ -318,48 +318,48 @@ impl LayerMap {
 
                 // adjust the copy rect to account for the margins
                 if data.anchor.contains(Anchor::LEFT) {
-                    source.size.w -= data.margin.left
+                    source.size.width -= data.margin.left
                 }
                 if data.anchor.contains(Anchor::RIGHT) {
-                    source.size.w -= data.margin.right
+                    source.size.width -= data.margin.right
                 }
                 if data.anchor.contains(Anchor::TOP) {
-                    source.size.h -= data.margin.top
+                    source.size.height -= data.margin.top
                 }
                 if data.anchor.contains(Anchor::BOTTOM) {
-                    source.size.h -= data.margin.bottom
+                    source.size.height -= data.margin.bottom
                 }
 
                 let mut size = data.size;
-                size.w = size.w.min(source.size.w);
-                size.h = size.h.min(source.size.h);
-                if size.w == 0 {
-                    size.w = source.size.w / 2;
+                size.width = size.width.min(source.size.width);
+                size.height = size.height.min(source.size.height);
+                if size.width == 0 {
+                    size.width = source.size.width / 2;
                 }
-                if size.h == 0 {
-                    size.h = source.size.h / 2;
+                if size.height == 0 {
+                    size.height = source.size.height / 2;
                 }
                 if data.anchor.anchored_horizontally() {
-                    size.w = source.size.w;
+                    size.width = source.size.width;
                 }
                 if data.anchor.anchored_vertically() {
-                    size.h = source.size.h;
+                    size.height = source.size.height;
                 }
 
                 let x = if data.anchor.contains(Anchor::LEFT) {
-                    source.loc.x + data.margin.left
+                    source.origin.x + data.margin.left
                 } else if data.anchor.contains(Anchor::RIGHT) {
-                    source.loc.x + (source.size.w - size.w)
+                    source.origin.x + (source.size.width - size.width)
                 } else {
-                    source.loc.x + ((source.size.w / 2) - (size.w / 2))
+                    source.origin.x + ((source.size.width / 2) - (size.width / 2))
                 };
 
                 let y = if data.anchor.contains(Anchor::TOP) {
-                    source.loc.y + data.margin.top
+                    source.origin.y + data.margin.top
                 } else if data.anchor.contains(Anchor::BOTTOM) {
-                    source.loc.y + (source.size.h - size.h)
+                    source.origin.y + (source.size.height - size.height)
                 } else {
-                    source.loc.y + ((source.size.h / 2) - (size.h / 2))
+                    source.origin.y + ((source.size.height / 2) - (size.height / 2))
                 };
 
                 let location: Point<i32, Logical> = (x, y).into();
@@ -367,42 +367,42 @@ impl LayerMap {
                 if let ExclusiveZone::Exclusive(amount) = data.exclusive_zone {
                     match data.anchor {
                         x if x.contains(Anchor::TOP) && x.contains(Anchor::BOTTOM) => {
-                            zone.size.w -= amount as i32;
+                            zone.size.width -= amount as i32;
                             if x.contains(Anchor::LEFT) {
-                                zone.loc.x += amount as i32 + data.margin.left;
-                                zone.size.w -= data.margin.left;
+                                zone.origin.x += amount as i32 + data.margin.left;
+                                zone.size.width -= data.margin.left;
                             }
                             if x.contains(Anchor::RIGHT) {
-                                zone.size.w -= data.margin.right
+                                zone.size.width -= data.margin.right
                             }
                         }
                         x if x.contains(Anchor::LEFT) && x.contains(Anchor::RIGHT) => {
-                            zone.size.h -= amount as i32;
+                            zone.size.height -= amount as i32;
                             if x.contains(Anchor::TOP) {
-                                zone.loc.y += amount as i32 + data.margin.top;
-                                zone.size.h -= data.margin.top
+                                zone.origin.y += amount as i32 + data.margin.top;
+                                zone.size.height -= data.margin.top
                             }
                             if x.contains(Anchor::BOTTOM) {
-                                zone.size.h -= data.margin.bottom
+                                zone.size.height -= data.margin.bottom
                             }
                         }
                         x if x == Anchor::all() => {
-                            zone.size.w = 0;
-                            zone.size.h = 0;
+                            zone.size.width = 0;
+                            zone.size.height = 0;
                         }
                         x if x.contains(Anchor::LEFT) && !x.contains(Anchor::RIGHT) => {
-                            zone.loc.x += amount as i32 + data.margin.left;
-                            zone.size.w -= amount as i32 + data.margin.left;
+                            zone.origin.x += amount as i32 + data.margin.left;
+                            zone.size.width -= amount as i32 + data.margin.left;
                         }
                         x if x.contains(Anchor::TOP) && !x.contains(Anchor::BOTTOM) => {
-                            zone.loc.y += amount as i32 + data.margin.top;
-                            zone.size.h -= amount as i32 + data.margin.top;
+                            zone.origin.y += amount as i32 + data.margin.top;
+                            zone.size.height -= amount as i32 + data.margin.top;
                         }
                         x if x.contains(Anchor::RIGHT) && !x.contains(Anchor::LEFT) => {
-                            zone.size.w -= amount as i32 + data.margin.right;
+                            zone.size.width -= amount as i32 + data.margin.right;
                         }
                         x if x.contains(Anchor::BOTTOM) && !x.contains(Anchor::TOP) => {
-                            zone.size.h -= amount as i32 + data.margin.bottom;
+                            zone.size.height -= amount as i32 + data.margin.bottom;
                         }
                         _ => {}
                     }

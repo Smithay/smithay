@@ -160,7 +160,7 @@ use crate::{
         SwapBuffersError,
     },
     output::{OutputModeSource, OutputNoMode},
-    utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{geometry::prelude::*, Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
 use super::{DrmDeviceFd, DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes};
@@ -935,12 +935,11 @@ impl<'a, 'b, B: Buffer> Element for SwapchainElement<'a, 'b, B> {
     }
 
     fn src(&self) -> Rectangle<f64, BufferCoords> {
-        Rectangle::from_loc_and_size((0, 0), self.slot.size()).to_f64()
+        Rectangle::from_size(self.slot.size()).to_f64()
     }
 
     fn geometry(&self, _scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(
-            (0, 0),
+        Rectangle::from_size(
             self.slot.size().to_logical(1, self.transform).to_physical(1),
         )
     }
@@ -1167,8 +1166,7 @@ where
                     _ => unreachable!(),
                 };
                 let size = dmabuf.size();
-                let geometry = Rectangle::from_loc_and_size(
-                    (0, 0),
+                let geometry = Rectangle::from_size(
                     size.to_logical(1, Transform::Normal).to_physical(1),
                 );
                 opaque_regions.push(geometry);
@@ -1203,7 +1201,7 @@ where
         if let Some((sync, dmabuf, geometry)) = primary_dmabuf {
             let blit_damage = damage
                 .iter()
-                .filter_map(|d| d.intersection(geometry))
+                .filter_map(|d| d.intersection(&geometry))
                 .collect::<Vec<_>>();
 
             trace!("blitting frame with damage: {:#?}", blit_damage);
@@ -1235,8 +1233,8 @@ where
                 let element_damage = damage
                     .iter()
                     .filter_map(|d| {
-                        d.intersection(dst).map(|mut d| {
-                            d.loc -= dst.loc;
+                        d.intersection(&dst).map(|mut d| {
+                            d.origin -= dst.origin;
                             d
                         })
                     })
@@ -1485,7 +1483,7 @@ where
             .overlay
             .sort_by_key(|p| std::cmp::Reverse(p.zpos.unwrap_or_default()));
 
-        let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
+        let cursor_size = Size::from((cursor_size.width as i32, cursor_size.height as i32));
         let damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
         let supports_fencing =
             !surface.is_legacy() && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?;
@@ -1690,8 +1688,8 @@ where
             element_state: None,
             config: Some(PlaneConfig {
                 properties: PlaneProperties {
-                    src: Rectangle::from_loc_and_size(Point::default(), dmabuf.size()).to_f64(),
-                    dst: Rectangle::from_loc_and_size(Point::default(), mode_size),
+                    src: Rectangle::from_size(dmabuf.size()).to_f64(),
+                    dst: Rectangle::from_size(mode_size),
                     transform: Transform::Normal,
                     alpha: 1.0,
                     format: buffer.format(),
@@ -1762,7 +1760,7 @@ where
         // The renderer (and also the logic for direct scan-out) will take care of the
         // actual transform during rendering
         let output_geometry: Rectangle<_, Physical> =
-            Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(current_size));
+            Rectangle::from_size(output_transform.transform_size(current_size));
 
         // We always acquire a buffer from the swapchain even
         // if we could end up doing direct scan-out on the primary plane.
@@ -1855,8 +1853,8 @@ where
             element_state: None,
             config: Some(PlaneConfig {
                 properties: PlaneProperties {
-                    src: Rectangle::from_loc_and_size(Point::default(), dmabuf.size()).to_f64(),
-                    dst: Rectangle::from_loc_and_size(Point::default(), current_size),
+                    src: Rectangle::from_size(dmabuf.size()).to_f64(),
+                    dst: Rectangle::from_size(current_size),
                     // NOTE: We do not apply the transform to the primary plane as this is handled by the dtr/renderer
                     transform: Transform::Normal,
                     alpha: 1.0,
@@ -1885,11 +1883,11 @@ where
         for element in elements.iter() {
             let element_id = element.id();
             let element_geometry = element.geometry(output_scale);
-            let element_loc = element_geometry.loc;
+            let element_loc = element_geometry.origin;
 
             // First test if the element overlaps with the output
             // if not we can skip it
-            let element_output_geometry = match element_geometry.intersection(output_geometry) {
+            let element_output_geometry = match element_geometry.intersection(&output_geometry) {
                 Some(geo) => geo,
                 None => continue,
             };
@@ -1898,7 +1896,7 @@ where
             let element_visible_area = element_output_geometry
                 .subtract_rects(opaque_regions.iter().copied())
                 .into_iter()
-                .fold(0usize, |acc, item| acc + (item.size.w * item.size.h) as usize);
+                .fold(0usize, |acc, item| acc + (item.size.width * item.size.height) as usize);
 
             if element_visible_area == 0 {
                 // No need to draw a completely hidden element
@@ -1915,7 +1913,7 @@ where
             }
 
             let element_opaque_regions = element.opaque_regions(output_scale);
-            let element_is_opaque = Rectangle::from_loc_and_size(Point::default(), element_geometry.size)
+            let element_is_opaque = Rectangle::from_size(element_geometry.size)
                 .subtract_rects(element_opaque_regions.iter().copied())
                 .is_empty();
 
@@ -1923,10 +1921,10 @@ where
                 element_opaque_regions
                     .into_iter()
                     .map(|mut region| {
-                        region.loc += element_loc;
+                        region.origin += element_loc;
                         region
                     })
-                    .filter_map(|geo| geo.intersection(output_geometry)),
+                    .filter_map(|geo| geo.intersection(&output_geometry)),
             );
 
             output_elements.push((element, element_geometry, element_visible_area, element_is_opaque));
@@ -1964,7 +1962,7 @@ where
                 let crtc_background_matches_clear_color =
                     (clear_color[0] == 0f32 && clear_color[1] == 0f32 && clear_color[2] == 0f32)
                         || clear_color[3] == 0f32;
-                let element_spans_complete_output = element_geometry.contains_rect(output_geometry);
+                let element_spans_complete_output = element_geometry.contains_rect(&output_geometry);
                 let overlaps_with_underlay = self
                     .planes
                     .overlay
@@ -2819,7 +2817,7 @@ where
 
         // if the element is greater than the cursor size we can not
         // use the cursor plane to scan out the element
-        if element_size.w > self.cursor_size.w || element_size.h > self.cursor_size.h {
+        if element_size.width > self.cursor_size.width || element_size.height > self.cursor_size.height {
             trace!(
                 "element {:?} too big for cursor {:?}, skipping",
                 element.id(),
@@ -2873,7 +2871,7 @@ where
                 state
                     .config
                     .as_ref()
-                    .map(|config| config.properties.dst.loc != cursor_plane_location)
+                    .map(|config| config.properties.dst.origin != cursor_plane_location)
             })
             .unwrap_or(true);
 
@@ -2899,7 +2897,7 @@ where
             // does not not to be tested
             plane_state.needs_test = false;
             let config = plane_state.config.as_mut().unwrap();
-            config.properties.dst.loc = cursor_plane_location;
+            config.properties.dst.origin = cursor_plane_location;
             frame_state.set_state(plane_info.handle, plane_state);
             return Some(plane_info.into());
         }
@@ -2913,8 +2911,8 @@ where
         // if we fail to create a buffer we can just return false and
         // force the cursor to be rendered on the primary plane
         let mut cursor_buffer = match cursor_state.allocator.create_buffer(
-            self.cursor_size.w as u32,
-            self.cursor_size.h as u32,
+            self.cursor_size.width as u32,
+            self.cursor_size.height as u32,
             DrmFourcc::Argb8888,
             &[DrmModifier::Linear],
         ) {
@@ -2986,11 +2984,11 @@ where
 
             frame.clear(
                 [0f32, 0f32, 0f32, 0f32],
-                &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
+                &[Rectangle::from_size(self.cursor_size)],
             )?;
 
             let src = element.src();
-            let dst = Rectangle::from_loc_and_size((0, 0), element_geometry.size);
+            let dst = Rectangle::from_size(element_geometry.size);
             element.draw(&mut frame, src, dst, &[dst])?;
 
             frame.finish()?.wait();
@@ -3008,7 +3006,7 @@ where
             return None;
         }
 
-        let copy_rect = Rectangle::from_loc_and_size((0, 0), cursor_buffer_size);
+        let copy_rect = Rectangle::from_size(cursor_buffer_size);
         let mapping = match renderer.copy_framebuffer(copy_rect, DrmFourcc::Argb8888) {
             Ok(mapping) => mapping,
             Err(err) => {
@@ -3029,8 +3027,8 @@ where
             return None;
         }
 
-        let src = Rectangle::from_loc_and_size(Point::default(), cursor_buffer_size).to_f64();
-        let dst = Rectangle::from_loc_and_size(cursor_plane_location, self.cursor_size);
+        let src = Rectangle::from_size(cursor_buffer_size).to_f64();
+        let dst = Rectangle::new(cursor_plane_location, self.cursor_size);
 
         let config = PlaneConfig {
             properties: PlaneProperties {
@@ -3669,7 +3667,7 @@ where
         let element_output_damage = element_damage
             .into_iter()
             .map(|mut rect| {
-                rect.loc += element_config.geometry.loc;
+                rect.origin += element_config.geometry.origin;
                 rect
             })
             .collect::<Vec<_>>();
