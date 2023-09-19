@@ -65,6 +65,7 @@ xkbcommon = { version = "0.5.0", features = ["wayland"]}
 scan_fmt = { version = "0.2.3", default-features = false }
 encoding = { version = "0.2.33", optional = true }
 profiling = "1.0"
+smallvec = "1.11"
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }

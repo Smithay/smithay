@@ -196,6 +196,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use indexmap::IndexMap;
+use smallvec::{smallvec, SmallVec};
 use tracing::{info_span, instrument, trace};
 
 use crate::{
@@ -208,6 +209,7 @@ use super::{
     element::{Element, Id, RenderElement, RenderElementState, RenderElementStates},
     sync::SyncPoint,
     utils::CommitCounter,
+    Bind,
 };
 
 use super::{Renderer, Texture};
@@ -230,7 +232,7 @@ impl ElementInstanceState {
 #[derive(Debug, Clone)]
 struct ElementState {
     last_commit: CommitCounter,
-    last_instances: Vec<ElementInstanceState>,
+    last_instances: SmallVec<[ElementInstanceState; 1]>,
 }
 
 impl ElementState {
@@ -347,6 +349,27 @@ impl OutputDamageTracker {
         &self.mode
     }
 
+    /// Render this output with the provided [`Renderer`] in the provided buffer
+    ///
+    /// - `elements` for this output in front-to-back order
+    #[instrument(level = "trace", parent = &self.span, skip(renderer, elements, buffer))]
+    #[profiling::function]
+    pub fn render_output_with<E, R, B>(
+        &mut self,
+        renderer: &mut R,
+        buffer: B,
+        age: usize,
+        elements: &[E],
+        clear_color: [f32; 4],
+    ) -> Result<RenderOutputResult, Error<R>>
+    where
+        E: RenderElement<R>,
+        R: Renderer + Bind<B>,
+        <R as Renderer>::TextureId: Texture,
+    {
+        self.render_output_internal(renderer, age, elements, clear_color, |r| r.bind(buffer))
+    }
+
     /// Render this output with the provided [`Renderer`]
     ///
     /// - `elements` for this output in front-to-back order
@@ -364,126 +387,7 @@ impl OutputDamageTracker {
         R: Renderer,
         <R as Renderer>::TextureId: Texture,
     {
-        let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
-
-        // Output transform is specified in surface-rotation, so inversion gives us the
-        // render transform for the output itself.
-        let output_transform = output_transform.invert();
-
-        // We have to apply to output transform to the output size so that the intersection
-        // tests in damage_output_internal produces the correct results and do not crop
-        // damage with the wrong size
-        let output_geo = Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(output_size));
-
-        // This will hold all the damage we need for this rendering step
-        let mut damage: Vec<Rectangle<i32, Physical>> = Vec::new();
-        let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
-        let mut opaque_regions: Vec<(usize, Vec<Rectangle<i32, Physical>>)> = Vec::new();
-        let states = self.damage_output_internal(
-            age,
-            elements,
-            output_scale,
-            output_geo,
-            &mut damage,
-            &mut render_elements,
-            &mut opaque_regions,
-        );
-
-        if damage.is_empty() {
-            trace!("no damage, skipping rendering");
-            return Ok(RenderOutputResult::skipped(states));
-        }
-
-        trace!(
-            "rendering with damage {:?} and opaque regions {:?}",
-            damage,
-            opaque_regions
-        );
-
-        let render_res = (|| {
-            let mut frame = renderer.render(output_size, output_transform)?;
-
-            let clear_damage = opaque_regions.iter().flat_map(|(_, regions)| regions).fold(
-                damage.clone(),
-                |damage, region| {
-                    damage
-                        .into_iter()
-                        .flat_map(|geo| geo.subtract_rect(*region))
-                        .collect::<Vec<_>>()
-                },
-            );
-
-            trace!("clearing damage {:?}", clear_damage);
-            frame.clear(clear_color, &clear_damage)?;
-
-            for (mut z_index, element) in render_elements.iter().rev().enumerate() {
-                // This is necessary because we reversed the render elements to draw
-                // them back to front, but z-index including opaque regions is defined
-                // front to back
-                z_index = render_elements.len() - 1 - z_index;
-
-                let element_id = element.id();
-                let element_geometry = element.geometry(output_scale);
-
-                let element_damage = opaque_regions
-                    .iter()
-                    .filter(|(index, _)| *index < z_index)
-                    .flat_map(|(_, regions)| regions)
-                    .fold(
-                        damage
-                            .clone()
-                            .into_iter()
-                            .filter_map(|d| d.intersection(element_geometry))
-                            .collect::<Vec<_>>(),
-                        |damage, region| {
-                            damage
-                                .into_iter()
-                                .flat_map(|geo| geo.subtract_rect(*region))
-                                .collect::<Vec<_>>()
-                        },
-                    )
-                    .into_iter()
-                    .map(|mut d| {
-                        d.loc -= element_geometry.loc;
-                        d
-                    })
-                    .collect::<Vec<_>>();
-
-                if element_damage.is_empty() {
-                    trace!(
-                        "skipping rendering element {:?} with geometry {:?}, no damage",
-                        element_id,
-                        element_geometry
-                    );
-                    continue;
-                }
-
-                trace!(
-                    "rendering element {:?} with geometry {:?} and damage {:?}",
-                    element_id,
-                    element_geometry,
-                    element_damage,
-                );
-
-                element.draw(&mut frame, element.src(), element_geometry, &element_damage)?;
-            }
-
-            frame.finish()
-        })();
-
-        match render_res {
-            Ok(sync) => Ok(RenderOutputResult {
-                sync,
-                damage: Some(damage),
-                states,
-            }),
-            Err(err) => {
-                // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
-                // thus clean our old states before returning
-                self.last_state = Default::default();
-                Err(Error::Rendering(err))
-            }
-        }
+        self.render_output_internal(renderer, age, elements, clear_color, |_| Ok(()))
     }
 
     /// Damage this output and return the damage without actually rendering the difference
@@ -561,15 +465,8 @@ impl OutputDamageTracker {
             };
 
             // Then test if the element is completely hidden behind opaque regions
-            let element_visible_area = opaque_regions
-                .iter()
-                .flat_map(|(_, opaque_regions)| opaque_regions)
-                .fold([element_output_geometry].to_vec(), |geometry, opaque_region| {
-                    geometry
-                        .into_iter()
-                        .flat_map(|g| g.subtract_rect(*opaque_region))
-                        .collect::<Vec<_>>()
-                })
+            let element_visible_area = element_output_geometry
+                .subtract_rects(opaque_regions.iter().flat_map(|(_, r)| r).copied())
                 .into_iter()
                 .fold(0usize, |acc, item| acc + (item.size.w * item.size.h) as usize);
 
@@ -633,23 +530,17 @@ impl OutputDamageTracker {
             .iter()
             .filter(|(id, _)| !render_elements.iter().any(|e| e.id() == *id))
             .flat_map(|(_, state)| {
-                opaque_regions
-                    .iter()
-                    .filter(|(z_index, _)| state.last_instances.iter().any(|i| *z_index < i.last_z_index))
-                    .flat_map(|(_, opaque_regions)| opaque_regions)
-                    .fold(
-                        state
-                            .last_instances
-                            .iter()
-                            .filter_map(|i| i.last_geometry.intersection(output_geo))
-                            .collect::<Vec<_>>(),
-                        |damage, opaque_region| {
-                            damage
-                                .into_iter()
-                                .flat_map(|damage| damage.subtract_rect(*opaque_region))
-                                .collect::<Vec<_>>()
-                        },
-                    )
+                Rectangle::subtract_rects_many(
+                    state
+                        .last_instances
+                        .iter()
+                        .filter_map(|i| i.last_geometry.intersection(output_geo)),
+                    opaque_regions
+                        .iter()
+                        .filter(|(z_index, _)| state.last_instances.iter().any(|i| *z_index < i.last_z_index))
+                        .flat_map(|(_, opaque_regions)| opaque_regions)
+                        .copied(),
+                )
             })
             .collect::<Vec<_>>();
         damage.extend(elements_gone);
@@ -677,31 +568,23 @@ impl OutputDamageTracker {
                             .filter_map(|i| i.last_geometry.intersection(output_geo)),
                     );
                 }
-                damage.extend(
+
+                damage.extend(Rectangle::subtract_rects_many_in_place(
+                    element_damage,
                     opaque_regions
                         .iter()
                         .filter(|(index, _)| *index < z_index)
                         .flat_map(|(_, opaque_regions)| opaque_regions)
-                        .fold(element_damage, |damage, opaque_region| {
-                            damage
-                                .into_iter()
-                                .flat_map(|damage| damage.subtract_rect(*opaque_region))
-                                .collect::<Vec<_>>()
-                        }),
-                );
+                        .copied(),
+                ));
             }
         }
 
         // damage regions no longer covered by opaque regions
-        let opaque_regions_gone = opaque_regions.iter().flat_map(|(_, r)| r.iter()).fold(
+        damage.extend(Rectangle::subtract_rects_many_in_place(
             self.last_state.opaque_regions.clone(),
-            |acc, item| {
-                acc.into_iter()
-                    .flat_map(|region| region.subtract_rect(*item))
-                    .collect::<Vec<_>>()
-            },
-        );
-        damage.extend(opaque_regions_gone);
+            opaque_regions.iter().flat_map(|(_, r)| r).copied(),
+        ));
 
         if self
             .last_state
@@ -784,7 +667,7 @@ impl OutputDamageTracker {
                         id.clone(),
                         ElementState {
                             last_commit: current_commit,
-                            last_instances: vec![ElementInstanceState {
+                            last_instances: smallvec![ElementInstanceState {
                                 last_geometry: elem_geometry,
                                 last_alpha: elem_alpha,
                                 last_z_index: z_index,
@@ -807,5 +690,129 @@ impl OutputDamageTracker {
         self.last_state.opaque_regions.shrink_to_fit();
 
         element_render_states
+    }
+
+    fn render_output_internal<E, R, F>(
+        &mut self,
+        renderer: &mut R,
+        age: usize,
+        elements: &[E],
+        clear_color: [f32; 4],
+        pre_render: F,
+    ) -> Result<RenderOutputResult, Error<R>>
+    where
+        E: RenderElement<R>,
+        R: Renderer,
+        <R as Renderer>::TextureId: Texture,
+        F: FnOnce(&mut R) -> Result<(), <R as Renderer>::Error>,
+    {
+        let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
+
+        // Output transform is specified in surface-rotation, so inversion gives us the
+        // render transform for the output itself.
+        let output_transform = output_transform.invert();
+
+        // We have to apply to output transform to the output size so that the intersection
+        // tests in damage_output_internal produces the correct results and do not crop
+        // damage with the wrong size
+        let output_geo = Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(output_size));
+
+        // This will hold all the damage we need for this rendering step
+        let mut damage: Vec<Rectangle<i32, Physical>> = Vec::new();
+        let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
+        let mut opaque_regions: Vec<(usize, Vec<Rectangle<i32, Physical>>)> = Vec::new();
+        let states = self.damage_output_internal(
+            age,
+            elements,
+            output_scale,
+            output_geo,
+            &mut damage,
+            &mut render_elements,
+            &mut opaque_regions,
+        );
+
+        if damage.is_empty() {
+            trace!("no damage, skipping rendering");
+            return Ok(RenderOutputResult::skipped(states));
+        }
+
+        trace!(
+            "rendering with damage {:?} and opaque regions {:?}",
+            damage,
+            opaque_regions
+        );
+
+        pre_render(renderer).map_err(Error::Rendering)?;
+
+        let render_res = (|| {
+            let mut frame = renderer.render(output_size, output_transform)?;
+
+            let clear_damage = Rectangle::subtract_rects_many_in_place(
+                damage.clone(),
+                opaque_regions.iter().flat_map(|(_, regions)| regions).copied(),
+            );
+
+            trace!("clearing damage {:?}", clear_damage);
+            frame.clear(clear_color, &clear_damage)?;
+
+            for (mut z_index, element) in render_elements.iter().rev().enumerate() {
+                // This is necessary because we reversed the render elements to draw
+                // them back to front, but z-index including opaque regions is defined
+                // front to back
+                z_index = render_elements.len() - 1 - z_index;
+
+                let element_id = element.id();
+                let element_geometry = element.geometry(output_scale);
+
+                let element_damage = Rectangle::subtract_rects_many(
+                    damage.iter().filter_map(|d| d.intersection(element_geometry)),
+                    opaque_regions
+                        .iter()
+                        .filter(|(index, _)| *index < z_index)
+                        .flat_map(|(_, regions)| regions)
+                        .copied(),
+                )
+                .into_iter()
+                .map(|mut d| {
+                    d.loc -= element_geometry.loc;
+                    d
+                })
+                .collect::<Vec<_>>();
+
+                if element_damage.is_empty() {
+                    trace!(
+                        "skipping rendering element {:?} with geometry {:?}, no damage",
+                        element_id,
+                        element_geometry
+                    );
+                    continue;
+                }
+
+                trace!(
+                    "rendering element {:?} with geometry {:?} and damage {:?}",
+                    element_id,
+                    element_geometry,
+                    element_damage,
+                );
+
+                element.draw(&mut frame, element.src(), element_geometry, &element_damage)?;
+            }
+
+            frame.finish()
+        })();
+
+        match render_res {
+            Ok(sync) => Ok(RenderOutputResult {
+                sync,
+                damage: Some(damage),
+                states,
+            }),
+            Err(err) => {
+                // if the rendering errors on us, we need to be prepared, that this whole buffer was partially updated and thus now unusable.
+                // thus clean our old states before returning
+                self.last_state = Default::default();
+                Err(Error::Rendering(err))
+            }
+        }
     }
 }

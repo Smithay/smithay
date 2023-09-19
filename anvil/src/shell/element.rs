@@ -576,6 +576,7 @@ impl SpaceElement for WindowElement {
             WindowElement::X11(w) => SpaceElement::output_leave(w, output),
         }
     }
+    #[profiling::function]
     fn refresh(&self) {
         match self {
             WindowElement::Wayland(w) => SpaceElement::refresh(w),

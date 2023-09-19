@@ -483,6 +483,11 @@ pub trait ImportDma: Renderer {
         Box::new(std::iter::empty())
     }
 
+    /// Test if a specific dmabuf [`Format`] is supported
+    fn has_dmabuf_format(&self, format: Format) -> bool {
+        self.dmabuf_formats().any(|f| f == format)
+    }
+
     /// Import a given raw dmabuf into the renderer.
     ///
     /// Returns a texture_id, which can be used with [`Frame::render_texture_from_to`] (or [`Frame::render_texture_at`])
@@ -540,6 +545,7 @@ pub trait ImportAll: Renderer {
     feature = "use_system_lib"
 ))]
 impl<R: Renderer + ImportMemWl + ImportEgl + ImportDmaWl> ImportAll for R {
+    #[profiling::function]
     fn import_buffer(
         &mut self,
         buffer: &wl_buffer::WlBuffer,
@@ -805,6 +811,7 @@ pub fn buffer_dimensions(buffer: &wl_buffer::WlBuffer) -> Option<Size<i32, Buffe
 ///
 /// *Note*: This will only return y-inverted for buffer types known to smithay (see [`buffer_type`])
 #[cfg(feature = "wayland_frontend")]
+#[profiling::function]
 pub fn buffer_y_inverted(buffer: &wl_buffer::WlBuffer) -> Option<bool> {
     if let Ok(dmabuf) = crate::wayland::dmabuf::get_dmabuf(buffer) {
         return Some(dmabuf.y_inverted());

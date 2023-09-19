@@ -180,22 +180,17 @@ impl RendererSurfaceState {
                             |mut new_regions, (kind, rect)| {
                                 match kind {
                                     RectangleKind::Add => {
-                                        let added_regions = new_regions
-                                            .iter()
-                                            .filter(|region| region.overlaps_or_touches(rect))
-                                            .fold(vec![rect], |new_regions, existing_region| {
-                                                new_regions
-                                                    .into_iter()
-                                                    .flat_map(|region| region.subtract_rect(*existing_region))
-                                                    .collect::<Vec<_>>()
-                                            });
+                                        let added_regions = rect.subtract_rects(
+                                            new_regions
+                                                .iter()
+                                                .filter(|region| region.overlaps_or_touches(rect))
+                                                .copied(),
+                                        );
                                         new_regions.extend(added_regions);
                                     }
                                     RectangleKind::Subtract => {
-                                        new_regions = new_regions
-                                            .into_iter()
-                                            .flat_map(|r| r.subtract_rect(rect))
-                                            .collect::<Vec<_>>();
+                                        new_regions =
+                                            Rectangle::subtract_rects_many_in_place(new_regions, [rect]);
                                     }
                                 }
 
@@ -558,14 +553,8 @@ where
         let element_geometry = element.geometry(scale);
 
         // Then test if the element is completely hidden behind opaque regions
-        let is_hidden = opaque_regions
-            .iter()
-            .fold([element_geometry].to_vec(), |geometry, opaque_region| {
-                geometry
-                    .into_iter()
-                    .flat_map(|g| g.subtract_rect(*opaque_region))
-                    .collect::<Vec<_>>()
-            })
+        let is_hidden = element_geometry
+            .subtract_rects(opaque_regions.iter().copied())
             .is_empty();
 
         if is_hidden {
@@ -573,16 +562,10 @@ where
             continue;
         }
 
-        let damage = opaque_regions
-            .iter()
-            .fold(damage.to_vec(), |damage, opaque_region| {
-                damage
-                    .into_iter()
-                    .flat_map(|damage| damage.subtract_rect(*opaque_region))
-                    .collect::<Vec<_>>()
-            });
-
-        render_damage.extend(damage);
+        render_damage.extend(Rectangle::subtract_rects_many(
+            damage.iter().copied(),
+            opaque_regions.iter().copied(),
+        ));
 
         opaque_regions.extend(element.opaque_regions(scale).into_iter().map(|mut region| {
             region.loc += element_geometry.loc;
