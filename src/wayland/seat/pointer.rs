@@ -32,7 +32,9 @@ use crate::{
         Seat,
     },
     utils::{Serial, SERIAL_COUNTER},
-    wayland::{compositor, pointer_gestures::PointerGestureUserData},
+    wayland::{
+        compositor, pointer_constraints::with_pointer_constraint, pointer_gestures::PointerGestureUserData,
+    },
 };
 
 use super::{SeatHandler, SeatState, WaylandFocus};
@@ -192,6 +194,11 @@ where
         });
         if let Some(pointer) = seat.get_pointer() {
             *pointer.last_enter.lock().unwrap() = None;
+            with_pointer_constraint(self, &pointer, |constraint| {
+                if let Some(constraint) = constraint {
+                    constraint.deactivate();
+                }
+            });
         }
     }
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {

@@ -11,11 +11,11 @@ use smithay::{
         default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
     },
     delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_input_method_manager,
-    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_pointer_gestures,
-    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
-    delegate_security_context, delegate_shm, delegate_tablet_manager, delegate_text_input_manager,
-    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration,
-    delegate_xdg_shell,
+    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_pointer_constraints,
+    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection, delegate_relative_pointer,
+    delegate_seat, delegate_security_context, delegate_shm, delegate_tablet_manager,
+    delegate_text_input_manager, delegate_viewporter, delegate_virtual_keyboard_manager,
+    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{
         utils::{
             surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
@@ -54,6 +54,7 @@ use smithay::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
         output::OutputManagerState,
+        pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler, PointerConstraintsState},
         pointer_gestures::PointerGesturesState,
         presentation::PresentationState,
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
@@ -266,9 +267,9 @@ impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
     fn focus_changed(&mut self, seat: &Seat<Self>, target: Option<&FocusTarget>) {
         let dh = &self.display_handle;
 
-        let focus = target
-            .and_then(WaylandFocus::wl_surface)
-            .and_then(|s| dh.get_client(s.id()).ok());
+        let wl_surface = target.and_then(WaylandFocus::wl_surface);
+
+        let focus = wl_surface.and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, focus.clone());
         set_primary_focus(dh, seat, focus);
     }
@@ -302,6 +303,18 @@ delegate_virtual_keyboard_manager!(@<BackendData: Backend + 'static> AnvilState<
 delegate_pointer_gestures!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_relative_pointer!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData> {
+    fn new_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>) {
+        // XXX region
+        if pointer.current_focus().and_then(|x| x.wl_surface()).as_ref() == Some(surface) {
+            with_pointer_constraint(surface, pointer, |constraint| {
+                constraint.unwrap().activate();
+            });
+        }
+    }
+}
+delegate_pointer_constraints!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_viewporter!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
@@ -548,6 +561,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         if BackendData::HAS_RELATIVE_MOTION {
             RelativePointerManagerState::new::<Self>(&dh);
         }
+        PointerConstraintsState::new::<Self>(&dh);
         if BackendData::HAS_GESTURES {
             PointerGesturesState::new::<Self>(&dh);
         }
