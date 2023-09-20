@@ -375,8 +375,8 @@ impl X11Handle {
         let size = window.size();
         let swapchain = Swapchain::new(
             Box::new(allocator) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError> + 'static>,
-            size.w as u32,
-            size.h as u32,
+            size.width as u32,
+            size.height as u32,
             format,
             modifiers,
         );
@@ -393,8 +393,8 @@ impl X11Handle {
             window: Arc::downgrade(&window.0),
             swapchain,
             format,
-            width: size.w,
-            height: size.h,
+            width: size.width,
+            height: size.height,
             buffer: None,
             resize: recv,
             span: self.span.clone(),

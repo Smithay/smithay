@@ -245,15 +245,15 @@ impl X11Surface {
             let mut state = self.state.lock().unwrap();
             let rect = rect.unwrap_or(state.geometry);
             let aux = ConfigureWindowAux::default()
-                .x(rect.loc.x)
-                .y(rect.loc.y)
-                .width(rect.size.w as u32)
-                .height(rect.size.h as u32)
+                .x(rect.origin.x)
+                .y(rect.origin.y)
+                .width(rect.size.width as u32)
+                .height(rect.size.height as u32)
                 .border_width(0);
             if let Some(frame) = state.mapped_onto {
                 let win_aux = ConfigureWindowAux::default()
-                    .width(rect.size.w as u32)
-                    .height(rect.size.h as u32)
+                    .width(rect.size.width as u32)
+                    .height(rect.size.height as u32)
                     .border_width(0);
                 conn.configure_window(frame, &aux)?;
                 conn.configure_window(self.window, &win_aux)?;

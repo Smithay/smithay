@@ -207,14 +207,14 @@ where
         let plane_state = PlaneState {
             handle: drm.plane(),
             config: Some(PlaneConfig {
-                src: Rectangle::from_loc_and_size(
+                src: Rectangle::new(
                     Point::default(),
-                    (mode.size().0 as i32, mode.size().1 as i32),
+                    (mode.size().0 as i32, mode.size().1 as i32).into(),
                 )
                 .to_f64(),
-                dst: Rectangle::from_loc_and_size(
+                dst: Rectangle::new(
                     Point::default(),
-                    (mode.size().0 as i32, mode.size().1 as i32),
+                    (mode.size().0 as i32, mode.size().1 as i32).into(),
                 ),
                 alpha: 1.0,
                 transform: Transform::Normal,
@@ -341,10 +341,10 @@ where
         let handle = slot.userdata().get::<GbmFramebuffer>().unwrap();
         let mode = self.drm.pending_mode();
         let src =
-            Rectangle::from_loc_and_size(Point::default(), (mode.size().0 as i32, mode.size().1 as i32))
+            Rectangle::new(Point::default(), (mode.size().0 as i32, mode.size().1 as i32).into())
                 .to_f64();
         let dst =
-            Rectangle::from_loc_and_size(Point::default(), (mode.size().0 as i32, mode.size().1 as i32));
+            Rectangle::new(Point::default(), (mode.size().0 as i32, mode.size().1 as i32).into());
 
         let damage_clips = damage.and_then(|damage| {
             PlaneDamageClips::from_damage(self.drm.device_fd(), src, dst, damage)

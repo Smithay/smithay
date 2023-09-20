@@ -1053,15 +1053,15 @@ impl X11Wm {
     ///
     /// `pixels` is expected to be in `rgba`-format with each channel encoded as an u8.
     ///
-    /// This function will panic, if `pixels` is not at least `size.w * size.h * 4` long.
+    /// This function will panic, if `pixels` is not at least `size.width * size.height * 4` long.
     pub fn set_cursor(
         &mut self,
         pixels: &[u8],
         size: Size<u16, Logical>,
         hotspot: Point<u16, Logical>,
     ) -> Result<(), ReplyOrIdError> {
-        assert!(pixels.len() >= size.w as usize * size.h as usize * 4usize);
-        let pixmap = PixmapWrapper::create_pixmap(&*self.conn, 32, self.screen.root, size.w, size.h)?;
+        assert!(pixels.len() >= size.width as usize * size.height as usize * 4usize);
+        let pixmap = PixmapWrapper::create_pixmap(&*self.conn, 32, self.screen.root, size.width, size.height)?;
         let Some(render_format) = self
             .conn
             .render_query_pict_formats()?
@@ -1088,8 +1088,8 @@ impl X11Wm {
                 ImageFormat::Z_PIXMAP,
                 pixmap.pixmap(),
                 gc.gcontext(),
-                size.w,
-                size.h,
+                size.width,
+                size.height,
                 0,
                 0,
                 0,
@@ -1339,9 +1339,9 @@ fn handle_event<D: XwmHandler + 'static>(
                 n.override_redirect,
                 Arc::downgrade(&conn),
                 xwm.atoms,
-                Rectangle::from_loc_and_size(
-                    (geo.x as i32, geo.y as i32),
-                    (geo.width as i32, geo.height as i32),
+                Rectangle::new(
+                    (geo.x as i32, geo.y as i32).into(),
+                    (geo.width as i32, geo.height as i32).into(),
                 ),
             );
             surface.update_properties(None)?;
@@ -1507,7 +1507,7 @@ fn handle_event<D: XwmHandler + 'static>(
                 state.configure_notify(
                     xwm_id,
                     surface,
-                    Rectangle::from_loc_and_size((n.x as i32, n.y as i32), (n.width as i32, n.height as i32)),
+                    Rectangle::new((n.x as i32, n.y as i32).into(), (n.width as i32, n.height as i32).into()),
                     if n.above_sibling == x11rb::NONE {
                         None
                     } else {
@@ -1516,9 +1516,9 @@ fn handle_event<D: XwmHandler + 'static>(
                 );
             } else if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == n.window).cloned() {
                 if surface.is_override_redirect() {
-                    let geometry = Rectangle::from_loc_and_size(
-                        (n.x as i32, n.y as i32),
-                        (n.width as i32, n.height as i32),
+                    let geometry = Rectangle::new(
+                        (n.x as i32, n.y as i32).into(),
+                        (n.width as i32, n.height as i32).into(),
                     );
                     surface.state.lock().unwrap().geometry = geometry;
                     drop(_guard);
@@ -1563,8 +1563,8 @@ fn handle_event<D: XwmHandler + 'static>(
                         conn.reparent_window(
                             n.window,
                             xwm.screen.root,
-                            state.geometry.loc.x as i16,
-                            state.geometry.loc.y as i16,
+                            state.geometry.origin.x as i16,
+                            state.geometry.origin.y as i16,
                         )?;
                         if let Some(frame) = state.mapped_onto.take() {
                             conn.destroy_window(frame)?;

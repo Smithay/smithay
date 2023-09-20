@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 
-use crate::utils::{Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform};
+use crate::utils::{geometry::prelude::*, Buffer as BufferCoord, Physical, Point, Rectangle, Scale, Size, Transform};
 use cgmath::Matrix3;
 
 #[cfg(feature = "wayland_frontend")]
@@ -189,8 +189,8 @@ pub trait Frame {
     ) -> Result<(), Self::Error> {
         self.render_texture_from_to(
             texture,
-            Rectangle::from_loc_and_size(Point::<i32, BufferCoord>::from((0, 0)), texture.size()).to_f64(),
-            Rectangle::from_loc_and_size(
+            Rectangle::new(Point::<i32, BufferCoord>::from((0, 0)), texture.size()).to_f64(),
+            Rectangle::new(
                 pos,
                 texture
                     .size()
@@ -360,7 +360,7 @@ pub trait ImportMem: Renderer {
     /// will also be interpreted as flipped.
     ///
     /// The provided data slice needs to be in a format supported as indicated by [`ImportMem::mem_formats`].
-    /// Its length should thus be `size.w * size.h * bits_per_pixel`.
+    /// Its length should thus be `size.width * size.height * bits_per_pixel`.
     /// Anything beyond will be truncated, if the buffer is too small an error will be returned.
     fn import_memory(
         &mut self,

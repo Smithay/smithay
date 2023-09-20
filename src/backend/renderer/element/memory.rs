@@ -160,11 +160,11 @@
 //!     });
 //!
 //!     // Return the whole buffer as damage
-//!     Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))])
+//!     Result::<_, ()>::Ok(vec![Rectangle::new(Point::default(), (WIDTH, HEIGHT))])
 //! });
 //!
 //! // Optionally update the opaque regions
-//! render_context.update_opaque_regions(Some(vec![Rectangle::from_loc_and_size(
+//! render_context.update_opaque_regions(Some(vec![Rectangle::new(
 //!     Point::default(),
 //!     Size::from((WIDTH, HEIGHT)),
 //! )]));
@@ -187,7 +187,7 @@
 //!             // Update the changed parts of the buffer
 //!
 //!             // Return the updated parts
-//!             Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))])
+//!             Result::<_, ()>::Ok(vec![Rectangle::new(Point::default(), (WIDTH, HEIGHT))])
 //!         });
 //!
 //!         last_update = now;
@@ -223,7 +223,7 @@ use crate::{
             Frame, ImportMem, Renderer,
         },
     },
-    utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{geometry::prelude::*, Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
 use super::{Element, Id, Kind, RenderElement};
@@ -269,7 +269,7 @@ impl MemoryRenderBufferInner {
         MemoryRenderBufferInner {
             mem: vec![
                 0;
-                (size.w * (get_bpp(format).expect("Format with unknown bits per pixel") / 8) as i32 * size.h)
+                (size.width * (get_bpp(format).expect("Format with unknown bits per pixel") / 8) as i32 * size.height)
                     as usize
             ],
             format,
@@ -294,7 +294,7 @@ impl MemoryRenderBufferInner {
         let size = size.into();
         assert_eq!(
             mem.len(),
-            (size.w * (get_bpp(format).expect("Format with unknown bits per pixel") / 8) as i32 * size.h)
+            (size.width * (get_bpp(format).expect("Format with unknown bits per pixel") / 8) as i32 * size.height)
                 as usize
         );
 
@@ -313,7 +313,7 @@ impl MemoryRenderBufferInner {
 
     fn resize(&mut self, size: impl Into<Size<i32, Buffer>>) {
         let size = size.into();
-        let mem_size = (size.w * 4 * size.h) as usize;
+        let mem_size = (size.width * 4 * size.height) as usize;
         if self.mem.len() != mem_size {
             self.mem.resize(mem_size, 0);
             self.renderer_seen.clear();
@@ -338,7 +338,7 @@ impl MemoryRenderBufferInner {
             .damage_bag
             .damage_since(last_commit)
             .map(|d| d.into_iter().reduce(|a, b| a.merge(b)).unwrap_or_default())
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.size));
+            .unwrap_or_else(|| Rectangle::new(Point::default(), self.size));
 
         match self.textures.entry(texture_id) {
             Entry::Occupied(entry) => {
@@ -529,15 +529,15 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         self.size
             .or_else(|| {
                 self.src
-                    .map(|src| Size::from((src.size.w as i32, src.size.h as i32)))
+                    .map(|src| Size::from((src.size.width as i32, src.size.height as i32)))
             })
             .unwrap_or_else(|| self.buffer.size())
     }
 
     fn physical_size(&self, scale: Scale<f64>) -> Size<i32, Physical> {
         let logical_size = self.logical_size();
-        ((logical_size.to_f64().to_physical(scale).to_point() + self.location).to_i32_round()
-            - self.location.to_i32_round())
+        ((logical_size.to_f64().to_physical(scale).to_point() + self.location).round().to_i32()
+            - self.location.round().to_i32())
         .to_size()
     }
 
@@ -561,9 +561,9 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
                     .filter_map(|rect| {
                         rect.to_f64()
                             .to_logical(guard.scale as f64, guard.transform, &guard.size.to_f64())
-                            .intersection(src)
+                            .intersection(&src)
                             .map(|mut rect| {
-                                rect.loc -= self.src.map(|rect| rect.loc).unwrap_or_default();
+                                rect.origin -= self.src.map(|rect| rect.origin).unwrap_or_default();
                                 rect.upscale(logical_scale)
                             })
                             .map(|rect| {
@@ -574,7 +574,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
                     })
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_else(|| vec![Rectangle::from_loc_and_size(Point::default(), physical_size)])
+            .unwrap_or_else(|| vec![Rectangle::new(Point::default(), physical_size)])
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
@@ -597,9 +597,9 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
                     .filter_map(|rect| {
                         rect.to_f64()
                             .to_logical(guard.scale as f64, guard.transform, &guard.size.to_f64())
-                            .intersection(src)
+                            .intersection(&src)
                             .map(|mut rect| {
-                                rect.loc -= self.src.map(|rect| rect.loc).unwrap_or_default();
+                                rect.origin -= self.src.map(|rect| rect.origin).unwrap_or_default();
                                 rect.upscale(logical_scale)
                             })
                             .map(|rect| {
@@ -615,13 +615,13 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
 
     fn src(&self) -> Rectangle<f64, Logical> {
         self.src
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.logical_size().to_f64()))
+            .unwrap_or_else(|| Rectangle::new(Point::default(), self.logical_size().to_f64()))
     }
 
     fn scale(&self) -> Scale<f64> {
         let size = self.logical_size();
         let src = self.src();
-        Scale::from((size.w as f64 / src.size.w, size.h as f64 / src.size.h))
+        Scale::from((size.width as f64 / src.size.width, size.height as f64 / src.size.height))
     }
 }
 
@@ -643,11 +643,11 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
         let guard = self.buffer.inner.borrow_mut();
         self.src
             .map(|src| src.to_buffer(guard.scale as f64, guard.transform, &logical_size.to_f64()))
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), guard.size).to_f64())
+            .unwrap_or_else(|| Rectangle::new(Point::default(), guard.size).to_f64())
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(self.location.to_i32_round(), self.physical_size(scale))
+        Rectangle::new(self.location.round().to_i32(), self.physical_size(scale))
     }
 
     fn damage_since(

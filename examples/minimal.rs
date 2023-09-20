@@ -191,7 +191,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
         backend.bind().unwrap();
 
         let size = backend.window_size().physical_size;
-        let damage = Rectangle::from_loc_and_size((0, 0), size);
+        let damage = Rectangle::new((0, 0), size);
 
         let elements = state
             .xdg_shell_state

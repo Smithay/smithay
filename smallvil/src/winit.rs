@@ -95,7 +95,7 @@ pub fn winit_dispatch(
     }
 
     let size = backend.window_size().physical_size;
-    let damage = Rectangle::from_loc_and_size((0, 0), size);
+    let damage = Rectangle::new((0, 0), size);
 
     backend.bind()?;
     smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(

@@ -70,10 +70,10 @@ impl Drop for GlesTextureInternal {
 
 impl Texture for GlesTexture {
     fn width(&self) -> u32 {
-        self.0.size.w as u32
+        self.0.size.width as u32
     }
     fn height(&self) -> u32 {
-        self.0.size.h as u32
+        self.0.size.height as u32
     }
     fn size(&self) -> Size<i32, BufferCoord> {
         self.0.size
@@ -102,10 +102,10 @@ pub struct GlesMapping {
 
 impl Texture for GlesMapping {
     fn width(&self) -> u32 {
-        self.size.w as u32
+        self.size.width as u32
     }
     fn height(&self) -> u32 {
-        self.size.h as u32
+        self.size.height as u32
     }
     fn size(&self) -> Size<i32, BufferCoord> {
         self.size

@@ -210,9 +210,9 @@ where
                         .cached_state
                         .pending::<SurfaceAttributes>()
                         .damage
-                        .push(Damage::Surface(Rectangle::from_loc_and_size(
-                            (x, y),
-                            (width, height),
+                        .push(Damage::Surface(Rectangle::new(
+                            (x, y).into(),
+                            (width, height).into(),
                         )));
                 });
             }
@@ -271,9 +271,9 @@ where
                         .cached_state
                         .pending::<SurfaceAttributes>()
                         .damage
-                        .push(Damage::Buffer(Rectangle::from_loc_and_size(
-                            (x, y),
-                            (width, height),
+                        .push(Damage::Buffer(Rectangle::new(
+                            (x, y).into(),
+                            (width, height).into(),
                         )))
                 });
             }
@@ -352,11 +352,11 @@ where
         match request {
             wl_region::Request::Add { x, y, width, height } => guard.rects.push((
                 RectangleKind::Add,
-                Rectangle::from_loc_and_size((x, y), (width, height)),
+                Rectangle::new((x, y).into(), (width, height).into()),
             )),
             wl_region::Request::Subtract { x, y, width, height } => guard.rects.push((
                 RectangleKind::Subtract,
-                Rectangle::from_loc_and_size((x, y), (width, height)),
+                Rectangle::new((x, y).into(), (width, height).into()),
             )),
             wl_region::Request::Destroy => {
                 // all is handled by our destructor

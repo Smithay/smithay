@@ -106,7 +106,7 @@ pub fn send_popup_configure(resource: &XdgPopup, configure: PopupConfigure) {
     }
 
     // Send the popup configure
-    resource.configure(geometry.loc.x, geometry.loc.y, geometry.size.w, geometry.size.h);
+    resource.configure(geometry.origin.x, geometry.origin.y, geometry.size.width, geometry.size.height);
 
     // Send the base xdg_surface configure event to mark
     // the configure as finished

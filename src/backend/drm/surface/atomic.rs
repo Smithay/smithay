@@ -283,10 +283,10 @@ impl AtomicDrmSurface {
                 [&PlaneState {
                     handle: self.plane,
                     config: Some(PlaneConfig {
-                        src: Rectangle::from_loc_and_size(Point::default(), pending.mode.size()).to_f64(),
-                        dst: Rectangle::from_loc_and_size(
+                        src: Rectangle::new(Point::default(), pending.mode.size().into()).to_f64(),
+                        dst: Rectangle::new(
                             Point::default(),
-                            (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
+                            (pending.mode.size().0 as i32, pending.mode.size().1 as i32).into(),
                         ),
                         transform: Transform::Normal,
                         alpha: 1.0,
@@ -335,10 +335,10 @@ impl AtomicDrmSurface {
             [&PlaneState {
                 handle: self.plane,
                 config: Some(PlaneConfig {
-                    src: Rectangle::from_loc_and_size(Point::default(), pending.mode.size()).to_f64(),
-                    dst: Rectangle::from_loc_and_size(
+                    src: Rectangle::new(Point::default(), pending.mode.size().into()).to_f64(),
+                    dst: Rectangle::new(
                         Point::default(),
-                        (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
+                        (pending.mode.size().0 as i32, pending.mode.size().1 as i32).into(),
                     ),
                     transform: Transform::Normal,
                     alpha: 1.0,
@@ -389,10 +389,10 @@ impl AtomicDrmSurface {
             [&PlaneState {
                 handle: self.plane,
                 config: Some(PlaneConfig {
-                    src: Rectangle::from_loc_and_size(Point::default(), pending.mode.size()).to_f64(),
-                    dst: Rectangle::from_loc_and_size(
+                    src: Rectangle::new(Point::default(), pending.mode.size().into()).to_f64(),
+                    dst: Rectangle::new(
                         Point::default(),
-                        (pending.mode.size().0 as i32, pending.mode.size().1 as i32),
+                        (pending.mode.size().0 as i32, pending.mode.size().1 as i32).into(),
                     ),
                     transform: Transform::Normal,
                     alpha: 1.0,
@@ -442,10 +442,10 @@ impl AtomicDrmSurface {
             [&PlaneState {
                 handle: self.plane,
                 config: Some(PlaneConfig {
-                    src: Rectangle::from_loc_and_size(Point::default(), mode.size()).to_f64(),
-                    dst: Rectangle::from_loc_and_size(
+                    src: Rectangle::new(Point::default(), mode.size().into()).to_f64(),
+                    dst: Rectangle::new(
                         Point::default(),
-                        (mode.size().0 as i32, mode.size().1 as i32),
+                        (mode.size().0 as i32, mode.size().1 as i32).into(),
                     ),
                     transform: Transform::Normal,
                     alpha: 1.0,
@@ -754,46 +754,46 @@ impl AtomicDrmSurface {
                     *handle,
                     plane_prop_handle(&prop_mapping, *handle, "SRC_X")?,
                     // these are 16.16. fixed point
-                    property::Value::UnsignedRange(to_fixed(config.src.loc.x) as u64),
+                    property::Value::UnsignedRange(to_fixed(config.src.origin.x) as u64),
                 );
                 req.add_property(
                     *handle,
                     plane_prop_handle(&prop_mapping, *handle, "SRC_Y")?,
                     // these are 16.16. fixed point
-                    property::Value::UnsignedRange(to_fixed(config.src.loc.y) as u64),
+                    property::Value::UnsignedRange(to_fixed(config.src.origin.y) as u64),
                 );
                 req.add_property(
                     *handle,
                     plane_prop_handle(&prop_mapping, *handle, "SRC_W")?,
                     // these are 16.16. fixed point
-                    property::Value::UnsignedRange(to_fixed(config.src.size.w) as u64),
+                    property::Value::UnsignedRange(to_fixed(config.src.size.width) as u64),
                 );
                 req.add_property(
                     *handle,
                     plane_prop_handle(&prop_mapping, *handle, "SRC_H")?,
                     // these are 16.16. fixed point
-                    property::Value::UnsignedRange(to_fixed(config.src.size.h) as u64),
+                    property::Value::UnsignedRange(to_fixed(config.src.size.height) as u64),
                 );
 
                 req.add_property(
                     *handle,
                     plane_prop_handle(&prop_mapping, *handle, "CRTC_X")?,
-                    property::Value::SignedRange(config.dst.loc.x as i64),
+                    property::Value::SignedRange(config.dst.origin.x as i64),
                 );
                 req.add_property(
                     *handle,
                     plane_prop_handle(&prop_mapping, *handle, "CRTC_Y")?,
-                    property::Value::SignedRange(config.dst.loc.y as i64),
+                    property::Value::SignedRange(config.dst.origin.y as i64),
                 );
                 req.add_property(
                     *handle,
                     plane_prop_handle(&prop_mapping, *handle, "CRTC_W")?,
-                    property::Value::UnsignedRange(config.dst.size.w as u64),
+                    property::Value::UnsignedRange(config.dst.size.width as u64),
                 );
                 req.add_property(
                     *handle,
                     plane_prop_handle(&prop_mapping, *handle, "CRTC_H")?,
-                    property::Value::UnsignedRange(config.dst.size.h as u64),
+                    property::Value::UnsignedRange(config.dst.size.height as u64),
                 );
                 if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "rotation") {
                     req.add_property(
@@ -1216,15 +1216,15 @@ mod test {
 
     #[test]
     fn test_fixed_point() {
-        let geometry: Rectangle<f64, Physical> = Rectangle::from_loc_and_size((0.0, 0.0), (1920.0, 1080.0));
-        let fixed = to_fixed(geometry.size.w) as u64;
+        let geometry: Rectangle<f64, Physical> = Rectangle::new((0.0, 0.0), (1920.0, 1080.0));
+        let fixed = to_fixed(geometry.size.width) as u64;
         assert_eq!(125829120, fixed);
     }
 
     #[test]
     fn test_fractional_fixed_point() {
-        let geometry: Rectangle<f64, Physical> = Rectangle::from_loc_and_size((0.0, 0.0), (1920.1, 1080.0));
-        let fixed = to_fixed(geometry.size.w) as u64;
+        let geometry: Rectangle<f64, Physical> = Rectangle::new((0.0, 0.0), (1920.1, 1080.0));
+        let fixed = to_fixed(geometry.size.width) as u64;
         assert_eq!(125835674, fixed);
     }
 }

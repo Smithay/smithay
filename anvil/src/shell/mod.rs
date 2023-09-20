@@ -333,9 +333,9 @@ fn place_new_window(
             let geo = space.output_geometry(&o)?;
             let map = layer_map_for_output(&o);
             let zone = map.non_exclusive_zone();
-            Some(Rectangle::from_loc_and_size(geo.loc + zone.loc, zone.size))
+            Some(Rectangle::new(geo.origin + zone.loc, zone.size))
         })
-        .unwrap_or_else(|| Rectangle::from_loc_and_size((0, 0), (800, 800)));
+        .unwrap_or_else(|| Rectangle::new((0, 0), (800, 800)));
 
     // set the initial toplevel bounds
     #[allow(irrefutable_let_patterns)]
@@ -345,10 +345,10 @@ fn place_new_window(
         });
     }
 
-    let max_x = output_geometry.loc.x + (((output_geometry.size.w as f32) / 3.0) * 2.0) as i32;
-    let max_y = output_geometry.loc.y + (((output_geometry.size.h as f32) / 3.0) * 2.0) as i32;
-    let x_range = Uniform::new(output_geometry.loc.x, max_x);
-    let y_range = Uniform::new(output_geometry.loc.y, max_y);
+    let max_x = output_geometry.origin.x + (((output_geometry.size.w as f32) / 3.0) * 2.0) as i32;
+    let max_y = output_geometry.origin.y + (((output_geometry.size.h as f32) / 3.0) * 2.0) as i32;
+    let x_range = Uniform::new(output_geometry.origin.x, max_x);
+    let y_range = Uniform::new(output_geometry.origin.y, max_y);
     let mut rng = rand::thread_rng();
     let x = x_range.sample(&mut rng);
     let y = y_range.sample(&mut rng);
@@ -377,7 +377,7 @@ pub fn fixup_positions(space: &mut Space<WindowElement>, pointer_location: Point
             let geo = space.output_geometry(o)?;
             let map = layer_map_for_output(o);
             let zone = map.non_exclusive_zone();
-            Some(Rectangle::from_loc_and_size(geo.loc + zone.loc, zone.size))
+            Some(Rectangle::new(geo.origin + zone.loc, zone.size))
         })
         .collect::<Vec<_>>();
     for window in space.elements() {
@@ -385,7 +385,7 @@ pub fn fixup_positions(space: &mut Space<WindowElement>, pointer_location: Point
             Some(loc) => loc,
             None => continue,
         };
-        let geo_loc = window.bbox().loc + window_location;
+        let geo_loc = window.bbox().origin + window_location;
 
         if !outputs.iter().any(|o_geo| o_geo.contains(geo_loc)) {
             orphaned_windows.push(window.clone());

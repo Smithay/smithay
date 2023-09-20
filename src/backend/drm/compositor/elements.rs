@@ -52,7 +52,7 @@ where
                 .iter()
                 .cloned()
                 .map(|mut d| {
-                    d.loc += dst.loc;
+                    d.origin += dst.origin;
                     d
                 })
                 .collect::<Vec<_>>(),
@@ -82,7 +82,7 @@ impl Element for HolepunchRenderElement {
     }
 
     fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
-        vec![Rectangle::from_loc_and_size(Point::default(), self.geometry.size)]
+        vec![Rectangle::new(Point::default(), self.geometry.size)]
     }
 }
 
@@ -118,12 +118,12 @@ impl OverlayPlaneElement {
         // the opaque geometry we calculated we have to subtract
         // that from the element local opaque regions.
         opaque_regions.iter_mut().for_each(|region| {
-            region.loc -= opaque_geometry.loc;
+            region.origin -= opaque_geometry.origin;
         });
 
         // Move the opaque geometry relative to the original
         // element location
-        opaque_geometry.loc += geometry.loc;
+        opaque_geometry.origin += geometry.origin;
 
         Some(OverlayPlaneElement {
             id,

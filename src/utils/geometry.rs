@@ -1,5 +1,5 @@
 use std::fmt;
-use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+use std::ops::{Add, Mul, Sub};
 
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::protocol::wl_output::Transform as WlTransform;
@@ -22,7 +22,7 @@ pub struct Raw;
 
 /// Trait for types serving as a coordinate for other geometry utils
 pub trait Coordinate:
-    Sized + Add<Self, Output = Self> + Sub<Self, Output = Self> + PartialOrd + Default + Copy + fmt::Debug
+    Sized + Add<Self, Output = Self> + Sub<Self, Output = Self> + PartialOrd + Default + Copy + euclid::num::Zero + fmt::Debug
 {
     /// Downscale the coordinate
     fn downscale(self, scale: Self) -> Self;
@@ -309,22 +309,11 @@ where
     }
 }
 
+pub type Point<N, Kind> = euclid::Point2D<N, Kind>;
+pub type Size<N, Kind> = euclid::Size2D<N, Kind>;
+pub type Rectangle<N, Kind> = euclid::Rect<N, Kind>;
+
 /*
- * Point
- */
-
-/// A point as defined by its x and y coordinates
-///
-/// Operations on points are saturating.
-#[repr(C)]
-pub struct Point<N, Kind> {
-    /// horizontal coordinate
-    pub x: N,
-    /// vertical coordinate
-    pub y: N,
-    _kind: std::marker::PhantomData<Kind>,
-}
-
 impl<N: Coordinate, Kind> Point<N, Kind> {
     /// Convert this [`Point`] to a [`Size`] with the same coordinates
     ///
@@ -388,8 +377,8 @@ impl<N: Coordinate, Kind> Point<N, Kind> {
         let rect = rect.into();
 
         Point {
-            x: self.x.max(rect.loc.x).min(rect.size.w),
-            y: self.y.max(rect.loc.y).min(rect.size.h),
+            x: self.x.max(rect.origin.x).min(rect.size.width),
+            y: self.y.max(rect.origin.y).min(rect.size.height),
             _kind: std::marker::PhantomData,
         }
     }
@@ -439,42 +428,6 @@ impl<Kind> Point<f64, Kind> {
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for Point<N, Logical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Logical>")
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Point<N, Physical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Physical>")
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Point<N, Raw> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Raw>")
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Point<N, Buffer> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Buffer>")
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .finish()
-    }
-}
-
 impl<N: Coordinate> Point<N, Logical> {
     #[inline]
     /// Convert this logical point to physical coordinate space according to given scale factor
@@ -494,7 +447,7 @@ impl<N: Coordinate> Point<N, Logical> {
         self,
         scale: impl Into<Scale<S>>,
     ) -> Point<R, Physical> {
-        self.to_f64().to_physical(scale.into().to_f64()).to_i32_round()
+        self.to_f64().to_physical(scale.into().to_f64()).round().to_i32()
     }
 
     /// Convert this logical point to physical coordinate space according to given scale factor
@@ -567,24 +520,6 @@ impl<N: Coordinate> Point<N, Buffer> {
     }
 }
 
-impl<N, Kind> From<(N, N)> for Point<N, Kind> {
-    #[inline]
-    fn from((x, y): (N, N)) -> Point<N, Kind> {
-        Point {
-            x,
-            y,
-            _kind: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<N, Kind> From<Point<N, Kind>> for (N, N) {
-    #[inline]
-    fn from(point: Point<N, Kind>) -> (N, N) {
-        (point.x, point.y)
-    }
-}
-
 impl<N: Coordinate, Kind> Add for Point<N, Kind> {
     type Output = Point<N, Kind>;
     #[inline]
@@ -624,58 +559,13 @@ impl<N: Coordinate, Kind> Sub for Point<N, Kind> {
         }
     }
 }
-
-impl<N: Clone, Kind> Clone for Point<N, Kind> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Point {
-            x: self.x.clone(),
-            y: self.y.clone(),
-            _kind: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<N: Copy, Kind> Copy for Point<N, Kind> {}
-
-impl<N: PartialEq, Kind> PartialEq for Point<N, Kind> {
-    fn eq(&self, other: &Self) -> bool {
-        self.x == other.x && self.y == other.y
-    }
-}
-
-impl<N: Eq, Kind> Eq for Point<N, Kind> {}
-
-impl<N: Default, Kind> Default for Point<N, Kind> {
-    fn default() -> Self {
-        Point {
-            x: N::default(),
-            y: N::default(),
-            _kind: std::marker::PhantomData,
-        }
-    }
-}
+*/
 
 /*
  * Size
  */
 
-/// A size as defined by its width and height
-///
-/// Constructors of this type ensure that the values are always positive via
-/// `debug_assert!()`, however manually changing the values of the fields
-/// can break this invariant.
-///
-/// Operations on sizes are saturating.
-#[repr(C)]
-pub struct Size<N, Kind> {
-    /// horizontal coordinate
-    pub w: N,
-    /// vertical coordinate
-    pub h: N,
-    _kind: std::marker::PhantomData<Kind>,
-}
-
+/*
 impl<N: Coordinate, Kind> Size<N, Kind> {
     /// Convert this [`Size`] to a [`Point`] with the same coordinates
     #[inline]
@@ -736,14 +626,6 @@ impl<N: Coordinate, Kind> Size<N, Kind> {
             _kind: std::marker::PhantomData,
         }
     }
-
-    /// Check if this [`Size`] is empty
-    ///
-    /// Returns true if either the width or the height is zero
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.w == N::default() || self.h == N::default()
-    }
 }
 
 impl<Kind> Size<f64, Kind> {
@@ -778,42 +660,6 @@ impl<Kind> Size<f64, Kind> {
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for Size<N, Logical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Logical>")
-            .field("w", &self.w)
-            .field("h", &self.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Size<N, Physical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Physical>")
-            .field("w", &self.w)
-            .field("h", &self.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Size<N, Raw> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Raw>")
-            .field("w", &self.w)
-            .field("h", &self.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Size<N, Buffer> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Buffer>")
-            .field("w", &self.w)
-            .field("h", &self.h)
-            .finish()
-    }
-}
-
 impl<N: Coordinate> Size<N, Logical> {
     #[inline]
     /// Convert this logical size to physical coordinate space according to given scale factor
@@ -833,7 +679,7 @@ impl<N: Coordinate> Size<N, Logical> {
         self,
         scale: impl Into<Scale<S>>,
     ) -> Size<R, Physical> {
-        self.to_f64().to_physical(scale.into().to_f64()).to_i32_round()
+        self.to_f64().to_physical(scale.into().to_f64()).round().to_i32()
     }
 
     /// Convert this logical size to physical coordinate space according to given scale factor
@@ -910,13 +756,6 @@ impl<N: Coordinate, Kind> From<(N, N)> for Size<N, Kind> {
     }
 }
 
-impl<N, Kind> From<Size<N, Kind>> for (N, N) {
-    #[inline]
-    fn from(point: Size<N, Kind>) -> (N, N) {
-        (point.w, point.h)
-    }
-}
-
 impl<N: Coordinate, Kind> Add for Size<N, Kind> {
     type Output = Size<N, Kind>;
     #[inline]
@@ -964,37 +803,6 @@ impl<N: Coordinate + Div<Output = N>, KindLhs, KindRhs> Div<Size<N, KindRhs>> fo
     }
 }
 
-impl<N: Clone, Kind> Clone for Size<N, Kind> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Size {
-            w: self.w.clone(),
-            h: self.h.clone(),
-            _kind: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<N: Copy, Kind> Copy for Size<N, Kind> {}
-
-impl<N: PartialEq, Kind> PartialEq for Size<N, Kind> {
-    fn eq(&self, other: &Self) -> bool {
-        self.w == other.w && self.h == other.h
-    }
-}
-
-impl<N: Eq, Kind> Eq for Size<N, Kind> {}
-
-impl<N: Default, Kind> Default for Size<N, Kind> {
-    fn default() -> Self {
-        Size {
-            w: N::default(),
-            h: N::default(),
-            _kind: std::marker::PhantomData,
-        }
-    }
-}
-
 impl<N: Coordinate, Kind> Add<Size<N, Kind>> for Point<N, Kind> {
     type Output = Point<N, Kind>;
     #[inline]
@@ -1018,7 +826,129 @@ impl<N: Coordinate, Kind> Sub<Size<N, Kind>> for Point<N, Kind> {
         }
     }
 }
+*/
 
+pub mod prelude {
+    use super::*;
+
+    pub trait SizeLogicalalExt {
+        type N: Coordinate;
+        fn to_physical(self, scale: impl Into<Scale<Self::N>>) -> Size<Self::N, Physical>;
+    }
+
+    impl<N: Coordinate> SizeLogicalalExt for Size<N, Logical> {
+        type N = N;
+        fn to_physical(self, scale: impl Into<Scale<N>>) -> Size<N, Physical> {
+            let scale = scale.into();
+            Size::new(self.width.upscale(scale.x), self.height.upscale(scale.y))
+        }
+    }
+
+    pub trait SizePhysicalExt {
+        type N: Coordinate;
+        fn to_logical(self, scale: impl Into<Self::N>) -> Size<Self::N, Logical>;
+    }
+
+    impl<N: Coordinate> SizePhysicalExt for Size<N, Physical> {
+        type N = N;
+        #[inline]
+        /// Convert this physical point to logical coordinate space according to given scale factor
+        fn to_logical(self, scale: impl Into<Scale<N>>) -> Size<N, Logical> {
+            let scale = scale.into();
+            Size::new(self.width.downscale(scale.x), self.width.downscale(scale.y))
+        }
+    }
+
+    pub trait SizeBufferExt {
+        type N: Coordinate;
+        fn to_logical(self, scale: impl Into<Self::N>, transformation: Transform) -> Size<Self::N, Logical>;
+    }
+
+    impl<N: Coordinate> SizeBufferExt for Size<N, Buffer> {
+        type N = N;
+        #[inline]
+        /// Convert this physical point to logical coordinate space according to given scale factor
+        fn to_logical(self, scale: impl Into<Scale<N>>, transformation: Transform) -> Size<N, Logical> {
+            let scale = scale.into();
+            transformation.invert().transform_size(Size::new(
+                self.width.downscale(scale.x),
+                self.height.downscale(scale.y),
+            ))
+        }
+    }
+
+    trait RectangleLogicalExt {
+        type N: Coordinate;
+        fn to_buffer(
+            self,
+            scale: impl Into<Scale<Self::N>>,
+            transformation: Transform,
+            area: &Size<Self::N, Logical>,
+        ) -> Rectangle<Self::N, Buffer>;
+
+    }
+
+    impl<N: Coordinate> RectangleLogicalExt for Rectangle<N, Logical> {
+        type N = N;
+        #[inline]
+        fn to_buffer(
+            self,
+            scale: impl Into<Scale<N>>,
+            transformation: Transform,
+            area: &Size<N, Logical>,
+        ) -> Rectangle<N, Buffer> {
+            let rect = transformation.transform_rect_in(self, area);
+            let scale = scale.into();
+            Rectangle::new(
+                (rect.origin.x.upscale(scale.x), rect.origin.y.upscale(scale.y)).into(),
+                (rect.size.width.upscale(scale.x), rect.size.height.upscale(scale.y)).into(),
+            )
+        }
+    }
+
+    pub trait RectanglePhysicalExt {
+        type N: Coordinate;
+        fn to_logical(self, scale: impl Into<Scale<Self::N>>) -> Rectangle<Self::N, Logical>;
+    }
+
+    impl<N: Coordinate> RectanglePhysicalExt for Rectangle<N, Physical> {
+        #[inline]
+        fn to_logical(self, scale: impl Into<Scale<N>>) -> Rectangle<N, Logical> {
+            let scale = scale.into();
+            Rectangle::new(self.origin.to_logical(scale), self.size.to_logical(scale))
+        }
+    }
+
+    pub trait RectangleBufferExt {
+        type N: Coordinate;
+        fn to_logical(
+            self,
+            scale: impl Into<Scale<Self::N>>,
+            transformation: Transform,
+            area: &Size<Self::N, Buffer>,
+        ) -> Rectangle<Self::N, Logical>;
+    }
+
+    impl<N: Coordinate> RectangleBufferExt for Rectangle<N, Buffer> {
+        type N = N;
+        #[inline]
+        fn to_logical(
+            self,
+            scale: impl Into<Scale<N>>,
+            transformation: Transform,
+            area: &Size<N, Buffer>,
+        ) -> Rectangle<N, Logical> {
+            let rect = transformation.invert().transform_rect_in(self, area);
+            let scale = scale.into();
+            Rectangle::new(
+                (rect.origin.x.downscale(scale.x), rect.origin.y.downscale(scale.y)).into(),
+                (rect.size.width.downscale(scale.x), rect.size.height.downscale(scale.y)).into(),
+            )
+        }
+    }
+}
+
+/*
 /// A rectangle defined by its top-left corner and dimensions
 ///
 /// Operations on rectangles are saturating.
@@ -1058,14 +988,6 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
             size: self.size.downscale(scale),
         }
     }
-
-    /// Check if this [`Rectangle`] is empty
-    ///
-    /// Returns true if either the width or the height
-    /// of the [`Size`] is zero
-    pub fn is_empty(&self) -> bool {
-        self.size.is_empty()
-    }
 }
 
 impl<Kind> Rectangle<f64, Kind> {
@@ -1073,56 +995,33 @@ impl<Kind> Rectangle<f64, Kind> {
     #[inline]
     pub fn to_i32_round<N: Coordinate>(self) -> Rectangle<N, Kind> {
         Rectangle {
-            loc: self.loc.to_i32_round(),
-            size: self.size.to_i32_round(),
+            loc: self.loc.round().to_i32(),
+            size: self.size.round().to_i32(),
         }
     }
 
     /// Convert to i32 by returning the largest integer-space rectangle fitting into the float-based rectangle
     #[inline]
     pub fn to_i32_down<N: Coordinate>(self) -> Rectangle<N, Kind> {
-        Rectangle::from_extemities(self.loc.to_i32_ceil(), (self.loc + self.size).to_i32_floor())
+        Rectangle::from_extemities(self.loc.to_i32_ceil(), (self.origin + self.size).to_i32_floor())
     }
 
     /// Convert to i32 by returning the smallest integet-space rectangle encapsulating the float-based rectangle
     #[inline]
     pub fn to_i32_up<N: Coordinate>(self) -> Rectangle<N, Kind> {
-        Rectangle::from_extemities(self.loc.to_i32_floor(), (self.loc + self.size).to_i32_ceil())
+        Rectangle::from_extemities(self.loc.to_i32_floor(), (self.origin + self.size).to_i32_ceil())
     }
 }
 
 impl<N: Coordinate, Kind> Rectangle<N, Kind> {
-    /// Create a new [`Rectangle`] from the coordinates of its top-left corner and its dimensions
-    #[inline]
-    pub fn from_loc_and_size(loc: impl Into<Point<N, Kind>>, size: impl Into<Size<N, Kind>>) -> Self {
-        Rectangle {
-            loc: loc.into(),
-            size: size.into(),
-        }
-    }
-
-    /// Create a new [`Rectangle`] from the coordinates of its top-left corner and its bottom-right corner
-    #[inline]
-    pub fn from_extemities(
-        topleft: impl Into<Point<N, Kind>>,
-        bottomright: impl Into<Point<N, Kind>>,
-    ) -> Self {
-        let topleft = topleft.into();
-        let bottomright = bottomright.into();
-        Rectangle {
-            loc: topleft,
-            size: (bottomright - topleft).to_size(),
-        }
-    }
-
     /// Checks whether given [`Point`] is inside the rectangle
     #[inline]
     pub fn contains<P: Into<Point<N, Kind>>>(self, point: P) -> bool {
         let p: Point<N, Kind> = point.into();
         (p.x >= self.loc.x)
-            && (p.x < self.loc.x.saturating_add(self.size.w))
+            && (p.x < self.loc.x.saturating_add(self.size.width))
             && (p.y >= self.loc.y)
-            && (p.y < self.loc.y.saturating_add(self.size.h))
+            && (p.y < self.loc.y.saturating_add(self.size.height))
     }
 
     /// Checks whether given [`Rectangle`] is inside the rectangle
@@ -1136,8 +1035,8 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         let r: Rectangle<N, Kind> = rect.into();
         r.loc.x >= self.loc.x
             && r.loc.y >= self.loc.y
-            && r.loc.x.saturating_add(r.size.w) <= self.loc.x.saturating_add(self.size.w)
-            && r.loc.y.saturating_add(r.size.h) <= self.loc.y.saturating_add(self.size.h)
+            && r.loc.x.saturating_add(r.size.width) <= self.loc.x.saturating_add(self.size.width)
+            && r.loc.y.saturating_add(r.size.height) <= self.loc.y.saturating_add(self.size.height)
     }
 
     /// Checks whether a given [`Rectangle`] overlaps with this one
@@ -1148,10 +1047,10 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     pub fn overlaps(self, other: impl Into<Rectangle<N, Kind>>) -> bool {
         let other = other.into();
 
-        self.loc.x < other.loc.x.saturating_add(other.size.w)
-            && other.loc.x < self.loc.x.saturating_add(self.size.w)
-            && self.loc.y < other.loc.y.saturating_add(other.size.h)
-            && other.loc.y < self.loc.y.saturating_add(self.size.h)
+        self.loc.x < other.loc.x.saturating_add(other.size.width)
+            && other.loc.x < self.loc.x.saturating_add(self.size.width)
+            && self.loc.y < other.loc.y.saturating_add(other.size.height)
+            && other.loc.y < self.loc.y.saturating_add(self.size.height)
     }
 
     /// Checks whether a given [`Rectangle`] overlaps with this one or touches it
@@ -1162,10 +1061,10 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     pub fn overlaps_or_touches(self, other: impl Into<Rectangle<N, Kind>>) -> bool {
         let other = other.into();
 
-        self.loc.x <= other.loc.x.saturating_add(other.size.w)
-            && other.loc.x <= self.loc.x.saturating_add(self.size.w)
-            && self.loc.y <= other.loc.y.saturating_add(other.size.h)
-            && other.loc.y <= self.loc.y.saturating_add(self.size.h)
+        self.loc.x <= other.loc.x.saturating_add(other.size.width)
+            && other.loc.x <= self.loc.x.saturating_add(self.size.width)
+            && self.loc.y <= other.loc.y.saturating_add(other.size.height)
+            && other.loc.y <= self.loc.y.saturating_add(self.size.height)
     }
 
     /// Clamp rectangle to min and max corners resulting in the overlapping area of two rectangles
@@ -1180,8 +1079,8 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         Some(Rectangle::from_extemities(
             (self.loc.x.max(other.loc.x), self.loc.y.max(other.loc.y)),
             (
-                (self.loc.x.saturating_add(self.size.w)).min(other.loc.x.saturating_add(other.size.w)),
-                (self.loc.y.saturating_add(self.size.h)).min(other.loc.y.saturating_add(other.size.h)),
+                (self.loc.x.saturating_add(self.size.width)).min(other.loc.x.saturating_add(other.size.width)),
+                (self.loc.y.saturating_add(self.size.height)).min(other.loc.y.saturating_add(other.size.height)),
             ),
         ))
     }
@@ -1205,7 +1104,7 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
     /// Merge two [`Rectangle`] by producing the smallest rectangle that contains both
     #[inline]
     pub fn merge(self, other: Self) -> Self {
-        Self::bounding_box([self.loc, self.loc + self.size, other.loc, other.loc + other.size])
+        Self::bounding_box([self.loc, self.origin + self.size, other.loc, other.origin + other.size])
     }
 
     /// Subtract another [`Rectangle`] from this [`Rectangle`]
@@ -1264,31 +1163,31 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
                 // we already checked that there is an overlap so the unwrap should be safe
                 let intersection = item.intersection(other).unwrap();
 
-                let top_rect = Rectangle::from_loc_and_size(
+                let top_rect = Rectangle::new(
                     item.loc,
-                    (item.size.w, intersection.loc.y.saturating_sub(item.loc.y)),
+                    (item.size.width, intersection.loc.y.saturating_sub(item.loc.y)),
                 );
-                let left_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
+                let left_rect: Rectangle<N, Kind> = Rectangle::new(
                     (item.loc.x, intersection.loc.y),
-                    (intersection.loc.x.saturating_sub(item.loc.x), intersection.size.h),
+                    (intersection.loc.x.saturating_sub(item.loc.x), intersection.size.height),
                 );
-                let right_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
+                let right_rect: Rectangle<N, Kind> = Rectangle::new(
                     (
-                        intersection.loc.x.saturating_add(intersection.size.w),
+                        intersection.loc.x.saturating_add(intersection.size.width),
                         intersection.loc.y,
                     ),
                     (
-                        (item.loc.x.saturating_add(item.size.w))
-                            .saturating_sub(intersection.loc.x.saturating_add(intersection.size.w)),
-                        intersection.size.h,
+                        (item.loc.x.saturating_add(item.size.width))
+                            .saturating_sub(intersection.loc.x.saturating_add(intersection.size.width)),
+                        intersection.size.height,
                     ),
                 );
-                let bottom_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
-                    (item.loc.x, intersection.loc.y.saturating_add(intersection.size.h)),
+                let bottom_rect: Rectangle<N, Kind> = Rectangle::new(
+                    (item.loc.x, intersection.loc.y.saturating_add(intersection.size.height)),
                     (
-                        item.size.w,
-                        (item.loc.y.saturating_add(item.size.h))
-                            .saturating_sub(intersection.loc.y.saturating_add(intersection.size.h)),
+                        item.size.width,
+                        (item.loc.y.saturating_add(item.size.height))
+                            .saturating_sub(intersection.loc.y.saturating_add(intersection.size.height)),
                     ),
                 );
 
@@ -1332,7 +1231,7 @@ impl<N: Coordinate> Rectangle<N, Logical> {
         self,
         scale: impl Into<Scale<S>>,
     ) -> Rectangle<R, Physical> {
-        self.to_f64().to_physical(scale.into().to_f64()).to_i32_round()
+        self.to_f64().to_physical(scale.into().to_f64()).round().to_i32()
     }
 
     /// Convert this logical rectangle to physical coordinate space according to given scale factor,
@@ -1371,13 +1270,13 @@ impl<N: Coordinate> Rectangle<N, Logical> {
         let scale = scale.into();
         Rectangle {
             loc: Point {
-                x: rect.loc.x.upscale(scale.x),
-                y: rect.loc.y.upscale(scale.y),
+                x: rect.origin.x.upscale(scale.x),
+                y: rect.origin.y.upscale(scale.y),
                 _kind: std::marker::PhantomData,
             },
             size: Size {
-                w: rect.size.w.upscale(scale.x),
-                h: rect.size.h.upscale(scale.y),
+                w: rect.size.width.upscale(scale.x),
+                h: rect.size.height.upscale(scale.y),
                 _kind: std::marker::PhantomData,
             },
         }
@@ -1409,91 +1308,19 @@ impl<N: Coordinate> Rectangle<N, Buffer> {
         let scale = scale.into();
         Rectangle {
             loc: Point {
-                x: rect.loc.x.downscale(scale.x),
-                y: rect.loc.y.downscale(scale.y),
+                x: rect.origin.x.downscale(scale.x),
+                y: rect.origin.y.downscale(scale.y),
                 _kind: std::marker::PhantomData,
             },
             size: Size {
-                w: rect.size.w.downscale(scale.x),
-                h: rect.size.h.downscale(scale.y),
+                w: rect.size.width.downscale(scale.x),
+                h: rect.size.height.downscale(scale.y),
                 _kind: std::marker::PhantomData,
             },
         }
     }
 }
-
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Logical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Logical>")
-            .field("x", &self.loc.x)
-            .field("y", &self.loc.y)
-            .field("width", &self.size.w)
-            .field("height", &self.size.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Physical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Physical>")
-            .field("x", &self.loc.x)
-            .field("y", &self.loc.y)
-            .field("width", &self.size.w)
-            .field("height", &self.size.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Raw> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Raw>")
-            .field("x", &self.loc.x)
-            .field("y", &self.loc.y)
-            .field("width", &self.size.w)
-            .field("height", &self.size.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Buffer> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Buffer>")
-            .field("x", &self.loc.x)
-            .field("y", &self.loc.y)
-            .field("width", &self.size.w)
-            .field("height", &self.size.h)
-            .finish()
-    }
-}
-
-impl<N: Clone, Kind> Clone for Rectangle<N, Kind> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Rectangle {
-            loc: self.loc.clone(),
-            size: self.size.clone(),
-        }
-    }
-}
-
-impl<N: Copy, Kind> Copy for Rectangle<N, Kind> {}
-
-impl<N: PartialEq, Kind> PartialEq for Rectangle<N, Kind> {
-    fn eq(&self, other: &Self) -> bool {
-        self.loc == other.loc && self.size == other.size
-    }
-}
-
-impl<N: Eq, Kind> Eq for Rectangle<N, Kind> {}
-
-impl<N: Default, Kind> Default for Rectangle<N, Kind> {
-    fn default() -> Self {
-        Rectangle {
-            loc: Default::default(),
-            size: Default::default(),
-        }
-    }
-}
+*/
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 /// Possible transformations to two-dimensional planes
@@ -1543,13 +1370,13 @@ impl Transform {
     ) -> Point<N, Kind> {
         match *self {
             Transform::Normal => point,
-            Transform::_90 => (area.h - point.y, point.x).into(),
-            Transform::_180 => (area.w - point.x, area.h - point.y).into(),
-            Transform::_270 => (point.y, area.w - point.x).into(),
-            Transform::Flipped => (area.w - point.x, point.y).into(),
+            Transform::_90 => (area.height - point.y, point.x).into(),
+            Transform::_180 => (area.width - point.x, area.height - point.y).into(),
+            Transform::_270 => (point.y, area.width - point.x).into(),
+            Transform::Flipped => (area.width - point.x, point.y).into(),
             Transform::Flipped90 => (point.y, point.x).into(),
-            Transform::Flipped180 => (point.x, area.h - point.y).into(),
-            Transform::Flipped270 => (area.h - point.y, area.w - point.x).into(),
+            Transform::Flipped180 => (point.x, area.height - point.y).into(),
+            Transform::Flipped270 => (area.height - point.y, area.width - point.x).into(),
         }
     }
 
@@ -1560,7 +1387,7 @@ impl Transform {
             || *self == Transform::Flipped90
             || *self == Transform::Flipped270
         {
-            (size.h, size.w).into()
+            (size.height, size.width).into()
         } else {
             size
         }
@@ -1575,25 +1402,25 @@ impl Transform {
         let size = self.transform_size(rect.size);
 
         let loc = match *self {
-            Transform::Normal => rect.loc,
-            Transform::_90 => (area.h - rect.loc.y - rect.size.h, rect.loc.x).into(),
+            Transform::Normal => rect.origin,
+            Transform::_90 => (area.height - rect.origin.y - rect.size.height, rect.origin.x).into(),
             Transform::_180 => (
-                area.w - rect.loc.x - rect.size.w,
-                area.h - rect.loc.y - rect.size.h,
+                area.width - rect.origin.x - rect.size.width,
+                area.height - rect.origin.y - rect.size.height,
             )
                 .into(),
-            Transform::_270 => (rect.loc.y, area.w - rect.loc.x - rect.size.w).into(),
-            Transform::Flipped => (area.w - rect.loc.x - rect.size.w, rect.loc.y).into(),
+            Transform::_270 => (rect.origin.y, area.width - rect.origin.x - rect.size.width).into(),
+            Transform::Flipped => (area.width - rect.origin.x - rect.size.width, rect.origin.y).into(),
             Transform::Flipped90 => (
-                area.h - rect.loc.y - rect.size.h,
-                area.w - rect.loc.x - rect.size.w,
+                area.height - rect.origin.y - rect.size.height,
+                area.width - rect.origin.x - rect.size.width,
             )
                 .into(),
-            Transform::Flipped180 => (rect.loc.x, area.h - rect.loc.y - rect.size.h).into(),
-            Transform::Flipped270 => (rect.loc.y, rect.loc.x).into(),
+            Transform::Flipped180 => (rect.origin.x, area.height - rect.origin.y - rect.size.height).into(),
+            Transform::Flipped270 => (rect.origin.y, rect.origin.x).into(),
         };
 
-        Rectangle::from_loc_and_size(loc, size)
+        Rectangle::new(loc, size)
     }
 
     /// Returns true if the transformation would flip contents
@@ -1657,7 +1484,7 @@ mod tests {
 
     #[test]
     fn transform_rect_ident() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
         let size = Size::from((70, 90));
         let transform = Transform::Normal;
 
@@ -1666,112 +1493,112 @@ mod tests {
 
     #[test]
     fn transform_rect_90() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
         let size = Size::from((70, 90));
         let transform = Transform::_90;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((30, 10), (40, 30)),
+            Rectangle::new((30, 10), (40, 30)),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_180() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
         let size = Size::from((70, 90));
         let transform = Transform::_180;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((30, 30), (30, 40)),
+            Rectangle::new((30, 30), (30, 40)),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_270() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
         let size = Size::from((70, 90));
         let transform = Transform::_270;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((20, 30), (40, 30)),
+            Rectangle::new((20, 30), (40, 30)),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_f() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
         let size = Size::from((70, 90));
         let transform = Transform::Flipped;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((30, 20), (30, 40)),
+            Rectangle::new((30, 20), (30, 40)),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_f90() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
         let size = Size::from((70, 80));
         let transform = Transform::Flipped90;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((20, 30), (40, 30)),
+            Rectangle::new((20, 30), (40, 30)),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_f180() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
         let size = Size::from((70, 90));
         let transform = Transform::Flipped180;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((10, 30), (30, 40)),
+            Rectangle::new((10, 30), (30, 40)),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn transform_rect_f270() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
+        let rect = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
         let size = Size::from((70, 90));
         let transform = Transform::Flipped270;
 
         assert_eq!(
-            Rectangle::from_loc_and_size((20, 10), (40, 30)),
+            Rectangle::new((20, 10), (40, 30)),
             transform.transform_rect_in(rect, &size)
         )
     }
 
     #[test]
     fn rectangle_contains_rect_itself() {
-        let rect = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
-        assert!(rect.contains_rect(rect));
+        let rect = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
+        assert!(rect.contains_rect(&rect));
     }
 
     #[test]
     fn rectangle_contains_rect_outside() {
-        let first = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
-        let second = Rectangle::<i32, Logical>::from_loc_and_size((41, 61), (30, 40));
-        assert!(!first.contains_rect(second));
+        let first = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
+        let second = Rectangle::<i32, Logical>::new((41, 61), (30, 40));
+        assert!(!first.contains_rect(&second));
     }
 
     #[test]
     fn rectangle_contains_rect_extends() {
-        let first = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 40));
-        let second = Rectangle::<i32, Logical>::from_loc_and_size((10, 20), (30, 45));
-        assert!(!first.contains_rect(second));
+        let first = Rectangle::<i32, Logical>::new((10, 20), (30, 40));
+        let second = Rectangle::<i32, Logical>::new((10, 20), (30, 45));
+        assert!(!first.contains_rect(&second));
     }
 
     #[test]
     fn rectangle_subtract_full() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((-10, -10), (1000, 1000));
+        let outer = Rectangle::<i32, Logical>::new((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::new((-10, -10), (1000, 1000));
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(rects, vec![])
@@ -1779,124 +1606,124 @@ mod tests {
 
     #[test]
     fn rectangle_subtract_center_hole() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((10, 10), (80, 80));
+        let outer = Rectangle::<i32, Logical>::new((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::new((10, 10), (80, 80));
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(
             rects,
             vec![
                 // Top rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 10)),
+                Rectangle::<i32, Logical>::new((0, 0), (100, 10)),
                 // Left rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 10), (10, 80)),
+                Rectangle::<i32, Logical>::new((0, 10), (10, 80)),
                 // Right rect
-                Rectangle::<i32, Logical>::from_loc_and_size((90, 10), (10, 80)),
+                Rectangle::<i32, Logical>::new((90, 10), (10, 80)),
                 // Bottom rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 90), (100, 10)),
+                Rectangle::<i32, Logical>::new((0, 90), (100, 10)),
             ]
         )
     }
 
     #[test]
     fn rectangle_subtract_full_top() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((0, -20), (100, 100));
+        let outer = Rectangle::<i32, Logical>::new((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::new((0, -20), (100, 100));
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(
             rects,
             vec![
                 // Bottom rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 80), (100, 20)),
+                Rectangle::<i32, Logical>::new((0, 80), (100, 20)),
             ]
         )
     }
 
     #[test]
     fn rectangle_subtract_full_bottom() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((0, 20), (100, 100));
+        let outer = Rectangle::<i32, Logical>::new((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::new((0, 20), (100, 100));
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(
             rects,
             vec![
                 // Top rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 20)),
+                Rectangle::<i32, Logical>::new((0, 0), (100, 20)),
             ]
         )
     }
 
     #[test]
     fn rectangle_subtract_full_left() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((-20, 0), (100, 100));
+        let outer = Rectangle::<i32, Logical>::new((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::new((-20, 0), (100, 100));
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(
             rects,
             vec![
                 // Right rect
-                Rectangle::<i32, Logical>::from_loc_and_size((80, 0), (20, 100)),
+                Rectangle::<i32, Logical>::new((80, 0), (20, 100)),
             ]
         )
     }
 
     #[test]
     fn rectangle_subtract_full_right() {
-        let outer = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (100, 100));
-        let inner = Rectangle::<i32, Logical>::from_loc_and_size((20, 0), (100, 100));
+        let outer = Rectangle::<i32, Logical>::new((0, 0), (100, 100));
+        let inner = Rectangle::<i32, Logical>::new((20, 0), (100, 100));
 
         let rects = outer.subtract_rect(inner);
         assert_eq!(
             rects,
             vec![
                 // Left rect
-                Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (20, 100)),
+                Rectangle::<i32, Logical>::new((0, 0), (20, 100)),
             ]
         )
     }
 
     #[test]
     fn rectangle_overlaps_or_touches_top() {
-        let top = Rectangle::<i32, Logical>::from_loc_and_size((0, -24), (800, 24));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let top = Rectangle::<i32, Logical>::new((0, -24), (800, 24));
+        let main = Rectangle::<i32, Logical>::new((0, 0), (800, 600));
         assert!(main.overlaps_or_touches(top));
     }
 
     #[test]
     fn rectangle_overlaps_or_touches_left() {
-        let left = Rectangle::<i32, Logical>::from_loc_and_size((-4, -24), (4, 624));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let left = Rectangle::<i32, Logical>::new((-4, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::new((0, 0), (800, 600));
         assert!(main.overlaps_or_touches(left));
     }
 
     #[test]
     fn rectangle_overlaps_or_touches_right() {
-        let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let right = Rectangle::<i32, Logical>::new((800, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::new((0, 0), (800, 600));
         assert!(main.overlaps_or_touches(right));
     }
 
     #[test]
     fn rectangle_no_overlap_top() {
-        let top = Rectangle::<i32, Logical>::from_loc_and_size((0, -24), (800, 24));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let top = Rectangle::<i32, Logical>::new((0, -24), (800, 24));
+        let main = Rectangle::<i32, Logical>::new((0, 0), (800, 600));
         assert!(!main.overlaps(top));
     }
 
     #[test]
     fn rectangle_no_overlap_left() {
-        let left = Rectangle::<i32, Logical>::from_loc_and_size((-4, -24), (4, 624));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let left = Rectangle::<i32, Logical>::new((-4, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::new((0, 0), (800, 600));
         assert!(!main.overlaps(left));
     }
 
     #[test]
     fn rectangle_no_overlap_right() {
-        let right = Rectangle::<i32, Logical>::from_loc_and_size((800, -24), (4, 624));
-        let main = Rectangle::<i32, Logical>::from_loc_and_size((0, 0), (800, 600));
+        let right = Rectangle::<i32, Logical>::new((800, -24), (4, 624));
+        let main = Rectangle::<i32, Logical>::new((0, 0), (800, 600));
         assert!(!main.overlaps(right));
     }
 }

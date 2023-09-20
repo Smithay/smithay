@@ -80,7 +80,7 @@ impl PopupKind {
                 .current
                 .geometry
         })
-        .loc
+        .origin
     }
 }
 

@@ -224,7 +224,7 @@ pub fn send_toplevel_configure(
     // send bounds if requested
     if send_bounds && resource.version() >= xdg_toplevel::EVT_CONFIGURE_BOUNDS_SINCE {
         let bounds = configure.state.bounds.unwrap_or_default();
-        resource.configure_bounds(bounds.w, bounds.h);
+        resource.configure_bounds(bounds.width, bounds.height);
     }
 
     // send the capabilities if requested

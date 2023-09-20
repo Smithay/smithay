@@ -346,14 +346,14 @@
 //!     // Your draw code here...
 //!
 //!     // Return the damage areas
-//!     Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(
+//!     Result::<_, ()>::Ok(vec![Rectangle::new(
 //!         Point::default(),
 //!         Size::from((WIDTH, HEIGHT)),
 //!     )])
 //! });
 //!
 //! // Optionally update the opaque regions
-//! render_context.update_opaque_regions(Some(vec![Rectangle::from_loc_and_size(
+//! render_context.update_opaque_regions(Some(vec![Rectangle::new(
 //!     Point::default(),
 //!     Size::from((WIDTH, HEIGHT)),
 //! )]));
@@ -374,7 +374,7 @@
 //!             // Update the changed parts of the buffer
 //!
 //!             // Return the updated parts
-//!             Result::<_, ()>::Ok(vec![Rectangle::from_loc_and_size(Point::default(), (WIDTH, HEIGHT))])
+//!             Result::<_, ()>::Ok(vec![Rectangle::new(Point::default(), (WIDTH, HEIGHT))])
 //!         });
 //!
 //!         last_update = now;
@@ -410,7 +410,7 @@ use crate::{
             Frame, ImportMem, Renderer, Texture,
         },
     },
-    utils::{Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{geometry::prelude::*, Buffer, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
 use super::{CommitCounter, Element, Id, Kind, RenderElement};
@@ -635,7 +635,7 @@ pub struct TextureRenderElement<T> {
 impl<T: Texture> TextureRenderElement<T> {
     fn damage_since(&self, commit: Option<CommitCounter>) -> Vec<Rectangle<i32, Buffer>> {
         self.snapshot.damage_since(commit).unwrap_or_else(|| {
-            vec![Rectangle::from_loc_and_size(
+            vec![Rectangle::new(
                 Point::default(),
                 self.texture.size(),
             )]
@@ -770,27 +770,27 @@ impl<T: Texture> TextureRenderElement<T> {
         self.size
             .or_else(|| {
                 self.src
-                    .map(|src| Size::from((src.size.w as i32, src.size.h as i32)))
+                    .map(|src| Size::from((src.size.width as i32, src.size.height as i32)))
             })
             .unwrap_or_else(|| self.texture.size().to_logical(self.scale, self.transform))
     }
 
     fn physical_size(&self, scale: Scale<f64>) -> Size<i32, Physical> {
         let logical_size = self.logical_size();
-        ((logical_size.to_f64().to_physical(scale).to_point() + self.location).to_i32_round()
-            - self.location.to_i32_round())
+        ((logical_size.to_f64().to_physical(scale).to_point() + self.location).round().to_i32()
+            - self.location.round().to_i32())
         .to_size()
     }
 
     fn src(&self) -> Rectangle<f64, Logical> {
         self.src
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.logical_size().to_f64()))
+            .unwrap_or_else(|| Rectangle::new(Point::default(), self.logical_size().to_f64()))
     }
 
     fn scale(&self) -> Scale<f64> {
         let size = self.logical_size();
         let src = self.src();
-        Scale::from((size.w as f64 / src.size.w, size.h as f64 / src.size.h))
+        Scale::from((size.width as f64 / src.size.width, size.height as f64 / src.size.height))
     }
 
     fn rect_to_global<N>(&self, rect: Rectangle<N, Logical>) -> Rectangle<f64, Logical>
@@ -799,7 +799,7 @@ impl<T: Texture> TextureRenderElement<T> {
     {
         let scale = self.scale();
         let mut rect = rect.to_f64();
-        rect.loc -= self.src.map(|rect| rect.loc).unwrap_or_default();
+        rect.origin -= self.src.map(|rect| rect.origin).unwrap_or_default();
         rect.upscale(scale)
     }
 }
@@ -817,7 +817,7 @@ where
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        Rectangle::from_loc_and_size(self.location.to_i32_round(), self.physical_size(scale))
+        Rectangle::new(self.location.round().to_i32(), self.physical_size(scale))
     }
 
     fn transform(&self) -> Transform {
@@ -844,7 +844,7 @@ where
             .filter_map(|rect| {
                 rect.to_f64()
                     .to_logical(self.scale as f64, self.transform, &texture_size.to_f64())
-                    .intersection(src)
+                    .intersection(&src)
                     .map(|rect| self.rect_to_global(rect).to_i32_up::<i32>())
                     .map(|rect| {
                         let surface_scale = physical_size.to_f64() / logical_size.to_f64().to_physical(scale);
@@ -868,7 +868,7 @@ where
                 r.iter()
                     .filter_map(|rect| {
                         rect.to_f64()
-                            .intersection(src)
+                            .intersection(&src)
                             .map(|rect| self.rect_to_global(rect).to_i32_up::<i32>())
                             .map(|rect| {
                                 let surface_scale =

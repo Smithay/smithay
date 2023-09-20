@@ -1,6 +1,6 @@
 use crate::{
     backend::renderer::{buffer_dimensions, buffer_has_alpha, element::RenderElement, ImportAll, Renderer},
-    utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
+    utils::{geometry::prelude::*, Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::{
         compositor::{
             self, add_destruction_hook, is_sync_subsurface, with_surface_tree_downward,
@@ -142,8 +142,8 @@ impl RendererSurfaceState {
                                 &surface_size,
                             ),
                         }
-                        .intersection(Rectangle::from_loc_and_size(
-                            (0, 0),
+                        .intersection(Rectangle::new(
+                            (0, 0).into(),
                             self.buffer_dimensions.unwrap(),
                         ))
                     })
@@ -153,8 +153,8 @@ impl RendererSurfaceState {
 
                 self.opaque_regions.clear();
                 if !self.buffer_has_alpha.unwrap_or(true) {
-                    self.opaque_regions.push(Rectangle::from_loc_and_size(
-                        (0, 0),
+                    self.opaque_regions.push(Rectangle::new(
+                        (0, 0).into(),
                         self.surface_view.unwrap().dst,
                     ))
                 } else if let Some(region_attributes) = &attrs.opaque_region {
@@ -165,13 +165,13 @@ impl RendererSurfaceState {
                             let dest_size = self.surface_view.unwrap().dst;
 
                             let rect_constrained_loc = rect
-                                .loc
-                                .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                                .origin
+                                .constrain(Rectangle::from_size(dest_size));
                             let rect_clamped_size = rect
                                 .size
-                                .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+                                .clamp((0, 0).into(), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                            let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                            let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
 
                             (kind, rect)
                         })
@@ -225,7 +225,7 @@ impl RendererSurfaceState {
         self.damage.damage_since(commit).unwrap_or_else(|| {
             self.buffer_dimensions
                 .as_ref()
-                .map(|size| vec![Rectangle::from_loc_and_size((0, 0), *size)])
+                .map(|size| vec![Rectangle::new((0, 0).into(), *size)])
                 .unwrap_or_else(Vec::new)
         })
     }
@@ -368,7 +368,7 @@ impl SurfaceView {
         let viewport = states.cached_state.current::<viewporter::ViewportCachedState>();
         let src = viewport
             .src
-            .unwrap_or_else(|| Rectangle::from_loc_and_size((0.0, 0.0), surface_size.to_f64()));
+            .unwrap_or_else(|| Rectangle::new((0.0, 0.0).into(), surface_size.to_f64()));
         let dst = viewport.size().unwrap_or(surface_size);
         let mut offset = if states.role == Some("subsurface") {
             states.cached_state.current::<SubsurfaceCachedState>().location
@@ -385,7 +385,7 @@ impl SurfaceView {
     {
         let scale = self.scale();
         let mut rect = rect.to_f64();
-        rect.loc -= self.src.loc;
+        rect.origin -= self.src.origin;
         rect.upscale(scale)
     }
 
@@ -395,14 +395,14 @@ impl SurfaceView {
     {
         let scale = self.scale();
         let mut rect = rect.to_f64().downscale(scale);
-        rect.loc += self.src.loc;
+        rect.origin += self.src.origin;
         rect
     }
 
     fn scale(&self) -> Scale<f64> {
         Scale::from((
-            self.dst.w as f64 / self.src.size.w,
-            self.dst.h as f64 / self.src.size.h,
+            self.dst.width as f64 / self.src.size.width,
+            self.dst.height as f64 / self.src.size.height,
         ))
     }
 }
@@ -568,7 +568,7 @@ where
         ));
 
         opaque_regions.extend(element.opaque_regions(scale).into_iter().map(|mut region| {
-            region.loc += element_geometry.loc;
+            region.origin += element_geometry.origin;
             region
         }));
         render_elements.insert(0, element);
@@ -602,9 +602,9 @@ where
 
         let element_damage = damage
             .iter()
-            .filter_map(|d| d.intersection(element_geometry))
+            .filter_map(|d| d.intersection(&element_geometry))
             .map(|mut d| {
-                d.loc -= element_geometry.loc;
+                d.origin -= element_geometry.origin;
                 d
             })
             .collect::<Vec<_>>();

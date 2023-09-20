@@ -42,7 +42,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for MoveSurfaceG
         let new_location = self.initial_window_location.to_f64() + delta;
 
         data.space
-            .map_element(self.window.clone(), new_location.to_i32_round(), true);
+            .map_element(self.window.clone(), new_location.round().to_i32(), true);
     }
 
     fn relative_motion(
@@ -313,7 +313,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
             #[cfg(feature = "xwayland")]
             WindowElement::X11(x11) => {
                 let location = data.space.element_location(&self.window).unwrap();
-                x11.configure(Rectangle::from_loc_and_size(location, self.last_window_size))
+                x11.configure(Rectangle::new(location, self.last_window_size))
                     .unwrap();
             }
         }
@@ -399,7 +399,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
 
                         data.space.map_element(self.window.clone(), location, true);
                     }
-                    x11.configure(Rectangle::from_loc_and_size(location, self.last_window_size))
+                    x11.configure(Rectangle::new(location, self.last_window_size))
                         .unwrap();
 
                     let Some(surface) = self.window.wl_surface() else {

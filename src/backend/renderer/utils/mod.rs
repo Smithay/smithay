@@ -2,6 +2,7 @@
 //! and [`RenderElement`](super::element::RenderElement)s with [`Renderer`](super::Renderer)s.
 
 use crate::utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Size};
+use euclid::Vector2D;
 use std::{collections::VecDeque, fmt, sync::Arc};
 
 #[cfg(feature = "wayland_frontend")]
@@ -301,5 +302,5 @@ pub struct SurfaceView {
     /// The logical destination size used for scaling
     pub dst: Size<i32, Logical>,
     /// The logical offset for a sub-surface
-    pub offset: Point<i32, Logical>,
+    pub offset: Vector2D<i32, Logical>,
 }

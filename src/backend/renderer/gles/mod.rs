@@ -53,7 +53,7 @@ use crate::backend::{
     },
     egl::fence::EGLFence,
 };
-use crate::utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform};
+use crate::utils::{geometry::prelude::*, Buffer as BufferCoord, Physical, Rectangle, Size, Transform};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
@@ -285,12 +285,12 @@ impl GlesTarget {
                     gl.BlitFramebuffer(
                         0,
                         0,
-                        size.w,
-                        size.h,
+                        size.width,
+                        size.height,
                         0,
                         0,
-                        size.w,
-                        size.h,
+                        size.width,
+                        size.height,
                         ffi::STENCIL_BUFFER_BIT,
                         ffi::NEAREST,
                     );
@@ -958,15 +958,15 @@ impl ImportMemWl for GlesRenderer {
                 } else {
                     for region in damage.iter() {
                         trace!("Uploading partial shm texture");
-                        self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
-                        self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
+                        self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.origin.x);
+                        self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.origin.y);
                         self.gl.TexSubImage2D(
                             ffi::TEXTURE_2D,
                             0,
-                            region.loc.x,
-                            region.loc.y,
-                            region.size.w,
-                            region.size.h,
+                            region.origin.x,
+                            region.origin.y,
+                            region.size.width,
+                            region.size.height,
                             read_format,
                             type_,
                             ptr.offset(offset as isize) as *const _,
@@ -1016,7 +1016,7 @@ impl ImportMem for GlesRenderer {
         self.make_current()?;
 
         if data.len()
-            < (size.w * size.h) as usize
+            < (size.width * size.height) as usize
                 * (get_bpp(format).ok_or(GlesError::UnsupportedPixelFormat(format))? / 8)
         {
             return Err(GlesError::UnexpectedSize);
@@ -1059,8 +1059,8 @@ impl ImportMem for GlesRenderer {
                     ffi::TEXTURE_2D,
                     0,
                     internal as i32,
-                    size.w,
-                    size.h,
+                    size.width,
+                    size.height,
                     0,
                     format,
                     layout,
@@ -1104,7 +1104,7 @@ impl ImportMem for GlesRenderer {
             .ok_or(GlesError::UnknownPixelFormat)?;
 
         if data.len()
-            < (region.size.w * region.size.h) as usize
+            < (region.size.width * region.size.height) as usize
                 * (gl_bpp(read_format, type_).ok_or(GlesError::UnknownPixelFormat)? / 8)
         {
             return Err(GlesError::UnexpectedSize);
@@ -1116,16 +1116,16 @@ impl ImportMem for GlesRenderer {
                 .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
             self.gl
                 .TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
-            self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, texture.0.size.w);
-            self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.loc.x);
-            self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.loc.y);
+            self.gl.PixelStorei(ffi::UNPACK_ROW_LENGTH, texture.0.size.width);
+            self.gl.PixelStorei(ffi::UNPACK_SKIP_PIXELS, region.origin.x);
+            self.gl.PixelStorei(ffi::UNPACK_SKIP_ROWS, region.origin.y);
             self.gl.TexSubImage2D(
                 ffi::TEXTURE_2D,
                 0,
-                region.loc.x,
-                region.loc.y,
-                region.size.w,
-                region.size.h,
+                region.origin.x,
+                region.origin.y,
+                region.size.width,
+                region.size.height,
                 read_format,
                 type_,
                 data.as_ptr() as *const _,
@@ -1367,15 +1367,15 @@ impl ExportMem for GlesRenderer {
             self.gl.GenBuffers(1, &mut pbo);
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
             let bpp = gl_bpp(format, layout).ok_or(GlesError::UnsupportedPixelLayout)? / 8;
-            let size = (region.size.w * region.size.h * bpp as i32) as isize;
+            let size = (region.size.width * region.size.height * bpp as i32) as isize;
             self.gl
                 .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_READ);
             self.gl.ReadBuffer(ffi::COLOR_ATTACHMENT0);
             self.gl.ReadPixels(
-                region.loc.x,
-                region.loc.y,
-                region.size.w,
-                region.size.h,
+                region.origin.x,
+                region.origin.y,
+                region.size.width,
+                region.size.height,
                 format,
                 layout,
                 ptr::null_mut(),
@@ -1425,16 +1425,16 @@ impl ExportMem for GlesRenderer {
             self.gl.BindBuffer(ffi::PIXEL_PACK_BUFFER, pbo);
             self.gl.BufferData(
                 ffi::PIXEL_PACK_BUFFER,
-                (region.size.w * region.size.h * bpp as i32) as isize,
+                (region.size.width * region.size.height * bpp as i32) as isize,
                 ptr::null(),
                 ffi::STREAM_READ,
             );
             self.gl.ReadBuffer(ffi::COLOR_ATTACHMENT0);
             self.gl.ReadPixels(
-                region.loc.x,
-                region.loc.y,
-                region.size.w,
-                region.size.h,
+                region.origin.x,
+                region.origin.y,
+                region.size.width,
+                region.size.height,
                 format,
                 layout,
                 ptr::null_mut(),
@@ -1472,7 +1472,7 @@ impl ExportMem for GlesRenderer {
     ) -> Result<&'a [u8], Self::Error> {
         self.make_current()?;
         let size = texture_mapping.size();
-        let len = size.w * size.h * 4;
+        let len = size.width * size.height * 4;
 
         let mapping_ptr = texture_mapping.mapping.load(Ordering::SeqCst);
         let ptr = if mapping_ptr.is_null() {
@@ -1514,8 +1514,8 @@ impl GlesRenderer {
                         ffi::TEXTURE_2D,
                         0,
                         ffi::RGBA16F as i32,
-                        size.w,
-                        size.h,
+                        size.width,
+                        size.height,
                         0,
                         ffi::RGBA,
                         ffi::HALF_FLOAT,
@@ -1544,7 +1544,7 @@ impl GlesRenderer {
                     self.gl.GenRenderbuffers(1, &mut rbo);
                     self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
                     self.gl
-                        .RenderbufferStorage(ffi::RENDERBUFFER, ffi::STENCIL_INDEX8, size.w, size.h);
+                        .RenderbufferStorage(ffi::RENDERBUFFER, ffi::STENCIL_INDEX8, size.width, size.height);
 
                     self.gl.FramebufferRenderbuffer(
                         ffi::FRAMEBUFFER,
@@ -1753,8 +1753,8 @@ impl Offscreen<GlesTexture> for GlesRenderer {
                 ffi::TEXTURE_2D,
                 0,
                 internal as i32,
-                size.w,
-                size.h,
+                size.width,
+                size.height,
                 0,
                 format,
                 layout,
@@ -1837,7 +1837,7 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
             self.gl.GenRenderbuffers(1, &mut rbo);
             self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
             self.gl
-                .RenderbufferStorage(ffi::RENDERBUFFER, internal, size.w, size.h);
+                .RenderbufferStorage(ffi::RENDERBUFFER, internal, size.width, size.height);
             self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
             Ok(GlesRenderbuffer(Rc::new(GlesRenderbufferInternal {
@@ -1965,14 +1965,14 @@ impl GlesRenderer {
         let errno = unsafe {
             while self.gl.GetError() != ffi::NO_ERROR {} // clear flag before
             self.gl.BlitFramebuffer(
-                src.loc.x,
-                src.loc.y,
-                src.loc.x + src.size.w,
-                src.loc.y + src.size.h,
-                dst.loc.x,
-                dst.loc.y,
-                dst.loc.x + dst.size.w,
-                dst.loc.y + dst.size.h,
+                src.origin.x,
+                src.origin.y,
+                src.origin.x + src.size.width,
+                src.origin.y + src.size.height,
+                dst.origin.x,
+                dst.origin.y,
+                dst.origin.x + dst.size.width,
+                dst.origin.y + dst.size.height,
                 ffi::COLOR_BUFFER_BIT,
                 match filter {
                     TextureFilter::Linear => ffi::LINEAR,
@@ -2274,9 +2274,9 @@ impl Renderer for GlesRenderer {
         self.make_current()?;
 
         unsafe {
-            self.gl.Viewport(0, 0, output_size.w, output_size.h);
+            self.gl.Viewport(0, 0, output_size.width, output_size.height);
 
-            self.gl.Scissor(0, 0, output_size.w, output_size.h);
+            self.gl.Scissor(0, 0, output_size.width, output_size.height);
             self.gl.Enable(ffi::SCISSOR_TEST);
 
             self.gl.Enable(ffi::BLEND);
@@ -2299,15 +2299,15 @@ impl Renderer for GlesRenderer {
 
         // Handle the width/height swap when the output is rotated by 90°/270°.
         if let Transform::_90 | Transform::_270 | Transform::Flipped90 | Transform::Flipped270 = transform {
-            mem::swap(&mut output_size.w, &mut output_size.h);
+            mem::swap(&mut output_size.width, &mut output_size.height);
         }
 
         // replicate https://www.khronos.org/registry/OpenGL-Refpages/gl2.1/xhtml/glOrtho.xml
         // glOrtho(0, width, 0, height, 1, 1);
         let mut renderer = Matrix3::<f32>::identity();
         let t = Matrix3::<f32>::identity();
-        let x = 2.0 / (output_size.w as f32);
-        let y = 2.0 / (output_size.h as f32);
+        let x = 2.0 / (output_size.width as f32);
+        let y = 2.0 / (output_size.height as f32);
 
         // Rotation & Reflection
         renderer[0][0] = x * t[0][0];
@@ -2454,7 +2454,7 @@ impl<'frame> Frame for GlesFrame<'frame> {
             self.renderer.gl.Disable(ffi::BLEND);
         }
 
-        let res = self.draw_solid(Rectangle::from_loc_and_size((0, 0), self.size), at, color);
+        let res = self.draw_solid(Rectangle::new((0, 0).into(), self.size), at, color);
 
         unsafe {
             self.renderer.gl.Enable(ffi::BLEND);
@@ -2654,18 +2654,18 @@ impl<'frame> GlesFrame<'frame> {
                 let dest_size = dest.size;
 
                 let rect_constrained_loc = rect
-                    .loc
-                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                    .origin
+                    .constrain(Rectangle::from_size(dest_size));
                 let rect_clamped_size = rect
                     .size
-                    .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+                    .clamp((0, 0).into(), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
                 [
-                    (dest.loc.x + rect.loc.x) as f32,
-                    (dest.loc.y + rect.loc.y) as f32,
-                    rect.size.w as f32,
-                    rect.size.h as f32,
+                    (dest.origin.x + rect.origin.x) as f32,
+                    (dest.origin.y + rect.origin.y) as f32,
+                    rect.size.width as f32,
+                    rect.size.height as f32,
                 ]
             })
             .collect::<Vec<_>>();
@@ -2789,7 +2789,7 @@ impl<'frame> GlesFrame<'frame> {
         let mut mat = Matrix3::<f32>::identity();
 
         // dest position and scale
-        mat = mat * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
+        mat = mat * Matrix3::from_translation(Vector2::new(dest.origin.x as f32, dest.origin.y as f32));
 
         // src scale, position, tranform and y_inverted
         let tex_size = texture.size().to_f64();
@@ -2809,14 +2809,14 @@ impl<'frame> GlesFrame<'frame> {
         // first scale to meet the src size
         tex_mat = tex_mat
             * Matrix3::from_nonuniform_scale(
-                (src_size.w / tex_size.w) as f32,
-                (src_size.h / tex_size.h) as f32,
+                (src_size.width / tex_size.width) as f32,
+                (src_size.height / tex_size.height) as f32,
             );
         // now translate by the src location
         tex_mat = tex_mat
             * Matrix3::from_translation(Vector2::new(
-                (src.loc.x / src_size.w) as f32,
-                (src.loc.y / src_size.h) as f32,
+                (src.origin.x / src_size.width) as f32,
+                (src.origin.y / src_size.height) as f32,
             ));
         // then apply the transform and if necessary invert the y axis
         tex_mat = tex_mat * Matrix3::from_translation(Vector2::new(0.5, 0.5));
@@ -2832,8 +2832,8 @@ impl<'frame> GlesFrame<'frame> {
         // at last scale back to tex space
         tex_mat = tex_mat
             * Matrix3::from_nonuniform_scale(
-                (1.0f64 / dest.size.w as f64) as f32,
-                (1.0f64 / dest.size.h as f64) as f32,
+                (1.0f64 / dest.size.width as f64) as f32,
+                (1.0f64 / dest.size.height as f64) as f32,
             );
 
         let instances = damage
@@ -2842,18 +2842,18 @@ impl<'frame> GlesFrame<'frame> {
                 let dest_size = dest.size;
 
                 let rect_constrained_loc = rect
-                    .loc
-                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                    .origin
+                    .constrain(Rectangle::from_size(dest_size));
                 let rect_clamped_size = rect
                     .size
-                    .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+                    .clamp((0, 0).into(), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
                 [
-                    rect.loc.x as f32,
-                    rect.loc.y as f32,
-                    rect.size.w as f32,
-                    rect.size.h as f32,
+                    rect.origin.x as f32,
+                    rect.origin.y as f32,
+                    rect.size.width as f32,
+                    rect.size.height as f32,
                 ]
             })
             .collect::<Vec<_>>();
@@ -3067,18 +3067,18 @@ impl<'frame> GlesFrame<'frame> {
                         let dest_size = dest.size;
 
                         let rect_constrained_loc = rect
-                            .loc
-                            .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                            .origin
+                            .constrain(Rectangle::from_size(dest_size));
                         let rect_clamped_size = rect
                             .size
-                            .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+                            .clamp((0, 0).into(), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                        let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                        let rect = Rectangle::new(rect_constrained_loc, rect_clamped_size);
                         [
-                            rect.loc.x as f32,
-                            rect.loc.y as f32,
-                            rect.size.w as f32,
-                            rect.size.h as f32,
+                            rect.origin.x as f32,
+                            rect.origin.y as f32,
+                            rect.size.width as f32,
+                            rect.size.height as f32,
                         ]
                     })
                     .collect::<Vec<_>>()
@@ -3093,11 +3093,11 @@ impl<'frame> GlesFrame<'frame> {
         let mut tex_matrix = Matrix3::<f32>::identity();
 
         // dest position and scale
-        matrix = matrix * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
+        matrix = matrix * Matrix3::from_translation(Vector2::new(dest.origin.x as f32, dest.origin.y as f32));
         tex_matrix = tex_matrix
             * Matrix3::from_nonuniform_scale(
-                (1.0f64 / dest.size.w as f64) as f32,
-                (1.0f64 / dest.size.h as f64) as f32,
+                (1.0f64 / dest.size.width as f64) as f32,
+                (1.0f64 / dest.size.height as f64) as f32,
             );
 
         //apply output transformation
@@ -3116,7 +3116,7 @@ impl<'frame> GlesFrame<'frame> {
 
             gl.UniformMatrix3fv(program.uniform_matrix, 1, ffi::FALSE, matrix.as_ptr());
             gl.UniformMatrix3fv(program.uniform_tex_matrix, 1, ffi::FALSE, tex_matrix.as_ptr());
-            gl.Uniform2f(program.uniform_size, dest.size.w as f32, dest.size.h as f32);
+            gl.Uniform2f(program.uniform_size, dest.size.width as f32, dest.size.height as f32);
             gl.Uniform1f(program.uniform_alpha, alpha);
             let tint = if self.renderer.debug_flags.contains(DebugFlags::TINT) {
                 1.0f32

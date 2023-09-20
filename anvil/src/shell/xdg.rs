@@ -308,7 +308,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 state.states.set(xdg_toplevel::State::Maximized);
                 state.size = Some(geometry.size);
             });
-            self.space.map_element(window, geometry.loc, true);
+            self.space.map_element(window, geometry.origin, true);
         }
 
         // The protocol demands us to always reply with a configure,

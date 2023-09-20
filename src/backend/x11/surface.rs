@@ -137,10 +137,10 @@ impl X11Surface {
     }
 
     fn resize(&mut self, size: Size<u16, Logical>) {
-        self.swapchain.resize(size.w as u32, size.h as u32);
+        self.swapchain.resize(size.width as u32, size.height as u32);
         self.buffer = None;
 
-        self.width = size.w;
-        self.height = size.h;
+        self.width = size.width;
+        self.height = size.height;
     }
 }
