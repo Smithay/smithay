@@ -52,6 +52,7 @@ impl Smallvil {
                         time: event.time_msec(),
                     },
                 );
+                pointer.frame(self);
             }
             InputEvent::PointerButton { event, .. } => {
                 let pointer = self.seat.get_pointer().unwrap();
@@ -92,6 +93,7 @@ impl Smallvil {
                         time: event.time_msec(),
                     },
                 );
+                pointer.frame(self);
             }
             InputEvent::PointerAxis { event, .. } => {
                 let source = event.source();
@@ -128,7 +130,9 @@ impl Smallvil {
                     }
                 }
 
-                self.seat.get_pointer().unwrap().axis(self, frame);
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.axis(self, frame);
+                pointer.frame(self);
             }
             _ => {}
         }

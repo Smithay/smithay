@@ -757,6 +757,11 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for LayerSurface {
             PointerTarget::<D>::axis(surface, seat, data, frame)
         }
     }
+    fn frame(&self, seat: &Seat<D>, data: &mut D) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::frame(surface, seat, data)
+        }
+    }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
         if let Some(surface) = self.0.focused_surface.lock().unwrap().take() {
             PointerTarget::<D>::leave(&surface, seat, data, serial, time)

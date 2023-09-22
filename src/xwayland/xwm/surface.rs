@@ -926,6 +926,12 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for X11Surface {
         }
     }
 
+    fn frame(&self, seat: &Seat<D>, data: &mut D) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            PointerTarget::frame(surface, seat, data);
+        }
+    }
+
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             PointerTarget::leave(surface, seat, data, serial, time);

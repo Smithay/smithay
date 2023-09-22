@@ -120,6 +120,8 @@ where
     fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent);
     /// A pointer of a given seat scrolled on an axis
     fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame);
+    /// End of a pointer frame
+    fn frame(&self, seat: &Seat<D>, data: &mut D);
     /// A pointer of a given seat started a swipe gesture
     fn gesture_swipe_begin(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeBeginEvent);
     /// A pointer of a given seat updated a swipe gesture
@@ -280,6 +282,17 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
         let seat = self.get_seat(data);
         self.inner.lock().unwrap().with_grab(&seat, |mut handle, grab| {
             grab.axis(data, &mut handle, details);
+        });
+    }
+
+    /// End of a pointer frame
+    ///
+    /// A frame groups associated events. This terminates the frame.
+    #[instrument(level = "trace", parent = &self.span, skip(self, data))]
+    pub fn frame(&self, data: &mut D) {
+        let seat = self.get_seat(data);
+        self.inner.lock().unwrap().with_grab(&seat, |mut handle, grab| {
+            grab.frame(data, &mut handle);
         });
     }
 
@@ -544,6 +557,16 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     pub fn axis(&mut self, data: &mut D, details: AxisFrame) {
         if let Some((focused, _)) = self.inner.focus.as_mut() {
             focused.axis(self.seat, data, details);
+        }
+    }
+
+    /// End of a pointer frame
+    ///
+    /// This will internally send the appropriate frame event to the client
+    /// objects matching with the currently focused surface.
+    pub fn frame(&mut self, data: &mut D) {
+        if let Some((focused, _)) = self.inner.focus.as_mut() {
+            focused.frame(self.seat, data);
         }
     }
 

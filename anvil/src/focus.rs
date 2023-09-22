@@ -104,6 +104,13 @@ impl<BackendData: Backend> PointerTarget<AnvilState<BackendData>> for FocusTarge
             FocusTarget::Popup(p) => PointerTarget::axis(p.wl_surface(), seat, data, frame),
         }
     }
+    fn frame(&self, seat: &Seat<AnvilState<BackendData>>, data: &mut AnvilState<BackendData>) {
+        match self {
+            FocusTarget::Window(w) => PointerTarget::frame(w, seat, data),
+            FocusTarget::LayerSurface(l) => PointerTarget::frame(l, seat, data),
+            FocusTarget::Popup(p) => PointerTarget::frame(p.wl_surface(), seat, data),
+        }
+    }
     fn leave(
         &self,
         seat: &Seat<AnvilState<BackendData>>,
