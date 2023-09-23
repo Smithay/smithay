@@ -354,11 +354,8 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-
 
       - name: Rust toolchain
-        # nightly changed no_coverage to coverage(off) which breaks the build
-        # see: https://github.com/rust-lang/rust/pull/114656
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: nightly-2023-06-17
           components: llvm-tools-preview
 
       - name: grcov cache
@@ -446,7 +443,7 @@ jobs:
       - name: Build Documentation
         env: 
           RUSTDOCFLAGS: --cfg=docsrs
-        run: cargo doc --no-deps --features "test_all_features" -p smithay -p calloop:0.10.6 -p drm -p gbm -p input -p nix:0.26.4 -p udev -p wayland-server -p wayland-backend -p wayland-protocols:0.30.1 -p winit -p x11rb
+        run: cargo doc --no-deps --features "test_all_features" -p smithay -p calloop:0.10.6 -p drm -p gbm -p input -p nix:0.27.1 -p udev:0.8.0 -p wayland-server -p wayland-backend -p wayland-protocols:0.31.0 -p winit -p x11rb
         
       - name: Setup index
         run: cp ./doc_index.html ./target/doc/index.html

@@ -111,14 +111,14 @@ where
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &KeyboardUserData<D>) {
+    fn destroyed(_state: &mut D, _client_id: ClientId, keyboard: &WlKeyboard, data: &KeyboardUserData<D>) {
         if let Some(ref handle) = data.handle {
             handle
                 .arc
                 .known_kbds
                 .lock()
                 .unwrap()
-                .retain(|k| k.id() != object_id)
+                .retain(|k| k.id() != keyboard.id())
         }
     }
 }

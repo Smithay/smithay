@@ -1,6 +1,6 @@
 use std::{
     io::{Read, Write},
-    os::unix::{io::FromRawFd, net::UnixStream},
+    os::unix::{io::AsRawFd, net::UnixStream},
 };
 
 use tracing::{debug, info, warn};
@@ -168,13 +168,7 @@ fn open_socket(addr: socket::UnixAddr) -> nix::Result<UnixStream> {
         None,
     )?;
     // bind it to requested address
-    if let Err(e) = socket::bind(fd, &addr) {
-        let _ = ::nix::unistd::close(fd);
-        return Err(e);
-    }
-    if let Err(e) = socket::listen(fd, 1) {
-        let _ = ::nix::unistd::close(fd);
-        return Err(e);
-    }
-    Ok(unsafe { FromRawFd::from_raw_fd(fd) })
+    socket::bind(fd.as_raw_fd(), &addr)?;
+    socket::listen(&fd, 1)?;
+    Ok(UnixStream::from(fd))
 }

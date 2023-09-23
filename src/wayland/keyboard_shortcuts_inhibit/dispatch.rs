@@ -132,7 +132,7 @@ where
     fn destroyed(
         handler: &mut D,
         _client: ClientId,
-        id: ObjectId,
+        wl_inhibitor: &ZwpKeyboardShortcutsInhibitorV1,
         data: &KeyboardShortcutsInhibitorUserData,
     ) {
         data.is_active.store(false, atomic::Ordering::Release);
@@ -140,7 +140,7 @@ where
         let state = handler.keyboard_shortcuts_inhibit_state();
 
         if let Entry::Occupied(mut entry) = state.inhibitors.entry(data.seat.clone()) {
-            let inhibitor = entry.get_mut().borrow_mut().remove(id);
+            let inhibitor = entry.get_mut().borrow_mut().remove(wl_inhibitor.id());
 
             if entry.get().borrow().is_empty() {
                 entry.remove();

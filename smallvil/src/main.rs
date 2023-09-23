@@ -7,12 +7,15 @@ mod input;
 mod state;
 mod winit;
 
-use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
+use smithay::reexports::{
+    calloop::EventLoop,
+    wayland_server::{Display, DisplayHandle},
+};
 pub use state::Smallvil;
 
 pub struct CalloopData {
     state: Smallvil,
-    display: Display<Smallvil>,
+    display_handle: DisplayHandle,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -24,10 +27,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut event_loop: EventLoop<CalloopData> = EventLoop::try_new()?;
 
-    let mut display: Display<Smallvil> = Display::new()?;
-    let state = Smallvil::new(&mut event_loop, &mut display);
+    let display: Display<Smallvil> = Display::new()?;
+    let display_handle = display.handle();
+    let state = Smallvil::new(&mut event_loop, display);
 
-    let mut data = CalloopData { state, display };
+    let mut data = CalloopData {
+        state,
+        display_handle,
+    };
 
     crate::winit::init_winit(&mut event_loop, &mut data)?;
 

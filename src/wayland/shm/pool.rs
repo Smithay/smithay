@@ -3,7 +3,7 @@
 use std::{
     cell::Cell,
     num::NonZeroUsize,
-    os::unix::io::{AsRawFd, OwnedFd, RawFd},
+    os::unix::io::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
     ptr,
     sync::{
         mpsc::{sync_channel, SyncSender},
@@ -282,7 +282,7 @@ unsafe fn map(fd: RawFd, size: NonZeroUsize) -> Result<*mut u8, ()> {
             size,
             mman::ProtFlags::PROT_READ | mman::ProtFlags::PROT_WRITE,
             mman::MapFlags::MAP_SHARED,
-            fd,
+            Some(BorrowedFd::borrow_raw(fd)),
             0,
         )
     };
@@ -305,7 +305,7 @@ unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
             size,
             mman::ProtFlags::PROT_READ,
             mman::MapFlags::MAP_ANONYMOUS | mman::MapFlags::MAP_PRIVATE | mman::MapFlags::MAP_FIXED,
-            -1,
+            None::<BorrowedFd<'_>>,
             0,
         )
     };
@@ -368,6 +368,7 @@ extern "C" fn sigbus_handler(_signum: libc::c_int, info: *mut libc::siginfo_t, _
 #[cfg(any(target_os = "linux", target_os = "android"))]
 unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
     #[repr(C)]
+    #[allow(non_camel_case_types)]
     struct siginfo_t {
         a: [libc::c_int; 3], // si_signo, si_errno, si_code
         si_addr: *mut libc::c_void,

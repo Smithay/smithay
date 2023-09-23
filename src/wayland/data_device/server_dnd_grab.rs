@@ -345,7 +345,14 @@ where
         None
     }
 
-    fn destroyed(&self, _data: &mut D, _client_id: ClientId, _object_id: ObjectId) {}
+    fn destroyed(
+        self: Arc<Self>,
+        _handle: &Handle,
+        _data: &mut D,
+        _client_id: ClientId,
+        _object_id: ObjectId,
+    ) {
+    }
 }
 
 fn handle_server_dnd<D>(

@@ -78,7 +78,7 @@ use wayland_protocols::wp::relative_pointer::zv1::server::{
     zwp_relative_pointer_v1::{self, ZwpRelativePointerV1},
 };
 use wayland_server::{
-    backend::{ClientId, GlobalId, ObjectId},
+    backend::{ClientId, GlobalId},
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
@@ -195,13 +195,18 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &RelativePointerUserData<D>) {
+    fn destroyed(
+        _state: &mut D,
+        _: ClientId,
+        object: &ZwpRelativePointerV1,
+        data: &RelativePointerUserData<D>,
+    ) {
         if let Some(ref handle) = data.handle {
             handle
                 .known_relative_pointers
                 .lock()
                 .unwrap()
-                .retain(|p| p.id() != object_id);
+                .retain(|p| p.id() != object.id());
         }
     }
 }

@@ -3,7 +3,7 @@ use tracing::error;
 use xkbcommon::xkb::{Keymap, KEYMAP_FORMAT_TEXT_V1};
 
 use std::ffi::CString;
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{AsFd, BorrowedFd};
 
 /// Wraps an XKB keymap into a sealed file or stores as just a string for sending to WlKeyboard over an fd
 #[derive(Debug)]
@@ -46,12 +46,12 @@ impl KeymapFile {
     /// Run a closure with the file descriptor to ensure safety
     pub fn with_fd<F>(&self, supports_sealed: bool, cb: F) -> Result<(), std::io::Error>
     where
-        F: FnOnce(RawFd, usize),
+        F: FnOnce(BorrowedFd<'_>, usize),
     {
-        use std::{io::Write, os::unix::io::AsRawFd, path::PathBuf};
+        use std::{io::Write, path::PathBuf};
 
         if let Some(file) = supports_sealed.then_some(self.sealed.as_ref()).flatten() {
-            cb(file.as_raw_fd(), file.size());
+            cb(file.as_fd(), file.size());
         } else {
             let dir = std::env::var_os("XDG_RUNTIME_DIR")
                 .map(PathBuf::from)
@@ -61,7 +61,7 @@ impl KeymapFile {
             file.write_all(self.keymap.as_bytes())?;
             file.flush()?;
 
-            cb(file.as_raw_fd(), self.keymap.len());
+            cb(file.as_fd(), self.keymap.len());
         }
         Ok(())
     }

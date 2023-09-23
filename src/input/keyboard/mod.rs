@@ -394,13 +394,13 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let mut keymap_file = self.arc.keymap.lock().unwrap();
         keymap_file.change_keymap(keymap);
 
-        use std::os::unix::io::AsRawFd;
+        use std::os::unix::io::AsFd;
         use tracing::warn;
         use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
         let known_kbds = &self.arc.known_kbds;
         for kbd in &*known_kbds.lock().unwrap() {
             let res = keymap_file.with_fd(kbd.version() >= 7, |fd, size| {
-                kbd.keymap(KeymapFormat::XkbV1, fd.as_raw_fd(), size as u32)
+                kbd.keymap(KeymapFormat::XkbV1, fd.as_fd(), size as u32)
             });
             if let Err(e) = res {
                 warn!(

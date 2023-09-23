@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use tracing::error;
 
 use wayland_server::{
-    backend::{ClientId, ObjectId},
+    backend::ClientId,
     protocol::wl_data_source::{self},
     protocol::{wl_data_device_manager::DndAction, wl_data_source::WlDataSource},
     Dispatch, DisplayHandle, Resource,
@@ -80,7 +80,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, _resource: ObjectId, data: &DataSourceUserData) {
+    fn destroyed(_state: &mut D, _client: ClientId, _resource: &WlDataSource, data: &DataSourceUserData) {
         data.alive_tracker.destroy_notify();
     }
 }

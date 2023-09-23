@@ -97,7 +97,7 @@ where
     fn destroyed(
         _state: &mut D,
         _client_id: wayland_server::backend::ClientId,
-        object_id: wayland_server::backend::ObjectId,
+        output: &WlOutput,
         data: &OutputUserData,
     ) {
         data.global_data
@@ -105,7 +105,7 @@ where
             .lock()
             .unwrap()
             .instances
-            .retain(|o| o.id() != object_id);
+            .retain(|o| o.id() != output.id());
     }
 }
 
@@ -195,7 +195,7 @@ where
     fn destroyed(
         _state: &mut D,
         _client_id: wayland_server::backend::ClientId,
-        object_id: wayland_server::backend::ObjectId,
+        xdg_output: &ZxdgOutputV1,
         data: &XdgOutputUserData,
     ) {
         data.xdg_output
@@ -203,6 +203,6 @@ where
             .lock()
             .unwrap()
             .instances
-            .retain(|o| o.id() != object_id);
+            .retain(|o| o.id() != xdg_output.id());
     }
 }

@@ -324,7 +324,7 @@ where
     fn destroyed(
         state: &mut D,
         _client_id: wayland_server::backend::ClientId,
-        object_id: wayland_server::backend::ObjectId,
+        layer_surface: &ZwlrLayerSurfaceV1,
         data: &WlrLayerSurfaceUserData,
     ) {
         data.alive_tracker.destroy_notify();
@@ -333,7 +333,7 @@ where
         let mut layers = data.shell_data.known_layers.lock().unwrap();
         if let Some(index) = layers
             .iter()
-            .position(|layer| layer.shell_surface.id() == object_id)
+            .position(|layer| layer.shell_surface.id() == layer_surface.id())
         {
             let layer = layers.remove(index);
             drop(layers);

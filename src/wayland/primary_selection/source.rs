@@ -3,10 +3,7 @@ use std::sync::Mutex;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::{
     self as primary_source, ZwpPrimarySelectionSourceV1 as PrimarySource,
 };
-use wayland_server::{
-    backend::{ClientId, ObjectId},
-    Dispatch, DisplayHandle, Resource,
-};
+use wayland_server::{backend::ClientId, Dispatch, DisplayHandle, Resource};
 
 use crate::utils::{alive_tracker::AliveTracker, IsAlive};
 
@@ -62,7 +59,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, _resource: ObjectId, data: &PrimarySourceUserData) {
+    fn destroyed(_state: &mut D, _client: ClientId, _resource: &PrimarySource, data: &PrimarySourceUserData) {
         data.alive_tracker.destroy_notify();
     }
 }

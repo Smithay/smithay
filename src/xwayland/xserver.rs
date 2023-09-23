@@ -195,7 +195,6 @@ struct XWaylandInstance {
     wayland_client: Client,
     wayland_client_fd: RawFd,
     wm_fd: Option<UnixStream>,
-    child_stdout: ChildStdout,
 }
 
 // Inner implementation of the XWayland manager
@@ -280,10 +279,10 @@ where
     let loop_inner = inner.clone();
     loop_handle
         .insert_source(
-            Generic::<_, io::Error>::new(child_stdout.as_raw_fd(), Interest::READ, Mode::Level),
-            move |_, _, _| {
+            Generic::<_, io::Error>::new(child_stdout, Interest::READ, Mode::Level),
+            move |_, child_stdout, _| {
                 // the closure must be called exactly one time, this cannot panic
-                xwayland_ready(&loop_inner);
+                xwayland_ready(&loop_inner, child_stdout);
                 Ok(calloop::PostAction::Remove)
             },
         )
@@ -307,7 +306,6 @@ where
         wayland_client: client,
         wayland_client_fd: client_fd,
         wm_fd: Some(x_wm_me),
-        child_stdout,
     });
 
     Ok(display)
@@ -395,7 +393,7 @@ impl Inner {
 }
 
 #[instrument(name = "xwayland", skip(inner), fields(display = inner.lock().unwrap().instance.as_ref().map(|i| i.display_lock.display())))]
-fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
+fn xwayland_ready(inner: &Arc<Mutex<Inner>>, child_stdout: &mut ChildStdout) {
     // Lots of re-borrowing to please the borrow-checker
     let mut guard = inner.lock().unwrap();
     let guard = &mut *guard;
@@ -405,8 +403,6 @@ fn xwayland_ready(inner: &Arc<Mutex<Inner>>) {
         error!("XWayland crashed at startup, will not try to restart it.");
         return;
     };
-    // neither the child_stdout
-    let child_stdout = &mut instance.child_stdout;
 
     // This reads the one byte that is written when sh receives SIGUSR1
     let mut buffer = [0];

@@ -194,7 +194,7 @@ use std::{
     convert::TryFrom,
     ffi::CString,
     ops::Sub,
-    os::unix::io::AsRawFd,
+    os::unix::io::{AsFd, AsRawFd},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -444,7 +444,7 @@ impl DmabufFeedback {
     pub fn send(&self, feedback: &zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1) {
         feedback.main_device(self.0.main_device.to_ne_bytes().to_vec());
         feedback.format_table(
-            self.0.format_table.file.as_raw_fd(),
+            self.0.format_table.file.as_fd(),
             self.0.format_table.file.size() as u32,
         );
 

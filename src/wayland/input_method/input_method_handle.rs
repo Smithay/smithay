@@ -8,7 +8,7 @@ use wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_v2::{self, ZwpInputMethodV2},
     zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2,
 };
-use wayland_server::backend::{ClientId, ObjectId};
+use wayland_server::backend::ClientId;
 use wayland_server::{
     protocol::{wl_keyboard::KeymapFormat, wl_surface::WlSurface},
     Client, DataInit, Dispatch, DisplayHandle, Resource,
@@ -216,7 +216,12 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, _input_method: ObjectId, data: &InputMethodUserData<D>) {
+    fn destroyed(
+        _state: &mut D,
+        _client: ClientId,
+        _input_method: &ZwpInputMethodV2,
+        data: &InputMethodUserData<D>,
+    ) {
         data.handle.inner.lock().unwrap().instance = None;
         data.text_input_handle.with_focused_text_input(|ti, surface, _| {
             ti.leave(surface);

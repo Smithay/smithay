@@ -12,8 +12,7 @@ use wayland_protocols::xdg::shell::server::{
 };
 
 use wayland_server::{
-    backend::{ClientId, ObjectId},
-    DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
+    backend::ClientId, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
 };
 
 use super::{ShellClient, ShellClientData, XdgPositionerUserData, XdgShellHandler, XdgSurfaceUserData};
@@ -107,7 +106,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, _object_id: ObjectId, data: &XdgWmBaseUserData) {
+    fn destroyed(_state: &mut D, _client_id: ClientId, _object: &XdgWmBase, data: &XdgWmBaseUserData) {
         data.alive_tracker.destroy_notify();
     }
 }
