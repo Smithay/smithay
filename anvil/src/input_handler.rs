@@ -1177,33 +1177,32 @@ enum KeyAction {
 }
 
 fn process_keyboard_shortcut(modifiers: ModifiersState, keysym: Keysym) -> Option<KeyAction> {
-    if modifiers.ctrl && modifiers.alt && keysym == xkb::KEY_BackSpace
-        || modifiers.logo && keysym == xkb::KEY_q
+    if modifiers.ctrl && modifiers.alt && keysym == Keysym::BackSpace || modifiers.logo && keysym == Keysym::q
     {
         // ctrl+alt+backspace = quit
         // logo + q = quit
         Some(KeyAction::Quit)
-    } else if (xkb::KEY_XF86Switch_VT_1..=xkb::KEY_XF86Switch_VT_12).contains(&keysym) {
+    } else if (xkb::KEY_XF86Switch_VT_1..=xkb::KEY_XF86Switch_VT_12).contains(&keysym.raw()) {
         // VTSwitch
         Some(KeyAction::VtSwitch(
-            (keysym - xkb::KEY_XF86Switch_VT_1 + 1) as i32,
+            (keysym.raw() - xkb::KEY_XF86Switch_VT_1 + 1) as i32,
         ))
-    } else if modifiers.logo && keysym == xkb::KEY_Return {
+    } else if modifiers.logo && keysym == Keysym::Return {
         // run terminal
         Some(KeyAction::Run("weston-terminal".into()))
-    } else if modifiers.logo && (xkb::KEY_1..=xkb::KEY_9).contains(&keysym) {
-        Some(KeyAction::Screen((keysym - xkb::KEY_1) as usize))
-    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_M {
+    } else if modifiers.logo && (xkb::KEY_1..=xkb::KEY_9).contains(&keysym.raw()) {
+        Some(KeyAction::Screen((keysym.raw() - xkb::KEY_1) as usize))
+    } else if modifiers.logo && modifiers.shift && keysym == Keysym::M {
         Some(KeyAction::ScaleDown)
-    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_P {
+    } else if modifiers.logo && modifiers.shift && keysym == Keysym::P {
         Some(KeyAction::ScaleUp)
-    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_W {
+    } else if modifiers.logo && modifiers.shift && keysym == Keysym::W {
         Some(KeyAction::TogglePreview)
-    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_R {
+    } else if modifiers.logo && modifiers.shift && keysym == Keysym::R {
         Some(KeyAction::RotateOutput)
-    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_T {
+    } else if modifiers.logo && modifiers.shift && keysym == Keysym::T {
         Some(KeyAction::ToggleTint)
-    } else if modifiers.logo && modifiers.shift && keysym == xkb::KEY_D {
+    } else if modifiers.logo && modifiers.shift && keysym == Keysym::D {
         Some(KeyAction::ToggleDecorations)
     } else {
         None

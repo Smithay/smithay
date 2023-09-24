@@ -24,7 +24,7 @@ use smithay::{
         PopupManager, Space,
     },
     input::{
-        keyboard::XkbConfig,
+        keyboard::{Keysym, XkbConfig},
         pointer::{CursorImageStatus, PointerHandle},
         Seat, SeatHandler, SeatState,
     },
@@ -146,7 +146,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub dnd_icon: Option<WlSurface>,
 
     // input-related fields
-    pub suppressed_keys: Vec<u32>,
+    pub suppressed_keys: Vec<Keysym>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
     pub seat_name: String,
     pub seat: Seat<AnvilState<BackendData>>,
