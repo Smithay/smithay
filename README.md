@@ -31,7 +31,7 @@ Also:
 
 ## Anvil
 
-Like others, Smithay as a compositor library has its own sample compositor: anvil.
+Smithay as a compositor library has its own sample compositor: anvil.
 
 To get informations about it and how you can run it visit [anvil README](https://github.com/Smithay/smithay/blob/master/anvil/README.md)
 
