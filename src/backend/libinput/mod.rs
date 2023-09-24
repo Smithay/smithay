@@ -769,7 +769,8 @@ impl EventSource for LibinputInputBackend {
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
-        poll.register(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap())
+        // Safety: the FD cannot be closed without removing the LibinputInputBackend from the event loop
+        unsafe { poll.register(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap()) }
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {

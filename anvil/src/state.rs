@@ -529,7 +529,10 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 Generic::new(display, Interest::READ, Mode::Level),
                 |_, display, data| {
                     profiling::scope!("dispatch_clients");
-                    display.dispatch_clients(&mut data.state).unwrap();
+                    // Safety: we don't drop the display
+                    unsafe {
+                        display.get_mut().dispatch_clients(&mut data.state).unwrap();
+                    }
                     Ok(PostAction::Continue)
                 },
             )

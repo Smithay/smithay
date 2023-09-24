@@ -282,7 +282,8 @@ where
             Generic::<_, io::Error>::new(child_stdout, Interest::READ, Mode::Level),
             move |_, child_stdout, _| {
                 // the closure must be called exactly one time, this cannot panic
-                xwayland_ready(&loop_inner, child_stdout);
+                // Safety: xwayland_ready will not close the child_stdout
+                xwayland_ready(&loop_inner, unsafe { child_stdout.get_mut() });
                 Ok(calloop::PostAction::Remove)
             },
         )

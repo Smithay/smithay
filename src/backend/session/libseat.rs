@@ -243,12 +243,15 @@ impl EventSource for LibSeatSessionNotifier {
 
         self.token = Some(factory.token());
         let mut seat = self.internal.seat.borrow_mut();
-        poll.register(
-            seat.get_fd().unwrap(),
-            calloop::Interest::READ,
-            calloop::Mode::Level,
-            self.token.unwrap(),
-        )
+        // Safety: the seat fd cannot be close without removing the LibSeatSessionNotifier from the event loop
+        unsafe {
+            poll.register(
+                seat.get_fd().unwrap(),
+                calloop::Interest::READ,
+                calloop::Mode::Level,
+                self.token.unwrap(),
+            )
+        }
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {

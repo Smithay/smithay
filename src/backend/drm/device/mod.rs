@@ -511,12 +511,15 @@ impl EventSource for DrmDeviceNotifier {
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
-        poll.register(
-            self.internal.as_fd(),
-            Interest::READ,
-            calloop::Mode::Level,
-            self.token.unwrap(),
-        )
+        // Safety: the FD cannot be closed without removing the DrmDeviceNotifier from the event loop
+        unsafe {
+            poll.register(
+                self.internal.as_fd(),
+                Interest::READ,
+                calloop::Mode::Level,
+                self.token.unwrap(),
+            )
+        }
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
