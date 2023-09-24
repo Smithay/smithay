@@ -59,4 +59,4 @@ To get informations about it and how you can run it visit [anvil README](https:/
 
 ## Contact us
 
-If you have questions or want to discuss the project with us, our main chatroom is on Matrix: [`#smithay:matrix.org`](https://matrix.to/#/#smithay:matrix.org). You can also join it via an IRC bridge, on `#smithay` on [libera.chat](https://libera.chat/).
+If you have questions or want to discuss the project with us, our main chatroom is on Matrix: [`#smithay:matrix.org`](https://matrix.to/#/#smithay:matrix.org).
