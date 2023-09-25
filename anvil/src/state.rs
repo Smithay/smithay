@@ -24,7 +24,7 @@ use smithay::{
         PopupManager, Space,
     },
     input::{
-        keyboard::XkbConfig,
+        keyboard::{Keysym, XkbConfig},
         pointer::{CursorImageStatus, PointerHandle},
         Seat, SeatHandler, SeatState,
     },
@@ -146,7 +146,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub dnd_icon: Option<WlSurface>,
 
     // input-related fields
-    pub suppressed_keys: Vec<u32>,
+    pub suppressed_keys: Vec<Keysym>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
     pub seat_name: String,
     pub seat: Seat<AnvilState<BackendData>>,
@@ -529,7 +529,10 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
                 Generic::new(display, Interest::READ, Mode::Level),
                 |_, display, data| {
                     profiling::scope!("dispatch_clients");
-                    display.dispatch_clients(&mut data.state).unwrap();
+                    // Safety: we don't drop the display
+                    unsafe {
+                        display.get_mut().dispatch_clients(&mut data.state).unwrap();
+                    }
                     Ok(PostAction::Continue)
                 },
             )

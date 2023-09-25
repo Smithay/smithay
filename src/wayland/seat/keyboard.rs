@@ -149,7 +149,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
             kbd.enter(
                 serial.into(),
                 self,
-                serialize_pressed_keys(keys.iter().map(|h| h.raw_code() - 8).collect()),
+                serialize_pressed_keys(keys.iter().map(|h| h.raw_code().raw() - 8).collect()),
             )
         });
         let text_input = seat.text_input();
@@ -173,7 +173,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         time: u32,
     ) {
         for_each_focused_kbds(seat, self, |kbd| {
-            kbd.key(serial.into(), time, key.raw_code() - 8, state.into())
+            kbd.key(serial.into(), time, key.raw_code().raw() - 8, state.into())
         })
     }
 

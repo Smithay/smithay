@@ -100,7 +100,7 @@ impl ImportMemWl for DummyRenderer {
                 for w in 0..width {
                     let idx = (offset + w + h * stride) as usize;
                     assert!(idx < len);
-                    x |= unsafe { ptr::read(ptr.offset(idx as isize)) };
+                    x |= unsafe { ptr::read(ptr.add(idx)) };
                 }
             }
 

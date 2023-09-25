@@ -192,7 +192,8 @@ impl EventSource for UdevBackend {
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
-        poll.register(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap())
+        // Safety: the fd is owned by the UdevBackend and cannot be closed before it is removed from the event loop
+        unsafe { poll.register(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap()) }
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {

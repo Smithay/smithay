@@ -131,7 +131,10 @@ impl Smallvil {
             .insert_source(
                 Generic::new(display, Interest::READ, Mode::Level),
                 |_, display, state| {
-                    display.dispatch_clients(&mut state.state).unwrap();
+                    // Safety: we don't drop the display
+                    unsafe {
+                        display.get_mut().dispatch_clients(&mut state.state).unwrap();
+                    }
                     Ok(PostAction::Continue)
                 },
             )
