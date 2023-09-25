@@ -3,7 +3,7 @@
 use std::{
     cell::Cell,
     num::NonZeroUsize,
-    os::unix::io::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
+    os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     ptr,
     sync::{
         mpsc::{sync_channel, SyncSender},
@@ -80,7 +80,7 @@ pub enum ResizeError {
 impl InnerPool {
     #[instrument(skip_all, name = "wayland_shm")]
     pub fn new(fd: OwnedFd, size: NonZeroUsize) -> Result<InnerPool, OwnedFd> {
-        let memmap = match MemMap::new(fd.as_raw_fd(), size) {
+        let memmap = match MemMap::new(fd.as_fd(), size) {
             Ok(memmap) => memmap,
             Err(_) => {
                 return Err(fd);
@@ -102,7 +102,7 @@ impl InnerPool {
         }
 
         trace!(fd = ?self.fd, oldsize = oldsize, newsize = ?newsize, "Resizing shm pool");
-        guard.remap(newsize).map_err(|()| {
+        guard.remap(self.fd.as_fd(), newsize).map_err(|()| {
             debug!(fd = ?self.fd, oldsize = oldsize, newsize = ?newsize, "SHM pool resize failed");
             ResizeError::MremapFailed
         })
@@ -216,27 +216,25 @@ impl Drop for Pool {
 #[derive(Debug)]
 struct MemMap {
     ptr: *mut u8,
-    fd: RawFd,
     size: usize,
 }
 
 impl MemMap {
-    fn new(fd: RawFd, size: NonZeroUsize) -> Result<MemMap, ()> {
+    fn new(fd: BorrowedFd<'_>, size: NonZeroUsize) -> Result<MemMap, ()> {
         Ok(MemMap {
             ptr: unsafe { map(fd, size) }?,
-            fd,
             size: size.into(),
         })
     }
 
-    fn remap(&mut self, newsize: NonZeroUsize) -> Result<(), ()> {
+    fn remap(&mut self, fd: BorrowedFd<'_>, newsize: NonZeroUsize) -> Result<(), ()> {
         if self.ptr.is_null() {
             return Err(());
         }
         // memunmap cannot fail, as we are unmapping a pre-existing map
         let _ = unsafe { unmap(self.ptr, self.size) };
         // remap the fd with the new size
-        match unsafe { map(self.fd, newsize) } {
+        match unsafe { map(fd, newsize) } {
             Ok(ptr) => {
                 // update the parameters
                 self.ptr = ptr;
@@ -247,7 +245,6 @@ impl MemMap {
                 // set ourselves in an empty state
                 self.ptr = ptr::null_mut();
                 self.size = 0;
-                self.fd = -1;
                 Err(())
             }
         }
@@ -275,14 +272,14 @@ impl Drop for MemMap {
 }
 
 /// A simple wrapper with some default arguments for `nix::mman::mmap`.
-unsafe fn map(fd: RawFd, size: NonZeroUsize) -> Result<*mut u8, ()> {
+unsafe fn map(fd: BorrowedFd<'_>, size: NonZeroUsize) -> Result<*mut u8, ()> {
     let ret = unsafe {
         mman::mmap(
             None,
             size,
             mman::ProtFlags::PROT_READ | mman::ProtFlags::PROT_WRITE,
             mman::MapFlags::MAP_SHARED,
-            Some(BorrowedFd::borrow_raw(fd)),
+            Some(fd),
             0,
         )
     };
