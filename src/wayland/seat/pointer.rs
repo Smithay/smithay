@@ -185,7 +185,9 @@ where
         });
         for_each_focused_pointers(seat, self, |ptr| {
             ptr.leave(serial.into(), self);
-            ptr.frame();
+            if ptr.version() >= 5 {
+                ptr.frame();
+            }
         });
         if let Some(pointer) = seat.get_pointer() {
             *pointer.last_enter.lock().unwrap() = None;
