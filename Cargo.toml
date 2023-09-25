@@ -68,6 +68,7 @@ scan_fmt = { version = "0.2.3", default-features = false }
 encoding_rs = { version = "0.8.33", optional = true }
 profiling = "1.0"
 smallvec = "1.11"
+wayland-scanner = "0.31.0"
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }

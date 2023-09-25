@@ -46,6 +46,7 @@
 //!
 
 pub mod buffer;
+pub mod color;
 pub mod compositor;
 pub mod content_type;
 pub mod cursor_shape;

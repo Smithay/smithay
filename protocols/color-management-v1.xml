@@ -1,0 +1,1055 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="color_management_v1">
+  <copyright>
+    Copyright 2019 Sebastian Wick
+    Copyright 2019 Erwin Burema
+    Copyright 2020 AMD
+    Copyright 2020, 2022, 2023 Collabora, Ltd.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="color management protocol">
+    The aim of the color management extension is to allow clients to know
+    the color properties of outputs, and to tell the compositor about the color
+    properties of their content on surfaces. Doing this enables a compositor
+    to perform automatic color management of content for different outputs
+    according to how content is intended to look like.
+
+    The color properties are represented as an image description object which
+    is immutable after it has been created. A wl_output always has an
+    associated image description that clients can observe. A wl_surface
+    always has an associated preferred image description as a hint chosen by
+    the compositor that clients can also observe. Clients can set an image
+    description on a wl_surface to denote the color characteristics of the
+    surface contents.
+
+    An image description includes SDR and HDR colorimetry and encoding, HDR
+    metadata, and viewing environment parameters. An image description does
+    not include the properties set through color-representation extension.
+    It is expected that the color-representation extension is used in
+    conjunction with the color management extension when necessary,
+    particularly with the YUV family of pixel formats.
+
+    Recommendation ITU-T H.273
+    "Coding-independent code points for video signal type identification"
+    shall be referred to as simply H.273 here, and it defines the CICP values.
+
+    The color-and-hdr repository
+    (https://gitlab.freedesktop.org/pq/color-and-hdr) contains
+    background information on the protocol design and legacy color management.
+    It also contains a glossary, learning resources for digital color, tools,
+    samples and more.
+
+    The terminology used in this protocol is based on common color science and
+    color encoding terminology where possible. The glossary in the color-and-hdr
+    repository shall be the authority on the definition of terms in this
+    protocol.
+  </description>
+
+  <interface name="wp_color_manager_v1" version="1">
+    <description summary="color manager singleton">
+      A global interface used for getting color management extensions for
+      wl_surface and wl_output objects, and for creating client defined image
+      description objects. The extension interfaces allow
+      getting the image description of outputs and setting the image
+      description of surfaces.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the color manager">
+        Destroy the wp_color_manager_v1 object. This does not affect any other
+        objects in any way.
+      </description>
+    </request>
+
+    <enum name="error">
+      <entry name="unsupported_feature" value="0" summary="request not supported"/>
+    </enum>
+
+    <enum name="render_intent">
+      <description summary="rendering intents">
+        See the ICC.1:2022 specification from the International Color Consortium
+        for more details about rendering intents.
+
+        The principles of ICC defined rendering intents apply with all types
+        of image descriptions, not only those with ICC file profiles.
+
+        Compositors must support the perceptual rendering intent. Other
+        rendering intents are optional.
+      </description>
+
+      <entry name="perceptual" value="0" summary="perceptual"/>
+      <entry name="relative" value="1" summary="media-relative colorimetric"/>
+      <entry name="saturation" value="2" summary="saturation"/>
+      <entry name="absolute" value="3" summary="ICC-absolute colorimetric"/>
+      <entry name="relative_bpc" value="4"
+             summary="media-relative colorimetric + black point compensation"/>
+    </enum>
+
+    <enum name="feature">
+      <description summary="compositor supported features"/>
+
+      <entry name="icc_v2_v4" value="0" summary="new_icc_creator request"/>
+      <entry name="parametric" value="1" summary="new_parametric_creator request"/>
+      <entry name="set_primaries" value="2" summary="parametric set_primaries request"/>
+      <entry name="set_tf_power" value="3" summary="parametric set_tf_power request"/>
+      <entry name="set_mastering_display_primaries" value="4">
+        <description summary="parametric set_mastering_display_primaries request">
+          The compositor supports set_mastering_display_primaries request
+          with a target color volume fully contained inside the primary
+          color volume.
+        </description>
+      </entry>
+      <entry name="extended_target_volume" value="5">
+        <description summary="parametric target exceeds primary color volume">
+          The compositor additionally supports target color volumes that
+          extend outside of the primary color volume.
+
+          This can only be advertised if feature set_mastering_display_primaries
+          is supported as well.
+        </description>
+      </entry>
+    </enum>
+
+    <request name="get_color_management_output">
+      <description summary="create a color management interface for a wl_output">
+        This creates a new wp_color_management_output_v1 object for the
+        given wl_output.
+
+        See the wp_color_management_output_v1 interface for more details.
+      </description>
+
+      <arg name="id" type="new_id" interface="wp_color_management_output_v1"/>
+      <arg name="output" type="object" interface="wl_output"/>
+    </request>
+
+    <request name="get_color_management_surface">
+      <description summary="create a color management interface for a wl_surface">
+        This creates a new color wp_color_management_surface_v1 object for the
+        given wl_surface.
+
+        See the wp_color_management_surface_v1 interface for more details.
+      </description>
+
+      <arg name="id" type="new_id" interface="wp_color_management_surface_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <request name="new_icc_creator">
+      <description summary="make a new ICC-based image description creator object">
+        Makes a new ICC-based image description creator object with all
+        properties initially unset. The client can then use the object's
+        interface to define all the required properties for an image description
+        and finally create a wp_image_description_v1 object.
+
+        This request can be used when the compositor advertises
+        wp_color_manager_v1.feature.icc_v2_v4.
+        Otherwise this request raises the protocol error unsupported_feature.
+      </description>
+
+      <arg name="obj" type="new_id"
+           interface="wp_image_description_creator_icc_v1"
+           summary="the new creator object"/>
+    </request>
+
+    <request name="new_parametric_creator">
+      <description summary="make a new parametric image description creator object">
+        Makes a new parametric image description creator object with all
+        properties initially unset. The client can then use the object's
+        interface to define all the required properties for an image description
+        and finally create a wp_image_description_v1 object.
+
+        This request can be used when the compositor advertises
+        wp_color_manager_v1.feature.parametric.
+        Otherwise this request raises the protocol error unsupported_feature.
+      </description>
+
+      <arg name="obj" type="new_id"
+           interface="wp_image_description_creator_params_v1"
+           summary="the new creator object"/>
+    </request>
+
+    <event name="supported_intent">
+      <description summary="supported rendering intent">
+        When this object is created, it shall immediately send this event
+        once for each rendering intent the compositor supports.
+      </description>
+
+      <arg name="render_intent" type="uint" enum="render_intent"
+           summary="rendering intent"/>
+    </event>
+
+    <event name="supported_feature">
+      <description summary="supported features">
+        When this object is created, it shall immediately send this event
+        once for each compositor supported feature listed in the enumeration.
+      </description>
+
+      <arg name="feature" type="uint" enum="feature" summary="supported feature"/>
+    </event>
+
+    <event name="supported_tf_cicp">
+      <description summary="supported transfer characteristic code point">
+        When this object is created, it shall immediately send this event
+        once for each H.273 TransferCharacteristics code point the compositor
+        supports with the parametric image description creator.
+      </description>
+
+      <arg name="tf_code" type="uint" summary="TransferCharacteristics code point"/>
+    </event>
+
+    <event name="supported_primaries_cicp">
+      <description summary="supported primaries code point">
+        When this object is created, it shall immediately send this event
+        once for each H.273 ColourPrimaries code point the compositor
+        supports with the parametric image description creator.
+      </description>
+
+      <arg name="primaries_code" type="uint" summary="ColourPrimaries code point"/>
+    </event>
+  </interface>
+
+  <interface name="wp_color_management_output_v1" version="1">
+    <description summary="output color properties">
+      A wp_color_management_output_v1 describes the color properties of an
+      output.
+
+      When wp_color_management_output_v1 object is created, it will send
+      its initial events followed by a wl_output.done event. When creating
+      wl_output and its extension objects, use a final wl_display.sync to
+      guarantee that all output events have been received across all
+      extensions.
+
+      If the wl_output associated with the wp_color_management_output_v1 is
+      destroyed, the wp_color_management_output_v1 object becomes inert.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the color management output">
+        Destroy the color wp_color_management_output_v1 object. This does not
+        affect any remaining protocol objects.
+      </description>
+    </request>
+
+    <event name="image_description_changed">
+      <description summary="image description changed">
+        This event is sent whenever the image description of the
+        output changed, followed by one wl_output.done event common to
+        output events across all extensions.
+
+        This is not an initial event.
+
+        If the client wants to use the updated image description, it needs
+        to do get_image_description again, because image description objects
+        are immutable.
+      </description>
+    </event>
+
+    <request name="get_image_description">
+      <description summary="get the image description of the output">
+        This creates a new wp_image_description_v1 object for the current image description
+        of the output. There always is exactly one image description active for an
+        output so the client should destroy the image description created by earlier
+        invocations of this request. This request is usually sent as a reaction
+        to the image_description_changed event or when creating a
+        wp_color_management_output_v1 object.
+
+        The created wp_image_description_v1 object preserves the image description
+        of the output from the time the object was created.
+
+        The resulting image description object allows get_information request.
+
+        If the interface version is inadequate for the output's image
+        description, meaning that the client does not support all the
+        events needed to deliver the crucial information, the resulting image
+        description object shall immediately deliver the
+        wp_image_description_v1.failed event with the low_version cause,
+        otherwise the object shall immediately deliver the ready event.
+      </description>
+
+      <arg name="image_description" type="new_id" interface="wp_image_description_v1"/>
+    </request>
+  </interface>
+
+  <interface name="wp_color_management_surface_v1" version="1">
+    <description summary="color management extension to a surface">
+        A wp_color_management_surface_v1 allows the client to set the color
+        space and HDR properties of a surface.
+
+        If the wl_surface associated with the wp_color_management_surface_v1 is
+        destroyed, the wp_color_management_surface_v1 object becomes inert.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the color management interface for a surface">
+        Destroy the wp_color_management_surface_v1 object.
+
+        When the last wp_color_management_surface_v1 object for a wl_surface
+        is destroyed, it does the same as set_default_image_description.
+      </description>
+    </request>
+
+    <enum name="error">
+      <description summary="protocol errors"/>
+
+      <entry name="render_intent" value="1" summary="unsupported rendering intent"/>
+    </enum>
+
+    <request name="set_image_description">
+      <description summary="set the surface image description">
+        Set the image description of the underlying surface. The image
+        description and rendering intent are double-buffered state, see
+        wl_surface.commit.
+
+        It is the client's responsibility to understand the image description
+        it sets on a surface, and to provide content that matches that image
+        description.
+
+        A rendering intent provides the client's preference on how content
+        colors should be mapped to each output. The render_intent value must
+        be one advertised by the compositor with
+        wp_color_manager_v1.render_intent event, otherwise the protocol error
+        render_intent is raised.
+
+        By default, a surface does not have an associated image description
+        nor a rendering intent. The handling of color on such surfaces is
+        compositor implementation defined.
+      </description>
+
+      <arg name="image_description" type="object" interface="wp_image_description_v1"/>
+      <arg name="render_intent" type="uint" enum="wp_color_manager_v1.render_intent"
+           summary="rendering intent"/>
+    </request>
+
+    <request name="set_default_image_description">
+      <description summary="set the surface image description to default">
+        This request sets the surface image description to the defaults, see
+        set_image_description. This is double-buffered state, see
+        wl_surface.commit.
+      </description>
+    </request>
+
+    <event name="preferred_changed">
+      <description summary="compositor's preferred image description for the surface">
+        The preferred image description is the one which likely has the most
+        performance and/or quality benefits for the compositor if used by the
+        client for its wl_surface contents. This event is sent whenever the
+        compositor changes the wl_surface's preferred image description.
+
+        This is not an initial event.
+
+        This event is merely a notification. When the client wants to know
+        what the preferred image description is, it shall use the get_preferred
+        request.
+
+        The preferred image description is not automatically used for anything.
+        It is only a hint, and clients may set any valid image description with
+        set_image_description but there might be performance and color accuracy
+        improvements by providing the wl_surface contents in the preferred
+        image description. Therefore clients that can, should render according
+        to the preferred image description
+      </description>
+    </event>
+
+    <request name="get_preferred">
+      <description summary="get the preferred image description">
+        This creates a new wp_image_description_v1 object for the currently
+        preferred image description for the wl_surface. The client should
+        stop using and destroy the image descriptions created by earlier
+        invocations of this request for the associated wl_surface.
+        This request is usually sent as a reaction to the preferred_changed
+        event or when creating a wp_color_management_surface_v1 object if
+        the client is capable of adapting to image descriptions.
+
+        The created wp_image_description_v1 object preserves the preferred image
+        description of the wl_surface from the time the object was created.
+
+        The resulting image description object allows get_information request.
+
+        If the interface version is inadequate for the preferred image
+        description, meaning that the client does not support all the
+        events needed to deliver the crucial information, the resulting image
+        description object shall immediately deliver the
+        wp_image_description_v1.failed event with the low_version cause,
+        otherwise the object shall immediately deliver the ready event.
+      </description>
+
+      <arg name="image_description" type="new_id" interface="wp_image_description_v1"/>
+    </request>
+  </interface>
+
+  <interface name="wp_image_description_creator_icc_v1" version="1">
+    <description summary="holder of image description ICC information">
+      This type of object is used for collecting all the information required
+      to create a wp_image_description_v1 object from an ICC file. A complete
+      set of required parameters consists of these properties:
+      - ICC file
+
+      Each required property must be set exactly once if the client is to create
+      an image description. The set requests verify that a property was not
+      already set. The create request verifies that all required properties are
+      set. There may be several alternative requests for setting each property,
+      and in that case the client must choose one of them.
+
+      Once all properties have been set, the create request can be used to
+      create the image description object. Finally, the params object should
+      be destroyed.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy">
+        Destroys this object. No other object is affected.
+      </description>
+    </request>
+
+    <enum name="error">
+      <description summary="protocol errors"/>
+
+      <entry name="incomplete_set" value="0" summary="incomplete parameter set"/>
+      <entry name="inconsistent_set" value="1" summary="invalid combination of parameters"/>
+      <entry name="already_used" value="2" summary="create request already done"/>
+      <entry name="already_set" value="3" summary="property already set"/>
+      <entry name="bad_fd" value="4" summary="fd not seekable and readable"/>
+      <entry name="bad_size" value="5" summary="no or too much data"/>
+    </enum>
+
+    <request name="create">
+      <description summary="Create the image description object from ICC data">
+        Create an image description object based on the ICC information
+        previously set on this object. A compositor must parse the ICC data in
+        some undefined but finite amount of time.
+
+        The completeness of the parameter set is verified. If the set is not
+        complete, the protocol error incomplete_set is raised. For the
+        definition of a complete set, see the description of this interface.
+
+        If the particular combination of the information is not supported
+        by the compositor, the resulting image description object shall
+        immediately deliver the wp_image_description_v1.failed event with the
+        'unsupported' cause. If a valid image description was created from the
+        information, the wp_image_description_v1.ready event will eventually
+        be sent instead.
+
+        This request can be issued at most once during the lifetime of the
+        wp_image_description_creator_icc_v1 object, after which the only
+        legal request is destroy. Otherwise the protocol error already_used
+        is raised.
+
+        A client should destroy this object immediately after this request.
+
+        The resulting image description object does not allow get_information
+        request.
+      </description>
+
+      <arg name="image_description" type="new_id" interface="wp_image_description_v1"/>
+    </request>
+
+    <request name="set_icc_file">
+      <description summary="set the ICC profile file">
+        Sets the ICC profile file to be used as the basis of the image
+        description.
+
+        The data shall be found through the given fd at the given offset,
+        having the given length. The fd must seekable and readable. Violating
+        these requirements raises the bad_fd protocol error.
+
+        The maximum size of the ICC profile is 4 MB. If length is greater
+        than that or zero, the protocol error bad_size is raised.
+
+        A compositor may read the file at any time starting from this request
+        and only until whichever happens first:
+        - If create request was issued, the wp_image_description_v1 object
+          delivers either failed or ready event; or
+        - if create request was not issued, this
+          wp_image_description_creator_icc_v1 object is destroyed.
+
+        A compositor shall not modify the contents of the file, and the fd may
+        be sealed for writes and size changes. The client must ensure to its
+        best ability that the data does not change while the compositor is
+        reading it.
+
+        The data must represent a valid ICC profile.
+        The ICC profile version must be 2 or 4, it must be a 3 channel profile
+        and the class must be 'display'.
+        Violating these requirements will not result in a protocol error but
+        will eventually send the wp_image_description_v1.failed event on the
+        created wp_image_description_v1 with the 'unsupported' cause.
+
+        See the International Color Consortium specification ICC.1:2022 for more
+        details about ICC profiles.
+      </description>
+
+      <arg name="icc_profile" type="fd" summary="ICC profile"/>
+      <arg name="offset" type="uint" summary="byte offset in fd to start of ICC data"/>
+      <arg name="length" type="uint" summary="length of ICC data in bytes"/>
+    </request>
+  </interface>
+
+  <interface name="wp_image_description_creator_params_v1" version="1">
+    <description summary="holder of image description parameters">
+      This type of object is used for collecting all the parameters required
+      to create a wp_image_description_v1 object. A complete set of required
+      parameters consists of these properties:
+      - transfer characteristic function (tf)
+      - chromaticities of primaries and white point (primary color volume)
+
+      The following properties are optional and have a well-defined default
+      if not explicitly set:
+      - mastering display primaries and white point (target color volume)
+      - mastering luminance range
+      - maxCLL
+      - maxFALL
+
+      Each required property must be set exactly once if the client is to create
+      an image description. The set requests verify that a property was not
+      already set. The create request verifies that all required properties are
+      set. There may be several alternative requests for setting each property,
+      and in that case the client must choose one of them.
+
+      Once all properties have been set, the create request can be used to
+      create the image description object. Finally, the params object should
+      be destroyed.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy">
+        Destroys this object. No other object is affected.
+      </description>
+    </request>
+
+    <enum name="error">
+      <description summary="protocol errors"/>
+
+      <entry name="incomplete_set" value="0" summary="incomplete parameter set"/>
+      <entry name="inconsistent_set" value="1" summary="invalid combination of parameters"/>
+      <entry name="already_used" value="2" summary="create request already done"/>
+      <entry name="already_set" value="3" summary="property already set"/>
+      <entry name="invalid_tf" value="4" summary="invalid transfer characteristic"/>
+      <entry name="invalid_primaries" value="5" summary="invalid primaries or white point"/>
+      <entry name="invalid_luminance" value="6" summary="invalid luminance value or range"/>
+      <entry name="invalid_mastering" value="7" summary="invalid mastering information"/>
+    </enum>
+
+    <request name="create">
+      <description summary="Create the image description object using params">
+        Create an image description object based on the parameters previously
+        set on this object.
+
+        The completeness of the parameter set is verified. If the set is not
+        complete, the protocol error incomplete_set is raised. For the
+        definition of a complete set, see the description of this interface.
+
+        If the particular combination of the parameter set is not supported
+        by the compositor, the resulting image description object shall
+        immediately deliver the wp_image_description_v1.failed event with the
+        'unsupported' cause. If a valid image description was created from the
+        parameter set, the wp_image_description_v1.ready event will eventually
+        be sent instead.
+
+        This request can be issued at most once during the lifetime of the
+        wp_image_description_creator_params_v1 object, after which the only
+        legal request is destroy. Otherwise the protocol error already_used
+        is raised.
+
+        A client should destroy this object immediately after this request.
+
+        The resulting image description object does not allow get_information
+        request.
+      </description>
+
+      <arg name="image_description" type="new_id" interface="wp_image_description_v1"/>
+    </request>
+
+    <request name="set_tf_cicp">
+      <description summary="transfer characteristic in H.273 code points" >
+        Sets the transfer characteristic using H.273 TransferCharacteristics
+        code points.
+
+        Only code points advertised with wp_color_manager_v1
+        event supported_tf_cicp are allowed. Other values shall raise the
+        protocol error invalid_tf.
+
+        If transfer characteristic has already been set on this object, the
+        protocol error already_set is raised.
+      </description>
+
+      <arg name="tf_code" type="uint" summary="TransferCharacteristics code point"/>
+    </request>
+
+    <request name="set_tf_power">
+      <description summary="transfer characteristic as a power curve">
+        Sets the color component transfer characteristic to a power curve
+        with the given exponent. This curve represents the conversion from
+        electrical to optical pixel or color values.
+
+        The curve exponent shall be multiplied by 10000 to get the argument
+        eexp value to carry the precision of 4 decimals.
+
+        The curve exponent must be at least 1.0 and at most 10.0. Otherwise
+        the protocol error invalid_tf is raised.
+
+        If transfer characteristic has already been set on this object, the
+        protocol error already_set is raised.
+
+        This request can be used when the compositor advertises
+        wp_color_manager_v1.feature.set_tf_power. Otherwise this request raises
+        the protocol error invalid_tf.
+      </description>
+
+      <arg name="eexp" type="uint" summary="the exponent * 10000"/>
+    </request>
+
+    <request name="set_primaries_cicp">
+      <description summary="primaries in H.273 code points">
+        Sets the color primaries and white point using H.273 ColourPrimaries
+        code points. This describes the primary color volume which is the basis
+        for color value encoding.
+
+        Only code points advertised with wp_color_manager_v1
+        event supported_primaries_cicp are allowed. Other values shall raise the
+        protocol error invalid_primaries.
+
+        If primaries have already been set on this object, the protocol error
+        already_set is raised.
+      </description>
+
+      <arg name="primaries_code" type="uint" summary="ColourPrimaries code point"/>
+    </request>
+
+    <request name="set_primaries">
+      <description summary="primaries as chromaticity coordinates">
+        Sets the color primaries and white point using CIE 1931 xy
+        chromaticity coordinates. This describes the primary color volume
+        which is the basis for color value encoding.
+
+        Each coordinate value is multiplied by 10000 to get the argument
+        value to carry precision of 4 decimals.
+
+        If primaries have already been set on this object, the protocol error
+        already_set is raised.
+
+        This request can be used if the compositor advertises
+        wp_color_manager_v1.feature.set_primaries. Otherwise this request
+        raises the protocol error invalid_primaries.
+      </description>
+
+      <arg name="r_x" type="uint" summary="Red x * 10000"/>
+      <arg name="r_y" type="uint" summary="Red y * 10000"/>
+      <arg name="g_x" type="uint" summary="Green x * 10000"/>
+      <arg name="g_y" type="uint" summary="Green y * 10000"/>
+      <arg name="b_x" type="uint" summary="Blue x * 10000"/>
+      <arg name="b_y" type="uint" summary="Blue y * 10000"/>
+      <arg name="w_x" type="uint" summary="White x * 10000"/>
+      <arg name="w_y" type="uint" summary="White y * 10000"/>
+    </request>
+
+    <request name="set_mastering_display_primaries">
+      <description summary="mastering display primaries as chromaticity coordinates">
+        Provides the color primaries and white point of the mastering display
+        using CIE 1931 xy chromaticity coordinates. This is compatible with the
+        SMPTE ST 2086 definition of HDR static metadata.
+
+        The primaries and transfer characteristics define how an encoded pixel
+        value is converted to CIE 1931 XYZ but they do not define what
+        sub-volume of the container color volume in XYZ is meaningful for the
+        content. The mastering display primaries help defining this target color
+        volume. Compositors may use the target color volume to improve gamut
+        mapping when applicable for the chosen rendering intent.
+
+        If mastering display primaries are not explicitly set, the target
+        color volume is assumed to be equal to the primary color volume.
+
+        The target color volume can exceed the primary color volume to allow for
+        a greater color volume with an existing color space definition (for
+        example scRGB). It can be smaller than the primary color volume to
+        minimize gamut and tone mapping distances for big color spaces (HDR
+        metadata).
+
+        To make use of the entire target color volume a suitable pixel format
+        has to be chosen (e.g. floating point to exceed the primary color
+        volume, or abusing limited quantization range as with xvYCC).
+
+        Each coordinate value is multiplied by 10000 to get the argument
+        value to carry precision of 4 decimals.
+
+        If mastering display primaries have already been set on this object,
+        the protocol error already_set is raised.
+
+        This request can be used if the compositor advertises
+        wp_color_manager_v1.feature.set_mastering_display_primaries.
+        Otherwise this request raises the protocol error invalid_mastering.
+        The advertisement implies support only for target color
+        volumes fully contained within the primary color volume.
+
+        If a compositor additionally supports target color volume exceeding
+        the primary color volume, it must advertise
+        wp_color_manager_v1.feature.extended_target_volume.
+        If a client uses target color volume exceeding the primary color volume
+        and the compositor does not support it, the result is implementation
+        defined. Compositors are recommended to detect this case and fail the
+        image description gracefully, but it may as well result in color
+        artifacts.
+      </description>
+
+      <arg name="r_x" type="uint" summary="Red x * 10000"/>
+      <arg name="r_y" type="uint" summary="Red y * 10000"/>
+      <arg name="g_x" type="uint" summary="Green x * 10000"/>
+      <arg name="g_y" type="uint" summary="Green y * 10000"/>
+      <arg name="b_x" type="uint" summary="Blue x * 10000"/>
+      <arg name="b_y" type="uint" summary="Blue y * 10000"/>
+      <arg name="w_x" type="uint" summary="White x * 10000"/>
+      <arg name="w_y" type="uint" summary="White y * 10000"/>
+    </request>
+
+    <request name="set_mastering_luminance">
+      <description summary="display mastering luminance range">
+        Sets the luminance range that was used during the content mastering
+        process as the minimum and maximum absolute luminance L. This is
+        compatible with the SMPTE ST 2086 definition of HDR static metadata.
+
+        This can only be set when set_tf_cicp is used to set the transfer
+        characteristic to Rec. ITU-R BT.2100-2 perceptual quantization system.
+        Otherwise, 'create' request shall raise inconsistent_set protocol
+        error.
+
+        The mastering luminance range is undefined by default.
+
+        If max L is less than or equal to min L, the protocol error
+        invalid_luminance is raised.
+
+        Min L value is multiplied by 10000 to get the argument min_lum value
+        and carry precision of 4 decimals. Max L value is unscaled for max_lum.
+      </description>
+
+      <arg name="min_lum" type="uint" summary="min L (cd/m²) * 10000"/>
+      <arg name="max_lum" type="uint" summary="max L (cd/m²)"/>
+    </request>
+
+    <request name="set_maxCLL">
+      <description summary="maximum content light level">
+        Sets the maximum content light level (maxCLL) as defined by CTA-861-H.
+
+        This can only be set when set_tf_cicp is used to set the transfer
+        characteristic to Rec. ITU-R BT.2100-2 perceptual quantization system.
+        Otherwise, 'create' request shall raise inconsistent_set protocol
+        error.
+
+        MaxCLL is undefined by default.
+      </description>
+
+      <arg name="maxCLL" type="uint" summary="maxCLL (cd/m²)"/>
+    </request>
+
+    <request name="set_maxFALL">
+      <description summary="maximum frame-average light level">
+        Sets the maximum frame-average light level (maxFALL) as defined by
+        CTA-861-H.
+
+        This can only be set when set_tf_cicp is used to set the transfer
+        characteristic to Rec. ITU-R BT.2100-2 perceptual quantization system.
+        Otherwise, 'create' request shall raise inconsistent_set protocol
+        error.
+
+        MaxFALL is undefined by default.
+      </description>
+
+      <arg name="maxFALL" type="uint" summary="maxFALL (cd/m²)"/>
+    </request>
+  </interface>
+
+  <interface name="wp_image_description_v1" version="1">
+    <description summary="Colorimetric image description">
+      An image description carries information about the color encoding used
+      on a surface when attached to a wl_surface via
+      wp_color_management_surface_v1.set_image_description. A compositor can
+      use this information to decode pixel values into colorimetrically
+      meaningful quantities.
+
+      Note, that the wp_image_description_v1 object is not ready to be used
+      immediately after creation. The object eventually delivers either the
+      'ready' or the 'failed' event, specified in all requests creating it. The
+      object is deemed "ready" after receiving the 'ready' event.
+
+      An object which is not ready is illegal to use, it can only be destroyed.
+      Any other request in this interface shall result in the 'not_ready'
+      protocol error. Attempts to use an object which is not ready through other
+      interfaces shall raise protocol errors defined there.
+
+      Once created and regardless of how it was created, a wp_image_description_v1
+      object always refers to one fixed image description. It cannot change
+      after creation.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the image description">
+        Destroy this object. It is safe to destroy an object which is not ready.
+
+        Destroying a wp_image_description_v1 object has no side-effects, not
+        even if a wp_color_management_surface_v1.set_image_description has
+        not yet been followed by a wl_surface.commit.
+      </description>
+    </request>
+
+    <enum name="error">
+      <description summary="protocol errors"/>
+
+      <entry name="not_ready" value="0" summary="attempted to use an object which is not ready"/>
+      <entry name="no_information" value="1" summary="get_information not allowed"/>
+    </enum>
+
+    <enum name="cause">
+      <description summary="generic reason for failure"/>
+
+      <entry name="low_version" value="0" summary="interface version too low"/>
+      <entry name="unsupported" value="1" summary="unsupported image description data"/>
+    </enum>
+
+    <event name="failed">
+      <description summary="graceful error on creating the image description">
+        If creating a wp_image_description_v1 object fails for a reason that
+        is not defined as a protocol error, this event is sent.
+        The requests that create image description objects define whether
+        and when this can occur. Only such creation requests can trigger this
+        event. This event cannot be triggered after the image description was
+        successfully formed.
+
+        Once this event has been sent, the wp_image_description_v1 object will
+        never become ready and it can only be destroyed.
+      </description>
+
+      <arg name="cause" type="uint" enum="cause" summary="generic reason"/>
+      <arg name="msg" type="string" summary="ad hoc human-readable explanation"/>
+    </event>
+
+    <event name="ready">
+      <description summary="indication that the object is ready to be used">
+        Once this event has been sent, the wp_image_description_v1 object is
+        deemed "ready". Ready objects can be used to send requests and can be
+        used through other interfaces.
+
+        Every ready wp_image_description_v1 protocol object refers to an
+        underlying image description record in the compositor. Multiple protocol
+        objects may end up referring to the same record. Clients may identify
+        these "copies" by comparing their id numbers: if the numbers from two
+        protocol objects are identical, the protocol objects refer to the same
+        image description record. Two different image description records
+        cannot have the same id number simultaneously. The id number does not
+        change during the lifetime of the image description record.
+
+        The id number is valid only as long as the protocol object is alive.
+        If all protocol objects referring to the same image description record
+        are destroyed, the id number may be recycled for a different image
+        description record.
+
+        Image description id number is not a protocol object id. Zero is
+        reserved as an invalid id number. It shall not be possible for a
+        client to refer to an image description by its id number in protocol.
+        The id numbers might not be portable between Wayland connections.
+
+        This identity allows clients to de-duplicate image description records
+        and avoid get_information request if they already have the image
+        description information.
+      </description>
+
+      <arg name="identity" type="uint" summary="image description id number"/>
+    </event>
+
+    <request name="get_information">
+      <description summary="get information about the image description">
+        As a reply to this request, the compositor shall send all matching
+        information events describing this image description object and finally
+        the 'done' event.
+
+        Each information event may only be sent as a response to get_information
+        request, and it may only be sent once.
+
+        Every get_information request on the same object shall always return the
+        exact same data.
+
+        Not all image description protocol objects allow get_information
+        request. Whether it is allowed or not is defined by the request that
+        created the object. If get_information is not allowed, the protocol
+        error no_information is raised.
+      </description>
+    </request>
+
+    <event name="done">
+      <description summary="end of information">
+        Signals the end of an information event sequence. This shall be sent
+        only and exactly once for each get_information request on this object.
+      </description>
+    </event>
+
+    <event name="icc_file">
+      <description summary="ICC profile matching the image description">
+        This is an information event, see get_information.
+
+        The icc argument provides a file descriptor to the client which may be
+        memory-mapped to provide the ICC profile matching the image description.
+        The fd is read-only, and if mapped then it must be mapped with
+        MAP_PRIVATE by the client.
+
+        The ICC profile version and other details are determined by the
+        compositor. There is no provision for a client to ask for a specific
+        kind of a profile.
+      </description>
+
+      <arg name="icc" type="fd" summary="ICC profile file descriptor"/>
+      <arg name="icc_size" type="uint" summary="ICC profile size, in bytes"/>
+      <!-- Offset always 0, compositor must not expose unnecessary data. -->
+    </event>
+
+    <event name="primaries">
+      <description summary="primaries as chromaticity coordinates">
+        This is an information event, see get_information.
+
+        Delivers the primary color volume primaries and white point
+        using CIE 1931 xy chromaticity coordinates.
+
+        Each coordinate value is multiplied by 10000 to get the argument
+        value to carry precision of 4 decimals.
+      </description>
+
+      <arg name="r_x" type="uint" summary="Red x * 10000"/>
+      <arg name="r_y" type="uint" summary="Red y * 10000"/>
+      <arg name="g_x" type="uint" summary="Green x * 10000"/>
+      <arg name="g_y" type="uint" summary="Green y * 10000"/>
+      <arg name="b_x" type="uint" summary="Blue x * 10000"/>
+      <arg name="b_y" type="uint" summary="Blue y * 10000"/>
+      <arg name="w_x" type="uint" summary="White x * 10000"/>
+      <arg name="w_y" type="uint" summary="White y * 10000"/>
+    </event>
+
+    <event name="primaries_cicp">
+      <description summary="H.273 ColourPrimaries code">
+        This is an information event, see get_information.
+
+        This event provides the H.273 ColourPrimaries code matching the
+        primary color volume primaries and white point of this
+        image description.
+      </description>
+
+      <arg name="primaries_code" type="uint" summary="H.273 ColourPrimaries code"/>
+    </event>
+
+    <event name="tf_cicp">
+      <description summary="H.273 TransferCharacteristics code">
+        This is an information event, see get_information.
+
+        This event provides the H.273 TransferCharacteristics code matching
+        the transfer characteristics of this image description.
+      </description>
+
+      <arg name="tf_code" type="uint" summary="H.273 TransferCharacteristics code"/>
+    </event>
+
+    <event name="tf_power">
+      <description summary="transfer characteristic as a power curve">
+        This is an information event, see get_information.
+
+        The color component transfer characteristic of this image description
+        is a pure power curve. This event provides the exponent of the power
+        function. This curve represents the conversion from electrical to
+        optical pixel or color values.
+
+        The curve exponent has been multiplied by 10000 to get the argument
+        eexp value to carry the precision of 4 decimals.
+      </description>
+
+      <arg name="eexp" type="uint" summary="the exponent * 10000"/>
+    </event>
+
+    <event name="target_primaries">
+      <description summary="target primaries as chromaticity coordinates">
+        This is an information event, see get_information.
+
+        Provides the color primaries and white point of the target
+        color volume using CIE 1931 xy chromaticity coordinates. This is
+        compatible with the SMPTE ST 2086 definition of HDR static metadata
+        for mastering displays.
+
+        While primary color volume is about how color is encoded, the
+        target color volume is the actually displayable color volume.
+        If target color volume is equal to the primary color volume,
+        then this event is not sent.
+
+        Each coordinate value is multiplied by 10000 to get the argument
+        value to carry precision of 4 decimals.
+      </description>
+
+      <arg name="r_x" type="uint" summary="Red x * 10000"/>
+      <arg name="r_y" type="uint" summary="Red y * 10000"/>
+      <arg name="g_x" type="uint" summary="Green x * 10000"/>
+      <arg name="g_y" type="uint" summary="Green y * 10000"/>
+      <arg name="b_x" type="uint" summary="Blue x * 10000"/>
+      <arg name="b_y" type="uint" summary="Blue y * 10000"/>
+      <arg name="w_x" type="uint" summary="White x * 10000"/>
+      <arg name="w_y" type="uint" summary="White y * 10000"/>
+    </event>
+
+    <event name="target_luminance">
+      <description summary="target luminance range">
+        This is an information event, see get_information.
+
+        Provides the luminance range that the image description is targeting
+        as the minimum and maximum absolute luminance L. This is compatible
+        with the SMPTE ST 2086 definition of HDR static metadata.
+
+        This luminance range is only theoretical and may not correspond to the
+        luminance of light emitted on an actual display.
+
+        Min L value is multiplied by 10000 to get the argument min_lum value
+        and carry precision of 4 decimals. Max L value is unscaled for max_lum.
+      </description>
+
+      <arg name="min_lum" type="uint" summary="min L (cd/m²) * 10000"/>
+      <arg name="max_lum" type="uint" summary="max L (cd/m²)"/>
+    </event>
+
+    <event name="target_maxCLL">
+      <description summary="target maximum content light level">
+        This is an information event, see get_information.
+
+        Provides the targeted maxCLL of the image description. MaxCLL is
+        defined by CTA-861-H.
+
+        This luminance is only theoretical and may not correspond to the
+        luminance of light emitted on an actual display.
+      </description>
+
+      <arg name="maxCLL" type="uint" summary="maxCLL (cd/m²)"/>
+    </event>
+
+    <event name="target_maxFALL">
+      <description summary="target maximum frame-average light level">
+        This is an information event, see get_information.
+
+        Provides the targeted maxFALL of the image description. MaxFALL is
+        defined by CTA-861-H.
+
+        This luminance is only theoretical and may not correspond to the
+        luminance of light emitted on an actual display.
+      </description>
+
+      <arg name="maxFALL" type="uint" summary="maxFALL (cd/m²)"/>
+    </event>
+  </interface>
+</protocol>
