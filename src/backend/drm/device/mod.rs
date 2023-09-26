@@ -432,7 +432,7 @@ pub enum DrmEvent {
 }
 
 /// Timing metadata for page-flip events
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct EventMetadata {
     /// The time the frame flip happend
     pub time: Time,
@@ -441,7 +441,7 @@ pub struct EventMetadata {
 }
 
 /// Either a realtime or monotonic timestamp
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Time {
     /// Monotonic time stamp
     Monotonic(Duration),
