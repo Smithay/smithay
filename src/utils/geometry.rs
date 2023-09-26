@@ -439,36 +439,10 @@ impl<Kind> Point<f64, Kind> {
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for Point<N, Logical> {
+impl<N: fmt::Debug, S> fmt::Debug for Point<N, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Logical>")
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Point<N, Physical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Physical>")
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Point<N, Raw> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Raw>")
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Point<N, Buffer> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Buffer>")
+        f.write_fmt(format_args!("Point<{}>", std::any::type_name::<S>()))?;
+        f.debug_struct("")
             .field("x", &self.x)
             .field("y", &self.y)
             .finish()
@@ -778,36 +752,10 @@ impl<Kind> Size<f64, Kind> {
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for Size<N, Logical> {
+impl<N: fmt::Debug, S> fmt::Debug for Size<N, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Logical>")
-            .field("w", &self.w)
-            .field("h", &self.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Size<N, Physical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Physical>")
-            .field("w", &self.w)
-            .field("h", &self.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Size<N, Raw> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Raw>")
-            .field("w", &self.w)
-            .field("h", &self.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Size<N, Buffer> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Buffer>")
+        f.write_fmt(format_args!("Size<{}>", std::any::type_name::<S>()))?;
+        f.debug_struct("")
             .field("w", &self.w)
             .field("h", &self.h)
             .finish()
@@ -1422,42 +1370,10 @@ impl<N: Coordinate> Rectangle<N, Buffer> {
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Logical> {
+impl<N: fmt::Debug, S> fmt::Debug for Rectangle<N, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Logical>")
-            .field("x", &self.loc.x)
-            .field("y", &self.loc.y)
-            .field("width", &self.size.w)
-            .field("height", &self.size.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Physical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Physical>")
-            .field("x", &self.loc.x)
-            .field("y", &self.loc.y)
-            .field("width", &self.size.w)
-            .field("height", &self.size.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Raw> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Raw>")
-            .field("x", &self.loc.x)
-            .field("y", &self.loc.y)
-            .field("width", &self.size.w)
-            .field("height", &self.size.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Buffer> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Buffer>")
+        f.write_fmt(format_args!("Rectangle<{}>", std::any::type_name::<S>()))?;
+        f.debug_struct("")
             .field("x", &self.loc.x)
             .field("y", &self.loc.y)
             .field("width", &self.size.w)
