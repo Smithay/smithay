@@ -99,7 +99,7 @@ use nix::{
 use std::{
     collections::HashMap,
     io,
-    os::unix::io::{FromRawFd, OwnedFd},
+    os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd},
     sync::{
         atomic::{AtomicU32, Ordering},
         mpsc, Arc, Mutex, Weak,
@@ -965,7 +965,9 @@ fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, OwnedFd), X11Error> {
         }
     };
 
-    let dri_node = DrmNode::from_file(&dri3.device_fd).map_err(Into::<AllocateBuffersError>::into)?;
+    // TODO: x11rb git makes `RawFdContainer` an alias for `OwnedFd`, so this isn't needed
+    let device_fd = unsafe { BorrowedFd::borrow_raw(dri3.device_fd.as_raw_fd()) };
+    let dri_node = DrmNode::from_file(device_fd).map_err(Into::<AllocateBuffersError>::into)?;
     if dri_node.ty() != NodeType::Render {
         // Try to get the render node.
         match dri_node.node_with_type(NodeType::Render) {

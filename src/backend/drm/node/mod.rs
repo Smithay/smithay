@@ -8,7 +8,7 @@ use libc::dev_t;
 use std::{
     fmt::{self, Display, Formatter},
     io,
-    os::unix::io::{AsRawFd, RawFd},
+    os::unix::io::{AsFd, AsRawFd},
     path::{Path, PathBuf},
 };
 
@@ -36,17 +36,12 @@ pub struct DrmNode {
 }
 
 impl DrmNode {
-    /// Creates a DRM node from a file descriptor.
+    /// Creates a DRM node from an open drm device.
     ///
     /// This function does not take ownership of the passed in file descriptor.
-    pub fn from_fd(fd: RawFd) -> Result<DrmNode, CreateDrmNodeError> {
-        let stat = fstat(fd).map_err(Into::<io::Error>::into)?;
+    pub fn from_file<A: AsFd>(file: A) -> Result<DrmNode, CreateDrmNodeError> {
+        let stat = fstat(file.as_fd().as_raw_fd()).map_err(Into::<io::Error>::into)?;
         DrmNode::from_stat(stat)
-    }
-
-    /// Creates a DRM node from an open drm device.
-    pub fn from_file<A: AsRawFd>(file: &A) -> Result<DrmNode, CreateDrmNodeError> {
-        DrmNode::from_fd(file.as_raw_fd())
     }
 
     /// Creates a DRM node from path.
