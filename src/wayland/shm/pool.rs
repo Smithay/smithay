@@ -78,7 +78,7 @@ pub enum ResizeError {
 }
 
 impl InnerPool {
-    #[instrument(skip_all, name = "wayland_shm")]
+    #[instrument(level = "trace", skip_all, name = "wayland_shm")]
     pub fn new(fd: OwnedFd, size: NonZeroUsize) -> Result<InnerPool, OwnedFd> {
         let memmap = match MemMap::new(fd.as_fd(), size) {
             Ok(memmap) => memmap,
