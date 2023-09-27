@@ -8,9 +8,7 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_v2::{self, ZwpTabletV2},
 };
 use wayland_server::{
-    backend::{ClientId, ObjectId},
-    protocol::wl_surface::WlSurface,
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
+    backend::ClientId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::backend::input::Device;
@@ -122,12 +120,12 @@ where
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, tablet: ObjectId, data: &TabletUserData) {
+    fn destroyed(_state: &mut D, _client: ClientId, tablet: &ZwpTabletV2, data: &TabletUserData) {
         data.handle
             .inner
             .lock()
             .unwrap()
             .instances
-            .retain(|i| Resource::id(i) != tablet);
+            .retain(|i| Resource::id(i) != Resource::id(tablet));
     }
 }

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::{self, ZwpTextInputV3};
-use wayland_server::backend::{ClientId, ObjectId};
+use wayland_server::backend::ClientId;
 use wayland_server::{protocol::wl_surface::WlSurface, Dispatch, Resource};
 
 use crate::utils::IsAlive;
@@ -183,7 +183,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, ti: ObjectId, data: &TextInputUserData) {
+    fn destroyed(_state: &mut D, _client: ClientId, ti: &ZwpTextInputV3, data: &TextInputUserData) {
         // Ensure IME is deactivated when text input dies.
         data.input_method_handle.with_instance(|input_method| {
             input_method.deactivate();
@@ -195,6 +195,6 @@ where
             .lock()
             .unwrap()
             .instances
-            .retain(|i| i.instance.id() != ti);
+            .retain(|i| i.instance.id() != ti.id());
     }
 }

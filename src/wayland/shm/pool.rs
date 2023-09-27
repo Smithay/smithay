@@ -3,9 +3,13 @@
 use std::{
     cell::Cell,
     num::NonZeroUsize,
-    os::unix::io::{AsRawFd, OwnedFd, RawFd},
+    os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     ptr,
-    sync::{Once, RwLock},
+    sync::{
+        mpsc::{sync_channel, SyncSender},
+        Once, RwLock,
+    },
+    thread,
 };
 
 use nix::{
@@ -15,7 +19,35 @@ use nix::{
         signal::{self, SigAction, SigHandler, Signal},
     },
 };
+use once_cell::sync::Lazy;
 use tracing::{debug, instrument, trace};
+
+// Dropping Pool is actually pretty slow. Unmapping the memory can take 1-2 ms, but the real
+// offender is closing the file descriptor, which I've seen take up to 6 ms. It's waiting on some
+// spinlock in the kernel.
+//
+// Blocking the main thread for 6 ms is quite bad. In fact, 6 ms is almost the entire time budget
+// for a 165 Hz frame. To make matters worse, some clients will cause repeated creation and
+// dropping of shm pools, like Firefox during a focus-out animation. This results in dropped
+// frames.
+//
+// To work around this problem, we spawn a separate thread whose sole purpose is dropping stuff we
+// send it through a channel. Conveniently, Pool is already Send, so there's no problem doing this.
+//
+// We use SyncSender because the regular Sender only got Sync in 1.72 which is above our MSRV.
+static DROP_THIS: Lazy<SyncSender<InnerPool>> = Lazy::new(|| {
+    let (tx, rx) = sync_channel(16);
+    thread::Builder::new()
+        .name("Shm dropping thread".to_owned())
+        .spawn(move || {
+            while let Ok(x) = rx.recv() {
+                profiling::scope!("dropping Pool");
+                drop(x);
+            }
+        })
+        .unwrap();
+    tx
+});
 
 thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr::null_mut(), false)));
 
@@ -26,31 +58,36 @@ static SIGBUS_INIT: Once = Once::new();
 
 #[derive(Debug)]
 pub struct Pool {
+    inner: Option<InnerPool>,
+}
+
+#[derive(Debug)]
+struct InnerPool {
     map: RwLock<MemMap>,
     fd: OwnedFd,
 }
 
 // SAFETY: The memmap is owned by the pool and content is only accessible via a reference.
-unsafe impl Send for Pool {}
+unsafe impl Send for InnerPool {}
 // SAFETY: The memmap is guarded by a RwLock, meaning no writers may mutate the memmap when it is being read.
-unsafe impl Sync for Pool {}
+unsafe impl Sync for InnerPool {}
 
 pub enum ResizeError {
     InvalidSize,
     MremapFailed,
 }
 
-impl Pool {
-    #[instrument(skip_all, name = "wayland_shm")]
-    pub fn new(fd: OwnedFd, size: NonZeroUsize) -> Result<Pool, OwnedFd> {
-        let memmap = match MemMap::new(fd.as_raw_fd(), size) {
+impl InnerPool {
+    #[instrument(level = "trace", skip_all, name = "wayland_shm")]
+    pub fn new(fd: OwnedFd, size: NonZeroUsize) -> Result<InnerPool, OwnedFd> {
+        let memmap = match MemMap::new(fd.as_fd(), size) {
             Ok(memmap) => memmap,
             Err(_) => {
                 return Err(fd);
             }
         };
         trace!(fd = ?fd, size = ?size, "Creating new shm pool");
-        Ok(Pool {
+        Ok(InnerPool {
             map: RwLock::new(memmap),
             fd,
         })
@@ -65,7 +102,7 @@ impl Pool {
         }
 
         trace!(fd = ?self.fd, oldsize = oldsize, newsize = ?newsize, "Resizing shm pool");
-        guard.remap(newsize).map_err(|()| {
+        guard.remap(self.fd.as_fd(), newsize).map_err(|()| {
             debug!(fd = ?self.fd, oldsize = oldsize, newsize = ?newsize, "SHM pool resize failed");
             ResizeError::MremapFailed
         })
@@ -148,30 +185,56 @@ impl Pool {
     }
 }
 
+impl Pool {
+    pub fn new(fd: OwnedFd, size: NonZeroUsize) -> Result<Self, OwnedFd> {
+        InnerPool::new(fd, size).map(|p| Self { inner: Some(p) })
+    }
+
+    pub fn resize(&self, newsize: NonZeroUsize) -> Result<(), ResizeError> {
+        self.inner.as_ref().unwrap().resize(newsize)
+    }
+
+    pub fn size(&self) -> usize {
+        self.inner.as_ref().unwrap().size()
+    }
+
+    pub fn with_data<T, F: FnOnce(*const u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
+        self.inner.as_ref().unwrap().with_data(f)
+    }
+
+    pub fn with_data_mut<T, F: FnOnce(*mut u8, usize) -> T>(&self, f: F) -> Result<T, ()> {
+        self.inner.as_ref().unwrap().with_data_mut(f)
+    }
+}
+
+impl Drop for Pool {
+    fn drop(&mut self) {
+        let _ = DROP_THIS.send(self.inner.take().unwrap());
+    }
+}
+
 #[derive(Debug)]
 struct MemMap {
     ptr: *mut u8,
-    fd: RawFd,
     size: usize,
 }
 
 impl MemMap {
-    fn new(fd: RawFd, size: NonZeroUsize) -> Result<MemMap, ()> {
+    fn new(fd: BorrowedFd<'_>, size: NonZeroUsize) -> Result<MemMap, ()> {
         Ok(MemMap {
             ptr: unsafe { map(fd, size) }?,
-            fd,
             size: size.into(),
         })
     }
 
-    fn remap(&mut self, newsize: NonZeroUsize) -> Result<(), ()> {
+    fn remap(&mut self, fd: BorrowedFd<'_>, newsize: NonZeroUsize) -> Result<(), ()> {
         if self.ptr.is_null() {
             return Err(());
         }
         // memunmap cannot fail, as we are unmapping a pre-existing map
         let _ = unsafe { unmap(self.ptr, self.size) };
         // remap the fd with the new size
-        match unsafe { map(self.fd, newsize) } {
+        match unsafe { map(fd, newsize) } {
             Ok(ptr) => {
                 // update the parameters
                 self.ptr = ptr;
@@ -182,7 +245,6 @@ impl MemMap {
                 // set ourselves in an empty state
                 self.ptr = ptr::null_mut();
                 self.size = 0;
-                self.fd = -1;
                 Err(())
             }
         }
@@ -210,14 +272,14 @@ impl Drop for MemMap {
 }
 
 /// A simple wrapper with some default arguments for `nix::mman::mmap`.
-unsafe fn map(fd: RawFd, size: NonZeroUsize) -> Result<*mut u8, ()> {
+unsafe fn map(fd: BorrowedFd<'_>, size: NonZeroUsize) -> Result<*mut u8, ()> {
     let ret = unsafe {
         mman::mmap(
             None,
             size,
             mman::ProtFlags::PROT_READ | mman::ProtFlags::PROT_WRITE,
             mman::MapFlags::MAP_SHARED,
-            fd,
+            Some(fd),
             0,
         )
     };
@@ -225,6 +287,7 @@ unsafe fn map(fd: RawFd, size: NonZeroUsize) -> Result<*mut u8, ()> {
 }
 
 /// A simple wrapper for `nix::mman::munmap`.
+#[profiling::function]
 unsafe fn unmap(ptr: *mut u8, size: usize) -> Result<(), ()> {
     let ret = unsafe { mman::munmap(ptr as *mut _, size) };
     ret.map_err(|_| ())
@@ -239,7 +302,7 @@ unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
             size,
             mman::ProtFlags::PROT_READ,
             mman::MapFlags::MAP_ANONYMOUS | mman::MapFlags::MAP_PRIVATE | mman::MapFlags::MAP_FIXED,
-            -1,
+            None::<BorrowedFd<'_>>,
             0,
         )
     };
@@ -302,6 +365,7 @@ extern "C" fn sigbus_handler(_signum: libc::c_int, info: *mut libc::siginfo_t, _
 #[cfg(any(target_os = "linux", target_os = "android"))]
 unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
     #[repr(C)]
+    #[allow(non_camel_case_types)]
     struct siginfo_t {
         a: [libc::c_int; 3], // si_signo, si_errno, si_code
         si_addr: *mut libc::c_void,

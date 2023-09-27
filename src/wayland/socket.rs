@@ -88,7 +88,7 @@ impl ListeningSocketSource {
 
     /// Returns the name of the listening socket.
     pub fn socket_name(&self) -> &OsStr {
-        self.socket.file.socket_name().unwrap()
+        self.socket.get_ref().socket_name().unwrap()
     }
 }
 

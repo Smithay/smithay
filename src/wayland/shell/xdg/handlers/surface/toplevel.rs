@@ -8,9 +8,7 @@ use crate::{
 use wayland_protocols::xdg::shell::server::xdg_toplevel::{self, XdgToplevel};
 
 use wayland_server::{
-    backend::{ClientId, ObjectId},
-    protocol::wl_surface,
-    DataInit, Dispatch, DisplayHandle, Resource, WEnum,
+    backend::ClientId, protocol::wl_surface, DataInit, Dispatch, DisplayHandle, Resource, WEnum,
 };
 
 use super::{
@@ -122,7 +120,12 @@ where
         }
     }
 
-    fn destroyed(state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &XdgShellSurfaceUserData) {
+    fn destroyed(
+        state: &mut D,
+        _client_id: ClientId,
+        xdg_toplevel: &XdgToplevel,
+        data: &XdgShellSurfaceUserData,
+    ) {
         data.alive_tracker.destroy_notify();
         data.decoration.lock().unwrap().take();
 
@@ -130,7 +133,7 @@ where
             .xdg_shell_state()
             .known_toplevels
             .iter()
-            .position(|top| top.shell_surface.id() == object_id)
+            .position(|top| top.shell_surface.id() == xdg_toplevel.id())
         {
             let toplevel = state.xdg_shell_state().known_toplevels.remove(index);
             let surface = toplevel.wl_surface().clone();

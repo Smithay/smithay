@@ -133,6 +133,7 @@ use ::gbm::{BufferObject, BufferObjectFlags};
 use drm::control::{connector, crtc, framebuffer, plane, Mode, PlaneType};
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::IndexMap;
+use smallvec::SmallVec;
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
 
@@ -149,7 +150,7 @@ use crate::{
             buffer_y_inverted,
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::{
-                Element, Id, RenderElement, RenderElementPresentationState, RenderElementState,
+                Element, Id, Kind, RenderElement, RenderElementPresentationState, RenderElementState,
                 RenderElementStates, RenderingReason, UnderlyingStorage,
             },
             sync::SyncPoint,
@@ -323,7 +324,7 @@ struct ElementInstanceState {
 
 #[derive(Debug)]
 struct ElementState<B: Framebuffer> {
-    instances: Vec<ElementInstanceState>,
+    instances: SmallVec<[ElementInstanceState; 1]>,
     fb_cache: ElementFramebufferCache<B>,
 }
 
@@ -657,15 +658,16 @@ impl<B: Framebuffer> FrameState<B> {
         supports_fencing: bool,
         allow_modeset: bool,
     ) -> Result<(), DrmError> {
+        let needs_test = self.planes.iter().any(|(_, state)| state.needs_test);
         let is_fully_compatible = self.planes.iter().all(|(handle, state)| {
-            !state.needs_test
-                || previous_frame
-                    .plane_state(*handle)
-                    .map(|other| state.is_compatible(other))
-                    .unwrap_or(false)
+            previous_frame
+                .plane_state(*handle)
+                .map(|other| state.is_compatible(other))
+                .unwrap_or(false)
         });
 
-        if is_fully_compatible {
+        if !needs_test || is_fully_compatible {
+            trace!("skipping fully compatible state test");
             self.planes
                 .iter_mut()
                 .for_each(|(_, state)| state.needs_test = false);
@@ -1179,12 +1181,8 @@ where
             }
         };
 
-        let clear_damage = opaque_regions.iter().fold(damage.clone(), |damage, region| {
-            damage
-                .into_iter()
-                .flat_map(|geo| geo.subtract_rect(*region))
-                .collect::<Vec<_>>()
-        });
+        let clear_damage =
+            Rectangle::subtract_rects_many_in_place(damage.clone(), opaque_regions.iter().copied());
 
         let mut sync: Option<SyncPoint> = None;
         if !clear_damage.is_empty() {
@@ -1808,9 +1806,10 @@ where
 
         let mut output_damage: Vec<Rectangle<i32, Physical>> = Vec::new();
         let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
-        let mut element_states = IndexMap::new();
+        let mut element_states =
+            IndexMap::with_capacity(std::cmp::min(elements.len(), self.planes.overlay.len()));
         let mut render_element_states = RenderElementStates {
-            states: Default::default(),
+            states: HashMap::with_capacity(elements.len()),
         };
 
         // So first we want to create a clean state, for that we have to reset all overlay and cursor planes
@@ -1880,7 +1879,8 @@ where
         // This holds all elements that are visible on the output
         // A element is considered visible if it intersects with the output geometry
         // AND is not completely hidden behind opaque regions
-        let mut output_elements: Vec<(&'a E, usize)> = Vec::with_capacity(elements.len());
+        let mut output_elements: Vec<(&'a E, Rectangle<i32, Physical>, usize, bool)> =
+            Vec::with_capacity(elements.len());
 
         for element in elements.iter() {
             let element_id = element.id();
@@ -1895,14 +1895,8 @@ where
             };
 
             // Then test if the element is completely hidden behind opaque regions
-            let element_visible_area = opaque_regions
-                .iter()
-                .fold([element_output_geometry].to_vec(), |geometry, opaque_region| {
-                    geometry
-                        .into_iter()
-                        .flat_map(|g| g.subtract_rect(*opaque_region))
-                        .collect::<Vec<_>>()
-                })
+            let element_visible_area = element_output_geometry
+                .subtract_rects(opaque_regions.iter().copied())
                 .into_iter()
                 .fold(0usize, |acc, item| acc + (item.size.w * item.size.h) as usize);
 
@@ -1920,19 +1914,22 @@ where
                 continue;
             }
 
-            output_elements.push((element, element_visible_area));
+            let element_opaque_regions = element.opaque_regions(output_scale);
+            let element_is_opaque = Rectangle::from_loc_and_size(Point::default(), element_geometry.size)
+                .subtract_rects(element_opaque_regions.iter().copied())
+                .is_empty();
 
-            let element_opaque_regions = element
-                .opaque_regions(output_scale)
-                .into_iter()
-                .map(|mut region| {
-                    region.loc += element_loc;
-                    region
-                })
-                .filter_map(|geo| geo.intersection(output_geometry))
-                .collect::<Vec<_>>();
+            opaque_regions.extend(
+                element_opaque_regions
+                    .into_iter()
+                    .map(|mut region| {
+                        region.loc += element_loc;
+                        region
+                    })
+                    .filter_map(|geo| geo.intersection(output_geometry)),
+            );
 
-            opaque_regions.extend(element_opaque_regions);
+            output_elements.push((element, element_geometry, element_visible_area, element_is_opaque));
         }
 
         // This will hold the element that has been selected for direct scan-out on
@@ -1949,10 +1946,13 @@ where
         let mut cursor_plane_element: Option<&'a E> = None;
 
         let output_elements_len = output_elements.len();
-        for (index, (element, element_visible_area)) in output_elements.iter().enumerate() {
+        for (index, (element, element_geometry, element_visible_area, element_is_opaque)) in
+            output_elements.iter().enumerate()
+        {
             let element_id = element.id();
-            let element_geometry = element.geometry(output_scale);
+            let element_geometry = *element_geometry;
             let remaining_elements = output_elements_len - index;
+            let element_is_opaque = *element_is_opaque;
 
             // Check if we found our last item, we can try to do
             // direct scan-out on the primary plane
@@ -1961,7 +1961,6 @@ where
             // on the primary plane, this will disable direct scan-out
             // on the primary plane.
             let try_assign_primary_plane = if remaining_elements == 1 && primary_plane_elements.is_empty() {
-                let element_is_opaque = element_is_opaque(element, output_scale);
                 let crtc_background_matches_clear_color =
                     (clear_color[0] == 0f32 && clear_color[1] == 0f32 && clear_color[2] == 0f32)
                         || clear_color[3] == 0f32;
@@ -1983,6 +1982,8 @@ where
                 renderer,
                 *element,
                 index,
+                element_geometry,
+                element_is_opaque,
                 &mut element_states,
                 &primary_plane_elements,
                 output_scale,
@@ -2172,10 +2173,6 @@ where
                 (dmabuf, age)
             };
 
-            renderer
-                .bind(dmabuf)
-                .map_err(OutputDamageTrackerError::Rendering)?;
-
             // store the current renderer debug flags and replace them
             // with our own
             let renderer_debug_flags = renderer.debug_flags();
@@ -2220,9 +2217,9 @@ where
                     .map(|e| DrmRenderElements::Other(*e)),
             );
 
-            let render_res = self
-                .damage_tracker
-                .render_output(renderer, age, &elements, clear_color);
+            let render_res =
+                self.damage_tracker
+                    .render_output_with(renderer, dmabuf, age, &elements, clear_color);
 
             // restore the renderer debug flags
             renderer.set_debug_flags(renderer_debug_flags);
@@ -2316,16 +2313,9 @@ where
             }
         }
 
-        self.next_frame = Some(next_frame_state);
-
         let primary_plane_element = if render {
             let (slot, sync) = {
-                let primary_plane_state = self
-                    .next_frame
-                    .as_ref()
-                    .unwrap()
-                    .plane_state(self.planes.primary.handle)
-                    .unwrap();
+                let primary_plane_state = next_frame_state.plane_state(self.planes.primary.handle).unwrap();
                 let config = primary_plane_state.config.as_ref().unwrap();
                 (
                     config.buffer.clone(),
@@ -2361,6 +2351,13 @@ where
             primary_plane_element_id: self.primary_plane_element_id.clone(),
             supports_fencing: self.supports_fencing,
         };
+
+        // We only store the next frame if it acutaly contains any changes
+        // Storing the (empty) frame could keep a reference to wayland buffers which
+        // could otherwise be potentially released on `frame_submitted`
+        if !next_frame_state.is_empty() {
+            self.next_frame = Some(next_frame_state);
+        }
 
         Ok(frame_reference)
     }
@@ -2589,6 +2586,8 @@ where
         renderer: &mut R,
         element: &'a E,
         element_zindex: usize,
+        element_geometry: Rectangle<i32, Physical>,
+        element_is_opaque: bool,
         element_states: &mut IndexMap<
             Id,
             ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
@@ -2638,6 +2637,7 @@ where
                 renderer,
                 element,
                 element_zindex,
+                element_geometry,
                 element_states,
                 scale,
                 frame_state,
@@ -2658,23 +2658,11 @@ where
             };
         }
 
-        let mut element_config = self.element_config(
-            renderer,
-            element,
-            element_zindex,
-            element_states,
-            frame_state,
-            scale,
-            output_transform,
-            output_geometry,
-            false,
-        );
-
         if let Some(plane) = self.try_assign_cursor_plane(
             renderer,
             element,
             element_zindex,
-            element_config.as_mut().ok(),
+            element_geometry,
             scale,
             frame_state,
             output_damage,
@@ -2689,15 +2677,19 @@ where
             return Ok(plane);
         }
 
-        let element_config = element_config?;
-
         match self.try_assign_overlay_plane(
+            renderer,
             element,
-            element_config,
+            element_zindex,
+            element_geometry,
+            element_is_opaque,
+            element_states,
             primary_plane_elements,
             scale,
             frame_state,
             output_damage,
+            output_transform,
+            output_geometry,
         )? {
             Ok(plane) => {
                 trace!("assigned element {:?} to overlay plane", element.id());
@@ -2713,10 +2705,11 @@ where
     #[instrument(level = "trace", skip_all)]
     #[profiling::function]
     fn try_assign_primary_plane<'a, R, E>(
-        &self,
+        &mut self,
         renderer: &mut R,
         element: &'a E,
         element_zindex: usize,
+        element_geometry: Rectangle<i32, Physical>,
         element_states: &mut IndexMap<
             Id,
             ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
@@ -2735,9 +2728,9 @@ where
             renderer,
             element,
             element_zindex,
+            element_geometry,
             element_states,
             frame_state,
-            scale,
             output_transform,
             output_geometry,
             true,
@@ -2787,15 +2780,7 @@ where
         renderer: &mut R,
         element: &E,
         element_zindex: usize,
-        element_config: Option<
-            &mut ElementPlaneConfig<
-                '_,
-                DrmScanoutBuffer<
-                    <A as Allocator>::Buffer,
-                    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
-                >,
-            >,
-        >,
+        element_geometry: Rectangle<i32, Physical>,
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
@@ -2821,7 +2806,15 @@ where
             return None;
         }
 
-        let element_geometry = element.geometry(scale);
+        if element.kind() != Kind::Cursor {
+            trace!(
+                "skipping element {:?} on cursor {:?}, element kind not cursor",
+                element.id(),
+                plane_info.handle
+            );
+            return None;
+        }
+
         let element_size = output_transform.transform_size(element_geometry.size);
 
         // if the element is greater than the cursor size we can not
@@ -2833,40 +2826,6 @@ where
                 plane_info.handle,
             );
             return None;
-        }
-
-        // if the element exposes the underlying storage we can try to do
-        // direct scan-out
-        if let Some(element_config) = element_config {
-            if !element_config.failed_planes.cursor {
-                trace!(
-                    "trying to assign element {:?} for direct scan-out on cursor {:?}",
-                    element.id(),
-                    plane_info.handle,
-                );
-
-                match self.try_assign_plane(
-                    element,
-                    element_config,
-                    plane_info,
-                    scale,
-                    frame_state,
-                    output_damage,
-                ) {
-                    Ok(Ok(plane)) => {
-                        trace!(
-                            "assigned element {:?} for direct scan-out on cursor {:?}",
-                            element.id(),
-                            plane_info.handle,
-                        );
-                        return Some(plane);
-                    }
-                    Ok(Err(Some(RenderingReason::ScanoutFailed))) => {
-                        element_config.failed_planes.cursor = true;
-                    }
-                    _ => {}
-                }
-            }
         }
 
         let Some(cursor_state) = self.cursor_state.as_mut() else {
@@ -3154,16 +3113,16 @@ where
     #[instrument(level = "trace", skip_all)]
     #[profiling::function]
     fn element_config<'a, R, E>(
-        &self,
+        &mut self,
         renderer: &mut R,
         element: &E,
         element_zindex: usize,
+        element_geometry: Rectangle<i32, Physical>,
         element_states: &'a mut IndexMap<
             Id,
             ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
         >,
         frame_state: &mut Frame<A, F>,
-        scale: Scale<f64>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
         allow_opaque_fallback: bool,
@@ -3182,7 +3141,6 @@ where
         E: RenderElement<R>,
     {
         let element_id = element.id();
-        let element_geometry = element.geometry(scale);
 
         // We can only try to do direct scan-out for element that provide a underlying storage
         let underlying_storage = element
@@ -3195,13 +3153,15 @@ where
         if !element_states.contains_key(element_id) {
             let previous_fb_cache = self
                 .element_states
-                .get(element_id)
-                .map(|state| state.fb_cache.clone())
+                .get_mut(element_id)
+                // Note: We can mem::take the old fb_cache here here as we guarante that
+                // the element state will always overwrite the current state at the end of render_frame
+                .map(|state| std::mem::take(&mut state.fb_cache))
                 .unwrap_or_default();
             element_states.insert(
                 element_id.clone(),
                 ElementState {
-                    instances: Vec::with_capacity(1),
+                    instances: SmallVec::new(),
                     fb_cache: previous_fb_cache,
                 },
             );
@@ -3394,19 +3354,22 @@ where
     #[instrument(level = "trace", skip_all)]
     #[profiling::function]
     fn try_assign_overlay_plane<'a, R, E>(
-        &self,
+        &mut self,
+        renderer: &mut R,
         element: &'a E,
-        element_config: ElementPlaneConfig<
-            '_,
-            DrmScanoutBuffer<
-                <A as Allocator>::Buffer,
-                <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer,
-            >,
+        element_zindex: usize,
+        element_geometry: Rectangle<i32, Physical>,
+        element_is_opaque: bool,
+        element_states: &mut IndexMap<
+            Id,
+            ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>,
         >,
         primary_plane_elements: &[&'a E],
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
+        output_transform: Transform,
+        output_geometry: Rectangle<i32, Physical>,
     ) -> Result<Result<PlaneAssignment, Option<RenderingReason>>, ExportBufferError>
     where
         R: Renderer,
@@ -3428,6 +3391,18 @@ where
             );
             return Ok(Err(None));
         }
+
+        let element_config = self.element_config(
+            renderer,
+            element,
+            element_zindex,
+            element_geometry,
+            element_states,
+            frame_state,
+            output_transform,
+            output_geometry,
+            false,
+        )?;
 
         let overlaps_with_primary_plane_element = primary_plane_elements.iter().any(|e| {
             let other_geometry = e.geometry(scale);
@@ -3491,7 +3466,7 @@ where
             // test if the plane represents an underlay
             let is_underlay = self.planes.primary.zpos.unwrap_or_default() > plane.zpos.unwrap_or_default();
 
-            if is_underlay && !(element_is_opaque(element, scale) && primary_plane_has_alpha) {
+            if is_underlay && !(element_is_opaque && primary_plane_has_alpha) {
                 trace!(
                     "skipping direct scan-out on underlay {:?} with zpos {:?}, element {:?} is not opaque or primary plane has no alpha channel",
                     plane.handle,
@@ -3711,6 +3686,12 @@ where
         };
 
         let res = if is_compatible {
+            trace!(
+                "skipping atomic test for compatible element {:?} on {:?} with zpos {:?}",
+                element_id,
+                plane.handle,
+                plane.zpos,
+            );
             frame_state.set_state(plane.handle, plane_state);
             true
         } else {
@@ -3840,21 +3821,6 @@ fn apply_output_transform(transform: Transform, output_transform: Transform) -> 
         (Transform::Flipped270, Transform::Flipped180) => Transform::_270,
         (Transform::Flipped270, Transform::Flipped270) => Transform::Normal,
     }
-}
-
-fn element_is_opaque<E: Element>(element: &E, scale: Scale<f64>) -> bool {
-    let opaque_regions = element.opaque_regions(scale);
-    let element_geometry = Rectangle::from_loc_and_size(Point::default(), element.geometry(scale).size);
-
-    opaque_regions
-        .iter()
-        .fold([element_geometry].to_vec(), |geometry, opaque_region| {
-            geometry
-                .into_iter()
-                .flat_map(|g| g.subtract_rect(*opaque_region))
-                .collect::<Vec<_>>()
-        })
-        .is_empty()
 }
 
 struct OwnedFramebuffer<B: Framebuffer>(Arc<B>);

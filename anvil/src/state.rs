@@ -1,5 +1,5 @@
 use std::{
-    os::unix::io::{AsRawFd, OwnedFd},
+    os::unix::io::OwnedFd,
     sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
@@ -11,11 +11,11 @@ use smithay::{
         default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
     },
     delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_input_method_manager,
-    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_pointer_gestures,
-    delegate_presentation, delegate_primary_selection, delegate_relative_pointer, delegate_seat,
-    delegate_security_context, delegate_shm, delegate_tablet_manager, delegate_text_input_manager,
-    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration,
-    delegate_xdg_shell,
+    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_pointer_constraints,
+    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection, delegate_relative_pointer,
+    delegate_seat, delegate_security_context, delegate_shm, delegate_tablet_manager,
+    delegate_text_input_manager, delegate_viewporter, delegate_virtual_keyboard_manager,
+    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{
         space::SpaceElement,
         utils::{
@@ -25,7 +25,7 @@ use smithay::{
         PopupKind, PopupManager, Space,
     },
     input::{
-        keyboard::XkbConfig,
+        keyboard::{Keysym, XkbConfig},
         pointer::{CursorImageStatus, PointerHandle},
         Seat, SeatHandler, SeatState,
     },
@@ -55,6 +55,7 @@ use smithay::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
         output::OutputManagerState,
+        pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler, PointerConstraintsState},
         pointer_gestures::PointerGesturesState,
         presentation::PresentationState,
         primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
@@ -100,7 +101,7 @@ use smithay::{
 
 pub struct CalloopData<BackendData: Backend + 'static> {
     pub state: AnvilState<BackendData>,
-    pub display: Display<AnvilState<BackendData>>,
+    pub display_handle: DisplayHandle,
 }
 
 #[derive(Debug, Default)]
@@ -146,7 +147,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub dnd_icon: Option<WlSurface>,
 
     // input-related fields
-    pub suppressed_keys: Vec<u32>,
+    pub suppressed_keys: Vec<Keysym>,
     pub cursor_status: Arc<Mutex<CursorImageStatus>>,
     pub seat_name: String,
     pub seat: Seat<AnvilState<BackendData>>,
@@ -267,9 +268,9 @@ impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
     fn focus_changed(&mut self, seat: &Seat<Self>, target: Option<&FocusTarget>) {
         let dh = &self.display_handle;
 
-        let focus = target
-            .and_then(WaylandFocus::wl_surface)
-            .and_then(|s| dh.get_client(s.id()).ok());
+        let wl_surface = target.and_then(WaylandFocus::wl_surface);
+
+        let focus = wl_surface.and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, focus.clone());
         set_primary_focus(dh, seat, focus);
     }
@@ -323,6 +324,18 @@ delegate_virtual_keyboard_manager!(@<BackendData: Backend + 'static> AnvilState<
 delegate_pointer_gestures!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_relative_pointer!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+impl<BackendData: Backend> PointerConstraintsHandler for AnvilState<BackendData> {
+    fn new_constraint(&mut self, surface: &WlSurface, pointer: &PointerHandle<Self>) {
+        // XXX region
+        if pointer.current_focus().and_then(|x| x.wl_surface()).as_ref() == Some(surface) {
+            with_pointer_constraint(surface, pointer, |constraint| {
+                constraint.unwrap().activate();
+            });
+        }
+    }
+}
+delegate_pointer_constraints!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_viewporter!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
@@ -478,8 +491,7 @@ impl<BackendData: Backend + 'static> SecurityContextHandler for AnvilState<Backe
                     ..ClientState::default()
                 };
                 if let Err(err) = data
-                    .display
-                    .handle()
+                    .display_handle
                     .insert_client(client_stream, Arc::new(client_state))
                 {
                     warn!("Error adding wayland client: {}", err);
@@ -505,11 +517,13 @@ delegate_xwayland_keyboard_grab!(@<BackendData: Backend + 'static> AnvilState<Ba
 
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
-        display: &mut Display<AnvilState<BackendData>>,
+        display: Display<AnvilState<BackendData>>,
         handle: LoopHandle<'static, CalloopData<BackendData>>,
         backend_data: BackendData,
         listen_on_socket: bool,
     ) -> AnvilState<BackendData> {
+        let dh = display.handle();
+
         let clock = Clock::new().expect("failed to initialize clock");
 
         // init wayland clients
@@ -519,8 +533,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             handle
                 .insert_source(source, |client_stream, _, data| {
                     if let Err(err) = data
-                        .display
-                        .handle()
+                        .display_handle
                         .insert_client(client_stream, Arc::new(ClientState::default()))
                     {
                         warn!("Error adding wayland client: {}", err);
@@ -534,21 +547,19 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         };
         handle
             .insert_source(
-                Generic::new(
-                    display.backend().poll_fd().as_raw_fd(),
-                    Interest::READ,
-                    Mode::Level,
-                ),
-                |_, _, data| {
+                Generic::new(display, Interest::READ, Mode::Level),
+                |_, display, data| {
                     profiling::scope!("dispatch_clients");
-                    data.display.dispatch_clients(&mut data.state).unwrap();
+                    // Safety: we don't drop the display
+                    unsafe {
+                        display.get_mut().dispatch_clients(&mut data.state).unwrap();
+                    }
                     Ok(PostAction::Continue)
                 },
             )
             .expect("Failed to init wayland server source");
 
         // init globals
-        let dh = display.handle();
         let compositor_state = CompositorState::new::<Self>(&dh);
         let data_device_state = DataDeviceState::new::<Self>(&dh);
         let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
@@ -569,6 +580,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         if BackendData::HAS_RELATIVE_MOTION {
             RelativePointerManagerState::new::<Self>(&dh);
         }
+        PointerConstraintsState::new::<Self>(&dh);
         if BackendData::HAS_GESTURES {
             PointerGesturesState::new::<Self>(&dh);
         }
@@ -593,7 +605,6 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             *cursor_status2.lock().unwrap() = new_status;
         });
 
-        let dh = display.handle();
         let keyboard_shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<Self>(&dh);
 
         #[cfg(feature = "xwayland")]
@@ -601,6 +612,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             XWaylandKeyboardGrabState::new::<Self>(&dh);
 
             let (xwayland, channel) = XWayland::new(&dh);
+            let dh = dh.clone();
             let ret = handle.insert_source(channel, move |event, _, data| match event {
                 XWaylandEvent::Ready {
                     connection,
@@ -633,7 +645,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
 
         AnvilState {
             backend_data,
-            display_handle: display.handle(),
+            display_handle: dh,
             socket_name,
             running: Arc::new(AtomicBool::new(true)),
             handle,

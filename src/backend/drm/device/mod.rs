@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io;
-use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd};
+use std::os::unix::io::{AsFd, BorrowedFd};
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicBool, Arc, Mutex, Weak};
 use std::time::{Duration, SystemTime};
@@ -432,7 +432,7 @@ pub enum DrmEvent {
 }
 
 /// Timing metadata for page-flip events
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct EventMetadata {
     /// The time the frame flip happend
     pub time: Time,
@@ -441,7 +441,7 @@ pub struct EventMetadata {
 }
 
 /// Either a realtime or monotonic timestamp
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Time {
     /// Monotonic time stamp
     Monotonic(Duration),
@@ -511,18 +511,21 @@ impl EventSource for DrmDeviceNotifier {
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
-        poll.register(
-            self.internal.as_fd().as_raw_fd(),
-            Interest::READ,
-            calloop::Mode::Level,
-            self.token.unwrap(),
-        )
+        // Safety: the FD cannot be closed without removing the DrmDeviceNotifier from the event loop
+        unsafe {
+            poll.register(
+                self.internal.as_fd(),
+                Interest::READ,
+                calloop::Mode::Level,
+                self.token.unwrap(),
+            )
+        }
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
         poll.reregister(
-            self.internal.as_fd().as_raw_fd(),
+            self.internal.as_fd(),
             Interest::READ,
             calloop::Mode::Level,
             self.token.unwrap(),
@@ -531,6 +534,6 @@ impl EventSource for DrmDeviceNotifier {
 
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.token = None;
-        poll.unregister(self.internal.as_fd().as_raw_fd())
+        poll.unregister(self.internal.as_fd())
     }
 }

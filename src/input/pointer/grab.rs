@@ -73,6 +73,10 @@ pub trait PointerGrab<D: SeatHandler>: Send {
     /// You generally will want to invoke `PointerInnerHandle::axis()` as part of your processing. If you
     /// don't, the rest of the compositor will behave as if the axis event never occurred.
     fn axis(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, details: AxisFrame);
+    /// End of a pointer frame
+    ///
+    /// A frame groups associated events. This terminates the frame.
+    fn frame(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>);
     /// A pointer of a given seat started a swipe gesture
     ///
     /// This method allows you attach additional behavior to a swipe gesture begin event, possibly altering it.
@@ -260,6 +264,10 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
         handle.axis(data, details);
     }
 
+    fn frame(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>) {
+        handle.frame(data);
+    }
+
     fn gesture_swipe_begin(
         &mut self,
         data: &mut D,
@@ -377,6 +385,10 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
 
     fn axis(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, details: AxisFrame) {
         handle.axis(data, details);
+    }
+
+    fn frame(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>) {
+        handle.frame(data);
     }
 
     fn gesture_swipe_begin(

@@ -77,6 +77,14 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for MoveSurfaceG
         handle.axis(data, details)
     }
 
+    fn frame(
+        &mut self,
+        data: &mut AnvilState<BackendData>,
+        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+    ) {
+        handle.frame(data);
+    }
+
     fn gesture_swipe_begin(
         &mut self,
         data: &mut AnvilState<BackendData>,
@@ -430,6 +438,14 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
         details: AxisFrame,
     ) {
         handle.axis(data, details)
+    }
+
+    fn frame(
+        &mut self,
+        data: &mut AnvilState<BackendData>,
+        handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
+    ) {
+        handle.frame(data);
     }
 
     fn gesture_swipe_begin(

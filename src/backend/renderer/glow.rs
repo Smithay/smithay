@@ -424,6 +424,9 @@ impl ImportDma for GlowRenderer {
     fn dmabuf_formats(&self) -> Box<dyn Iterator<Item = Format>> {
         self.gl.dmabuf_formats()
     }
+    fn has_dmabuf_format(&self, format: Format) -> bool {
+        self.gl.has_dmabuf_format(format)
+    }
 }
 
 #[cfg(feature = "wayland_frontend")]

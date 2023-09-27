@@ -5,8 +5,7 @@ use std::sync::{
 
 use wayland_protocols::xdg::activation::v1::server::{xdg_activation_token_v1, xdg_activation_v1};
 use wayland_server::{
-    backend::{ClientId, ObjectId},
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use super::{
@@ -170,7 +169,12 @@ where
         }
     }
 
-    fn destroyed(state: &mut D, _: ClientId, _: ObjectId, data: &ActivationTokenData) {
+    fn destroyed(
+        state: &mut D,
+        _: ClientId,
+        _: &xdg_activation_token_v1::XdgActivationTokenV1,
+        data: &ActivationTokenData,
+    ) {
         let guard = data.token.lock().unwrap();
 
         if let Some(token) = &*guard {

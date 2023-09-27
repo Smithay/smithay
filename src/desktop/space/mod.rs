@@ -325,6 +325,7 @@ impl<E: SpaceElement + PartialEq> Space<E> {
     ///
     /// Needs to be called periodically, at best before every
     /// wayland socket flush.
+    #[profiling::function]
     pub fn refresh(&mut self) {
         self.elements.retain(|e| e.alive());
 

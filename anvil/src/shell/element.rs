@@ -302,6 +302,16 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
             }
         }
     }
+    fn frame(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>) {
+        let state = self.decoration_state();
+        if !state.is_ssd || state.ptr_entered_window {
+            match self {
+                WindowElement::Wayland(w) => PointerTarget::frame(w, seat, data),
+                #[cfg(feature = "xwayland")]
+                WindowElement::X11(w) => PointerTarget::frame(w, seat, data),
+            }
+        }
+    }
     fn leave(
         &self,
         seat: &Seat<AnvilState<Backend>>,
@@ -576,6 +586,7 @@ impl SpaceElement for WindowElement {
             WindowElement::X11(w) => SpaceElement::output_leave(w, output),
         }
     }
+    #[profiling::function]
     fn refresh(&self) {
         match self {
             WindowElement::Wayland(w) => SpaceElement::refresh(w),

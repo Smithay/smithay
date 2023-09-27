@@ -1,4 +1,4 @@
-use std::{ffi::OsString, os::unix::io::AsRawFd, sync::Arc};
+use std::{ffi::OsString, sync::Arc};
 
 use smithay::{
     desktop::{PopupManager, Space, Window, WindowSurfaceType},
@@ -45,7 +45,7 @@ pub struct Smallvil {
 }
 
 impl Smallvil {
-    pub fn new(event_loop: &mut EventLoop<CalloopData>, display: &mut Display<Self>) -> Self {
+    pub fn new(event_loop: &mut EventLoop<CalloopData>, display: Display<Self>) -> Self {
         let start_time = std::time::Instant::now();
 
         let dh = display.handle();
@@ -101,7 +101,7 @@ impl Smallvil {
     }
 
     fn init_wayland_listener(
-        display: &mut Display<Smallvil>,
+        display: Display<Smallvil>,
         event_loop: &mut EventLoop<CalloopData>,
     ) -> OsString {
         // Creates a new listening socket, automatically choosing the next available `wayland` socket name.
@@ -120,8 +120,7 @@ impl Smallvil {
                 //
                 // You may also associate some data with the client when inserting the client.
                 state
-                    .display
-                    .handle()
+                    .display_handle
                     .insert_client(client_stream, Arc::new(ClientState::default()))
                     .unwrap();
             })
@@ -130,13 +129,12 @@ impl Smallvil {
         // You also need to add the display itself to the event loop, so that client events will be processed by wayland-server.
         handle
             .insert_source(
-                Generic::new(
-                    display.backend().poll_fd().as_raw_fd(),
-                    Interest::READ,
-                    Mode::Level,
-                ),
-                |_, _, state| {
-                    state.display.dispatch_clients(&mut state.state).unwrap();
+                Generic::new(display, Interest::READ, Mode::Level),
+                |_, display, state| {
+                    // Safety: we don't drop the display
+                    unsafe {
+                        display.get_mut().dispatch_clients(&mut state.state).unwrap();
+                    }
                     Ok(PostAction::Continue)
                 },
             )

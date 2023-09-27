@@ -159,7 +159,7 @@ fn open_device(path: &str) -> DrmDeviceFd {
     let file = File::options()
         .read(true)
         .write(true)
-        .open(&path)
+        .open(path)
         .expect("Failed to open device node");
     DrmDeviceFd::new(DeviceFd::from(Into::<OwnedFd>::into(file)))
 }

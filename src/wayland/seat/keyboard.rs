@@ -111,14 +111,14 @@ where
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client_id: ClientId, object_id: ObjectId, data: &KeyboardUserData<D>) {
+    fn destroyed(_state: &mut D, _client_id: ClientId, keyboard: &WlKeyboard, data: &KeyboardUserData<D>) {
         if let Some(ref handle) = data.handle {
             handle
                 .arc
                 .known_kbds
                 .lock()
                 .unwrap()
-                .retain(|k| k.id() != object_id)
+                .retain(|k| k.id() != keyboard.id())
         }
     }
 }
@@ -149,7 +149,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
             kbd.enter(
                 serial.into(),
                 self,
-                serialize_pressed_keys(keys.iter().map(|h| h.raw_code() - 8).collect()),
+                serialize_pressed_keys(keys.iter().map(|h| h.raw_code().raw() - 8).collect()),
             )
         });
         let input_method = seat.input_method();
@@ -181,7 +181,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         time: u32,
     ) {
         for_each_focused_kbds(seat, self, |kbd| {
-            kbd.key(serial.into(), time, key.raw_code() - 8, state.into())
+            kbd.key(serial.into(), time, key.raw_code().raw() - 8, state.into())
         })
     }
 

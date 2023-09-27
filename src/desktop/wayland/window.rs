@@ -297,7 +297,7 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
                     PointerTarget::<D>::leave(&old_surface, seat, data, event.serial, event.time);
                     PointerTarget::<D>::enter(&surface, seat, data, &new_event);
                 } else {
-                    PointerTarget::<D>::motion(&surface, seat, data, &new_event)
+                    PointerTarget::<D>::motion(&surface, seat, data, &new_event);
                 }
             } else {
                 PointerTarget::<D>::enter(&surface, seat, data, &new_event)
@@ -320,6 +320,11 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
     fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
         if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
             PointerTarget::<D>::axis(surface, seat, data, frame)
+        }
+    }
+    fn frame(&self, seat: &Seat<D>, data: &mut D) {
+        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
+            PointerTarget::<D>::frame(surface, seat, data)
         }
     }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {

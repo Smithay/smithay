@@ -2,7 +2,7 @@ use crate::{
     backend::renderer::{
         element::{
             surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
-            AsRenderElements,
+            AsRenderElements, Kind,
         },
         ImportAll, Renderer,
     },
@@ -34,6 +34,8 @@ impl SpaceElement for Window {
     fn set_activate(&self, activated: bool) {
         self.set_activated(activated);
     }
+
+    #[profiling::function]
     fn output_enter(&self, output: &Output, overlap: Rectangle<i32, Logical>) {
         self.user_data().insert_if_missing(WindowOutputUserData::default);
         {
@@ -47,6 +49,8 @@ impl SpaceElement for Window {
         }
         self.refresh()
     }
+
+    #[profiling::function]
     fn output_leave(&self, output: &Output) {
         if let Some(state) = self.user_data().get::<WindowOutputUserData>() {
             state.borrow_mut().output_overlap.retain(|weak, _| weak != output);
@@ -76,6 +80,7 @@ impl SpaceElement for Window {
         }
     }
 
+    #[profiling::function]
     fn refresh(&self) {
         self.user_data().insert_if_missing(WindowOutputUserData::default);
         let state = self.user_data().get::<WindowOutputUserData>().unwrap().borrow();
@@ -123,13 +128,19 @@ where
                     location + offset,
                     scale,
                     alpha,
+                    Kind::Unspecified,
                 )
             });
 
         render_elements.extend(popup_render_elements);
 
         render_elements.extend(render_elements_from_surface_tree(
-            renderer, surface, location, scale, alpha,
+            renderer,
+            surface,
+            location,
+            scale,
+            alpha,
+            Kind::Unspecified,
         ));
 
         render_elements

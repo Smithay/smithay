@@ -3,10 +3,7 @@ use wayland_protocols::wp::tablet::zv2::server::{
     zwp_tablet_tool_v2::ZwpTabletToolV2,
     zwp_tablet_v2::ZwpTabletV2,
 };
-use wayland_server::{
-    backend::{ClientId, ObjectId},
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
-};
+use wayland_server::{backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, Resource};
 
 use crate::backend::input::TabletToolDescriptor;
 use crate::input::pointer::CursorImageStatus;
@@ -232,12 +229,12 @@ where
     ) {
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, seat: ObjectId, data: &TabletSeatUserData) {
+    fn destroyed(_state: &mut D, _client: ClientId, seat: &ZwpTabletSeatV2, data: &TabletSeatUserData) {
         data.handle
             .inner
             .lock()
             .unwrap()
             .instances
-            .retain(|i| i.id() != seat);
+            .retain(|i| i.id() != seat.id());
     }
 }

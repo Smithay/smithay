@@ -439,36 +439,10 @@ impl<Kind> Point<f64, Kind> {
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for Point<N, Logical> {
+impl<N: fmt::Debug, S> fmt::Debug for Point<N, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Logical>")
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Point<N, Physical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Physical>")
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Point<N, Raw> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Raw>")
-            .field("x", &self.x)
-            .field("y", &self.y)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Point<N, Buffer> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Point<Buffer>")
+        f.write_fmt(format_args!("Point<{}>", std::any::type_name::<S>()))?;
+        f.debug_struct("")
             .field("x", &self.x)
             .field("y", &self.y)
             .finish()
@@ -778,36 +752,10 @@ impl<Kind> Size<f64, Kind> {
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for Size<N, Logical> {
+impl<N: fmt::Debug, S> fmt::Debug for Size<N, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Logical>")
-            .field("w", &self.w)
-            .field("h", &self.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Size<N, Physical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Physical>")
-            .field("w", &self.w)
-            .field("h", &self.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Size<N, Raw> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Raw>")
-            .field("w", &self.w)
-            .field("h", &self.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Size<N, Buffer> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Size<Buffer>")
+        f.write_fmt(format_args!("Size<{}>", std::any::type_name::<S>()))?;
+        f.debug_struct("")
             .field("w", &self.w)
             .field("h", &self.h)
             .finish()
@@ -1208,72 +1156,109 @@ impl<N: Coordinate, Kind> Rectangle<N, Kind> {
         Self::bounding_box([self.loc, self.loc + self.size, other.loc, other.loc + other.size])
     }
 
-    /// Subtracts another [`Rectangle`] from this [`Rectangle`]
+    /// Subtract another [`Rectangle`] from this [`Rectangle`]
     ///
     /// If the rectangles to not overlap the original rectangle will
     /// be returned.
     /// If the other rectangle contains self no rectangle will be returned,
     /// otherwise up to 4 rectangles will be returned.
     pub fn subtract_rect(self, other: Self) -> Vec<Self> {
-        // If there is no overlap there is nothing to subtract
-        if !self.overlaps(other) {
-            return vec![self];
+        self.subtract_rects([other])
+    }
+
+    /// Subtract a set of [`Rectangle`]s from this [`Rectangle`]
+    pub fn subtract_rects(self, others: impl IntoIterator<Item = Self>) -> Vec<Self> {
+        let mut remaining = Vec::with_capacity(4);
+        remaining.push(self);
+        Self::subtract_rects_many_in_place(remaining, others)
+    }
+
+    /// Subtract a set of [`Rectangle`]s from a set [`Rectangle`]s
+    pub fn subtract_rects_many(
+        rects: impl IntoIterator<Item = Self>,
+        others: impl IntoIterator<Item = Self>,
+    ) -> Vec<Self> {
+        let remaining = rects.into_iter().collect::<Vec<_>>();
+        Self::subtract_rects_many_in_place(remaining, others)
+    }
+
+    /// Subtract a set of [`Rectangle`]s from a set [`Rectangle`]s in-place
+    pub fn subtract_rects_many_in_place(
+        mut rects: Vec<Self>,
+        others: impl IntoIterator<Item = Self>,
+    ) -> Vec<Self> {
+        for other in others {
+            let items = rects.len();
+            let mut checked = 0usize;
+            let mut index = 0usize;
+
+            while checked != items {
+                checked += 1;
+
+                // If there is no overlap there is nothing to subtract
+                if !rects[index].overlaps(other) {
+                    index += 1;
+                    continue;
+                }
+
+                // We now know that we have to subtract the other rect
+                let item = rects.remove(index);
+
+                // If we are completely contained then nothing is left
+                if other.contains_rect(item) {
+                    continue;
+                }
+
+                // we already checked that there is an overlap so the unwrap should be safe
+                let intersection = item.intersection(other).unwrap();
+
+                let top_rect = Rectangle::from_loc_and_size(
+                    item.loc,
+                    (item.size.w, intersection.loc.y.saturating_sub(item.loc.y)),
+                );
+                let left_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
+                    (item.loc.x, intersection.loc.y),
+                    (intersection.loc.x.saturating_sub(item.loc.x), intersection.size.h),
+                );
+                let right_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
+                    (
+                        intersection.loc.x.saturating_add(intersection.size.w),
+                        intersection.loc.y,
+                    ),
+                    (
+                        (item.loc.x.saturating_add(item.size.w))
+                            .saturating_sub(intersection.loc.x.saturating_add(intersection.size.w)),
+                        intersection.size.h,
+                    ),
+                );
+                let bottom_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
+                    (item.loc.x, intersection.loc.y.saturating_add(intersection.size.h)),
+                    (
+                        item.size.w,
+                        (item.loc.y.saturating_add(item.size.h))
+                            .saturating_sub(intersection.loc.y.saturating_add(intersection.size.h)),
+                    ),
+                );
+
+                if !top_rect.is_empty() {
+                    rects.push(top_rect);
+                }
+
+                if !left_rect.is_empty() {
+                    rects.push(left_rect);
+                }
+
+                if !right_rect.is_empty() {
+                    rects.push(right_rect);
+                }
+
+                if !bottom_rect.is_empty() {
+                    rects.push(bottom_rect);
+                }
+            }
         }
 
-        // If we are completely contained then nothing is left
-        if other.contains_rect(self) {
-            return vec![];
-        }
-
-        // we already checked that there is an overlap so the unwrap should be safe
-        let intersection = self.intersection(other).unwrap();
-
-        let top_rect = Rectangle::from_loc_and_size(
-            self.loc,
-            (self.size.w, intersection.loc.y.saturating_sub(self.loc.y)),
-        );
-        let left_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
-            (self.loc.x, intersection.loc.y),
-            (intersection.loc.x.saturating_sub(self.loc.x), intersection.size.h),
-        );
-        let right_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
-            (
-                intersection.loc.x.saturating_add(intersection.size.w),
-                intersection.loc.y,
-            ),
-            (
-                (self.loc.x.saturating_add(self.size.w))
-                    .saturating_sub(intersection.loc.x.saturating_add(intersection.size.w)),
-                intersection.size.h,
-            ),
-        );
-        let bottom_rect: Rectangle<N, Kind> = Rectangle::from_loc_and_size(
-            (self.loc.x, intersection.loc.y.saturating_add(intersection.size.h)),
-            (
-                self.size.w,
-                (self.loc.y.saturating_add(self.size.h))
-                    .saturating_sub(intersection.loc.y.saturating_add(intersection.size.h)),
-            ),
-        );
-
-        let mut vec = Vec::with_capacity(4);
-        if !top_rect.is_empty() {
-            vec.push(top_rect);
-        }
-
-        if !left_rect.is_empty() {
-            vec.push(left_rect);
-        }
-
-        if !right_rect.is_empty() {
-            vec.push(right_rect);
-        }
-
-        if !bottom_rect.is_empty() {
-            vec.push(bottom_rect);
-        }
-
-        vec
+        rects
     }
 }
 
@@ -1385,42 +1370,10 @@ impl<N: Coordinate> Rectangle<N, Buffer> {
     }
 }
 
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Logical> {
+impl<N: fmt::Debug, S> fmt::Debug for Rectangle<N, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Logical>")
-            .field("x", &self.loc.x)
-            .field("y", &self.loc.y)
-            .field("width", &self.size.w)
-            .field("height", &self.size.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Physical> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Physical>")
-            .field("x", &self.loc.x)
-            .field("y", &self.loc.y)
-            .field("width", &self.size.w)
-            .field("height", &self.size.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Raw> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Raw>")
-            .field("x", &self.loc.x)
-            .field("y", &self.loc.y)
-            .field("width", &self.size.w)
-            .field("height", &self.size.h)
-            .finish()
-    }
-}
-
-impl<N: fmt::Debug> fmt::Debug for Rectangle<N, Buffer> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rectangle<Buffer>")
+        f.write_fmt(format_args!("Rectangle<{}>", std::any::type_name::<S>()))?;
+        f.debug_struct("")
             .field("x", &self.loc.x)
             .field("y", &self.loc.y)
             .field("width", &self.size.w)

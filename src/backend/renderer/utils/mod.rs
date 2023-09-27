@@ -2,7 +2,7 @@
 //! and [`RenderElement`](super::element::RenderElement)s with [`Renderer`](super::Renderer)s.
 
 use crate::utils::{Buffer as BufferCoord, Coordinate, Logical, Physical, Point, Rectangle, Size};
-use std::{collections::VecDeque, fmt};
+use std::{collections::VecDeque, fmt, sync::Arc};
 
 #[cfg(feature = "wayland_frontend")]
 mod wayland;
@@ -72,10 +72,10 @@ pub struct DamageBag<N, Kind> {
 pub struct DamageSnapshot<N, Kind> {
     limit: usize,
     commit_counter: CommitCounter,
-    damage: VecDeque<Vec<Rectangle<N, Kind>>>,
+    damage: Arc<VecDeque<Vec<Rectangle<N, Kind>>>>,
 }
 
-impl<N: Clone, Kind> Clone for DamageSnapshot<N, Kind> {
+impl<N, Kind> Clone for DamageSnapshot<N, Kind> {
     fn clone(&self) -> Self {
         Self {
             limit: self.limit,
@@ -141,18 +141,18 @@ impl<N: fmt::Debug> fmt::Debug for DamageSnapshot<N, Logical> {
 
 const MAX_DAMAGE: usize = 4;
 
-impl<N, Kind> Default for DamageBag<N, Kind> {
+impl<N: Clone, Kind> Default for DamageBag<N, Kind> {
     fn default() -> Self {
         DamageBag::new(MAX_DAMAGE)
     }
 }
 
-impl<N, Kind> DamageSnapshot<N, Kind> {
+impl<N: Clone, Kind> DamageSnapshot<N, Kind> {
     fn new(limit: usize) -> Self {
         DamageSnapshot {
             limit,
             commit_counter: CommitCounter::default(),
-            damage: VecDeque::with_capacity(limit),
+            damage: Arc::new(VecDeque::with_capacity(limit)),
         }
     }
 
@@ -161,7 +161,7 @@ impl<N, Kind> DamageSnapshot<N, Kind> {
         DamageSnapshot {
             limit: 0,
             commit_counter: CommitCounter::default(),
-            damage: VecDeque::default(),
+            damage: Default::default(),
         }
     }
 
@@ -181,7 +181,7 @@ impl<N, Kind> DamageSnapshot<N, Kind> {
     }
 
     fn reset(&mut self) {
-        self.damage.clear();
+        Arc::make_mut(&mut self.damage).clear();
         self.commit_counter.increment();
     }
 }
@@ -231,14 +231,15 @@ impl<N: Coordinate, Kind> DamageSnapshot<N, Kind> {
             .collect::<Vec<_>>();
         damage.dedup();
 
-        self.damage.push_front(damage);
-        self.damage.truncate(self.limit);
+        let inner_damage = Arc::make_mut(&mut self.damage);
+        inner_damage.push_front(damage);
+        inner_damage.truncate(self.limit);
 
         self.commit_counter.increment();
     }
 }
 
-impl<N, Kind> DamageBag<N, Kind> {
+impl<N: Clone, Kind> DamageBag<N, Kind> {
     /// Initialize a a new [`DamageBag`] with the specified limit
     pub fn new(limit: usize) -> Self {
         DamageBag {
@@ -266,7 +267,7 @@ impl<N, Kind> DamageBag<N, Kind> {
     }
 }
 
-impl<N: Clone, Kind> DamageBag<N, Kind> {
+impl<N, Kind> DamageBag<N, Kind> {
     /// Get a snapshot of the current damage
     pub fn snapshot(&self) -> DamageSnapshot<N, Kind> {
         self.state.clone()

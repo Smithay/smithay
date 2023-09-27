@@ -7,7 +7,7 @@ use wayland_server::protocol::wl_buffer;
 
 use crate::backend::{
     drm::{CreateDrmNodeError, DrmNode},
-    egl::{EGLContext, EGLDevice, EGLDisplay, Error as EGLError},
+    egl::{context::ContextPriority, EGLContext, EGLDevice, EGLDisplay, Error as EGLError},
     renderer::{
         gles::{GlesError, GlesRenderer},
         multigpu::{ApiDevice, Error as MultiError, GraphicsApi},
@@ -58,6 +58,7 @@ type Factory = Box<dyn Fn(&EGLDisplay) -> Result<GlesRenderer, Error>>;
 /// A [`GraphicsApi`] utilizing EGL for device enumeration and OpenGL ES for rendering.
 pub struct EglGlesBackend<R> {
     factory: Option<Factory>,
+    context_priority: Option<ContextPriority>,
     _renderer: std::marker::PhantomData<R>,
 }
 
@@ -71,6 +72,7 @@ impl<R> Default for EglGlesBackend<R> {
     fn default() -> Self {
         EglGlesBackend {
             factory: None,
+            context_priority: None,
             _renderer: std::marker::PhantomData,
         }
     }
@@ -84,6 +86,18 @@ impl<R> EglGlesBackend<R> {
     {
         Self {
             factory: Some(Box::new(factory)),
+            ..Default::default()
+        }
+    }
+
+    /// Initialize a new [`EglGlesBackend`] with a [`ContextPriority`] for instantiating [`GlesRenderer`]s
+    ///
+    /// Note: This is mutually exclusive with [`EglGlesBackend::with_factory`](EglGlesBackend::with_factory),
+    /// but you can create an [`EGLContext`] with a specific [`ContextPriority`] within your factory.
+    /// See [`EGLContext::new_with_priority`] for more information.
+    pub fn with_context_priority(priority: ContextPriority) -> Self {
+        Self {
+            context_priority: Some(priority),
             ..Default::default()
         }
     }
@@ -113,7 +127,9 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for EglGle
                 let renderer = if let Some(factory) = self.factory.as_ref() {
                     factory(&display)?.into()
                 } else {
-                    let context = EGLContext::new(&display).map_err(Error::Egl)?;
+                    let context =
+                        EGLContext::new_with_priority(&display, self.context_priority.unwrap_or_default())
+                            .map_err(Error::Egl)?;
                     unsafe { GlesRenderer::new(context).map_err(Error::Gl)? }.into()
                 };
 

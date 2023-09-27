@@ -12,7 +12,7 @@ use input::event;
 
 use std::{
     io,
-    os::unix::io::{AsRawFd, RawFd},
+    os::unix::io::{AsFd, BorrowedFd},
     path::PathBuf,
 };
 #[cfg(feature = "backend_session")]
@@ -619,9 +619,9 @@ impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
     }
 }
 
-impl AsRawFd for LibinputInputBackend {
-    fn as_raw_fd(&self) -> RawFd {
-        self.context.as_raw_fd()
+impl AsFd for LibinputInputBackend {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.context.as_fd()
     }
 }
 
@@ -769,16 +769,17 @@ impl EventSource for LibinputInputBackend {
 
     fn register(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
-        poll.register(self.as_raw_fd(), Interest::READ, Mode::Level, self.token.unwrap())
+        // Safety: the FD cannot be closed without removing the LibinputInputBackend from the event loop
+        unsafe { poll.register(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap()) }
     }
 
     fn reregister(&mut self, poll: &mut Poll, factory: &mut TokenFactory) -> calloop::Result<()> {
         self.token = Some(factory.token());
-        poll.reregister(self.as_raw_fd(), Interest::READ, Mode::Level, self.token.unwrap())
+        poll.reregister(self.as_fd(), Interest::READ, Mode::Level, self.token.unwrap())
     }
 
     fn unregister(&mut self, poll: &mut Poll) -> calloop::Result<()> {
         self.token = None;
-        poll.unregister(self.as_raw_fd())
+        poll.unregister(self.as_fd())
     }
 }

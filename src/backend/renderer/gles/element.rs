@@ -2,7 +2,7 @@
 
 use crate::{
     backend::renderer::{
-        element::{Element, Id, RenderElement, UnderlyingStorage},
+        element::{Element, Id, Kind, RenderElement, UnderlyingStorage},
         utils::CommitCounter,
     },
     utils::{Buffer, Logical, Physical, Rectangle, Scale, Transform},
@@ -20,6 +20,7 @@ pub struct PixelShaderElement {
     opaque_regions: Vec<Rectangle<i32, Logical>>,
     alpha: f32,
     additional_uniforms: Vec<Uniform<'static>>,
+    kind: Kind,
 }
 
 impl PixelShaderElement {
@@ -31,6 +32,7 @@ impl PixelShaderElement {
         opaque_regions: Option<Vec<Rectangle<i32, Logical>>>,
         alpha: f32,
         additional_uniforms: Vec<Uniform<'_>>,
+        kind: Kind,
     ) -> Self {
         PixelShaderElement {
             shader,
@@ -40,6 +42,7 @@ impl PixelShaderElement {
             opaque_regions: opaque_regions.unwrap_or_default(),
             alpha,
             additional_uniforms: additional_uniforms.into_iter().map(|u| u.into_owned()).collect(),
+            kind,
         }
     }
 
@@ -95,6 +98,10 @@ impl Element for PixelShaderElement {
 
     fn alpha(&self) -> f32 {
         1.0
+    }
+
+    fn kind(&self) -> Kind {
+        self.kind
     }
 }
 

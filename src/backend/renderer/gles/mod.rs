@@ -1275,6 +1275,10 @@ impl ImportDma for GlesRenderer {
                 .into_iter(),
         )
     }
+
+    fn has_dmabuf_format(&self, format: Format) -> bool {
+        self.egl.dmabuf_texture_formats().contains(&format)
+    }
 }
 
 #[cfg(feature = "wayland_frontend")]

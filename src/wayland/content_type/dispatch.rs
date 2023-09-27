@@ -3,8 +3,7 @@ use wayland_protocols::wp::content_type::v1::server::{
     wp_content_type_v1::{self, WpContentTypeV1},
 };
 use wayland_server::{
-    backend::{ClientId, ObjectId},
-    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    backend::ClientId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use super::{ContentTypeState, ContentTypeSurfaceCachedState, ContentTypeSurfaceData, ContentTypeUserData};
@@ -131,7 +130,7 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _client: ClientId, _object: ObjectId, _data: &ContentTypeUserData) {
+    fn destroyed(_state: &mut D, _client: ClientId, _object: &WpContentTypeV1, _data: &ContentTypeUserData) {
         // Nothing to do here, graceful Destroy is already handled with double buffering
         // and in case of client close WlSurface destroyed handler will clean up the data anyway,
         // so there is no point in queuing new update

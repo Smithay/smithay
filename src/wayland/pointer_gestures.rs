@@ -43,6 +43,7 @@
 //! #   fn relative_motion(&self, seat: &Seat<State>, data: &mut State, event: &RelativeMotionEvent) {}
 //! #   fn button(&self, seat: &Seat<State>, data: &mut State, event: &ButtonEvent) {}
 //! #   fn axis(&self, seat: &Seat<State>, data: &mut State, frame: AxisFrame) {}
+//! #   fn frame(&self, seat: &Seat<State>, data: &mut State) {}
 //! #   fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
 //! #   fn gesture_swipe_begin(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeBeginEvent) {}
 //! #   fn gesture_swipe_update(&self, seat: &Seat<State>, data: &mut State, event: &GestureSwipeUpdateEvent) {}
@@ -93,7 +94,7 @@ use wayland_protocols::wp::pointer_gestures::zv1::server::{
     zwp_pointer_gestures_v1::{self, ZwpPointerGesturesV1},
 };
 use wayland_server::{
-    backend::{ClientId, GlobalId, ObjectId},
+    backend::{ClientId, GlobalId},
     protocol::wl_surface::WlSurface,
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
@@ -237,13 +238,18 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &PointerGestureUserData<D>) {
+    fn destroyed(
+        _state: &mut D,
+        _: ClientId,
+        object: &ZwpPointerGestureSwipeV1,
+        data: &PointerGestureUserData<D>,
+    ) {
         if let Some(ref handle) = data.handle {
             handle
                 .known_swipe_gestures
                 .lock()
                 .unwrap()
-                .retain(|p| p.id() != object_id);
+                .retain(|p| p.id() != object.id());
         }
     }
 }
@@ -269,13 +275,18 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &PointerGestureUserData<D>) {
+    fn destroyed(
+        _state: &mut D,
+        _: ClientId,
+        object: &ZwpPointerGesturePinchV1,
+        data: &PointerGestureUserData<D>,
+    ) {
         if let Some(ref handle) = data.handle {
             handle
                 .known_pinch_gestures
                 .lock()
                 .unwrap()
-                .retain(|p| p.id() != object_id);
+                .retain(|p| p.id() != object.id());
         }
     }
 }
@@ -301,13 +312,18 @@ where
         }
     }
 
-    fn destroyed(_state: &mut D, _: ClientId, object_id: ObjectId, data: &PointerGestureUserData<D>) {
+    fn destroyed(
+        _state: &mut D,
+        _: ClientId,
+        object: &ZwpPointerGestureHoldV1,
+        data: &PointerGestureUserData<D>,
+    ) {
         if let Some(ref handle) = data.handle {
             handle
                 .known_hold_gestures
                 .lock()
                 .unwrap()
-                .retain(|p| p.id() != object_id);
+                .retain(|p| p.id() != object.id());
         }
     }
 }

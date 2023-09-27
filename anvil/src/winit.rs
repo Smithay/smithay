@@ -86,7 +86,8 @@ impl Backend for WinitData {
 
 pub fn run_winit() {
     let mut event_loop = EventLoop::try_new().unwrap();
-    let mut display = Display::new().unwrap();
+    let display = Display::new().unwrap();
+    let mut display_handle = display.handle();
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     let (mut backend, mut winit) = match winit::init::<GlesRenderer>() {
@@ -188,7 +189,7 @@ pub fn run_winit() {
             fps: fps_ticker::Fps::default(),
         }
     };
-    let mut state = AnvilState::init(&mut display, event_loop.handle(), data, true);
+    let mut state = AnvilState::init(display, event_loop.handle(), data, true);
     state
         .shm_state
         .update_formats(state.backend_data.backend.renderer().shm_formats());
@@ -225,7 +226,7 @@ pub fn run_winit() {
                     crate::shell::fixup_positions(&mut state.space, state.pointer.current_location());
                 }
                 WinitEvent::Input(event) => {
-                    state.process_input_event_windowed(&display.handle(), event, OUTPUT_NAME)
+                    state.process_input_event_windowed(&display_handle, event, OUTPUT_NAME)
                 }
                 _ => (),
             })
@@ -399,16 +400,22 @@ pub fn run_winit() {
             }
         }
 
-        let mut calloop_data = CalloopData { state, display };
+        let mut calloop_data = CalloopData {
+            state,
+            display_handle,
+        };
         let result = event_loop.dispatch(Some(Duration::from_millis(1)), &mut calloop_data);
-        CalloopData { state, display } = calloop_data;
+        CalloopData {
+            state,
+            display_handle,
+        } = calloop_data;
 
         if result.is_err() {
             state.running.store(false, Ordering::SeqCst);
         } else {
             state.space.refresh();
             state.popups.cleanup();
-            display.flush_clients().unwrap();
+            display_handle.flush_clients().unwrap();
         }
 
         #[cfg(feature = "debug")]
