@@ -18,16 +18,6 @@ pub struct PopupHandle {
     pub rectangle: Rectangle<i32, Physical>,
 }
 
-impl PopupHandle {
-    /// Set relative location of text cursor
-    pub fn set_rectangle(&mut self, x: i32, y: i32, width: i32, height: i32) {
-        self.rectangle = Rectangle::from_loc_and_size((x, y), (width, height));
-        if let Some(ref mut popup) = self.surface {
-            popup.set_rectangle(x, y, width, height);
-        }
-    }
-}
-
 /// A handle to an input method popup surface
 #[derive(Debug, Clone)]
 pub struct PopupSurface {

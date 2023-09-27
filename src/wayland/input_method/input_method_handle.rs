@@ -16,7 +16,7 @@ use wayland_server::{
 
 use crate::{
     input::{keyboard::KeyboardHandle, SeatHandler},
-    utils::{alive_tracker::AliveTracker, SERIAL_COUNTER},
+    utils::{alive_tracker::AliveTracker, Rectangle, SERIAL_COUNTER},
     wayland::{compositor, seat::WaylandFocus, text_input::TextInputHandle},
 };
 
@@ -72,7 +72,7 @@ impl InputMethodHandle {
 
     pub(crate) fn set_text_input_rectangle(&self, x: i32, y: i32, width: i32, height: i32) {
         let mut inner = self.inner.lock().unwrap();
-        inner.popup_handle.set_rectangle(x, y, width, height);
+        inner.popup_handle.rectangle = Rectangle::from_loc_and_size((x, y), (width, height));
     }
 
     /// Convenience function to close popup surfaces
