@@ -11,7 +11,7 @@ use crate::{
     },
     utils::{user_data::UserDataMap, IsAlive, Logical, Rectangle, Serial, Size},
 };
-use encoding::{DecoderTrap, Encoding};
+use encoding_rs::WINDOWS_1252;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex, Weak},
@@ -553,14 +553,8 @@ impl X11Surface {
         let conn = self.conn.upgrade().ok_or(ConnectionError::UnknownError)?;
         let (class, instance) = match WmClass::get(&*conn, self.window)?.reply_unchecked() {
             Ok(Some(wm_class)) => (
-                encoding::all::ISO_8859_1
-                    .decode(wm_class.class(), DecoderTrap::Replace)
-                    .ok()
-                    .unwrap_or_default(),
-                encoding::all::ISO_8859_1
-                    .decode(wm_class.instance(), DecoderTrap::Replace)
-                    .ok()
-                    .unwrap_or_default(),
+                WINDOWS_1252.decode(wm_class.class()).0.to_string(),
+                WINDOWS_1252.decode(wm_class.instance()).0.to_string(),
             ),
             Ok(None) | Err(ConnectionError::ParseError(_)) => (Default::default(), Default::default()), // Getting the property failed
             Err(err) => return Err(err),
@@ -735,9 +729,7 @@ impl X11Surface {
         let bytes = bytes.collect::<Vec<u8>>();
 
         match reply.type_ {
-            x if x == AtomEnum::STRING.into() => Ok(encoding::all::ISO_8859_1
-                .decode(&bytes, DecoderTrap::Replace)
-                .ok()),
+            x if x == AtomEnum::STRING.into() => Ok(Some(WINDOWS_1252.decode(&bytes).0.to_string())),
             x if x == self.atoms.UTF8_STRING => Ok(String::from_utf8(bytes).ok()),
             _ => Ok(None),
         }
