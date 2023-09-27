@@ -252,6 +252,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 time: evt.time_msec(),
             },
         );
+        pointer.frame(self);
     }
 
     fn update_keyboard_focus(&mut self, serial: Serial) {
