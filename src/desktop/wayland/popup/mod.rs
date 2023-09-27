@@ -93,10 +93,7 @@ impl PopupKind {
                 })
                 .loc
             }
-            // TODO
-            PopupKind::InputMethod(ref t) => {
-                t.location().to_logical(1) // XXX
-            }
+            PopupKind::InputMethod(ref t) => t.location(),
         }
     }
 }

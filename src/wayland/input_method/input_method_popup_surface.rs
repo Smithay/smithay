@@ -87,7 +87,7 @@ impl PopupSurface {
     }
 
     /// Used to access the location of an input popup surface relative to the parent
-    pub fn location(&self) -> Point<i32, Physical> {
+    pub fn location(&self) -> Point<i32, Logical> {
         Point::from((
             self.rectangle.loc.x - self.rectangle.size.w,
             self.rectangle.loc.y + self.rectangle.size.h,
