@@ -26,10 +26,10 @@ use crate::{
         Seat, SeatHandler,
     },
     utils::{IsAlive, Logical, Point},
-    wayland::seat::WaylandFocus,
+    wayland::{seat::WaylandFocus, selection::seat_data::SeatData},
 };
 
-use super::{seat_data::SeatData, with_source_metadata, ClientDndGrabHandler, DataDeviceHandler};
+use super::{with_source_metadata, ClientDndGrabHandler, DataDeviceHandler};
 
 pub(crate) struct DnDGrab<D: SeatHandler> {
     dh: DisplayHandle,
@@ -94,7 +94,7 @@ where
             if let Some(surface) = self.current_focus.take() {
                 // only leave if there is a data source or we are on the original client
                 if self.data_source.is_some() || self.origin.id().same_client_as(&surface.id()) {
-                    for device in seat_data.known_devices() {
+                    for device in seat_data.known_data_devices() {
                         if device.id().same_client_as(&surface.id()) {
                             device.leave();
                         }
@@ -127,8 +127,7 @@ where
                         chosen_action: DndAction::empty(),
                     }));
                     for device in seat_data
-                        .known_devices()
-                        .iter()
+                        .known_data_devices()
                         .filter(|d| d.id().same_client_as(&surface.id()))
                     {
                         let handle = self.dh.backend_handle();
@@ -163,7 +162,7 @@ where
                 } else {
                     // only send if we are on a surface of the same client
                     if self.origin.id().same_client_as(&surface.id()) {
-                        for device in seat_data.known_devices() {
+                        for device in seat_data.known_data_devices() {
                             if device.id().same_client_as(&surface.id()) {
                                 device.enter(event.serial.into(), &surface, x, y, None);
                             }
@@ -174,7 +173,7 @@ where
             } else {
                 // make a move
                 if self.data_source.is_some() || self.origin.id().same_client_as(&surface.id()) {
-                    for device in seat_data.known_devices() {
+                    for device in seat_data.known_data_devices() {
                         if device.id().same_client_as(&surface.id()) {
                             device.motion(event.time, x, y);
                         }
@@ -211,7 +210,7 @@ where
             };
             if let Some(ref surface) = self.current_focus {
                 if self.data_source.is_some() || self.origin.id().same_client_as(&surface.id()) {
-                    for device in seat_data.known_devices() {
+                    for device in seat_data.known_data_devices() {
                         if device.id().same_client_as(&surface.id()) && validated {
                             device.drop();
                         }
@@ -240,7 +239,7 @@ where
             // in all cases abandon the drop
             // no more buttons are pressed, release the grab
             if let Some(ref surface) = self.current_focus {
-                for device in seat_data.known_devices() {
+                for device in seat_data.known_data_devices() {
                     if device.id().same_client_as(&surface.id()) {
                         device.leave();
                     }

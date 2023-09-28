@@ -7,7 +7,8 @@
 //! To use this functionality you must first spawn an [`XWayland`](super::XWayland) instance to attach a [`X11Wm`] to.
 //!
 //! ```no_run
-//! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder, SelectionType}};
+//! #  use smithay::wayland::selection::SelectionTarget;
+//! #  use smithay::xwayland::{XWayland, XWaylandEvent, X11Wm, X11Surface, XwmHandler, xwm::{XwmId, ResizeEdge, Reorder}};
 //! #  use smithay::utils::{Rectangle, Logical};
 //! #  use std::os::unix::io::OwnedFd;
 //! #
@@ -27,7 +28,7 @@
 //!     fn configure_notify(&mut self, xwm: XwmId, window: X11Surface, geometry: Rectangle<i32, Logical>, above: Option<u32>) { /* ... */ }
 //!     fn resize_request(&mut self, xwm: XwmId, window: X11Surface, button: u32, resize_edge: ResizeEdge) { /* ... */ }
 //!     fn move_request(&mut self, xwm: XwmId, window: X11Surface, button: u32) { /* ... */ }
-//!     fn send_selection(&mut self, xwm: XwmId, selection: SelectionType, mime_type: String, fd: OwnedFd) { /* ... */ }
+//!     fn send_selection(&mut self, xwm: XwmId, selection: SelectionTarget, mime_type: String, fd: OwnedFd) { /* ... */ }
 //! }
 //! #
 //! # let dh = unreachable!();
@@ -65,7 +66,10 @@
 
 use crate::{
     utils::{x11rb::X11Source, Logical, Point, Rectangle, Size},
-    wayland::compositor::{get_role, give_role},
+    wayland::{
+        compositor::{get_role, give_role},
+        selection::SelectionTarget,
+    },
 };
 use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction, RegistrationToken};
 use nix::fcntl::OFlag;
@@ -223,15 +227,6 @@ impl StackingDirection {
     }
 }
 
-/// Type of a given Selection
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SelectionType {
-    /// Clipboard selection
-    Clipboard,
-    /// Primary selection
-    Primary,
-}
-
 /// Handler trait for X11Wm interactions
 pub trait XwmHandler {
     /// [`X11Wm`] getter for a given ID.
@@ -332,24 +327,24 @@ pub trait XwmHandler {
     fn move_request(&mut self, xwm: XwmId, window: X11Surface, button: u32);
 
     /// Window requests access to the given selection.
-    fn allow_selection_access(&mut self, xwm: XwmId, selection: SelectionType) -> bool {
+    fn allow_selection_access(&mut self, xwm: XwmId, selection: SelectionTarget) -> bool {
         let _ = (xwm, selection);
         false
     }
 
     /// The given selection is being read by an X client and needs to be written to the provided file descriptor
-    fn send_selection(&mut self, xwm: XwmId, selection: SelectionType, mime_type: String, fd: OwnedFd) {
+    fn send_selection(&mut self, xwm: XwmId, selection: SelectionTarget, mime_type: String, fd: OwnedFd) {
         let _ = (xwm, selection, mime_type, fd);
         panic!("`allow_selection_access` returned true without `send_selection` implementation to handle transfers.");
     }
 
     /// A new selection was set by an X client with provided mime_types
-    fn new_selection(&mut self, xwm: XwmId, selection: SelectionType, mime_types: Vec<String>) {
+    fn new_selection(&mut self, xwm: XwmId, selection: SelectionTarget, mime_types: Vec<String>) {
         let _ = (xwm, selection, mime_types);
     }
 
     /// A proviously set selection of an X client got cleared
-    fn cleared_selection(&mut self, xwm: XwmId, selection: SelectionType) {
+    fn cleared_selection(&mut self, xwm: XwmId, selection: SelectionTarget) {
         let _ = (xwm, selection);
     }
 }
@@ -393,7 +388,7 @@ impl Drop for X11Wm {
 #[derive(Debug)]
 struct XWmSelection {
     atom: Atom,
-    type_: SelectionType,
+    type_: SelectionTarget,
 
     conn: Arc<RustConnection>,
     window: X11Window,
@@ -563,8 +558,8 @@ impl XWmSelection {
         conn.flush()?;
 
         let selection = match atom {
-            x if x == atoms.CLIPBOARD => SelectionType::Clipboard,
-            x if x == atoms.PRIMARY => SelectionType::Primary,
+            x if x == atoms.CLIPBOARD => SelectionTarget::Clipboard,
+            x if x == atoms.PRIMARY => SelectionTarget::Primary,
             _ => unreachable!(),
         };
 
@@ -1111,12 +1106,12 @@ impl X11Wm {
     /// `mime_types` being `None` indicate there is no active selection anymore.
     pub fn new_selection(
         &mut self,
-        selection: SelectionType,
+        selection: SelectionTarget,
         mime_types: Option<Vec<String>>,
     ) -> Result<(), ReplyOrIdError> {
         let selection = match selection {
-            SelectionType::Clipboard => &mut self.clipboard,
-            SelectionType::Primary => &mut self.primary,
+            SelectionTarget::Clipboard => &mut self.clipboard,
+            SelectionTarget::Primary => &mut self.primary,
         };
 
         if let Some(mime_types) = mime_types {
@@ -1135,7 +1130,7 @@ impl X11Wm {
     /// Request to transfer the active `selection` for the provided `mime_type` to the provided file descriptor.
     pub fn send_selection<D>(
         &mut self,
-        selection: SelectionType,
+        selection: SelectionTarget,
         mime_type: String,
         fd: OwnedFd,
         loop_handle: LoopHandle<'_, D>,
@@ -1147,8 +1142,8 @@ impl X11Wm {
 
         let xwm_id = self.id();
         let selection = match selection {
-            SelectionType::Clipboard => &mut self.clipboard,
-            SelectionType::Primary => &mut self.primary,
+            SelectionTarget::Clipboard => &mut self.clipboard,
+            SelectionTarget::Primary => &mut self.primary,
         };
 
         info!(
@@ -1229,8 +1224,8 @@ impl X11Wm {
                     let conn = &xwm.conn;
                     let atoms = &xwm.atoms;
                     let selection = match selection_type {
-                        SelectionType::Clipboard => &mut xwm.clipboard,
-                        SelectionType::Primary => &mut xwm.primary,
+                        SelectionTarget::Clipboard => &mut xwm.clipboard,
+                        SelectionTarget::Primary => &mut xwm.primary,
                     };
                     if let Some(transfer) = selection
                         .incoming
@@ -1782,8 +1777,8 @@ fn handle_event<D: XwmHandler + 'static>(
             let allow_access = state.allow_selection_access(xwm_id, selection_type);
             let xwm = state.xwm_state(xwm_id);
             let selection = match selection_type {
-                SelectionType::Clipboard => &mut xwm.clipboard,
-                SelectionType::Primary => &mut xwm.primary,
+                SelectionTarget::Clipboard => &mut xwm.clipboard,
+                SelectionTarget::Primary => &mut xwm.primary,
             };
 
             let _guard = xwm.span.enter();
@@ -1921,8 +1916,8 @@ fn handle_event<D: XwmHandler + 'static>(
                             move |_, fd, data| {
                                 let xwm = data.xwm_state(xwm_id);
                                 let selection = match selection_type {
-                                    SelectionType::Clipboard => &mut xwm.clipboard,
-                                    SelectionType::Primary => &mut xwm.primary,
+                                    SelectionTarget::Clipboard => &mut xwm.clipboard,
+                                    SelectionTarget::Primary => &mut xwm.primary,
                                 };
 
                                 if let Some(transfer) = selection

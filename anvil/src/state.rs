@@ -10,12 +10,12 @@ use smithay::{
     backend::renderer::element::{
         default_primary_scanout_output_compare, utils::select_dmabuf_feedback, RenderElementStates,
     },
-    delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_input_method_manager,
-    delegate_keyboard_shortcuts_inhibit, delegate_layer_shell, delegate_output, delegate_pointer_constraints,
-    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection, delegate_relative_pointer,
-    delegate_seat, delegate_security_context, delegate_shm, delegate_tablet_manager,
-    delegate_text_input_manager, delegate_viewporter, delegate_virtual_keyboard_manager,
-    delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale,
+    delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit, delegate_layer_shell,
+    delegate_output, delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
+    delegate_primary_selection, delegate_relative_pointer, delegate_seat, delegate_security_context,
+    delegate_shm, delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
+    delegate_virtual_keyboard_manager, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{
         space::SpaceElement,
         utils::{
@@ -44,10 +44,6 @@ use smithay::{
     utils::{Clock, Monotonic, Rectangle},
     wayland::{
         compositor::{get_parent, with_states, CompositorClientState, CompositorState},
-        data_device::{
-            set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
-            ServerDndGrabHandler,
-        },
         dmabuf::DmabufFeedback,
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
         input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface},
@@ -58,11 +54,19 @@ use smithay::{
         pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler, PointerConstraintsState},
         pointer_gestures::PointerGesturesState,
         presentation::PresentationState,
-        primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
         relative_pointer::RelativePointerManagerState,
         seat::WaylandFocus,
         security_context::{
             SecurityContext, SecurityContextHandler, SecurityContextListenerSource, SecurityContextState,
+        },
+        selection::data_device::{
+            set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
+            ServerDndGrabHandler,
+        },
+        selection::{
+            primary_selection::{set_primary_focus, PrimarySelectionHandler, PrimarySelectionState},
+            wlr_data_control::{DataControlHandler, DataControlState},
+            SelectionHandler,
         },
         shell::{
             wlr_layer::WlrLayerShellState,
@@ -89,14 +93,10 @@ use crate::{focus::FocusTarget, shell::WindowElement};
 #[cfg(feature = "xwayland")]
 use smithay::{
     delegate_xwayland_keyboard_grab,
-    reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1,
     utils::{Point, Size},
-    wayland::{
-        data_device::with_source_metadata as with_data_device_source_metadata,
-        primary_selection::with_source_metadata as with_primary_source_metadata,
-        xwayland_keyboard_grab::{XWaylandKeyboardGrabHandler, XWaylandKeyboardGrabState},
-    },
-    xwayland::{xwm::SelectionType, X11Wm, XWayland, XWaylandEvent},
+    wayland::selection::{SelectionSource, SelectionTarget},
+    wayland::xwayland_keyboard_grab::{XWaylandKeyboardGrabHandler, XWaylandKeyboardGrabState},
+    xwayland::{X11Wm, XWayland, XWaylandEvent},
 };
 
 pub struct CalloopData<BackendData: Backend + 'static> {
@@ -134,6 +134,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub layer_shell_state: WlrLayerShellState,
     pub output_manager_state: OutputManagerState,
     pub primary_selection_state: PrimarySelectionState,
+    pub data_control_state: DataControlState,
     pub seat_state: SeatState<AnvilState<BackendData>>,
     pub keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     pub shm_state: ShmState,
@@ -170,37 +171,11 @@ pub struct AnvilState<BackendData: Backend + 'static> {
 delegate_compositor!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
-    type SelectionUserData = ();
-
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
-
-    #[cfg(feature = "xwayland")]
-    fn new_selection(&mut self, source: Option<WlDataSource>, _seat: Seat<Self>) {
-        if let Some(xwm) = self.xwm.as_mut() {
-            if let Some(source) = source {
-                if let Ok(Err(err)) = with_data_device_source_metadata(&source, |metadata| {
-                    xwm.new_selection(SelectionType::Clipboard, Some(metadata.mime_types.clone()))
-                }) {
-                    warn!(?err, "Failed to set Xwayland clipboard selection");
-                }
-            } else if let Err(err) = xwm.new_selection(SelectionType::Clipboard, None) {
-                warn!(?err, "Failed to clear Xwayland clipboard selection");
-            }
-        }
-    }
-
-    #[cfg(feature = "xwayland")]
-    fn send_selection(&mut self, mime_type: String, fd: OwnedFd, _seat: Seat<Self>, _user_data: &()) {
-        if let Some(xwm) = self.xwm.as_mut() {
-            if let Err(err) = xwm.send_selection(SelectionType::Clipboard, mime_type, fd, self.handle.clone())
-            {
-                warn!(?err, "Failed to send clipboard (X11 -> Wayland)");
-            }
-        }
-    }
 }
+
 impl<BackendData: Backend> ClientDndGrabHandler for AnvilState<BackendData> {
     fn started(&mut self, _source: Option<WlDataSource>, icon: Option<WlSurface>, _seat: Seat<Self>) {
         self.dnd_icon = icon;
@@ -218,37 +193,49 @@ delegate_data_device!(@<BackendData: Backend + 'static> AnvilState<BackendData>)
 
 delegate_output!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-impl<BackendData: Backend> PrimarySelectionHandler for AnvilState<BackendData> {
+impl<BackendData: Backend> SelectionHandler for AnvilState<BackendData> {
     type SelectionUserData = ();
-    fn primary_selection_state(&self) -> &PrimarySelectionState {
-        &self.primary_selection_state
-    }
 
     #[cfg(feature = "xwayland")]
-    fn new_selection(&mut self, source: Option<ZwpPrimarySelectionSourceV1>, _seat: Seat<Self>) {
+    fn new_selection(&mut self, ty: SelectionTarget, source: Option<SelectionSource>, _seat: Seat<Self>) {
         if let Some(xwm) = self.xwm.as_mut() {
-            if let Some(source) = source {
-                if let Ok(Err(err)) = with_primary_source_metadata(&source, |metadata| {
-                    xwm.new_selection(SelectionType::Primary, Some(metadata.mime_types.clone()))
-                }) {
-                    warn!(?err, "Failed to set Xwayland primary selection");
-                }
-            } else if let Err(err) = xwm.new_selection(SelectionType::Primary, None) {
-                warn!(?err, "Failed to clear Xwayland primary selection");
+            if let Err(err) = xwm.new_selection(ty, source.map(|source| source.mime_types())) {
+                warn!(?err, ?ty, "Failed to set Xwayland selection");
             }
         }
     }
 
     #[cfg(feature = "xwayland")]
-    fn send_selection(&mut self, mime_type: String, fd: OwnedFd, _seat: Seat<Self>, _user_data: &()) {
+    fn send_selection(
+        &mut self,
+        ty: SelectionTarget,
+        mime_type: String,
+        fd: OwnedFd,
+        _seat: Seat<Self>,
+        _user_data: &(),
+    ) {
         if let Some(xwm) = self.xwm.as_mut() {
-            if let Err(err) = xwm.send_selection(SelectionType::Primary, mime_type, fd, self.handle.clone()) {
+            if let Err(err) = xwm.send_selection(ty, mime_type, fd, self.handle.clone()) {
                 warn!(?err, "Failed to send primary (X11 -> Wayland)");
             }
         }
     }
 }
+
+impl<BackendData: Backend> PrimarySelectionHandler for AnvilState<BackendData> {
+    fn primary_selection_state(&self) -> &PrimarySelectionState {
+        &self.primary_selection_state
+    }
+}
 delegate_primary_selection!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+impl<BackendData: Backend> DataControlHandler for AnvilState<BackendData> {
+    fn data_control_state(&self) -> &DataControlState {
+        &self.data_control_state
+    }
+}
+
+delegate_data_control!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> ShmHandler for AnvilState<BackendData> {
     fn shm_state(&self) -> &ShmState {
@@ -565,6 +552,8 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let primary_selection_state = PrimarySelectionState::new::<Self>(&dh);
+        let data_control_state =
+            DataControlState::new::<Self, _>(&dh, Some(&primary_selection_state), |_| true);
         let mut seat_state = SeatState::new();
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
         let viewporter_state = ViewporterState::new::<Self>(&dh);
@@ -656,6 +645,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             layer_shell_state,
             output_manager_state,
             primary_selection_state,
+            data_control_state,
             seat_state,
             keyboard_shortcuts_inhibit_state,
             shm_state,

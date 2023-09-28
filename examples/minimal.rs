@@ -24,7 +24,10 @@ use smithay::{
             with_surface_tree_downward, CompositorClientState, CompositorHandler, CompositorState,
             SurfaceAttributes, TraversalAction,
         },
-        data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
+        selection::{
+            data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler},
+            SelectionHandler,
+        },
         shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
         shm::{ShmHandler, ShmState},
     },
@@ -64,8 +67,11 @@ impl XdgShellHandler for App {
     }
 }
 
-impl DataDeviceHandler for App {
+impl SelectionHandler for App {
     type SelectionUserData = ();
+}
+
+impl DataDeviceHandler for App {
     fn data_device_state(&self) -> &DataDeviceState {
         &self.data_device_state
     }
