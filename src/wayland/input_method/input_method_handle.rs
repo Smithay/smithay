@@ -73,6 +73,9 @@ impl InputMethodHandle {
     pub(crate) fn set_text_input_rectangle(&self, x: i32, y: i32, width: i32, height: i32) {
         let mut inner = self.inner.lock().unwrap();
         inner.popup_handle.rectangle = Rectangle::from_loc_and_size((x, y), (width, height));
+        if let Some(mut popup_surface) = inner.popup_handle.surface.clone() {
+            popup_surface.set_rectangle(x, y, width, height);
+        }
     }
 
     /// Convenience function to close popup surfaces
