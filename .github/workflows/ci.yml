@@ -64,8 +64,6 @@ jobs:
         run: cargo cache clean-unref
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       - name: Clippy Smithay
         run: cargo clippy --features "test_all_features" -- -D warnings
       - name: Clippy Anvil
@@ -101,8 +99,6 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       - name: Check
         run: cargo check --features "test_all_features"
 
@@ -179,9 +175,6 @@ jobs:
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
 
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
-
       - name: Test features
         env:
           RUST_BACKTRACE: full
@@ -219,9 +212,6 @@ jobs:
       
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       
       - name: Run tests
         env:
@@ -261,9 +251,6 @@ jobs:
 
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libxkbcommon-dev libegl1-mesa-dev libwayland-dev
-      
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       
       - name: Test smallvil
         env:
@@ -306,9 +293,6 @@ jobs:
 
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       
       - name: Test features
         env:
@@ -393,9 +377,6 @@ jobs:
       - name: Build WLCS
         run: ./compile_wlcs.sh
 
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
-
       - name: Build anvil WLCS plugin
         env:
           RUST_BACKTRACE: full
@@ -447,9 +428,6 @@ jobs:
 
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       
       - name: Build Documentation
         env: 
