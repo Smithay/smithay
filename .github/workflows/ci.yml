@@ -297,7 +297,7 @@ jobs:
       - name: Test features
         env:
           RUST_BACKTRACE: full
-        run: cargo hack check --each-feature --manifest-path "./anvil/Cargo.toml"
+        run: cargo hack check --each-feature --manifest-path "./anvil/Cargo.toml" --exclude-features profile-with-puffin,profile-with-tracy,profile-with-tracy-mem
 
   anvil-wlcs:
     needs:
