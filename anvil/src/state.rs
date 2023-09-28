@@ -17,11 +17,12 @@ use smithay::{
     delegate_text_input_manager, delegate_viewporter, delegate_virtual_keyboard_manager,
     delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_shell,
     desktop::{
+        space::SpaceElement,
         utils::{
             surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
             update_surface_primary_scanout_output, OutputPresentationFeedback,
         },
-        PopupManager, Space,
+        PopupKind, PopupManager, Space,
     },
     input::{
         keyboard::{Keysym, XkbConfig},
@@ -40,7 +41,7 @@ use smithay::{
             Display, DisplayHandle, Resource,
         },
     },
-    utils::{Clock, Monotonic},
+    utils::{Clock, Monotonic, Rectangle},
     wayland::{
         compositor::{get_parent, with_states, CompositorClientState, CompositorState},
         data_device::{
@@ -49,7 +50,7 @@ use smithay::{
         },
         dmabuf::DmabufFeedback,
         fractional_scale::{with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState},
-        input_method::InputMethodManagerState,
+        input_method::{InputMethodHandler, InputMethodManagerState, PopupSurface},
         keyboard_shortcuts_inhibit::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
@@ -282,6 +283,26 @@ delegate_seat!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 delegate_tablet_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_text_input_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
+impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
+    fn new_popup(&mut self, surface: PopupSurface) {
+        if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
+            warn!("Failed to track popup: {}", err);
+        }
+    }
+
+    fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, smithay::utils::Logical> {
+        let w = self
+            .space
+            .elements()
+            .find(|window| window.wl_surface().as_ref() == Some(parent));
+        if let Some(window) = w {
+            window.geometry()
+        } else {
+            Rectangle::default()
+        }
+    }
+}
 
 delegate_input_method_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 

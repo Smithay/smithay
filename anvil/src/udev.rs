@@ -87,7 +87,6 @@ use smithay::{
         drm_lease::{
             DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
         },
-        input_method::{InputMethodHandle, InputMethodSeat},
     },
 };
 use smithay_drm_extras::{
@@ -1468,7 +1467,6 @@ impl AnvilState<UdevData> {
             &mut renderer,
             &self.space,
             &output,
-            self.seat.input_method(),
             self.pointer.current_location(),
             &pointer_image,
             &mut self.backend_data.pointer_element,
@@ -1572,7 +1570,6 @@ fn render_surface<'a, 'b>(
     renderer: &mut UdevRenderer<'a, 'b>,
     space: &Space<WindowElement>,
     output: &Output,
-    input_method: &InputMethodHandle,
     pointer_location: Point<f64, Logical>,
     pointer_image: &TextureBuffer<MultiTexture>,
     pointer_element: &mut PointerElement<MultiTexture>,
@@ -1585,21 +1582,6 @@ fn render_surface<'a, 'b>(
     let scale = Scale::from(output.current_scale().fractional_scale());
 
     let mut custom_elements: Vec<CustomRenderElements<_>> = Vec::new();
-    // draw input method surface if any
-    let rectangle = input_method.coordinates();
-    let position = Point::from((
-        rectangle.loc.x + rectangle.size.w,
-        rectangle.loc.y + rectangle.size.h,
-    ));
-    input_method.with_surface(|surface| {
-        custom_elements.extend(AsRenderElements::<UdevRenderer<'a, 'b>>::render_elements(
-            &SurfaceTree::from_surface(surface),
-            renderer,
-            position.to_physical_precise_round(scale),
-            scale,
-            1.0,
-        ));
-    });
 
     if output_geometry.to_f64().contains(pointer_location) {
         let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = cursor_status {

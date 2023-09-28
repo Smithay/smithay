@@ -279,11 +279,10 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     .get::<FullscreenSurface>()
                     .and_then(|f| f.get())
                 {
-                    if let Some((_, point)) = window.surface_under(
+                    if let Some((_, _)) = window.surface_under(
                         self.pointer.current_location() - output_geo.loc.to_f64(),
                         WindowSurfaceType::ALL,
                     ) {
-                        input_method.set_point(&point);
                         #[cfg(feature = "xwayland")]
                         if let WindowElement::X11(surf) = &window {
                             self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
@@ -299,13 +298,12 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     .or_else(|| layers.layer_under(WlrLayer::Top, self.pointer.current_location()))
                 {
                     if layer.can_receive_keyboard_focus() {
-                        if let Some((_, point)) = layer.surface_under(
+                        if let Some((_, _)) = layer.surface_under(
                             self.pointer.current_location()
                                 - output_geo.loc.to_f64()
                                 - layers.layer_geometry(layer).unwrap().loc.to_f64(),
                             WindowSurfaceType::ALL,
                         ) {
-                            input_method.set_point(&point);
                             keyboard.set_focus(self, Some(layer.clone().into()), serial);
                             return;
                         }
@@ -313,13 +311,12 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 }
             }
 
-            if let Some((window, point)) = self
+            if let Some((window, _)) = self
                 .space
                 .element_under(self.pointer.current_location())
                 .map(|(w, p)| (w.clone(), p))
             {
                 self.space.raise_element(&window, true);
-                input_method.set_point(&point);
                 keyboard.set_focus(self, Some(window.clone().into()), serial);
                 #[cfg(feature = "xwayland")]
                 if let WindowElement::X11(surf) = &window {
@@ -336,13 +333,12 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     .or_else(|| layers.layer_under(WlrLayer::Background, self.pointer.current_location()))
                 {
                     if layer.can_receive_keyboard_focus() {
-                        if let Some((_, point)) = layer.surface_under(
+                        if let Some((_, _)) = layer.surface_under(
                             self.pointer.current_location()
                                 - output_geo.loc.to_f64()
                                 - layers.layer_geometry(layer).unwrap().loc.to_f64(),
                             WindowSurfaceType::ALL,
                         ) {
-                            input_method.set_point(&point);
                             keyboard.set_focus(self, Some(layer.clone().into()), serial);
                         }
                     }

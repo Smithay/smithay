@@ -152,15 +152,23 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
                 serialize_pressed_keys(keys.iter().map(|h| h.raw_code().raw() - 8).collect()),
             )
         });
+        let input_method = seat.input_method();
+        input_method.with_instance(|im| {
+            im.activate();
+        });
         let text_input = seat.text_input();
-        text_input.set_focus(Some(self), || {});
+        text_input.enter(self);
     }
 
     fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial) {
         for_each_focused_kbds(seat, self, |kbd| kbd.leave(serial.into(), self));
         let text_input = seat.text_input();
         let input_method = seat.input_method();
-        text_input.set_focus(None, || input_method.close_popup());
+        input_method.close_popup();
+        input_method.with_instance(|im| {
+            im.deactivate();
+        });
+        text_input.leave(self);
     }
 
     fn key(

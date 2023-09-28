@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use tracing::warn;
 use wayland_protocols_misc::zwp_input_method_v2::server::{
     zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2,
     zwp_input_method_v2::{self, ZwpInputMethodV2},
@@ -10,20 +11,20 @@ use wayland_protocols_misc::zwp_input_method_v2::server::{
 };
 use wayland_server::backend::ClientId;
 use wayland_server::{
-    protocol::{wl_keyboard::KeymapFormat, wl_surface::WlSurface},
-    Client, DataInit, Dispatch, DisplayHandle, Resource,
+    protocol::wl_keyboard::KeymapFormat, Client, DataInit, Dispatch, DisplayHandle, Resource,
 };
 
 use crate::{
     input::{keyboard::KeyboardHandle, SeatHandler},
-    utils::{IsAlive, Logical, Physical, Point, Rectangle, SERIAL_COUNTER},
+    utils::{alive_tracker::AliveTracker, Rectangle, SERIAL_COUNTER},
     wayland::{compositor, seat::WaylandFocus, text_input::TextInputHandle},
 };
 
 use super::{
     input_method_keyboard_grab::InputMethodKeyboardGrab,
-    input_method_popup_surface::InputMethodPopupSurfaceHandle, InputMethodKeyboardUserData,
-    InputMethodManagerState, InputMethodPopupSurfaceUserData,
+    input_method_popup_surface::{PopupHandle, PopupSurface},
+    InputMethodHandler, InputMethodKeyboardUserData, InputMethodManagerState,
+    InputMethodPopupSurfaceUserData,
 };
 
 const INPUT_POPUP_SURFACE_ROLE: &str = "zwp_input_popup_surface_v2";
@@ -31,7 +32,7 @@ const INPUT_POPUP_SURFACE_ROLE: &str = "zwp_input_popup_surface_v2";
 #[derive(Default, Debug)]
 pub(crate) struct InputMethod {
     pub instance: Option<ZwpInputMethodV2>,
-    pub popup: InputMethodPopupSurfaceHandle,
+    pub popup_handle: PopupHandle,
     pub keyboard_grab: InputMethodKeyboardGrab,
 }
 
@@ -69,39 +70,18 @@ impl InputMethodHandle {
         keyboard.grab.is_some()
     }
 
-    /// Convenience function to draw surfaces
-    pub fn with_surface<F>(&self, mut f: F)
-    where
-        F: FnMut(&WlSurface),
-    {
-        let inner = self.inner.lock().unwrap();
-        let popup = inner.popup.inner.lock().unwrap();
-        if popup.surface_role.is_some() {
-            if let Some(surface) = &popup.surface {
-                if surface.alive() {
-                    f(surface);
-                }
-            }
+    pub(crate) fn set_text_input_rectangle(&self, x: i32, y: i32, width: i32, height: i32) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.popup_handle.rectangle = Rectangle::from_loc_and_size((x, y), (width, height));
+        if let Some(mut popup_surface) = inner.popup_handle.surface.clone() {
+            popup_surface.set_rectangle(x, y, width, height);
         }
     }
 
     /// Convenience function to close popup surfaces
     pub(crate) fn close_popup(&self) {
-        let inner = self.inner.lock().unwrap();
-        let mut popup = inner.popup.inner.lock().unwrap();
-        popup.surface_role = None;
-    }
-
-    /// Used to access the relative location of an input popup surface
-    pub fn coordinates(&self) -> Rectangle<i32, Physical> {
-        let inner = self.inner.lock().unwrap();
-        inner.popup.coordinates()
-    }
-
-    /// Sets the point of the upper left corner of the surface in focus
-    pub fn set_point(&self, point: &Point<i32, Logical>) {
         let mut inner = self.inner.lock().unwrap();
-        inner.popup.set_point(point);
+        inner.popup_handle.surface = None;
     }
 }
 
@@ -128,11 +108,12 @@ where
     D: Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData>,
     D: Dispatch<ZwpInputMethodKeyboardGrabV2, InputMethodKeyboardUserData<D>>,
     D: SeatHandler,
+    D: InputMethodHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         _client: &Client,
         seat: &ZwpInputMethodV2,
         request: zwp_input_method_v2::Request,
@@ -142,7 +123,7 @@ where
     ) {
         match request {
             zwp_input_method_v2::Request::CommitString { text } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface, _| {
+                data.text_input_handle.with_focused_text_input(|ti, _surface| {
                     ti.commit_string(Some(text.clone()));
                 });
             }
@@ -151,7 +132,7 @@ where
                 cursor_begin,
                 cursor_end,
             } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface, _| {
+                data.text_input_handle.with_focused_text_input(|ti, _surface| {
                     ti.preedit_string(Some(text.clone()), cursor_begin, cursor_end);
                 });
             }
@@ -159,14 +140,12 @@ where
                 before_length,
                 after_length,
             } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface, _| {
+                data.text_input_handle.with_focused_text_input(|ti, _surface| {
                     ti.delete_surrounding_text(before_length, after_length);
                 });
             }
-            zwp_input_method_v2::Request::Commit { serial } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface, _| {
-                    ti.done(serial);
-                });
+            zwp_input_method_v2::Request::Commit { serial: _ } => {
+                data.text_input_handle.done();
             }
             zwp_input_method_v2::Request::GetInputPopupSurface { id, surface } => {
                 if compositor::give_role(&surface, INPUT_POPUP_SURFACE_ROLE).is_err() {
@@ -174,16 +153,30 @@ where
                     seat.post_error(0u32, "Surface already has a role.");
                     return;
                 }
-                let input_method = data.handle.inner.lock().unwrap();
+
+                let parent = if let Some(parent) = data.text_input_handle.focus() {
+                    parent
+                } else {
+                    return;
+                };
+
+                let mut input_method = data.handle.inner.lock().unwrap();
+
                 let instance = data_init.init(
                     id,
                     InputMethodPopupSurfaceUserData {
-                        handle: input_method.popup.clone(),
+                        alive_tracker: AliveTracker::default(),
                     },
                 );
-                let mut popup = input_method.popup.inner.lock().unwrap();
-                popup.surface_role = Some(instance);
-                popup.surface = Some(surface);
+                let popup = PopupSurface::new(
+                    instance,
+                    surface,
+                    parent.clone(),
+                    input_method.popup_handle.rectangle,
+                    state.parent_geometry(&parent),
+                );
+                input_method.popup_handle.surface = Some(popup.clone());
+                state.new_popup(popup);
             }
             zwp_input_method_v2::Request::GrabKeyboard { keyboard } => {
                 let input_method = data.handle.inner.lock().unwrap();
@@ -199,15 +192,18 @@ where
                 let mut keyboard = input_method.keyboard_grab.inner.lock().unwrap();
                 keyboard.grab = Some(instance.clone());
                 keyboard.text_input_handle = data.text_input_handle.clone();
-                keyboard.popup_handle = input_method.popup.clone();
                 let guard = data.keyboard_handle.arc.internal.lock().unwrap();
                 instance.repeat_info(guard.repeat_rate, guard.repeat_delay);
                 let keymap_file = data.keyboard_handle.arc.keymap.lock().unwrap();
-                keymap_file
-                    .with_fd(false, |fd, size| {
-                        instance.keymap(KeymapFormat::XkbV1, fd, size as u32);
-                    })
-                    .unwrap(); //TODO: log some kind of error here
+                let res = keymap_file.with_fd(false, |fd, size| {
+                    instance.keymap(KeymapFormat::XkbV1, fd, size as u32);
+                });
+                if let Err(e) = res {
+                    warn!(
+                        err = ?e,
+                        "Failed to send keymap to client"
+                    );
+                }
             }
             zwp_input_method_v2::Request::Destroy => {
                 // Nothing to do
@@ -223,7 +219,7 @@ where
         data: &InputMethodUserData<D>,
     ) {
         data.handle.inner.lock().unwrap().instance = None;
-        data.text_input_handle.with_focused_text_input(|ti, surface, _| {
+        data.text_input_handle.with_focused_text_input(|ti, surface| {
             ti.leave(surface);
         });
     }

@@ -34,13 +34,12 @@ use smithay::{
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
         wayland_server::{protocol::wl_surface, Display},
     },
-    utils::{IsAlive, Point, Scale, Transform},
+    utils::{IsAlive, Scale, Transform},
     wayland::{
         compositor,
         dmabuf::{
             DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportError,
         },
-        input_method::InputMethodSeat,
     },
 };
 use tracing::{error, info, warn};
@@ -267,7 +266,6 @@ pub fn run_winit() {
             let damage_tracker = &mut state.backend_data.damage_tracker;
             let show_window_preview = state.show_window_preview;
 
-            let input_method = state.seat.input_method();
             let dnd_icon = state.dnd_icon.as_ref();
 
             let scale = Scale::from(output.current_scale().fractional_scale());
@@ -311,22 +309,6 @@ pub fn run_winit() {
                 let mut elements = Vec::<CustomRenderElements<GlesRenderer>>::new();
 
                 elements.extend(pointer_element.render_elements(renderer, cursor_pos_scaled, scale, 1.0));
-
-                // draw input method surface if any
-                let rectangle = input_method.coordinates();
-                let position = Point::from((
-                    rectangle.loc.x + rectangle.size.w,
-                    rectangle.loc.y + rectangle.size.h,
-                ));
-                input_method.with_surface(|surface| {
-                    elements.extend(AsRenderElements::<GlesRenderer>::render_elements(
-                        &smithay::desktop::space::SurfaceTree::from_surface(surface),
-                        renderer,
-                        position.to_physical_precise_round(scale),
-                        scale,
-                        1.0,
-                    ));
-                });
 
                 // draw the dnd icon if any
                 if let Some(surface) = dnd_icon {

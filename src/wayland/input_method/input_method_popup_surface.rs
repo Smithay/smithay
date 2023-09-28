@@ -1,59 +1,99 @@
-use std::sync::{Arc, Mutex};
-
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::{
     self, ZwpInputPopupSurfaceV2,
 };
-use wayland_server::backend::ClientId;
-use wayland_server::{protocol::wl_surface::WlSurface, Dispatch};
+use wayland_server::{backend::ClientId, protocol::wl_surface::WlSurface, Dispatch, Resource};
 
-use crate::utils::{Logical, Physical, Point, Rectangle};
+use crate::utils::{
+    alive_tracker::{AliveTracker, IsAlive},
+    Physical, Rectangle,
+};
+use crate::utils::{Logical, Point};
 
 use super::InputMethodManagerState;
 
-#[derive(Default, Debug)]
-pub(crate) struct InputMethodPopupSurface {
-    pub surface_role: Option<ZwpInputPopupSurfaceV2>,
-    pub surface: Option<WlSurface>,
-    rectangle: Rectangle<i32, Physical>,
-    point: Point<i32, Logical>,
+/// Handle to a popup surface
+#[derive(Debug, Clone, Default)]
+pub struct PopupHandle {
+    pub surface: Option<PopupSurface>,
+    pub rectangle: Rectangle<i32, Physical>,
 }
 
-/// Handle to an input method instance
-#[derive(Default, Debug, Clone)]
-pub struct InputMethodPopupSurfaceHandle {
-    pub(crate) inner: Arc<Mutex<InputMethodPopupSurface>>,
+/// A handle to an input method popup surface
+#[derive(Debug, Clone)]
+pub struct PopupSurface {
+    /// The surface role for the input method popup
+    pub surface_role: ZwpInputPopupSurfaceV2,
+    surface: WlSurface,
+    parent: WlSurface,
+    /// Rectangle with position and size of  text cursor, used for placement of popup surface
+    pub rectangle: Rectangle<i32, Physical>,
+    parent_location: Rectangle<i32, Logical>,
 }
 
-impl InputMethodPopupSurfaceHandle {
-    /// Used to store surface coordinates
-    pub fn add_coordinates(&self, x: i32, y: i32, width: i32, height: i32) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.rectangle.loc.x = x;
-        inner.rectangle.loc.y = y;
-        inner.rectangle.size.w = width;
-        inner.rectangle.size.h = height;
+impl std::cmp::PartialEq for PopupSurface {
+    fn eq(&self, other: &Self) -> bool {
+        self.surface_role == other.surface_role
+    }
+}
+
+impl PopupSurface {
+    pub(crate) fn new(
+        surface_role: ZwpInputPopupSurfaceV2,
+        surface: WlSurface,
+        parent: WlSurface,
+        rectangle: Rectangle<i32, Physical>,
+        parent_location: Rectangle<i32, Logical>,
+    ) -> Self {
+        Self {
+            surface_role,
+            surface,
+            parent,
+            rectangle,
+            parent_location,
+        }
     }
 
-    /// Used to access the relative location of an input popup surface
-    pub fn coordinates(&self) -> Rectangle<i32, Physical> {
-        let inner = self.inner.lock().unwrap();
-        let mut rectangle = inner.rectangle;
-        rectangle.loc.x += inner.point.x;
-        rectangle.loc.y += inner.point.y;
-        rectangle
+    /// Is the input method popup surface referred by this handle still alive?
+    pub fn alive(&self) -> bool {
+        // TODO other things to check? This may not sufice.
+        let role_data: &InputMethodPopupSurfaceUserData = self.surface_role.data().unwrap();
+        self.surface.alive() && role_data.alive_tracker.alive()
     }
 
-    /// Sets the point of the upper left corner of the surface in focus
-    pub fn set_point(&mut self, point: &Point<i32, Logical>) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.point = *point;
+    /// Access to the underlying `wl_surface` of this popup
+    pub fn wl_surface(&self) -> &WlSurface {
+        &self.surface
+    }
+
+    /// Access to the parent surface associated with this popup
+    pub fn get_parent_surface(&self) -> WlSurface {
+        self.parent.clone()
+    }
+
+    /// Access to the parent surface location associated with this popup
+    pub fn parent_location(&self) -> Rectangle<i32, Logical> {
+        self.parent_location
+    }
+
+    /// Used to access the location of an input popup surface relative to the parent
+    pub fn location(&self) -> Point<i32, Logical> {
+        Point::from((
+            self.rectangle.loc.x - self.rectangle.size.w,
+            self.rectangle.loc.y + self.rectangle.size.h,
+        ))
+    }
+
+    /// Set relative location of text cursor
+    pub fn set_rectangle(&mut self, x: i32, y: i32, width: i32, height: i32) {
+        self.rectangle = Rectangle::from_loc_and_size((x, y), (width, height));
+        self.surface_role.text_input_rectangle(x, y, width, height);
     }
 }
 
 /// User data of ZwpInputPopupSurfaceV2 object
 #[derive(Debug)]
 pub struct InputMethodPopupSurfaceUserData {
-    pub(super) handle: InputMethodPopupSurfaceHandle,
+    pub(super) alive_tracker: AliveTracker,
 }
 
 impl<D> Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData, D> for InputMethodManagerState {
@@ -80,6 +120,6 @@ impl<D> Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData, D> for
         _object: &ZwpInputPopupSurfaceV2,
         data: &InputMethodPopupSurfaceUserData,
     ) {
-        data.handle.inner.lock().unwrap().surface_role = None;
+        data.alive_tracker.destroy_notify();
     }
 }

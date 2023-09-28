@@ -20,8 +20,8 @@ use smithay::{
         },
         wayland_server::{protocol::wl_surface, Client, Display, DisplayHandle, Resource},
     },
-    utils::{IsAlive, Point, Scale, SERIAL_COUNTER as SCOUNTER},
-    wayland::{compositor, input_method::InputMethodSeat},
+    utils::{IsAlive, Scale, SERIAL_COUNTER as SCOUNTER},
+    wayland::compositor,
 };
 
 use anvil::{drawing::PointerElement, render::*, state::Backend, AnvilState, CalloopData, ClientState};
@@ -94,23 +94,6 @@ pub fn run(channel: Channel<WlcsEvent>) {
             let scale = Scale::from(output.current_scale().fractional_scale());
             let mut cursor_guard = state.cursor_status.lock().unwrap();
             let mut elements: Vec<CustomRenderElements<_>> = Vec::new();
-
-            // draw input method square if any
-            let input_method = state.seat.input_method();
-            let rectangle = input_method.coordinates();
-            let position = Point::from((
-                rectangle.loc.x + rectangle.size.w,
-                rectangle.loc.y + rectangle.size.h,
-            ));
-            input_method.with_surface(|surface| {
-                elements.extend(AsRenderElements::<DummyRenderer>::render_elements(
-                    &smithay::desktop::space::SurfaceTree::from_surface(surface),
-                    &mut renderer,
-                    position.to_physical_precise_round(scale),
-                    scale,
-                    1.0,
-                ));
-            });
 
             // draw the cursor as relevant
             // reset the cursor if the surface is no longer alive
