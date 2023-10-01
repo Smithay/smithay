@@ -27,9 +27,13 @@ fn output_surfaces(o: &Output) -> RefMut<'_, HashSet<WlWeak<WlSurface>>> {
     surfaces
 }
 
+/// Updates the output overlap for a surface tree.
+///
+/// Surfaces in the tree will receive output enter and leave events as necessary according to their
+/// computed overlap.
 #[instrument(level = "trace", skip(output), fields(output = output.name()))]
 #[profiling::function]
-fn output_update(output: &Output, output_overlap: Option<Rectangle<i32, Logical>>, surface: &WlSurface) {
+pub fn output_update(output: &Output, output_overlap: Option<Rectangle<i32, Logical>>, surface: &WlSurface) {
     let mut surface_list = output_surfaces(output);
 
     with_surface_tree_downward(

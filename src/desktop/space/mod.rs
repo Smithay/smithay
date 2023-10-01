@@ -26,7 +26,7 @@ mod output;
 mod utils;
 
 #[cfg(feature = "wayland_frontend")]
-mod wayland;
+pub(crate) mod wayland;
 
 pub use self::element::*;
 use self::output::*;
