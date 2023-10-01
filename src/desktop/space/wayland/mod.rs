@@ -29,7 +29,7 @@ fn output_surfaces(o: &Output) -> RefMut<'_, HashSet<WlWeak<WlSurface>>> {
 
 #[instrument(level = "trace", skip(output), fields(output = output.name()))]
 #[profiling::function]
-fn output_update(output: &Output, output_overlap: Rectangle<i32, Logical>, surface: &WlSurface) {
+fn output_update(output: &Output, output_overlap: Option<Rectangle<i32, Logical>>, surface: &WlSurface) {
     let mut surface_list = output_surfaces(output);
 
     with_surface_tree_downward(
@@ -61,6 +61,13 @@ fn output_update(output: &Output, output_overlap: Rectangle<i32, Logical>, surfa
                 output_leave(output, &mut surface_list, wl_surface);
                 return;
             }
+
+            let Some(output_overlap) = output_overlap else {
+                // There's no overlap, send a leave event.
+                output_leave(output, &mut surface_list, wl_surface);
+                return;
+            };
+
             let data = states.data_map.get::<RendererSurfaceStateUserData>();
 
             if let Some(surface_view) = data.and_then(|d| d.borrow().surface_view) {
