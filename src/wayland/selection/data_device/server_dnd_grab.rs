@@ -15,19 +15,22 @@ use wayland_server::{
     DisplayHandle, Resource,
 };
 
-use crate::input::{
-    pointer::{
-        AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
-        GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
-        GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
-        PointerInnerHandle, RelativeMotionEvent,
-    },
-    Seat, SeatHandler,
-};
 use crate::utils::{Logical, Point};
 use crate::wayland::seat::WaylandFocus;
+use crate::{
+    input::{
+        pointer::{
+            AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
+            GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
+            GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
+            PointerInnerHandle, RelativeMotionEvent,
+        },
+        Seat, SeatHandler,
+    },
+    wayland::selection::seat_data::SeatData,
+};
 
-use super::{DataDeviceHandler, DataDeviceUserData, SeatData, ServerDndGrabHandler, SourceMetadata};
+use super::{DataDeviceHandler, DataDeviceUserData, ServerDndGrabHandler, SourceMetadata};
 
 pub(crate) struct ServerDnDGrab<D: SeatHandler> {
     dh: DisplayHandle,
@@ -88,7 +91,7 @@ where
         if focus.as_ref().and_then(|(s, _)| s.wl_surface()) != self.current_focus.clone() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
-                for device in seat_data.known_devices() {
+                for device in seat_data.known_data_devices() {
                     if device.id().same_client_as(&surface.id()) {
                         device.leave();
                     }
@@ -119,8 +122,7 @@ where
                     chosen_action: DndAction::empty(),
                 }));
                 for device in seat_data
-                    .known_devices()
-                    .iter()
+                    .known_data_devices()
                     .filter(|d| d.id().same_client_as(&surface.id()))
                 {
                     let handle = self.dh.backend_handle();
@@ -156,7 +158,7 @@ where
                 self.current_focus = Some(surface);
             } else {
                 // make a move
-                for device in seat_data.known_devices() {
+                for device in seat_data.known_data_devices() {
                     if device.id().same_client_as(&surface.id()) {
                         device.motion(time, x, y);
                     }
@@ -194,7 +196,7 @@ where
                 false
             };
             if let Some(ref surface) = self.current_focus {
-                for device in seat_data.known_devices() {
+                for device in seat_data.known_data_devices() {
                     if device.id().same_client_as(&surface.id()) && validated {
                         device.drop();
                     }
@@ -216,7 +218,7 @@ where
             // in all cases abandon the drop
             // no more buttons are pressed, release the grab
             if let Some(ref surface) = self.current_focus {
-                for device in seat_data.known_devices() {
+                for device in seat_data.known_data_devices() {
                     if device.id().same_client_as(&surface.id()) {
                         device.leave();
                     }

@@ -19,7 +19,7 @@ pub struct SourceMetadata {
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct PrimarySourceUserData {
-    pub(super) inner: Mutex<SourceMetadata>,
+    pub(crate) inner: Mutex<SourceMetadata>,
     alive_tracker: AliveTracker,
 }
 
@@ -68,16 +68,5 @@ impl IsAlive for PrimarySource {
     fn alive(&self) -> bool {
         let data: &PrimarySourceUserData = self.data().unwrap();
         data.alive_tracker.alive()
-    }
-}
-
-/// Access the metadata of a data source
-pub fn with_source_metadata<T, F: FnOnce(&SourceMetadata) -> T>(
-    source: &PrimarySource,
-    f: F,
-) -> Result<T, crate::utils::UnmanagedResource> {
-    match source.data::<PrimarySourceUserData>() {
-        Some(data) => Ok(f(&data.inner.lock().unwrap())),
-        None => Err(crate::utils::UnmanagedResource),
     }
 }
