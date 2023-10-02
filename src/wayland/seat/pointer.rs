@@ -27,7 +27,7 @@ use crate::{
             AxisFrame, ButtonEvent, CursorImageAttributes, CursorImageStatus, GestureHoldBeginEvent,
             GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
             GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent,
-            PointerHandle, PointerInternal, PointerTarget, RelativeMotionEvent,
+            PointerHandle, PointerTarget, RelativeMotionEvent,
         },
         Seat,
     },
@@ -428,84 +428,87 @@ where
     ) {
         match request {
             Request::SetCursor {
+                serial,
                 surface,
                 hotspot_x,
                 hotspot_y,
-                serial,
             } => {
-                if let Some(ref handle) = data.handle {
-                    if !handle
-                        .last_enter
-                        .lock()
-                        .unwrap()
-                        .as_ref()
-                        .map(|last_serial| last_serial.0 == serial)
-                        .unwrap_or(false)
-                    {
-                        return; // Ignore mismatches in serial
-                    }
+                let handle = match &data.handle {
+                    Some(handle) => handle,
+                    None => return,
+                };
 
-                    let seat = {
-                        let seat_state = state.seat_state();
-                        seat_state
-                            .seats
-                            .iter()
-                            .find(|seat| seat.get_pointer().map(|h| &h == handle).unwrap_or(false))
-                            .cloned()
-                    };
+                if !handle
+                    .last_enter
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .map(|last_serial| last_serial.0 == serial)
+                    .unwrap_or(false)
+                {
+                    return; // Ignore mismatches in serial
+                }
 
-                    let guard = handle.inner.lock().unwrap();
-                    // only allow setting the cursor icon if the current pointer focus
-                    // is of the same client
-                    let PointerInternal { ref focus, .. } = *guard;
-                    if let Some((ref focus, _)) = *focus {
-                        if focus.same_client_as(&pointer.id()) {
-                            match surface {
-                                Some(surface) => {
-                                    // tolerate re-using the same surface
-                                    if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
-                                        && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
-                                    {
-                                        pointer.post_error(
-                                            wl_pointer::Error::Role,
-                                            "Given wl_surface has another role.",
-                                        );
-                                        return;
-                                    }
-                                    compositor::with_states(&surface, |states| {
-                                        states.data_map.insert_if_missing_threadsafe(|| {
-                                            Mutex::new(CursorImageAttributes {
-                                                hotspot: (0, 0).into(),
-                                            })
-                                        });
-                                        states
-                                            .data_map
-                                            .get::<Mutex<CursorImageAttributes>>()
-                                            .unwrap()
-                                            .lock()
-                                            .unwrap()
-                                            .hotspot = (hotspot_x, hotspot_y).into();
-                                    });
+                // Only allow setting the cursor icon if the current pointer focus is of the same
+                // client.
+                if !handle
+                    .inner
+                    .lock()
+                    .unwrap()
+                    .focus
+                    .as_ref()
+                    .map(|(focus, _)| focus.same_client_as(&pointer.id()))
+                    .unwrap_or(false)
+                {
+                    return;
+                }
 
-                                    if let Some(seat) = seat {
-                                        state.cursor_image(&seat, CursorImageStatus::Surface(surface));
-                                    }
-                                }
-                                None => {
-                                    if let Some(seat) = seat {
-                                        state.cursor_image(&seat, CursorImageStatus::Hidden);
-                                    }
-                                }
-                            }
+                let cursor_image = match surface {
+                    Some(surface) => {
+                        // tolerate re-using the same surface
+                        if compositor::give_role(&surface, CURSOR_IMAGE_ROLE).is_err()
+                            && compositor::get_role(&surface) != Some(CURSOR_IMAGE_ROLE)
+                        {
+                            pointer.post_error(wl_pointer::Error::Role, "Given wl_surface has another role.");
+                            return;
                         }
+
+                        compositor::with_states(&surface, |states| {
+                            states.data_map.insert_if_missing_threadsafe(|| {
+                                Mutex::new(CursorImageAttributes {
+                                    hotspot: (0, 0).into(),
+                                })
+                            });
+                            states
+                                .data_map
+                                .get::<Mutex<CursorImageAttributes>>()
+                                .unwrap()
+                                .lock()
+                                .unwrap()
+                                .hotspot = (hotspot_x, hotspot_y).into();
+                        });
+
+                        CursorImageStatus::Surface(surface)
                     }
+                    None => CursorImageStatus::Hidden,
+                };
+
+                let seat = state
+                    .seat_state()
+                    .seats
+                    .iter()
+                    .find(|seat| seat.get_pointer().map(|h| h == *handle).unwrap_or(false))
+                    .cloned();
+
+                if let Some(seat) = seat {
+                    state.cursor_image(&seat, cursor_image)
                 }
             }
             Request::Release => {
                 // Our destructors already handle it
             }
             _ => unreachable!(),
-        }
+        };
     }
 
     fn destroyed(_state: &mut D, _: ClientId, pointer: &WlPointer, data: &PointerUserData<D>) {
