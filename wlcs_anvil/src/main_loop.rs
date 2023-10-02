@@ -102,7 +102,7 @@ pub fn run(channel: Channel<WlcsEvent>) {
                 reset = !surface.alive();
             }
             if reset {
-                *cursor_guard = CursorImageStatus::Default;
+                *cursor_guard = CursorImageStatus::default_named();
             }
 
             let cursor_hotspot = if let CursorImageStatus::Surface(ref surface) = *cursor_guard {

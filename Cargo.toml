@@ -30,6 +30,7 @@ appendlist = "1.4"
 ash = { version = "0.37.1", optional = true }
 bitflags = "2.2.1"
 calloop = "0.12.2"
+cursor-icon = "1.0.0"
 cgmath = "0.18.0"
 downcast-rs = "1.2.0"
 drm-fourcc = "^2.2.0"

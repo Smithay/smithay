@@ -1611,7 +1611,7 @@ fn render_surface<'a, 'b>(
                 reset = !surface.alive();
             }
             if reset {
-                *cursor_status = CursorImageStatus::Default;
+                *cursor_status = CursorImageStatus::default_named();
             }
 
             pointer_element.set_status(cursor_status.clone());

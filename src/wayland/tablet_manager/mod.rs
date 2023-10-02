@@ -91,7 +91,7 @@ const MANAGER_VERSION: u32 = 1;
 
 mod tablet;
 mod tablet_seat;
-mod tablet_tool;
+pub(crate) mod tablet_tool;
 
 pub use tablet::{TabletDescriptor, TabletHandle, TabletUserData};
 pub use tablet_seat::{TabletSeatHandle, TabletSeatUserData};

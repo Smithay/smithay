@@ -48,6 +48,7 @@
 pub mod buffer;
 pub mod compositor;
 pub mod content_type;
+pub mod cursor_shape;
 pub mod data_device;
 pub mod dmabuf;
 #[cfg(feature = "backend_drm")]

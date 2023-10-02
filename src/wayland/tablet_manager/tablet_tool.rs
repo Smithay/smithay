@@ -18,9 +18,9 @@ use super::tablet::TabletHandle;
 use super::TabletManagerState;
 
 #[derive(Debug, Default)]
-struct TabletTool {
+pub(crate) struct TabletTool {
     instances: Vec<ZwpTabletToolV2>,
-    focus: Option<WlSurface>,
+    pub(crate) focus: Option<WlSurface>,
 
     is_down: bool,
 
@@ -211,7 +211,7 @@ impl Drop for TabletTool {
 /// A TabletTool relation to a physical tool depends on the tablet's ability to report serial numbers. If the tablet supports this capability, then the object represents a specific physical tool and can be identified even when used on multiple tablets.
 #[derive(Debug, Default, Clone)]
 pub struct TabletToolHandle {
-    inner: Arc<Mutex<TabletTool>>,
+    pub(crate) inner: Arc<Mutex<TabletTool>>,
 }
 
 impl TabletToolHandle {
@@ -417,9 +417,9 @@ impl From<ButtonState> for zwp_tablet_tool_v2::ButtonState {
 
 /// User data of ZwpTabletToolV2 object
 pub struct TabletToolUserData {
-    handle: TabletToolHandle,
-    cb: Mutex<Box<dyn FnMut(&TabletToolDescriptor, CursorImageStatus) + Send>>,
-    desc: TabletToolDescriptor,
+    pub(crate) handle: TabletToolHandle,
+    pub(crate) cb: Mutex<Box<dyn FnMut(&TabletToolDescriptor, CursorImageStatus) + Send>>,
+    pub(crate) desc: TabletToolDescriptor,
 }
 
 impl fmt::Debug for TabletToolUserData {

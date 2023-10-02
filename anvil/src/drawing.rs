@@ -35,7 +35,7 @@ impl<T: Texture> Default for PointerElement<T> {
     fn default() -> Self {
         Self {
             texture: Default::default(),
-            status: CursorImageStatus::Default,
+            status: CursorImageStatus::default_named(),
         }
     }
 }
@@ -84,7 +84,8 @@ where
     {
         match &self.status {
             CursorImageStatus::Hidden => vec![],
-            CursorImageStatus::Default => {
+            // Always render `Default` for a named shape.
+            CursorImageStatus::Named(_) => {
                 if let Some(texture) = self.texture.as_ref() {
                     vec![
                         PointerRenderElement::<R>::from(TextureRenderElement::from_texture_buffer(
