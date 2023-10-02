@@ -13,6 +13,7 @@ use crate::{
 };
 
 mod cursor_image;
+pub use cursor_icon::CursorIcon;
 pub use cursor_image::{CursorImageAttributes, CursorImageStatus, CursorImageSurfaceData};
 
 mod grab;
@@ -740,7 +741,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 focused.leave(seat, data, event.serial, event.time);
             }
             self.focus = None;
-            data.cursor_image(seat, CursorImageStatus::Default);
+            data.cursor_image(seat, CursorImageStatus::default_named());
         }
 
         // do we enter one ?
