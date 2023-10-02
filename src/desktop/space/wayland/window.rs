@@ -9,10 +9,9 @@ use crate::{
     desktop::{space::SpaceElement, PopupManager, Window, WindowSurfaceType},
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
-    wayland::compositor::{with_surface_tree_downward, TraversalAction},
 };
 
-use super::{output_leave, output_surfaces, output_update, WindowOutputUserData};
+use super::{output_update, WindowOutputUserData};
 
 impl SpaceElement for Window {
     fn geometry(&self) -> Rectangle<i32, Logical> {
@@ -56,27 +55,10 @@ impl SpaceElement for Window {
             state.borrow_mut().output_overlap.retain(|weak, _| weak != output);
         }
 
-        let mut surface_list = output_surfaces(output);
         let surface = self.toplevel().wl_surface();
-        with_surface_tree_downward(
-            surface,
-            (),
-            |_, _, _| TraversalAction::DoChildren(()),
-            |wl_surface, _, _| {
-                output_leave(output, &mut surface_list, wl_surface);
-            },
-            |_, _, _| true,
-        );
+        output_update(output, None, surface);
         for (popup, _) in PopupManager::popups_for_surface(surface) {
-            with_surface_tree_downward(
-                popup.wl_surface(),
-                (),
-                |_, _, _| TraversalAction::DoChildren(()),
-                |wl_surface, _, _| {
-                    output_leave(output, &mut surface_list, wl_surface);
-                },
-                |_, _, _| true,
-            );
+            output_update(output, None, popup.wl_surface());
         }
     }
 
@@ -88,11 +70,11 @@ impl SpaceElement for Window {
         let surface = self.toplevel().wl_surface();
         for (weak, overlap) in state.output_overlap.iter() {
             if let Some(output) = weak.upgrade() {
-                output_update(&output, *overlap, surface);
+                output_update(&output, Some(*overlap), surface);
                 for (popup, location) in PopupManager::popups_for_surface(surface) {
                     let mut overlap = *overlap;
                     overlap.loc -= location;
-                    output_update(&output, overlap, popup.wl_surface());
+                    output_update(&output, Some(overlap), popup.wl_surface());
                 }
             }
         }
