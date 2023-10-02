@@ -64,8 +64,6 @@ jobs:
         run: cargo cache clean-unref
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       - name: Clippy Smithay
         run: cargo clippy --features "test_all_features" -- -D warnings
       - name: Clippy Anvil
@@ -79,8 +77,7 @@ jobs:
 
     runs-on: ubuntu-22.04
     needs:
-      - clippy-check
-      - format
+      - smithay-check-features
 
     steps:
       - name: Checkout sources
@@ -101,8 +98,6 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       - name: Check
         run: cargo check --features "test_all_features"
 
@@ -112,8 +107,7 @@ jobs:
 
     runs-on: ubuntu-22.04
     needs:
-      - clippy-check
-      - format
+      - smithay-check-features
 
     steps:
       - name: Checkout sources
@@ -143,33 +137,47 @@ jobs:
       - name: Check
         run: cargo check --features "test_all_features"
 
+  smithay-check-features:
+
+    env:
+      RUSTFLAGS: "-D warnings"
+
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Get date for registry cache
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
+      - name: Cargo registry cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ steps.date.outputs.date }}
+          restore-keys: ${{ runner.os }}-cargo-registry-
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: System dependencies
+        run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
+
+      - name: Test features
+        env:
+          RUST_BACKTRACE: full
+        run: cargo hack check --each-feature --no-dev-deps
+
   smithay-tests:
     needs:
-      - format
-      - clippy-check
-    strategy:
-      fail-fast: false
-      matrix:
-        features:
-        - ''
-        - backend_winit
-        - backend_drm
-        - backend_gbm
-        - backend_egl
-        - backend_libinput
-        - backend_udev
-        - backend_session
-        - backend_session_libseat
-        - backend_vulkan
-        - backend_x11
-        - desktop
-        - renderer_gl
-        - renderer_glow
-        - renderer_multi
-        - wayland_frontend
-        - xwayland
-        - default
-        - test_all_features
+      - smithay-check-features
 
     env:
       RUSTFLAGS: "-D warnings"
@@ -198,22 +206,15 @@ jobs:
       
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       
-      - name: Test features
+      - name: Run tests
         env:
           RUST_BACKTRACE: full
-        run: cargo test --no-default-features --features "${{ matrix.features }}"
+        run: cargo test --features "test_all_features"
 
-  smallvil:
+  smallvil-check:
     needs:
-      - format
-      - clippy-check
-      - smithay-tests
-    strategy:
-      fail-fast: false
+      - smithay-check-features
 
     env:
       RUSTFLAGS: "-D warnings"
@@ -243,30 +244,14 @@ jobs:
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libxkbcommon-dev libegl1-mesa-dev libwayland-dev
       
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
-      
       - name: Test smallvil
         env:
           RUST_BACKTRACE: full
-        run: cargo test --manifest-path "./smallvil/Cargo.toml"
+        run: cargo check --manifest-path "./smallvil/Cargo.toml"
 
-  anvil-tests:
+  anvil-check-features:
     needs:
-      - format
-      - clippy-check
-      - smithay-tests
-    strategy:
-      fail-fast: false
-      matrix:
-        features:
-        - ''
-        - egl
-        - winit
-        - udev
-        - x11
-        - default
-        - test_all_features
+      - smithay-check-features
 
     env:
       RUSTFLAGS: "-D warnings"
@@ -293,23 +278,20 @@ jobs:
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       
       - name: Test features
         env:
           RUST_BACKTRACE: full
-        run: cargo test --manifest-path "./anvil/Cargo.toml" --no-default-features --features "${{ matrix.features }}"
+        run: cargo hack check --each-feature --manifest-path "./anvil/Cargo.toml" --exclude-features profile-with-puffin,profile-with-tracy,profile-with-tracy-mem
 
   anvil-wlcs:
     needs:
-      - format
-      - clippy-check
-      - smithay-tests
-      - anvil-tests
+      - anvil-check-features
 
     strategy:
       fail-fast: false
@@ -382,9 +364,6 @@ jobs:
       - name: Build WLCS
         run: ./compile_wlcs.sh
 
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
-
       - name: Build anvil WLCS plugin
         env:
           RUST_BACKTRACE: full
@@ -408,7 +387,7 @@ jobs:
     name: Documentation on Github Pages
     runs-on: ubuntu-22.04
     needs:
-      - smithay-tests
+      - smithay-check-features
 
     steps:
       - name: Checkout sources
@@ -436,9 +415,6 @@ jobs:
 
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
-      
-      - name: Downgrade log
-        run: cargo update -p log --precise 0.4.14
       
       - name: Build Documentation
         env: 
