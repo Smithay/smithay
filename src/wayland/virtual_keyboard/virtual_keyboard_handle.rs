@@ -1,9 +1,8 @@
 use std::fs::File;
 use std::io::Read;
-use std::os::unix::io::{FromRawFd, OwnedFd};
+use std::os::unix::io::OwnedFd;
 use std::{
     fmt,
-    os::unix::io::AsRawFd,
     sync::{Arc, Mutex},
 };
 
@@ -188,7 +187,7 @@ where
 
     // Read entire keymap.
     let mut keymap_buffer = vec![0; size];
-    let mut file = unsafe { File::from_raw_fd(fd.as_raw_fd()) };
+    let mut file = File::from(fd);
     if let Err(err) = file.read_exact(&mut keymap_buffer) {
         debug!("Could not read keymap: {err}");
         return;

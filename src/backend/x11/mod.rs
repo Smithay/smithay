@@ -99,7 +99,7 @@ use nix::{
 use std::{
     collections::HashMap,
     io,
-    os::unix::io::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd},
+    os::unix::io::{AsRawFd, FromRawFd, OwnedFd},
     sync::{
         atomic::{AtomicU32, Ordering},
         mpsc, Arc, Mutex, Weak,
@@ -966,8 +966,9 @@ fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, OwnedFd), X11Error> {
     };
 
     // TODO: x11rb git makes `RawFdContainer` an alias for `OwnedFd`, so this isn't needed
-    let device_fd = unsafe { BorrowedFd::borrow_raw(dri3.device_fd.as_raw_fd()) };
-    let dri_node = DrmNode::from_file(device_fd).map_err(Into::<AllocateBuffersError>::into)?;
+    let device_fd = unsafe { OwnedFd::from_raw_fd(dri3.device_fd.into_raw_fd()) };
+
+    let dri_node = DrmNode::from_file(&device_fd).map_err(Into::<AllocateBuffersError>::into)?;
     if dri_node.ty() != NodeType::Render {
         // Try to get the render node.
         match dri_node.node_with_type(NodeType::Render) {
@@ -997,15 +998,14 @@ fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, OwnedFd), X11Error> {
         };
     }
 
-    let fd = dri3.device_fd.into_raw_fd();
-    let fd_flags = fcntl::fcntl(fd, fcntl::F_GETFD).map_err(AllocateBuffersError::from)?;
+    let fd_flags = fcntl::fcntl(device_fd.as_raw_fd(), fcntl::F_GETFD).map_err(AllocateBuffersError::from)?;
 
     // Enable the close-on-exec flag.
     fcntl::fcntl(
-        fd,
+        device_fd.as_raw_fd(),
         fcntl::F_SETFD(fcntl::FdFlag::from_bits_truncate(fd_flags) | fcntl::FdFlag::FD_CLOEXEC),
     )
     .map_err(AllocateBuffersError::from)?;
 
-    Ok((dri_node, unsafe { OwnedFd::from_raw_fd(fd) }))
+    Ok((dri_node, device_fd))
 }
