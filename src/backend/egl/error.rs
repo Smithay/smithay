@@ -160,7 +160,7 @@ pub fn wrap_egl_call<R: PartialEq, F: FnOnce() -> R>(call: F, err: R) -> Result<
         Ok(res)
     } else {
         Err(EGLError::from_last_call().unwrap_or_else(|| {
-            tracing::warn!("Errornous EGL call didn't set EGLError");
+            tracing::warn!("Erroneous EGL call didn't set EGLError");
             EGLError::Unknown(0)
         }))
     }
@@ -174,7 +174,7 @@ pub fn wrap_egl_call_ptr<R, F: FnOnce() -> *const R>(call: F) -> Result<*const R
         Ok(res)
     } else {
         Err(EGLError::from_last_call().unwrap_or_else(|| {
-            tracing::warn!("Errornous EGL call didsn't set EGLError");
+            tracing::warn!("Erroneous EGL call didn't set EGLError");
             EGLError::Unknown(0)
         }))
     }

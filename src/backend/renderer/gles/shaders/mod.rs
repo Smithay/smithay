@@ -1,6 +1,8 @@
 mod color;
 mod implicit;
 
+use std::fmt::Write;
+
 pub(super) use color::*;
 pub use implicit::*;
 
@@ -113,18 +115,20 @@ pub(super) unsafe fn texture_program(
     let create_variant = |defines: &[&str]| -> Result<GlesTexProgramVariant, GlesError> {
         let shader = src.replace(
             "//_DEFINES_",
-            &defines
-                .iter()
-                .map(|define| format!("#define {}\n", define))
-                .collect::<String>(),
+            &defines.iter().fold(String::new(), |mut shader, define| {
+                let _ = writeln!(&mut shader, "#define {}", define);
+                shader
+            }),
         );
         let debug_shader = src.replace(
             "//_DEFINES_",
             &defines
                 .iter()
                 .chain(&[shaders::DEBUG_FLAGS])
-                .map(|define| format!("#define {}\n", define))
-                .collect::<String>(),
+                .fold(String::new(), |mut shader, define| {
+                    let _ = writeln!(shader, "#define {}", define);
+                    shader
+                }),
         );
 
         let program = unsafe { link_program(gl, shaders::VERTEX_SHADER, &shader)? };

@@ -226,7 +226,7 @@ impl RendererSurfaceState {
             self.buffer_dimensions
                 .as_ref()
                 .map(|size| vec![Rectangle::from_loc_and_size((0, 0), *size)])
-                .unwrap_or_else(Vec::new)
+                .unwrap_or_default()
         })
     }
 
