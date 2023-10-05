@@ -574,7 +574,7 @@ impl EGLDisplay {
         let mut format: nix::libc::c_int = 0;
         let mut num_planes: nix::libc::c_int = 0;
         let mut modifier: ffi::egl::types::EGLuint64KHR = 0;
-        if unsafe {
+        wrap_egl_call_bool(|| unsafe {
             // TODO: clippy warns us here that we might dereference a raw pointer in a non unsafe public function
             // For now we add a allow rule, but this should be addressed in the future
             ffi::egl::ExportDMABUFImageQueryMESA(
@@ -583,10 +583,9 @@ impl EGLDisplay {
                 &mut format as *mut _,
                 &mut num_planes as *mut _,
                 &mut modifier as *mut _,
-            ) == ffi::egl::FALSE
-        } {
-            EGLError::from_last_call().map_err(Error::DmabufExportFailed)?;
-        }
+            )
+        })
+        .map_err(Error::DmabufExportFailed)?;
 
         let mut fds: Vec<nix::libc::c_int> = Vec::with_capacity(num_planes as usize);
         let mut strides: Vec<ffi::egl::types::EGLint> = Vec::with_capacity(num_planes as usize);
@@ -594,16 +593,17 @@ impl EGLDisplay {
         unsafe {
             // TODO: clippy warns us here that we might dereference a raw pointer in a non unsafe public function
             // For now we add a allow rule, but this should be addressed in the future
-            if ffi::egl::ExportDMABUFImageMESA(
-                **self.display,
-                image,
-                fds.as_mut_ptr(),
-                strides.as_mut_ptr(),
-                offsets.as_mut_ptr(),
-            ) == ffi::egl::FALSE
-            {
-                EGLError::from_last_call().map_err(Error::DmabufExportFailed)?;
-            }
+            wrap_egl_call_bool(|| {
+                ffi::egl::ExportDMABUFImageMESA(
+                    **self.display,
+                    image,
+                    fds.as_mut_ptr(),
+                    strides.as_mut_ptr(),
+                    offsets.as_mut_ptr(),
+                )
+            })
+            .map_err(Error::DmabufExportFailed)?;
+
             fds.set_len(num_planes as usize);
             strides.set_len(num_planes as usize);
             offsets.set_len(num_planes as usize);
