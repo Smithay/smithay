@@ -1,18 +1,24 @@
 #![allow(missing_docs)]
+#[cfg(feature = "wayland_frontend")]
 use std::cell::Cell;
 
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
+use crate::backend::renderer::ImportEgl;
+#[cfg(feature = "wayland_frontend")]
+use crate::{
+    backend::renderer::{ImportDmaWl, ImportMemWl},
+    reexports::wayland_server::protocol::wl_buffer,
+    wayland::{self, compositor::SurfaceData},
+};
 use crate::{
     backend::{
         allocator::{dmabuf::Dmabuf, Fourcc},
         renderer::{
-            sync::SyncPoint, DebugFlags, Frame, ImportDma, ImportDmaWl, ImportEgl, ImportMem, ImportMemWl,
-            Renderer, Texture, TextureFilter,
+            sync::SyncPoint, DebugFlags, Frame, ImportDma, ImportMem, Renderer, Texture, TextureFilter,
         },
-        SwapBuffersError, self,
+        SwapBuffersError,
     },
-    reexports::wayland_server::protocol::wl_buffer,
     utils::{Buffer, Physical, Rectangle, Size, Transform},
-    wayland::{compositor::SurfaceData, self},
 };
 
 #[derive(Debug)]
@@ -81,6 +87,7 @@ impl ImportMem for DummyRenderer {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl ImportMemWl for DummyRenderer {
     fn import_shm_buffer(
         &mut self,
@@ -88,8 +95,8 @@ impl ImportMemWl for DummyRenderer {
         surface: Option<&SurfaceData>,
         _damage: &[Rectangle<i32, Buffer>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        use wayland::shm::with_buffer_contents;
         use std::ptr;
+        use wayland::shm::with_buffer_contents;
         let ret = with_buffer_contents(buffer, |ptr, len, data| {
             let offset = data.offset as u32;
             let width = data.width as u32;
@@ -130,11 +137,12 @@ impl ImportDma for DummyRenderer {
     }
 }
 
+#[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 impl ImportEgl for DummyRenderer {
     fn bind_wl_display(
         &mut self,
         _display: &::wayland_server::DisplayHandle,
-    ) -> Result<(), backend::egl::Error> {
+    ) -> Result<(), crate::backend::egl::Error> {
         unimplemented!()
     }
 
@@ -142,7 +150,7 @@ impl ImportEgl for DummyRenderer {
         unimplemented!()
     }
 
-    fn egl_reader(&self) -> Option<&backend::egl::display::EGLBufferReader> {
+    fn egl_reader(&self) -> Option<&crate::backend::egl::display::EGLBufferReader> {
         unimplemented!()
     }
 
@@ -156,6 +164,7 @@ impl ImportEgl for DummyRenderer {
     }
 }
 
+#[cfg(feature = "wayland_frontend")]
 impl ImportDmaWl for DummyRenderer {}
 
 pub struct DummyFrame {}
