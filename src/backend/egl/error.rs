@@ -144,10 +144,10 @@ impl From<u32> for EGLError {
 }
 
 impl EGLError {
-    pub(super) fn from_last_call() -> Result<(), EGLError> {
+    pub(super) fn from_last_call() -> Option<EGLError> {
         match unsafe { ffi::egl::GetError() as u32 } {
-            ffi::egl::SUCCESS => Ok(()),
-            x => Err(EGLError::from(x)),
+            ffi::egl::SUCCESS => None,
+            x => Some(EGLError::from(x)),
         }
     }
 }
@@ -159,7 +159,10 @@ pub fn wrap_egl_call<R: PartialEq, F: FnOnce() -> R>(call: F, err: R) -> Result<
     if res != err {
         Ok(res)
     } else {
-        EGLError::from_last_call().map(|()| res)
+        Err(EGLError::from_last_call().unwrap_or_else(|| {
+            tracing::warn!("Erroneous EGL call didn't set EGLError");
+            EGLError::Unknown(0)
+        }))
     }
 }
 
@@ -170,7 +173,10 @@ pub fn wrap_egl_call_ptr<R, F: FnOnce() -> *const R>(call: F) -> Result<*const R
     if !res.is_null() {
         Ok(res)
     } else {
-        EGLError::from_last_call().map(|()| res)
+        Err(EGLError::from_last_call().unwrap_or_else(|| {
+            tracing::warn!("Erroneous EGL call didn't set EGLError");
+            EGLError::Unknown(0)
+        }))
     }
 }
 

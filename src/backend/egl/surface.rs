@@ -107,7 +107,10 @@ impl EGLSurface {
             debug!(
                 "Failed to query buffer age value for surface {:?}: {}",
                 self,
-                EGLError::from_last_call().unwrap_err()
+                EGLError::from_last_call().unwrap_or_else(|| {
+                    tracing::warn!("Erroneous EGL call didn't set EGLError");
+                    EGLError::Unknown(0)
+                })
             );
             None
         } else {
@@ -142,7 +145,10 @@ impl EGLSurface {
                 parent: &self.span,
                 "Failed to query size value for surface {:?}: {}",
                 self,
-                EGLError::from_last_call().unwrap_err()
+                EGLError::from_last_call().unwrap_or_else(|| {
+                    tracing::warn!("Erroneous EGL call didn't set EGLError");
+                    EGLError::Unknown(0)
+                })
             );
             None
         } else {
