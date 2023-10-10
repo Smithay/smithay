@@ -3,7 +3,6 @@ use std::ffi::OsString;
 use std::{
     collections::{hash_map::HashMap, HashSet},
     convert::TryInto,
-    os::unix::io::FromRawFd,
     path::Path,
     sync::{atomic::Ordering, Mutex},
     time::{Duration, Instant},
@@ -856,7 +855,7 @@ impl AnvilState<UdevData> {
             )
             .map_err(DeviceAddError::DeviceOpen)?;
 
-        let fd = DrmDeviceFd::new(unsafe { DeviceFd::from_raw_fd(fd) });
+        let fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
         let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
         let gbm = GbmDevice::new(fd).map_err(DeviceAddError::GbmDevice)?;

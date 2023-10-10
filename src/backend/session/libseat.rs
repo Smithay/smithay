@@ -7,7 +7,7 @@ use libseat::{Seat, SeatEvent};
 use std::{
     cell::RefCell,
     collections::HashMap,
-    os::unix::io::{AsFd, AsRawFd, RawFd},
+    os::unix::io::{AsFd, AsRawFd, FromRawFd, OwnedFd, RawFd},
     path::Path,
     rc::{Rc, Weak},
     sync::{
@@ -16,7 +16,7 @@ use std::{
     },
 };
 
-use nix::{errno::Errno, fcntl::OFlag, unistd::close};
+use nix::{errno::Errno, fcntl::OFlag};
 
 use calloop::{
     channel::{self, Channel},
@@ -115,7 +115,7 @@ impl Session for LibSeatSession {
     type Error = Error;
 
     #[instrument(parent = &self.span, skip(self))]
-    fn open(&mut self, path: &Path, _flags: OFlag) -> Result<RawFd, Self::Error> {
+    fn open(&mut self, path: &Path, _flags: OFlag) -> Result<OwnedFd, Self::Error> {
         if let Some(session) = self.internal.upgrade() {
             debug!("Opening device: {:?}", path);
 
@@ -128,7 +128,8 @@ impl Session for LibSeatSession {
 
                     session.devices.borrow_mut().insert(raw_fd, device);
 
-                    raw_fd
+                    // SAFETY: `libseat::Device` does not close fd on drop
+                    unsafe { OwnedFd::from_raw_fd(raw_fd) }
                 })
                 .map_err(|err| Error::FailedToOpenDevice(Errno::from_i32(err.into())))
         } else {
@@ -137,11 +138,11 @@ impl Session for LibSeatSession {
     }
 
     #[instrument(parent = &self.span, skip(self))]
-    fn close(&mut self, fd: RawFd) -> Result<(), Self::Error> {
+    fn close(&mut self, fd: OwnedFd) -> Result<(), Self::Error> {
         if let Some(session) = self.internal.upgrade() {
             debug!("Closing device: {:?}", fd);
 
-            let out = if let Some(dev) = session.devices.borrow_mut().remove(&fd) {
+            let out = if let Some(dev) = session.devices.borrow_mut().remove(&fd.as_fd().as_raw_fd()) {
                 session
                     .seat
                     .borrow_mut()
@@ -151,7 +152,7 @@ impl Session for LibSeatSession {
                 Ok(())
             };
 
-            close(fd).unwrap();
+            // `fd` is closed on drop
 
             out
         } else {
