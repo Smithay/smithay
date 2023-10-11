@@ -87,8 +87,8 @@ impl DrmDeviceFd {
     }
 
     /// Returns the `dev_t` of the underlying device
-    pub fn dev_id(&self) -> Result<nix::libc::dev_t, nix::Error> {
-        Ok(nix::sys::stat::fstat(self.0.fd.as_raw_fd())?.st_rdev)
+    pub fn dev_id(&self) -> rustix::io::Result<libc::dev_t> {
+        Ok(rustix::fs::fstat(&self.0.fd)?.st_rdev)
     }
 }
 

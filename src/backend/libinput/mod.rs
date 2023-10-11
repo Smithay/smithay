@@ -603,9 +603,9 @@ impl<S: Session> From<S> for LibinputSessionInterface<S> {
 #[cfg(feature = "backend_session")]
 impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
     fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<OwnedFd, i32> {
-        use nix::fcntl::OFlag;
+        use rustix::fs::OFlags;
         self.0
-            .open(path, OFlag::from_bits_truncate(flags))
+            .open(path, OFlags::from_bits_truncate(flags as u32))
             .map_err(|err| err.as_errno().unwrap_or(1 /*Use EPERM by default*/))
     }
 

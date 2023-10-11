@@ -92,14 +92,17 @@ use crate::{
 };
 use calloop::{EventSource, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm_fourcc::{DrmFourcc, DrmModifier};
+/*
 use nix::{
     fcntl::{self, OFlag},
     sys::stat::Mode,
 };
+*/
+use rustix::fs::{Mode, OFlags};
 use std::{
     collections::HashMap,
     io,
-    os::unix::io::{AsRawFd, FromRawFd, OwnedFd},
+    os::unix::io::{FromRawFd, OwnedFd},
     sync::{
         atomic::{AtomicU32, Ordering},
         mpsc, Arc, Mutex, Weak,
@@ -935,10 +938,10 @@ fn egl_init(_: &X11Inner) -> Result<(DrmNode, OwnedFd), EGLInitError> {
             _ => unreachable!(),
         })
         .map_err(EGLInitError::IO)?;
-    let fd = fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())
+    let fd = rustix::fs::open(&path, OFlags::RDWR | OFlags::CLOEXEC, Mode::empty())
         .map_err(Into::<io::Error>::into)
         .map_err(EGLInitError::IO)?;
-    Ok((node, unsafe { OwnedFd::from_raw_fd(fd) }))
+    Ok((node, fd))
 }
 
 fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, OwnedFd), X11Error> {
@@ -975,9 +978,9 @@ fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, OwnedFd), X11Error> {
             Some(Ok(node)) => {
                 match node
                     .dev_path()
-                    .map(|path| fcntl::open(&path, OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty()))
+                    .map(|path| rustix::fs::open(path, OFlags::RDWR | OFlags::CLOEXEC, Mode::empty()))
                 {
-                    Some(Ok(fd)) => return Ok((node, unsafe { OwnedFd::from_raw_fd(fd) })),
+                    Some(Ok(fd)) => return Ok((node, fd)),
                     Some(Err(err)) => {
                         warn!("Could not create render node from existing DRM node ({:?}): {}, falling back to primary node", dri_node.dev_path().as_ref().map(|x| x.display()), err);
                     }
@@ -998,14 +1001,11 @@ fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, OwnedFd), X11Error> {
         };
     }
 
-    let fd_flags = fcntl::fcntl(device_fd.as_raw_fd(), fcntl::F_GETFD).map_err(AllocateBuffersError::from)?;
+    let fd_flags = rustix::io::fcntl_getfd(&device_fd).map_err(AllocateBuffersError::from)?;
 
     // Enable the close-on-exec flag.
-    fcntl::fcntl(
-        device_fd.as_raw_fd(),
-        fcntl::F_SETFD(fcntl::FdFlag::from_bits_truncate(fd_flags) | fcntl::FdFlag::FD_CLOEXEC),
-    )
-    .map_err(AllocateBuffersError::from)?;
+    rustix::io::fcntl_setfd(&device_fd, fd_flags | rustix::io::FdFlags::CLOEXEC)
+        .map_err(AllocateBuffersError::from)?;
 
     Ok((dri_node, device_fd))
 }

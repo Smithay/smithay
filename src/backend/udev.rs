@@ -37,7 +37,8 @@
 //! See also `anvil/src/udev.rs` for pure hardware backed example of a compositor utilizing this
 //! backend.
 
-use nix::sys::stat::{dev_t, stat};
+use libc::dev_t;
+use rustix::fs::stat;
 use std::{
     collections::HashMap,
     ffi::OsString,

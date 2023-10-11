@@ -78,7 +78,7 @@ use std::{
     fmt,
     num::NonZeroU32,
     os::unix::{
-        io::{FromRawFd, OwnedFd},
+        io::{AsRawFd, OwnedFd},
         prelude::AsFd,
     },
     path::{Path, PathBuf},
@@ -92,6 +92,7 @@ use drm::{
     control::{connector, crtc, plane, Device, OFlag, RawResourceHandle},
     SystemError,
 };
+use rustix::fs::OFlags;
 use wayland_protocols::wp::drm_lease::v1::server::*;
 use wayland_server::backend::GlobalId;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource};
@@ -359,29 +360,29 @@ pub enum Error {
     UnableToGetFd,
     /// Unable to open a new file descriptor for the drm device used
     #[error("Unable to open new file descriptor for drm device")]
-    UnableToOpenNode(#[source] nix::Error),
+    UnableToOpenNode(#[source] rustix::io::Errno),
     /// Unable to drop DRM Master on a new file descriptor
     #[error("Unable to drop master status on file descriptor for drm device")]
     UnableToDropMaster(#[source] nix::errno::Errno),
 }
 
 fn get_non_master_fd<P: AsRef<Path>>(path: P) -> Result<OwnedFd, Error> {
-    let fd = nix::fcntl::open(
+    let fd = rustix::fs::open(
         path.as_ref(),
-        OFlag::O_RDWR | OFlag::O_CLOEXEC,
-        nix::sys::stat::Mode::empty(),
+        OFlags::RDWR | OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
     )
     .map_err(Error::UnableToOpenNode)?;
 
     // check if the fd has master
-    if drm_ffi::get_client(fd, 0)
+    if drm_ffi::get_client(fd.as_raw_fd(), 0)
         .map(|client| client.auth == 1)
         .unwrap_or(false)
     {
-        drm_ffi::auth::release_master(fd).map_err(Error::UnableToDropMaster)?;
+        drm_ffi::auth::release_master(fd.as_raw_fd()).map_err(Error::UnableToDropMaster)?;
     }
 
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    Ok(fd)
 }
 
 impl DrmLeaseState {

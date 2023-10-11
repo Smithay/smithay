@@ -27,11 +27,10 @@
 //! ensure you read the `presentproto.txt` file (link in the non-public comments of the
 //! x11 mod.rs).
 
-use std::{os::unix::io::AsRawFd, sync::atomic::Ordering};
+use std::{os::unix::io::IntoRawFd, sync::atomic::Ordering};
 
 use super::{PresentError, Window, X11Error};
 use drm_fourcc::DrmFourcc;
-use nix::fcntl;
 use x11rb::{
     connection::Connection,
     protocol::{
@@ -87,13 +86,12 @@ where
 
         // XCB closes the file descriptor after sending, so duplicate the file descriptors.
         for handle in dmabuf.handles() {
-            let fd = fcntl::fcntl(
-                handle.as_raw_fd(),
-                fcntl::FcntlArg::F_DUPFD_CLOEXEC(3), // Set to 3 so the fd cannot become stdin, stdout or stderr
+            let fd = rustix::io::fcntl_dupfd_cloexec(
+                handle, 3, // Set to 3 so the fd cannot become stdin, stdout or stderr
             )
             .map_err(|e| PresentError::DupFailed(e.to_string()))?;
 
-            fds.push(RawFdContainer::new(fd))
+            fds.push(RawFdContainer::new(fd.into_raw_fd()))
         }
 
         // We need dri3 >= 1.2 in order to use the enhanced dri3_pixmap_from_buffers function.

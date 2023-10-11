@@ -1,11 +1,11 @@
 use std::{
     io::{Read, Write},
-    os::unix::{io::AsRawFd, net::UnixStream},
+    os::unix::net::UnixStream,
 };
 
 use tracing::{debug, info, warn};
 
-use nix::{errno::Errno, sys::socket};
+use rustix::{io::Errno, net::SocketAddrUnix};
 
 /// Find a free X11 display slot and setup
 pub(crate) fn prepare_x11_sockets(
@@ -18,7 +18,7 @@ pub(crate) fn prepare_x11_sockets(
                 // we got a lockfile, try and create the socket
                 match open_x11_sockets_for_display(d, open_abstract_socket) {
                     Ok(sockets) => return Ok((lock, sockets)),
-                    Err(err) => return Err(std::io::Error::from_raw_os_error(err as i32)),
+                    Err(err) => return Err(std::io::Error::from(err)),
                 };
             }
         }
@@ -61,7 +61,10 @@ impl X11Lock {
         match lockfile {
             Ok(mut file) => {
                 // we got it, write our PID in it and we're good
-                let ret = file.write_fmt(format_args!("{:>10}\n", ::nix::unistd::Pid::this()));
+                let ret = file.write_fmt(format_args!(
+                    "{:>10}\n",
+                    rustix::process::Pid::as_raw(Some(rustix::process::getpid()))
+                ));
                 if ret.is_err() {
                     // write to the file failed ? we abandon
                     ::std::mem::drop(file);
@@ -84,14 +87,15 @@ impl X11Lock {
                 let mut spid = [0u8; 11];
                 file.read_exact(&mut spid).map_err(|_| ())?;
                 ::std::mem::drop(file);
-                let pid = ::nix::unistd::Pid::from_raw(
+                let pid = rustix::process::Pid::from_raw(
                     ::std::str::from_utf8(&spid)
                         .map_err(|_| ())?
                         .trim()
                         .parse::<i32>()
                         .map_err(|_| ())?,
-                );
-                if let Err(Errno::ESRCH) = ::nix::sys::signal::kill(pid, None) {
+                )
+                .ok_or(())?;
+                if let Err(Errno::SRCH) = rustix::process::test_kill_process(pid) {
                     // no process whose pid equals the contents of the lockfile exists
                     // remove the lockfile and try grabbing it again
                     if let Ok(()) = ::std::fs::remove_file(filename) {
@@ -133,14 +137,17 @@ impl Drop for X11Lock {
 ///
 /// Should only be done after the associated lockfile is acquired!
 #[cfg(target_os = "linux")]
-fn open_x11_sockets_for_display(display: u32, open_abstract_socket: bool) -> nix::Result<Vec<UnixStream>> {
+fn open_x11_sockets_for_display(
+    display: u32,
+    open_abstract_socket: bool,
+) -> rustix::io::Result<Vec<UnixStream>> {
     let path = format!("/tmp/.X11-unix/X{}", display);
     let _ = ::std::fs::remove_file(&path);
     // We know this path is not too long, these unwrap cannot fail
-    let fs_addr = socket::UnixAddr::new(path.as_bytes()).unwrap();
+    let fs_addr = SocketAddrUnix::new(path.as_bytes()).unwrap();
     let mut sockets = vec![open_socket(fs_addr)?];
     if open_abstract_socket {
-        let abs_addr = socket::UnixAddr::new_abstract(path.as_bytes()).unwrap();
+        let abs_addr = SocketAddrUnix::new_abstract_name(path.as_bytes()).unwrap();
         sockets.push(open_socket(abs_addr)?);
     }
     Ok(sockets)
@@ -150,25 +157,28 @@ fn open_x11_sockets_for_display(display: u32, open_abstract_socket: bool) -> nix
 ///
 /// Should only be done after the associated lockfile is acquired!
 #[cfg(not(target_os = "linux"))]
-fn open_x11_sockets_for_display(display: u32, _open_abstract_socket: bool) -> nix::Result<Vec<UnixStream>> {
+fn open_x11_sockets_for_display(
+    display: u32,
+    _open_abstract_socket: bool,
+) -> rustix::io::Result<Vec<UnixStream>> {
     let path = format!("/tmp/.X11-unix/X{}", display);
     let _ = ::std::fs::remove_file(&path);
     // We know this path is not too long, these unwrap cannot fail
-    let fs_addr = socket::UnixAddr::new(path.as_bytes()).unwrap();
+    let fs_addr = SocketAddrUnix::new(path.as_bytes()).unwrap();
     Ok(vec![open_socket(fs_addr)?])
 }
 
 /// Open an unix socket for listening and bind it to given path
-fn open_socket(addr: socket::UnixAddr) -> nix::Result<UnixStream> {
+fn open_socket(addr: SocketAddrUnix) -> rustix::io::Result<UnixStream> {
     // create an unix stream socket
-    let fd = socket::socket(
-        socket::AddressFamily::Unix,
-        socket::SockType::Stream,
-        socket::SockFlag::SOCK_CLOEXEC,
+    let fd = rustix::net::socket_with(
+        rustix::net::AddressFamily::UNIX,
+        rustix::net::SocketType::STREAM,
+        rustix::net::SocketFlags::CLOEXEC,
         None,
     )?;
     // bind it to requested address
-    socket::bind(fd.as_raw_fd(), &addr)?;
-    socket::listen(&fd, 1)?;
+    rustix::net::bind_unix(&fd, &addr)?;
+    rustix::net::listen(&fd, 1)?;
     Ok(UnixStream::from(fd))
 }

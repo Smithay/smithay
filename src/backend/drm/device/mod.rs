@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use calloop::{EventSource, Interest, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm::control::{connector, crtc, plane, Device as ControlDevice, Event, Mode, ResourceHandles};
 use drm::{ClientCapability, Device as BasicDevice, DriverCapability};
-use nix::libc::dev_t;
+use libc::dev_t;
 
 pub(super) mod atomic;
 mod fd;

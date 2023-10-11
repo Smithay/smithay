@@ -72,13 +72,13 @@ use crate::{
     },
 };
 use calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction, RegistrationToken};
-use nix::fcntl::OFlag;
+use rustix::fs::OFlags;
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
     fmt,
     os::unix::{
-        io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd},
+        io::{AsFd, BorrowedFd, OwnedFd},
         net::UnixStream,
     },
     sync::Arc,
@@ -433,7 +433,7 @@ impl IncomingTransfer {
             return Ok(true);
         }
 
-        let len = nix::unistd::write(fd.as_raw_fd(), &self.source_data)?;
+        let len = rustix::io::write(fd, &self.source_data)?;
         self.source_data = self.source_data.split_off(len);
 
         Ok(self.source_data.is_empty())
@@ -1138,8 +1138,6 @@ impl X11Wm {
     where
         D: XwmHandler + 'static,
     {
-        use nix::fcntl::{fcntl, FcntlArg};
-
         let xwm_id = self.id();
         let selection = match selection {
             SelectionTarget::Clipboard => &mut self.clipboard,
@@ -1207,10 +1205,7 @@ impl X11Wm {
             x11rb::CURRENT_TIME,
         )?;
 
-        if let Err(err) = fcntl(
-            fd.as_raw_fd(),
-            FcntlArg::F_SETFL(OFlag::O_WRONLY | OFlag::O_NONBLOCK),
-        ) {
+        if let Err(err) = rustix::fs::fcntl_setfl(&fd, OFlags::WRONLY | OFlags::NONBLOCK) {
             warn!(?err, "Failed to restrict wl file descriptor");
         }
 
@@ -1880,10 +1875,10 @@ fn handle_event<D: XwmHandler + 'static>(
                             }
                         };
 
-                        let (recv_fd, send_fd) = nix::unistd::pipe2(OFlag::O_CLOEXEC | OFlag::O_NONBLOCK)
-                            .map_err(|err| {
-                                ConnectionError::IoError(std::io::Error::from_raw_os_error(err as i32))
-                            })?;
+                        let (recv_fd, send_fd) = rustix::pipe::pipe_with(
+                            rustix::pipe::PipeFlags::CLOEXEC | rustix::pipe::PipeFlags::NONBLOCK,
+                        )
+                        .map_err(|err| ConnectionError::IoError(std::io::Error::from(err)))?;
 
                         // It seems that if we ever try to reply to a selection request after
                         // another has been sent by the same requestor, the requestor never reads
@@ -1908,11 +1903,7 @@ fn handle_event<D: XwmHandler + 'static>(
 
                         let requestor = n.requestor;
                         let token = match loop_handle.insert_source(
-                            Generic::new(
-                                unsafe { OwnedFd::from_raw_fd(recv_fd) },
-                                Interest::READ,
-                                Mode::Level,
-                            ),
+                            Generic::new(recv_fd, Interest::READ, Mode::Level),
                             move |_, fd, data| {
                                 let xwm = data.xwm_state(xwm_id);
                                 let selection = match selection_type {
@@ -1972,9 +1963,7 @@ fn handle_event<D: XwmHandler + 'static>(
 
                         let selection_type = selection.type_;
                         drop(_guard);
-                        state.send_selection(xwm_id, selection_type, mime_type, unsafe {
-                            OwnedFd::from_raw_fd(send_fd)
-                        });
+                        state.send_selection(xwm_id, selection_type, mime_type, send_fd);
                     }
                 }
             } else {
@@ -2269,7 +2258,7 @@ fn read_selection_callback(
     transfer: &mut OutgoingTransfer,
 ) -> Result<OutgoingAction, ReplyOrIdError> {
     let mut buf = [0; INCR_CHUNK_SIZE];
-    let Ok(len) = nix::unistd::read(fd.as_raw_fd(), &mut buf) else {
+    let Ok(len) = rustix::io::read(fd, &mut buf) else {
         debug!(
             requestor = transfer.request.requestor,
             "File descriptor closed, aborting transfer."

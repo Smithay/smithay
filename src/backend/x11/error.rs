@@ -1,6 +1,6 @@
 use std::io;
 
-use nix::errno::Errno;
+use rustix::io::Errno;
 use x11rb::rust_connection::{ConnectError, ConnectionError, ReplyError, ReplyOrIdError};
 
 use crate::backend::{allocator::dmabuf::AnyError, drm::CreateDrmNodeError};

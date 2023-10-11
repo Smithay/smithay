@@ -194,7 +194,7 @@ use std::{
     convert::TryFrom,
     ffi::CString,
     ops::Sub,
-    os::unix::io::{AsFd, AsRawFd},
+    os::unix::io::AsFd,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -202,7 +202,7 @@ use std::{
 };
 
 use indexmap::IndexSet;
-use nix::unistd;
+use rustix::fs::{seek, SeekFrom};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{
     zwp_linux_buffer_params_v1, zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
 };
@@ -1033,11 +1033,11 @@ impl DmabufParamsData {
                 }
             };
 
-            if let Ok(size) = unistd::lseek(plane.fd.as_raw_fd(), 0, unistd::Whence::SeekEnd) {
+            if let Ok(size) = seek(&plane.fd, SeekFrom::End(0)) {
                 // Reset seek point
-                let _ = unistd::lseek(plane.fd.as_raw_fd(), 0, unistd::Whence::SeekSet);
+                let _ = seek(&plane.fd, SeekFrom::Start(0));
 
-                if plane.offset as libc::off_t > size {
+                if plane.offset as u64 > size {
                     params.post_error(
                         zwp_linux_buffer_params_v1::Error::OutOfBounds,
                         format!("Invalid offset {} for plane {}.", plane.offset, plane.plane_idx),
@@ -1046,7 +1046,7 @@ impl DmabufParamsData {
                     return None;
                 }
 
-                if (plane.offset + plane.stride) as libc::off_t > size {
+                if (plane.offset + plane.stride) as u64 > size {
                     params.post_error(
                         zwp_linux_buffer_params_v1::Error::OutOfBounds,
                         format!("Invalid stride {} for plane {}.", plane.stride, plane.plane_idx),
@@ -1056,7 +1056,7 @@ impl DmabufParamsData {
                 }
 
                 // Planes > 0 can be subsampled, in which case 'size' will be smaller than expected.
-                if plane.plane_idx == 0 && end as libc::off_t > size {
+                if plane.plane_idx == 0 && end as u64 > size {
                     params.post_error(
                         zwp_linux_buffer_params_v1::Error::OutOfBounds,
                         format!(

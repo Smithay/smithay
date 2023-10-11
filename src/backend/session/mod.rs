@@ -26,7 +26,7 @@
 //!
 //! Other implementations can be provided out-of-tree.
 
-use nix::fcntl::OFlag;
+use rustix::fs::OFlags;
 use std::{
     cell::RefCell,
     os::unix::io::OwnedFd,
@@ -45,7 +45,7 @@ pub trait Session {
     /// Opens a device at the given `path` with the given flags.
     ///
     /// Returns a raw file descriptor
-    fn open(&mut self, path: &Path, flags: OFlag) -> Result<OwnedFd, Self::Error>;
+    fn open(&mut self, path: &Path, flags: OFlags) -> Result<OwnedFd, Self::Error>;
     /// Close a previously opened file descriptor
     fn close(&mut self, fd: OwnedFd) -> Result<(), Self::Error>;
 
@@ -72,7 +72,7 @@ pub enum Event {
 impl Session for () {
     type Error = ();
 
-    fn open(&mut self, _path: &Path, _flags: OFlag) -> Result<OwnedFd, Self::Error> {
+    fn open(&mut self, _path: &Path, _flags: OFlags) -> Result<OwnedFd, Self::Error> {
         Err(())
     }
     fn close(&mut self, _fd: OwnedFd) -> Result<(), Self::Error> {
@@ -94,7 +94,7 @@ impl Session for () {
 impl<S: Session> Session for Rc<RefCell<S>> {
     type Error = S::Error;
 
-    fn open(&mut self, path: &Path, flags: OFlag) -> Result<OwnedFd, Self::Error> {
+    fn open(&mut self, path: &Path, flags: OFlags) -> Result<OwnedFd, Self::Error> {
         self.borrow_mut().open(path, flags)
     }
 
@@ -118,7 +118,7 @@ impl<S: Session> Session for Rc<RefCell<S>> {
 impl<S: Session> Session for Arc<Mutex<S>> {
     type Error = S::Error;
 
-    fn open(&mut self, path: &Path, flags: OFlag) -> Result<OwnedFd, Self::Error> {
+    fn open(&mut self, path: &Path, flags: OFlags) -> Result<OwnedFd, Self::Error> {
         self.lock().unwrap().open(path, flags)
     }
 

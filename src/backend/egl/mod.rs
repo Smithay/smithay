@@ -27,6 +27,7 @@
 //! Renderers based on EGL may support doing this for you by allowing you to [`Bind`](crate::backend::renderer::Bind) a dmabuf directly.
 //!
 
+use std::ffi::c_void;
 use std::fmt;
 
 pub mod context;
@@ -37,8 +38,6 @@ pub use self::error::*;
 use crate::backend::SwapBuffersError as GraphicsSwapBuffersError;
 #[cfg(feature = "wayland_frontend")]
 use crate::utils::{Buffer, Size};
-
-use nix::libc::c_void;
 
 #[allow(non_camel_case_types, dead_code, unused_mut, non_upper_case_globals)]
 pub mod ffi;
