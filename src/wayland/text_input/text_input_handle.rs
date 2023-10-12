@@ -66,6 +66,18 @@ impl TextInputHandle {
         }
     }
 
+    fn focused_instance<F>(&self, text_input: &ZwpTextInputV3, f: F)
+    where
+        F: Fn(),
+    {
+        let mut inner = self.inner.lock().unwrap();
+        for ti in inner.instances.iter_mut() {
+            if &ti.instance == text_input {
+                f();
+            }
+        }
+    }
+
     pub(crate) fn focus(&self) -> Option<WlSurface> {
         self.inner.lock().unwrap().focus.clone()
     }
@@ -144,12 +156,16 @@ where
     ) {
         match request {
             zwp_text_input_v3::Request::Enable => {
-                // To avoid keeping uneccessary state in the compositor the events are not double buffered,
-                // hence this request is unused
+                data.handle.focused_instance(resource, || {
+                    data.input_method_handle
+                        .with_instance(|input_method| input_method.activate())
+                });
             }
             zwp_text_input_v3::Request::Disable => {
-                // To avoid keeping uneccessary state in the compositor the events are not double buffered,
-                // hence this request is unused
+                data.handle.focused_instance(resource, || {
+                    data.input_method_handle
+                        .with_instance(|input_method| input_method.deactivate())
+                });
             }
             zwp_text_input_v3::Request::SetSurroundingText { text, cursor, anchor } => {
                 data.input_method_handle.with_instance(|input_method| {
