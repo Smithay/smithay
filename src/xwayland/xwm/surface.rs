@@ -30,7 +30,7 @@ use x11rb::{
     wrapper::ConnectionExt,
 };
 
-use super::XwmId;
+use super::{send_configure_notify, XwmId};
 
 /// X11 window managed by an [`X11Wm`](super::X11Wm)
 #[derive(Debug, Clone)]
@@ -257,6 +257,7 @@ impl X11Surface {
                     .border_width(0);
                 conn.configure_window(frame, &aux)?;
                 conn.configure_window(self.window, &win_aux)?;
+                send_configure_notify(&conn, &self.window, rect, false)?;
             } else {
                 conn.configure_window(self.window, &aux)?;
             }

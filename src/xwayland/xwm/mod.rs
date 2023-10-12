@@ -94,11 +94,11 @@ use x11rb::{
         render::{ConnectionExt as _, CreatePictureAux, PictureWrapper},
         xfixes::{ConnectionExt as _, SelectionEventMask},
         xproto::{
-            Atom, AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureWindowAux, ConnectionExt as _,
-            CreateGCAux, CreateWindowAux, CursorWrapper, EventMask, FontWrapper, GcontextWrapper,
-            GetPropertyReply, ImageFormat, PixmapWrapper, PropMode, Property, QueryExtensionReply, Screen,
-            SelectionNotifyEvent, SelectionRequestEvent, StackMode, Window as X11Window, WindowClass,
-            SELECTION_NOTIFY_EVENT,
+            Atom, AtomEnum, ChangeWindowAttributesAux, ConfigWindow, ConfigureNotifyEvent,
+            ConfigureWindowAux, ConnectionExt as _, CreateGCAux, CreateWindowAux, CursorWrapper, EventMask,
+            FontWrapper, GcontextWrapper, GetPropertyReply, ImageFormat, PixmapWrapper, PropMode, Property,
+            QueryExtensionReply, Screen, SelectionNotifyEvent, SelectionRequestEvent, StackMode,
+            Window as X11Window, WindowClass, CONFIGURE_NOTIFY_EVENT, SELECTION_NOTIFY_EVENT,
         },
         Event,
     },
@@ -2396,6 +2396,34 @@ fn send_selection_notify_resp(
             } else {
                 AtomEnum::NONE.into()
             },
+        },
+    )?;
+    conn.flush()?;
+    Ok(())
+}
+
+fn send_configure_notify(
+    conn: &RustConnection,
+    win: &X11Window,
+    geometry: Rectangle<i32, Logical>,
+    override_redirect: bool,
+) -> Result<(), ConnectionError> {
+    conn.send_event(
+        false,
+        *win,
+        EventMask::STRUCTURE_NOTIFY,
+        ConfigureNotifyEvent {
+            response_type: CONFIGURE_NOTIFY_EVENT,
+            sequence: 0,
+            event: *win,
+            window: *win,
+            above_sibling: x11rb::NONE,
+            x: geometry.loc.x as i16,
+            y: geometry.loc.y as i16,
+            width: geometry.size.w as u16,
+            height: geometry.size.h as u16,
+            border_width: 0,
+            override_redirect,
         },
     )?;
     conn.flush()?;
