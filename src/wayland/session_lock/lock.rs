@@ -7,7 +7,7 @@ use crate::wayland::compositor;
 use crate::wayland::compositor::SurfaceAttributes;
 use _session_lock::ext_session_lock_surface_v1::ExtSessionLockSurfaceV1;
 use _session_lock::ext_session_lock_v1::{Error, ExtSessionLockV1, Request};
-use wayland_protocols::ext::session_lock::v1::server as _session_lock;
+use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock, ext_session_lock_surface_v1};
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource};
 
 use crate::wayland::session_lock::surface::{ExtLockSurfaceUserData, LockSurface, LockSurfaceAttributes};
@@ -83,9 +83,9 @@ where
 
                 // Initialize surface data.
                 compositor::with_states(&surface, |states| {
-                    states
-                        .data_map
-                        .insert_if_missing_threadsafe(|| Mutex::new(LockSurfaceAttributes::default()))
+                    states.data_map.insert_if_missing_threadsafe(|| {
+                        Mutex::new(LockSurfaceAttributes::new(lock_surface.clone()))
+                    })
                 });
 
                 // Add pre-commit hook for updating surface state.
@@ -94,9 +94,15 @@ where
                         let attributes = states.data_map.get::<Mutex<LockSurfaceAttributes>>();
                         let mut attributes = attributes.unwrap().lock().unwrap();
 
-                        if let Some(state) = attributes.last_acked {
-                            attributes.current = state;
-                        }
+                        let Some(state) = attributes.last_acked else {
+                            attributes.surface.post_error(
+                                ext_session_lock_surface_v1::Error::CommitBeforeFirstAck,
+                                "Committed before the first ack_configure.",
+                            );
+                            return;
+                        };
+
+                        attributes.current = state;
                     });
                 });
 

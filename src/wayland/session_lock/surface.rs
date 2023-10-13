@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use crate::utils::{IsAlive, Logical, Serial, Size, SERIAL_COUNTER};
 use crate::wayland::compositor;
 use _session_lock::ext_session_lock_surface_v1::{Error, ExtSessionLockSurfaceV1, Request};
-use wayland_protocols::ext::session_lock::v1::server as _session_lock;
+use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock, ext_session_lock_surface_v1};
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource};
 
@@ -56,8 +56,10 @@ where
 }
 
 /// Attributes for ext-session-lock surfaces.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct LockSurfaceAttributes {
+    pub(crate) surface: ext_session_lock_surface_v1::ExtSessionLockSurfaceV1,
+
     /// The serial of the last acked configure
     pub configure_serial: Option<Serial>,
 
@@ -79,6 +81,17 @@ pub struct LockSurfaceAttributes {
 }
 
 impl LockSurfaceAttributes {
+    pub(crate) fn new(surface: ext_session_lock_surface_v1::ExtSessionLockSurfaceV1) -> Self {
+        Self {
+            surface,
+            configure_serial: None,
+            server_pending: None,
+            pending_configures: vec![],
+            last_acked: None,
+            current: Default::default(),
+        }
+    }
+
     fn ack_configure(&mut self, serial: Serial) -> Option<LockSurfaceConfigure> {
         let configure = self
             .pending_configures
