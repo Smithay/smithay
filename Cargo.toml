@@ -70,6 +70,8 @@ profiling = "1.0.13"
 smallvec = "1.11"
 pixman = { version = "0.2.1", features = ["drm-fourcc", "sync"], optional = true }
 aliasable = { version = "0.1.3", optional = true }
+# reis = { version = "0.5.0", features = ["calloop"] }
+reis = { git = "https://github.com/ids1024/reis", features = ["calloop"] }
 
 
 [dev-dependencies]
