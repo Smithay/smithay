@@ -49,9 +49,7 @@ where
         match request {
             Request::GetLockSurface { id, surface, output } => {
                 // Assign surface a role and ensure it never had one before.
-                if compositor::get_role(&surface).is_some()
-                    || compositor::give_role(&surface, LOCK_SURFACE_ROLE).is_err()
-                {
+                if compositor::give_role(&surface, LOCK_SURFACE_ROLE).is_err() {
                     lock.post_error(Error::Role, "Surface already has a role.");
                     return;
                 }
@@ -83,9 +81,19 @@ where
 
                 // Initialize surface data.
                 compositor::with_states(&surface, |states| {
-                    states.data_map.insert_if_missing_threadsafe(|| {
+                    let inserted = states.data_map.insert_if_missing_threadsafe(|| {
                         Mutex::new(LockSurfaceAttributes::new(lock_surface.clone()))
-                    })
+                    });
+
+                    if !inserted {
+                        let mut attributes = states
+                            .data_map
+                            .get::<Mutex<LockSurfaceAttributes>>()
+                            .unwrap()
+                            .lock()
+                            .unwrap();
+                        attributes.surface = lock_surface.clone();
+                    }
                 });
 
                 // Add pre-commit hook for updating surface state.
