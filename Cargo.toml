@@ -74,6 +74,7 @@ aliasable = { version = "0.1.3", optional = true }
 atomic_float = "1.1.0"
 sha2 = "0.10.9"
 tracy-client = { version = "0.18.4", default-features = false, optional = true }
+reis = { version = "0.6.0", features = ["calloop"] }
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -87,7 +88,7 @@ pkg-config = { version = "0.3.17", optional = true }
 cc = { version = "1.0.79", optional = true }
 
 [features]
-default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_pixman", "renderer_multi", "xwayland", "wayland_frontend", "backend_vulkan"]
+default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_pixman", "renderer_multi", "xwayland", "wayland_frontend", "backend_vulkan", "backend_libei"]
 backend_winit = ["winit", "backend_egl", "wayland-client", "wayland-cursor", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/xinput", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
 backend_drm = ["drm", "drm-ffi"]
@@ -100,6 +101,7 @@ backend_session = []
 backend_udev = ["udev", "input/udev"]
 backend_vulkan = ["ash", "scopeguard"]
 backend_session_libseat = ["backend_session", "libseat"]
+backend_libei = ["wayland_frontend"]
 desktop = []
 renderer_gl = ["gl_generator", "backend_egl"]
 renderer_glow = ["renderer_gl", "glow"]
