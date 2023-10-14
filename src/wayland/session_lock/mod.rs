@@ -30,7 +30,9 @@
 //!     fn lock(&mut self, _confirmation: SessionLocker) {
 //!         // Lock and clear the screen.
 //!
-//!         // Call `SessionLocker::lock` after the cleared frame was presented.
+//!         // Call `confirmation.lock()` after a cleared frame was presented on all outputs.
+//!
+//!         // Dropping `confirmation` will cancel the locking.
 //!     }
 //!
 //!     fn unlock(&mut self) {
