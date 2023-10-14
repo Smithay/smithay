@@ -16,7 +16,7 @@
 //! # struct State { session_lock_state: SessionLockManagerState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! // Create the compositor state
-//! let session_lock_state = SessionLockManagerState::new::<State>(&display.handle());
+//! let session_lock_state = SessionLockManagerState::new::<State, _>(&display.handle(), |_| true);
 //!
 //! // Insert the SessionLockManagerState into your state.
 //!
@@ -71,15 +71,19 @@ pub struct SessionLockManagerState {
 
 impl SessionLockManagerState {
     /// Create new [`ExtSessionLockManagerV1`] global.
-    pub fn new<D>(display: &DisplayHandle) -> Self
+    pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<ExtSessionLockManagerV1, ()>,
+        D: GlobalDispatch<ExtSessionLockManagerV1, SessionLockManagerGlobalData>,
         D: Dispatch<ExtSessionLockManagerV1, ()>,
         D: Dispatch<ExtSessionLockV1, SessionLockState>,
         D: SessionLockHandler,
         D: 'static,
+        F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
-        display.create_global::<D, ExtSessionLockManagerV1, _>(MANAGER_VERSION, ());
+        let data = SessionLockManagerGlobalData {
+            filter: Box::new(filter),
+        };
+        display.create_global::<D, ExtSessionLockManagerV1, _>(MANAGER_VERSION, data);
 
         Self {
             locked_outputs: Vec::new(),
@@ -87,9 +91,16 @@ impl SessionLockManagerState {
     }
 }
 
-impl<D> GlobalDispatch<ExtSessionLockManagerV1, (), D> for SessionLockManagerState
+#[allow(missing_debug_implementations)]
+#[doc(hidden)]
+pub struct SessionLockManagerGlobalData {
+    /// Filter whether the clients can view global.
+    filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
+}
+
+impl<D> GlobalDispatch<ExtSessionLockManagerV1, SessionLockManagerGlobalData, D> for SessionLockManagerState
 where
-    D: GlobalDispatch<ExtSessionLockManagerV1, ()>,
+    D: GlobalDispatch<ExtSessionLockManagerV1, SessionLockManagerGlobalData>,
     D: Dispatch<ExtSessionLockManagerV1, ()>,
     D: Dispatch<ExtSessionLockV1, SessionLockState>,
     D: SessionLockHandler,
@@ -100,16 +111,20 @@ where
         _display: &DisplayHandle,
         _client: &Client,
         manager: New<ExtSessionLockManagerV1>,
-        _manager_state: &(),
+        _global_data: &SessionLockManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
         data_init.init(manager, ());
+    }
+
+    fn can_view(client: Client, global_data: &SessionLockManagerGlobalData) -> bool {
+        (global_data.filter)(&client)
     }
 }
 
 impl<D> Dispatch<ExtSessionLockManagerV1, (), D> for SessionLockManagerState
 where
-    D: GlobalDispatch<ExtSessionLockManagerV1, ()>,
+    D: GlobalDispatch<ExtSessionLockManagerV1, SessionLockManagerGlobalData>,
     D: Dispatch<ExtSessionLockManagerV1, ()>,
     D: Dispatch<ExtSessionLockV1, SessionLockState>,
     D: SessionLockHandler,
@@ -202,7 +217,7 @@ impl SessionLocker {
 macro_rules! delegate_session_lock {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_manager_v1::ExtSessionLockManagerV1: ()
+            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_manager_v1::ExtSessionLockManagerV1: $crate::wayland::session_lock::SessionLockManagerGlobalData
         ] => $crate::wayland::session_lock::SessionLockManagerState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
