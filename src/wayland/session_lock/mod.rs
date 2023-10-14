@@ -10,8 +10,9 @@
 //! ```
 //! use smithay::delegate_session_lock;
 //! use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
-//! use smithay::wayland::session_lock::{SessionLockManagerState, SessionLockHandler, SessionLocker};
-//! use smithay::wayland::session_lock::surface::LockSurface;
+//! use smithay::wayland::session_lock::{
+//!     LockSurface, SessionLockManagerState, SessionLockHandler, SessionLocker,
+//! };
 //!
 //! # struct State { session_lock_state: SessionLockManagerState }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -55,11 +56,13 @@ use wayland_server::protocol::wl_output::WlOutput;
 use wayland_server::protocol::wl_surface::WlSurface;
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
-use crate::wayland::session_lock::lock::SessionLockState;
-use crate::wayland::session_lock::surface::{LockSurface, LockSurfaceConfigure};
+use crate::wayland::session_lock::surface::LockSurfaceConfigure;
 
-pub mod lock;
-pub mod surface;
+mod lock;
+mod surface;
+
+pub use lock::SessionLockState;
+pub use surface::{ExtLockSurfaceUserData, LockSurface};
 
 const MANAGER_VERSION: u32 = 1;
 
@@ -225,11 +228,11 @@ macro_rules! delegate_session_lock {
         ] => $crate::wayland::session_lock::SessionLockManagerState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1: $crate::wayland::session_lock::lock::SessionLockState
+            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1: $crate::wayland::session_lock::SessionLockState
         ] => $crate::wayland::session_lock::SessionLockManagerState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_surface_v1::ExtSessionLockSurfaceV1: $crate::wayland::session_lock::surface::ExtLockSurfaceUserData
+            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_surface_v1::ExtSessionLockSurfaceV1: $crate::wayland::session_lock::ExtLockSurfaceUserData
         ] => $crate::wayland::session_lock::SessionLockManagerState);
     };
 }
