@@ -3,8 +3,10 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::wayland::compositor;
+use crate::backend::renderer::buffer_dimensions;
+use crate::utils::Size;
 use crate::wayland::compositor::SurfaceAttributes;
+use crate::wayland::compositor::{self, BufferAssignment};
 use _session_lock::ext_session_lock_surface_v1::ExtSessionLockSurfaceV1;
 use _session_lock::ext_session_lock_v1::{Error, ExtSessionLockV1, Request};
 use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock, ext_session_lock_surface_v1};
@@ -109,6 +111,39 @@ where
                             );
                             return;
                         };
+
+                        // Verify the attached buffer: ext-session-lock requires no NULL buffers
+                        // and an exact dimentions match.
+                        let surface_attrs = states.cached_state.pending::<SurfaceAttributes>();
+                        if let Some(assignment) = surface_attrs.buffer.as_ref() {
+                            match assignment {
+                                BufferAssignment::Removed => {
+                                    attributes.surface.post_error(
+                                        ext_session_lock_surface_v1::Error::NullBuffer,
+                                        "Surface attached a NULL buffer.",
+                                    );
+                                    return;
+                                }
+                                BufferAssignment::NewBuffer(buffer) => {
+                                    if let Some(buf_size) = buffer_dimensions(buffer) {
+                                        let scale = surface_attrs.buffer_scale;
+                                        let transform = surface_attrs.buffer_transform.into();
+                                        let surface_size = buf_size.to_logical(scale, transform);
+
+                                        let surface_size =
+                                            Size::from((surface_size.w as u32, surface_size.h as u32));
+
+                                        if Some(surface_size) != state.size {
+                                            attributes.surface.post_error(
+                                                ext_session_lock_surface_v1::Error::DimensionsMismatch,
+                                                "Surface dimensions do not match acked configure.",
+                                            );
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         attributes.current = state;
                     });
