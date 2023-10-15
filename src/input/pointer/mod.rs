@@ -301,7 +301,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// This will internally send the appropriate event to the client
     /// objects matching with the currently focused surface, if the client uses
-    /// the relative pointer protocol.
+    /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_swipe_begin(&self, data: &mut D, event: &GestureSwipeBeginEvent) {
         let seat = self.get_seat(data);
@@ -317,7 +317,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// This will internally send the appropriate event to the client
     /// objects matching with the currently focused surface, if the client uses
-    /// the relative pointer protocol.
+    /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_swipe_update(&self, data: &mut D, event: &GestureSwipeUpdateEvent) {
         let seat = self.get_seat(data);
@@ -333,7 +333,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// This will internally send the appropriate event to the client
     /// objects matching with the currently focused surface, if the client uses
-    /// the relative pointer protocol.
+    /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_swipe_end(&self, data: &mut D, event: &GestureSwipeEndEvent) {
         let seat = self.get_seat(data);
@@ -349,7 +349,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// This will internally send the appropriate event to the client
     /// objects matching with the currently focused surface, if the client uses
-    /// the relative pointer protocol.
+    /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_pinch_begin(&self, data: &mut D, event: &GesturePinchBeginEvent) {
         let seat = self.get_seat(data);
@@ -365,7 +365,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// This will internally send the appropriate event to the client
     /// objects matching with the currently focused surface, if the client uses
-    /// the relative pointer protocol.
+    /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_pinch_update(&self, data: &mut D, event: &GesturePinchUpdateEvent) {
         let seat = self.get_seat(data);
@@ -381,7 +381,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// This will internally send the appropriate event to the client
     /// objects matching with the currently focused surface, if the client uses
-    /// the relative pointer protocol.
+    /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_pinch_end(&self, data: &mut D, event: &GesturePinchEndEvent) {
         let seat = self.get_seat(data);
@@ -397,7 +397,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// This will internally send the appropriate event to the client
     /// objects matching with the currently focused surface, if the client uses
-    /// the relative pointer protocol.
+    /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_hold_begin(&self, data: &mut D, event: &GestureHoldBeginEvent) {
         let seat = self.get_seat(data);
@@ -413,7 +413,7 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     ///
     /// This will internally send the appropriate event to the client
     /// objects matching with the currently focused surface, if the client uses
-    /// the relative pointer protocol.
+    /// the pointer gestures protocol.
     #[instrument(level = "trace", parent = &self.span, skip(self, data))]
     pub fn gesture_hold_end(&self, data: &mut D, event: &GestureHoldEndEvent) {
         let seat = self.get_seat(data);
