@@ -8,7 +8,6 @@ use std::time::{Duration, SystemTime};
 use calloop::{EventSource, Interest, Poll, PostAction, Readiness, Token, TokenFactory};
 use drm::control::{connector, crtc, plane, Device as ControlDevice, Event, Mode, ResourceHandles};
 use drm::{ClientCapability, Device as BasicDevice, DriverCapability};
-use nix::libc::dev_t;
 
 pub(super) mod atomic;
 mod fd;
@@ -17,6 +16,7 @@ pub(super) mod legacy;
 use crate::utils::{Buffer, DevPath, Size};
 
 use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurface, DrmSurfaceInternal};
+use super::DrmNode;
 use super::{error::Error, planes, Planes};
 use atomic::AtomicDrmDevice;
 use legacy::LegacyDrmDevice;
@@ -109,7 +109,7 @@ impl PlaneClaimStorage {
 /// An open drm device
 #[derive(Debug)]
 pub struct DrmDevice {
-    pub(super) dev_id: dev_t,
+    pub(super) dev_node: DrmNode,
     pub(crate) internal: Arc<DrmDeviceInternal>,
     has_universal_planes: bool,
     cursor_size: Size<u32, Buffer>,
@@ -190,7 +190,10 @@ impl DrmDevice {
 
         info!("DrmDevice initializing");
 
-        let dev_id = fd.dev_id().map_err(Error::UnableToGetDeviceId)?;
+        let dev_node = {
+            let dev_id = fd.dev_id().map_err(Error::UnableToGetDeviceId)?;
+            DrmNode::from_dev_id(dev_id)?
+        };
         let active = Arc::new(AtomicBool::new(true));
 
         let has_universal_planes = fd
@@ -217,7 +220,7 @@ impl DrmDevice {
 
         Ok((
             DrmDevice {
-                dev_id,
+                dev_node,
                 internal: internal.clone(),
                 has_universal_planes,
                 cursor_size,
@@ -364,7 +367,7 @@ impl DrmDevice {
         };
 
         Ok(DrmSurface {
-            dev_id: self.dev_id,
+            dev_node: self.dev_node,
             crtc,
             planes,
             internal: Arc::new(internal),
@@ -372,9 +375,9 @@ impl DrmDevice {
         })
     }
 
-    /// Returns the device_id of the underlying drm node
-    pub fn device_id(&self) -> dev_t {
-        self.dev_id
+    /// Returns the drm node of the device.
+    pub fn device_node(&self) -> DrmNode {
+        self.dev_node
     }
 
     /// Returns the underlying file descriptor

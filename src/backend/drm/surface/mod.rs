@@ -5,12 +5,11 @@ use std::sync::Arc;
 use drm::control::{connector, crtc, framebuffer, plane, Device as ControlDevice, Mode};
 use drm::Device as BasicDevice;
 
-use nix::libc::dev_t;
-
 pub(super) mod atomic;
 #[cfg(feature = "backend_gbm")]
 pub(super) mod gbm;
 pub(super) mod legacy;
+use super::DrmNode;
 use super::{
     device::PlaneClaimStorage, error::Error, plane_type, DrmDeviceFd, PlaneClaim, PlaneType, Planes,
 };
@@ -24,7 +23,7 @@ use legacy::LegacyDrmSurface;
 pub struct DrmSurface {
     // This field is only read when 'backend_session' is enabled
     #[allow(dead_code)]
-    pub(super) dev_id: dev_t,
+    pub(super) dev_node: DrmNode,
     pub(super) crtc: crtc::Handle,
     pub(super) planes: Planes,
     pub(super) internal: Arc<DrmSurfaceInternal>,
