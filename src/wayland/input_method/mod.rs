@@ -19,6 +19,7 @@
 //!
 //! impl InputMethodHandler for State {
 //!     fn new_popup(&mut self, surface: PopupSurface) {}
+//!     fn dismiss_popup(&mut self, surface: PopupSurface) {}
 //!     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical> {
 //!         Rectangle::default()
 //!     }
@@ -75,15 +76,21 @@ use super::text_input::TextInputHandle;
 
 const MANAGER_VERSION: u32 = 1;
 
+/// The role of the input method popup.
+pub const INPUT_POPUP_SURFACE_ROLE: &str = "zwp_input_popup_surface_v2";
+
 mod input_method_handle;
 mod input_method_keyboard_grab;
 mod input_method_popup_surface;
-pub use input_method_popup_surface::PopupSurface;
+pub use input_method_popup_surface::{PopupParent, PopupSurface};
 
 /// Adds input method popup to compositor state
 pub trait InputMethodHandler {
-    /// Add a popup surface to compositor state
+    /// Add a popup surface to compositor state.
     fn new_popup(&mut self, surface: PopupSurface);
+
+    /// Dismiss a popup surface from the compositor state.
+    fn dismiss_popup(&mut self, surface: PopupSurface);
 
     /// Sets the parent location so the popup surface can be placed correctly
     fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, Logical>;
@@ -168,7 +175,7 @@ impl<D> Dispatch<ZwpInputMethodManagerV2, (), D> for InputMethodManagerState
 where
     D: Dispatch<ZwpInputMethodManagerV2, ()>,
     D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
-    D: SeatHandler,
+    D: SeatHandler + InputMethodHandler,
     D: 'static,
 {
     fn request(
@@ -199,6 +206,9 @@ where
                         handle: handle.clone(),
                         text_input_handle: text_input_handle.clone(),
                         keyboard_handle,
+                        popup_geometry_callback: D::parent_geometry,
+                        new_popup: D::new_popup,
+                        dismiss_popup: D::dismiss_popup,
                     },
                 );
                 handle.add_instance(&instance);

@@ -9,7 +9,6 @@ use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboa
 use wayland_server::backend::ClientId;
 use wayland_server::Dispatch;
 
-use crate::backend::input::KeyState;
 use crate::input::{
     keyboard::{
         GrabStartData as KeyboardGrabStartData, KeyboardGrab, KeyboardHandle, KeyboardInnerHandle,
@@ -17,7 +16,8 @@ use crate::input::{
     },
     SeatHandler,
 };
-use crate::wayland::{seat::WaylandFocus, text_input::TextInputHandle};
+use crate::wayland::text_input::TextInputHandle;
+use crate::{backend::input::KeyState, utils::Serial};
 
 use super::InputMethodManagerState;
 
@@ -36,7 +36,6 @@ pub struct InputMethodKeyboardGrab {
 impl<D> KeyboardGrab<D> for InputMethodKeyboardGrab
 where
     D: SeatHandler + 'static,
-    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn input(
         &mut self,
@@ -45,23 +44,25 @@ where
         keycode: u32,
         key_state: KeyState,
         modifiers: Option<ModifiersState>,
-        _serial: crate::utils::Serial,
+        serial: Serial,
         time: u32,
     ) {
         let inner = self.inner.lock().unwrap();
         let keyboard = inner.grab.as_ref().unwrap();
-        inner.text_input_handle.focused_text_input_serial(|serial| {
-            keyboard.key(serial, time, keycode, key_state.into());
-            if let Some(serialized) = modifiers.map(|m| m.serialized) {
-                keyboard.modifiers(
-                    serial,
-                    serialized.depressed,
-                    serialized.latched,
-                    serialized.locked,
-                    serialized.layout_effective,
-                )
-            }
-        });
+        inner
+            .text_input_handle
+            .focused_text_input_serial_or_default(serial.0, |serial| {
+                keyboard.key(serial, time, keycode, key_state.into());
+                if let Some(serialized) = modifiers.map(|m| m.serialized) {
+                    keyboard.modifiers(
+                        serial,
+                        serialized.depressed,
+                        serialized.latched,
+                        serialized.locked,
+                        serialized.layout_effective,
+                    )
+                }
+            });
     }
 
     fn set_focus(

@@ -182,7 +182,8 @@ impl PopupManager {
         })
     }
 
-    pub(crate) fn dismiss_popup(surface: &WlSurface, popup: &PopupKind) -> Result<(), DeadResource> {
+    /// Dismiss the `popup` associated with the `surface.
+    pub fn dismiss_popup(surface: &WlSurface, popup: &PopupKind) -> Result<(), DeadResource> {
         if !surface.alive() {
             return Err(DeadResource);
         }
