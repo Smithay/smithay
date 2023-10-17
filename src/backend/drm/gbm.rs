@@ -316,11 +316,7 @@ fn framebuffer_from_bo_internal<D, T>(
 where
     D: drm::control::Device + DevPath,
 {
-    let modifier = match bo.modifier().unwrap() {
-        DrmModifier::Invalid => None,
-        x => Some(x),
-    };
-
+    let modifier = bo.modifier();
     let flags = if bo.modifier().is_some() {
         FbCmd2Flags::MODIFIERS
     } else {
