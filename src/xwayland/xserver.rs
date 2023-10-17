@@ -43,7 +43,7 @@ use std::{
     ffi::OsStr,
     io::{self, Read},
     os::unix::{
-        io::{AsRawFd, RawFd},
+        io::{AsRawFd, BorrowedFd, RawFd},
         net::UnixStream,
         process::CommandExt,
     },
@@ -503,8 +503,8 @@ where
 ///
 /// This means that the `Fd` will *not* be automatically
 /// closed when we `exec()` into XWayland
-fn unset_cloexec(fd: RawFd) -> io::Result<()> {
-    use nix::fcntl::{fcntl, FcntlArg, FdFlag};
-    fcntl(fd, FcntlArg::F_SETFD(FdFlag::empty()))?;
+unsafe fn unset_cloexec(fd: RawFd) -> io::Result<()> {
+    let fd = BorrowedFd::borrow_raw(fd);
+    rustix::io::fcntl_setfd(fd, rustix::io::FdFlags::empty())?;
     Ok(())
 }

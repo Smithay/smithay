@@ -5,7 +5,7 @@ use std::sync::Arc;
 use drm::control::{connector, crtc, framebuffer, plane, Device as ControlDevice, Mode};
 use drm::Device as BasicDevice;
 
-use nix::libc::dev_t;
+use libc::dev_t;
 
 pub(super) mod atomic;
 #[cfg(feature = "backend_gbm")]

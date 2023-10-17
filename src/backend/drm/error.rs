@@ -21,7 +21,7 @@ pub enum Error {
     },
     /// Unable to determine device id of drm device
     #[error("Unable to determine device id of drm device")]
-    UnableToGetDeviceId(#[source] nix::Error),
+    UnableToGetDeviceId(#[source] rustix::io::Errno),
     /// Device is currently paused
     #[error("Device is currently paused, operation rejected")]
     DeviceInactive,

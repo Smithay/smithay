@@ -2,6 +2,7 @@
 
 use std::{
     cell::Cell,
+    mem,
     num::NonZeroUsize,
     os::unix::io::{AsFd, BorrowedFd, OwnedFd},
     ptr,
@@ -12,14 +13,8 @@ use std::{
     thread,
 };
 
-use nix::{
-    libc,
-    sys::{
-        mman,
-        signal::{self, SigAction, SigHandler, Signal},
-    },
-};
 use once_cell::sync::Lazy;
+use rustix::mm;
 use tracing::{debug, instrument, trace};
 
 // Dropping Pool is actually pretty slow. Unmapping the memory can take 1-2 ms, but the real
@@ -53,7 +48,7 @@ thread_local!(static SIGBUS_GUARD: Cell<(*const MemMap, bool)> = Cell::new((ptr:
 
 /// SAFETY:
 /// This will be only set in the `SIGBUS_INIT` closure, hence only once!
-static mut OLD_SIGBUS_HANDLER: *mut SigAction = 0 as *mut SigAction;
+static mut OLD_SIGBUS_HANDLER: Option<libc::sigaction> = None;
 static SIGBUS_INIT: Once = Once::new();
 
 #[derive(Debug)]
@@ -274,12 +269,12 @@ impl Drop for MemMap {
 /// A simple wrapper with some default arguments for `nix::mman::mmap`.
 unsafe fn map(fd: BorrowedFd<'_>, size: NonZeroUsize) -> Result<*mut u8, ()> {
     let ret = unsafe {
-        mman::mmap(
-            None,
-            size,
-            mman::ProtFlags::PROT_READ | mman::ProtFlags::PROT_WRITE,
-            mman::MapFlags::MAP_SHARED,
-            Some(fd),
+        mm::mmap(
+            ptr::null_mut(),
+            size.into(),
+            mm::ProtFlags::READ | mm::ProtFlags::WRITE,
+            mm::MapFlags::SHARED,
+            fd,
             0,
         )
     };
@@ -289,21 +284,17 @@ unsafe fn map(fd: BorrowedFd<'_>, size: NonZeroUsize) -> Result<*mut u8, ()> {
 /// A simple wrapper for `nix::mman::munmap`.
 #[profiling::function]
 unsafe fn unmap(ptr: *mut u8, size: usize) -> Result<(), ()> {
-    let ret = unsafe { mman::munmap(ptr as *mut _, size) };
+    let ret = unsafe { mm::munmap(ptr as *mut _, size) };
     ret.map_err(|_| ())
 }
 
 unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
-    let size = NonZeroUsize::try_from(size).map_err(|_| ())?;
-    let addr = NonZeroUsize::try_from(ptr as usize).map_err(|_| ())?;
     let ret = unsafe {
-        mman::mmap(
-            Some(addr),
+        mm::mmap_anonymous(
+            ptr as *mut std::ffi::c_void,
             size,
-            mman::ProtFlags::PROT_READ,
-            mman::MapFlags::MAP_ANONYMOUS | mman::MapFlags::MAP_PRIVATE | mman::MapFlags::MAP_FIXED,
-            None::<BorrowedFd<'_>>,
-            0,
+            mm::ProtFlags::READ,
+            mm::MapFlags::PRIVATE | mm::MapFlags::FIXED,
         )
     };
     ret.map(|_| ()).map_err(|_| ())
@@ -313,23 +304,30 @@ unsafe fn nullify_map(ptr: *mut u8, size: usize) -> Result<(), ()> {
 /// `SIGBUS_INIT`.
 unsafe fn place_sigbus_handler() {
     // create our sigbus handler
-    let action = SigAction::new(
-        SigHandler::SigAction(sigbus_handler),
-        signal::SaFlags::SA_NODEFER,
-        signal::SigSet::empty(),
-    );
-    match unsafe { signal::sigaction(Signal::SIGBUS, &action) } {
-        Ok(old_signal) => unsafe {
-            OLD_SIGBUS_HANDLER = Box::into_raw(Box::new(old_signal));
-        },
-        Err(e) => panic!("sigaction failed sor SIGBUS handler: {:?}", e),
+    unsafe {
+        let action = libc::sigaction {
+            sa_sigaction: sigbus_handler as _,
+            sa_flags: libc::SA_SIGINFO | libc::SA_NODEFER,
+            ..mem::zeroed()
+        };
+        let old_action = OLD_SIGBUS_HANDLER.insert(mem::zeroed());
+        if libc::sigaction(libc::SIGBUS, &action, old_action) == -1 {
+            let e = rustix::io::Errno::from_raw_os_error(errno::errno().0);
+            panic!("sigaction failed for SIGBUS handler: {:?}", e);
+        }
     }
 }
 
 unsafe fn reraise_sigbus() {
     // reset the old sigaction
-    let _ = unsafe { signal::sigaction(Signal::SIGBUS, &*OLD_SIGBUS_HANDLER) };
-    let _ = signal::raise(Signal::SIGBUS);
+    unsafe {
+        libc::sigaction(
+            libc::SIGBUS,
+            OLD_SIGBUS_HANDLER.as_ref().unwrap(),
+            ptr::null_mut(),
+        );
+        libc::raise(libc::SIGBUS);
+    }
 }
 
 extern "C" fn sigbus_handler(_signum: libc::c_int, info: *mut libc::siginfo_t, _context: *mut libc::c_void) {

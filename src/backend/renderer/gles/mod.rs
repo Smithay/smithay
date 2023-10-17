@@ -84,7 +84,7 @@ enum CleanupResource {
     FramebufferObject(ffi::types::GLuint),
     RenderbufferObject(ffi::types::GLuint),
     EGLImage(EGLImage),
-    Mapping(ffi::types::GLuint, *const nix::libc::c_void),
+    Mapping(ffi::types::GLuint, *const std::ffi::c_void),
     Program(ffi::types::GLuint),
 }
 
@@ -474,7 +474,7 @@ extern "system" fn gl_debug_log(
     _severity: ffi::types::GLenum,
     _length: ffi::types::GLsizei,
     message: *const ffi::types::GLchar,
-    user_param: *mut nix::libc::c_void,
+    user_param: *mut std::ffi::c_void,
 ) {
     let _ = std::panic::catch_unwind(move || unsafe {
         let span = &mut *(user_param as *mut tracing::Span);

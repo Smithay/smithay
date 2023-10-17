@@ -12,7 +12,6 @@
 
 use calloop::generic::Generic;
 use calloop::{EventSource, Interest, Mode, PostAction};
-use nix::poll;
 
 use super::{Allocator, Buffer, Format, Fourcc, Modifier};
 use crate::utils::{Buffer as BufferCoords, Size};
@@ -397,13 +396,13 @@ impl DmabufSource {
         ];
         for (idx, handle) in dmabuf.handles().enumerate() {
             if matches!(
-                poll::poll(
-                    &mut [poll::PollFd::new(
+                rustix::event::poll(
+                    &mut [rustix::event::PollFd::new(
                         &handle,
                         if interest.writable {
-                            poll::PollFlags::POLLOUT
+                            rustix::event::PollFlags::OUT
                         } else {
-                            poll::PollFlags::POLLIN
+                            rustix::event::PollFlags::IN
                         },
                     )],
                     0

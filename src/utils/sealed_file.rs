@@ -23,16 +23,10 @@ impl SealedFile {
 
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "android"))]
     pub fn with_data(name: CString, data: &[u8]) -> Result<Self, std::io::Error> {
-        use nix::{
-            fcntl::{FcntlArg, SealFlag},
-            sys::memfd::MemFdCreateFlag,
-        };
+        use rustix::fs::{MemfdFlags, SealFlags};
         use std::io::Seek;
 
-        let fd = nix::sys::memfd::memfd_create(
-            &name,
-            MemFdCreateFlag::MFD_CLOEXEC | MemFdCreateFlag::MFD_ALLOW_SEALING,
-        )?;
+        let fd = rustix::fs::memfd_create(&name, MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING)?;
 
         let mut file: File = fd.into();
         file.write_all(data)?;
@@ -40,14 +34,9 @@ impl SealedFile {
 
         file.seek(std::io::SeekFrom::Start(0))?;
 
-        nix::fcntl::fcntl(
-            file.as_raw_fd(),
-            FcntlArg::F_ADD_SEALS(
-                SealFlag::F_SEAL_SEAL
-                    | SealFlag::F_SEAL_SHRINK
-                    | SealFlag::F_SEAL_GROW
-                    | SealFlag::F_SEAL_WRITE,
-            ),
+        rustix::fs::fcntl_add_seals(
+            &file,
+            SealFlags::SEAL | SealFlags::SHRINK | SealFlags::GROW | SealFlags::WRITE,
         )?;
 
         Ok(Self {

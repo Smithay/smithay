@@ -96,7 +96,7 @@ pub struct GlesMapping {
     pub(super) layout: ffi::types::GLenum,
     pub(super) has_alpha: bool,
     pub(super) size: Size<i32, BufferCoord>,
-    pub(super) mapping: AtomicPtr<nix::libc::c_void>,
+    pub(super) mapping: AtomicPtr<std::ffi::c_void>,
     pub(super) destruction_callback_sender: Sender<CleanupResource>,
 }
 

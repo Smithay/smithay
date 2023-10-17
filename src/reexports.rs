@@ -11,7 +11,7 @@ pub use drm;
 pub use gbm;
 #[cfg(feature = "backend_libinput")]
 pub use input;
-pub use nix;
+pub use rustix;
 #[cfg(feature = "backend_udev")]
 pub use udev;
 #[cfg(feature = "wayland_frontend")]

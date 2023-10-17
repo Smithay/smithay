@@ -7,7 +7,7 @@ use libseat::{Seat, SeatEvent};
 use std::{
     cell::RefCell,
     collections::HashMap,
-    os::unix::io::{AsFd, AsRawFd, RawFd},
+    os::unix::io::{AsFd, AsRawFd, FromRawFd, OwnedFd, RawFd},
     path::Path,
     rc::{Rc, Weak},
     sync::{
@@ -16,7 +16,7 @@ use std::{
     },
 };
 
-use nix::{errno::Errno, fcntl::OFlag, unistd::close};
+use rustix::{fs::OFlags, io::Errno};
 
 use calloop::{
     channel::{self, Channel},
@@ -107,7 +107,7 @@ impl LibSeatSession {
 
             (session, notifier)
         })
-        .map_err(|err| Error::FailedToOpenSession(Errno::from_i32(err.into())))
+        .map_err(|err| Error::FailedToOpenSession(Errno::from_raw_os_error(err.into())))
     }
 }
 
@@ -115,7 +115,7 @@ impl Session for LibSeatSession {
     type Error = Error;
 
     #[instrument(parent = &self.span, skip(self))]
-    fn open(&mut self, path: &Path, _flags: OFlag) -> Result<RawFd, Self::Error> {
+    fn open(&mut self, path: &Path, _flags: OFlags) -> Result<OwnedFd, Self::Error> {
         if let Some(session) = self.internal.upgrade() {
             debug!("Opening device: {:?}", path);
 
@@ -128,30 +128,31 @@ impl Session for LibSeatSession {
 
                     session.devices.borrow_mut().insert(raw_fd, device);
 
-                    raw_fd
+                    // SAFETY: `libseat::Device` does not close fd on drop
+                    unsafe { OwnedFd::from_raw_fd(raw_fd) }
                 })
-                .map_err(|err| Error::FailedToOpenDevice(Errno::from_i32(err.into())))
+                .map_err(|err| Error::FailedToOpenDevice(Errno::from_raw_os_error(err.into())))
         } else {
             Err(Error::SessionLost)
         }
     }
 
     #[instrument(parent = &self.span, skip(self))]
-    fn close(&mut self, fd: RawFd) -> Result<(), Self::Error> {
+    fn close(&mut self, fd: OwnedFd) -> Result<(), Self::Error> {
         if let Some(session) = self.internal.upgrade() {
             debug!("Closing device: {:?}", fd);
 
-            let out = if let Some(dev) = session.devices.borrow_mut().remove(&fd) {
+            let out = if let Some(dev) = session.devices.borrow_mut().remove(&fd.as_fd().as_raw_fd()) {
                 session
                     .seat
                     .borrow_mut()
                     .close_device(dev)
-                    .map_err(|err| Error::FailedToCloseDevice(Errno::from_i32(err.into())))
+                    .map_err(|err| Error::FailedToCloseDevice(Errno::from_raw_os_error(err.into())))
             } else {
                 Ok(())
             };
 
-            close(fd).unwrap();
+            // `fd` is closed on drop
 
             out
         } else {
@@ -167,7 +168,7 @@ impl Session for LibSeatSession {
                 .seat
                 .borrow_mut()
                 .switch_session(vt)
-                .map_err(|err| Error::FailedToChangeVt(Errno::from_i32(err.into())))
+                .map_err(|err| Error::FailedToChangeVt(Errno::from_raw_os_error(err.into())))
         } else {
             Err(Error::SessionLost)
         }
@@ -306,7 +307,7 @@ impl AsErrno for Error {
             &Self::FailedToOpenSession(errno)
             | &Self::FailedToOpenDevice(errno)
             | &Self::FailedToCloseDevice(errno)
-            | &Self::FailedToChangeVt(errno) => Some(errno as i32),
+            | &Self::FailedToChangeVt(errno) => Some(errno.raw_os_error()),
             _ => None,
         }
     }

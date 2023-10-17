@@ -3,7 +3,6 @@ use std::ffi::OsString;
 use std::{
     collections::{hash_map::HashMap, HashSet},
     convert::TryInto,
-    os::unix::io::FromRawFd,
     path::Path,
     sync::{atomic::Ordering, Mutex},
     time::{Duration, Instant},
@@ -71,7 +70,7 @@ use smithay::{
             Device as _,
         },
         input::Libinput,
-        nix::fcntl::OFlag,
+        rustix::fs::OFlags,
         wayland_protocols::wp::{
             linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1,
             presentation_time::server::wp_presentation_feedback,
@@ -852,11 +851,11 @@ impl AnvilState<UdevData> {
             .session
             .open(
                 path,
-                OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK,
+                OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK,
             )
             .map_err(DeviceAddError::DeviceOpen)?;
 
-        let fd = DrmDeviceFd::new(unsafe { DeviceFd::from_raw_fd(fd) });
+        let fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
         let (drm, notifier) = DrmDevice::new(fd.clone(), true).map_err(DeviceAddError::DrmDevice)?;
         let gbm = GbmDevice::new(fd).map_err(DeviceAddError::GbmDevice)?;

@@ -8,24 +8,18 @@ use libc::dev_t;
 use std::{
     fmt::{self, Display, Formatter},
     io,
-    os::unix::io::{AsFd, AsRawFd},
+    os::unix::io::AsFd,
     path::{Path, PathBuf},
 };
 
-use nix::sys::stat::{fstat, stat, FileStat};
-#[cfg(not(target_os = "freebsd"))]
-use nix::sys::stat::{major, minor};
+use rustix::fs::{fstat, stat, Stat};
 
-// Not currently provided in `libc` or `nix`
-// https://github.com/rust-lang/libc/pull/2999
-#[cfg(target_os = "freebsd")]
 fn major(dev: dev_t) -> u64 {
-    ((dev >> 8) & 0xff) as u64
+    unsafe { libc::major(dev) as u64 }
 }
 
-#[cfg(target_os = "freebsd")]
 fn minor(dev: dev_t) -> u64 {
-    (dev & 0xffff00ff) as u64
+    unsafe { libc::minor(dev) as u64 }
 }
 
 /// A node which refers to a DRM device.
@@ -40,7 +34,7 @@ impl DrmNode {
     ///
     /// This function does not take ownership of the passed in file descriptor.
     pub fn from_file<A: AsFd>(file: A) -> Result<DrmNode, CreateDrmNodeError> {
-        let stat = fstat(file.as_fd().as_raw_fd()).map_err(Into::<io::Error>::into)?;
+        let stat = fstat(file).map_err(Into::<io::Error>::into)?;
         DrmNode::from_stat(stat)
     }
 
@@ -51,7 +45,7 @@ impl DrmNode {
     }
 
     /// Creates a DRM node from a file stat.
-    pub fn from_stat(stat: FileStat) -> Result<DrmNode, CreateDrmNodeError> {
+    pub fn from_stat(stat: Stat) -> Result<DrmNode, CreateDrmNodeError> {
         let dev = stat.st_rdev;
         DrmNode::from_dev_id(dev)
     }
@@ -216,7 +210,6 @@ pub fn is_device_drm(major: u64, minor: u64) -> bool {
 
 #[cfg(target_os = "freebsd")]
 fn devname(major: u64, minor: u64) -> Option<String> {
-    use nix::sys::stat::SFlag;
     use std::os::raw::{c_char, c_int};
 
     // Matching value of SPECNAMELEN in FreeBSD 13+
@@ -225,7 +218,7 @@ fn devname(major: u64, minor: u64) -> Option<String> {
     let buf: *mut c_char = unsafe {
         libc::devname_r(
             libc::makedev(major as _, minor as _),
-            SFlag::S_IFCHR.bits(), // Must be S_IFCHR or S_IFBLK
+            libc::S_IFCHR, // Must be S_IFCHR or S_IFBLK
             dev_name.as_mut_ptr() as *mut c_char,
             dev_name.len() as c_int,
         )

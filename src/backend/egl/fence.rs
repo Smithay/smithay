@@ -66,7 +66,9 @@ impl EGLFence {
 
         // In case of an error we have to close the fd to not leak it
         if res.is_err() {
-            let _ = ::nix::unistd::close(fd);
+            unsafe {
+                rustix::io::close(fd);
+            }
         }
 
         let handle = res?;

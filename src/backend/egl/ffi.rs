@@ -3,7 +3,7 @@
 use tracing::{error, info, warn};
 
 use super::Error;
-use nix::libc::{c_long, c_uint, c_void};
+use std::ffi::{c_long, c_uint, c_void};
 
 pub type khronos_utime_nanoseconds_t = khronos_uint64_t;
 pub type khronos_uint64_t = u64;

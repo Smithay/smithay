@@ -16,10 +16,7 @@ use std::{
     path::PathBuf,
 };
 #[cfg(feature = "backend_session")]
-use std::{
-    os::unix::io::{FromRawFd, IntoRawFd, OwnedFd},
-    path::Path,
-};
+use std::{os::unix::io::OwnedFd, path::Path};
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
@@ -606,16 +603,14 @@ impl<S: Session> From<S> for LibinputSessionInterface<S> {
 #[cfg(feature = "backend_session")]
 impl<S: Session> libinput::LibinputInterface for LibinputSessionInterface<S> {
     fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<OwnedFd, i32> {
-        use nix::fcntl::OFlag;
-        let fd = self
-            .0
-            .open(path, OFlag::from_bits_truncate(flags))
-            .map_err(|err| err.as_errno().unwrap_or(1 /*Use EPERM by default*/))?;
-        Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+        use rustix::fs::OFlags;
+        self.0
+            .open(path, OFlags::from_bits_truncate(flags as u32))
+            .map_err(|err| err.as_errno().unwrap_or(1 /*Use EPERM by default*/))
     }
 
     fn close_restricted(&mut self, fd: OwnedFd) {
-        let _ = self.0.close(fd.into_raw_fd());
+        let _ = self.0.close(fd);
     }
 }
 

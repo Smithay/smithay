@@ -1,6 +1,6 @@
 //! Type safe native types for safe egl initialisation
 
-use std::ffi::CStr;
+use std::ffi::{c_int, CStr};
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -12,7 +12,6 @@ use std::{
 };
 
 use libc::c_void;
-use nix::libc::c_int;
 #[cfg(all(feature = "use_system_lib", feature = "wayland_frontend"))]
 use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
 #[cfg(feature = "use_system_lib")]
@@ -571,8 +570,8 @@ impl EGLDisplay {
             ]));
         }
 
-        let mut format: nix::libc::c_int = 0;
-        let mut num_planes: nix::libc::c_int = 0;
+        let mut format: c_int = 0;
+        let mut num_planes: c_int = 0;
         let mut modifier: ffi::egl::types::EGLuint64KHR = 0;
         wrap_egl_call_bool(|| unsafe {
             // TODO: clippy warns us here that we might dereference a raw pointer in a non unsafe public function
@@ -587,7 +586,7 @@ impl EGLDisplay {
         })
         .map_err(Error::DmabufExportFailed)?;
 
-        let mut fds: Vec<nix::libc::c_int> = Vec::with_capacity(num_planes as usize);
+        let mut fds: Vec<c_int> = Vec::with_capacity(num_planes as usize);
         let mut strides: Vec<ffi::egl::types::EGLint> = Vec::with_capacity(num_planes as usize);
         let mut offsets: Vec<ffi::egl::types::EGLint> = Vec::with_capacity(num_planes as usize);
         unsafe {
