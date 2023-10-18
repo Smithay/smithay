@@ -1,15 +1,16 @@
-use std::fs::File;
-use std::io::Read;
 use std::os::unix::io::OwnedFd;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     fmt,
     sync::{Arc, Mutex},
 };
 
 use tracing::debug;
+use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::Error::NoKeymap;
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::{
     self, ZwpVirtualKeyboardV1,
 };
+use wayland_server::Resource;
 use wayland_server::{
     backend::ClientId,
     protocol::wl_keyboard::{KeyState, KeymapFormat},
@@ -25,21 +26,9 @@ use crate::{
 
 use super::VirtualKeyboardManagerState;
 
-/// Maximum keymap size. Up to 1MiB.
-const MAX_KEYMAP_SIZE: usize = 0x100000;
-
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-struct SerializedMods {
-    depressed: u32,
-    latched: u32,
-    locked: u32,
-    group: u32,
-}
-
 #[derive(Debug, Default)]
 pub(crate) struct VirtualKeyboard {
     instances: u8,
-    modifiers: Option<SerializedMods>,
     old_keymap: Option<String>,
 }
 
@@ -59,6 +48,7 @@ impl VirtualKeyboardHandle {
 /// User data of ZwpVirtualKeyboardV1 object
 pub struct VirtualKeyboardUserData<D: SeatHandler> {
     pub(super) handle: VirtualKeyboardHandle,
+    pub(crate) has_keymap: AtomicBool,
     pub(crate) seat: Seat<D>,
 }
 
@@ -80,7 +70,7 @@ where
     fn request(
         _data: &mut D,
         _client: &Client,
-        _: &ZwpVirtualKeyboardV1,
+        virtual_keyboard: &ZwpVirtualKeyboardV1,
         request: zwp_virtual_keyboard_v1::Request,
         data: &VirtualKeyboardUserData<D>,
         _dh: &DisplayHandle,
@@ -88,31 +78,27 @@ where
     ) {
         match request {
             zwp_virtual_keyboard_v1::Request::Keymap { format, fd, size } => {
-                update_keymap(data, format, fd, size as usize);
+                if update_keymap(data, format, fd, size as usize) {
+                    data.has_keymap.store(true, Ordering::Relaxed);
+                }
             }
             zwp_virtual_keyboard_v1::Request::Key { time, key, state } => {
+                if !data.has_keymap.load(Ordering::Relaxed) {
+                    virtual_keyboard.post_error(NoKeymap, "`key` sent before keymap.")
+                }
                 let keyboard_handle = data.seat.get_keyboard().unwrap();
                 let internal = keyboard_handle.arc.internal.lock().unwrap();
-                let inner = data.handle.inner.lock().unwrap();
                 if let Some(focus) = internal.focus.as_ref().and_then(|f| f.0.wl_surface()) {
                     for_each_focused_kbds(&data.seat, &focus, |kbd| {
-                        // This should be wl_keyboard::KeyState,
-                        // but the protocol does not state the parameter is an enum.
+                        // This should be wl_keyboard::KeyState, but the protocol does not state
+                        // the parameter is an enum.
                         let key_state = if state == 1 {
                             KeyState::Pressed
                         } else {
                             KeyState::Released
                         };
+
                         kbd.key(SERIAL_COUNTER.next_serial().0, time, key, key_state);
-                        if let Some(mods) = inner.modifiers {
-                            kbd.modifiers(
-                                SERIAL_COUNTER.next_serial().0,
-                                mods.depressed,
-                                mods.latched,
-                                mods.locked,
-                                mods.group,
-                            );
-                        }
                     });
                 }
             }
@@ -122,12 +108,22 @@ where
                 mods_locked,
                 group,
             } => {
-                data.handle.inner.lock().unwrap().modifiers = Some(SerializedMods {
-                    depressed: mods_depressed,
-                    latched: mods_latched,
-                    locked: mods_locked,
-                    group,
-                });
+                if !data.has_keymap.load(Ordering::Relaxed) {
+                    virtual_keyboard.post_error(NoKeymap, "`modifiers` sent before keymap.")
+                }
+                let keyboard_handle = data.seat.get_keyboard().unwrap();
+                let internal = keyboard_handle.arc.internal.lock().unwrap();
+                if let Some(focus) = internal.focus.as_ref().and_then(|f| f.0.wl_surface()) {
+                    for_each_focused_kbds(&data.seat, &focus, |kbd| {
+                        kbd.modifiers(
+                            SERIAL_COUNTER.next_serial().0,
+                            mods_depressed,
+                            mods_latched,
+                            mods_locked,
+                            group,
+                        );
+                    });
+                }
             }
             zwp_virtual_keyboard_v1::Request::Destroy => {
                 // Nothing to do
@@ -169,54 +165,37 @@ where
 }
 
 /// Handle the zwp_virtual_keyboard_v1::keymap request.
-fn update_keymap<D>(data: &VirtualKeyboardUserData<D>, format: u32, fd: OwnedFd, size: usize)
+///
+/// The `true` returns when keymap was properly loaded.
+fn update_keymap<D>(data: &VirtualKeyboardUserData<D>, format: u32, fd: OwnedFd, size: usize) -> bool
 where
     D: SeatHandler + 'static,
 {
     // Only libxkbcommon compatible keymaps are supported.
     if format != KeymapFormat::XkbV1 as u32 {
         debug!("Unsupported keymap format: {format:?}");
-        return;
+        return false;
     }
 
-    // Ignore potentially malicious requests.
-    if size > MAX_KEYMAP_SIZE {
-        debug!("Excessive keymap size: {size:?}");
-        return;
-    }
-
-    // Read entire keymap.
-    let mut keymap_buffer = vec![0; size];
-    let mut file = File::from(fd);
-    if let Err(err) = file.read_exact(&mut keymap_buffer) {
-        debug!("Could not read keymap: {err}");
-        return;
-    }
-    let mut new_keymap = match String::from_utf8(keymap_buffer) {
-        Ok(keymap) => keymap,
-        Err(err) => {
-            debug!("Invalid utf8 keymap: {err}");
-            return;
-        }
-    };
-
-    // Ignore everything after the first nul byte.
-    if let Some(nul_index) = new_keymap.find('\0') {
-        new_keymap.truncate(nul_index);
-    }
-
-    // Attempt to parse the new keymap.
-    let new_keymap = xkb::Keymap::new_from_string(
-        &xkb::Context::new(xkb::CONTEXT_NO_FLAGS),
-        new_keymap,
-        xkb::KEYMAP_FORMAT_TEXT_V1,
-        xkb::KEYMAP_COMPILE_NO_FLAGS,
-    );
-    let new_keymap = match new_keymap {
-        Some(keymap) => keymap,
-        None => {
+    let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+    // SAFETY: we can map the keymap into the memory.
+    let new_keymap = match unsafe {
+        xkb::Keymap::new_from_fd(
+            &context,
+            fd,
+            size,
+            xkb::KEYMAP_FORMAT_TEXT_V1,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+    } {
+        Ok(Some(new_keymap)) => new_keymap,
+        Ok(None) => {
             debug!("Invalid libxkbcommon keymap");
-            return;
+            return false;
+        }
+        Err(err) => {
+            debug!("Could not map the keymap: {err:?}");
+            return false;
         }
     };
 
@@ -230,4 +209,6 @@ where
         inner.old_keymap = Some(old_keymap);
         keyboard_handle.change_keymap(new_keymap);
     }
+
+    true
 }

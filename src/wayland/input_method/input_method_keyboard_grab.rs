@@ -51,6 +51,7 @@ where
         let inner = self.inner.lock().unwrap();
         let keyboard = inner.grab.as_ref().unwrap();
         inner.text_input_handle.focused_text_input_serial(|serial| {
+            keyboard.key(serial, time, keycode, key_state.into());
             if let Some(serialized) = modifiers.map(|m| m.serialized) {
                 keyboard.modifiers(
                     serial,
@@ -60,7 +61,6 @@ where
                     serialized.layout_effective,
                 )
             }
-            keyboard.key(serial, time, keycode, key_state.into());
         });
     }
 

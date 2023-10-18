@@ -299,7 +299,10 @@ impl<D: SeatHandler + 'static> Clone for GrabStartData<D> {
 /// the struct implementing this trait will be dropped. As such you should put clean-up logic in the destructor,
 /// rather than trying to guess when the grab will end.
 pub trait KeyboardGrab<D: SeatHandler> {
-    /// An input was reported
+    /// An input was reported.
+    ///
+    /// `modifiers` are only passed when their state actually changes. The modifier must be
+    /// sent after the key event.
     #[allow(clippy::too_many_arguments)]
     fn input(
         &mut self,
@@ -312,7 +315,7 @@ pub trait KeyboardGrab<D: SeatHandler> {
         time: u32,
     );
 
-    /// A focus change was requested
+    /// A focus change was requested.
     fn set_focus(
         &mut self,
         data: &mut D,
