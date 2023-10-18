@@ -47,12 +47,11 @@ impl SealedFile {
 
     #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "android")))]
     pub fn with_data(name: CString, data: &[u8]) -> Result<Self, std::io::Error> {
-        use nix::{
-            errno::Errno,
-            fcntl::OFlag,
-            sys::{mman, stat::Mode},
-        };
         use rand::{distributions::Alphanumeric, Rng};
+        use rustix::{
+            io::Errno,
+            shm::{Mode, ShmOFlags},
+        };
 
         let mut rng = rand::thread_rng();
 
@@ -63,23 +62,23 @@ impl SealedFile {
             let mut shm_name = name.as_bytes().to_owned();
             shm_name.push(b'-');
             shm_name.extend((0..7).map(|_| rng.sample(Alphanumeric)));
-            let fd = mman::shm_open(
+            let fd = rustix::shm::shm_open(
                 shm_name.as_slice(),
-                OFlag::O_RDWR | OFlag::O_CREAT | OFlag::O_EXCL,
-                Mode::S_IRWXU,
+                ShmOFlags::RDWR | ShmOFlags::CREATE | ShmOFlags::EXCL,
+                Mode::RWXU,
             );
-            if fd != Err(Errno::EEXIST) || n > 3 {
-                break (shm_name, unsafe { File::from_raw_fd(fd?) });
+            if !matches!(fd, Err(Errno::EXIST)) || n > 3 {
+                break (shm_name, File::from(fd?));
             }
             n += 1;
         };
 
         // Sealing isn't available, so re-open read-only.
-        let fd_rdonly = mman::shm_open(shm_name.as_slice(), OFlag::O_RDONLY, Mode::empty())?;
-        let file_rdonly = unsafe { File::from_raw_fd(fd_rdonly) };
+        let fd_rdonly = rustix::shm::shm_open(shm_name.as_slice(), ShmOFlags::RDONLY, Mode::empty())?;
+        let file_rdonly = File::from(fd_rdonly);
 
         // Unlink so another process can't open shm file.
-        let _ = mman::shm_unlink(shm_name.as_slice());
+        let _ = rustix::shm::shm_unlink(shm_name.as_slice());
 
         file.write_all(data)?;
         file.flush()?;
