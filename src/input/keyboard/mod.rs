@@ -145,9 +145,9 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
 
     fn with_grab<F>(&mut self, seat: &Seat<D>, f: F)
     where
-        F: FnOnce(KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
+        F: FnOnce(&mut KeyboardInnerHandle<'_, D>, &mut dyn KeyboardGrab<D>),
     {
-        let mut grab = ::std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
+        let mut grab = std::mem::replace(&mut self.grab, GrabStatus::Borrowed);
         match grab {
             GrabStatus::Borrowed => panic!("Accessed a keyboard grab from within a keyboard grab access."),
             GrabStatus::Active(_, ref mut handler) => {
@@ -155,14 +155,14 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
                 if let Some(ref surface) = handler.start_data().focus {
                     if !surface.alive() {
                         self.grab = GrabStatus::None;
-                        f(KeyboardInnerHandle { inner: self, seat }, &mut DefaultGrab);
+                        f(&mut KeyboardInnerHandle { inner: self, seat }, &mut DefaultGrab);
                         return;
                     }
                 }
-                f(KeyboardInnerHandle { inner: self, seat }, &mut **handler);
+                f(&mut KeyboardInnerHandle { inner: self, seat }, &mut **handler);
             }
             GrabStatus::None => {
-                f(KeyboardInnerHandle { inner: self, seat }, &mut DefaultGrab);
+                f(&mut KeyboardInnerHandle { inner: self, seat }, &mut DefaultGrab);
             }
         }
 
@@ -533,8 +533,8 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         // forward to client if no keybinding is triggered
         let seat = self.get_seat(data);
         let modifiers = mods_changed.then_some(guard.mods_state);
-        guard.with_grab(&seat, move |mut handle, grab| {
-            grab.input(data, &mut handle, keycode, state, modifiers, serial, time);
+        guard.with_grab(&seat, |handle, grab| {
+            grab.input(data, handle, keycode, state, modifiers, serial, time);
         });
         if guard.focus.is_some() {
             trace!("Input forwarded to client");
@@ -556,8 +556,8 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         let mut guard = self.arc.internal.lock().unwrap();
         guard.pending_focus = focus.clone();
         let seat = self.get_seat(data);
-        guard.with_grab(&seat, move |mut handle, grab| {
-            grab.set_focus(data, &mut handle, focus, serial);
+        guard.with_grab(&seat, |handle, grab| {
+            grab.set_focus(data, handle, focus, serial);
         });
     }
 
