@@ -224,7 +224,7 @@ where
                     }
                 }
             }
-            handle.unset_grab(data, serial, time);
+            handle.unset_grab(data, serial, time, true);
         }
     }
 

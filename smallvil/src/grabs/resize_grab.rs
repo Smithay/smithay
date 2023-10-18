@@ -152,7 +152,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
 
         if !handle.current_pressed().contains(&BTN_LEFT) {
             // No more buttons are pressed, release the grab.
-            handle.unset_grab(data, event.serial, event.time);
+            handle.unset_grab(data, event.serial, event.time, true);
 
             let xdg = self.window.toplevel();
             xdg.with_pending_state(|state| {

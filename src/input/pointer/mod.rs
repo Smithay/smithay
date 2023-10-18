@@ -181,7 +181,10 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     #[instrument(level = "debug", parent = &self.span, skip(self, data))]
     pub fn unset_grab(&self, data: &mut D, serial: Serial, time: u32) {
         let seat = self.get_seat(data);
-        self.inner.lock().unwrap().unset_grab(data, &seat, serial, time);
+        self.inner
+            .lock()
+            .unwrap()
+            .unset_grab(data, &seat, serial, time, true);
     }
 
     /// Check if this pointer is currently grabbed with this serial
@@ -460,9 +463,11 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
 
     /// Remove any current grab on this pointer, resetting it to the default behavior
     ///
-    /// This will also restore the focus of the underlying pointer
-    pub fn unset_grab(&mut self, data: &mut D, serial: Serial, time: u32) {
-        self.inner.unset_grab(data, self.seat, serial, time);
+    /// This will also restore the focus of the underlying pointer if restore_focus
+    /// is [`true`]
+    pub fn unset_grab(&mut self, data: &mut D, serial: Serial, time: u32, restore_focus: bool) {
+        self.inner
+            .unset_grab(data, self.seat, serial, time, restore_focus);
     }
 
     /// Access the current focus of this pointer
@@ -678,21 +683,23 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         }
     }
 
-    fn unset_grab(&mut self, data: &mut D, seat: &Seat<D>, serial: Serial, time: u32) {
+    fn unset_grab(&mut self, data: &mut D, seat: &Seat<D>, serial: Serial, time: u32, restore_focus: bool) {
         self.grab = GrabStatus::None;
-        // restore the focus
-        let location = self.location;
-        let focus = self.pending_focus.clone();
-        self.motion(
-            data,
-            seat,
-            focus,
-            &MotionEvent {
-                location,
-                serial,
-                time,
-            },
-        );
+        if restore_focus {
+            // restore the focus
+            let location = self.location;
+            let focus = self.pending_focus.clone();
+            self.motion(
+                data,
+                seat,
+                focus,
+                &MotionEvent {
+                    location,
+                    serial,
+                    time,
+                },
+            );
+        }
     }
 
     fn motion(
