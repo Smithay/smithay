@@ -1,4 +1,5 @@
-use std::{cmp::Ordering, marker::PhantomData, mem::MaybeUninit, time::Duration};
+use rustix::time::{ClockId, Timespec};
+use std::{cmp::Ordering, marker::PhantomData, time::Duration};
 
 /// Marker for clock source that never returns a negative [`Time`]
 pub trait NonNegativeClockSource: ClockSource {}
@@ -8,9 +9,7 @@ pub trait NonNegativeClockSource: ClockSource {}
 pub struct Monotonic;
 
 impl ClockSource for Monotonic {
-    fn id() -> libc::clockid_t {
-        libc::CLOCK_MONOTONIC
-    }
+    const ID: ClockId = ClockId::Monotonic;
 }
 
 impl NonNegativeClockSource for Monotonic {}
@@ -20,51 +19,42 @@ impl NonNegativeClockSource for Monotonic {}
 pub struct Realtime;
 
 impl ClockSource for Realtime {
-    fn id() -> libc::clockid_t {
-        libc::CLOCK_REALTIME
-    }
+    const ID: ClockId = ClockId::Realtime;
 }
 
 /// Id for a clock according to unix clockid_t
 pub trait ClockSource {
     /// Gets the id of the clock source
-    fn id() -> libc::clockid_t;
+    const ID: ClockId;
 }
 
 /// Defines a clock with a specific kind
 #[derive(Debug)]
-pub struct Clock<Kind> {
-    clk_id: libc::clockid_t,
+pub struct Clock<Kind: ClockSource> {
     _kind: PhantomData<Kind>,
 }
 
 impl<Kind: ClockSource> Clock<Kind> {
     /// Initialize a new clock
-    pub fn new() -> std::io::Result<Self> {
-        let clk_id = Kind::id();
-        clock_get_time(clk_id)?;
-        Ok(Clock {
-            clk_id,
-            _kind: PhantomData,
-        })
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Clock { _kind: PhantomData }
     }
 
     /// Returns the current time
     pub fn now(&self) -> Time<Kind> {
-        clock_get_time(self.clk_id)
-            .expect("failed to get clock time")
-            .into()
+        rustix::time::clock_gettime(Kind::ID).into()
     }
 
     /// Gets the id of the clock
-    pub fn id(&self) -> libc::clockid_t {
-        Kind::id()
+    pub fn id(&self) -> ClockId {
+        Kind::ID
     }
 }
 
 /// A point in time for a clock with a specific kind
 pub struct Time<Kind> {
-    tp: libc::timespec,
+    tp: Timespec,
     _kind: PhantomData<Kind>,
 }
 
@@ -128,7 +118,7 @@ impl<Kind> Ord for Time<Kind> {
 
 impl<Kind: NonNegativeClockSource> From<Duration> for Time<Kind> {
     fn from(tp: Duration) -> Self {
-        let tp = libc::timespec {
+        let tp = Timespec {
             tv_sec: tp.as_secs() as libc::time_t,
             #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
             tv_nsec: tp.subsec_nanos() as i64,
@@ -142,8 +132,8 @@ impl<Kind: NonNegativeClockSource> From<Duration> for Time<Kind> {
     }
 }
 
-impl<Kind> From<libc::timespec> for Time<Kind> {
-    fn from(tp: libc::timespec) -> Self {
+impl<Kind> From<Timespec> for Time<Kind> {
+    fn from(tp: Timespec) -> Self {
         Time {
             tp,
             _kind: PhantomData,
@@ -157,7 +147,7 @@ const NANOS_PER_SEC: i64 = 1_000_000_000;
 #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
 const NANOS_PER_SEC: std::os::raw::c_long = 1_000_000_000;
 
-fn saturating_sub_timespec(lhs: libc::timespec, rhs: libc::timespec) -> Option<Duration> {
+fn saturating_sub_timespec(lhs: Timespec, rhs: Timespec) -> Option<Duration> {
     if let Some(mut secs) = lhs.tv_sec.checked_sub(rhs.tv_sec) {
         let nanos = if lhs.tv_nsec >= rhs.tv_nsec {
             lhs.tv_nsec - rhs.tv_nsec
@@ -174,19 +164,6 @@ fn saturating_sub_timespec(lhs: libc::timespec, rhs: libc::timespec) -> Option<D
     }
 }
 
-fn clock_get_time(clk_id: libc::clockid_t) -> Result<libc::timespec, std::io::Error> {
-    let mut tp = MaybeUninit::zeroed();
-    unsafe {
-        let res = libc::clock_gettime(clk_id, tp.as_mut_ptr());
-
-        if res < 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        Ok(tp.assume_init())
-    }
-}
-
 #[cfg(test)]
 mod test {
     use std::time::Duration;
@@ -195,7 +172,7 @@ mod test {
 
     #[test]
     fn monotonic() {
-        let clock_source: Clock<Monotonic> = Clock::new().unwrap();
+        let clock_source: Clock<Monotonic> = Clock::new();
         let now = clock_source.now();
         let zero = Time::<Monotonic>::from(Duration::ZERO);
         assert_eq!(Time::<Monotonic>::elapsed(&zero, now), now.into());

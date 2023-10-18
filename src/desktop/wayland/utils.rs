@@ -404,7 +404,7 @@ impl OutputPresentationFeedback {
     {
         let time = time.into();
         let refresh = refresh.into();
-        let clk_id = Kind::id() as u32;
+        let clk_id = Kind::ID as u32;
         if let Some(output) = self.output.upgrade() {
             for mut callback in self.callbacks.drain(..) {
                 callback.presented(&output, clk_id, time, refresh, seq, flags);
