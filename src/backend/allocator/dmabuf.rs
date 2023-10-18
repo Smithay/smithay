@@ -18,7 +18,7 @@ use crate::utils::{Buffer as BufferCoords, Size};
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::compositor::{Blocker, BlockerState};
 use std::hash::{Hash, Hasher};
-use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
+use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::{error, fmt};
@@ -79,6 +79,19 @@ pub struct Dmabuf(pub(crate) Arc<DmabufInternal>);
 #[derive(Debug, Clone)]
 /// Weak reference to a dmabuf handle
 pub struct WeakDmabuf(pub(crate) Weak<DmabufInternal>);
+
+// A reference to a particular dmabuf plane fd, so it can be used as a calloop source.
+#[derive(Debug)]
+struct PlaneRef {
+    dmabuf: Dmabuf,
+    idx: usize,
+}
+
+impl AsFd for PlaneRef {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.dmabuf.0.planes[self.idx].fd.as_fd()
+    }
+}
 
 impl PartialEq for Dmabuf {
     fn eq(&self, other: &Self) -> bool {
@@ -340,8 +353,8 @@ impl Blocker for DmabufBlocker {
 
 #[derive(Debug)]
 enum Subsource {
-    Active(Generic<BorrowedFd<'static>, std::io::Error>),
-    Done(Generic<BorrowedFd<'static>, std::io::Error>),
+    Active(Generic<PlaneRef, std::io::Error>),
+    Done(Generic<PlaneRef, std::io::Error>),
     Empty,
 }
 
@@ -411,8 +424,10 @@ impl DmabufSource {
             ) {
                 continue;
             }
-            // SAFETY: This is stored together with the Dmabuf holding the owned file descriptors
-            let fd = unsafe { BorrowedFd::borrow_raw(handle.as_raw_fd()) };
+            let fd = PlaneRef {
+                dmabuf: dmabuf.clone(),
+                idx,
+            };
             sources[idx] = Subsource::Active(Generic::new(fd, interest, Mode::OneShot));
         }
         if sources
