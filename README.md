@@ -1,3 +1,7 @@
+# This fork project is on halt
+Read more at https://github.com/waylovely-project/waylovely#readme
+___
+
 # Smithay
 
 [![Crates.io](https://img.shields.io/crates/v/smithay.svg)](https://crates.io/crates/smithay)
