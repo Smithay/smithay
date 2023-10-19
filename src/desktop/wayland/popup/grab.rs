@@ -551,7 +551,7 @@ where
         event: &MotionEvent,
     ) {
         if self.popup_grab.has_ended() {
-            handle.unset_grab(data, event.serial, event.time);
+            handle.unset_grab(data, event.serial, event.time, true);
             self.popup_grab.unset_keyboard_grab(data, event.serial);
             return;
         }
@@ -591,7 +591,7 @@ where
         let state = event.state;
 
         if self.popup_grab.has_ended() {
-            handle.unset_grab(data, serial, time);
+            handle.unset_grab(data, serial, time, true);
             handle.button(data, event);
             self.popup_grab.unset_keyboard_grab(data, serial);
             return;
@@ -610,7 +610,7 @@ where
                 .unwrap_or(false)
         {
             let _ = self.popup_grab.ungrab(PopupUngrabStrategy::All);
-            handle.unset_grab(data, serial, time);
+            handle.unset_grab(data, serial, time, true);
             handle.button(data, event);
             self.popup_grab.unset_keyboard_grab(data, serial);
             return;

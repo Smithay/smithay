@@ -245,7 +245,7 @@ where
                     }
                 }
             }
-            handle.unset_grab(data, event.serial, event.time);
+            handle.unset_grab(data, event.serial, event.time, true);
         }
     }
 

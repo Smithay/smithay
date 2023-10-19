@@ -379,7 +379,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
         handle.button(data, event);
         if handle.current_pressed().is_empty() {
             // no more buttons are pressed, release the grab
-            handle.unset_grab(data, event.serial, event.time);
+            handle.unset_grab(data, event.serial, event.time, false);
         }
     }
 
