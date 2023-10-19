@@ -1,4 +1,4 @@
-use std::{collections::HashMap, os::unix::io::FromRawFd, path::PathBuf, time::Duration};
+use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use ::drm::control::{connector, crtc};
 use smithay_drm_extras::{
@@ -14,7 +14,7 @@ use smithay::{
     },
     reexports::{
         calloop::{timer::Timer, EventLoop, LoopHandle},
-        nix::fcntl::OFlag,
+        rustix::fs::OFlags,
     },
     utils::DeviceFd,
 };
@@ -104,11 +104,11 @@ impl State {
             .session
             .open(
                 &path,
-                OFlag::O_RDWR | OFlag::O_CLOEXEC | OFlag::O_NOCTTY | OFlag::O_NONBLOCK,
+                OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK,
             )
             .unwrap();
 
-        let fd = DrmDeviceFd::new(unsafe { DeviceFd::from_raw_fd(fd) });
+        let fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
         let (drm, drm_notifier) = drm::DrmDevice::new(fd, false).unwrap();
 
