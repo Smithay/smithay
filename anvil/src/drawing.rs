@@ -1,7 +1,5 @@
 #![allow(clippy::too_many_arguments)]
 
-
-
 use smithay::{
     backend::renderer::{
         element::{
