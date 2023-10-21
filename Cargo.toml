@@ -85,7 +85,7 @@ cc = { version = "1.0.79", optional = true }
 default = ["backend_drm", "backend_gbm", "backend_libinput", "backend_udev", "backend_session_libseat", "backend_x11", "backend_winit", "desktop", "renderer_gl", "renderer_multi", "xwayland", "wayland_frontend", "backend_vulkan"]
 backend_winit = ["winit", "backend_egl", "wayland-egl", "renderer_gl"]
 backend_x11 = ["x11rb", "x11rb/dri3", "x11rb/xfixes", "x11rb/present", "x11rb_event_source", "backend_gbm", "backend_drm", "backend_egl"]
-backend_drm = ["drm", "drm-ffi"]
+backend_drm = ["drm", "drm-ffi", "renderer_pixman"] # Pixman needed for DrmCompositor
 backend_gbm = ["gbm", "cc", "pkg-config"]
 backend_gbm_has_fd_for_plane = []
 backend_gbm_has_create_with_modifiers2 = []

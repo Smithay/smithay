@@ -9,8 +9,7 @@
 //! will be rendered on the primary plane using the provided [`Renderer`].
 //! Additionally it will try to assign the top most element that fit's into the cursor size (as specified
 //! by the [`DrmDevice`](crate::backend::drm::DrmDevice)) on the cursor plane. If the element can not be
-//! directly scanned out the renderer will be used to render the element into an [`Offscreen`] buffer that
-//! is copied over to the allocated gbm buffer for the cursor plane.
+//! directly scanned out, pixman will be used to render the element.
 //!
 //! Note: While the [`DrmCompositor`] also works on *legacy* drm the use of overlay and cursor planes is disabled in that case.
 //! Direct scan-out will only work with an atomic [`DrmSurface`].
@@ -105,7 +104,7 @@
 //!
 //! # let elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 //! let render_frame_result = compositor
-//!     .render_frame::<_, _, GlesTexture>(&mut renderer, &elements, CLEAR_COLOR)
+//!     .render_frame::<_, _>(&mut renderer, &elements, CLEAR_COLOR)
 //!     .expect("failed to render frame");
 //!
 //! if render_frame_result.damage.is_some() {
@@ -125,8 +124,10 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     io::ErrorKind,
+    ops::Deref,
     os::unix::io::{AsFd, OwnedFd},
     rc::Rc,
+    slice,
     sync::{Arc, Mutex},
 };
 
@@ -145,7 +146,7 @@ use crate::{
     backend::{
         allocator::{
             dmabuf::{AsDmabuf, Dmabuf},
-            format::{get_opaque, has_alpha},
+            format::{self, get_opaque, has_alpha},
             gbm::{GbmAllocator, GbmDevice},
             Allocator, Buffer, Slot, Swapchain,
         },
@@ -157,9 +158,10 @@ use crate::{
                 Element, Id, Kind, RenderElement, RenderElementPresentationState, RenderElementState,
                 RenderElementStates, RenderingReason, UnderlyingStorage,
             },
+            pixman::{PixmanError, PixmanRenderBuffer, PixmanRenderer, PixmanTexture},
             sync::SyncPoint,
             utils::{CommitCounter, DamageBag, DamageSnapshot},
-            Bind, Blit, DebugFlags, ExportMem, Frame as RendererFrame, Offscreen, Renderer, Texture,
+            Bind, Blit, DebugFlags, Frame as RendererFrame, ImportAll, Renderer, Texture, Unbind,
         },
         SwapBuffersError,
     },
@@ -1415,6 +1417,7 @@ where
 
     swapchain: Swapchain<A>,
 
+    pixman_renderer: PixmanRenderer,
     cursor_size: Size<i32, Physical>,
     cursor_state: Option<CursorState<G>>,
 
@@ -1534,6 +1537,8 @@ where
                         }
                     });
 
+                    let pixman_renderer = PixmanRenderer::new().map_err(FrameError::PixmanError)?;
+
                     let overlay_plane_element_ids = OverlayPlaneElementIds::from_planes(&planes);
 
                     let drm_renderer = DrmCompositor {
@@ -1547,6 +1552,7 @@ where
                         next_frame: None,
                         swapchain,
                         framebuffer_exporter,
+                        pixman_renderer,
                         cursor_size,
                         cursor_state,
                         surface,
@@ -1755,7 +1761,7 @@ where
     /// - `elements` for this frame in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip_all)]
     #[profiling::function]
-    pub fn render_frame<'a, R, E, Target>(
+    pub fn render_frame<'a, R, E>(
         &mut self,
         renderer: &mut R,
         elements: &'a [E],
@@ -1763,7 +1769,7 @@ where
     ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
+        R: Renderer + Bind<Dmabuf>,
         <R as Renderer>::TextureId: Texture + 'static,
     {
         if !self.surface.is_active() {
@@ -2636,7 +2642,7 @@ where
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "trace", skip_all)]
     #[profiling::function]
-    fn try_assign_element<'a, R, E, Target>(
+    fn try_assign_element<'a, R, E>(
         &mut self,
         renderer: &mut R,
         element: &'a E,
@@ -2656,7 +2662,7 @@ where
         try_assign_primary_plane: bool,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
-        R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
+        R: Renderer + Bind<Dmabuf>,
         E: RenderElement<R>,
     {
         // Check if we have a free plane, otherwise we can exit early
@@ -2830,7 +2836,7 @@ where
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "trace", skip_all)]
     #[profiling::function]
-    fn try_assign_cursor_plane<R, E, Target>(
+    fn try_assign_cursor_plane<R, E>(
         &mut self,
         renderer: &mut R,
         element: &E,
@@ -2843,7 +2849,7 @@ where
         output_geometry: Rectangle<i32, Physical>,
     ) -> Option<PlaneAssignment>
     where
-        R: Renderer + Offscreen<Target> + ExportMem,
+        R: Renderer,
         E: RenderElement<R>,
     {
         // if we have no cursor plane we can exit early
@@ -3003,24 +3009,107 @@ where
             }
         };
 
-        let cursor_buffer_size = self.cursor_size.to_logical(1).to_buffer(1, Transform::Normal);
-        let offscreen_buffer = match renderer.create_buffer(DrmFourcc::Argb8888, cursor_buffer_size) {
-            Ok(buffer) => buffer,
-            Err(err) => {
-                debug!(
-                    "failed to create offscreen buffer for cursor {:?}: {}",
-                    plane_info.handle, err
-                );
-                return None;
-            }
+        let Some(storage) = element.underlying_storage(renderer) else {
+            trace!("Can't obtain cursor's underlying storage");
+            return None;
         };
 
-        if let Err(err) = renderer.bind(offscreen_buffer) {
-            debug!(
-                "failed to bind cursor buffer for cursor {:?}: {}",
-                plane_info.handle, err
-            );
-            return None;
+        let cursor_buffer_size = self.cursor_size.to_logical(1).to_buffer(1, Transform::Normal);
+
+        // Create a pixman image from the source cursor data. This will either be set by the
+        // client, or the compositor's choice.
+        let cursor_texture = match storage {
+            UnderlyingStorage::Wayland(buffer) => self
+                .pixman_renderer
+                .import_buffer(buffer.deref(), None, &[])
+                .transpose()
+                .ok()
+                .flatten(),
+            UnderlyingStorage::Memory((data, format, width, height)) => {
+                let stride =
+                    width * (format::get_bpp(format).expect("Format with unknown bits per pixel") / 8);
+                let size = stride * height;
+
+                let Ok(pixman_format) = pixman::FormatCode::try_from(format) else {
+                    debug!("No pixman format for {format}");
+                    return None;
+                };
+                match pixman::Image::from_slice_mut(
+                    pixman_format,
+                    width,
+                    height,
+                    unsafe { slice::from_raw_parts_mut(data as *mut u32, size / 4) },
+                    stride,
+                    false,
+                ) {
+                    Ok(image) => Some(PixmanTexture::from(image)),
+                    Err(e) => {
+                        debug!("pixman cursor: {e}");
+                        None
+                    }
+                }
+            }
+        }?;
+
+        let src = Rectangle::from_loc_and_size(Point::default(), cursor_buffer_size).to_f64();
+        let dst = Rectangle::from_loc_and_size(cursor_plane_location, self.cursor_size);
+
+        let ret = cursor_buffer
+            .map_mut::<_, _, Result<_, <PixmanRenderer as Renderer>::Error>>(
+                &cursor_state.framebuffer_exporter,
+                0,
+                0,
+                cursor_buffer_size.w as u32,
+                cursor_buffer_size.h as u32,
+                |mbo| {
+                    let plane_pixman_format = pixman::FormatCode::try_from(DrmFourcc::Argb8888).unwrap();
+                    let cursor_dst = pixman::Image::from_slice_mut(
+                        plane_pixman_format,
+                        mbo.width() as usize,
+                        mbo.height() as usize,
+                        unsafe {
+                            slice::from_raw_parts_mut(
+                                mbo.buffer_mut().as_mut_ptr() as *mut u32,
+                                mbo.buffer().len() / 4,
+                            )
+                        },
+                        mbo.stride() as usize,
+                        false,
+                    )
+                    .map_err(|_| PixmanError::ImportFailed)?;
+
+                    self.pixman_renderer.bind(PixmanRenderBuffer::from(cursor_dst))?;
+                    let mut frame = self.pixman_renderer.render(self.cursor_size, output_transform)?;
+                    frame.clear(
+                        [0f32, 0f32, 0f32, 0f32],
+                        &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
+                    )?;
+                    frame.render_texture_from_to(
+                        &cursor_texture,
+                        src,
+                        dst,
+                        element.damage_since(scale, None).as_slice(),
+                        element.transform(),
+                        element.alpha(),
+                    )?;
+                    frame.finish()?.wait();
+                    Ok(())
+                },
+            )
+            .expect("Lost track of cursor device");
+
+        _ = self.pixman_renderer.unbind();
+
+        match ret {
+            Err(err) => {
+                debug!("{err}");
+                return None;
+            }
+            Ok(Err(err)) => {
+                debug!("{err}");
+                return None;
+            }
+            Ok(Ok(_)) => (),
         };
 
         // Try to claim the plane, if this fails we can not use it
@@ -3031,61 +3120,6 @@ where
                 return None;
             }
         };
-
-        // save the renderer debug flags and disable all for the cursor plane
-        let renderer_debug_flags = renderer.debug_flags();
-        renderer.set_debug_flags(DebugFlags::empty());
-
-        let mut render = || {
-            let mut frame = renderer.render(self.cursor_size, output_transform)?;
-
-            frame.clear(
-                [0f32, 0f32, 0f32, 0f32],
-                &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
-            )?;
-
-            let src = element.src();
-            let dst = Rectangle::from_loc_and_size((0, 0), element_geometry.size);
-            element.draw(&mut frame, src, dst, &[dst])?;
-
-            frame.finish()?.wait();
-
-            Ok::<(), <R as Renderer>::Error>(())
-        };
-
-        let render_res = render();
-
-        // restore the renderer debug flags
-        renderer.set_debug_flags(renderer_debug_flags);
-
-        if let Err(err) = render_res {
-            debug!("failed to render cursor element: {}", err);
-            return None;
-        }
-
-        let copy_rect = Rectangle::from_loc_and_size((0, 0), cursor_buffer_size);
-        let mapping = match renderer.copy_framebuffer(copy_rect, DrmFourcc::Argb8888) {
-            Ok(mapping) => mapping,
-            Err(err) => {
-                info!("failed to export cursor offscreen buffer: {}", err);
-                return None;
-            }
-        };
-        let data = match renderer.map_texture(&mapping) {
-            Ok(data) => data,
-            Err(err) => {
-                info!("failed to map exported cursor offscreen buffer: {}", err);
-                return None;
-            }
-        };
-
-        if let Err(err) = cursor_buffer.write(data) {
-            info!("failed to write cursor buffer; {}", err);
-            return None;
-        }
-
-        let src = Rectangle::from_loc_and_size(Point::default(), cursor_buffer_size).to_f64();
-        let dst = Rectangle::from_loc_and_size(cursor_plane_location, self.cursor_size);
 
         let config = PlaneConfig {
             properties: PlaneProperties {
@@ -3942,6 +3976,9 @@ pub enum FrameError<
     /// Error during buffer allocation
     #[error("The underlying allocator encountered an error: {0}")]
     Allocator(#[source] A),
+    /// Error creating the pixman renderer
+    #[error("Pixman renderer encountered an error: {0}")]
+    PixmanError(#[from] PixmanError),
     /// Error during exporting the buffer as dmabuf
     #[error("Failed to export the allocated buffer as dmabuf: {0}")]
     AsDmabufError(#[source] B),
@@ -4007,6 +4044,7 @@ impl<
             }
             FrameError::DrmError(err) => err.into(),
             FrameError::Allocator(err) => SwapBuffersError::ContextLost(Box::new(err)),
+            FrameError::PixmanError(err) => err.into(),
             FrameError::AsDmabufError(err) => SwapBuffersError::ContextLost(Box::new(err)),
             FrameError::FramebufferExport(err) => SwapBuffersError::ContextLost(Box::new(err)),
         }
