@@ -68,6 +68,7 @@ scan_fmt = { version = "0.2.3", default-features = false }
 encoding_rs = { version = "0.8.33", optional = true }
 profiling = "1.0"
 smallvec = "1.11"
+pixman = { git = "https://github.com/cmeissl/pixman-rs.git", version = "0.1.0", features = ["drm-fourcc"] }
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }
