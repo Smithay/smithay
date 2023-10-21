@@ -10,7 +10,7 @@ use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
 use smithay::{
     backend::{allocator::Fourcc, renderer::ImportMem},
-    reexports::winit::platform::wayland::WindowExtWayland,
+    reexports::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle},
 };
 
 use smithay::{
@@ -33,6 +33,7 @@ use smithay::{
         calloop::EventLoop,
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
         wayland_server::{protocol::wl_surface, Display},
+        winit::platform::pump_events::PumpStatus,
     },
     utils::{IsAlive, Scale, Transform},
     wayland::{
@@ -97,7 +98,7 @@ pub fn run_winit() {
             return;
         }
     };
-    let size = backend.window_size().physical_size;
+    let size = backend.window_size();
 
     let mode = Mode {
         size,
@@ -211,27 +212,26 @@ pub fn run_winit() {
     let mut pointer_element = PointerElement::<GlesTexture>::default();
 
     while state.running.load(Ordering::SeqCst) {
-        if winit
-            .dispatch_new_events(|event| match event {
-                WinitEvent::Resized { size, .. } => {
-                    // We only have one output
-                    let output = state.space.outputs().next().unwrap().clone();
-                    state.space.map_output(&output, (0, 0));
-                    let mode = Mode {
-                        size,
-                        refresh: 60_000,
-                    };
-                    output.change_current_state(Some(mode), None, None, None);
-                    output.set_preferred(mode);
-                    crate::shell::fixup_positions(&mut state.space, state.pointer.current_location());
-                }
-                WinitEvent::Input(event) => {
-                    state.process_input_event_windowed(&display_handle, event, OUTPUT_NAME)
-                }
-                _ => (),
-            })
-            .is_err()
-        {
+        let status = winit.dispatch_new_events(|event| match event {
+            WinitEvent::Resized { size, .. } => {
+                // We only have one output
+                let output = state.space.outputs().next().unwrap().clone();
+                state.space.map_output(&output, (0, 0));
+                let mode = Mode {
+                    size,
+                    refresh: 60_000,
+                };
+                output.change_current_state(Some(mode), None, None, None);
+                output.set_preferred(mode);
+                crate::shell::fixup_positions(&mut state.space, state.pointer.current_location());
+            }
+            WinitEvent::Input(event) => {
+                state.process_input_event_windowed(&display_handle, event, OUTPUT_NAME)
+            }
+            _ => (),
+        });
+
+        if let PumpStatus::Exit(_) = status {
             state.running.store(false, Ordering::SeqCst);
             break;
         }
@@ -294,8 +294,15 @@ pub fn run_winit() {
                         backend.renderer().egl_context().get_context_handle(),
                         backend
                             .window()
-                            .wayland_surface()
-                            .unwrap_or_else(std::ptr::null_mut),
+                            .window_handle()
+                            .map(|handle| {
+                                if let RawWindowHandle::Wayland(handle) = handle.as_raw() {
+                                    handle.surface.as_ptr()
+                                } else {
+                                    std::ptr::null_mut()
+                                }
+                            })
+                            .unwrap_or_else(|_| std::ptr::null_mut()),
                     );
                 }
                 let age = if *full_redraw > 0 {
@@ -356,8 +363,15 @@ pub fn run_winit() {
                             backend.renderer().egl_context().get_context_handle(),
                             backend
                                 .window()
-                                .wayland_surface()
-                                .unwrap_or_else(std::ptr::null_mut),
+                                .window_handle()
+                                .map(|handle| {
+                                    if let RawWindowHandle::Wayland(handle) = handle.as_raw() {
+                                        handle.surface.as_ptr()
+                                    } else {
+                                        std::ptr::null_mut()
+                                    }
+                                })
+                                .unwrap_or_else(|_| std::ptr::null_mut()),
                         );
                     }
 
@@ -388,8 +402,15 @@ pub fn run_winit() {
                             backend.renderer().egl_context().get_context_handle(),
                             backend
                                 .window()
-                                .wayland_surface()
-                                .unwrap_or_else(std::ptr::null_mut),
+                                .window_handle()
+                                .map(|handle| {
+                                    if let RawWindowHandle::Wayland(handle) = handle.as_raw() {
+                                        handle.surface.as_ptr()
+                                    } else {
+                                        std::ptr::null_mut()
+                                    }
+                                })
+                                .unwrap_or_else(|_| std::ptr::null_mut()),
                         );
                     }
 

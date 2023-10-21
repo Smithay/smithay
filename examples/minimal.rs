@@ -1,5 +1,6 @@
 use std::{os::unix::io::OwnedFd, sync::Arc};
 
+use ::winit::platform::pump_events::PumpStatus;
 use smithay::{
     backend::{
         input::{InputEvent, KeyboardKeyEvent},
@@ -167,7 +168,7 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
     std::process::Command::new("weston-terminal").spawn().ok();
 
     loop {
-        winit.dispatch_new_events(|event| match event {
+        let status = winit.dispatch_new_events(|event| match event {
             WinitEvent::Resized { .. } => {}
             WinitEvent::Input(event) => match event {
                 InputEvent::Keyboard { event } => {
@@ -192,11 +193,16 @@ pub fn run_winit() -> Result<(), Box<dyn std::error::Error>> {
                 _ => {}
             },
             _ => (),
-        })?;
+        });
+
+        match status {
+            PumpStatus::Continue => (),
+            PumpStatus::Exit(_) => return Ok(()),
+        };
 
         backend.bind().unwrap();
 
-        let size = backend.window_size().physical_size;
+        let size = backend.window_size();
         let damage = Rectangle::from_loc_and_size((0, 0), size);
 
         let elements = state

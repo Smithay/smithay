@@ -10,8 +10,7 @@
 //! you want on the initialization of the backend. These functions will provide you
 //! with two objects:
 //!
-//! - a [`WinitGraphicsBackend`], which can give you an implementation of a
-//!   [`Renderer`](crate::backend::renderer::Renderer)
+//! - a [`WinitGraphicsBackend`], which can give you an implementation of a [`Renderer`]
 //!   (or even [`GlesRenderer`]) through its `renderer` method in addition to further
 //!   functionality to access and manage the created winit-window.
 //! - a [`WinitEventLoop`], which dispatches some [`WinitEvent`] from the host graphics server.
@@ -19,7 +18,26 @@
 //! The other types in this module are the instances of the associated types of these
 //! two traits for the winit backend.
 
-mod input;
+use std::io::Error as IoError;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use calloop::generic::Generic;
+use calloop::{EventSource, Interest, PostAction, Readiness, Token};
+use tracing::{debug, error, info, info_span, instrument, trace, warn};
+use wayland_egl as wegl;
+use winit::event_loop::EventLoopBuilder;
+use winit::platform::pump_events::PumpStatus;
+use winit::platform::scancode::PhysicalKeyExtScancode;
+use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use winit::{
+    dpi::LogicalSize,
+    event::{ElementState, Event, Touch, TouchPhase, WindowEvent},
+    event_loop::EventLoop,
+    platform::pump_events::EventLoopExtPumpEvents,
+    window::{Window as WinitWindow, WindowBuilder},
+};
 
 use crate::{
     backend::{
@@ -34,96 +52,17 @@ use crate::{
             Bind,
         },
     },
-    utils::{Logical, Physical, Rectangle, Size},
-};
-use std::{cell::RefCell, rc::Rc, sync::Arc, time::Instant};
-use wayland_egl as wegl;
-use winit::{
-    dpi::LogicalSize,
-    event::{ElementState, Event, KeyboardInput, Touch, TouchPhase, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    platform::run_return::EventLoopExtRunReturn,
-    platform::{wayland::WindowExtWayland, x11::WindowExtX11},
-    window::{Window as WinitWindow, WindowBuilder},
+    utils::{Physical, Rectangle, Size},
 };
 
-use std::cell::Cell;
-use tracing::{debug, error, info, info_span, instrument, trace, warn};
+mod input;
 
 pub use self::input::*;
 
 use super::renderer::Renderer;
 
-/// Errors thrown by the `winit` backends
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    /// Failed to initialize a window
-    #[error("Failed to initialize a window")]
-    InitFailed(#[from] winit::error::OsError),
-    #[error("Failed to create a surface for the window")]
-    /// Surface creation error
-    Surface(Box<dyn std::error::Error>),
-    /// Context creation is not supported on the current window system
-    #[error("Context creation is not supported on the current window system")]
-    NotSupported,
-    /// EGL error
-    #[error("EGL error: {0}")]
-    Egl(#[from] EGLError),
-    /// Renderer initialization failed
-    #[error("Renderer creation failed: {0}")]
-    RendererCreationError(#[from] GlesError),
-}
-
-/// Size properties of a winit window
-#[derive(Debug, Clone)]
-pub struct WindowSize {
-    /// Pixel side of the window
-    pub physical_size: Size<i32, Physical>,
-    /// Scaling factor of the window
-    pub scale_factor: f64,
-}
-
-impl WindowSize {
-    fn logical_size(&self) -> Size<f64, Logical> {
-        self.physical_size.to_f64().to_logical(self.scale_factor)
-    }
-}
-
-/// Window with an active EGL Context created by `winit`.
-#[derive(Debug)]
-pub struct WinitGraphicsBackend<R> {
-    renderer: R,
-    // The display isn't used past this point but must be kept alive.
-    _display: EGLDisplay,
-    egl: Rc<EGLSurface>,
-    window: Arc<WinitWindow>,
-    size: Rc<RefCell<WindowSize>>,
-    damage_tracking: bool,
-    resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
-    span: tracing::Span,
-}
-
-/// Abstracted event loop of a [`WinitWindow`].
-///
-/// You need to call [`dispatch_new_events`](WinitEventLoop::dispatch_new_events)
-/// periodically to receive any events.
-#[derive(Debug)]
-pub struct WinitEventLoop {
-    window: Arc<WinitWindow>,
-    events_loop: EventLoop<()>,
-    time: Instant,
-    key_counter: u32,
-    initialized: bool,
-    size: Rc<RefCell<WindowSize>>,
-    resize_notification: Rc<Cell<Option<Size<i32, Physical>>>>,
-    /// Whether winit is using Wayland or X11 as it's backend.
-    is_x11: bool,
-    span: tracing::Span,
-}
-
 /// Create a new [`WinitGraphicsBackend`], which implements the
-/// [`Renderer`](crate::backend::renderer::Renderer) trait and a corresponding
-/// [`WinitEventLoop`].
+/// [`Renderer`] trait and a corresponding [`WinitEventLoop`].
 pub fn init<R>() -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
 where
     R: From<GlesRenderer> + Bind<Rc<EGLSurface>>,
@@ -137,9 +76,9 @@ where
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the
-/// [`Renderer`](crate::backend::renderer::Renderer) trait, from a given [`WindowBuilder`]
-/// struct and a corresponding [`WinitEventLoop`].
+/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`]
+/// trait, from a given [`WindowBuilder`] struct and a corresponding
+/// [`WinitEventLoop`].
 pub fn init_from_builder<R>(
     builder: WindowBuilder,
 ) -> Result<(WinitGraphicsBackend<R>, WinitEventLoop), Error>
@@ -153,14 +92,14 @@ where
             version: (3, 0),
             profile: None,
             debug: cfg!(debug_assertions),
-            vsync: true,
+            vsync: false,
         },
     )
 }
 
-/// Create a new [`WinitGraphicsBackend`], which implements the
-/// [`Renderer`](crate::backend::renderer::Renderer) trait, from a given [`WindowBuilder`]
-/// struct, as well as given [`GlAttributes`] for further customization of the rendering pipeline and a
+/// Create a new [`WinitGraphicsBackend`], which implements the [`Renderer`]
+/// trait, from a given [`WindowBuilder`] struct, as well as given
+/// [`GlAttributes`] for further customization of the rendering pipeline and a
 /// corresponding [`WinitEventLoop`].
 pub fn init_from_builder_with_gl_attr<R>(
     builder: WindowBuilder,
@@ -174,97 +113,553 @@ where
     let _guard = span.enter();
     info!("Initializing a winit backend");
 
-    let events_loop = EventLoop::new();
-    let winit_window = Arc::new(builder.build(&events_loop).map_err(Error::InitFailed)?);
+    let event_loop = EventLoopBuilder::new()
+        .build()
+        .map_err(Error::EventLoopCreation)?;
 
-    span.record("window", Into::<u64>::into(winit_window.id()));
+    let window = Arc::new(builder.build(&event_loop).map_err(Error::WindowCreation)?);
+
+    span.record("window", Into::<u64>::into(window.id()));
     debug!("Window created");
 
     let (display, context, surface, is_x11) = {
-        let display = EGLDisplay::new(winit_window.clone())?;
+        let display = EGLDisplay::new(window.clone())?;
 
         let context = EGLContext::new_with_config(&display, attributes, PixelFormatRequirements::_10_bit())
             .or_else(|_| {
             EGLContext::new_with_config(&display, attributes, PixelFormatRequirements::_8_bit())
         })?;
 
-        let (surface, is_x11) = if let Some(wl_surface) = winit_window.wayland_surface() {
-            debug!("Winit backend: Wayland");
-            let size = winit_window.inner_size();
-            let surface = unsafe {
-                wegl::WlEglSurface::new_from_raw(wl_surface as *mut _, size.width as i32, size.height as i32)
+        let (surface, is_x11) = match window.window_handle().map(|handle| handle.as_raw()) {
+            Ok(RawWindowHandle::Wayland(handle)) => {
+                debug!("Winit backend: Wayland");
+                let size = window.inner_size();
+                let surface = unsafe {
+                    wegl::WlEglSurface::new_from_raw(
+                        handle.surface.as_ptr() as *mut _,
+                        size.width as i32,
+                        size.height as i32,
+                    )
+                }
+                .map_err(|err| Error::Surface(err.into()))?;
+                unsafe {
+                    (
+                        EGLSurface::new(
+                            &display,
+                            context.pixel_format().unwrap(),
+                            context.config_id(),
+                            surface,
+                        )
+                        .map_err(EGLError::CreationFailed)?,
+                        false,
+                    )
+                }
             }
-            .map_err(|err| Error::Surface(err.into()))?;
-            (
+            Ok(RawWindowHandle::Xlib(handle)) => {
+                debug!("Winit backend: X11");
                 unsafe {
-                    EGLSurface::new(
-                        &display,
-                        context.pixel_format().unwrap(),
-                        context.config_id(),
-                        surface,
+                    (
+                        EGLSurface::new(
+                            &display,
+                            context.pixel_format().unwrap(),
+                            context.config_id(),
+                            native::XlibWindow(handle.window),
+                        )
+                        .map_err(EGLError::CreationFailed)?,
+                        true,
                     )
-                    .map_err(EGLError::CreationFailed)?
-                },
-                false,
-            )
-        } else if let Some(xlib_window) = winit_window.xlib_window().map(native::XlibWindow) {
-            debug!("Winit backend: X11");
-            (
-                unsafe {
-                    EGLSurface::new(
-                        &display,
-                        context.pixel_format().unwrap(),
-                        context.config_id(),
-                        xlib_window,
-                    )
-                    .map_err(EGLError::CreationFailed)?
-                },
-                true,
-            )
-        } else {
-            unreachable!("No backends for winit other then Wayland and X11 are supported")
+                }
+            }
+            _ => panic!("only running on Wayland or with Xlib is supported"),
         };
 
         let _ = context.unbind();
-
         (display, context, surface, is_x11)
     };
 
-    let (w, h): (u32, u32) = winit_window.inner_size().into();
-    let size = Rc::new(RefCell::new(WindowSize {
-        physical_size: (w as i32, h as i32).into(),
-        scale_factor: winit_window.scale_factor(),
-    }));
-
     let egl = Rc::new(surface);
     let renderer = unsafe { GlesRenderer::new(context)?.into() };
-    let resize_notification = Rc::new(Cell::new(None));
     let damage_tracking = display.supports_damage();
 
     drop(_guard);
+
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    let event_loop = Generic::new(event_loop, Interest::READ, calloop::Mode::Level);
+
     Ok((
         WinitGraphicsBackend {
-            window: winit_window.clone(),
-            _display: display,
-            egl,
-            renderer,
-            damage_tracking,
-            size: size.clone(),
-            resize_notification: resize_notification.clone(),
+            window: window.clone(),
             span: span.clone(),
+            _display: display,
+            egl_surface: egl,
+            damage_tracking,
+            bind_size: None,
+            renderer,
         },
         WinitEventLoop {
-            resize_notification,
-            events_loop,
-            window: winit_window,
-            time: Instant::now(),
+            scale_factor: window.scale_factor(),
+            start_time: Instant::now(),
             key_counter: 0,
-            initialized: false,
-            size,
+            fake_token: None,
+            event_loop,
+            window,
+            pending_events: Vec::new(),
             is_x11,
             span,
         },
     ))
+}
+
+/// Errors thrown by the `winit` backends
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// Failed to initialize an event loop.
+    #[error("Failed to initialize an event loop")]
+    EventLoopCreation(#[from] winit::error::EventLoopError),
+    /// Failed to initialize a window.
+    #[error("Failed to initialize a window")]
+    WindowCreation(#[from] winit::error::OsError),
+    #[error("Failed to create a surface for the window")]
+    /// Surface creation error.
+    Surface(Box<dyn std::error::Error>),
+    /// Context creation is not supported on the current window system
+    #[error("Context creation is not supported on the current window system")]
+    NotSupported,
+    /// EGL error.
+    #[error("EGL error: {0}")]
+    Egl(#[from] EGLError),
+    /// Renderer initialization failed.
+    #[error("Renderer creation failed: {0}")]
+    RendererCreationError(#[from] GlesError),
+}
+
+/// Window with an active EGL Context created by `winit`.
+#[derive(Debug)]
+pub struct WinitGraphicsBackend<R> {
+    renderer: R,
+    // The display isn't used past this point but must be kept alive.
+    _display: EGLDisplay,
+    egl_surface: Rc<EGLSurface>,
+    window: Arc<WinitWindow>,
+    damage_tracking: bool,
+    bind_size: Option<Size<i32, Physical>>,
+    span: tracing::Span,
+}
+
+impl<R> WinitGraphicsBackend<R>
+where
+    R: Bind<Rc<EGLSurface>>,
+    crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
+{
+    /// Window size of the underlying window
+    pub fn window_size(&self) -> Size<i32, Physical> {
+        let (w, h): (i32, i32) = self.window.inner_size().into();
+        (w, h).into()
+    }
+
+    /// Scale factor of the underlying window.
+    pub fn scale_factor(&self) -> f64 {
+        self.window.scale_factor()
+    }
+
+    /// Reference to the underlying window
+    pub fn window(&self) -> &WinitWindow {
+        &self.window
+    }
+
+    /// Access the underlying renderer
+    pub fn renderer(&mut self) -> &mut R {
+        &mut self.renderer
+    }
+
+    /// Bind the underlying window to the underlying renderer.
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
+    pub fn bind(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
+        // NOTE: we must resize before making the current context current, otherwise the back
+        // buffer will be latched. Some nvidia drivers may not like it, but a lot of wayland
+        // software does the order that way due to mesa latching back buffer on each
+        // `make_current`.
+        let window_size = self.window_size();
+        if Some(window_size) != self.bind_size {
+            self.egl_surface.resize(window_size.w, window_size.h, 0, 0);
+        }
+        self.bind_size = Some(window_size);
+
+        self.renderer.bind(self.egl_surface.clone())?;
+
+        Ok(())
+    }
+
+    /// Retrieve the underlying `EGLSurface` for advanced operations
+    ///
+    /// **Note:** Don't carelessly use this to manually bind the renderer to the surface,
+    /// `WinitGraphicsBackend::bind` transparently handles window resizes for you.
+    pub fn egl_surface(&self) -> Rc<EGLSurface> {
+        self.egl_surface.clone()
+    }
+
+    /// Retrieve the buffer age of the current backbuffer of the window.
+    ///
+    /// This will only return a meaningful value, if this `WinitGraphicsBackend`
+    /// is currently bound (by previously calling [`WinitGraphicsBackend::bind`]).
+    ///
+    /// Otherwise and on error this function returns `None`.
+    /// If you are using this value actively e.g. for damage-tracking you should
+    /// likely interpret an error just as if "0" was returned.
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    pub fn buffer_age(&self) -> Option<usize> {
+        if self.damage_tracking {
+            self.egl_surface.buffer_age().map(|x| x as usize)
+        } else {
+            Some(0)
+        }
+    }
+
+    /// Submits the back buffer to the window by swapping, requires the window to be previously
+    /// bound (see [`WinitGraphicsBackend::bind`]).
+    #[instrument(level = "trace", parent = &self.span, skip(self))]
+    #[profiling::function]
+    pub fn submit(
+        &mut self,
+        damage: Option<&[Rectangle<i32, Physical>]>,
+    ) -> Result<(), crate::backend::SwapBuffersError> {
+        let mut damage = match damage {
+            Some(damage) if self.damage_tracking && !damage.is_empty() => {
+                let bind_size = self
+                    .bind_size
+                    .expect("submitting without ever binding the renderer.");
+                let damage = damage
+                    .iter()
+                    .map(|rect| {
+                        Rectangle::from_loc_and_size(
+                            (rect.loc.x, bind_size.h - rect.loc.y - rect.size.h),
+                            rect.size,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                Some(damage)
+            }
+            _ => None,
+        };
+
+        // Request frame callback.
+        self.window.pre_present_notify();
+        self.egl_surface.swap_buffers(damage.as_deref_mut())?;
+        Ok(())
+    }
+}
+
+/// Abstracted event loop of a [`WinitWindow`].
+///
+/// You can register it into `calloop` or call
+/// [`dispatch_new_events`](WinitEventLoop::dispatch_new_events) periodically to receive any
+/// events.
+#[derive(Debug)]
+pub struct WinitEventLoop {
+    window: Arc<WinitWindow>,
+    start_time: Instant,
+    fake_token: Option<Token>,
+    key_counter: u32,
+    pending_events: Vec<WinitEvent>,
+    is_x11: bool,
+    scale_factor: f64,
+    event_loop: Generic<EventLoop<()>>,
+    span: tracing::Span,
+}
+
+impl WinitEventLoop {
+    /// Processes new events of the underlying event loop and calls the provided callback.
+    ///
+    /// You need to periodically call this function to keep the underlying event loop and
+    /// [`WinitWindow`] active. Otherwise the window may not respond to user interaction.
+    ///
+    /// Returns an error if the [`WinitWindow`] the window has been closed. Calling
+    /// `dispatch_new_events` again after the [`WinitWindow`] has been closed is considered an
+    /// application error and unspecified behaviour may occur.
+    ///
+    /// The linked [`WinitGraphicsBackend`] will error with a lost context and should
+    /// not be used anymore as well.
+    #[instrument(level = "trace", parent = &self.span, skip_all)]
+    #[profiling::function]
+    pub fn dispatch_new_events<F>(&mut self, mut callback: F) -> PumpStatus
+    where
+        F: FnMut(WinitEvent),
+    {
+        // SAFETY: we don't drop event loop ourselves.
+        let event_loop = unsafe { self.event_loop.get_mut() };
+        let timestamp = || self.start_time.elapsed().as_micros() as u64;
+
+        event_loop.pump_events(Some(Duration::ZERO), |event, _window_target| {
+            match event {
+                Event::Resumed => {
+                    callback(WinitEvent::Input(InputEvent::DeviceAdded {
+                        device: WinitVirtualDevice,
+                    }));
+                }
+                Event::UserEvent(_) => (),
+                Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::Resized(size) => {
+                        trace!("Resizing window to {size:?}");
+                        let (w, h): (i32, i32) = size.into();
+
+                        callback(WinitEvent::Resized {
+                            size: (w, h).into(),
+                            scale_factor: self.scale_factor,
+                        });
+                    }
+                    WindowEvent::ScaleFactorChanged {
+                        scale_factor: new_scale_factor,
+                        ..
+                    } => {
+                        trace!("Scale factor changed to {new_scale_factor}");
+                        self.scale_factor = new_scale_factor;
+                        let (w, h): (i32, i32) = self.window.inner_size().into();
+                        callback(WinitEvent::Resized {
+                            size: (w, h).into(),
+                            scale_factor: self.scale_factor,
+                        });
+                    }
+                    WindowEvent::RedrawRequested => {
+                        callback(WinitEvent::Redraw);
+                    }
+                    WindowEvent::CloseRequested => {
+                        callback(WinitEvent::CloseRequested);
+                    }
+                    WindowEvent::Focused(focused) => {
+                        callback(WinitEvent::Focus(focused));
+                    }
+                    WindowEvent::KeyboardInput {
+                        event, is_synthetic, ..
+                    } if !is_synthetic && !event.repeat => {
+                        match event.state {
+                            ElementState::Pressed => self.key_counter += 1,
+                            ElementState::Released => {
+                                self.key_counter = self.key_counter.saturating_sub(1);
+                            }
+                        };
+
+                        let scancode = event.physical_key.to_scancode().unwrap_or(0);
+                        let event = InputEvent::Keyboard {
+                            event: WinitKeyboardInputEvent {
+                                time: timestamp(),
+                                key: scancode,
+                                count: self.key_counter,
+                                state: event.state,
+                            },
+                        };
+                        callback(WinitEvent::Input(event));
+                    }
+                    WindowEvent::CursorMoved { position, .. } => {
+                        let size = self.window.inner_size();
+                        let x = position.x / size.width as f64;
+                        let y = position.y / size.height as f64;
+                        let event = InputEvent::PointerMotionAbsolute {
+                            event: WinitMouseMovedEvent {
+                                time: timestamp(),
+                                position: RelativePosition::new(x, y),
+                                global_position: position,
+                            },
+                        };
+                        callback(WinitEvent::Input(event));
+                    }
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        let event = InputEvent::PointerAxis {
+                            event: WinitMouseWheelEvent {
+                                time: timestamp(),
+                                delta,
+                            },
+                        };
+                        callback(WinitEvent::Input(event));
+                    }
+                    WindowEvent::MouseInput { state, button, .. } => {
+                        let event = InputEvent::PointerButton {
+                            event: WinitMouseInputEvent {
+                                time: timestamp(),
+                                button,
+                                state,
+                                is_x11: self.is_x11,
+                            },
+                        };
+                        callback(WinitEvent::Input(event));
+                    }
+                    WindowEvent::Touch(Touch {
+                        phase: TouchPhase::Started,
+                        location,
+                        id,
+                        ..
+                    }) => {
+                        let size = self.window.inner_size();
+                        let x = location.x / size.width as f64;
+                        let y = location.y / size.width as f64;
+                        let event = InputEvent::TouchDown {
+                            event: WinitTouchStartedEvent {
+                                time: timestamp(),
+                                global_position: location,
+                                position: RelativePosition::new(x, y),
+                                id,
+                            },
+                        };
+
+                        callback(WinitEvent::Input(event));
+                    }
+                    WindowEvent::Touch(Touch {
+                        phase: TouchPhase::Moved,
+                        location,
+                        id,
+                        ..
+                    }) => {
+                        let size = self.window.inner_size();
+                        let x = location.x / size.width as f64;
+                        let y = location.y / size.width as f64;
+                        let event = InputEvent::TouchMotion {
+                            event: WinitTouchMovedEvent {
+                                time: timestamp(),
+                                position: RelativePosition::new(x, y),
+                                global_position: location,
+                                id,
+                            },
+                        };
+
+                        callback(WinitEvent::Input(event));
+                    }
+
+                    WindowEvent::Touch(Touch {
+                        phase: TouchPhase::Ended,
+                        location,
+                        id,
+                        ..
+                    }) => {
+                        let size = self.window.inner_size();
+                        let x = location.x / size.width as f64;
+                        let y = location.y / size.width as f64;
+                        let event = InputEvent::TouchMotion {
+                            event: WinitTouchMovedEvent {
+                                time: timestamp(),
+                                position: RelativePosition::new(x, y),
+                                global_position: location,
+                                id,
+                            },
+                        };
+                        callback(WinitEvent::Input(event));
+
+                        let event = InputEvent::TouchUp {
+                            event: WinitTouchEndedEvent {
+                                time: timestamp(),
+                                id,
+                            },
+                        };
+
+                        callback(WinitEvent::Input(event));
+                    }
+
+                    WindowEvent::Touch(Touch {
+                        phase: TouchPhase::Cancelled,
+                        id,
+                        ..
+                    }) => {
+                        let event = InputEvent::TouchCancel {
+                            event: WinitTouchCancelledEvent {
+                                time: timestamp(),
+                                id,
+                            },
+                        };
+                        callback(WinitEvent::Input(event));
+                    }
+                    WindowEvent::DroppedFile(_)
+                    | WindowEvent::Destroyed
+                    | WindowEvent::CursorEntered { .. }
+                    | WindowEvent::AxisMotion { .. }
+                    | WindowEvent::CursorLeft { .. }
+                    | WindowEvent::ModifiersChanged(_)
+                    | WindowEvent::KeyboardInput { .. }
+                    | WindowEvent::HoveredFile(_)
+                    | WindowEvent::HoveredFileCancelled
+                    | WindowEvent::Ime(_)
+                    | WindowEvent::Moved(_)
+                    | WindowEvent::Occluded(_)
+                    | WindowEvent::SmartMagnify { .. }
+                    | WindowEvent::ThemeChanged(_)
+                    | WindowEvent::TouchpadMagnify { .. }
+                    | WindowEvent::TouchpadPressure { .. }
+                    | WindowEvent::TouchpadRotate { .. }
+                    | WindowEvent::ActivationTokenDone { .. } => (),
+                },
+                Event::NewEvents(_)
+                | Event::DeviceEvent { .. }
+                | Event::MemoryWarning
+                | Event::Suspended
+                | Event::AboutToWait
+                | Event::LoopExiting => (),
+            };
+        })
+    }
+}
+
+impl EventSource for WinitEventLoop {
+    type Event = WinitEvent;
+    type Metadata = ();
+    type Ret = ();
+    type Error = IoError;
+
+    const NEEDS_EXTRA_LIFECYCLE_EVENTS: bool = true;
+
+    fn before_sleep(&mut self) -> calloop::Result<Option<(calloop::Readiness, calloop::Token)>> {
+        let mut pending_events = std::mem::take(&mut self.pending_events);
+        let callback = |event| {
+            pending_events.push(event);
+        };
+        // NOTE: drain winit's event loop before going to sleep, so we can
+        // wake up if other thread has woken up underlying winit loop, like other
+        // event queue got dispatched during that.
+        self.dispatch_new_events(callback);
+        self.pending_events = pending_events;
+        if self.pending_events.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some((Readiness::EMPTY, self.fake_token.unwrap())))
+        }
+    }
+
+    fn process_events<F>(
+        &mut self,
+        _readiness: calloop::Readiness,
+        _token: calloop::Token,
+        mut callback: F,
+    ) -> Result<PostAction, Self::Error>
+    where
+        F: FnMut(Self::Event, &mut Self::Metadata) -> Self::Ret,
+    {
+        let mut callback = |event| callback(event, &mut ());
+        for event in self.pending_events.drain(..) {
+            callback(event);
+        }
+        Ok(match self.dispatch_new_events(callback) {
+            PumpStatus::Continue => PostAction::Continue,
+            PumpStatus::Exit(_) => PostAction::Remove,
+        })
+    }
+
+    fn register(
+        &mut self,
+        poll: &mut calloop::Poll,
+        token_factory: &mut calloop::TokenFactory,
+    ) -> calloop::Result<()> {
+        self.fake_token = Some(token_factory.token());
+        self.event_loop.register(poll, token_factory)
+    }
+
+    fn reregister(
+        &mut self,
+        poll: &mut calloop::Poll,
+        token_factory: &mut calloop::TokenFactory,
+    ) -> calloop::Result<()> {
+        self.event_loop.register(poll, token_factory)
+    }
+
+    fn unregister(&mut self, poll: &mut calloop::Poll) -> calloop::Result<()> {
+        self.event_loop.unregister(poll)
+    }
 }
 
 /// Specific events generated by Winit
@@ -284,322 +679,9 @@ pub enum WinitEvent {
     /// An input event occurred.
     Input(InputEvent<WinitInput>),
 
+    /// The user requested to close the window.
+    CloseRequested,
+
     /// A redraw was requested
-    Refresh,
-}
-
-impl<R> WinitGraphicsBackend<R>
-where
-    R: Bind<Rc<EGLSurface>>,
-    crate::backend::SwapBuffersError: From<<R as Renderer>::Error>,
-{
-    /// Window size of the underlying window
-    pub fn window_size(&self) -> WindowSize {
-        self.size.borrow().clone()
-    }
-
-    /// Reference to the underlying window
-    pub fn window(&self) -> &WinitWindow {
-        &self.window
-    }
-
-    /// Access the underlying renderer
-    pub fn renderer(&mut self) -> &mut R {
-        &mut self.renderer
-    }
-
-    /// Bind the underlying window to the underlying renderer
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    #[profiling::function]
-    pub fn bind(&mut self) -> Result<(), crate::backend::SwapBuffersError> {
-        // apparently the nvidia-driver doesn't like `wl_egl_window_resize`, if the surface is not current.
-        // So the order here is important.
-        self.renderer.bind(self.egl.clone())?;
-
-        // Were we told to resize?
-        if let Some(size) = self.resize_notification.take() {
-            self.egl.resize(size.w, size.h, 0, 0);
-        }
-
-        Ok(())
-    }
-
-    /// Retrieve the underlying `EGLSurface` for advanced operations
-    ///
-    /// **Note:** Don't carelessly use this to manually bind the renderer to the surface,
-    /// `WinitGraphicsBackend::bind` transparently handles window resizes for you.
-    pub fn egl_surface(&self) -> Rc<EGLSurface> {
-        self.egl.clone()
-    }
-
-    /// Retrieve the buffer age of the current backbuffer of the window.
-    ///
-    /// This will only return a meaningful value, if this `WinitGraphicsBackend`
-    /// is currently bound (by previously calling [`WinitGraphicsBackend::bind`]).
-    ///
-    /// Otherwise and on error this function returns `None`.
-    /// If you are using this value actively e.g. for damage-tracking you should
-    /// likely interpret an error just as if "0" was returned.
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    pub fn buffer_age(&self) -> Option<usize> {
-        if self.damage_tracking {
-            self.egl.buffer_age().map(|x| x as usize)
-        } else {
-            Some(0)
-        }
-    }
-
-    /// Submits the back buffer to the window by swapping, requires the window to be previously bound (see [`WinitGraphicsBackend::bind`]).
-    #[instrument(level = "trace", parent = &self.span, skip(self))]
-    #[profiling::function]
-    pub fn submit(
-        &mut self,
-        damage: Option<&[Rectangle<i32, Physical>]>,
-    ) -> Result<(), crate::backend::SwapBuffersError> {
-        let mut damage = match damage {
-            Some(damage) if self.damage_tracking && !damage.is_empty() => {
-                let size = self.size.borrow().physical_size;
-                let damage = damage
-                    .iter()
-                    .map(|rect| {
-                        Rectangle::from_loc_and_size(
-                            (rect.loc.x, size.h - rect.loc.y - rect.size.h),
-                            rect.size,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                Some(damage)
-            }
-            _ => None,
-        };
-        self.egl.swap_buffers(damage.as_deref_mut())?;
-        Ok(())
-    }
-}
-
-/// Errors that may happen when driving a [`WinitEventLoop`]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, thiserror::Error)]
-pub enum WinitError {
-    /// The underlying [`WinitWindow`] was closed. No further events can be processed.
-    ///
-    /// See `dispatch_new_events`.
-    #[error("Winit window was closed")]
-    WindowClosed,
-}
-
-impl WinitEventLoop {
-    /// Processes new events of the underlying event loop and calls the provided callback.
-    ///
-    /// You need to periodically call this function to keep the underlying event loop and
-    /// [`WinitWindow`] active. Otherwise the window may not respond to user interaction.
-    ///
-    /// Returns an error if the [`WinitWindow`] the window has been closed. Calling
-    /// `dispatch_new_events` again after the [`WinitWindow`] has been closed is considered an
-    /// application error and unspecified behaviour may occur.
-    ///
-    /// The linked [`WinitGraphicsBackend`] will error with a lost context and should
-    /// not be used anymore as well.
-    #[instrument(level = "trace", parent = &self.span, skip_all)]
-    #[profiling::function]
-    pub fn dispatch_new_events<F>(&mut self, mut callback: F) -> Result<(), WinitError>
-    where
-        F: FnMut(WinitEvent),
-    {
-        use self::WinitEvent::*;
-
-        let mut closed = false;
-
-        {
-            // NOTE: This ugly pile of references is here, because rustc could not
-            // figure out how to reference all these objects correctly into the
-            // upcoming closure, which is why all are borrowed manually and the
-            // assignments are then moved into the closure to avoid rustc's
-            // wrong interference.
-            let closed_ptr = &mut closed;
-            let key_counter = &mut self.key_counter;
-            let time = &self.time;
-            let window = &self.window;
-            let resize_notification = &self.resize_notification;
-            let window_size = &self.size;
-            let is_x11 = self.is_x11;
-
-            if !self.initialized {
-                callback(Input(InputEvent::DeviceAdded {
-                    device: WinitVirtualDevice,
-                }));
-                self.initialized = true;
-            }
-
-            self.events_loop
-                .run_return(move |event, _target, control_flow| match event {
-                    Event::RedrawEventsCleared => {
-                        *control_flow = ControlFlow::Exit;
-                    }
-                    Event::RedrawRequested(_id) => {
-                        callback(WinitEvent::Refresh);
-                    }
-                    Event::WindowEvent { event, .. } => {
-                        let duration = Instant::now().duration_since(*time);
-                        let time = duration.as_micros() as u64;
-                        match event {
-                            WindowEvent::Resized(psize) => {
-                                trace!("Resizing window to {:?}", psize);
-                                let scale_factor = window.scale_factor();
-                                let mut wsize = window_size.borrow_mut();
-                                let (pw, ph): (u32, u32) = psize.into();
-                                wsize.physical_size = (pw as i32, ph as i32).into();
-                                wsize.scale_factor = scale_factor;
-
-                                resize_notification.set(Some(wsize.physical_size));
-
-                                callback(WinitEvent::Resized {
-                                    size: wsize.physical_size,
-                                    scale_factor,
-                                });
-                            }
-                            WindowEvent::Focused(focus) => {
-                                callback(WinitEvent::Focus(focus));
-                            }
-
-                            WindowEvent::ScaleFactorChanged {
-                                scale_factor,
-                                new_inner_size: new_psize,
-                            } => {
-                                let mut wsize = window_size.borrow_mut();
-                                wsize.scale_factor = scale_factor;
-
-                                let (pw, ph): (u32, u32) = (*new_psize).into();
-                                resize_notification.set(Some((pw as i32, ph as i32).into()));
-
-                                callback(WinitEvent::Resized {
-                                    size: (pw as i32, ph as i32).into(),
-                                    scale_factor: wsize.scale_factor,
-                                });
-                            }
-                            WindowEvent::KeyboardInput {
-                                input: KeyboardInput { scancode, state, .. },
-                                ..
-                            } => {
-                                match state {
-                                    ElementState::Pressed => *key_counter += 1,
-                                    ElementState::Released => {
-                                        *key_counter = key_counter.checked_sub(1).unwrap_or(0)
-                                    }
-                                };
-                                callback(Input(InputEvent::Keyboard {
-                                    event: WinitKeyboardInputEvent {
-                                        time,
-                                        key: scancode,
-                                        count: *key_counter,
-                                        state,
-                                    },
-                                }));
-                            }
-                            WindowEvent::CursorMoved { position, .. } => {
-                                let lpos = position.to_logical(window_size.borrow().scale_factor);
-                                callback(Input(InputEvent::PointerMotionAbsolute {
-                                    event: WinitMouseMovedEvent {
-                                        size: window_size.clone(),
-                                        time,
-                                        logical_position: lpos,
-                                    },
-                                }));
-                            }
-                            WindowEvent::MouseWheel { delta, .. } => {
-                                let event = WinitMouseWheelEvent { time, delta };
-                                callback(Input(InputEvent::PointerAxis { event }));
-                            }
-                            WindowEvent::MouseInput { state, button, .. } => {
-                                callback(Input(InputEvent::PointerButton {
-                                    event: WinitMouseInputEvent {
-                                        time,
-                                        button,
-                                        state,
-                                        is_x11,
-                                    },
-                                }));
-                            }
-
-                            WindowEvent::Touch(Touch {
-                                phase: TouchPhase::Started,
-                                location,
-                                id,
-                                ..
-                            }) => {
-                                let location = location.to_logical(window_size.borrow().scale_factor);
-                                callback(Input(InputEvent::TouchDown {
-                                    event: WinitTouchStartedEvent {
-                                        size: window_size.clone(),
-                                        time,
-                                        location,
-                                        id,
-                                    },
-                                }));
-                            }
-                            WindowEvent::Touch(Touch {
-                                phase: TouchPhase::Moved,
-                                location,
-                                id,
-                                ..
-                            }) => {
-                                let location = location.to_logical(window_size.borrow().scale_factor);
-                                callback(Input(InputEvent::TouchMotion {
-                                    event: WinitTouchMovedEvent {
-                                        size: window_size.clone(),
-                                        time,
-                                        location,
-                                        id,
-                                    },
-                                }));
-                            }
-
-                            WindowEvent::Touch(Touch {
-                                phase: TouchPhase::Ended,
-                                location,
-                                id,
-                                ..
-                            }) => {
-                                let location = location.to_logical(window_size.borrow().scale_factor);
-                                callback(Input(InputEvent::TouchMotion {
-                                    event: WinitTouchMovedEvent {
-                                        size: window_size.clone(),
-                                        time,
-                                        location,
-                                        id,
-                                    },
-                                }));
-                                callback(Input(InputEvent::TouchUp {
-                                    event: WinitTouchEndedEvent { time, id },
-                                }))
-                            }
-
-                            WindowEvent::Touch(Touch {
-                                phase: TouchPhase::Cancelled,
-                                id,
-                                ..
-                            }) => {
-                                callback(Input(InputEvent::TouchCancel {
-                                    event: WinitTouchCancelledEvent { time, id },
-                                }));
-                            }
-                            WindowEvent::CloseRequested | WindowEvent::Destroyed => {
-                                callback(Input(InputEvent::DeviceRemoved {
-                                    device: WinitVirtualDevice,
-                                }));
-                                warn!("Window closed");
-                                *closed_ptr = true;
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {}
-                });
-        }
-
-        if closed {
-            Err(WinitError::WindowClosed)
-        } else {
-            Ok(())
-        }
-    }
+    Redraw,
 }
