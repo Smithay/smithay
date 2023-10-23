@@ -130,7 +130,10 @@ use std::{
 };
 
 use ::gbm::{BufferObject, BufferObjectFlags};
-use drm::control::{connector, crtc, framebuffer, plane, Mode, PlaneType};
+use drm::{
+    control::{connector, crtc, framebuffer, plane, Mode, PlaneType},
+    Device, DriverCapability,
+};
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
 use indexmap::IndexMap;
 use smallvec::SmallVec;
@@ -1487,8 +1490,18 @@ where
 
         let cursor_size = Size::from((cursor_size.w as i32, cursor_size.h as i32));
         let damage_tracker = OutputDamageTracker::from_mode_source(output_mode_source.clone());
-        let supports_fencing =
-            !surface.is_legacy() && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?;
+        let supports_fencing = !surface.is_legacy()
+            && surface
+                .get_driver_capability(DriverCapability::SyncObj)
+                .map(|val| val != 0)
+                .map_err(|err| {
+                    FrameError::DrmError(DrmError::Access {
+                        errmsg: "Failed to query driver capability",
+                        dev: surface.dev_path(),
+                        source: err,
+                    })
+                })?
+            && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?;
 
         for format in color_formats {
             debug!("Testing color format: {}", format);
