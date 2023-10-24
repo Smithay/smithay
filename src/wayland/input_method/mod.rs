@@ -46,7 +46,7 @@
 //! }
 //!
 //! // Add the seat state to your state and create manager globals
-//! InputMethodManagerState::new::<State>(&display_handle);
+//! InputMethodManagerState::new::<State, _>(&display_handle, |_client| true);
 //! // Add text input capabilities, needed for the input method to work
 //! TextInputManagerState::new::<State>(&display_handle);
 //!
@@ -103,6 +103,12 @@ impl<D: SeatHandler + 'static> InputMethodSeat for Seat<D> {
     }
 }
 
+/// Data associated with a InputMethodManager global.
+#[allow(missing_debug_implementations)]
+pub struct InputMethodManagerGlobalData {
+    filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
+}
+
 /// State of wp misc input method protocol
 #[derive(Debug)]
 pub struct InputMethodManagerState {
@@ -111,15 +117,19 @@ pub struct InputMethodManagerState {
 
 impl InputMethodManagerState {
     /// Initialize a text input manager global.
-    pub fn new<D>(display: &DisplayHandle) -> Self
+    pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<ZwpInputMethodManagerV2, ()>,
+        D: GlobalDispatch<ZwpInputMethodManagerV2, InputMethodManagerGlobalData>,
         D: Dispatch<ZwpInputMethodManagerV2, ()>,
         D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
         D: SeatHandler,
         D: 'static,
+        F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
-        let global = display.create_global::<D, ZwpInputMethodManagerV2, _>(MANAGER_VERSION, ());
+        let data = InputMethodManagerGlobalData {
+            filter: Box::new(filter),
+        };
+        let global = display.create_global::<D, ZwpInputMethodManagerV2, _>(MANAGER_VERSION, data);
 
         Self { global }
     }
@@ -130,9 +140,9 @@ impl InputMethodManagerState {
     }
 }
 
-impl<D> GlobalDispatch<ZwpInputMethodManagerV2, (), D> for InputMethodManagerState
+impl<D> GlobalDispatch<ZwpInputMethodManagerV2, InputMethodManagerGlobalData, D> for InputMethodManagerState
 where
-    D: GlobalDispatch<ZwpInputMethodManagerV2, ()>,
+    D: GlobalDispatch<ZwpInputMethodManagerV2, InputMethodManagerGlobalData>,
     D: Dispatch<ZwpInputMethodManagerV2, ()>,
     D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
     D: SeatHandler,
@@ -143,10 +153,14 @@ where
         _: &DisplayHandle,
         _: &Client,
         resource: New<ZwpInputMethodManagerV2>,
-        _: &(),
+        _: &InputMethodManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
         data_init.init(resource, ());
+    }
+
+    fn can_view(client: Client, global_data: &InputMethodManagerGlobalData) -> bool {
+        (global_data.filter)(&client)
     }
 }
 
@@ -202,7 +216,8 @@ where
 macro_rules! delegate_input_method_manager {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_manager_v2::ZwpInputMethodManagerV2: ()
+            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_manager_v2::ZwpInputMethodManagerV2:
+            $crate::wayland::input_method::InputMethodManagerGlobalData
         ] => $crate::wayland::input_method::InputMethodManagerState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
