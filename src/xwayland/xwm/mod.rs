@@ -214,15 +214,15 @@ enum StackingDirection {
 impl StackingDirection {
     fn pos_comparator(&self, pos: usize, last_pos: usize) -> bool {
         match self {
-            Self::Downwards => last_pos > pos,
-            Self::Upwards => last_pos < pos,
+            Self::Downwards => last_pos < pos,
+            Self::Upwards => last_pos > pos,
         }
     }
 
     fn stack_mode(&self) -> StackMode {
         match self {
-            Self::Downwards => StackMode::ABOVE,
-            Self::Upwards => StackMode::BELOW,
+            Self::Downwards => StackMode::BELOW,
+            Self::Upwards => StackMode::ABOVE,
         }
     }
 }
