@@ -64,6 +64,7 @@ pub mod relative_pointer;
 pub mod seat;
 pub mod security_context;
 pub mod selection;
+pub mod session_lock;
 pub mod shell;
 pub mod shm;
 pub mod socket;
