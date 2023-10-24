@@ -5,13 +5,10 @@ use smithay::{
         renderer::{
             damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, gles::GlesRenderer,
         },
-        winit::{self, WinitError, WinitEvent, WinitEventLoop, WinitGraphicsBackend},
+        winit::{self, WinitEvent},
     },
     output::{Mode, Output, PhysicalProperties, Subpixel},
-    reexports::calloop::{
-        timer::{TimeoutAction, Timer},
-        EventLoop,
-    },
+    reexports::calloop::EventLoop,
     utils::{Rectangle, Transform},
 };
 
@@ -24,10 +21,10 @@ pub fn init_winit(
     let display_handle = &mut data.display_handle;
     let state = &mut data.state;
 
-    let (mut backend, mut winit) = winit::init()?;
+    let (mut backend, winit) = winit::init()?;
 
     let mode = Mode {
-        size: backend.window_size().physical_size,
+        size: backend.window_size(),
         refresh: 60_000,
     };
 
@@ -50,78 +47,63 @@ pub fn init_winit(
 
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 
-    let timer = Timer::immediate();
-    event_loop.handle().insert_source(timer, move |_, _, data| {
-        winit_dispatch(&mut backend, &mut winit, data, &output, &mut damage_tracker).unwrap();
-        TimeoutAction::ToDuration(Duration::from_millis(16))
+    event_loop.handle().insert_source(winit, move |event, _, data| {
+        let display = &mut data.display_handle;
+        let state = &mut data.state;
+
+        match event {
+            WinitEvent::Resized { size, .. } => {
+                output.change_current_state(
+                    Some(Mode {
+                        size,
+                        refresh: 60_000,
+                    }),
+                    None,
+                    None,
+                    None,
+                );
+            }
+            WinitEvent::Input(event) => state.process_input_event(event),
+            WinitEvent::Redraw => {
+                let size = backend.window_size();
+                let damage = Rectangle::from_loc_and_size((0, 0), size);
+
+                backend.bind().unwrap();
+                smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
+                    &output,
+                    backend.renderer(),
+                    1.0,
+                    0,
+                    [&state.space],
+                    &[],
+                    &mut damage_tracker,
+                    [0.1, 0.1, 0.1, 1.0],
+                )
+                .unwrap();
+                backend.submit(Some(&[damage])).unwrap();
+
+                state.space.elements().for_each(|window| {
+                    window.send_frame(
+                        &output,
+                        state.start_time.elapsed(),
+                        Some(Duration::ZERO),
+                        |_, _| Some(output.clone()),
+                    )
+                });
+
+                state.space.refresh();
+                state.popups.cleanup();
+                let _ = display.flush_clients();
+
+                // Ask for redraw to schedule new frame.
+                backend.window().request_redraw();
+            }
+            WinitEvent::CloseRequested => {
+                state.loop_signal.stop();
+            }
+            _ => (),
+        };
     })?;
-
-    Ok(())
-}
-
-pub fn winit_dispatch(
-    backend: &mut WinitGraphicsBackend<GlesRenderer>,
-    winit: &mut WinitEventLoop,
-    data: &mut CalloopData,
-    output: &Output,
-    damage_tracker: &mut OutputDamageTracker,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let display_handle = &mut data.display_handle;
-    let state = &mut data.state;
-
-    let res = winit.dispatch_new_events(|event| match event {
-        WinitEvent::Resized { size, .. } => {
-            output.change_current_state(
-                Some(Mode {
-                    size,
-                    refresh: 60_000,
-                }),
-                None,
-                None,
-                None,
-            );
-        }
-        WinitEvent::Input(event) => state.process_input_event(event),
-        _ => (),
-    });
-
-    if let Err(WinitError::WindowClosed) = res {
-        // Stop the loop
-        state.loop_signal.stop();
-
-        return Ok(());
-    } else {
-        res?;
-    }
-
-    let size = backend.window_size().physical_size;
-    let damage = Rectangle::from_loc_and_size((0, 0), size);
-
-    backend.bind()?;
-    smithay::desktop::space::render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
-        output,
-        backend.renderer(),
-        1.0,
-        0,
-        [&state.space],
-        &[],
-        damage_tracker,
-        [0.1, 0.1, 0.1, 1.0],
-    )?;
-    backend.submit(Some(&[damage]))?;
-
-    state.space.elements().for_each(|window| {
-        window.send_frame(
-            output,
-            state.start_time.elapsed(),
-            Some(Duration::ZERO),
-            |_, _| Some(output.clone()),
-        )
-    });
-
-    state.space.refresh();
-    state.popups.cleanup();
-    display_handle.flush_clients()?;
 
     Ok(())
 }
