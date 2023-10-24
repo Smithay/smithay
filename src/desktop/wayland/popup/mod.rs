@@ -50,7 +50,7 @@ impl PopupKind {
     fn parent(&self) -> Option<WlSurface> {
         match *self {
             PopupKind::Xdg(ref t) => t.get_parent_surface(),
-            PopupKind::InputMethod(ref t) => Some(t.get_parent_surface()),
+            PopupKind::InputMethod(ref t) => t.get_parent().map(|parent| parent.surface.clone()),
         }
     }
 
@@ -65,7 +65,7 @@ impl PopupKind {
                     .geometry
                     .unwrap_or_default()
             }),
-            PopupKind::InputMethod(ref t) => t.parent_location(),
+            PopupKind::InputMethod(ref t) => t.get_parent().map(|parent| parent.location).unwrap_or_default(),
         }
     }
 

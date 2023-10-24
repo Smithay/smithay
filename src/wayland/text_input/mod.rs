@@ -150,6 +150,9 @@ where
                     },
                 );
                 handle.add_instance(&instance);
+                if input_method_handle.has_instance() {
+                    handle.enter();
+                }
             }
             zwp_text_input_manager_v3::Request::Destroy => {
                 // Nothing to do

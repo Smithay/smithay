@@ -278,16 +278,17 @@ impl<BackendData: Backend> InputMethodHandler for AnvilState<BackendData> {
         }
     }
 
-    fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, smithay::utils::Logical> {
-        let w = self
-            .space
-            .elements()
-            .find(|window| window.wl_surface().as_ref() == Some(parent));
-        if let Some(window) = w {
-            window.geometry()
-        } else {
-            Rectangle::default()
+    fn dismiss_popup(&mut self, surface: PopupSurface) {
+        if let Some(parent) = surface.get_parent().map(|parent| parent.surface.clone()) {
+            let _ = PopupManager::dismiss_popup(&parent, &PopupKind::from(surface));
         }
+    }
+
+    fn parent_geometry(&self, parent: &WlSurface) -> Rectangle<i32, smithay::utils::Logical> {
+        self.space
+            .elements()
+            .find_map(|window| (window.wl_surface().as_ref() == Some(parent)).then(|| window.geometry()))
+            .unwrap_or_default()
     }
 }
 

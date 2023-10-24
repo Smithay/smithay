@@ -144,7 +144,7 @@ fn serialize_pressed_keys(keys: Vec<u32>) -> Vec<u8> {
 }
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
-    fn enter(&self, seat: &Seat<D>, _data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
+    fn enter(&self, seat: &Seat<D>, state: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
         for_each_focused_kbds(seat, self, |kbd| {
             kbd.enter(
                 serial.into(),
@@ -152,23 +152,35 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
                 serialize_pressed_keys(keys.iter().map(|h| h.raw_code().raw() - 8).collect()),
             )
         });
-        let input_method = seat.input_method();
-        input_method.with_instance(|im| {
-            im.activate();
-        });
+
         let text_input = seat.text_input();
-        text_input.enter(self);
+        let input_method = seat.input_method();
+
+        if input_method.has_instance() {
+            input_method.deactivate_input_method(state, true);
+        }
+
+        // NOTE: Always set focus regardless whether the client actually has the
+        // text-input global bound due to clients doing lazy global binding.
+        text_input.set_focus(Some(self.clone()));
+
+        // Only notify on `enter` once we have an actual IME.
+        if input_method.has_instance() {
+            text_input.enter();
+        }
     }
 
-    fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial) {
+    fn leave(&self, seat: &Seat<D>, state: &mut D, serial: Serial) {
         for_each_focused_kbds(seat, self, |kbd| kbd.leave(serial.into(), self));
         let text_input = seat.text_input();
         let input_method = seat.input_method();
-        input_method.close_popup();
-        input_method.with_instance(|im| {
-            im.deactivate();
-        });
-        text_input.leave(self);
+
+        if input_method.has_instance() {
+            input_method.deactivate_input_method(state, true);
+            text_input.leave();
+        }
+
+        text_input.set_focus(None);
     }
 
     fn key(
