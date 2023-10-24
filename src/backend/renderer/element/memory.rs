@@ -226,7 +226,7 @@ use crate::{
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{Element, Id, Kind, RenderElement};
+use super::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 
 #[derive(Debug)]
 struct MemoryRenderBufferInner {
@@ -693,5 +693,15 @@ where
         };
 
         frame.render_texture_from_to(texture, src, dst, damage, transform, self.alpha)
+    }
+
+    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
+        let buf = self.buffer.inner.borrow();
+        Some(UnderlyingStorage::Memory((
+            buf.mem.as_ptr(),
+            buf.format,
+            buf.size.w as usize,
+            buf.size.h as usize,
+        )))
     }
 }

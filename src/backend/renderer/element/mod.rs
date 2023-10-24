@@ -21,6 +21,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
+use drm_fourcc::DrmFourcc;
 #[cfg(feature = "wayland_frontend")]
 use wayland_server::{backend::ObjectId, Resource};
 
@@ -100,6 +101,8 @@ pub enum UnderlyingStorage {
     /// A wayland buffer
     #[cfg(feature = "wayland_frontend")]
     Wayland(Buffer),
+    /// A memory backed buffer
+    Memory((*const u8, DrmFourcc, usize, usize)),
 }
 
 /// Defines the (optional) reason why a [`Element`] was selected for
