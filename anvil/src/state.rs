@@ -512,7 +512,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     ) -> AnvilState<BackendData> {
         let dh = display.handle();
 
-        let clock = Clock::new().expect("failed to initialize clock");
+        let clock = Clock::new();
 
         // init wayland clients
         let socket_name = if listen_on_socket {
