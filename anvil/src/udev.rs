@@ -20,7 +20,7 @@ use smithay::backend::drm::compositor::PrimaryPlaneElement;
 #[cfg(feature = "egl")]
 use smithay::backend::renderer::ImportEgl;
 #[cfg(feature = "debug")]
-use smithay::backend::renderer::ImportMem;
+use smithay::backend::renderer::{multigpu::MultiTexture, ImportMem};
 use smithay::{
     backend::{
         allocator::{
@@ -37,9 +37,9 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
-            element::{texture::TextureBuffer, AsRenderElements, RenderElement, RenderElementStates},
+            element::{memory::MemoryRenderBuffer, AsRenderElements, RenderElement, RenderElementStates},
             gles::{GlesRenderer, GlesTexture},
-            multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer, MultiTexture},
+            multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer},
             sync::SyncPoint,
             Bind, DebugFlags, ExportMem, ImportDma, ImportMemWl, Offscreen, Renderer,
         },
@@ -125,8 +125,8 @@ pub struct UdevData {
     allocator: Option<Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>>,
     gpus: GpuManager<GbmGlesBackend<GlesRenderer>>,
     backends: HashMap<DrmNode, BackendData>,
-    pointer_images: Vec<(xcursor::parser::Image, TextureBuffer<MultiTexture>)>,
-    pointer_element: PointerElement<MultiTexture>,
+    pointer_images: Vec<(xcursor::parser::Image, MemoryRenderBuffer)>,
+    pointer_element: PointerElement,
     #[cfg(feature = "debug")]
     fps_texture: Option<MultiTexture>,
     pointer_image: crate::cursor::Cursor,
@@ -1433,19 +1433,16 @@ impl AnvilState<UdevData> {
                 }
             })
             .unwrap_or_else(|| {
-                let texture = TextureBuffer::from_memory(
-                    &mut renderer,
-                    &frame.pixels_rgba,
+                let buffer = MemoryRenderBuffer::from_memory(
+                    &frame.pixels_rgba[..],
                     Fourcc::Abgr8888,
                     (frame.width as i32, frame.height as i32),
-                    false,
                     1,
                     Transform::Normal,
                     None,
-                )
-                .expect("Failed to import cursor bitmap");
-                pointer_images.push((frame, texture.clone()));
-                texture
+                );
+                pointer_images.push((frame, buffer.clone()));
+                buffer
             });
 
         let output = if let Some(output) = self.space.outputs().find(|o| {
@@ -1570,8 +1567,8 @@ fn render_surface<'a, 'b>(
     space: &Space<WindowElement>,
     output: &Output,
     pointer_location: Point<f64, Logical>,
-    pointer_image: &TextureBuffer<MultiTexture>,
-    pointer_element: &mut PointerElement<MultiTexture>,
+    pointer_image: &MemoryRenderBuffer,
+    pointer_element: &mut PointerElement,
     dnd_icon: &Option<wl_surface::WlSurface>,
     cursor_status: &mut CursorImageStatus,
     clock: &Clock<Monotonic>,
@@ -1600,7 +1597,7 @@ fn render_surface<'a, 'b>(
         let cursor_pos_scaled = cursor_pos.to_physical(scale).to_i32_round();
 
         // set cursor
-        pointer_element.set_texture(pointer_image.clone());
+        pointer_element.set_buffer(pointer_image.clone());
 
         // draw the cursor as relevant
         {
