@@ -211,6 +211,7 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     marker::PhantomData,
     rc::Rc,
+    sync::Arc,
 };
 
 use tracing::{instrument, trace, warn};
@@ -226,13 +227,102 @@ use crate::{
     utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{Element, Id, Kind, RenderElement};
+use super::{Element, Id, Kind, RenderElement, UnderlyingStorage};
+
+/// A buffer storing pixel data backed by system memory
+#[derive(Debug, Clone)]
+pub struct MemoryBuffer {
+    mem: Arc<Vec<u8>>,
+    format: Fourcc,
+    size: Size<i32, Buffer>,
+    stride: i32,
+}
+
+impl Default for MemoryBuffer {
+    fn default() -> Self {
+        Self {
+            mem: Default::default(),
+            format: Fourcc::Abgr8888,
+            size: Default::default(),
+            stride: Default::default(),
+        }
+    }
+}
+
+impl MemoryBuffer {
+    /// Create a new zeroed memory buffer with the specified format and size
+    pub fn new(format: Fourcc, size: impl Into<Size<i32, Buffer>>) -> Self {
+        let size = size.into();
+        let stride = size.w * (get_bpp(format).expect("Format with unknown bits per pixel") / 8) as i32;
+        let mem = vec![0; (stride * size.h) as usize];
+        Self {
+            mem: Arc::new(mem),
+            format,
+            size,
+            stride,
+        }
+    }
+
+    /// Create a new memory buffer from a slice with the specified format and size
+    pub fn from_slice(mem: &[u8], format: Fourcc, size: impl Into<Size<i32, Buffer>>) -> Self {
+        let size = size.into();
+        let stride = size.w * (get_bpp(format).expect("Format with unknown bits per pixel") / 8) as i32;
+        assert!(mem.len() >= (stride * size.h) as usize);
+        Self {
+            mem: Arc::new(mem.to_vec()),
+            format,
+            size,
+            stride,
+        }
+    }
+
+    /// Get the size of this buffer
+    pub fn size(&self) -> Size<i32, Buffer> {
+        self.size
+    }
+
+    /// Get the format of this buffer
+    pub fn format(&self) -> Fourcc {
+        self.format
+    }
+
+    /// Get the stride of this buffer
+    pub fn stride(&self) -> i32 {
+        self.stride
+    }
+
+    /// Resize this buffer to the size specified
+    pub fn resize(&mut self, size: impl Into<Size<i32, Buffer>>) -> bool {
+        let size = size.into();
+        let stride = size.w * (get_bpp(self.format).expect("Format with unknown bits per pixel") / 8) as i32;
+        let mem = Arc::make_mut(&mut self.mem);
+        let mem_size = (stride * size.h) as usize;
+        if mem.len() != mem_size {
+            mem.resize(mem_size, 0);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl std::ops::Deref for MemoryBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.mem
+    }
+}
+
+impl std::ops::DerefMut for MemoryBuffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *Arc::make_mut(&mut self.mem)
+    }
+}
 
 #[derive(Debug)]
 struct MemoryRenderBufferInner {
-    mem: Vec<u8>,
-    format: Fourcc,
-    size: Size<i32, Buffer>,
+    mem: MemoryBuffer,
     scale: i32,
     transform: Transform,
     opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
@@ -244,9 +334,7 @@ struct MemoryRenderBufferInner {
 impl Default for MemoryRenderBufferInner {
     fn default() -> Self {
         MemoryRenderBufferInner {
-            mem: Vec::default(),
-            format: Fourcc::Abgr8888,
-            size: Size::default(),
+            mem: Default::default(),
             scale: 1,
             transform: Transform::Normal,
             opaque_regions: None,
@@ -265,15 +353,8 @@ impl MemoryRenderBufferInner {
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Self {
-        let size = size.into();
         MemoryRenderBufferInner {
-            mem: vec![
-                0;
-                (size.w * (get_bpp(format).expect("Format with unknown bits per pixel") / 8) as i32 * size.h)
-                    as usize
-            ],
-            format,
-            size,
+            mem: MemoryBuffer::new(format, size),
             scale,
             transform,
             opaque_regions,
@@ -284,24 +365,13 @@ impl MemoryRenderBufferInner {
     }
 
     fn from_memory(
-        mem: &[u8],
-        format: Fourcc,
-        size: impl Into<Size<i32, Buffer>>,
+        mem: MemoryBuffer,
         scale: i32,
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Self {
-        let size = size.into();
-        assert_eq!(
-            mem.len(),
-            (size.w * (get_bpp(format).expect("Format with unknown bits per pixel") / 8) as i32 * size.h)
-                as usize
-        );
-
         MemoryRenderBufferInner {
-            mem: mem.to_vec(),
-            format,
-            size,
+            mem,
             scale,
             transform,
             opaque_regions,
@@ -311,15 +381,27 @@ impl MemoryRenderBufferInner {
         }
     }
 
+    fn from_slice(
+        mem: &[u8],
+        format: Fourcc,
+        size: impl Into<Size<i32, Buffer>>,
+        scale: i32,
+        transform: Transform,
+        opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+    ) -> Self {
+        Self::from_memory(
+            MemoryBuffer::from_slice(mem, format, size),
+            scale,
+            transform,
+            opaque_regions,
+        )
+    }
+
     fn resize(&mut self, size: impl Into<Size<i32, Buffer>>) {
-        let size = size.into();
-        let mem_size = (size.w * 4 * size.h) as usize;
-        if self.mem.len() != mem_size {
-            self.mem.resize(mem_size, 0);
+        if self.mem.resize(size) {
             self.renderer_seen.clear();
             self.textures.clear();
             self.damage_bag.reset();
-            self.size = size;
             self.opaque_regions = None;
         }
     }
@@ -338,7 +420,7 @@ impl MemoryRenderBufferInner {
             .damage_bag
             .damage_since(last_commit)
             .map(|d| d.into_iter().reduce(|a, b| a.merge(b)).unwrap_or_default())
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.size));
+            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), self.mem.size()));
 
         match self.textures.entry(texture_id) {
             Entry::Occupied(entry) => {
@@ -349,7 +431,7 @@ impl MemoryRenderBufferInner {
             }
             Entry::Vacant(entry) => {
                 trace!("importing memory");
-                let tex = renderer.import_memory(&self.mem, self.format, self.size, false)?;
+                let tex = renderer.import_memory(&self.mem, self.mem.format(), self.mem.size(), false)?;
                 entry.insert(Box::new(tex));
             }
         };
@@ -396,15 +478,28 @@ impl MemoryRenderBuffer {
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Self {
         let inner = MemoryRenderBufferInner::new(format, size, scale, transform, opaque_regions);
-        #[allow(clippy::arc_with_non_send_sync)]
         MemoryRenderBuffer {
             id: Id::new(),
             inner: Rc::new(RefCell::new(inner)),
         }
     }
 
-    /// Initialize a [`MemoryRenderBuffer`] from existing memory
+    /// Initialize a [`MemoryRenderBuffer`] from an existing [`MemoryBuffer`]
     pub fn from_memory(
+        mem: MemoryBuffer,
+        scale: i32,
+        transform: Transform,
+        opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
+    ) -> Self {
+        let inner = MemoryRenderBufferInner::from_memory(mem, scale, transform, opaque_regions);
+        MemoryRenderBuffer {
+            id: Id::new(),
+            inner: Rc::new(RefCell::new(inner)),
+        }
+    }
+
+    /// Initialize a [`MemoryRenderBuffer`] from a slice
+    pub fn from_slice(
         mem: &[u8],
         format: Fourcc,
         size: impl Into<Size<i32, Buffer>>,
@@ -412,8 +507,7 @@ impl MemoryRenderBuffer {
         transform: Transform,
         opaque_regions: Option<Vec<Rectangle<i32, Buffer>>>,
     ) -> Self {
-        let inner = MemoryRenderBufferInner::from_memory(mem, format, size, scale, transform, opaque_regions);
-        #[allow(clippy::arc_with_non_send_sync)]
+        let inner = MemoryRenderBufferInner::from_slice(mem, format, size, scale, transform, opaque_regions);
         MemoryRenderBuffer {
             id: Id::new(),
             inner: Rc::new(RefCell::new(inner)),
@@ -436,7 +530,7 @@ impl MemoryRenderBuffer {
 
     fn size(&self) -> Size<i32, Logical> {
         let guard = self.inner.borrow_mut();
-        guard.size.to_logical(guard.scale, guard.transform)
+        guard.mem.size().to_logical(guard.scale, guard.transform)
     }
 }
 
@@ -560,7 +654,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
                     .into_iter()
                     .filter_map(|rect| {
                         rect.to_f64()
-                            .to_logical(guard.scale as f64, guard.transform, &guard.size.to_f64())
+                            .to_logical(guard.scale as f64, guard.transform, &guard.mem.size().to_f64())
                             .intersection(src)
                             .map(|mut rect| {
                                 rect.loc -= self.src.map(|rect| rect.loc).unwrap_or_default();
@@ -596,7 +690,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
                     .iter()
                     .filter_map(|rect| {
                         rect.to_f64()
-                            .to_logical(guard.scale as f64, guard.transform, &guard.size.to_f64())
+                            .to_logical(guard.scale as f64, guard.transform, &guard.mem.size().to_f64())
                             .intersection(src)
                             .map(|mut rect| {
                                 rect.loc -= self.src.map(|rect| rect.loc).unwrap_or_default();
@@ -643,7 +737,7 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
         let guard = self.buffer.inner.borrow_mut();
         self.src
             .map(|src| src.to_buffer(guard.scale as f64, guard.transform, &logical_size.to_f64()))
-            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), guard.size).to_f64())
+            .unwrap_or_else(|| Rectangle::from_loc_and_size(Point::default(), guard.mem.size()).to_f64())
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
@@ -693,5 +787,10 @@ where
         };
 
         frame.render_texture_from_to(texture, src, dst, damage, transform, self.alpha)
+    }
+
+    fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
+        let buf = self.buffer.inner.borrow();
+        Some(UnderlyingStorage::Memory(buf.mem.clone()))
     }
 }
