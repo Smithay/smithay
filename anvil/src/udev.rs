@@ -1441,7 +1441,7 @@ impl AnvilState<UdevData> {
                 }
             })
             .unwrap_or_else(|| {
-                let buffer = MemoryRenderBuffer::from_memory(
+                let buffer = MemoryRenderBuffer::from_slice(
                     &frame.pixels_rgba,
                     Fourcc::Argb8888,
                     (frame.width as i32, frame.height as i32),

@@ -199,10 +199,11 @@ enum ScanoutBuffer<B: Buffer> {
     Cursor(BufferObject<()>),
 }
 
-impl<B: Buffer> From<UnderlyingStorage> for ScanoutBuffer<B> {
-    fn from(storage: UnderlyingStorage) -> Self {
+impl<B: Buffer> ScanoutBuffer<B> {
+    fn from_underlying_storage(storage: UnderlyingStorage) -> Option<Self> {
         match storage {
-            UnderlyingStorage::Wayland(buffer) => Self::Wayland(buffer),
+            UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer)),
+            UnderlyingStorage::Memory { .. } => None,
         }
     }
 }
@@ -283,10 +284,11 @@ enum ElementFramebufferCacheBuffer {
     Wayland(wayland_server::Weak<WlBuffer>),
 }
 
-impl From<&UnderlyingStorage> for ElementFramebufferCacheBuffer {
-    fn from(storage: &UnderlyingStorage) -> Self {
+impl ElementFramebufferCacheBuffer {
+    fn from_underlying_storage(storage: &UnderlyingStorage) -> Option<Self> {
         match storage {
-            UnderlyingStorage::Wayland(buffer) => Self::Wayland(buffer.downgrade()),
+            UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer.downgrade())),
+            UnderlyingStorage::Memory { .. } => None,
         }
     }
 }
@@ -298,11 +300,12 @@ struct ElementFramebufferCacheKey {
 }
 
 impl ElementFramebufferCacheKey {
-    fn from_underlying_storage(storage: &UnderlyingStorage, allow_opaque_fallback: bool) -> Self {
-        Self {
+    fn from_underlying_storage(storage: &UnderlyingStorage, allow_opaque_fallback: bool) -> Option<Self> {
+        let buffer = ElementFramebufferCacheBuffer::from_underlying_storage(storage)?;
+        Some(Self {
             allow_opaque_fallback,
-            buffer: ElementFramebufferCacheBuffer::from(storage),
-        }
+            buffer,
+        })
     }
 }
 
@@ -349,27 +352,17 @@ where
 {
     fn get(
         &self,
-        buffer: &UnderlyingStorage,
-        allow_opaque_fallback: bool,
+        cache_key: &ElementFramebufferCacheKey,
     ) -> Option<Result<OwnedFramebuffer<B>, ExportBufferError>> {
-        self.fb_cache
-            .get(&ElementFramebufferCacheKey::from_underlying_storage(
-                buffer,
-                allow_opaque_fallback,
-            ))
-            .cloned()
+        self.fb_cache.get(cache_key).cloned()
     }
 
     fn insert(
         &mut self,
-        buffer: &UnderlyingStorage,
+        cache_key: ElementFramebufferCacheKey,
         fb: Result<OwnedFramebuffer<B>, ExportBufferError>,
-        allow_opaque_fallback: bool,
     ) {
-        self.fb_cache.insert(
-            ElementFramebufferCacheKey::from_underlying_storage(buffer, allow_opaque_fallback),
-            fb,
-        );
+        self.fb_cache.insert(cache_key, fb);
     }
 
     fn cleanup(&mut self) {
@@ -767,10 +760,11 @@ pub enum ExportBuffer<'a, B: Buffer> {
     Allocator(&'a B),
 }
 
-impl<'a, B: Buffer> From<&'a UnderlyingStorage> for ExportBuffer<'a, B> {
-    fn from(storage: &'a UnderlyingStorage) -> Self {
+impl<'a, B: Buffer> ExportBuffer<'a, B> {
+    fn from_underlying_storage(storage: &'a UnderlyingStorage) -> Option<Self> {
         match storage {
-            UnderlyingStorage::Wayland(buffer) => Self::Wayland(buffer),
+            UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer)),
+            UnderlyingStorage::Memory { .. } => None,
         }
     }
 }
@@ -3261,7 +3255,10 @@ where
             .map(|state| &mut state.fb_cache)
             .unwrap();
 
-        let cached_fb = element_fb_cache.get(&underlying_storage, allow_opaque_fallback);
+        let element_cache_key =
+            ElementFramebufferCacheKey::from_underlying_storage(&underlying_storage, allow_opaque_fallback)
+                .ok_or(ExportBufferError::Unsupported)?;
+        let cached_fb = element_fb_cache.get(&element_cache_key);
 
         if cached_fb.is_none() {
             trace!(
@@ -3270,20 +3267,19 @@ where
                 &underlying_storage
             );
 
-            let fb = self
-                .framebuffer_exporter
-                .add_framebuffer(
-                    self.surface.device_fd(),
-                    ExportBuffer::from(&underlying_storage),
-                    allow_opaque_fallback,
-                )
-                .map_err(|err| {
-                    trace!("failed to add framebuffer: {:?}", err);
-                    ExportBufferError::ExportFailed
-                })
-                .and_then(|fb| {
-                    fb.map(|fb| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb)))
-                        .ok_or(ExportBufferError::Unsupported)
+            let fb = ExportBuffer::from_underlying_storage(&underlying_storage)
+                .ok_or(ExportBufferError::Unsupported)
+                .and_then(|buffer| {
+                    self.framebuffer_exporter
+                        .add_framebuffer(self.surface.device_fd(), buffer, allow_opaque_fallback)
+                        .map_err(|err| {
+                            trace!("failed to add framebuffer: {:?}", err);
+                            ExportBufferError::ExportFailed
+                        })
+                        .and_then(|fb| {
+                            fb.map(|fb| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb)))
+                                .ok_or(ExportBufferError::Unsupported)
+                        })
                 });
 
             if fb.is_err() {
@@ -3294,7 +3290,7 @@ where
                 );
             }
 
-            element_fb_cache.insert(&underlying_storage, fb, allow_opaque_fallback);
+            element_fb_cache.insert(element_cache_key.clone(), fb);
         } else {
             trace!(
                 "using cached fb for element {:?} underlying storage {:?}",
@@ -3303,17 +3299,14 @@ where
             );
         }
 
-        let fb = element_fb_cache
-            .get(&underlying_storage, allow_opaque_fallback)
-            .unwrap()?;
+        let fb = element_fb_cache.get(&element_cache_key).unwrap()?;
 
+        let src = element.src();
+        let dst = output_transform.transform_rect_in(element_geometry, &output_geometry.size);
         let transform = apply_output_transform(
             apply_underlying_storage_transform(element.transform(), &underlying_storage),
             output_transform,
         );
-
-        let src = element.src();
-        let dst = output_transform.transform_rect_in(element_geometry, &output_geometry.size);
         let alpha = element.alpha();
         let properties = PlaneProperties {
             src,
@@ -3322,6 +3315,9 @@ where
             transform,
             format: fb.format(),
         };
+        let buffer = ScanoutBuffer::from_underlying_storage(underlying_storage)
+            .map(|buffer| Owned::from(DrmScanoutBuffer { fb, buffer }))
+            .ok_or(ExportBufferError::Unsupported)?;
 
         if !element_states
             .get(element_id)
@@ -3432,10 +3428,7 @@ where
             properties,
             z_index: element_zindex,
             geometry: element_geometry,
-            buffer: Owned::from(DrmScanoutBuffer {
-                fb,
-                buffer: ScanoutBuffer::from(underlying_storage.clone()),
-            }),
+            buffer,
             failed_planes,
         })
     }
@@ -3841,6 +3834,7 @@ fn apply_underlying_storage_transform(
                 element_transform
             }
         }
+        UnderlyingStorage::Memory { .. } => element_transform,
     }
 }
 
@@ -3945,9 +3939,6 @@ where
         return false;
     }
 
-    // At the moment only wayland buffers are supported
-    let UnderlyingStorage::Wayland(buffer) = underlying_storage;
-
     let Ok(bo_format) = bo.format() else {
         return false;
     };
@@ -3955,41 +3946,59 @@ where
         return false;
     };
 
-    // Only shm buffers are supported for copy
-    shm::with_buffer_contents(&buffer, |ptr, len, data| {
-        let Some(format) = shm::shm_format_to_fourcc(data.format) else {
-            return false;
-        };
-
-        if format != bo_format {
-            return false;
-        };
-
-        let expected_len = (data.stride * data.height) as usize;
-        if data.offset as usize + expected_len > len {
-            return false;
-        };
-
-        let src = unsafe { std::slice::from_raw_parts(ptr.offset(data.offset as isize), expected_len) };
-        if data.stride == bo_stride as i32 {
+    let mut copy_to_bo = |src, src_stride, src_height| {
+        if src_stride == bo_stride as i32 {
             matches!(bo.write(src), Ok(Ok(_)))
         } else {
             let res = bo.map_mut(device, 0, 0, cursor_size.w as u32, cursor_size.h as u32, |mbo| {
                 let dst = mbo.buffer_mut();
-                for row in 0..data.height {
-                    let src_row_start = (row * data.stride) as usize;
-                    let src_row_end = src_row_start + data.stride as usize;
+                for row in 0..src_height {
+                    let src_row_start = (row * src_stride) as usize;
+                    let src_row_end = src_row_start + src_stride as usize;
                     let src_row = &src[src_row_start..src_row_end];
                     let dst_row_start = (row * bo_stride as i32) as usize;
-                    let dst_row_end = dst_row_start + data.stride as usize;
+                    let dst_row_end = dst_row_start + src_stride as usize;
                     let dst_row = &mut dst[dst_row_start..dst_row_end];
                     dst_row.copy_from_slice(src_row);
                 }
             });
             matches!(res, Ok(Ok(_)))
         }
-    })
-    .unwrap_or(false)
+    };
+
+    match underlying_storage {
+        UnderlyingStorage::Wayland(buffer) => {
+            // Only shm buffers are supported for copy
+            shm::with_buffer_contents(&buffer, |ptr, len, data| {
+                let Some(format) = shm::shm_format_to_fourcc(data.format) else {
+                    return false;
+                };
+
+                if format != bo_format {
+                    return false;
+                };
+
+                let expected_len = (data.stride * data.height) as usize;
+                if data.offset as usize + expected_len > len {
+                    return false;
+                };
+
+                copy_to_bo(
+                    unsafe { std::slice::from_raw_parts(ptr.offset(data.offset as isize), expected_len) },
+                    data.stride,
+                    data.height,
+                )
+            })
+            .unwrap_or(false)
+        }
+        UnderlyingStorage::Memory(memory) => {
+            if memory.format() != bo_format {
+                return false;
+            };
+
+            copy_to_bo(&*memory, memory.stride(), memory.size().h)
+        }
+    }
 }
 
 struct OwnedFramebuffer<B: Framebuffer>(Arc<B>);
