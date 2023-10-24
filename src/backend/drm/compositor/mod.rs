@@ -202,6 +202,7 @@ impl<B: Buffer> From<UnderlyingStorage> for ScanoutBuffer<B> {
     fn from(storage: UnderlyingStorage) -> Self {
         match storage {
             UnderlyingStorage::Wayland(buffer) => Self::Wayland(buffer),
+            UnderlyingStorage::Memory(_) => todo!(),
         }
     }
 }
@@ -286,6 +287,7 @@ impl From<&UnderlyingStorage> for ElementFramebufferCacheBuffer {
     fn from(storage: &UnderlyingStorage) -> Self {
         match storage {
             UnderlyingStorage::Wayland(buffer) => Self::Wayland(buffer.downgrade()),
+            UnderlyingStorage::Memory(_) => todo!(),
         }
     }
 }
@@ -762,6 +764,7 @@ impl<'a, B: Buffer> From<&'a UnderlyingStorage> for ExportBuffer<'a, B> {
     fn from(storage: &'a UnderlyingStorage) -> Self {
         match storage {
             UnderlyingStorage::Wayland(buffer) => Self::Wayland(buffer),
+            UnderlyingStorage::Memory(_) => todo!(),
         }
     }
 }
@@ -3803,6 +3806,7 @@ fn apply_underlying_storage_transform(
                 element_transform
             }
         }
+        UnderlyingStorage::Memory(_) => element_transform,
     }
 }
 
