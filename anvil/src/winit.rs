@@ -20,7 +20,7 @@ use smithay::{
         renderer::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::AsRenderElements,
-            gles::{GlesRenderer, GlesTexture},
+            gles::GlesRenderer,
             ImportDma, ImportMemWl,
         },
         winit::{self, WinitEvent, WinitGraphicsBackend},
@@ -212,7 +212,7 @@ pub fn run_winit() {
 
     info!("Initialization completed, starting the main loop.");
 
-    let mut pointer_element = PointerElement::<GlesTexture>::default();
+    let mut pointer_element = PointerElement::default();
 
     while state.running.load(Ordering::SeqCst) {
         let status = winit.dispatch_new_events(|event| match event {
