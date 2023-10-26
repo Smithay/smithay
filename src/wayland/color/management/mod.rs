@@ -433,7 +433,7 @@ impl TryInto<ImageDescriptionContents> for ImageDescriptionParametricBuilder {
     type Error = DescriptionError;
     fn try_into(self) -> Result<ImageDescriptionContents, Self::Error> {
         if (self.target_luminance.is_some() || self.max_cll.is_some() || self.max_fall.is_some())
-            && self.tf != Some(TransferFunction::CICP(18))
+            && !(self.tf == Some(TransferFunction::CICP(16)) || self.tf == Some(TransferFunction::CICP(18)))
         {
             return Err(DescriptionError::InconsistentSet);
         }

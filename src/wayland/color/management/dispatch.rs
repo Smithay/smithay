@@ -828,7 +828,9 @@ where
                     return
                 };
 
-                if !color_state.supported_tf_cicp.contains(&18 /* TODO */) {
+                if !color_state.supported_tf_cicp.contains(&16)
+                    && !color_state.supported_tf_cicp.contains(&18)
+                {
                     resource.post_error(
                         wp_image_description_creator_params_v1::Error::InconsistentSet,
                         "Mastering Luminance is only valid for Rec. ITU-R BT.2100-2, which is unsupported",
@@ -859,7 +861,9 @@ where
                     return
                 };
 
-                if !color_state.supported_tf_cicp.contains(&18 /* TODO */) {
+                if !color_state.supported_tf_cicp.contains(&16)
+                    && !color_state.supported_tf_cicp.contains(&18)
+                {
                     resource.post_error(
                         wp_image_description_creator_params_v1::Error::InconsistentSet,
                         "Max CCL is only valid for Rec. ITU-R BT.2100-2, which is unsupported",
@@ -882,7 +886,9 @@ where
                     return
                 };
 
-                if !color_state.supported_tf_cicp.contains(&18 /* TODO */) {
+                if !color_state.supported_tf_cicp.contains(&16)
+                    && !color_state.supported_tf_cicp.contains(&18)
+                {
                     resource.post_error(
                         wp_image_description_creator_params_v1::Error::InconsistentSet,
                         "Max FALL is only valid for Rec. ITU-R BT.2100-2, which is unsupported",
