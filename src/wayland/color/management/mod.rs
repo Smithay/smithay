@@ -32,8 +32,8 @@ pub struct ColorManagementState {
 pub trait ColorManagementHandler {
     fn color_management_state(&mut self) -> &mut ColorManagementState;
     fn verify_icc(&mut self, icc_data: &[u8]) -> bool;
-    fn description_for_output(&self, output: &Output) -> ImageDescription;
-    fn preferred_description_for_surface(&self, surface: &WlSurface) -> ImageDescription;
+    fn description_for_output(&mut self, output: &Output) -> ImageDescription;
+    fn preferred_description_for_surface(&mut self, surface: &WlSurface) -> ImageDescription;
 }
 
 #[derive(Debug)]
@@ -289,11 +289,11 @@ impl ColorManagementState {
             + Dispatch<wp_image_description_v1::WpImageDescriptionV1, ImageDescriptionData, D>
             + Dispatch<
                 wp_image_description_creator_icc_v1::WpImageDescriptionCreatorIccV1,
-                Mutex<ImageDescriptionIccBuilder>,
+                Mutex<Option<ImageDescriptionIccBuilder>>,
                 D,
             > + Dispatch<
                 wp_image_description_creator_params_v1::WpImageDescriptionCreatorParamsV1,
-                Mutex<ImageDescriptionParametricBuilder>,
+                Mutex<Option<ImageDescriptionParametricBuilder>>,
                 D,
             > + 'static,
     {
@@ -307,7 +307,20 @@ impl ColorManagementState {
         }
     }
 
-    pub fn build_description<B: TryInto<ImageDescriptionContents, Error = DescriptionError>>(
+    pub fn build_description(&mut self, contents: ImageDescriptionContents) -> ImageDescription {
+        struct ImageDescriptionWrapper(ImageDescriptionContents);
+        impl TryInto<ImageDescriptionContents> for ImageDescriptionWrapper {
+            type Error = DescriptionError;
+            fn try_into(self) -> Result<ImageDescriptionContents, Self::Error> {
+                Ok(self.0)
+            }
+        }
+
+        self.build_description_internal(ImageDescriptionWrapper(contents))
+            .unwrap()
+    }
+
+    fn build_description_internal<B: TryInto<ImageDescriptionContents, Error = DescriptionError>>(
         &mut self,
         contents: B,
     ) -> Result<ImageDescription, DescriptionError> {
@@ -458,17 +471,17 @@ impl TryInto<ImageDescriptionContents> for ImageDescriptionParametricBuilder {
 macro_rules! delegate_color_management {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         type __WpColorManagerV1 =
-            $crate::wayland::color::management::protocol::wp_color_manager_v1::WpColorManagerV1;
+            $crate::wayland::color::management::wp_color_manager_v1::WpColorManagerV1;
         type __WpColorManagementOutputV1 =
-            $crate::wayland::color::management::protocol::wp_color_management_output_v1::WpColorManagementOutputV1;
+            $crate::wayland::color::management::wp_color_management_output_v1::WpColorManagementOutputV1;
         type __WpColorManagementSurfaceV1 =
-            $crate::wayland::color::management::protocol::wp_color_management_surface_v1::WpColorManagementSurfaceV1;
+            $crate::wayland::color::management::wp_color_management_surface_v1::WpColorManagementSurfaceV1;
         type __WpImageDescriptionV1 =
-            $crate::wayland::color::management::protocol::wp_image_description_v1::WpImageDescriptionV1;
+            $crate::wayland::color::management::wp_image_description_v1::WpImageDescriptionV1;
         type __WpImageDescriptionCreatorIccV1 =
-            $crate::wayland::color::management::protocol::wp_image_description_creator_icc_v1::WpImageDescriptionCreatorIccV1;
+            $crate::wayland::color::management::wp_image_description_creator_icc_v1::WpImageDescriptionCreatorIccV1;
         type __WpImageDescriptionCreatorParamsV1 =
-            $crate::wayland::color::management::protocol::wp_image_description_creator_params_v1::WpImageDescriptionCreatorParamsV1;
+            $crate::wayland::color::management::wp_image_description_creator_params_v1::WpImageDescriptionCreatorParamsV1;
 
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
             [
@@ -490,7 +503,7 @@ macro_rules! delegate_color_management {
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
             [
-                __WpColorManagementSurfaceV1: wayland_server::Weak<wayland_server::protocol::surface::WlSurface>
+                __WpColorManagementSurfaceV1: $crate::reexports::wayland_server::Weak<$crate::reexports::wayland_server::protocol::wl_surface::WlSurface>
             ] => $crate::wayland::color::management::ColorManagementState
         );
 
@@ -508,13 +521,13 @@ macro_rules! delegate_color_management {
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
             [
-                __WpImageDescriptionCreatorIccV1: std::sync::Mutex<$crate::wayland::color::management::ImageDescriptionIccBuilder>
+                __WpImageDescriptionCreatorIccV1: std::sync::Mutex<Option<$crate::wayland::color::management::ImageDescriptionIccBuilder>>
             ] => $crate::wayland::color::management::ColorManagementState
         );
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
             [
-                __WpImageDescriptionCreatorParamsV1: std::sync::Mutex<$crate::wayland::color::management::ImageDescriptionParametricBuilder>
+                __WpImageDescriptionCreatorParamsV1: std::sync::Mutex<Option<$crate::wayland::color::management::ImageDescriptionParametricBuilder>>
             ] => $crate::wayland::color::management::ColorManagementState
         );
     };

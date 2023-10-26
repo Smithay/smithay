@@ -115,9 +115,9 @@ impl ColorRepresentationState {
 macro_rules! delegate_color_representation {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         type __WpColorRepresentationManagerV1 =
-            $crate::wayland::color::representation::protocol::wp_color_representation_manager_v1::WpColorRepresentationManagerV1;
+            $crate::wayland::color::representation::wp_color_representation_manager_v1::WpColorRepresentationManagerV1;
         type __WpColorRepresentationV1 =
-            $crate::wayland::color::representation::protocol::wp_color_representation_v1::WpColorRepresentationV1;
+            $crate::wayland::color::representation::wp_color_representation_v1::WpColorRepresentationV1;
 
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
             [
@@ -133,7 +133,7 @@ macro_rules! delegate_color_representation {
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
             [
-                __WpColorRepresentationV1: wayland_server::Weak<wayland_server::protocol::surface::WlSurface>
+                __WpColorRepresentationV1: $crate::reexports::wayland_server::Weak<$crate::reexports::wayland_server::protocol::wl_surface::WlSurface>
             ] => $crate::wayland::color::representation::ColorRepresentationState
         );
     };

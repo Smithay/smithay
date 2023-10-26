@@ -588,7 +588,7 @@ where
                 };
 
                 let color_state = state.color_management_state();
-                match color_state.build_description(data) {
+                match color_state.build_description_internal(data) {
                     Ok(desc) => {
                         if state.verify_icc(match &desc.0.contents {
                             super::ImageDescriptionContents::ICC(IccData { data, .. }) => data,
@@ -911,7 +911,7 @@ where
                     return
                 };
 
-                match color_state.build_description(data) {
+                match color_state.build_description_internal(data) {
                     Ok(desc) => {
                         let instance = data_init.init(
                             image_description,
