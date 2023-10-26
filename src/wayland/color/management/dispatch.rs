@@ -475,10 +475,10 @@ where
                             }
                         }
                         if let Some(max_ccl) = max_ccl {
-                            resource.target_maxCLL(*max_ccl);
+                            resource.target_max_cll(*max_ccl);
                         }
                         if let Some(max_fall) = max_fall {
-                            resource.target_maxFALL(*max_fall);
+                            resource.target_max_fall(*max_fall);
                         }
                     }
                 }
@@ -854,7 +854,7 @@ where
                     return;
                 }
             }
-            wp_image_description_creator_params_v1::Request::SetMaxCLL { maxCLL } => {
+            wp_image_description_creator_params_v1::Request::SetMaxCll { max_cll } => {
                 let mut data_guard = data.lock().unwrap();
                 let Some(data) = data_guard.as_mut() else {
                     resource.post_error(wp_image_description_creator_params_v1::Error::AlreadyUsed, "Creator was already used");
@@ -871,7 +871,7 @@ where
                     return;
                 }
 
-                if data.set_max_cll(maxCLL) {
+                if data.set_max_cll(max_cll) {
                     resource.post_error(
                         wp_image_description_creator_params_v1::Error::AlreadySet,
                         "Max CCL was already set",
@@ -879,7 +879,7 @@ where
                     return;
                 }
             }
-            wp_image_description_creator_params_v1::Request::SetMaxFALL { maxFALL } => {
+            wp_image_description_creator_params_v1::Request::SetMaxFall { max_fall } => {
                 let mut data_guard = data.lock().unwrap();
                 let Some(data) = data_guard.as_mut() else {
                     resource.post_error(wp_image_description_creator_params_v1::Error::AlreadyUsed, "Creator was already used");
@@ -896,7 +896,7 @@ where
                     return;
                 }
 
-                if data.set_max_fall(maxFALL) {
+                if data.set_max_fall(max_fall) {
                     resource.post_error(
                         wp_image_description_creator_params_v1::Error::AlreadySet,
                         "Max CCL was already set",
