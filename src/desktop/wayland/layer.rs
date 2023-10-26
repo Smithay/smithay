@@ -703,16 +703,16 @@ impl LayerSurface {
     }
 
     /// Run a closure on all surfaces in this layer (including it's popups, if [`PopupManager`] is used)
-    pub fn with_surfaces<F>(&self, processor: F)
+    pub fn with_surfaces<F>(&self, mut processor: F)
     where
-        F: FnMut(&WlSurface, &SurfaceData) + Copy,
+        F: FnMut(&WlSurface, &SurfaceData),
     {
         let surface = self.0.surface.wl_surface();
 
-        with_surfaces_surface_tree(surface, processor);
+        with_surfaces_surface_tree(surface, &mut processor);
         for (popup, _) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
-            with_surfaces_surface_tree(surface, processor);
+            with_surfaces_surface_tree(surface, &mut processor);
         }
     }
 

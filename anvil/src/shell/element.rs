@@ -65,14 +65,15 @@ impl WindowElement {
 
     pub fn with_surfaces<F>(&self, processor: F)
     where
-        F: FnMut(&WlSurface, &WlSurfaceData) + Copy,
+        F: FnMut(&WlSurface, &WlSurfaceData),
     {
         match self {
             WindowElement::Wayland(w) => w.with_surfaces(processor),
             #[cfg(feature = "xwayland")]
             WindowElement::X11(w) => {
                 if let Some(surface) = w.wl_surface() {
-                    with_surfaces_surface_tree(&surface, processor);
+                    let mut processor = processor;
+                    with_surfaces_surface_tree(&surface, &mut processor);
                 }
             }
         }
