@@ -224,15 +224,15 @@ impl Window {
     }
 
     /// Run a closure on all surfaces in this window (including it's popups, if [`PopupManager`] is used)
-    pub fn with_surfaces<F>(&self, processor: F)
+    pub fn with_surfaces<F>(&self, mut processor: F)
     where
-        F: FnMut(&wl_surface::WlSurface, &SurfaceData) + Copy,
+        F: FnMut(&wl_surface::WlSurface, &SurfaceData),
     {
         let surface = self.0.toplevel.wl_surface();
-        with_surfaces_surface_tree(surface, processor);
+        with_surfaces_surface_tree(surface, &mut processor);
         for (popup, _) in PopupManager::popups_for_surface(surface) {
             let surface = popup.wl_surface();
-            with_surfaces_surface_tree(surface, processor);
+            with_surfaces_surface_tree(surface, &mut processor);
         }
     }
 

@@ -11,7 +11,11 @@ use std::{
     fmt,
     sync::{atomic::Ordering, Arc, Mutex},
 };
-use wayland_server::{backend::ObjectId, protocol::wl_surface::WlSurface, DisplayHandle, Resource};
+use wayland_server::{
+    backend::ObjectId,
+    protocol::{wl_output::Transform, wl_surface::WlSurface},
+    DisplayHandle, Resource,
+};
 
 type CommitHook = dyn Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync;
 type DestructionHook = dyn Fn(&mut dyn Any, &SurfaceData) + Send;
@@ -503,6 +507,24 @@ impl PrivateSurfaceData {
                 true
             }
             TraversalAction::Break => false,
+        }
+    }
+}
+
+/// The latest surface state suggest by wl_compositor `v6` events.
+#[derive(Debug)]
+pub struct SuggestedSurfaceState {
+    /// Latest scale sent via `wl_surface::preferred_buffer_scale`.
+    pub scale: i32,
+    /// Latest transform sent via `wl_surface::preferred_buffer_transform`.
+    pub transform: Transform,
+}
+
+impl Default for SuggestedSurfaceState {
+    fn default() -> Self {
+        Self {
+            scale: 1,
+            transform: Transform::Normal,
         }
     }
 }

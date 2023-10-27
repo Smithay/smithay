@@ -110,14 +110,16 @@ mod handlers;
 mod transaction;
 mod tree;
 
+use std::cell::RefCell;
 use std::{any::Any, sync::Mutex};
 
 pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
 use self::transaction::TransactionQueue;
 pub use self::transaction::{Blocker, BlockerState};
-use self::tree::PrivateSurfaceData;
 pub use self::tree::{AlreadyHasRole, TraversalAction};
+use self::tree::{PrivateSurfaceData, SuggestedSurfaceState};
+use crate::utils::Transform;
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
@@ -399,6 +401,32 @@ where
     PrivateSurfaceData::with_states(surface, f)
 }
 
+/// Send the `scale` and `transform` preferences for the given surface when it supports them.
+///
+/// The new state is only send when it differs from the already cached one on the calling thread.
+pub fn send_surface_state(surface: &WlSurface, data: &SurfaceData, scale: i32, transform: Transform) {
+    if surface.version() < 6 {
+        return;
+    }
+
+    // NOTE we insert default for checks below to work properly.
+    let mut storage = data
+        .data_map
+        .get_or_insert(|| RefCell::new(SuggestedSurfaceState::default()))
+        .borrow_mut();
+
+    if storage.scale != scale {
+        surface.preferred_buffer_scale(scale);
+        storage.scale = scale;
+    }
+
+    let transform = transform.into();
+    if storage.transform != transform {
+        surface.preferred_buffer_transform(transform);
+        storage.transform = transform;
+    }
+}
+
 /// Retrieve the metadata associated with a `wl_region`
 ///
 /// If the region is not managed by the `CompositorGlobal` that provided this token, this
@@ -517,6 +545,20 @@ pub trait CompositorHandler {
         let _ = surface;
     }
 
+    /// New subsurface handler.
+    ///
+    /// This handler can be used to run extra logic when subsurface is getting created. This
+    /// is an addition to [`new_surface`], which will be run for the subsurface surface anyway.
+    ///
+    /// When your compositor knows beforehand where it'll position subsurfaces it can send
+    /// [`send_surface_state`] to them.
+    ///
+    /// [`new_surface`]: Self::new_surface
+    fn new_subsurface(&mut self, surface: &WlSurface, parent: &WlSurface) {
+        let _ = surface;
+        let _ = parent;
+    }
+
     /// Surface commit handler
     ///
     /// This is called when any changed state from a commit actually becomes visible.
@@ -564,18 +606,40 @@ impl CompositorClientState {
     }
 }
 
-#[doc(hidden)]
 impl CompositorState {
-    /// Create new [`wl_compositor`](wayland_server::protocol::wl_compositor)
-    /// and [`wl_subcompositor`](wayland_server::protocol::wl_subcompositor) globals.
+    /// Create new [`wl_compositor`] version 5 and [`wl_subcompositor`] globals.
     ///
     /// It returns the two global handles, in case you wish to remove these globals from
     /// the event loop in the future.
+    ///
+    /// [`wl_compositor`]: wayland_server::protocol::wl_compositor
+    /// [`wl_subcompositor`]: wayland_server::protocol::wl_subcompositor
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
         D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
     {
-        let compositor = display.create_global::<D, WlCompositor, ()>(5, ());
+        Self::new_with_version::<D>(display, 5)
+    }
+
+    /// The same as [`new`], but binds at least version 6 of [`wl_compositor`].
+    ///
+    /// This means that for clients to scale and apply transformation with
+    /// non-default values [`send_surface_state`] must be used.
+    ///
+    /// [`new`]: Self::new
+    /// [`wl_compositor`]: wayland_server::protocol::wl_compositor
+    pub fn new_v6<D>(display: &DisplayHandle) -> Self
+    where
+        D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
+    {
+        Self::new_with_version::<D>(display, 6)
+    }
+
+    fn new_with_version<D>(display: &DisplayHandle, version: u32) -> Self
+    where
+        D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
+    {
+        let compositor = display.create_global::<D, WlCompositor, ()>(version, ());
         let subcompositor = display.create_global::<D, WlSubcompositor, ()>(1, ());
 
         CompositorState {

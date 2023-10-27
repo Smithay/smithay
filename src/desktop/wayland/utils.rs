@@ -149,7 +149,7 @@ where
 type SurfacePrimaryScanoutOutput = Mutex<PrimaryScanoutOutput>;
 
 /// Run a closure on all surfaces of a surface tree
-pub fn with_surfaces_surface_tree<F>(surface: &wl_surface::WlSurface, mut processor: F)
+pub fn with_surfaces_surface_tree<F>(surface: &wl_surface::WlSurface, processor: &mut F)
 where
     F: FnMut(&wl_surface::WlSurface, &SurfaceData),
 {
