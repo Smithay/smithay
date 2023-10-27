@@ -241,14 +241,12 @@ pub fn is_device_drm(dev: dev_t) -> bool {
 }
 
 /// Returns the path of a specific type of node from the same DRM device as another path of the same node.
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub fn path_to_type<P: AsRef<Path>>(path: P, ty: NodeType) -> io::Result<PathBuf> {
     let stat = stat(path.as_ref()).map_err(Into::<io::Error>::into)?;
     dev_path(stat.st_rdev, ty)
 }
 
 /// Returns the path of a specific type of node from the same DRM device as an existing DrmNode.
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub fn node_path(node: &DrmNode, ty: NodeType) -> io::Result<PathBuf> {
     dev_path(node.dev, ty)
 }
@@ -341,7 +339,47 @@ fn dev_path(dev: dev_t, ty: NodeType) -> io::Result<PathBuf> {
     ))
 }
 
-#[cfg(target_os = "freebsd")]
+#[cfg(target_os = "openbsd")]
+fn dev_path(dev: dev_t, ty: NodeType) -> io::Result<PathBuf> {
+    use std::io::ErrorKind;
+
+    if !is_device_drm(dev) {
+        return Err(io::Error::new(
+            ErrorKind::NotFound,
+            format!("{}:{} is no DRM device", major(dev), minor(dev)),
+        ));
+    }
+
+    let old_id = minor(dev);
+    let old_ty = match old_id >> 6 {
+        0 => NodeType::Primary,
+        1 => NodeType::Control,
+        2 => NodeType::Render,
+        _ => {
+            return Err(io::Error::new(
+                ErrorKind::NotFound,
+                format!("{}:{} is no DRM device", major(dev), minor(dev)),
+            ));
+        }
+    };
+    let id = old_id - get_minor_base(old_ty) + get_minor_base(ty);
+    let path = PathBuf::from(format!("/dev/dri/{}{}", ty.minor_name_prefix(), id));
+    if path.exists() {
+        return Ok(path);
+    }
+
+    Err(io::Error::new(
+        ErrorKind::NotFound,
+        format!(
+            "Could not find node of type {} from DRM device {}:{}",
+            ty,
+            major(dev),
+            minor(dev)
+        ),
+    ))
+}
+
+#[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
 fn get_minor_base(type_: NodeType) -> u32 {
     match type_ {
         NodeType::Primary => 0,
