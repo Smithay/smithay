@@ -374,5 +374,5 @@ unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
 
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 unsafe fn siginfo_si_addr(info: *mut libc::siginfo_t) -> *mut libc::c_void {
-    unsafe { (*info).si_addr }
+    unsafe { (*info).si_addr as _ }
 }

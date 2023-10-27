@@ -3,20 +3,20 @@
 // DRM major value.
 
 #[cfg(target_os = "dragonfly")]
-pub const DRM_MAJOR: u64 = 145;
+pub const DRM_MAJOR: u32 = 145;
 
 #[cfg(target_os = "netbsd")]
-pub const DRM_MAJOR: u64 = 34;
+pub const DRM_MAJOR: u32 = 34;
 
 #[cfg(all(target_os = "openbsd", target_arch = "i386"))]
-pub const DRM_MAJOR: u64 = 88;
+pub const DRM_MAJOR: u32 = 88;
 
 #[cfg(all(target_os = "openbsd", not(target_arch = "i386")))]
-pub const DRM_MAJOR: u64 = 87;
+pub const DRM_MAJOR: u32 = 87;
 
 #[cfg(not(any(target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd")))]
 #[allow(dead_code)] // Not used on Linux
-pub const DRM_MAJOR: u64 = 226;
+pub const DRM_MAJOR: u32 = 226;
 
 // DRM node prefixes
 
