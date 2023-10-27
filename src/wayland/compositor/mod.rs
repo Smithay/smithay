@@ -545,6 +545,20 @@ pub trait CompositorHandler {
         let _ = surface;
     }
 
+    /// New subsurface handler.
+    ///
+    /// This handler can be used to run extra logic when subsurface is getting created. This
+    /// is an addition to [`new_surface`], which will be run for the subsurface surface anyway.
+    ///
+    /// When your compositor knows beforehand where it'll position subsurfaces it can send
+    /// [`send_surface_state`] to them.
+    ///
+    /// [`new_surface`]: Self::new_surface
+    fn new_subsurface(&mut self, surface: &WlSurface, parent: &WlSurface) {
+        let _ = surface;
+        let _ = parent;
+    }
+
     /// Surface commit handler
     ///
     /// This is called when any changed state from a commit actually becomes visible.

@@ -390,7 +390,7 @@ where
     D: 'static,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         _client: &wayland_server::Client,
         subcompositor: &WlSubcompositor,
         request: wl_subcompositor::Request,
@@ -416,6 +416,8 @@ where
                 super::with_states(&surface, |states| {
                     states.data_map.insert_if_missing_threadsafe(SubsurfaceState::new)
                 });
+
+                state.new_subsurface(&surface, &parent);
             }
             wl_subcompositor::Request::Destroy => {}
             _ => unreachable!(),
