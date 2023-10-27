@@ -208,6 +208,11 @@ impl SessionLocker {
         }
     }
 
+    /// Get the underlying [`ExtSessionLockV1`]
+    pub fn ext_session_lock(&self) -> &ExtSessionLockV1 {
+        self.lock.as_ref().unwrap()
+    }
+
     /// Notify the client that the session lock was successful.
     pub fn lock(mut self) {
         if let Some(lock) = self.lock.take() {
