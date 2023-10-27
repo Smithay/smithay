@@ -64,7 +64,7 @@ mod lock;
 mod surface;
 
 pub use lock::SessionLockState;
-pub use surface::{ExtLockSurfaceUserData, LockSurface};
+pub use surface::{ExtLockSurfaceUserData, LockSurface, LockSurfaceState};
 
 const MANAGER_VERSION: u32 = 1;
 
