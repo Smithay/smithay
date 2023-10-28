@@ -1,11 +1,11 @@
 //! Implementation of backend traits for types provided by `winit`
 //!
 //! This module provides the appropriate implementations of the backend
-//! interfaces for running a compositor as a Wayland of X11 client using [`winit`].
+//! interfaces for running a compositor as a Wayland or X11 client using [`winit`].
 //!
 //! ## Usage
 //!
-//! The backend is initialized using of of the [`init`], [`init_from_builder`] or
+//! The backend is initialized using one of the [`init`], [`init_from_builder`] or
 //! [`init_from_builder_with_gl_attr`] functions, depending on the amount of control
 //! you want on the initialization of the backend. These functions will provide you
 //! with two objects:
