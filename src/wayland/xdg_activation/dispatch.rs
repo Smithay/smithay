@@ -51,10 +51,7 @@ where
 
                 let activation_state = state.activation_state();
 
-                if let Some(token_data) = activation_state.pending_tokens.remove(&token) {
-                    activation_state
-                        .activation_requests
-                        .insert(token.clone(), (token_data.clone(), surface.clone()));
+                if let Some(token_data) = activation_state.known_tokens.get(&token).cloned() {
                     state.request_activation(token, token_data, surface);
                 }
             }
@@ -158,7 +155,7 @@ where
                 *data.token.lock().unwrap() = Some(activation_token.clone());
                 state
                     .activation_state()
-                    .pending_tokens
+                    .known_tokens
                     .insert(activation_token.clone(), token_data);
                 token.done(activation_token.to_string());
             }
@@ -170,21 +167,10 @@ where
     }
 
     fn destroyed(
-        state: &mut D,
+        _: &mut D,
         _: ClientId,
         _: &xdg_activation_token_v1::XdgActivationTokenV1,
-        data: &ActivationTokenData,
+        _: &ActivationTokenData,
     ) {
-        let guard = data.token.lock().unwrap();
-
-        if let Some(token) = &*guard {
-            let activation_state = state.activation_state();
-
-            activation_state.pending_tokens.remove(token);
-
-            if let Some((token_data, surface)) = activation_state.activation_requests.remove(token) {
-                state.destroy_activation(token.clone(), token_data, surface);
-            }
-        }
     }
 }
