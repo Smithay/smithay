@@ -28,19 +28,7 @@
 //!     ) {
 //!         if token_data.timestamp.elapsed().as_secs() < 10 {
 //!             // Request surface activation
-//!         } else{
-//!             // Discard the request
-//!             self.activation_state.remove_request(&token);
 //!         }
-//!     }
-//!
-//!     fn destroy_activation(
-//!         &mut self,
-//!         token: XdgActivationToken,
-//!         token_data: XdgActivationTokenData,
-//!         surface: WlSurface
-//!     ) {
-//!         // The request is cancelled
 //!     }
 //! }
 //!
