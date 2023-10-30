@@ -59,7 +59,7 @@
 use std::{
     collections::HashMap,
     ops,
-    sync::{atomic::AtomicBool, Mutex},
+    sync::{atomic::AtomicBool, Arc, Mutex},
     time::Instant,
 };
 
@@ -72,7 +72,7 @@ use wayland_server::{
 
 use rand::distributions::{Alphanumeric, DistString};
 
-use crate::utils::Serial;
+use crate::utils::{user_data::UserDataMap, Serial};
 
 mod dispatch;
 
@@ -135,6 +135,8 @@ pub struct XdgActivationTokenData {
     /// You can use this do ignore tokens based on time.
     /// For example you coould ignore all tokens older that 5s.
     pub timestamp: Instant,
+    /// Additional user data attached
+    pub user_data: Arc<UserDataMap>,
 }
 
 impl XdgActivationTokenData {
@@ -150,6 +152,7 @@ impl XdgActivationTokenData {
                 app_id,
                 surface,
                 timestamp: Instant::now(),
+                user_data: Arc::new(UserDataMap::new()),
             },
         )
     }
@@ -214,6 +217,8 @@ pub trait XdgActivationHandler {
     ///
     /// If the token isn't considered valid, it can be immediately untracked by returning `false`.
     /// The default implementation considers every token valid and will always return `true`.
+    ///
+    /// This method may also be used to attach user_data to the token.
     fn token_created(&mut self, token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
         let _ = (token, data);
         true
