@@ -48,6 +48,13 @@ impl From<Serial> for u32 {
     }
 }
 
+impl Serial {
+    /// Checks if a serial was generated after or is equal to another given serial
+    pub fn is_no_older_than(&self, other: &Serial) -> bool {
+        other <= self
+    }
+}
+
 /// A counter for generating serials, for use in the client protocol
 ///
 /// A global instance of this counter is available as the `SERIAL_COUNTER`
