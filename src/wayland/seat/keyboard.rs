@@ -145,6 +145,7 @@ fn serialize_pressed_keys(keys: Vec<u32>) -> Vec<u8> {
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
     fn enter(&self, seat: &Seat<D>, state: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
+        *seat.get_keyboard().unwrap().arc.last_enter.lock().unwrap() = Some(serial);
         for_each_focused_kbds(seat, self, |kbd| {
             kbd.enter(
                 serial.into(),
@@ -171,6 +172,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
     }
 
     fn leave(&self, seat: &Seat<D>, state: &mut D, serial: Serial) {
+        *seat.get_keyboard().unwrap().arc.last_enter.lock().unwrap() = None;
         for_each_focused_kbds(seat, self, |kbd| kbd.leave(serial.into(), self));
         let text_input = seat.text_input();
         let input_method = seat.input_method();

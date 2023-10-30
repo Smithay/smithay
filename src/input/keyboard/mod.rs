@@ -190,6 +190,8 @@ pub(crate) struct KbdRc<D: SeatHandler> {
     pub(crate) keymap: Mutex<KeymapFile>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) known_kbds: Mutex<Vec<wayland_server::protocol::wl_keyboard::WlKeyboard>>,
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) last_enter: Mutex<Option<Serial>>,
     pub(crate) span: tracing::Span,
 }
 
@@ -207,6 +209,7 @@ impl<D: SeatHandler> fmt::Debug for KbdRc<D> {
             .field("internal", &self.internal)
             .field("keymap", &self.keymap)
             .field("known_kbds", &self.known_kbds)
+            .field("last_enter", &self.last_enter)
             .finish()
     }
 }
@@ -385,6 +388,8 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 internal: Mutex::new(internal),
                 #[cfg(feature = "wayland_frontend")]
                 known_kbds: Mutex::new(Vec::new()),
+                #[cfg(feature = "wayland_frontend")]
+                last_enter: Mutex::new(None),
                 span,
             }),
         })
@@ -605,6 +610,14 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         for kbd in &*self.arc.known_kbds.lock().unwrap() {
             kbd.repeat_info(rate, delay);
         }
+    }
+
+    /// Access the [`Serial`] of the last `keyboard_enter` event, if that focus is still active.
+    ///
+    /// In other words this will return `None` again, once a `keyboard_leave` occured.
+    #[cfg(feature = "wayland_frontend")]
+    pub fn last_enter(&self) -> Option<Serial> {
+        *self.arc.last_enter.lock().unwrap()
     }
 
     fn get_seat(&self, data: &mut D) -> Seat<D> {
