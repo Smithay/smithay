@@ -210,6 +210,15 @@ pub trait XdgActivationHandler {
     /// Returns the activation state.
     fn activation_state(&mut self) -> &mut XdgActivationState;
 
+    /// A client has created a new token.
+    ///
+    /// If the token isn't considered valid, it can be immediately untracked by returning `false`.
+    /// The default implementation considers every token valid and will always return `true`.
+    fn token_created(&mut self, token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
+        let _ = (token, data);
+        true
+    }
+
     /// A client has requested surface activation.
     ///
     /// The compositor may know which client requested this by checking the token data and may decide whether

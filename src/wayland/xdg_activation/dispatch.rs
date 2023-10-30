@@ -152,11 +152,15 @@ where
                     )
                 };
 
+                let valid = state.token_created(activation_token.clone(), token_data.clone());
+
                 *data.token.lock().unwrap() = Some(activation_token.clone());
-                state
-                    .activation_state()
-                    .known_tokens
-                    .insert(activation_token.clone(), token_data);
+                if valid {
+                    state
+                        .activation_state()
+                        .known_tokens
+                        .insert(activation_token.clone(), token_data);
+                }
                 token.done(activation_token.to_string());
             }
 
