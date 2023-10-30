@@ -155,6 +155,7 @@ mod atoms {
             _NET_WM_WINDOW_TYPE_UTILITY,
             _NET_WM_STATE_MODAL,
             _MOTIF_WM_HINTS,
+            _NET_STARTUP_ID,
 
             // server -> client
             WM_S0,
