@@ -172,6 +172,11 @@ impl XdgActivationState {
         }
     }
 
+    /// Access the data of a known token
+    pub fn data_for_token(&self, token: &XdgActivationToken) -> Option<&XdgActivationTokenData> {
+        self.known_tokens.get(token)
+    }
+
     /// Retain pending tokens
     ///
     /// You may want to remove super old tokens
