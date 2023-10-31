@@ -54,7 +54,7 @@ use wayland_protocols_wlr::layer_shell::v1::server::{
 use wayland_server::{
     backend::GlobalId,
     protocol::{wl_output::WlOutput, wl_surface},
-    DisplayHandle, GlobalDispatch, Resource,
+    Client, DisplayHandle, GlobalDispatch, Resource,
 };
 
 use crate::{
@@ -216,14 +216,35 @@ pub struct WlrLayerShellState {
     shell_global: GlobalId,
 }
 
+/// Data associated with a layer shell global
+#[allow(missing_debug_implementations)]
+pub struct WlrLayerShellGlobalData {
+    filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
+}
+
 impl WlrLayerShellState {
-    /// Create a new `wlr_layer_shell` globals
+    /// Create a new `wlr_layer_shell` global
     pub fn new<D>(display: &DisplayHandle) -> WlrLayerShellState
     where
-        D: GlobalDispatch<ZwlrLayerShellV1, ()>,
+        D: GlobalDispatch<ZwlrLayerShellV1, WlrLayerShellGlobalData>,
         D: 'static,
     {
-        let shell_global = display.create_global::<D, ZwlrLayerShellV1, _>(4, ());
+        Self::new_with_filter::<D, _>(display, |_| true)
+    }
+
+    /// Create a new `wlr_layer_shell` global with a client filter
+    pub fn new_with_filter<D, F>(display: &DisplayHandle, filter: F) -> WlrLayerShellState
+    where
+        D: GlobalDispatch<ZwlrLayerShellV1, WlrLayerShellGlobalData>,
+        D: 'static,
+        F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
+    {
+        let shell_global = display.create_global::<D, ZwlrLayerShellV1, WlrLayerShellGlobalData>(
+            4,
+            WlrLayerShellGlobalData {
+                filter: Box::new(filter),
+            },
+        );
 
         WlrLayerShellState {
             known_layers: Default::default(),
@@ -506,7 +527,7 @@ macro_rules! delegate_layer_shell {
         ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
 
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwlrLayerShellV1: ()
+            __ZwlrLayerShellV1: $crate::wayland::shell::wlr_layer::WlrLayerShellGlobalData
         ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
     };
 }
