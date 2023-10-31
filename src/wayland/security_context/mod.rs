@@ -10,7 +10,8 @@ use wayland_protocols::wp::security_context::v1::server::{
     wp_security_context_v1::{self, WpSecurityContextV1},
 };
 use wayland_server::{
-    backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    backend::{ClientId, GlobalId},
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 mod listener_source;
@@ -55,6 +56,8 @@ pub struct SecurityContext {
     pub app_id: Option<String>,
     /// Opaque sandbox-specific ID for an instance of an application
     pub instance_id: Option<String>,
+    /// Client that created the security context
+    pub creator_client_id: ClientId,
 }
 
 impl SecurityContextState {
@@ -155,7 +158,7 @@ where
 {
     fn request(
         state: &mut D,
-        _client: &wayland_server::Client,
+        client: &wayland_server::Client,
         context: &WpSecurityContextV1,
         request: wp_security_context_v1::Request,
         data: &SecurityContextUserData,
@@ -211,6 +214,7 @@ where
                     sandbox_engine: builder.sandbox_engine,
                     app_id: builder.app_id,
                     instance_id: builder.instance_id,
+                    creator_client_id: client.id(),
                 };
                 match listener_source {
                     Ok(listener_source) => state.context_created(listener_source, security_context),
