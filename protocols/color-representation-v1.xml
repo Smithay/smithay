@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="color_representation_v1">
+  <copyright>
+    Copyright 2022 Simon Ser
+    Copyright 2022 Red Hat, Inc.
+    Copyright 2022 Collabora, Ltd.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="color representation protocol extension">
+    This protocol extension delivers the metadata required to define alpha mode,
+    the color model, sub-sampling and quantization range used when interpreting
+    buffer contents. The main use case is defining how the YUV family of pixel
+    formats convert to RGB.
+
+    Note that this protocol does not define the colorimetry of the resulting RGB
+    channels / tristimulus values. Without the help of other extensions the
+    resulting colorimetry is therefore implementation defined.
+
+    If this extension is not used, the color representation used is compositor
+    implementation defined.
+
+    The code points used in this protocol are defined by Rec ITU-T H.273
+    Coding-independent code points for video signal type identification.
+  </description>
+
+  <interface name="wp_color_representation_manager_v1" version="1">
+    <description summary="color representation factory">
+      This global is a wp_color_representation_v1 factory.
+    </description>
+
+    <enum name="error">
+      <entry name="already_constructed" value="1"
+        summary="color representation already constructed for this surface"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager object.
+
+        Existing objects created through this interface remain valid.
+      </description>
+    </request>
+
+    <request name="create">
+      <description summary="create a color representation object for a surface">
+        Create a wp_color_representation_v1 object tied to a wl_surface.
+
+        If a wp_color_representation_v1 object already exists for this surface,
+        the already_constructed protocol error must be sent by the compositor.
+      </description>
+      <arg name="color_representation" type="new_id" interface="wp_color_representation_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <event name="coefficients">
+      <description summary="supported matrix coefficients">
+        This event advertises code points that the server supports. The code
+        point defines one formula and the related constants used to derive red,
+        green and blue signals, and the video full range flag.
+
+        All the supported code points are advertised once when the client binds
+        to this interface. A roundtrip after binding guarantees that the client
+        has received all supported code points.
+
+        For the definition of the code points, see the
+        wp_color_representation_v1::set_coefficients request.
+      </description>
+      <arg name="code_point" type="uint" summary="supported matrix coefficients and full range flag code point"/>
+    </event>
+
+    <event name="chroma_location">
+      <description summary="supported chroma location">
+        This event advertises code points that the server supports. The code
+        point represents one chroma location.
+
+        All the supported code points are advertised once when the client
+        binds to this interface. A roundtrip after binding guarantees that the
+        client has received all supported code points.
+
+        For the definition of the code points, see the
+        wp_color_representation_v1::set_chroma_location request.
+      </description>
+      <arg name="code_point" type="uint" summary="supported chroma location code point"/>
+    </event>
+  </interface>
+
+  <interface name="wp_color_representation_v1" version="1">
+    <description summary="color representation metadata">
+      This interface allows clients to set color representation metadata for a
+      surface.
+
+      A wp_color_representation_v1 object is associated with a wl_surface. If
+      the wl_surface is destroyed first, the wp_color_representation_v1 object
+      becomes inert.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_alpha_mode" value="1" summary="invalid alpha mode"/>
+      <entry name="unsupported_coefficients" value="2" summary="unsupported coefficients"/>
+      <entry name="unsupported_chroma_location" value="3" summary="unsupported chroma_location"/>
+      <entry name="incompatible_pixel_format" value="4" summary="the pixel format and a code point are incompatible"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the metadata object">
+        Destroy the color representation metadata object.
+
+        Destroying this object unsets all the color representation metadata for
+        the surface. The color representation transformations for the surface
+        are implementation defined when no code point is set. The alpha mode
+        becomes premultiplied_electrical.
+
+        Unsetting the color representation is double-buffered, see
+        wl_surface.commit.
+      </description>
+    </request>
+
+    <enum name="alpha_mode">
+      <description summary="alpha mode">
+        Specifies how the alpha channel affects the color channels.
+      </description>
+      <entry name="premultiplied_electrical" value="0">
+        <description summary="premultiplied alpha in electrical values">
+          Electrical color channel values (after transfer function encoding)
+          are already multiplied with the alpha channel value.
+        </description>
+      </entry>
+      <entry name="premultiplied_optical" value="1">
+        <description summary="premultiplied alpha in optical values">
+          Optical color channel values (before transfer function encoding)
+          are already multiplied with the alpha channel value.
+        </description>
+      </entry>
+      <entry name="straight" value="2">
+        <description summary="straight alpha">
+          Alpha channel has not been pre-multiplied into color channels.
+        </description>
+      </entry>
+    </enum>
+
+    <request name="set_alpha_mode">
+      <description summary="set the surface alpha mode">
+        Assuming an alpha channel exists, it is always linear. The alpha mode
+        determines whether and how the color channels include pre-multiplied
+        alpha. Using straight alpha might have performance benefits.
+
+        The "alpha_mode" argument must be a valid enum entry, otherwise the
+        "invalid_alpha_mode" protocol error is raised.
+
+        Alpha mode is double buffered, see wl_surface.commit.
+
+        By default, a surface is assumed to be premultiplied_electrical.
+      </description>
+      <arg name="alpha_mode" type="uint" enum="alpha_mode" summary="alpha mode"/>
+    </request>
+
+    <request name="set_coefficients">
+      <description summary="set the matrix coefficients">
+        Set the code point which defines the formula and the related constants
+        used to derive red, green and blue signals, and the video full range
+        flag.
+
+        Only code points advertised by the compositor are allowed to be used as
+        argument for this request. The "unsupported_coefficients" protocol error
+        is raised otherwise.
+
+        Bits 7 down to 0 represent a MatrixCoefficients code point as defined in
+        Rec ITU-T H.273. Bit 8 represents the VideoFullRangeFlag flag as defined
+        in Rec ITU-T H.273.
+
+        A call to wl_surface.commit verifies that the pixel format and
+        MatrixCoefficients code point in the committed surface contents are
+        compatible if contents exist. The "incompatible_pixel_format" protocol
+        error is raised otherwise.
+
+        A pixel format is compatible with a MatrixCoefficients code point if the
+        equations and conventions listed for the chosen code point (and
+        VideoFullRangeFlag) in Rec ITU-T H.273 can produce the color channels
+        (RGB or YCbCr) of the pixel format.
+
+        The code point is double-buffered, see wl_surface.commit.
+      </description>
+      <arg name="code_point" type="uint" summary="matrix coefficients and full range flag code point"/>
+    </request>
+
+    <request name="set_chroma_location">
+      <description summary="set the chroma location">
+        Set the code point which defines the position of downsampled chroma
+        samples.
+
+        Only code points advertised by the compositor are allowed to be used as
+        argument for this request. The "unsupported_chroma_location" protocol
+        error is raised otherwise.
+
+        The argument is a Chroma420SampleLocType code point as defined in Rec
+        ITU-T H.273.
+
+        A call to wl_surface.commit verifies that the pixel format and
+        Chroma420SampleLocType code point in the committed surface contents are
+        compatible if contents exist. The "incompatible_pixel_format" protocol
+        error is raised otherwise.
+
+        A pixel format is compatible with a Chroma420SampleLocType code point if
+        the pixel format is a 4:2:0 subsampled color format.
+
+        The code point is double-buffered, see wl_surface.commit.
+      </description>
+      <arg name="code_point" type="uint" summary="chroma 4:2:0 sample location code point"/>
+    </request>
+  </interface>
+</protocol>

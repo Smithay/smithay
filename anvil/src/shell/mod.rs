@@ -19,6 +19,7 @@ use smithay::{
     utils::{Logical, Point, Rectangle, Size},
     wayland::{
         buffer::BufferHandler,
+        color::{management::get_surface_description, representation::get_color_representation},
         compositor::{
             add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states,
             with_surface_tree_upward, BufferAssignment, CompositorClientState, CompositorHandler,
@@ -157,6 +158,11 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             }
         }
         self.popups.commit(surface);
+
+        if let (Some(desc), _) = get_surface_description(surface) {
+            let representation = get_color_representation(surface);
+            tracing::info!(?desc, ?representation, "Got Color Description from surface!");
+        }
 
         ensure_initial_configure(surface, &self.space, &mut self.popups)
     }
