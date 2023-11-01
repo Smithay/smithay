@@ -332,9 +332,22 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
         &mut self.xdg_activation_state
     }
 
+    fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
+        if let Some((serial, seat)) = data.serial {
+            let keyboard = self.seat.get_keyboard().unwrap();
+            Seat::from_resource(&seat) == Some(self.seat.clone())
+                && keyboard
+                    .last_enter()
+                    .map(|last_enter| serial.is_no_older_than(&last_enter))
+                    .unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
     fn request_activation(
         &mut self,
-        token: XdgActivationToken,
+        _token: XdgActivationToken,
         token_data: XdgActivationTokenData,
         surface: WlSurface,
     ) {
@@ -348,19 +361,7 @@ impl<BackendData: Backend> XdgActivationHandler for AnvilState<BackendData> {
             if let Some(window) = w {
                 self.space.raise_element(&window, true);
             }
-        } else {
-            // Discard the request
-            self.xdg_activation_state.remove_request(&token);
         }
-    }
-
-    fn destroy_activation(
-        &mut self,
-        _token: XdgActivationToken,
-        _token_data: XdgActivationTokenData,
-        _surface: WlSurface,
-    ) {
-        // The request is cancelled
     }
 }
 delegate_xdg_activation!(@<BackendData: Backend + 'static> AnvilState<BackendData>);

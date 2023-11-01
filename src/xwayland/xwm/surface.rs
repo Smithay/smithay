@@ -58,6 +58,7 @@ pub(crate) struct SharedSurfaceState {
     title: String,
     class: String,
     instance: String,
+    startup_id: Option<String>,
     protocols: Protocols,
     hints: Option<WmHints>,
     normal_hints: Option<WmSizeHints>,
@@ -151,6 +152,7 @@ impl X11Surface {
                 title: String::from(""),
                 class: String::from(""),
                 instance: String::from(""),
+                startup_id: None,
                 protocols: Vec::new(),
                 hints: None,
                 normal_hints: None,
@@ -293,6 +295,11 @@ impl X11Surface {
     /// Returns the current window instance of the underlying X11 window
     pub fn instance(&self) -> String {
         self.state.lock().unwrap().class.clone()
+    }
+
+    /// Returns the startup id of the underlying X11 window
+    pub fn startup_id(&self) -> Option<String> {
+        self.state.lock().unwrap().startup_id.clone()
     }
 
     /// Returns if the window is considered to be a popup.
@@ -533,6 +540,7 @@ impl X11Surface {
             Some(atom) if atom == AtomEnum::WM_TRANSIENT_FOR.into() => self.update_transient_for(),
             Some(atom) if atom == self.atoms._NET_WM_WINDOW_TYPE => self.update_net_window_type(),
             Some(atom) if atom == self.atoms._MOTIF_WM_HINTS => self.update_motif_hints(),
+            Some(atom) if atom == self.atoms._NET_STARTUP_ID => self.update_startup_id(),
             Some(_) => Ok(()), // unknown
             None => {
                 self.update_title()?;
@@ -544,6 +552,7 @@ impl X11Surface {
                 // NET_WM_STATE is managed by the WM, we don't need to update it unless explicitly asked to
                 self.update_net_window_type()?;
                 self.update_motif_hints()?;
+                self.update_startup_id()?;
                 Ok(())
             }
         }
@@ -615,6 +624,14 @@ impl X11Surface {
 
         let mut state = self.state.lock().unwrap();
         state.motif_hints = hints;
+        Ok(())
+    }
+
+    fn update_startup_id(&self) -> Result<(), ConnectionError> {
+        if let Some(startup_id) = self.read_window_property_string(self.atoms._NET_STARTUP_ID)? {
+            let mut state = self.state.lock().unwrap();
+            state.startup_id = Some(startup_id);
+        }
         Ok(())
     }
 

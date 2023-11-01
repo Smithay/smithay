@@ -28,19 +28,7 @@
 //!     ) {
 //!         if token_data.timestamp.elapsed().as_secs() < 10 {
 //!             // Request surface activation
-//!         } else{
-//!             // Discard the request
-//!             self.activation_state.remove_request(&token);
 //!         }
-//!     }
-//!
-//!     fn destroy_activation(
-//!         &mut self,
-//!         token: XdgActivationToken,
-//!         token_data: XdgActivationTokenData,
-//!         surface: WlSurface
-//!     ) {
-//!         // The request is cancelled
 //!     }
 //! }
 //!
@@ -59,7 +47,7 @@
 use std::{
     collections::HashMap,
     ops,
-    sync::{atomic::AtomicBool, Mutex},
+    sync::{atomic::AtomicBool, Arc, Mutex},
     time::Instant,
 };
 
@@ -72,7 +60,7 @@ use wayland_server::{
 
 use rand::distributions::{Alphanumeric, DistString};
 
-use crate::utils::Serial;
+use crate::utils::{user_data::UserDataMap, Serial};
 
 mod dispatch;
 
@@ -135,6 +123,8 @@ pub struct XdgActivationTokenData {
     /// You can use this do ignore tokens based on time.
     /// For example you coould ignore all tokens older that 5s.
     pub timestamp: Instant,
+    /// Additional user data attached
+    pub user_data: Arc<UserDataMap>,
 }
 
 impl XdgActivationTokenData {
@@ -150,6 +140,7 @@ impl XdgActivationTokenData {
                 app_id,
                 surface,
                 timestamp: Instant::now(),
+                user_data: Arc::new(UserDataMap::new()),
             },
         )
     }
@@ -159,8 +150,7 @@ impl XdgActivationTokenData {
 #[derive(Debug)]
 pub struct XdgActivationState {
     global: GlobalId,
-    pending_tokens: HashMap<XdgActivationToken, XdgActivationTokenData>,
-    activation_requests: HashMap<XdgActivationToken, (XdgActivationTokenData, WlSurface)>,
+    known_tokens: HashMap<XdgActivationToken, XdgActivationTokenData>,
 }
 
 impl XdgActivationState {
@@ -178,46 +168,31 @@ impl XdgActivationState {
 
         XdgActivationState {
             global,
-            pending_tokens: HashMap::new(),
-            activation_requests: HashMap::new(),
+            known_tokens: HashMap::new(),
         }
     }
 
-    /// Get current activation requests
-    ///
-    /// HashMap contains token data and target surface.
-    pub fn requests(&self) -> &HashMap<XdgActivationToken, (XdgActivationTokenData, WlSurface)> {
-        &self.activation_requests
-    }
-
-    /// Remove and return the activation request
-    ///
-    /// If you consider a request to be unwanted you can use this method to
-    /// discard it and don't track it any futher.
-    pub fn remove_request(
-        &mut self,
-        token: &XdgActivationToken,
-    ) -> Option<(XdgActivationTokenData, WlSurface)> {
-        self.activation_requests.remove(token)
-    }
-
-    /// Retain activation requests
-    pub fn retain_requests<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&XdgActivationToken, &(XdgActivationTokenData, WlSurface)) -> bool,
-    {
-        self.activation_requests.retain(|k, v| f(k, v))
+    /// Access the data of a known token
+    pub fn data_for_token(&self, token: &XdgActivationToken) -> Option<&XdgActivationTokenData> {
+        self.known_tokens.get(token)
     }
 
     /// Retain pending tokens
     ///
     /// You may want to remove super old tokens
     /// that were never turned into activation request for some reason
-    pub fn retain_pending_tokens<F>(&mut self, mut f: F)
+    pub fn retain_tokens<F>(&mut self, mut f: F)
     where
         F: FnMut(&XdgActivationToken, &XdgActivationTokenData) -> bool,
     {
-        self.pending_tokens.retain(|k, v| f(k, v))
+        self.known_tokens.retain(|k, v| f(k, v))
+    }
+
+    /// Removes an activation token from the internal storage.
+    ///
+    /// Returns `true` if the token was found and subsequently removed.
+    pub fn remove_token(&mut self, token: &XdgActivationToken) -> bool {
+        self.known_tokens.remove(token).is_some()
     }
 
     /// Returns the xdg activation global.
@@ -231,27 +206,25 @@ pub trait XdgActivationHandler {
     /// Returns the activation state.
     fn activation_state(&mut self) -> &mut XdgActivationState;
 
+    /// A client has created a new token.
+    ///
+    /// If the token isn't considered valid, it can be immediately untracked by returning `false`.
+    /// The default implementation considers every token valid and will always return `true`.
+    ///
+    /// This method may also be used to attach user_data to the token.
+    fn token_created(&mut self, token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
+        let _ = (token, data);
+        true
+    }
+
     /// A client has requested surface activation.
     ///
     /// The compositor may know which client requested this by checking the token data and may decide whether
     /// or not to follow through with the activation if it's considered unwanted.
     ///
-    /// If a request is unwanted, you can discard the request using [`XdgActivationState::remove_request`] to
-    /// ignore any future requests.
+    /// The token remains in the pool and might be used to issue other requests
+    /// until the compositor decides to remove it using [`XdgActivationState::remove_token`] or [`XdgActivationState::retain_tokens`].
     fn request_activation(
-        &mut self,
-        token: XdgActivationToken,
-        token_data: XdgActivationTokenData,
-        surface: WlSurface,
-    );
-
-    /// The activation token was destroyed.
-    ///
-    /// The compositor may cancel any activation requests coming from the token.
-    ///
-    /// For example if your compositor blinks or highlights a window when it requests activation then the
-    /// animation should stop when this function is called.
-    fn destroy_activation(
         &mut self,
         token: XdgActivationToken,
         token_data: XdgActivationTokenData,
