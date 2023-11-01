@@ -65,6 +65,14 @@
 //!     ) {
 //!         // ...
 //!     }
+//!     fn reposition_request(
+//!         &mut self,
+//!         surface: PopupSurface,
+//!         positioner: PositionerState,
+//!         token: u32,
+//!     ) {
+//!         // ...
+//!     }
 //! }
 //! delegate_xdg_shell!(State);
 //!

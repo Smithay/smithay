@@ -42,6 +42,12 @@
 //!     #     seat: wl_seat::WlSeat,
 //!     #     serial: Serial,
 //!     # ) { unimplemented!() }
+//!     # fn reposition_request(
+//!     #     &mut self,
+//!     #     surface: PopupSurface,
+//!     #     positioner: PositionerState,
+//!     #     token: u32,
+//!     # ) { unimplemented!() }
 //!     // ...
 //! }
 //! impl XdgDecorationHandler for State {
