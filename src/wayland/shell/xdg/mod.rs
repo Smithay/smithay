@@ -65,6 +65,14 @@
 //!     ) {
 //!         // ...
 //!     }
+//!     fn reposition_request(
+//!         &mut self,
+//!         surface: PopupSurface,
+//!         positioner: PositionerState,
+//!         token: u32,
+//!     ) {
+//!         // ...
+//!     }
 //! }
 //! delegate_xdg_shell!(State);
 //!
@@ -930,8 +938,10 @@ pub trait XdgShellHandler {
     /// A surface has acknowledged a configure serial.
     fn ack_configure(&mut self, surface: wl_surface::WlSurface, configure: Configure) {}
 
-    /// A client requested a reposition, providing a new
-    /// positioner, of a popup.
+    /// A client requested a reposition, providing a new positioner for a popup.
+    ///
+    /// To confirm the new popup position, `PopupSurface::send_repositioned` must be
+    /// called on the provided surface with the token.
     ///
     /// ## Arguments
     ///
@@ -944,7 +954,7 @@ pub trait XdgShellHandler {
     ///     The new popup position will not take effect until the corresponding configure event
     ///     is acknowledged by the client. See xdg_popup.repositioned for details.
     ///     The token itself is opaque, and has no other special meaning.
-    fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {}
+    fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32);
 
     /// A toplevel surface was destroyed.
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {}

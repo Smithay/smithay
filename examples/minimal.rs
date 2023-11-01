@@ -66,6 +66,10 @@ impl XdgShellHandler for App {
     fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
         // Handle popup grab here
     }
+
+    fn reposition_request(&mut self, _surface: PopupSurface, _positioner: PositionerState, _token: u32) {
+        // Handle popup reposition here
+    }
 }
 
 impl SelectionHandler for App {
