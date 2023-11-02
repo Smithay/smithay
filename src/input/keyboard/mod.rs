@@ -15,7 +15,6 @@ use xkbcommon::xkb::ffi::XKB_STATE_LAYOUT_EFFECTIVE;
 pub use xkbcommon::xkb::{self, keysyms, Keycode, Keysym};
 
 use super::{Seat, SeatHandler};
-use private::XkbTypesHandle;
 
 #[cfg(feature = "wayland_frontend")]
 mod keymap_file;
@@ -236,17 +235,17 @@ impl<'a> KeysymHandle<'a> {
     /// does not want to or cannot handle multiple keysyms.
     ///
     /// If the key does not have exactly one keysym, returns [`keysyms::KEY_NoSymbol`].
-    pub fn modified_sym(&'a self) -> Keysym {
+    pub fn modified_sym(&self) -> Keysym {
         self.state.key_get_one_sym(self.keycode)
     }
 
     /// Returns the syms for the underlying keycode with all modifications by the current keymap state applied.
-    pub fn modified_syms(&'a self) -> &'a [Keysym] {
+    pub fn modified_syms(&self) -> &[Keysym] {
         self.state.key_get_syms(self.keycode)
     }
 
     /// Returns the syms for the underlying keycode without any modifications by the current keymap state applied.
-    pub fn raw_syms(&'a self) -> &'a [Keysym] {
+    pub fn raw_syms(&self) -> &[Keysym] {
         self.keymap
             .key_get_syms_by_level(self.keycode, self.state.key_get_layout(self.keycode), 0)
     }
@@ -274,12 +273,12 @@ impl<'a> KeysymHandle<'a> {
                 continue;
             }
 
-            for keysym in self.raw_syms_for_key_in_layout(self.keycode, layout) {
-                // NOTE: Only check for ascii alphabetic since the rest of the punctuation should
-                // be uniform across layouts.
+            if let Some(keysym) = self.raw_syms_for_key_in_layout(self.keycode, layout).first() {
+                // NOTE: Only check for ascii non-control characters, since control ones are
+                // layout agnostic.
                 if keysym
                     .key_char()
-                    .map(|key| key.is_ascii_alphabetic())
+                    .map(|key| key.is_ascii() && !key.is_ascii_control())
                     .unwrap_or(false)
                 {
                     return Some(*keysym);
@@ -296,16 +295,6 @@ impl<'a> KeysymHandle<'a> {
     }
 }
 
-impl<'a> XkbTypesHandle for KeysymHandle<'a> {
-    fn keymap(&self) -> &xkb::Keymap {
-        self.keymap
-    }
-
-    fn state(&self) -> &xkb::State {
-        self.state
-    }
-}
-
 /// The currently active state of the Xkb.
 pub struct XkbContext<'a> {
     state: &'a mut xkb::State,
@@ -316,8 +305,6 @@ pub struct XkbContext<'a> {
 
 impl<'a> XkbContext<'a> {
     /// Set layout of the keyboard to the given index.
-    ///
-    /// Returns `true` when the layout got applied.
     pub fn set_layout(&mut self, layout: Layout) {
         let state = self.state.update_mask(
             self.mods_state.serialized.depressed,
@@ -334,13 +321,13 @@ impl<'a> XkbContext<'a> {
         }
     }
 
-    /// Switches layout forward cycling when cyclying when it reaches the end.
+    /// Switches layout forward cycling when it reaches the end.
     pub fn cycle_next_layout(&mut self) {
         let next_layout = (self.active_layout().0 + 1) % self.keymap.num_layouts();
         self.set_layout(Layout(next_layout));
     }
 
-    /// Switches layout backward cycling when cyclying when it reaches the start.
+    /// Switches layout backward cycling when it reaches the start.
     pub fn cycle_prev_layout(&mut self) {
         let num_layouts = self.keymap.num_layouts();
         let next_layout = (num_layouts + self.active_layout().0 - 1) % num_layouts;
@@ -357,18 +344,14 @@ impl<'a> fmt::Debug for XkbContext<'a> {
     }
 }
 
-impl<'a> XkbTypesHandle for XkbContext<'a> {
-    fn keymap(&self) -> &xkb::Keymap {
-        self.keymap
-    }
-
-    fn state(&self) -> &xkb::State {
-        self.state
-    }
-}
-
 /// Query and manipulate Xkb layouts.
-pub trait XkbContextHandler: XkbTypesHandle {
+pub trait XkbContextHandler {
+    /// Get the reference to the xkb keymap.
+    fn keymap(&self) -> &xkb::Keymap;
+
+    /// Get the reference to the xkb state.
+    fn state(&self) -> &xkb::State;
+
     /// Get the active layout of the keyboard.
     fn active_layout(&self) -> Layout {
         (0..self.keymap().num_layouts())
@@ -380,14 +363,9 @@ pub trait XkbContextHandler: XkbTypesHandle {
             .unwrap_or_default()
     }
 
-    /// Get the human readablle name for the layout.
+    /// Get the human readable name for the layout.
     fn layout_name(&self, layout: Layout) -> &str {
         self.keymap().layout_get_name(layout.0)
-    }
-
-    /// Get the number of layouts in the keymap.
-    fn num_layouts(&self) -> usize {
-        self.keymap().num_layouts() as usize
     }
 
     /// Iterate over layouts present in the keymap.
@@ -402,8 +380,24 @@ pub trait XkbContextHandler: XkbTypesHandle {
     }
 }
 
-impl<'a> XkbContextHandler for XkbContext<'a> {}
-impl<'a> XkbContextHandler for KeysymHandle<'a> {}
+impl<'a> XkbContextHandler for XkbContext<'a> {
+    fn keymap(&self) -> &xkb::Keymap {
+        self.keymap
+    }
+
+    fn state(&self) -> &xkb::State {
+        self.state
+    }
+}
+impl<'a> XkbContextHandler for KeysymHandle<'a> {
+    fn keymap(&self) -> &xkb::Keymap {
+        self.keymap
+    }
+
+    fn state(&self) -> &xkb::State {
+        self.state
+    }
+}
 
 /// Reference to the XkbLayout in the active keymap.
 ///
@@ -1018,17 +1012,5 @@ impl<D: SeatHandler + 'static> KeyboardGrab<D> for DefaultGrab {
 
     fn start_data(&self) -> &GrabStartData<D> {
         unreachable!()
-    }
-}
-
-mod private {
-    use super::xkb;
-    // Glue trait to avoid duplicated code.
-    pub trait XkbTypesHandle {
-        /// Get the reference to the xkb keymap.
-        fn keymap(&self) -> &xkb::Keymap;
-
-        /// Get the reference to the xkb state.
-        fn state(&self) -> &xkb::State;
     }
 }
