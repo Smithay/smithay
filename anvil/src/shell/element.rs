@@ -72,8 +72,7 @@ impl WindowElement {
             #[cfg(feature = "xwayland")]
             WindowElement::X11(w) => {
                 if let Some(surface) = w.wl_surface() {
-                    let mut processor = processor;
-                    with_surfaces_surface_tree(&surface, &mut processor);
+                    with_surfaces_surface_tree(&surface, processor);
                 }
             }
         }
