@@ -1478,6 +1478,15 @@ impl std::cmp::PartialEq for PopupSurface {
     }
 }
 
+impl std::cmp::Eq for PopupSurface {}
+
+impl std::hash::Hash for PopupSurface {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // self.alive().hash(state);
+        self.wl_surface.hash(state);
+    }
+}
+
 impl PopupSurface {
     /// Is the toplevel surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
