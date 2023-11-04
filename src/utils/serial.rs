@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 ///
 /// Is is also used internally by some parts of Smithay.
 pub static SERIAL_COUNTER: SerialCounter = SerialCounter {
-    serial: AtomicU32::new(0),
+    serial: AtomicU32::new(1),
 };
 
 /// A serial type, whose comparison takes into account the wrapping-around behavior of the
