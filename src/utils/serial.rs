@@ -71,6 +71,7 @@ pub struct SerialCounter {
 impl SerialCounter {
     /// Retrieve the next serial from the counter
     pub fn next_serial(&self) -> Serial {
+        let _ = self.serial.compare_exchange(0, 1, Ordering::AcqRel, Ordering::SeqCst);
         Serial(self.serial.fetch_add(1, Ordering::AcqRel))
     }
 }
