@@ -53,7 +53,7 @@ use std::{
 
 use wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;
 use wayland_server::{
-    backend::GlobalId,
+    backend::{ClientId, GlobalId},
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
     Dispatch, DisplayHandle, GlobalDispatch,
 };
@@ -103,6 +103,8 @@ impl From<XdgActivationToken> for String {
 
 #[derive(Debug, Clone)]
 pub struct XdgActivationTokenData {
+    /// Client that requested the token
+    pub client_id: ClientId,
     /// Provides information about the seat and serial event that requested the token.
     ///
     /// The serial can come from an input or focus event.
@@ -129,6 +131,7 @@ pub struct XdgActivationTokenData {
 
 impl XdgActivationTokenData {
     fn new(
+        client_id: ClientId,
         serial: Option<(Serial, WlSeat)>,
         app_id: Option<String>,
         surface: Option<WlSurface>,
@@ -136,6 +139,7 @@ impl XdgActivationTokenData {
         (
             XdgActivationToken::new(),
             XdgActivationTokenData {
+                client_id,
                 serial,
                 app_id,
                 surface,
