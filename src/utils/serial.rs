@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::{
+    hash::{Hash, Hasher},
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 /// A global [`SerialCounter`] for use in your compositor.
 ///
@@ -33,6 +36,12 @@ impl PartialOrd for Serial {
             // wrap-around occurred, invert comparison
             other.0.partial_cmp(&self.0)
         }
+    }
+}
+
+impl Hash for Serial {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
     }
 }
 
