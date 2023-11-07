@@ -1114,6 +1114,21 @@ impl ShellClient {
         Ok(())
     }
 
+    /// Kill the shell client for being unresponsive.
+    ///
+    /// Generally this will be used if the client does not respond to a ping in a reasonable amount of time.
+    pub fn unresponsive(&self) -> Result<(), crate::utils::DeadResource> {
+        if !self.alive() {
+            return Err(crate::utils::DeadResource);
+        }
+        self.kind.post_error(
+            xdg_wm_base::Error::Unresponsive,
+            "client did not respond to ping on time",
+        );
+
+        Ok(())
+    }
+
     /// Access the user data associated with this shell client
     pub fn with_data<F, T>(&self, f: F) -> Result<T, crate::utils::DeadResource>
     where
