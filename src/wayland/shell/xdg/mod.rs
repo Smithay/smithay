@@ -956,6 +956,9 @@ pub trait XdgShellHandler {
     ///     The token itself is opaque, and has no other special meaning.
     fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32);
 
+    /// A shell client was destroyed.
+    fn client_destroyed(&mut self, client: ShellClient) {}
+
     /// A toplevel surface was destroyed.
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {}
 
