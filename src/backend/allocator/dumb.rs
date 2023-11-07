@@ -1,7 +1,7 @@
 //! Module for [DumbBuffer](https://docs.kernel.org/gpu/drm-kms.html#dumb-buffer-objects) buffers
 
 use std::fmt;
-use std::os::unix::io::{FromRawFd, OwnedFd};
+use std::io;
 
 use drm::buffer::Buffer as DrmBuffer;
 use drm::control::{dumbbuffer::DumbBuffer as Handle, Device as ControlDevice};
@@ -31,7 +31,7 @@ impl fmt::Debug for DumbBuffer {
 
 impl Allocator for DrmDevice {
     type Buffer = DumbBuffer;
-    type Error = drm::SystemError;
+    type Error = io::Error;
 
     #[instrument(level = "trace", err)]
     #[profiling::function]
@@ -47,13 +47,13 @@ impl Allocator for DrmDevice {
             .iter()
             .all(|&x| x != Modifier::Invalid && x != Modifier::Linear)
         {
-            return Err(drm::SystemError::InvalidArgument);
+            return Err(rustix::io::Errno::INVAL.into());
         }
 
         let handle = self.create_dumb_buffer(
             (width, height),
             fourcc,
-            get_bpp(fourcc).ok_or(drm::SystemError::InvalidArgument)? as u32,
+            get_bpp(fourcc).ok_or(rustix::io::Errno::INVAL)? as u32,
         )?;
 
         Ok(DumbBuffer {
@@ -92,14 +92,14 @@ impl DumbBuffer {
 }
 
 impl AsDmabuf for DumbBuffer {
-    type Error = drm::SystemError;
+    type Error = io::Error;
 
     #[profiling::function]
     fn export(&self) -> Result<Dmabuf, Self::Error> {
-        let fd = unsafe { OwnedFd::from_raw_fd(self.fd.buffer_to_prime_fd(self.handle.handle(), 0)?) };
+        let fd = self.fd.buffer_to_prime_fd(self.handle.handle(), 0)?;
         let mut builder = Dmabuf::builder(self.size(), self.format.code, DmabufFlags::empty());
         builder.add_plane(fd, 0, 0, self.handle.pitch(), Modifier::Linear);
-        builder.build().ok_or(drm::SystemError::InvalidFileDescriptor)
+        builder.build().ok_or(rustix::io::Errno::INVAL.into())
     }
 }
 

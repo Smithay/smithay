@@ -1,6 +1,6 @@
 use crate::backend::SwapBuffersError;
 use drm::control::{connector, crtc, plane, Mode, RawResourceHandle};
-use std::path::PathBuf;
+use std::{io, path::PathBuf};
 
 /// Errors thrown by the [`DrmDevice`](crate::backend::drm::DrmDevice)
 /// and the [`DrmSurface`](crate::backend::drm::DrmSurface).
@@ -17,7 +17,7 @@ pub enum Error {
         /// Device on which the error was generated
         dev: Option<PathBuf>,
         /// Underlying device error
-        source: drm::SystemError,
+        source: io::Error,
     },
     /// Unable to determine device id of drm device
     #[error("Unable to determine device id of drm device")]
@@ -77,14 +77,8 @@ impl From<Error> for SwapBuffersError {
             Error::Access {
                 errmsg, dev, source, ..
             } if matches!(
-                source,
-                drm::SystemError::PermissionDenied
-                    | drm::SystemError::Unknown {
-                        errno: nix::errno::Errno::EBUSY,
-                    }
-                    | drm::SystemError::Unknown {
-                        errno: nix::errno::Errno::EINTR,
-                    }
+                source.raw_os_error(),
+                Some(libc::EPERM | libc::EBUSY | libc::EINTR)
             ) =>
             {
                 SwapBuffersError::TemporaryFailure(Box::new(Error::Access { errmsg, dev, source }))

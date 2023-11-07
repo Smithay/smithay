@@ -1,5 +1,6 @@
 //! Utilities to attach [`framebuffer::Handle`]s to gbm backed buffers
 
+use std::io;
 use std::os::unix::io::AsFd;
 use std::path::PathBuf;
 
@@ -186,7 +187,7 @@ pub struct AccessError {
     dev: Option<PathBuf>,
     /// Underlying device error
     #[source]
-    pub source: drm::SystemError,
+    pub source: io::Error,
 }
 
 impl From<AccessError> for super::DrmError {

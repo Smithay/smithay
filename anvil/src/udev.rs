@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::{
     collections::{hash_map::HashMap, HashSet},
     convert::TryInto,
+    io,
     path::Path,
     sync::{atomic::Ordering, Mutex},
     time::{Duration, Instant},
@@ -65,7 +66,6 @@ use smithay::{
             EventLoop, LoopHandle, RegistrationToken,
         },
         drm::{
-            self,
             control::{connector, crtc, Device, ModeTypeFlags},
             Device as _,
         },
@@ -1292,10 +1292,10 @@ impl AnvilState<UdevData> {
                     }
                     SwapBuffersError::TemporaryFailure(err) => matches!(
                         err.downcast_ref::<DrmError>(),
-                        Some(&DrmError::Access {
-                            source: drm::SystemError::PermissionDenied,
+                        Some(DrmError::Access {
+                            source,
                             ..
-                        })
+                        }) if source.kind() == io::ErrorKind::PermissionDenied
                     ),
                     SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
                 }
@@ -1483,14 +1483,13 @@ impl AnvilState<UdevData> {
                 warn!("Error during rendering: {:?}", err);
                 match err {
                     SwapBuffersError::AlreadySwapped => false,
-                    SwapBuffersError::TemporaryFailure(err) => !matches!(
-                        err.downcast_ref::<DrmError>(),
-                        Some(&DrmError::DeviceInactive)
-                            | Some(&DrmError::Access {
-                                source: drm::SystemError::PermissionDenied,
-                                ..
-                            })
-                    ),
+                    SwapBuffersError::TemporaryFailure(err) => match err.downcast_ref::<DrmError>() {
+                        Some(DrmError::DeviceInactive) => true,
+                        Some(DrmError::Access { source, .. }) => {
+                            source.kind() == io::ErrorKind::PermissionDenied
+                        }
+                        _ => false,
+                    },
                     SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
                 }
             }
