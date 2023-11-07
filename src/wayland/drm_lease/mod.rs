@@ -75,12 +75,9 @@
 
 use std::{
     collections::HashSet,
-    fmt,
+    fmt, io,
     num::NonZeroU32,
-    os::unix::{
-        io::{AsRawFd, OwnedFd},
-        prelude::AsFd,
-    },
+    os::unix::{io::OwnedFd, prelude::AsFd},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -88,10 +85,7 @@ use std::{
     },
 };
 
-use drm::{
-    control::{connector, crtc, plane, Device, OFlag, RawResourceHandle},
-    SystemError,
-};
+use drm::control::{connector, crtc, plane, Device, RawResourceHandle};
 use rustix::fs::OFlags;
 use wayland_protocols::wp::drm_lease::v1::server::*;
 use wayland_server::backend::GlobalId;
@@ -169,7 +163,7 @@ impl DrmLeaseBuilder {
         self.planes.insert(plane);
     }
 
-    fn build(self) -> Result<DrmLease, SystemError> {
+    fn build(self) -> io::Result<DrmLease> {
         let objects: Vec<RawResourceHandle> = self
             .planes
             .iter()
@@ -178,7 +172,7 @@ impl DrmLeaseBuilder {
             .chain(self.connectors.iter().cloned().map(Into::into))
             .chain(self.crtcs.iter().cloned().map(Into::into))
             .collect();
-        let (id, fd) = self.drm.create_lease(&objects, OFlag::O_CLOEXEC)?;
+        let (id, fd) = self.drm.create_lease(&objects, OFlags::CLOEXEC.bits())?;
 
         Ok(DrmLease {
             drm: self.drm.clone(),
@@ -350,7 +344,7 @@ impl fmt::Debug for DrmLeaseDeviceGlobalData {
 }
 
 /// Errors thrown by the DRM lease global
-#[derive(Debug, Clone, Copy, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Unable to figure out the path of the drm device used
     #[error("Unable to get modesetting node for drm device")]
@@ -363,7 +357,7 @@ pub enum Error {
     UnableToOpenNode(#[source] rustix::io::Errno),
     /// Unable to drop DRM Master on a new file descriptor
     #[error("Unable to drop master status on file descriptor for drm device")]
-    UnableToDropMaster(#[source] nix::errno::Errno),
+    UnableToDropMaster(#[source] io::Error),
 }
 
 fn get_non_master_fd<P: AsRef<Path>>(path: P) -> Result<OwnedFd, Error> {
@@ -375,11 +369,11 @@ fn get_non_master_fd<P: AsRef<Path>>(path: P) -> Result<OwnedFd, Error> {
     .map_err(Error::UnableToOpenNode)?;
 
     // check if the fd has master
-    if drm_ffi::get_client(fd.as_raw_fd(), 0)
+    if drm_ffi::get_client(fd.as_fd(), 0)
         .map(|client| client.auth == 1)
         .unwrap_or(false)
     {
-        drm_ffi::auth::release_master(fd.as_raw_fd()).map_err(Error::UnableToDropMaster)?;
+        drm_ffi::auth::release_master(fd.as_fd()).map_err(Error::UnableToDropMaster)?;
     }
 
     Ok(fd)

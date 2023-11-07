@@ -1,4 +1,5 @@
-use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd};
+use std::io;
+use std::os::unix::io::{AsFd, BorrowedFd};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -67,7 +68,7 @@ impl PlaneDamageClips {
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: impl IntoIterator<Item = Rectangle<i32, Physical>>,
-    ) -> Result<Option<Self>, drm_ffi::result::SystemError> {
+    ) -> io::Result<Option<Self>> {
         let scale = src.size / dst.size.to_logical(1).to_buffer(1, Transform::Normal).to_f64();
 
         let mut rects = damage
@@ -105,7 +106,7 @@ impl PlaneDamageClips {
             )
         };
 
-        let blob = drm_ffi::mode::create_property_blob(device.as_raw_fd(), data)?;
+        let blob = drm_ffi::mode::create_property_blob(device.as_fd(), data)?;
 
         Ok(Some(PlaneDamageClips {
             inner: Arc::new(PlaneDamageInner {

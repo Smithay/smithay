@@ -12,7 +12,7 @@ use crate::utils::{Buffer as BufferCoords, Size};
 pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
 use std::{
     convert::{AsMut, AsRef},
-    os::unix::io::{AsFd, AsRawFd, BorrowedFd},
+    os::unix::io::{AsFd, BorrowedFd},
 };
 use tracing::instrument;
 
@@ -219,9 +219,9 @@ impl Dmabuf {
         gbm: &GbmDevice<A>,
         usage: GbmBufferFlags,
     ) -> std::io::Result<GbmBuffer<T>> {
-        let mut handles = [0; MAX_PLANES];
+        let mut handles = [None; MAX_PLANES];
         for (i, handle) in self.handles().take(MAX_PLANES).enumerate() {
-            handles[i] = handle.as_raw_fd();
+            handles[i] = Some(handle);
         }
         let mut strides = [0i32; MAX_PLANES];
         for (i, stride) in self.strides().take(MAX_PLANES).enumerate() {
@@ -246,7 +246,7 @@ impl Dmabuf {
             )
         } else {
             gbm.import_buffer_object_from_dma_buf(
-                handles[0],
+                handles[0].unwrap(),
                 self.width(),
                 self.height(),
                 strides[0] as u32,
