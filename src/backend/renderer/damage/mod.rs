@@ -214,6 +214,10 @@ use super::{
 
 use super::{Renderer, Texture};
 
+mod shaper;
+
+use shaper::DamageShaper;
+
 const MAX_AGE: usize = 4;
 
 #[derive(Debug, Clone, Copy)]
@@ -256,6 +260,7 @@ struct RendererState {
 pub struct OutputDamageTracker {
     mode: OutputModeSource,
     last_state: RendererState,
+    damage_shaper: DamageShaper,
     span: tracing::Span,
 }
 
@@ -314,6 +319,7 @@ impl OutputDamageTracker {
                 transform,
             },
             last_state: Default::default(),
+            damage_shaper: Default::default(),
             span: info_span!("renderer_damage"),
         }
     }
@@ -326,6 +332,7 @@ impl OutputDamageTracker {
     pub fn from_output(output: &Output) -> Self {
         Self {
             mode: OutputModeSource::Auto(output.clone()),
+            damage_shaper: Default::default(),
             last_state: Default::default(),
             span: info_span!("renderer_damage", output = output.name()),
         }
@@ -339,8 +346,9 @@ impl OutputDamageTracker {
     pub fn from_mode_source(output_mode_source: impl Into<OutputModeSource>) -> Self {
         Self {
             mode: output_mode_source.into(),
-            last_state: Default::default(),
             span: info_span!("render_damage"),
+            damage_shaper: Default::default(),
+            last_state: Default::default(),
         }
     }
 
@@ -621,25 +629,18 @@ impl OutputDamageTracker {
         };
 
         // Optimize the damage for rendering
-        damage.dedup();
-        damage.retain(|rect| rect.overlaps_or_touches(output_geo));
-        damage.retain(|rect| !rect.is_empty());
-        // filter damage outside of the output gep and merge overlapping rectangles
-        *damage = damage
-            .drain(..)
-            .filter_map(|rect| rect.intersection(output_geo))
-            .fold(Vec::new(), |new_damage, mut rect| {
-                // replace with drain_filter, when that becomes stable to reuse the original Vec's memory
-                let (overlapping, mut new_damage): (Vec<_>, Vec<_>) = new_damage
-                    .into_iter()
-                    .partition(|other| other.overlaps_or_touches(rect));
 
-                for overlap in overlapping {
-                    rect = rect.merge(overlap);
-                }
-                new_damage.push(rect);
-                new_damage
-            });
+        // Clamp all rectangles to the bounds removing the ones without intersection.
+        damage.retain_mut(|rect| {
+            if let Some(intersected) = rect.intersection(output_geo) {
+                *rect = intersected;
+                true
+            } else {
+                false
+            }
+        });
+
+        self.damage_shaper.shape_damage(damage);
 
         if damage.is_empty() {
             trace!("nothing damaged, exiting early");
