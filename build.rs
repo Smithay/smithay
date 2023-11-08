@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_macros)]
 #[cfg(any(feature = "backend_egl", feature = "renderer_gl"))]
 fn gl_generate() {
     use gl_generator::{Api, Fallbacks, Profile, Registry};

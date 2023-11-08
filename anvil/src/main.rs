@@ -53,11 +53,14 @@ fn main() {
             tracing::error!("Unknown backend: {}", other);
         }
         None => {
-            println!("USAGE: anvil --backend");
-            println!();
-            println!("Possible backends are:");
-            for b in POSSIBLE_BACKENDS {
-                println!("\t{}", b);
+            #[allow(clippy::disallowed_macros)]
+            {
+                println!("USAGE: anvil --backend");
+                println!();
+                println!("Possible backends are:");
+                for b in POSSIBLE_BACKENDS {
+                    println!("\t{}", b);
+                }
             }
         }
     }
