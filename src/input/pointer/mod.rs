@@ -239,9 +239,9 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
 
     /// Notify about relative pointer motion
     ///
-    /// This will internally send the appropriate button event to the client
-    /// objects matching with the currently focused surface, if the client uses
-    /// the relative pointer protocol.
+    /// The new location is relative to the current location in surface (focus) local coordinate
+    /// space. This will internally take care of notifying the appropriate client objects
+    /// of enter/motion/leave events.
     #[instrument(level = "trace", parent = &self.span, skip(self, data, focus), fields(focus = ?focus.as_ref().map(|(_, loc)| ("...", loc))))]
     pub fn relative_motion(
         &self,
@@ -518,9 +518,9 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
 
     /// Notify about relative pointer motion
     ///
-    /// This will internally send the appropriate button event to the client
-    /// objects matching with the currently focused surface, if the client uses
-    /// the relative pointer protocol.
+    /// The new location is relative to the current location in surface (focus) local coordinate
+    /// space. This will internally take care of notifying the appropriate client objects
+    /// of enter/motion/leave events.
     pub fn relative_motion(
         &mut self,
         data: &mut D,
