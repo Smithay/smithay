@@ -65,29 +65,30 @@ impl TextInputHandle {
         }
     }
 
-    pub(crate) fn focus(&self) -> Option<WlSurface> {
+    /// Return the currently focused surface.
+    pub fn focus(&self) -> Option<WlSurface> {
         self.inner.lock().unwrap().focus.clone()
     }
 
     /// Advance the focus for the client to `surface`.
     ///
-    /// This doesn't send `enter` or `leave` events and is used to
-    /// tei the focus with the keyboard changes allowing sending
-    /// `enter`/`leave` when needed.
-    pub(crate) fn set_focus(&self, surface: Option<WlSurface>) {
+    /// This doesn't send any 'enter' or 'leave' events.
+    pub fn set_focus(&self, surface: Option<WlSurface>) {
         self.inner.lock().unwrap().focus = surface;
     }
 
-    /// Send `leave` for the currently focused text-input.
-    pub(crate) fn leave(&self) {
+    /// Send `leave` on the text-input instance for the currently focused
+    /// surface.
+    pub fn leave(&self) {
         let mut inner = self.inner.lock().unwrap();
         inner.with_focused_text_input(|text_input, focus, _| {
             text_input.leave(focus);
         });
     }
 
-    /// Send `enter` for the currenty focused text-input.
-    pub(crate) fn enter(&self) {
+    /// Send `enter` on the text-input instance for the currently focused
+    /// surface.
+    pub fn enter(&self) {
         let mut inner = self.inner.lock().unwrap();
         inner.with_focused_text_input(|text_input, focus, _| {
             text_input.enter(focus);
@@ -96,7 +97,7 @@ impl TextInputHandle {
 
     /// The `discard_state` is used when the input-method signaled that
     /// the state should be discarded and wrong serial sent.
-    pub(crate) fn done(&self, discard_state: bool) {
+    pub fn done(&self, discard_state: bool) {
         let mut inner = self.inner.lock().unwrap();
         inner.with_focused_text_input(|text_input, _, serial| {
             if discard_state {
@@ -109,8 +110,8 @@ impl TextInputHandle {
         });
     }
 
-    /// Callback function to use on the current focused text input surface
-    pub(crate) fn with_focused_text_input<F>(&self, mut f: F)
+    /// Access the text-input instance for the currently focused surface.
+    pub fn with_focused_text_input<F>(&self, mut f: F)
     where
         F: FnMut(&ZwpTextInputV3, &WlSurface),
     {
@@ -120,7 +121,7 @@ impl TextInputHandle {
         });
     }
 
-    /// Call the `callback` with the serial of the focused text_input or with the passed
+    /// Call the callback with the serial of the focused text_input or with the passed
     /// `default` one when empty.
     pub(crate) fn focused_text_input_serial_or_default<F>(&self, default: u32, mut callback: F)
     where
