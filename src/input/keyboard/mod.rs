@@ -403,7 +403,7 @@ impl<'a> XkbContextHandler for KeysymHandle<'a> {
 ///
 /// The layout may become invalid after calling [`KeyboardHandle::set_xkb_config`]
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Layout(xkb::LayoutIndex);
+pub struct Layout(pub xkb::LayoutIndex);
 
 /// Result for key input filtering (see [`KeyboardHandle::input`])
 #[derive(Debug)]
@@ -569,14 +569,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         }
     }
 
-    /// Change the [`XkbConfig`] used by the keyboard.
-    pub fn set_xkb_config(&self, data: &mut D, xkb_config: XkbConfig<'_>) -> Result<(), Error> {
-        let mut internal = self.arc.internal.lock().unwrap();
-
-        let keymap = xkb_config.compile_keymap(&internal.context).map_err(|_| {
-            debug!("Loading keymap failed");
-            Error::BadKeymap
-        })?;
+    fn update_xkb_state(&self, data: &mut D, internal: &mut KbdInternal<D>, keymap: xkb::Keymap) {
         let mut state = xkb::State::new(&keymap);
         for key in &internal.pressed_keys {
             state.update_key((key + 8).into(), xkb::KeyDirection::Down);
@@ -594,7 +587,23 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         #[cfg(feature = "wayland_frontend")]
         self.change_keymap(keymap);
+    }
 
+    /// Change the [`Keymap`] used by the keyboard.
+    pub fn set_keymap(&self, data: &mut D, keymap: xkb::Keymap) {
+        let mut internal = self.arc.internal.lock().unwrap();
+        self.update_xkb_state(data, &mut internal, keymap);
+    }
+
+    /// Change the [`XkbConfig`] used by the keyboard.
+    pub fn set_xkb_config(&self, data: &mut D, xkb_config: XkbConfig<'_>) -> Result<(), Error> {
+        let mut internal = self.arc.internal.lock().unwrap();
+
+        let keymap = xkb_config.compile_keymap(&internal.context).map_err(|_| {
+            debug!("Loading keymap failed");
+            Error::BadKeymap
+        })?;
+        self.update_xkb_state(data, &mut internal, keymap);
         Ok(())
     }
 
@@ -602,7 +611,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// changing layouts.
     ///
     /// The changes to the state are automatically broadcasted to the focused client on exit.
-    pub fn with_kkb_state<F: FnMut(XkbContext<'_>) -> T, T>(&self, data: &mut D, mut callback: F) -> T {
+    pub fn with_xkb_state<F: FnMut(XkbContext<'_>) -> T, T>(&self, data: &mut D, mut callback: F) -> T {
         let internal = &mut *self.arc.internal.lock().unwrap();
         let mut mods_changed = false;
         let state = XkbContext {
