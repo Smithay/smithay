@@ -590,17 +590,31 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     }
 
     /// Change the [`Keymap`] used by the keyboard.
-    pub fn set_keymap(&self, data: &mut D, keymap: xkb::Keymap) {
+    ///
+    /// The input is a keymap in XKB_KEYMAP_FORMAT_TEXT_V1 format.
+    pub fn set_keymap_from_string(&self, data: &mut D, keymap: String) -> Result<(), Error> {
         let mut internal = self.arc.internal.lock().unwrap();
+        // Construct the Keymap internally instead of accepting one as input
+        // because libxkbcommon is not thread-safe.
+        let keymap = xkb::Keymap::new_from_string(
+            &xkb::Context::new(0),
+            keymap,
+            xkb::KEYMAP_FORMAT_TEXT_V1,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+        .ok_or_else(|| {
+            debug!("Loading keymap from string failed");
+            Error::BadKeymap
+        })?;
         self.update_xkb_state(data, &mut internal, keymap);
+        Ok(())
     }
 
     /// Change the [`XkbConfig`] used by the keyboard.
     pub fn set_xkb_config(&self, data: &mut D, xkb_config: XkbConfig<'_>) -> Result<(), Error> {
         let mut internal = self.arc.internal.lock().unwrap();
-
         let keymap = xkb_config.compile_keymap(&internal.context).map_err(|_| {
-            debug!("Loading keymap failed");
+            debug!("Loading keymap from XkbConfig failed");
             Error::BadKeymap
         })?;
         self.update_xkb_state(data, &mut internal, keymap);
