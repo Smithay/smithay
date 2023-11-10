@@ -415,7 +415,7 @@ impl Window {
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
         match &self.0.surface {
-            WindowSurface::Wayland((_, data)) => &data,
+            WindowSurface::Wayland((_, data)) => data,
             #[cfg(feature = "xwayland")]
             WindowSurface::X11(s) => s.user_data(),
         }
