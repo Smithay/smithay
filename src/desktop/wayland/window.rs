@@ -1,3 +1,5 @@
+#[cfg(feature = "xwayland")]
+use crate::xwayland::X11Surface;
 use crate::{
     backend::input::KeyState,
     desktop::{space::RenderZindex, utils::*, PopupManager},
@@ -18,7 +20,6 @@ use crate::{
         seat::WaylandFocus,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
-    xwayland::X11Surface,
 };
 use std::{
     hash::{Hash, Hasher},
@@ -401,7 +402,8 @@ impl Window {
     pub fn toplevel(&self) -> Option<&ToplevelSurface> {
         match &self.0.surface {
             WindowSurface::Wayland((s, _)) => Some(s),
-            _ => None,
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(_) => None,
         }
     }
 
@@ -414,6 +416,7 @@ impl Window {
     pub fn user_data(&self) -> &UserDataMap {
         match &self.0.surface {
             WindowSurface::Wayland((_, data)) => &data,
+            #[cfg(feature = "xwayland")]
             WindowSurface::X11(s) => s.user_data(),
         }
     }
