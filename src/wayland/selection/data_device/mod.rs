@@ -309,7 +309,7 @@ where
         .user_data()
         .get::<RefCell<SeatData<D::SelectionUserData>>>()
         .unwrap();
-    match seat_data.borrow().get_primary_selection() {
+    match seat_data.borrow().get_clipboard_selection() {
         None => Err(SelectionRequestError::NoSelection),
         Some(OfferReplySource::Client(source)) => {
             if !source.contains_mime_type(&mime_type) {
