@@ -1,2 +1,9 @@
 msrv = "1.65.0"
 type-complexity-threshold = 400
+
+disallowed-macros = [
+    { path = "std::print", reason = "We use tracing for logging" },
+    { path = "std::println", reason = "We use tracing for logging" },
+    { path = "std::eprint", reason = "We use tracing for logging" },
+    { path = "std::eprintln", reason = "We use tracing for logging" },
+]

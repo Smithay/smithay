@@ -44,7 +44,7 @@ impl TouchHandle {
     ///
     /// The `position` parameter is in surface-local coordinates.
     pub fn down(
-        &mut self,
+        &self,
         serial: Serial,
         time: u32,
         surface: &WlSurface,

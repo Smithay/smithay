@@ -53,7 +53,7 @@ use std::{
 
 use wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;
 use wayland_server::{
-    backend::GlobalId,
+    backend::{ClientId, GlobalId},
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
     Dispatch, DisplayHandle, GlobalDispatch,
 };
@@ -103,6 +103,8 @@ impl From<XdgActivationToken> for String {
 
 #[derive(Debug, Clone)]
 pub struct XdgActivationTokenData {
+    /// Client that requested the token
+    pub client_id: Option<ClientId>,
     /// Provides information about the seat and serial event that requested the token.
     ///
     /// The serial can come from an input or focus event.
@@ -129,6 +131,7 @@ pub struct XdgActivationTokenData {
 
 impl XdgActivationTokenData {
     fn new(
+        client_id: Option<ClientId>,
         serial: Option<(Serial, WlSeat)>,
         app_id: Option<String>,
         surface: Option<WlSurface>,
@@ -136,6 +139,7 @@ impl XdgActivationTokenData {
         (
             XdgActivationToken::new(),
             XdgActivationTokenData {
+                client_id,
                 serial,
                 app_id,
                 surface,
@@ -170,6 +174,19 @@ impl XdgActivationState {
             global,
             known_tokens: HashMap::new(),
         }
+    }
+
+    /// Create a token without any client association, e.g. for spawning processes from the compositor.
+    ///
+    /// This will not invoke [`XdgActivationHandler::created_token`] like client-created tokens,
+    /// instead use the return arguments to handle any initialization of the data you might need and to copy the token.
+    pub fn create_external_token(
+        &mut self,
+        app_id: impl Into<Option<String>>,
+    ) -> (&XdgActivationToken, &XdgActivationTokenData) {
+        let (token, data) = XdgActivationTokenData::new(None, None, app_id.into(), None);
+        self.known_tokens.insert(token.clone(), data);
+        self.known_tokens.get_key_value(&token).unwrap()
     }
 
     /// Access the data of a known token

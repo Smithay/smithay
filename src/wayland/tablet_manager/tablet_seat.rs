@@ -86,7 +86,7 @@ impl TabletSeatHandle {
     }
 
     /// Add a callback to SetCursor event
-    pub fn on_cursor_surface<F>(&mut self, cb: F)
+    pub fn on_cursor_surface<F>(&self, cb: F)
     where
         F: FnMut(&TabletToolDescriptor, CursorImageStatus) + Send + 'static,
     {

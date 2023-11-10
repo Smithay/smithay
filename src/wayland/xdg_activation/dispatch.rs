@@ -87,7 +87,7 @@ where
 {
     fn request(
         state: &mut D,
-        _: &Client,
+        client: &Client,
         token: &xdg_activation_token_v1::XdgActivationTokenV1,
         request: xdg_activation_token_v1::Request,
         data: &ActivationTokenData,
@@ -146,6 +146,7 @@ where
                     let mut guard = data.build.lock().unwrap();
 
                     XdgActivationTokenData::new(
+                        Some(client.id()),
                         guard.serial.take(),
                         guard.app_id.take(),
                         guard.surface.take(),

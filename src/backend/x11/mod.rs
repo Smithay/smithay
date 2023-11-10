@@ -3,11 +3,7 @@
 //! This backend provides the appropriate backend implementations to run a Wayland compositor as an
 //! X11 client.
 //!
-//! The backend is initialized using [`X11Backend::new`](self::X11Backend::new). The function will
-//! return two objects:
-//!
-//! - an [`X11Backend`], which you will insert into an [`EventLoop`](calloop::EventLoop) to process events from the backend.
-//! - an [`X11Surface`], which represents a surface that buffers are presented to for display.
+//! The backend is initialized using [`X11Backend::new`](self::X11Backend::new).
 //!
 //! ## Example usage
 //!
@@ -24,7 +20,7 @@
 //! fn init_x11_backend(
 //!    handle: calloop::LoopHandle<CompositorState>,
 //! ) -> Result<(), Box<dyn Error>> {
-//!     // Create the backend, also yielding a surface that may be used to render to the window.
+//!     // Create the backend
 //!     let backend = X11Backend::new()?;
 //!
 //!     // Get a handle from the backend to interface with the X server

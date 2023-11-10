@@ -646,7 +646,7 @@ pub struct ToplevelState {
     pub decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
 
     /// The wm capabilities for this toplevel
-    pub capabilities: WmCapabilitieSet,
+    pub capabilities: WmCapabilitySet,
 }
 
 impl Clone for ToplevelState {
@@ -771,11 +771,11 @@ impl From<ToplevelStateSet> for Vec<xdg_toplevel::State> {
 
 /// Container holding the [`xdg_toplevel::WmCapabilities`] for a toplevel
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
-pub struct WmCapabilitieSet {
+pub struct WmCapabilitySet {
     capabilities: HashSet<xdg_toplevel::WmCapabilities>,
 }
 
-impl WmCapabilitieSet {
+impl WmCapabilitySet {
     /// Returns `true` if the set contains a capability.
     pub fn contains(&self, capability: xdg_toplevel::WmCapabilities) -> bool {
         self.capabilities.contains(&capability)
@@ -808,7 +808,7 @@ impl WmCapabilitieSet {
     }
 }
 
-impl<T> From<T> for WmCapabilitieSet
+impl<T> From<T> for WmCapabilitySet
 where
     T: IntoIterator<Item = xdg_toplevel::WmCapabilities>,
 {
@@ -956,6 +956,9 @@ pub trait XdgShellHandler {
     ///     The token itself is opaque, and has no other special meaning.
     fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32);
 
+    /// A shell client was destroyed.
+    fn client_destroyed(&mut self, client: ShellClient) {}
+
     /// A toplevel surface was destroyed.
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {}
 
@@ -971,7 +974,7 @@ pub trait XdgShellHandler {
 pub struct XdgShellState {
     known_toplevels: Vec<ToplevelSurface>,
     known_popups: Vec<PopupSurface>,
-    default_capabilities: WmCapabilitieSet,
+    default_capabilities: WmCapabilitySet,
     global: GlobalId,
 }
 
@@ -995,7 +998,7 @@ impl XdgShellState {
     /// Create a new `xdg_shell` global with a specific set of [`WmCapabilities`](xdg_toplevel::WmCapabilities)
     pub fn new_with_capabilities<D>(
         display: &DisplayHandle,
-        capabilities: impl Into<WmCapabilitieSet>,
+        capabilities: impl Into<WmCapabilitySet>,
     ) -> XdgShellState
     where
         D: GlobalDispatch<XdgWmBase, ()> + 'static,
@@ -1015,7 +1018,7 @@ impl XdgShellState {
     /// *Note*: This does not update the capabilities on existing toplevels, only new
     /// toplevels are affected. To update existing toplevels iterate over them,
     /// update their capabilities and send a configure.
-    pub fn replace_capabilities(&mut self, capabilities: impl Into<WmCapabilitieSet>) {
+    pub fn replace_capabilities(&mut self, capabilities: impl Into<WmCapabilitySet>) {
         self.default_capabilities = capabilities.into();
     }
 
@@ -1110,6 +1113,21 @@ impl ShellClient {
         }
         guard.pending_ping = Some(serial);
         self.kind.ping(serial.into());
+
+        Ok(())
+    }
+
+    /// Kill the shell client for being unresponsive.
+    ///
+    /// Generally this will be used if the client does not respond to a ping in a reasonable amount of time.
+    pub fn unresponsive(&self) -> Result<(), crate::utils::DeadResource> {
+        if !self.alive() {
+            return Err(crate::utils::DeadResource);
+        }
+        self.kind.post_error(
+            xdg_wm_base::Error::Unresponsive,
+            "client did not respond to ping on time",
+        );
 
         Ok(())
     }
