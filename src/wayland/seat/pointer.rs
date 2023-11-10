@@ -457,7 +457,7 @@ where
                     .unwrap()
                     .focus
                     .as_ref()
-                    .map(|(focus, _)| focus.same_client_as(&pointer.id()))
+                    .map(|focused| focused.surface.same_client_as(&pointer.id()))
                     .unwrap_or(false)
                 {
                     return;

@@ -10,7 +10,7 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel, wayland_server::protocol::wl_surface::WlSurface,
     },
-    utils::{Logical, Point, Rectangle, Size},
+    utils::{Logical, Point, Rectangle, RelativePoint, Size},
     wayland::{compositor, shell::xdg::SurfaceCachedState},
 };
 use std::cell::RefCell;
@@ -76,7 +76,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
         &mut self,
         data: &mut Smallvil,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<RelativePoint<WlSurface>>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -132,7 +132,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
         &mut self,
         data: &mut Smallvil,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<WlSurface>>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);

@@ -8,7 +8,7 @@ use smithay::{
         PointerInnerHandle, RelativeMotionEvent,
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
-    utils::{Logical, Point},
+    utils::{Logical, Point, RelativePoint},
 };
 
 pub struct MoveSurfaceGrab {
@@ -22,7 +22,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         &mut self,
         data: &mut Smallvil,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
-        _focus: Option<(WlSurface, Point<i32, Logical>)>,
+        _focus: Option<RelativePoint<WlSurface>>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -38,7 +38,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         &mut self,
         data: &mut Smallvil,
         handle: &mut PointerInnerHandle<'_, Smallvil>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<WlSurface>>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);

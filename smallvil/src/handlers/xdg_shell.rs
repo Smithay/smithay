@@ -142,9 +142,9 @@ fn check_grab(
 
     let start_data = pointer.grab_start_data()?;
 
-    let (focus, _) = start_data.focus.as_ref()?;
+    let focused = start_data.focus.as_ref()?;
     // If the focus was for a different surface, ignore the request.
-    if !focus.id().same_client_as(&surface.id()) {
+    if !focused.surface.id().same_client_as(&surface.id()) {
         return None;
     }
 

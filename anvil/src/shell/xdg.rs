@@ -112,7 +112,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .focus
                 .as_ref()
                 .unwrap()
-                .0
+                .surface
                 .same_client_as(&surface.wl_surface().id())
         {
             return;
@@ -404,7 +404,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 .focus
                 .as_ref()
                 .unwrap()
-                .0
+                .surface
                 .same_client_as(&surface.wl_surface().id())
         {
             return;

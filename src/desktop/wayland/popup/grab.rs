@@ -20,7 +20,7 @@ use crate::{
         },
         SeatHandler,
     },
-    utils::{DeadResource, IsAlive, Logical, Point, Serial},
+    utils::{DeadResource, IsAlive, RelativePoint, Serial},
     wayland::{compositor::get_role, seat::WaylandFocus, shell::xdg::XDG_POPUP_ROLE},
 };
 
@@ -303,7 +303,10 @@ where
                 // We set the focus to root as this will make
                 // sure the grab will stay alive until the
                 // toplevel is destroyed or the grab is unset
-                focus: Some((root.into(), (0, 0).into())),
+                focus: Some(RelativePoint {
+                    surface: root.into(),
+                    loc: (0f64, 0f64).into(),
+                }),
                 location: (0f64, 0f64).into(),
             },
         }
@@ -547,7 +550,7 @@ where
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &MotionEvent,
     ) {
         if self.popup_grab.has_ended() {
@@ -565,7 +568,7 @@ where
                     .current_grab()
                     .as_ref()
                     .and_then(|f2| f2.wl_surface())
-                    .map(|s| f1.0.same_client_as(&s.id()))
+                    .map(|s| f1.surface.same_client_as(&s.id()))
             })
             .unwrap_or(false)
         {
@@ -579,7 +582,7 @@ where
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);
@@ -605,7 +608,7 @@ where
                 .and_then(|f| {
                     self.popup_grab
                         .current_grab()
-                        .and_then(|f2| f.0.wl_surface().map(|s| f2.same_client_as(&s.id())))
+                        .and_then(|f2| f.surface.wl_surface().map(|s| f2.same_client_as(&s.id())))
                 })
                 .unwrap_or(false)
         {

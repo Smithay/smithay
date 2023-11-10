@@ -25,7 +25,7 @@ use crate::{
         },
         Seat, SeatHandler,
     },
-    utils::{IsAlive, Logical, Point},
+    utils::{IsAlive, RelativePoint},
     wayland::{seat::WaylandFocus, selection::seat_data::SeatData},
 };
 
@@ -77,7 +77,7 @@ where
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -89,7 +89,7 @@ where
             .get::<RefCell<SeatData<D::SelectionUserData>>>()
             .unwrap()
             .borrow_mut();
-        if focus.as_ref().and_then(|(s, _)| s.wl_surface()) != self.current_focus.clone() {
+        if focus.as_ref().and_then(|focus| focus.surface.wl_surface()) != self.current_focus.clone() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 // only leave if there is a data source or we are on the original client
@@ -107,16 +107,16 @@ where
                 }
             }
         }
-        if let Some((surface, surface_location)) = focus
+        if let Some((surface, srel_loc)) = focus
             .as_ref()
-            .and_then(|(h, loc)| h.wl_surface().map(|s| (s, loc)))
+            .and_then(|focus| focus.surface.wl_surface().map(|s| (s, focus.loc)))
         {
             // early return if the surface is no longer valid
             let client = match self.dh.get_client(surface.id()) {
                 Ok(c) => c,
                 Err(_) => return,
             };
-            let (x, y) = (event.location - surface_location.to_f64()).into();
+            let (x, y) = srel_loc.into();
             if self.current_focus.is_none() {
                 // We entered a new surface, send the data offer if appropriate
                 if let Some(ref source) = self.data_source {
@@ -187,7 +187,7 @@ where
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);

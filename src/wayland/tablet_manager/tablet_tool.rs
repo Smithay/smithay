@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::backend::input::{ButtonState, TabletToolCapabilities, TabletToolDescriptor, TabletToolType};
 use crate::input::pointer::{CursorImageAttributes, CursorImageStatus};
+use crate::utils::RelativePoint;
 use crate::utils::{Logical, Point};
 use crate::wayland::seat::CURSOR_IMAGE_ROLE;
 use wayland_protocols::wp::tablet::zv2::server::{
@@ -35,25 +36,27 @@ pub(crate) struct TabletTool {
 impl TabletTool {
     fn proximity_in(
         &mut self,
-        loc: Point<f64, Logical>,
-        (focus, sloc): (WlSurface, Point<i32, Logical>),
+        _loc: Point<f64, Logical>,
+        focus: RelativePoint<WlSurface>,
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,
     ) {
-        let wl_tool = self.instances.iter().find(|i| i.id().same_client_as(&focus.id()));
+        let wl_tool = self
+            .instances
+            .iter()
+            .find(|i| i.id().same_client_as(&focus.surface.id()));
 
         if let Some(wl_tool) = wl_tool {
-            tablet.with_focused_tablet(&focus, |wl_tablet| {
-                wl_tool.proximity_in(serial.into(), wl_tablet, &focus);
+            tablet.with_focused_tablet(&focus.surface, |wl_tablet| {
+                wl_tool.proximity_in(serial.into(), wl_tablet, &focus.surface);
                 // proximity_in has to be followed by motion event (required by protocol)
-                let srel_loc = loc - sloc.to_f64();
-                wl_tool.motion(srel_loc.x, srel_loc.y);
+                wl_tool.motion(focus.loc.x, focus.loc.y);
                 wl_tool.frame(time);
             });
         }
 
-        self.focus = Some(focus.clone());
+        self.focus = Some(focus.surface.clone());
     }
 
     fn proximity_out(&mut self, time: u32) {
@@ -102,21 +105,20 @@ impl TabletTool {
     fn motion(
         &mut self,
         pos: Point<f64, Logical>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<WlSurface>>,
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,
     ) {
         match (focus, self.focus.as_ref()) {
             (Some(focus), Some(prev_focus)) => {
-                if &focus.0 == prev_focus {
+                if &focus.surface == prev_focus {
                     if let Some(wl_tool) = self
                         .instances
                         .iter()
-                        .find(|i| i.id().same_client_as(&focus.0.id()))
+                        .find(|i| i.id().same_client_as(&focus.surface.id()))
                     {
-                        let srel_loc = pos - focus.1.to_f64();
-                        wl_tool.motion(srel_loc.x, srel_loc.y);
+                        wl_tool.motion(focus.loc.x, focus.loc.y);
 
                         if let Some(pressure) = self.pending_pressure.take() {
                             wl_tool.pressure((pressure * 65535.0).round() as u32);
@@ -287,12 +289,12 @@ impl TabletToolHandle {
     /// You provide the location of the tool, in the form of:
     ///
     /// - The coordinates of the tool in the global compositor space
-    /// - The surface on top of which the tool is, and the coordinates of its
-    ///   origin in the global compositor space.
+    /// - The surface on top of which the tool is, and the coordinates of the
+    ///   tool relative to the that surface
     pub fn proximity_in(
         &self,
         pos: Point<f64, Logical>,
-        focus: (WlSurface, Point<i32, Logical>),
+        focus: RelativePoint<WlSurface>,
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,
@@ -323,16 +325,15 @@ impl TabletToolHandle {
     /// You provide the new location of the tool, in the form of:
     ///
     /// - The coordinates of the tool in the global compositor space
-    /// - The surface on top of which the tool is, and the coordinates of its
-    ///   origin in the global compositor space (or `None` of the pointer is not
-    ///   on top of a client surface).
+    /// - The surface on top of which the tool is, and its position relative to
+    ///   that surface (or `None` of the pointer is not on top of a client surface).
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of proximity_in/proximity_out events.
     pub fn motion(
         &self,
         pos: Point<f64, Logical>,
-        focus: Option<(WlSurface, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<WlSurface>>,
         tablet: &TabletHandle,
         serial: Serial,
         time: u32,

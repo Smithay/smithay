@@ -208,12 +208,12 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>, display_han
         WlcsEvent::NewPointer { .. } => {}
         WlcsEvent::PointerMoveAbsolute { location, .. } => {
             let serial = SCOUNTER.next_serial();
-            let under = state.surface_under(location);
+            let focus = state.focused_surface(location);
             let time = Duration::from(state.clock.now()).as_millis() as u32;
             let ptr = state.pointer.clone();
             ptr.motion(
                 state,
-                under,
+                focus,
                 &MotionEvent {
                     location,
                     serial,
@@ -225,13 +225,13 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>, display_han
         WlcsEvent::PointerMoveRelative { delta, .. } => {
             let pointer_location = state.pointer.current_location() + delta;
             let serial = SCOUNTER.next_serial();
-            let under = state.surface_under(pointer_location);
+            let focus = state.focused_surface(pointer_location);
             let time = Duration::from(state.clock.now()).as_millis() as u32;
             let utime = Duration::from(state.clock.now()).as_micros() as u64;
             let ptr = state.pointer.clone();
             ptr.motion(
                 state,
-                under.clone(),
+                focus.clone(),
                 &MotionEvent {
                     location: pointer_location,
                     serial,
@@ -240,7 +240,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>, display_han
             );
             ptr.relative_motion(
                 state,
-                under,
+                focus,
                 &RelativeMotionEvent {
                     delta,
                     delta_unaccel: delta,
