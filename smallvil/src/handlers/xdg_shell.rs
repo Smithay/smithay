@@ -33,7 +33,7 @@ impl XdgShellHandler for Smallvil {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let window = Window::new(surface);
+        let window = Window::new_wayland_window(surface);
         self.space.map_element(window, (0, 0), false);
     }
 
@@ -65,7 +65,7 @@ impl XdgShellHandler for Smallvil {
             let window = self
                 .space
                 .elements()
-                .find(|w| w.toplevel().wl_surface() == wl_surface)
+                .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
                 .unwrap()
                 .clone();
             let initial_window_location = self.space.element_location(&window).unwrap();
@@ -97,7 +97,7 @@ impl XdgShellHandler for Smallvil {
             let window = self
                 .space
                 .elements()
-                .find(|w| w.toplevel().wl_surface() == wl_surface)
+                .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
                 .unwrap()
                 .clone();
             let initial_window_location = self.space.element_location(&window).unwrap();
@@ -156,7 +156,7 @@ pub fn handle_commit(popups: &mut PopupManager, space: &Space<Window>, surface: 
     // Handle toplevel commits.
     if let Some(window) = space
         .elements()
-        .find(|w| w.toplevel().wl_surface() == surface)
+        .find(|w| w.toplevel().unwrap().wl_surface() == surface)
         .cloned()
     {
         let initial_configure_sent = with_states(surface, |states| {
@@ -170,7 +170,7 @@ pub fn handle_commit(popups: &mut PopupManager, space: &Space<Window>, surface: 
         });
 
         if !initial_configure_sent {
-            window.toplevel().send_configure();
+            window.toplevel().unwrap().send_configure();
         }
     }
 

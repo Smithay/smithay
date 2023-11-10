@@ -108,7 +108,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 for element in self.space.elements() {
                     #[allow(irrefutable_let_patterns)]
                     if let WindowElement::Wayland(window) = element {
-                        let toplevel = window.toplevel();
+                        let toplevel = window.toplevel().unwrap();
                         let mode_changed = toplevel.with_pending_state(|state| {
                             if let Some(current_mode) = state.decoration_mode {
                                 let new_mode =

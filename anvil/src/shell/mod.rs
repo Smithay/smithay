@@ -242,7 +242,7 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
                     .initial_configure_sent
             });
             if !initial_configure_sent {
-                toplevel.toplevel().send_configure();
+                toplevel.toplevel().unwrap().send_configure();
             }
         }
 
@@ -347,7 +347,7 @@ fn place_new_window(
     // set the initial toplevel bounds
     #[allow(irrefutable_let_patterns)]
     if let WindowElement::Wayland(window) = window {
-        window.toplevel().with_pending_state(|state| {
+        window.toplevel().unwrap().with_pending_state(|state| {
             state.bounds = Some(output_geometry.size);
         });
     }

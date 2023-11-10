@@ -311,7 +311,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
 
         match &self.window {
             WindowElement::Wayland(w) => {
-                let xdg = w.toplevel();
+                let xdg = w.toplevel().unwrap();
                 xdg.with_pending_state(|state| {
                     state.states.set(xdg_toplevel::State::Resizing);
                     state.size = Some(self.last_window_size);
@@ -355,7 +355,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
 
             match &self.window {
                 WindowElement::Wayland(w) => {
-                    let xdg = w.toplevel();
+                    let xdg = w.toplevel().unwrap();
                     xdg.with_pending_state(|state| {
                         state.states.unset(xdg_toplevel::State::Resizing);
                         state.size = Some(self.last_window_size);

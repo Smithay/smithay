@@ -46,7 +46,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         // Do not send a configure here, the initial configure
         // of a xdg_surface has to be sent during the commit if
         // the surface is not already configured
-        let window = WindowElement::Wayland(Window::new(surface));
+        let window = WindowElement::Wayland(Window::new_wayland_window(surface));
         place_new_window(&mut self.space, self.pointer.current_location(), &window, true);
     }
 
