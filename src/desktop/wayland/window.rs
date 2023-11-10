@@ -18,6 +18,7 @@ use crate::{
         seat::WaylandFocus,
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
+    xwayland::X11Surface,
 };
 use std::{
     hash::{Hash, Hasher},
@@ -35,13 +36,19 @@ use wayland_server::protocol::wl_surface;
 crate::utils::ids::id_gen!(next_window_id, WINDOW_ID, WINDOW_IDS);
 
 #[derive(Debug)]
+pub(crate) enum WindowSurface {
+    Wayland((ToplevelSurface, UserDataMap)),
+    #[cfg(feature = "xwayland")]
+    X11(X11Surface),
+}
+
+#[derive(Debug)]
 pub(crate) struct WindowInner {
     pub(crate) id: usize,
-    toplevel: ToplevelSurface,
+    surface: WindowSurface,
     bbox: Mutex<Rectangle<i32, Logical>>,
     pub(crate) z_index: AtomicU8,
     focused_surface: Mutex<Option<wl_surface::WlSurface>>,
-    user_data: UserDataMap,
 }
 
 impl Drop for WindowInner {
@@ -70,7 +77,11 @@ impl Hash for Window {
 
 impl IsAlive for Window {
     fn alive(&self) -> bool {
-        self.0.toplevel.alive()
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => s.alive(),
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => s.alive(),
+        }
     }
 }
 
@@ -92,26 +103,50 @@ bitflags::bitflags! {
 
 impl Window {
     /// Construct a new [`Window`] from a xdg toplevel surface
+    #[deprecated]
     pub fn new(toplevel: ToplevelSurface) -> Window {
+        Self::new_wayland_window(toplevel)
+    }
+
+    /// Construct a new [`Window`] from a xdg toplevel surface
+    pub fn new_wayland_window(toplevel: ToplevelSurface) -> Window {
         let id = next_window_id();
 
         Window(Arc::new(WindowInner {
             id,
-            toplevel,
+            surface: WindowSurface::Wayland((toplevel, UserDataMap::new())),
             bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
             z_index: AtomicU8::new(RenderZindex::Shell as u8),
             focused_surface: Mutex::new(None),
-            user_data: UserDataMap::new(),
+        }))
+    }
+
+    /// Construct a new [`Window`] from an [`X11Surface`]
+    #[cfg(feature = "xwayland")]
+    pub fn new_x11_window(surface: X11Surface) -> Window {
+        let id = next_window_id();
+        Window(Arc::new(WindowInner {
+            id,
+            surface: WindowSurface::X11(surface),
+            bbox: Mutex::new(Rectangle::from_loc_and_size((0, 0), (0, 0))),
+            z_index: AtomicU8::new(RenderZindex::Shell as u8),
+            focused_surface: Mutex::new(None),
         }))
     }
 
     /// Returns the geometry of this window.
     pub fn geometry(&self) -> Rectangle<i32, Logical> {
-        // It's the set geometry with the full bounding box as the fallback.
-        with_states(self.0.toplevel.wl_surface(), |states| {
-            states.cached_state.current::<SurfaceCachedState>().geometry
-        })
-        .unwrap_or_else(|| self.bbox())
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                // It's the set geometry with the full bounding box as the fallback.
+                with_states(s.wl_surface(), |states| {
+                    states.cached_state.current::<SurfaceCachedState>().geometry
+                })
+                .unwrap_or_else(|| self.bbox())
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => s.geometry(),
+        }
     }
 
     /// Returns a bounding box over this window and its children.
@@ -125,25 +160,42 @@ impl Window {
     /// will not include the popups.
     pub fn bbox_with_popups(&self) -> Rectangle<i32, Logical> {
         let mut bounding_box = self.bbox();
-        let surface = self.0.toplevel.wl_surface();
-        for (popup, location) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
-            let offset = self.geometry().loc + location - popup.geometry().loc;
-            bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset));
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                let surface = s.wl_surface();
+                for (popup, location) in PopupManager::popups_for_surface(surface) {
+                    let surface = popup.wl_surface();
+                    let offset = self.geometry().loc + location - popup.geometry().loc;
+                    bounding_box = bounding_box.merge(bbox_from_surface_tree(surface, offset));
+                }
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(_) => {
+                // FIXME: What to do with X11 surfaces?
+                todo!();
+            }
         }
 
         bounding_box
     }
 
     /// Activate/Deactivate this window
-    pub fn set_activated(&self, active: bool) -> bool {
-        self.0.toplevel.with_pending_state(|state| {
-            if active {
-                state.states.set(xdg_toplevel::State::Activated)
-            } else {
-                state.states.unset(xdg_toplevel::State::Activated)
+    pub fn set_activated(&self, activated: bool) -> bool {
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => s.with_pending_state(|state| {
+                if activated {
+                    state.states.set(xdg_toplevel::State::Activated)
+                } else {
+                    state.states.unset(xdg_toplevel::State::Activated)
+                }
+            }),
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => {
+                let already_activated = s.is_activated();
+                s.set_activated(activated).ok();
+                already_activated
             }
-        })
+        }
     }
 
     /// Sends the frame callback to all the subsurfaces in this window that requested it
@@ -159,12 +211,22 @@ impl Window {
         T: Into<Duration>,
         F: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
     {
-        let time = time.into();
-        let surface = self.0.toplevel.wl_surface();
-        send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
-        for (popup, _) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
-            send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                let time = time.into();
+                let surface = s.wl_surface();
+                send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+                for (popup, _) in PopupManager::popups_for_surface(surface) {
+                    let surface = popup.wl_surface();
+                    send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+                }
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => {
+                if let Some(surface) = &s.wl_surface() {
+                    send_frames_surface_tree(surface, output, time, throttle, primary_scan_out_output);
+                }
+            }
         }
     }
 
@@ -180,16 +242,36 @@ impl Window {
         P: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
         F: Fn(&wl_surface::WlSurface, &SurfaceData) -> &'a DmabufFeedback + Copy,
     {
-        let surface = self.0.toplevel.wl_surface();
-        send_dmabuf_feedback_surface_tree(surface, output, primary_scan_out_output, select_dmabuf_feedback);
-        for (popup, _) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
-            send_dmabuf_feedback_surface_tree(
-                surface,
-                output,
-                primary_scan_out_output,
-                select_dmabuf_feedback,
-            );
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                let surface = s.wl_surface();
+                send_dmabuf_feedback_surface_tree(
+                    surface,
+                    output,
+                    primary_scan_out_output,
+                    select_dmabuf_feedback,
+                );
+                for (popup, _) in PopupManager::popups_for_surface(surface) {
+                    let surface = popup.wl_surface();
+                    send_dmabuf_feedback_surface_tree(
+                        surface,
+                        output,
+                        primary_scan_out_output,
+                        select_dmabuf_feedback,
+                    );
+                }
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => {
+                if let Some(surface) = &s.wl_surface() {
+                    send_dmabuf_feedback_surface_tree(
+                        surface,
+                        output,
+                        primary_scan_out_output,
+                        select_dmabuf_feedback,
+                    );
+                }
+            }
         }
     }
 
@@ -205,21 +287,36 @@ impl Window {
         F1: FnMut(&wl_surface::WlSurface, &SurfaceData) -> Option<Output> + Copy,
         F2: FnMut(&wl_surface::WlSurface, &SurfaceData) -> wp_presentation_feedback::Kind + Copy,
     {
-        let surface = self.0.toplevel.wl_surface();
-        take_presentation_feedback_surface_tree(
-            surface,
-            output_feedback,
-            primary_scan_out_output,
-            presentation_feedback_flags,
-        );
-        for (popup, _) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
-            take_presentation_feedback_surface_tree(
-                surface,
-                output_feedback,
-                primary_scan_out_output,
-                presentation_feedback_flags,
-            );
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                let surface = s.wl_surface();
+                take_presentation_feedback_surface_tree(
+                    surface,
+                    output_feedback,
+                    primary_scan_out_output,
+                    presentation_feedback_flags,
+                );
+                for (popup, _) in PopupManager::popups_for_surface(surface) {
+                    let surface = popup.wl_surface();
+                    take_presentation_feedback_surface_tree(
+                        surface,
+                        output_feedback,
+                        primary_scan_out_output,
+                        presentation_feedback_flags,
+                    );
+                }
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => {
+                if let Some(surface) = &s.wl_surface() {
+                    take_presentation_feedback_surface_tree(
+                        surface,
+                        output_feedback,
+                        primary_scan_out_output,
+                        presentation_feedback_flags,
+                    )
+                }
+            }
         }
     }
 
@@ -228,11 +325,21 @@ impl Window {
     where
         F: FnMut(&wl_surface::WlSurface, &SurfaceData),
     {
-        let surface = self.0.toplevel.wl_surface();
-        with_surfaces_surface_tree(surface, &mut processor);
-        for (popup, _) in PopupManager::popups_for_surface(surface) {
-            let surface = popup.wl_surface();
-            with_surfaces_surface_tree(surface, &mut processor);
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                let surface = s.wl_surface();
+                with_surfaces_surface_tree(surface, &mut processor);
+                for (popup, _) in PopupManager::popups_for_surface(surface) {
+                    let surface = popup.wl_surface();
+                    with_surfaces_surface_tree(surface, &mut processor);
+                }
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => {
+                if let Some(surface) = &s.wl_surface() {
+                    with_surfaces_surface_tree(surface, processor);
+                }
+            }
         }
     }
 
@@ -241,8 +348,18 @@ impl Window {
     /// Needs to be called whenever the toplevel surface or any unsynchronized subsurfaces of this window are updated
     /// to correctly update the bounding box of this window.
     pub fn on_commit(&self) {
-        let surface = self.0.toplevel.wl_surface();
-        *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(surface, (0, 0));
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                let surface = s.wl_surface();
+                *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(surface, (0, 0));
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => {
+                if let Some(surface) = &s.wl_surface() {
+                    *self.0.bbox.lock().unwrap() = bbox_from_surface_tree(surface, (0, 0));
+                }
+            }
+        }
     }
 
     /// Finds the topmost surface under this point matching the input regions of the surface and returns
@@ -257,23 +374,35 @@ impl Window {
         surface_type: WindowSurfaceType,
     ) -> Option<(wl_surface::WlSurface, Point<i32, Logical>)> {
         let point = point.into();
-        let surface = self.0.toplevel.wl_surface();
-        if surface_type.contains(WindowSurfaceType::POPUP) {
-            for (popup, location) in PopupManager::popups_for_surface(surface) {
-                let offset = self.geometry().loc + location - popup.geometry().loc;
-                if let Some(result) = under_from_surface_tree(popup.wl_surface(), point, offset, surface_type)
-                {
-                    return Some(result);
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                let surface = s.wl_surface();
+                if surface_type.contains(WindowSurfaceType::POPUP) {
+                    for (popup, location) in PopupManager::popups_for_surface(surface) {
+                        let offset = self.geometry().loc + location - popup.geometry().loc;
+                        if let Some(result) =
+                            under_from_surface_tree(popup.wl_surface(), point, offset, surface_type)
+                        {
+                            return Some(result);
+                        }
+                    }
                 }
-            }
-        }
 
-        under_from_surface_tree(surface, point, (0, 0), surface_type)
+                under_from_surface_tree(surface, point, (0, 0), surface_type)
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => s
+                .wl_surface()
+                .and_then(|s| under_from_surface_tree(&s, point, (0, 0), surface_type)),
+        }
     }
 
     /// Returns the underlying xdg toplevel surface
-    pub fn toplevel(&self) -> &ToplevelSurface {
-        &self.0.toplevel
+    pub fn toplevel(&self) -> Option<&ToplevelSurface> {
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => Some(s),
+            _ => None,
+        }
     }
 
     /// Override the z_index of this Window
@@ -283,7 +412,10 @@ impl Window {
 
     /// Returns a [`UserDataMap`] to allow associating arbitrary data with this window.
     pub fn user_data(&self) -> &UserDataMap {
-        &self.0.user_data
+        match &self.0.surface {
+            WindowSurface::Wayland((_, data)) => &data,
+            WindowSurface::X11(s) => s.user_data(),
+        }
     }
 }
 
@@ -384,10 +516,20 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
 
 impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
     fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        KeyboardTarget::<D>::enter(self.0.toplevel.wl_surface(), seat, data, keys, serial)
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                KeyboardTarget::<D>::enter(s.wl_surface(), seat, data, keys, serial)
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => KeyboardTarget::<D>::leave(s, seat, data, serial),
+        }
     }
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
-        KeyboardTarget::<D>::leave(self.0.toplevel.wl_surface(), seat, data, serial)
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => KeyboardTarget::<D>::leave(s.wl_surface(), seat, data, serial),
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => KeyboardTarget::<D>::leave(s, seat, data, serial),
+        }
     }
     fn key(
         &self,
@@ -398,15 +540,31 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for Window {
         serial: Serial,
         time: u32,
     ) {
-        KeyboardTarget::<D>::key(self.0.toplevel.wl_surface(), seat, data, key, state, serial, time)
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                KeyboardTarget::<D>::key(s.wl_surface(), seat, data, key, state, serial, time)
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => KeyboardTarget::<D>::key(s, seat, data, key, state, serial, time),
+        }
     }
     fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
-        KeyboardTarget::<D>::modifiers(self.0.toplevel.wl_surface(), seat, data, modifiers, serial)
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => {
+                KeyboardTarget::<D>::modifiers(s.wl_surface(), seat, data, modifiers, serial)
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => KeyboardTarget::<D>::modifiers(s, seat, data, modifiers, serial),
+        }
     }
 }
 
 impl WaylandFocus for Window {
     fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
-        Some(self.0.toplevel.wl_surface().clone())
+        match &self.0.surface {
+            WindowSurface::Wayland((s, _)) => Some(s.wl_surface().clone()),
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => s.wl_surface(),
+        }
     }
 }
