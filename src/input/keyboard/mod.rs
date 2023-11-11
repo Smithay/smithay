@@ -755,7 +755,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     }
 
     /// Iterate over the keysyms of the currently pressed keys.
-    pub fn with_pressed_keysyms<F, R>(&self, f: F)
+    pub fn with_pressed_keysyms<F, R>(&self, f: F) -> R
     where
         F: FnOnce(Vec<KeysymHandle<'_>>) -> R,
         R: 'static,
@@ -771,7 +771,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                     keymap: &guard.keymap,
                 })
                 .collect::<Vec<_>>();
-            f(handles);
+            f(handles)
         }
     }
 
