@@ -18,7 +18,7 @@
 //! ```no_run
 //! use smithay::{
 //!     delegate_dmabuf,
-//!     backend::allocator::dmabuf::Dmabuf,
+//!     backend::allocator::dmabuf::{Dmabuf},
 //!     reexports::{
 //!         wayland_server::protocol::{
 //!             wl_buffer::WlBuffer,
@@ -27,7 +27,7 @@
 //!     },
 //!     wayland::{
 //!         buffer::BufferHandler,
-//!         dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportError}
+//!         dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier}
 //!     },
 //! };
 //!
@@ -53,12 +53,12 @@
 //!         &mut self.dmabuf_state
 //!     }
 //!
-//!     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
+//!     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {
 //!         // Here you should import the dmabuf into your renderer.
 //!         //
-//!         // The return value indicates whether import was successful. If the return value is Err, then
-//!         // the client is told dmabuf import has failed.
-//!         Ok(())
+//!         // The notifier is used to communicate whether import was successful. In this example we
+//!         // call successful to notify the client import was successful.
+//!         notifier.successful::<State>();
 //!     }
 //!
 //!     fn new_surface_feedback(
@@ -145,7 +145,7 @@
 //! #     reexports::{wayland_server::protocol::wl_buffer::WlBuffer},
 //! #     wayland::{
 //! #         buffer::BufferHandler,
-//! #         dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportError}
+//! #         dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier}
 //! #     },
 //! # };
 //! # pub struct State {
@@ -159,9 +159,7 @@
 //! #     fn dmabuf_state(&mut self) -> &mut DmabufState {
 //! #         &mut self.dmabuf_state
 //! #     }
-//! #     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
-//! #         Ok(())
-//! #     }
+//! #     fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {}
 //! # }
 //! # delegate_dmabuf!(State);
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -204,12 +202,16 @@ use std::{
 use indexmap::IndexSet;
 use rustix::fs::{seek, SeekFrom};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{
-    zwp_linux_buffer_params_v1, zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
+    zwp_linux_buffer_params_v1::{self, ZwpLinuxBufferParamsV1},
+    zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
 };
 use wayland_server::{
-    backend::GlobalId,
-    protocol::{wl_buffer, wl_surface::WlSurface},
-    Client, DisplayHandle, GlobalDispatch, Resource, WEnum,
+    backend::{GlobalId, InvalidId},
+    protocol::{
+        wl_buffer::{self, WlBuffer},
+        wl_surface::WlSurface,
+    },
+    Client, Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
 };
 
 use crate::{
@@ -839,6 +841,133 @@ pub struct DmabufGlobal {
     id: usize,
 }
 
+/// An object to allow asynchronous creation of a [`Dmabuf`] backed [`WlBuffer`].
+///
+/// This object is [`Send`] to allow import of a [`Dmabuf`] to take place on another thread if desired.
+#[must_use = "This object must be used to notify the client whether dmabuf import succeeded"]
+#[derive(Debug)]
+pub struct ImportNotifier {
+    inner: ZwpLinuxBufferParamsV1,
+    display: DisplayHandle,
+    dmabuf: Dmabuf,
+    import: Import,
+    drop_ignore: bool,
+}
+
+/// Type of dmabuf import.
+#[derive(Debug)]
+enum Import {
+    /// The import can fail or create a WlBuffer.
+    Falliable,
+
+    /// A WlBuffer object has already been created. Failure causes client death.
+    Infallible(WlBuffer),
+}
+
+impl ImportNotifier {
+    /// Dmabuf import was successful.
+    ///
+    /// This can return [`InvalidId`] if the client the buffer was imported from has died.
+    pub fn successful<D>(mut self) -> Result<WlBuffer, InvalidId>
+    where
+        D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
+            + Dispatch<wl_buffer::WlBuffer, Dmabuf>
+            + BufferHandler
+            + DmabufHandler
+            + 'static,
+    {
+        let client = self.inner.client();
+
+        let result = match self.import {
+            Import::Falliable => {
+                if let Some(client) = client {
+                    match client.create_resource::<wl_buffer::WlBuffer, Dmabuf, D>(
+                        &self.display,
+                        1,
+                        self.dmabuf.clone(),
+                    ) {
+                        Ok(buffer) => {
+                            self.inner.created(&buffer);
+                            Ok(buffer)
+                        }
+
+                        Err(err) => {
+                            tracing::error!("failed to create protocol object for \"create\" request");
+                            Err(err)
+                        }
+                    }
+                } else {
+                    tracing::error!("client was dead while creating wl_buffer resource");
+                    self.inner.post_error(
+                        zwp_linux_buffer_params_v1::Error::InvalidWlBuffer,
+                        "create_immed failed and produced an invalid wl_buffer",
+                    );
+                    Err(InvalidId)
+                }
+            }
+            Import::Infallible(ref buffer) => Ok(buffer.clone()),
+        };
+
+        self.drop_ignore = true;
+        result
+    }
+
+    /// The buffer being imported is incomplete.
+    ///
+    /// This may be the result of too few or too many planes being used when creating a buffer.
+    pub fn incomplete(mut self) {
+        self.inner.post_error(
+            zwp_linux_buffer_params_v1::Error::Incomplete,
+            "missing or too many planes to create a buffer",
+        );
+        self.drop_ignore = true;
+    }
+
+    /// The buffer being imported has an invalid width or height.
+    pub fn invalid_dimensions(mut self) {
+        self.inner.post_error(
+            zwp_linux_buffer_params_v1::Error::InvalidDimensions,
+            "width or height of dmabuf is invalid",
+        );
+        self.drop_ignore = true;
+    }
+
+    /// Import failed due to an invalid format and plane combination.
+    ///
+    /// This is always a client error and will result in the client being killed.
+    pub fn invalid_format(mut self) {
+        self.inner.post_error(
+            zwp_linux_buffer_params_v1::Error::InvalidFormat,
+            "format and plane combination are not valid",
+        );
+        self.drop_ignore = true;
+    }
+
+    /// Import failed for an implementation dependent reason.
+    pub fn failed(mut self) {
+        if matches!(self.import, Import::Falliable) {
+            self.inner.failed();
+        } else {
+            self.inner.post_error(
+                zwp_linux_buffer_params_v1::Error::InvalidWlBuffer,
+                "create_immed failed and produced an invalid wl_buffer",
+            );
+        }
+        self.drop_ignore = true;
+    }
+}
+
+impl Drop for ImportNotifier {
+    fn drop(&mut self) {
+        if !self.drop_ignore {
+            tracing::warn!(
+                "Compositor bug: Server ignored ImportNotifier for {:?}",
+                self.inner
+            );
+        }
+    }
+}
+
 /// Handler trait for [`Dmabuf`] import from the compositor.
 pub trait DmabufHandler: BufferHandler {
     /// Returns a mutable reference to the [`DmabufState`] delegate type.
@@ -849,13 +978,8 @@ pub trait DmabufHandler: BufferHandler {
     /// The `global` indicates which [`DmabufGlobal`] the buffer was imported to. You should import the dmabuf
     /// into your renderer to ensure the dmabuf may be used later when rendering.
     ///
-    /// The return value of this function indicates whether dmabuf import is successful. The renderer is
-    /// responsible for determining whether the format and plane combinations are valid and should return
-    /// [`ImportError::InvalidFormat`] if the format and planes are not correct.
-    ///
-    /// If the import fails due to an implementation specific reason, then [`ImportError::Failed`] should be
-    /// returned.
-    fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError>;
+    /// Whether dmabuf import succeded is notified through the [`ImportNotifier`] object provided in this function.
+    fn dmabuf_imported(&mut self, global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier);
 
     /// This function allows to override the default [`DmabufFeedback`] for a surface
     ///
@@ -871,23 +995,6 @@ pub trait DmabufHandler: BufferHandler {
     ) -> Option<DmabufFeedback> {
         None
     }
-}
-
-/// Error that may occur when importing a [`Dmabuf`].
-#[derive(Debug, thiserror::Error)]
-pub enum ImportError {
-    /// Buffer import failed for a renderer implementation specific reason.
-    ///
-    /// Depending on the request sent by the client, this error may notify the client that buffer import
-    /// failed or will kill the client.
-    #[error("buffer import failed")]
-    Failed,
-
-    /// The format and plane combination is not valid.
-    ///
-    /// This specific error will kill the client providing the dmabuf.
-    #[error("format and plane combination is not valid")]
-    InvalidFormat,
 }
 
 /// Gets the contents of a [`Dmabuf`] backed [`WlBuffer`].
@@ -940,7 +1047,7 @@ impl DmabufParamsData {
     /// Emits a protocol error if the params have already been used to create a dmabuf.
     ///
     /// This returns true if the protocol object has not been used.
-    fn ensure_unused(&self, params: &zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1) -> bool {
+    fn ensure_unused(&self, params: &ZwpLinuxBufferParamsV1) -> bool {
         if !self.used.load(Ordering::Relaxed) {
             return true;
         }
@@ -961,7 +1068,7 @@ impl DmabufParamsData {
     /// A return value of [`None`] indicates buffer import has failed and the client has been killed.
     fn create_dmabuf(
         &self,
-        params: &zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
+        params: &ZwpLinuxBufferParamsV1,
         width: i32,
         height: i32,
         format: u32,
