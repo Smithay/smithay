@@ -44,7 +44,7 @@ use smithay::{
     wayland::{
         compositor,
         dmabuf::{
-            DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportError,
+            DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier,
         },
     },
 };
@@ -73,12 +73,10 @@ impl DmabufHandler for AnvilState<X11Data> {
         &mut self.backend_data.dmabuf_state
     }
 
-    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf) -> Result<(), ImportError> {
-        self.backend_data
-            .renderer
-            .import_dmabuf(&dmabuf, None)
-            .map(|_| ())
-            .map_err(|_| ImportError::Failed)
+    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {
+        if self.backend_data.renderer.import_dmabuf(&dmabuf, None).is_err() {
+            notifier.failed();
+        }
     }
 }
 delegate_dmabuf!(AnvilState<X11Data>);
