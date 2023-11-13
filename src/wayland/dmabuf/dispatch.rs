@@ -283,14 +283,12 @@ where
                 // create_dmabuf performs an implicit ensure_unused function call.
                 if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags) {
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
-                        let notifier = ImportNotifier {
-                            inner: params.clone(),
-                            display: dh.clone(),
-                            dmabuf: dmabuf.clone(),
-                            import: Import::Falliable,
-                            drop_ignore: false,
-                        };
-
+                        let notifier = ImportNotifier::new(
+                            params.clone(),
+                            dh.clone(),
+                            dmabuf.clone(),
+                            Import::Falliable,
+                        );
                         state.dmabuf_imported(&DmabufGlobal { id: data.id }, dmabuf, notifier);
                     } else {
                         // If the dmabuf global was destroyed, we cannot import any buffers.
@@ -312,15 +310,12 @@ where
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
                         // The buffer isn't technically valid during data_init, but the client is not allowed to use the buffer until ready.
                         let buffer = data_init.init(buffer_id, dmabuf.clone());
-
-                        let notifier = ImportNotifier {
-                            inner: params.clone(),
-                            display: dh.clone(),
-                            dmabuf: dmabuf.clone(),
-                            import: Import::Infallible(buffer),
-                            drop_ignore: false,
-                        };
-
+                        let notifier = ImportNotifier::new(
+                            params.clone(),
+                            dh.clone(),
+                            dmabuf.clone(),
+                            Import::Infallible(buffer),
+                        );
                         state.dmabuf_imported(&DmabufGlobal { id: data.id }, dmabuf, notifier);
                     } else {
                         // Buffer import failed. The protocol documentation heavily implies killing the

@@ -955,6 +955,16 @@ impl ImportNotifier {
         }
         self.drop_ignore = true;
     }
+
+    fn new(params: ZwpLinuxBufferParamsV1, display: DisplayHandle, dmabuf: Dmabuf, import: Import) -> Self {
+        Self {
+            inner: params,
+            display,
+            dmabuf,
+            import,
+            drop_ignore: false,
+        }
+    }
 }
 
 impl Drop for ImportNotifier {
