@@ -1,15 +1,20 @@
-use crate::utils::sealed_file::SealedFile;
-use tracing::error;
-use xkbcommon::xkb::{Keymap, KEYMAP_FORMAT_TEXT_V1};
-
 use std::ffi::CString;
 use std::os::unix::io::{AsFd, BorrowedFd};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use tracing::error;
+use xkbcommon::xkb::{self, Keymap, KEYMAP_FORMAT_TEXT_V1};
+
+use crate::utils::sealed_file::SealedFile;
+
+static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 /// Wraps an XKB keymap into a sealed file or stores as just a string for sending to WlKeyboard over an fd
 #[derive(Debug)]
 pub struct KeymapFile {
     sealed: Option<SealedFile>,
     keymap: String,
+    id: usize,
 }
 
 impl KeymapFile {
@@ -23,14 +28,19 @@ impl KeymapFile {
             error!("Error when creating sealed keymap file: {}", err);
         }
 
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+
         Self {
             sealed: sealed.ok(),
             keymap,
+            id,
         }
     }
 
     #[cfg(feature = "wayland_frontend")]
-    pub(crate) fn change_keymap(&mut self, keymap: String) {
+    pub(crate) fn change_keymap(&mut self, keymap: &Keymap) {
+        let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
+
         let name = CString::new("smithay-keymap-file").unwrap();
         let sealed = SealedFile::with_content(name, CString::new(keymap.clone()).unwrap());
 
@@ -38,6 +48,7 @@ impl KeymapFile {
             error!("Error when creating sealed keymap file: {}", err);
         }
 
+        self.id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         self.sealed = sealed.ok();
         self.keymap = keymap;
     }
@@ -76,5 +87,10 @@ impl KeymapFile {
         self.with_fd(keyboard.version() >= 7, |fd, size| {
             keyboard.keymap(KeymapFormat::XkbV1, fd, size as u32);
         })
+    }
+
+    /// Get this keymap's unique ID.
+    pub(crate) fn id(&self) -> usize {
+        self.id
     }
 }

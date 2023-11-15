@@ -494,6 +494,7 @@ pub trait KeyboardGrab<D: SeatHandler> {
 ///   details.
 pub struct KeyboardHandle<D: SeatHandler> {
     pub(crate) arc: Arc<KbdRc<D>>,
+    pub(crate) active_keymap: usize,
 }
 
 impl<D: SeatHandler> fmt::Debug for KeyboardHandle<D> {
@@ -506,6 +507,7 @@ impl<D: SeatHandler> Clone for KeyboardHandle<D> {
     fn clone(&self) -> Self {
         KeyboardHandle {
             arc: self.arc.clone(),
+            active_keymap: self.active_keymap,
         }
     }
 }
@@ -530,11 +532,16 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         info!(name = internal.keymap.layouts().next(), "Loaded Keymap");
 
+        #[cfg(feature = "wayland_frontend")]
+        let keymap_file = KeymapFile::new(&internal.keymap);
+        #[cfg(feature = "wayland_frontend")]
+        let active_keymap = keymap_file.id();
+
         drop(_guard);
         Ok(Self {
             arc: Arc::new(KbdRc {
                 #[cfg(feature = "wayland_frontend")]
-                keymap: Mutex::new(KeymapFile::new(&internal.keymap)),
+                keymap: Mutex::new(keymap_file),
                 internal: Mutex::new(internal),
                 #[cfg(feature = "wayland_frontend")]
                 known_kbds: Mutex::new(Vec::new()),
@@ -542,19 +549,33 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 last_enter: Mutex::new(None),
                 span,
             }),
+            active_keymap,
         })
     }
 
     #[cfg(feature = "wayland_frontend")]
     #[instrument(parent = &self.arc.span, skip(self, keymap))]
-    pub(crate) fn change_keymap(&self, keymap: xkb::Keymap) {
-        let keymap = keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1);
+    pub(crate) fn change_keymap(&self, keymap: &xkb::Keymap) {
         let mut keymap_file = self.arc.keymap.lock().unwrap();
-        keymap_file.change_keymap(keymap);
+        keymap_file.change_keymap(&keymap);
 
+        self.send_keymap(&keymap_file);
+    }
+
+    /// Send a new wl_keyboard keymap, without updating the internal keymap.
+    #[cfg(feature = "wayland_frontend")]
+    #[instrument(parent = &self.arc.span, skip(self, keymap_file))]
+    pub(crate) fn send_keymap(&self, keymap_file: &KeymapFile) {
         use std::os::unix::io::AsFd;
         use tracing::warn;
         use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
+
+        // Ignore request which do not change the keymap.
+        if keymap_file.id() == self.active_keymap {
+            return;
+        }
+        println!("SENDING NEW KEYMAP ({})", keymap_file.id());
+
         let known_kbds = &self.arc.known_kbds;
         for kbd in &*known_kbds.lock().unwrap() {
             let res = keymap_file.with_fd(kbd.version() >= 7, |fd, size| {
@@ -586,7 +607,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         };
 
         #[cfg(feature = "wayland_frontend")]
-        self.change_keymap(keymap);
+        self.change_keymap(&keymap);
     }
 
     /// Change the [`Keymap`] used by the keyboard.
@@ -710,6 +731,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
     {
         trace!("Handling keystroke");
+
         let mut guard = self.arc.internal.lock().unwrap();
         let mods_changed = guard.key_input(keycode, state);
         let key_handle = KeysymHandle {
@@ -913,21 +935,29 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
         serial: Serial,
         time: u32,
     ) {
-        //TODO
-        if let Some((focus, _)) = self.inner.focus.as_mut() {
-            // key event must be sent before modifers event for libxkbcommon
-            // to process them correctly
-            let key = KeysymHandle {
-                keycode: (keycode + 8).into(),
-                state: &self.inner.state,
-                keymap: &self.inner.keymap,
-            };
-
-            focus.key(self.seat, data, key, key_state, serial, time);
-            if let Some(mods) = modifiers {
-                focus.modifiers(self.seat, data, mods, serial);
-            }
+        let (focus, _) = match self.inner.focus.as_mut() {
+            Some(focus) => focus,
+            None => return,
         };
+
+        // Ensure keymap is up to date.
+        if let Some(keyboard_handle) = self.seat.get_keyboard() {
+            let keymap_file = keyboard_handle.arc.keymap.lock().unwrap();
+            keyboard_handle.send_keymap(&keymap_file);
+        }
+
+        // key event must be sent before modifers event for libxkbcommon
+        // to process them correctly
+        let key = KeysymHandle {
+            keycode: (keycode + 8).into(),
+            state: &self.inner.state,
+            keymap: &self.inner.keymap,
+        };
+
+        focus.key(self.seat, data, key, key_state, serial, time);
+        if let Some(mods) = modifiers {
+            focus.modifiers(self.seat, data, mods, serial);
+        }
     }
 
     /// Iterate over the currently pressed keys.

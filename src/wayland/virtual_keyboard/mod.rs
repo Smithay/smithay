@@ -41,8 +41,6 @@
 //! ```
 //!
 
-use std::sync::atomic::AtomicBool;
-
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::server::{
     zwp_virtual_keyboard_manager_v1::{self, ZwpVirtualKeyboardManagerV1},
     zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
@@ -157,7 +155,6 @@ where
                     VirtualKeyboardUserData {
                         handle: virtual_keyboard_handle.clone(),
                         seat: seat.clone(),
-                        has_keymap: AtomicBool::new(false),
                     },
                 );
 
