@@ -571,10 +571,11 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         use wayland_server::{protocol::wl_keyboard::KeymapFormat, Resource};
 
         // Ignore request which do not change the keymap.
-        if keymap_file.id() == self.active_keymap {
+        let new_id = keymap_file.id();
+        if new_id == self.active_keymap {
             return;
         }
-        println!("SENDING NEW KEYMAP ({})", keymap_file.id());
+        self.active_keymap = new_id;
 
         let known_kbds = &self.arc.known_kbds;
         for kbd in &*known_kbds.lock().unwrap() {
