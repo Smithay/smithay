@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::{
     default::Default,
     fmt, io,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 use thiserror::Error;
 use tracing::{debug, error, info, info_span, instrument, trace};
@@ -194,6 +194,7 @@ pub(crate) struct KbdRc<D: SeatHandler> {
     #[cfg(feature = "wayland_frontend")]
     pub(crate) last_enter: Mutex<Option<Serial>>,
     pub(crate) span: tracing::Span,
+    pub(crate) active_keymap: RwLock<usize>,
 }
 
 #[cfg(not(feature = "wayland_frontend"))]
@@ -494,7 +495,6 @@ pub trait KeyboardGrab<D: SeatHandler> {
 ///   details.
 pub struct KeyboardHandle<D: SeatHandler> {
     pub(crate) arc: Arc<KbdRc<D>>,
-    pub(crate) active_keymap: usize,
 }
 
 impl<D: SeatHandler> fmt::Debug for KeyboardHandle<D> {
@@ -507,7 +507,6 @@ impl<D: SeatHandler> Clone for KeyboardHandle<D> {
     fn clone(&self) -> Self {
         KeyboardHandle {
             arc: self.arc.clone(),
-            active_keymap: self.active_keymap,
         }
     }
 }
@@ -547,9 +546,9 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 known_kbds: Mutex::new(Vec::new()),
                 #[cfg(feature = "wayland_frontend")]
                 last_enter: Mutex::new(None),
+                active_keymap: RwLock::new(active_keymap),
                 span,
             }),
-            active_keymap,
         })
     }
 
@@ -572,10 +571,10 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         // Ignore request which do not change the keymap.
         let new_id = keymap_file.id();
-        if new_id == self.active_keymap {
+        if new_id == *self.arc.active_keymap.read().unwrap() {
             return;
         }
-        self.active_keymap = new_id;
+        *self.arc.active_keymap.write().unwrap() = new_id;
 
         let known_kbds = &self.arc.known_kbds;
         for kbd in &*known_kbds.lock().unwrap() {
