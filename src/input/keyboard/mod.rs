@@ -3,10 +3,12 @@
 use crate::backend::input::KeyState;
 use crate::utils::{IsAlive, Serial, SERIAL_COUNTER};
 use std::collections::HashSet;
+#[cfg(feature = "wayland_frontend")]
+use std::sync::RwLock;
 use std::{
     default::Default,
     fmt, io,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
 };
 use thiserror::Error;
 use tracing::{debug, error, info, info_span, instrument, trace};
@@ -194,6 +196,7 @@ pub(crate) struct KbdRc<D: SeatHandler> {
     #[cfg(feature = "wayland_frontend")]
     pub(crate) last_enter: Mutex<Option<Serial>>,
     pub(crate) span: tracing::Span,
+    #[cfg(feature = "wayland_frontend")]
     pub(crate) active_keymap: RwLock<usize>,
 }
 
@@ -546,6 +549,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
                 known_kbds: Mutex::new(Vec::new()),
                 #[cfg(feature = "wayland_frontend")]
                 last_enter: Mutex::new(None),
+                #[cfg(feature = "wayland_frontend")]
                 active_keymap: RwLock::new(active_keymap),
                 span,
             }),
@@ -954,6 +958,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
         };
 
         // Ensure keymap is up to date.
+        #[cfg(feature = "wayland_frontend")]
         if let Some(keyboard_handle) = self.seat.get_keyboard() {
             let keymap_file = keyboard_handle.arc.keymap.lock().unwrap();
             let mods = keyboard_handle.arc.internal.lock().unwrap().mods_state;
