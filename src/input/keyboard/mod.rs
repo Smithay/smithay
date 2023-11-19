@@ -560,7 +560,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     #[instrument(parent = &self.arc.span, skip(self, data, keymap))]
     pub(crate) fn change_keymap(&self, data: &mut D, keymap: &xkb::Keymap) {
         let mut keymap_file = self.arc.keymap.lock().unwrap();
-        keymap_file.change_keymap(&keymap);
+        keymap_file.change_keymap(keymap);
 
         let mods = self.arc.internal.lock().unwrap().mods_state;
         self.send_keymap(data, &keymap_file, mods);
