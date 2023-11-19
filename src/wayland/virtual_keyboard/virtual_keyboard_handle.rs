@@ -16,7 +16,7 @@ use wayland_server::{
 };
 use xkbcommon::xkb;
 
-use crate::input::keyboard::KeymapFile;
+use crate::input::keyboard::{KeyboardTarget, KeymapFile, ModifiersState};
 use crate::{
     input::{Seat, SeatHandler},
     utils::SERIAL_COUNTER,
@@ -28,8 +28,28 @@ use super::VirtualKeyboardManagerState;
 #[derive(Debug, Default)]
 pub(crate) struct VirtualKeyboard {
     instances: u8,
-    keymap: Option<KeymapFile>,
+    state: Option<VirtualKeyboardState>,
 }
+
+struct VirtualKeyboardState {
+    keymap: KeymapFile,
+    mods: ModifiersState,
+    state: xkb::State,
+}
+
+impl fmt::Debug for VirtualKeyboardState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VirtualKeyboardState")
+            .field("keymap", &self.keymap)
+            .field("mods", &self.mods)
+            .field("state", &self.state.get_raw_ptr())
+            .finish()
+    }
+}
+
+// This is OK because all parts of `xkb` will remain on the
+// same thread
+unsafe impl Send for VirtualKeyboard {}
 
 /// Handle to a virtual keyboard instance
 #[derive(Debug, Clone, Default)]
@@ -66,7 +86,7 @@ where
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn request(
-        _data: &mut D,
+        user_data: &mut D,
         _client: &Client,
         virtual_keyboard: &ZwpVirtualKeyboardV1,
         request: zwp_virtual_keyboard_v1::Request,
@@ -80,9 +100,9 @@ where
             }
             zwp_virtual_keyboard_v1::Request::Key { time, key, state } => {
                 // Ensure keymap was initialized.
-                let virtual_data = data.handle.inner.lock().unwrap();
-                let keymap = match &virtual_data.keymap {
-                    Some(keymap) => keymap,
+                let mut virtual_data = data.handle.inner.lock().unwrap();
+                let vk_state = match virtual_data.state.as_mut() {
+                    Some(vk_state) => vk_state,
                     None => {
                         virtual_keyboard.post_error(NoKeymap, "`key` sent before keymap.");
                         return;
@@ -91,7 +111,7 @@ where
 
                 // Ensure virtual keyboard's keymap is active.
                 let keyboard_handle = data.seat.get_keyboard().unwrap();
-                keyboard_handle.send_keymap(keymap);
+                keyboard_handle.send_keymap(user_data, &vk_state.keymap, vk_state.mods);
 
                 let internal = keyboard_handle.arc.internal.lock().unwrap();
                 if let Some(focus) = internal.focus.as_ref().and_then(|f| f.0.wl_surface()) {
@@ -115,30 +135,32 @@ where
                 group,
             } => {
                 // Ensure keymap was initialized.
-                let virtual_data = data.handle.inner.lock().unwrap();
-                let keymap = match &virtual_data.keymap {
-                    Some(keymap) => keymap,
+                let mut virtual_data = data.handle.inner.lock().unwrap();
+                let state = match virtual_data.state.as_mut() {
+                    Some(state) => state,
                     None => {
                         virtual_keyboard.post_error(NoKeymap, "`modifiers` sent before keymap.");
                         return;
                     }
                 };
 
+                // Update virtual keyboard's modifier state.
+                state
+                    .state
+                    .update_mask(mods_depressed, mods_latched, mods_locked, 0, 0, group);
+                state.mods.update_with(&state.state);
+
                 // Ensure virtual keyboard's keymap is active.
                 let keyboard_handle = data.seat.get_keyboard().unwrap();
-                keyboard_handle.send_keymap(keymap);
+                let keymap_changed = keyboard_handle.send_keymap(user_data, &state.keymap, state.mods);
 
-                let internal = keyboard_handle.arc.internal.lock().unwrap();
-                if let Some(focus) = internal.focus.as_ref().and_then(|f| f.0.wl_surface()) {
-                    for_each_focused_kbds(&data.seat, &focus, |kbd| {
-                        kbd.modifiers(
-                            SERIAL_COUNTER.next_serial().0,
-                            mods_depressed,
-                            mods_latched,
-                            mods_locked,
-                            group,
-                        );
-                    });
+                // Skip sending mods if keymap change already reported it.
+                if !keymap_changed {
+                    // Report modifiers change to all keyboards.
+                    let internal = keyboard_handle.arc.internal.lock().unwrap();
+                    if let Some(focus) = internal.focus.as_ref().and_then(|f| f.0.wl_surface()) {
+                        focus.modifiers(&data.seat, user_data, state.mods, SERIAL_COUNTER.next_serial());
+                    }
                 }
             }
             zwp_virtual_keyboard_v1::Request::Destroy => {
@@ -194,5 +216,10 @@ where
 
     // Store active virtual keyboard map.
     let mut inner = data.handle.inner.lock().unwrap();
-    inner.keymap = Some(KeymapFile::new(&new_keymap));
+    let mods = inner.state.take().map(|state| state.mods).unwrap_or_default();
+    inner.state = Some(VirtualKeyboardState {
+        mods,
+        keymap: KeymapFile::new(&new_keymap),
+        state: xkb::State::new(&new_keymap),
+    });
 }
