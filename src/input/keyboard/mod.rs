@@ -961,7 +961,7 @@ impl<'a, D: SeatHandler + 'static> KeyboardInnerHandle<'a, D> {
         #[cfg(feature = "wayland_frontend")]
         if let Some(keyboard_handle) = self.seat.get_keyboard() {
             let keymap_file = keyboard_handle.arc.keymap.lock().unwrap();
-            let mods = keyboard_handle.arc.internal.lock().unwrap().mods_state;
+            let mods = self.inner.mods_state;
             keyboard_handle.send_keymap(data, &keymap_file, mods);
         }
 
