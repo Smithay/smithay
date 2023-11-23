@@ -1024,18 +1024,20 @@ impl EGLBufferReader {
             // if EGL_FALSE is returned the value of inverted should be assumed as EGL_TRUE.
             //
             // see: https://www.khronos.org/registry/EGL/extensions/WL/EGL_WL_bind_wayland_display.txt
-            match wrap_egl_call_bool(|| unsafe {
-                ffi::egl::QueryWaylandBufferWL(
-                    **self.display,
-                    buffer.id().as_ptr() as _,
-                    ffi::egl::WAYLAND_Y_INVERTED_WL,
-                    &mut inverted,
-                )
-            })
-            .map_err(BufferAccessError::NotManaged)?
-            {
-                ffi::egl::TRUE => inverted != 0,
-                ffi::egl::FALSE => true,
+            match (
+                unsafe {
+                    ffi::egl::QueryWaylandBufferWL(
+                        **self.display,
+                        buffer.id().as_ptr() as _,
+                        ffi::egl::WAYLAND_Y_INVERTED_WL,
+                        &mut inverted,
+                    )
+                },
+                EGLError::from_last_call(),
+            ) {
+                (ffi::egl::TRUE, None) => inverted != 0,
+                (ffi::egl::FALSE, None) => true,
+                (_, Some(e)) => return Err(BufferAccessError::NotManaged(e)),
                 _ => unreachable!(),
             }
         };
