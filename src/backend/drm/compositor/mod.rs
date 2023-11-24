@@ -1399,6 +1399,7 @@ where
     primary_plane_element_id: Id,
     primary_plane_damage_bag: DamageBag<i32, BufferCoords>,
     supports_fencing: bool,
+    direct_scanout: bool,
 
     framebuffer_exporter: F,
 
@@ -1534,6 +1535,7 @@ where
                         primary_plane_element_id: Id::new(),
                         primary_plane_damage_bag: DamageBag::new(4),
                         primary_is_opaque: is_opaque,
+                        direct_scanout: true,
                         current_frame,
                         pending_frame: None,
                         queued_frame: None,
@@ -1563,6 +1565,13 @@ where
             }
         }
         Err(error.unwrap())
+    }
+
+    /// Enable or disable direct scanout.
+    ///
+    /// This is mostly useful for debugging purposes.
+    pub fn use_direct_scanout(&mut self, enabled: bool) {
+        self.direct_scanout = enabled;
     }
 
     fn find_supported_format(
@@ -2618,23 +2627,24 @@ where
         E: RenderElement<R>,
     {
         // Check if we have a free plane, otherwise we can exit early
-        if (self.planes.overlay.is_empty()
-            || self
-                .planes
-                .overlay
-                .iter()
-                .all(|plane| frame_state.is_assigned(plane.handle)))
-            && self
-                .planes
-                .cursor
-                .as_ref()
-                .map(|plane| frame_state.is_assigned(plane.handle))
-                .unwrap_or(true)
-            && (!try_assign_primary_plane
-                || frame_state
-                    .plane_state(self.planes.primary.handle)
-                    .map(|state| state.element_state.is_some())
-                    .unwrap_or(true))
+        if !self.direct_scanout
+            || ((self.planes.overlay.is_empty()
+                || self
+                    .planes
+                    .overlay
+                    .iter()
+                    .all(|plane| frame_state.is_assigned(plane.handle)))
+                && self
+                    .planes
+                    .cursor
+                    .as_ref()
+                    .map(|plane| frame_state.is_assigned(plane.handle))
+                    .unwrap_or(true)
+                && (!try_assign_primary_plane
+                    || frame_state
+                        .plane_state(self.planes.primary.handle)
+                        .map(|state| state.element_state.is_some())
+                        .unwrap_or(true)))
         {
             trace!(
                 "skipping direct scan-out for element {:?}, no free planes",
