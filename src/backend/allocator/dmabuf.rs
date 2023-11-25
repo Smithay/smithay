@@ -12,6 +12,7 @@
 
 use calloop::generic::Generic;
 use calloop::{EventSource, Interest, Mode, PostAction};
+use rustix::ioctl::{Setter, WriteOpcode};
 
 use super::{Allocator, Buffer, Format, Fourcc, Modifier};
 use crate::utils::{Buffer as BufferCoords, Size};
@@ -244,6 +245,152 @@ impl Dmabuf {
         let source = DmabufSource::new(self.clone(), interest)?;
         let blocker = DmabufBlocker(source.signal.clone());
         Ok((blocker, source))
+    }
+
+    /// Map the plane at specified index with the specified mode
+    ///
+    /// Returns `Err` if the plane with the specified index does not exist or
+    /// mmap failed
+    pub fn map_plane(
+        &self,
+        idx: usize,
+        mode: DmabufMappingMode,
+    ) -> Result<DmabufMapping, DmabufMappingFailed> {
+        let plane = self
+            .0
+            .planes
+            .get(idx)
+            .ok_or(DmabufMappingFailed::PlaneIndexOutOfBound)?;
+
+        let size = rustix::fs::seek(&plane.fd, rustix::fs::SeekFrom::End(0)).map_err(std::io::Error::from)?;
+        rustix::fs::seek(&plane.fd, rustix::fs::SeekFrom::Start(0)).map_err(std::io::Error::from)?;
+
+        let len = (size - plane.offset as u64) as usize;
+        let ptr = unsafe {
+            rustix::mm::mmap(
+                std::ptr::null_mut(),
+                len,
+                mode.into(),
+                rustix::mm::MapFlags::SHARED,
+                &plane.fd,
+                plane.offset as u64,
+            )
+        }
+        .map_err(std::io::Error::from)?;
+        Ok(DmabufMapping { len, ptr })
+    }
+
+    /// Synchronize access for the plane at the specified index
+    ///
+    /// Returns `Err` if the plane with the specified index does not exist or
+    /// the dmabuf_sync ioctl failed
+    pub fn sync_plane(&self, idx: usize, flags: DmabufSyncFlags) -> Result<(), DmabufSyncFailed> {
+        let plane = self
+            .0
+            .planes
+            .get(idx)
+            .ok_or(DmabufSyncFailed::PlaneIndexOutOfBound)?;
+        unsafe { rustix::ioctl::ioctl(&plane.fd, Setter::<DmaBufSync, _>::new(dma_buf_sync { flags })) }
+            .map_err(std::io::Error::from)?;
+        Ok(())
+    }
+}
+
+bitflags::bitflags! {
+    /// Modes of mapping a dmabuf plane
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct DmabufMappingMode: u32 {
+        /// Map the dmabuf readable
+        const READ = 0b00000001;
+        /// Map the dmabuf writable
+        const WRITE = 0b00000010;
+    }
+}
+
+impl From<DmabufMappingMode> for rustix::mm::ProtFlags {
+    fn from(mode: DmabufMappingMode) -> Self {
+        let mut flags = rustix::mm::ProtFlags::empty();
+
+        if mode.contains(DmabufMappingMode::READ) {
+            flags |= rustix::mm::ProtFlags::READ;
+        }
+
+        if mode.contains(DmabufMappingMode::WRITE) {
+            flags |= rustix::mm::ProtFlags::WRITE;
+        }
+
+        flags
+    }
+}
+
+/// Dmabuf mapping errors
+#[derive(Debug, thiserror::Error)]
+#[error("Mapping the dmabuf failed")]
+pub enum DmabufMappingFailed {
+    /// The supplied index for the plane is out of bounds
+    #[error("The supplied index for the plane is out of bounds")]
+    PlaneIndexOutOfBound,
+    /// Io error during map operation
+    Io(#[from] std::io::Error),
+}
+
+/// Dmabuf sync errors
+#[derive(Debug, thiserror::Error)]
+#[error("Sync of the dmabuf failed")]
+pub enum DmabufSyncFailed {
+    /// The supplied index for the plane is out of bounds
+    #[error("The supplied index for the plane is out of bounds")]
+    PlaneIndexOutOfBound,
+    /// Io error during sync operation
+    Io(#[from] std::io::Error),
+}
+
+bitflags::bitflags! {
+    /// Flags for the [`Dmabuf::sync_plane`](Dmabuf::sync_plane) operation
+    #[derive(Copy, Clone)]
+    pub struct DmabufSyncFlags: std::ffi::c_ulonglong {
+        /// Read from the dmabuf
+        const READ = 1 << 0;
+        /// Write to the dmabuf
+        #[allow(clippy::identity_op)]
+        const WRITE = 2 << 0;
+        /// Start of read/write
+        const START = 0 << 2;
+        /// End of read/write
+        const END = 1 << 2;
+    }
+}
+
+#[repr(C)]
+#[allow(non_camel_case_types)]
+struct dma_buf_sync {
+    flags: DmabufSyncFlags,
+}
+
+type DmaBufSync = WriteOpcode<b'b', 0, dma_buf_sync>;
+
+/// A mapping into a [`Dmabuf`]
+#[derive(Debug)]
+pub struct DmabufMapping {
+    ptr: *mut std::ffi::c_void,
+    len: usize,
+}
+
+impl DmabufMapping {
+    /// Access the raw pointer of the mapping
+    pub fn ptr(&self) -> *mut std::ffi::c_void {
+        self.ptr
+    }
+
+    /// Access the length of the mapping
+    pub fn length(&self) -> usize {
+        self.len
+    }
+}
+
+impl Drop for DmabufMapping {
+    fn drop(&mut self) {
+        let _ = unsafe { rustix::mm::munmap(self.ptr, self.len) };
     }
 }
 
