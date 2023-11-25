@@ -477,8 +477,11 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                         Transform::Normal => Transform::_90,
                         Transform::_90 => Transform::_180,
                         Transform::_180 => Transform::_270,
-                        Transform::_270 => Transform::Normal,
-                        _ => Transform::Normal,
+                        Transform::_270 => Transform::Flipped,
+                        Transform::Flipped => Transform::Flipped90,
+                        Transform::Flipped90 => Transform::Flipped180,
+                        Transform::Flipped180 => Transform::Flipped270,
+                        Transform::Flipped270 => Transform::Normal,
                     };
                     output.change_current_state(None, Some(new_transform), None, None);
                     crate::shell::fixup_positions(&mut self.space, self.pointer.current_location());
@@ -670,8 +673,11 @@ impl AnvilState<UdevData> {
                             Transform::Normal => Transform::_90,
                             Transform::_90 => Transform::_180,
                             Transform::_180 => Transform::_270,
-                            Transform::_270 => Transform::Normal,
-                            _ => Transform::Normal,
+                            Transform::_270 => Transform::Flipped,
+                            Transform::Flipped => Transform::Flipped90,
+                            Transform::Flipped90 => Transform::Flipped180,
+                            Transform::Flipped180 => Transform::Flipped270,
+                            Transform::Flipped270 => Transform::Normal,
                         };
                         output.change_current_state(None, Some(new_transform), None, None);
                         crate::shell::fixup_positions(&mut self.space, self.pointer.current_location());
