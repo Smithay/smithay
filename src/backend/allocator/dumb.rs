@@ -9,7 +9,6 @@ use tracing::instrument;
 
 use super::dmabuf::{AsDmabuf, Dmabuf, DmabufFlags};
 use super::{format::get_bpp, Allocator, Buffer, Format, Fourcc, Modifier};
-use crate::backend::drm::device::{DrmDevice, DrmDeviceInternal};
 use crate::backend::drm::DrmDeviceFd;
 use crate::utils::{Buffer as BufferCoords, Size};
 
@@ -29,7 +28,20 @@ impl fmt::Debug for DumbBuffer {
     }
 }
 
-impl Allocator for DrmDevice {
+/// Light wrapper around an [`DrmDeviceFd`] to implement the [`Allocator`]-trait
+#[derive(Debug)]
+pub struct DumbAllocator {
+    fd: DrmDeviceFd,
+}
+
+impl DumbAllocator {
+    /// Create a new [`DumbAllocator`] from a [`DrmDeviceFd`].
+    pub fn new(fd: DrmDeviceFd) -> Self {
+        DumbAllocator { fd }
+    }
+}
+
+impl Allocator for DumbAllocator {
     type Buffer = DumbBuffer;
     type Error = io::Error;
 
@@ -50,17 +62,14 @@ impl Allocator for DrmDevice {
             return Err(rustix::io::Errno::INVAL.into());
         }
 
-        let handle = self.create_dumb_buffer(
+        let handle = self.fd.create_dumb_buffer(
             (width, height),
             fourcc,
             get_bpp(fourcc).ok_or(rustix::io::Errno::INVAL)? as u32,
         )?;
 
         Ok(DumbBuffer {
-            fd: match &*self.internal {
-                DrmDeviceInternal::Atomic(dev) => dev.fd.clone(),
-                DrmDeviceInternal::Legacy(dev) => dev.fd.clone(),
-            },
+            fd: self.fd.clone(),
             handle,
             format: Format {
                 code: fourcc,

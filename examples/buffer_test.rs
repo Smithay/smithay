@@ -5,11 +5,12 @@ use smithay::{
     backend::{
         allocator::{
             dmabuf::{AnyError, Dmabuf, DmabufAllocator},
+            dumb::DumbAllocator,
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
             vulkan::{ImageUsageFlags, VulkanAllocator},
             Allocator, Fourcc, Modifier,
         },
-        drm::{DrmDevice, DrmDeviceFd, DrmNode},
+        drm::{DrmDeviceFd, DrmNode},
         egl::{EGLContext, EGLDevice, EGLDisplay},
         renderer::{
             gles::{GlesRenderbuffer, GlesRenderer},
@@ -173,9 +174,8 @@ fn buffer_test(args: TestArgs) {
     let mut allocator = match args.allocator {
         AllocatorType::DumbBuffer => {
             let fd = open_device(&path);
-            Box::new(DmabufAllocator(
-                DrmDevice::new(fd, false).expect("Failed to init drm device").0,
-            )) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>
+            let dumb_allocator = DumbAllocator::new(fd);
+            Box::new(DmabufAllocator(dumb_allocator)) as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>
         }
         AllocatorType::Gbm => {
             let fd = open_device(&path);
