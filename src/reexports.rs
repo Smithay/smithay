@@ -11,6 +11,8 @@ pub use drm;
 pub use gbm;
 #[cfg(feature = "backend_libinput")]
 pub use input;
+#[cfg(feature = "renderer_pixman")]
+pub use pixman;
 pub use rustix;
 #[cfg(feature = "backend_udev")]
 pub use udev;
