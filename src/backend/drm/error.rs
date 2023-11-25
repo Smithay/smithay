@@ -2,6 +2,19 @@ use crate::backend::SwapBuffersError;
 use drm::control::{connector, crtc, plane, Mode, RawResourceHandle};
 use std::{io, path::PathBuf};
 
+/// DRM access error
+#[derive(Debug, thiserror::Error)]
+#[error("DRM access error: {errmsg} on device `{dev:?}` ({source:})")]
+pub struct AccessError {
+    /// Error message associated to the access error
+    pub(crate) errmsg: &'static str,
+    /// Device on which the error was generated
+    pub(crate) dev: Option<PathBuf>,
+    /// Underlying device error
+    #[source]
+    pub source: io::Error,
+}
+
 /// Errors thrown by the [`DrmDevice`](crate::backend::drm::DrmDevice)
 /// and the [`DrmSurface`](crate::backend::drm::DrmSurface).
 #[derive(thiserror::Error, Debug)]
@@ -10,15 +23,8 @@ pub enum Error {
     #[error("Failed to aquire DRM master")]
     DrmMasterFailed,
     /// The `DrmDevice` encountered an access error
-    #[error("DRM access error: {errmsg} on device `{dev:?}` ({source:})")]
-    Access {
-        /// Error message associated to the access error
-        errmsg: &'static str,
-        /// Device on which the error was generated
-        dev: Option<PathBuf>,
-        /// Underlying device error
-        source: io::Error,
-    },
+    #[error(transparent)]
+    Access(#[from] AccessError),
     /// Unable to determine device id of drm device
     #[error("Unable to determine device id of drm device")]
     UnableToGetDeviceId(#[source] rustix::io::Errno),
@@ -74,14 +80,18 @@ impl From<Error> for SwapBuffersError {
     fn from(err: Error) -> SwapBuffersError {
         match err {
             x @ Error::DeviceInactive => SwapBuffersError::TemporaryFailure(Box::new(x)),
-            Error::Access {
+            Error::Access(AccessError {
                 errmsg, dev, source, ..
-            } if matches!(
+            }) if matches!(
                 source.raw_os_error(),
                 Some(libc::EPERM | libc::EBUSY | libc::EINTR)
             ) =>
             {
-                SwapBuffersError::TemporaryFailure(Box::new(Error::Access { errmsg, dev, source }))
+                SwapBuffersError::TemporaryFailure(Box::new(Error::Access(AccessError {
+                    errmsg,
+                    dev,
+                    source,
+                })))
             }
             x => SwapBuffersError::ContextLost(Box::new(x)),
         }

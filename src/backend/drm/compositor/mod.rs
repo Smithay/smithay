@@ -166,7 +166,7 @@ use crate::{
     utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{DrmDeviceFd, DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes};
+use super::{error::AccessError, DrmDeviceFd, DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes};
 
 mod elements;
 pub mod gbm;
@@ -1496,11 +1496,11 @@ where
                 .get_driver_capability(DriverCapability::SyncObj)
                 .map(|val| val != 0)
                 .map_err(|err| {
-                    FrameError::DrmError(DrmError::Access {
+                    FrameError::DrmError(DrmError::Access(AccessError {
                         errmsg: "Failed to query driver capability",
                         dev: surface.dev_path(),
                         source: err,
-                    })
+                    }))
                 })?
             && plane_has_property(&*surface, surface.plane(), "IN_FENCE_FD")?;
 
