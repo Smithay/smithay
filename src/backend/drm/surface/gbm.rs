@@ -10,6 +10,7 @@ use crate::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use crate::backend::allocator::format::get_opaque;
 use crate::backend::allocator::gbm::GbmConvertError;
 use crate::backend::allocator::{Allocator, Format, Fourcc, Modifier, Slot, Swapchain};
+use crate::backend::drm::error::AccessError;
 use crate::backend::drm::gbm::{framebuffer_from_bo, GbmFramebuffer};
 use crate::backend::drm::{plane_has_property, DrmError, DrmSurface};
 use crate::backend::renderer::sync::SyncPoint;
@@ -77,11 +78,11 @@ where
                             .get_driver_capability(DriverCapability::SyncObj)
                             .map(|val| val != 0)
                             .map_err(|err| {
-                                Error::DrmError(DrmError::Access {
+                                Error::DrmError(DrmError::Access(AccessError {
                                     errmsg: "Failed to query driver capability",
                                     dev: drm.dev_path(),
                                     source: err,
-                                })
+                                }))
                             })?
                         && plane_has_property(&*drm, drm.plane(), "IN_FENCE_FD")?;
 

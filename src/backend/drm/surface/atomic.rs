@@ -12,6 +12,7 @@ use std::sync::{
     Arc, RwLock,
 };
 
+use crate::backend::drm::error::AccessError;
 use crate::utils::{Coordinate, Point, Rectangle, Transform};
 use crate::{
     backend::{
@@ -43,10 +44,12 @@ impl State {
         crtc: crtc::Handle,
         prop_mapping: &mut Mapping,
     ) -> Result<Self, Error> {
-        let crtc_info = fd.get_crtc(crtc).map_err(|source| Error::Access {
-            errmsg: "Error loading crtc info",
-            dev: fd.dev_path(),
-            source,
+        let crtc_info = fd.get_crtc(crtc).map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error loading crtc info",
+                dev: fd.dev_path(),
+                source,
+            })
         })?;
 
         // If we have no current mode, we create a fake one, which will not match (and thus gets overridden on the commit below).
@@ -55,18 +58,22 @@ impl State {
         // So we cheat, because it works and is easier to handle later.
         let current_mode = crtc_info.mode().unwrap_or_else(|| unsafe { std::mem::zeroed() });
         let current_blob = match crtc_info.mode() {
-            Some(mode) => fd.create_property_blob(&mode).map_err(|source| Error::Access {
-                errmsg: "Failed to create Property Blob for mode",
-                dev: fd.dev_path(),
-                source,
+            Some(mode) => fd.create_property_blob(&mode).map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Failed to create Property Blob for mode",
+                    dev: fd.dev_path(),
+                    source,
+                })
             })?,
             None => property::Value::Unknown(0),
         };
 
-        let res_handles = fd.resource_handles().map_err(|source| Error::Access {
-            errmsg: "Error loading drm resources",
-            dev: fd.dev_path(),
-            source,
+        let res_handles = fd.resource_handles().map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error loading drm resources",
+                dev: fd.dev_path(),
+                source,
+            })
         })?;
 
         // the current set of connectors are those, that already have the correct `CRTC_ID` set.
@@ -143,10 +150,12 @@ impl AtomicDrmSurface {
         );
 
         let state = State::current_state(&*fd, crtc, &mut prop_mapping)?;
-        let blob = fd.create_property_blob(&mode).map_err(|source| Error::Access {
-            errmsg: "Failed to create Property Blob for mode",
-            dev: fd.dev_path(),
-            source,
+        let blob = fd.create_property_blob(&mode).map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Failed to create Property Blob for mode",
+                dev: fd.dev_path(),
+                source,
+            })
         })?;
         let pending = State {
             mode,
@@ -185,10 +194,12 @@ impl AtomicDrmSurface {
         let db = self
             .fd
             .create_dumb_buffer((w as u32, h as u32), format, get_bpp(format).unwrap() as u32)
-            .map_err(|source| Error::Access {
-                errmsg: "Failed to create dumb buffer",
-                dev: self.fd.dev_path(),
-                source,
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Failed to create dumb buffer",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
             })?;
         let fb_result = self
             .fd
@@ -197,10 +208,12 @@ impl AtomicDrmSurface {
                 get_depth(format).unwrap() as u32,
                 get_bpp(format).unwrap() as u32,
             )
-            .map_err(|source| Error::Access {
-                errmsg: "Failed to create framebuffer",
-                dev: self.fd.dev_path(),
-                source,
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Failed to create framebuffer",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
             });
 
         match fb_result {
@@ -242,10 +255,12 @@ impl AtomicDrmSurface {
                 &*self.fd,
                 self.fd
                     .resource_handles()
-                    .map_err(|source| Error::Access {
-                        errmsg: "Error loading connector info",
-                        dev: self.fd.dev_path(),
-                        source,
+                    .map_err(|source| {
+                        Error::Access(AccessError {
+                            errmsg: "Error loading connector info",
+                            dev: self.fd.dev_path(),
+                            source,
+                        })
                     })?
                     .connectors(),
                 &mut self.prop_mapping.write().unwrap().0,
@@ -261,14 +276,13 @@ impl AtomicDrmSurface {
         }
 
         self.ensure_props_known(&[conn])?;
-        let info = self
-            .fd
-            .get_connector(conn, false)
-            .map_err(|source| Error::Access {
+        let info = self.fd.get_connector(conn, false).map_err(|source| {
+            Error::Access(AccessError {
                 errmsg: "Error loading connector info",
                 dev: self.fd.dev_path(),
                 source,
-            })?;
+            })
+        })?;
 
         let mut pending = self.pending.write().unwrap();
 
@@ -425,14 +439,13 @@ impl AtomicDrmSurface {
         let mut pending = self.pending.write().unwrap();
 
         // check if new config is supported
-        let new_blob = self
-            .fd
-            .create_property_blob(&mode)
-            .map_err(|source| Error::Access {
+        let new_blob = self.fd.create_property_blob(&mode).map_err(|source| {
+            Error::Access(AccessError {
                 errmsg: "Failed to create Property Blob for mode",
                 dev: self.fd.dev_path(),
                 source,
-            })?;
+            })
+        })?;
 
         let test_buffer = self.create_test_buffer(mode.size(), self.plane)?;
 
@@ -507,10 +520,12 @@ impl AtomicDrmSurface {
         } else {
             AtomicCommitFlags::TEST_ONLY
         };
-        self.fd.atomic_commit(flags, req).map_err(|source| Error::Access {
-            errmsg: "Error testing state",
-            dev: self.fd.dev_path(),
-            source,
+        self.fd.atomic_commit(flags, req).map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error testing state",
+                dev: self.fd.dev_path(),
+                source,
+            })
         })
     }
 
@@ -607,10 +622,12 @@ impl AtomicDrmSurface {
                 },
                 req,
             )
-            .map_err(|source| Error::Access {
-                errmsg: "Error setting crtc",
-                dev: self.fd.dev_path(),
-                source,
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Error setting crtc",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
             });
 
         if result.is_ok() {
@@ -658,10 +675,12 @@ impl AtomicDrmSurface {
                 },
                 req,
             )
-            .map_err(|source| Error::Access {
-                errmsg: "Page flip commit failed",
-                dev: self.fd.dev_path(),
-                source,
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Page flip commit failed",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
             });
 
         if res.is_ok() {
@@ -1012,10 +1031,12 @@ impl AtomicDrmSurface {
         let result = self
             .fd
             .atomic_commit(AtomicCommitFlags::NONBLOCK, req)
-            .map_err(|source| Error::Access {
-                errmsg: "Failed to commit on clear_plane",
-                dev: self.fd.dev_path(),
-                source,
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Failed to commit on clear_plane",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
             });
 
         if result.is_ok() {

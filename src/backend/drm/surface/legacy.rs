@@ -6,6 +6,7 @@ use std::sync::{
     Arc, RwLock,
 };
 
+use crate::backend::drm::error::AccessError;
 use crate::{
     backend::drm::{
         device::legacy::set_connector_state, device::DrmDeviceInternal, error::Error, DrmDeviceFd,
@@ -25,31 +26,39 @@ impl State {
     fn current_state<A: DevPath + ControlDevice>(fd: &A, crtc: crtc::Handle) -> Result<Self, Error> {
         // Try to enumarate the current state to set the initial state variable correctly.
         // We need an accurate state to handle `commit_pending`.
-        let crtc_info = fd.get_crtc(crtc).map_err(|source| Error::Access {
-            errmsg: "Error loading crtc info",
-            dev: fd.dev_path(),
-            source,
+        let crtc_info = fd.get_crtc(crtc).map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error loading crtc info",
+                dev: fd.dev_path(),
+                source,
+            })
         })?;
 
         let current_mode = crtc_info.mode();
 
         let mut current_connectors = HashSet::new();
-        let res_handles = fd.resource_handles().map_err(|source| Error::Access {
-            errmsg: "Error loading drm resources",
-            dev: fd.dev_path(),
-            source,
-        })?;
-        for &con in res_handles.connectors() {
-            let con_info = fd.get_connector(con, false).map_err(|source| Error::Access {
-                errmsg: "Error loading connector info",
+        let res_handles = fd.resource_handles().map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error loading drm resources",
                 dev: fd.dev_path(),
                 source,
-            })?;
-            if let Some(enc) = con_info.current_encoder() {
-                let enc_info = fd.get_encoder(enc).map_err(|source| Error::Access {
-                    errmsg: "Error loading encoder info",
+            })
+        })?;
+        for &con in res_handles.connectors() {
+            let con_info = fd.get_connector(con, false).map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Error loading connector info",
                     dev: fd.dev_path(),
                     source,
+                })
+            })?;
+            if let Some(enc) = con_info.current_encoder() {
+                let enc_info = fd.get_encoder(enc).map_err(|source| {
+                    Error::Access(AccessError {
+                        errmsg: "Error loading encoder info",
+                        dev: fd.dev_path(),
+                        source,
+                    })
                 })?;
                 if let Some(current_crtc) = enc_info.crtc() {
                     if crtc == current_crtc {
@@ -192,10 +201,12 @@ impl LegacyDrmSurface {
             if !self
                 .fd
                 .get_connector(*connector, false)
-                .map_err(|source| Error::Access {
-                    errmsg: "Error loading connector info",
-                    dev: self.fd.dev_path(),
-                    source,
+                .map_err(|source| {
+                    Error::Access(AccessError {
+                        errmsg: "Error loading connector info",
+                        dev: self.fd.dev_path(),
+                        source,
+                    })
                 })?
                 .modes()
                 .contains(&mode)
@@ -244,10 +255,12 @@ impl LegacyDrmSurface {
                 // null commit (necessary to trigger removal on the kernel side with the legacy api.)
                 self.fd
                     .set_crtc(self.crtc, None, (0, 0), &[], None)
-                    .map_err(|source| Error::Access {
-                        errmsg: "Error setting crtc",
-                        dev: self.fd.dev_path(),
-                        source,
+                    .map_err(|source| {
+                        Error::Access(AccessError {
+                            errmsg: "Error setting crtc",
+                            dev: self.fd.dev_path(),
+                            source,
+                        })
                     })?;
             }
 
@@ -279,10 +292,12 @@ impl LegacyDrmSurface {
                     .collect::<Vec<connector::Handle>>(),
                 Some(pending.mode),
             )
-            .map_err(|source| Error::Access {
-                errmsg: "Error setting crtc",
-                dev: self.fd.dev_path(),
-                source,
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Error setting crtc",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
             })?;
 
         *current = pending.clone();
@@ -294,10 +309,12 @@ impl LegacyDrmSurface {
             // for `set_crtc`, but is necessary to drive the event loop and thus provide
             // a more consistent api.
             ControlDevice::page_flip(&*self.fd, self.crtc, framebuffer, PageFlipFlags::EVENT, None).map_err(
-                |source| Error::Access {
-                    errmsg: "Failed to queue page flip",
-                    dev: self.fd.dev_path(),
-                    source,
+                |source| {
+                    Error::Access(AccessError {
+                        errmsg: "Failed to queue page flip",
+                        dev: self.fd.dev_path(),
+                        source,
+                    })
                 },
             )?;
         }
@@ -325,10 +342,12 @@ impl LegacyDrmSurface {
             },
             None,
         )
-        .map_err(|source| Error::Access {
-            errmsg: "Failed to page flip",
-            dev: self.fd.dev_path(),
-            source,
+        .map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Failed to page flip",
+                dev: self.fd.dev_path(),
+                source,
+            })
         })
     }
 
@@ -354,10 +373,12 @@ impl LegacyDrmSurface {
                     .collect::<Vec<connector::Handle>>(),
                 Some(*mode),
             )
-            .map_err(|source| Error::Access {
-                errmsg: "Failed to test buffer",
-                dev: self.fd.dev_path(),
-                source,
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Failed to test buffer",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
             })
     }
 
@@ -369,14 +390,13 @@ impl LegacyDrmSurface {
     // Better would be some kind of test commit to ask the driver,
     // but that only exists for the atomic api.
     fn check_connector(&self, conn: connector::Handle, mode: &Mode) -> Result<bool, Error> {
-        let info = self
-            .fd
-            .get_connector(conn, false)
-            .map_err(|source| Error::Access {
+        let info = self.fd.get_connector(conn, false).map_err(|source| {
+            Error::Access(AccessError {
                 errmsg: "Error loading connector info",
                 dev: self.fd.dev_path(),
                 source,
-            })?;
+            })
+        })?;
 
         // check if the connector can handle the current mode
         if info.modes().contains(mode) {
@@ -385,19 +405,23 @@ impl LegacyDrmSurface {
                 .encoders()
                 .iter()
                 .map(|encoder| {
-                    self.fd.get_encoder(*encoder).map_err(|source| Error::Access {
-                        errmsg: "Error loading encoder info",
-                        dev: self.fd.dev_path(),
-                        source,
+                    self.fd.get_encoder(*encoder).map_err(|source| {
+                        Error::Access(AccessError {
+                            errmsg: "Error loading encoder info",
+                            dev: self.fd.dev_path(),
+                            source,
+                        })
                     })
                 })
                 .collect::<Result<Vec<encoder::Info>, _>>()?;
 
             // and if any encoder supports the selected crtc
-            let resource_handles = self.fd.resource_handles().map_err(|source| Error::Access {
-                errmsg: "Error loading resources",
-                dev: self.fd.dev_path(),
-                source,
+            let resource_handles = self.fd.resource_handles().map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Error loading resources",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
             })?;
             if !encoders
                 .iter()

@@ -7,7 +7,7 @@ use std::sync::{
 use drm::control::{connector, crtc, Device as ControlDevice};
 
 use super::DrmDeviceFd;
-use crate::backend::drm::error::Error;
+use crate::backend::drm::error::{AccessError, Error};
 use crate::utils::DevPath;
 
 use tracing::{debug, error, info_span, trace};
@@ -34,28 +34,36 @@ impl LegacyDrmDevice {
         // Enumerate (and save) the current device state.
         // We need to keep the previous device configuration to restore the state later,
         // so we query everything, that we can set.
-        let res_handles = dev.fd.resource_handles().map_err(|source| Error::Access {
-            errmsg: "Error loading drm resources",
-            dev: dev.fd.dev_path(),
-            source,
-        })?;
-        for &con in res_handles.connectors() {
-            let con_info = dev.fd.get_connector(con, false).map_err(|source| Error::Access {
-                errmsg: "Error loading connector info",
+        let res_handles = dev.fd.resource_handles().map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error loading drm resources",
                 dev: dev.fd.dev_path(),
                 source,
-            })?;
-            if let Some(enc) = con_info.current_encoder() {
-                let enc_info = dev.fd.get_encoder(enc).map_err(|source| Error::Access {
-                    errmsg: "Error loading encoder info",
+            })
+        })?;
+        for &con in res_handles.connectors() {
+            let con_info = dev.fd.get_connector(con, false).map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Error loading connector info",
                     dev: dev.fd.dev_path(),
                     source,
-                })?;
-                if let Some(crtc) = enc_info.crtc() {
-                    let info = dev.fd.get_crtc(crtc).map_err(|source| Error::Access {
-                        errmsg: "Error loading crtc info",
+                })
+            })?;
+            if let Some(enc) = con_info.current_encoder() {
+                let enc_info = dev.fd.get_encoder(enc).map_err(|source| {
+                    Error::Access(AccessError {
+                        errmsg: "Error loading encoder info",
                         dev: dev.fd.dev_path(),
                         source,
+                    })
+                })?;
+                if let Some(crtc) = enc_info.crtc() {
+                    let info = dev.fd.get_crtc(crtc).map_err(|source| {
+                        Error::Access(AccessError {
+                            errmsg: "Error loading crtc info",
+                            dev: dev.fd.dev_path(),
+                            source,
+                        })
                     })?;
                     dev.old_state
                         .entry(crtc)
@@ -83,10 +91,12 @@ impl LegacyDrmDevice {
     }
 
     pub(super) fn reset_state(&self) -> Result<(), Error> {
-        let res_handles = self.fd.resource_handles().map_err(|source| Error::Access {
-            errmsg: "Failed to query resource handles",
-            dev: self.fd.dev_path(),
-            source,
+        let res_handles = self.fd.resource_handles().map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Failed to query resource handles",
+                dev: self.fd.dev_path(),
+                source,
+            })
         })?;
         set_connector_state(&self.fd, res_handles.connectors().iter().copied(), false)?;
 
@@ -98,10 +108,12 @@ impl LegacyDrmDevice {
             // null commit (necessary to trigger removal on the kernel side with the legacy api.)
             self.fd
                 .set_crtc(*crtc, None, (0, 0), &[], None)
-                .map_err(|source| Error::Access {
-                    errmsg: "Error setting crtc",
-                    dev: self.fd.dev_path(),
-                    source,
+                .map_err(|source| {
+                    Error::Access(AccessError {
+                        errmsg: "Error setting crtc",
+                        dev: self.fd.dev_path(),
+                        source,
+                    })
                 })?;
         }
 
@@ -154,27 +166,33 @@ where
 {
     // for every connector...
     for conn in connectors {
-        let info = dev.get_connector(conn, false).map_err(|source| Error::Access {
-            errmsg: "Failed to get connector infos",
-            dev: dev.dev_path(),
-            source,
+        let info = dev.get_connector(conn, false).map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Failed to get connector infos",
+                dev: dev.dev_path(),
+                source,
+            })
         })?;
         // that is currently connected ...
         if info.state() == connector::State::Connected {
             // get a list of it's properties.
-            let props = dev.get_properties(conn).map_err(|source| Error::Access {
-                errmsg: "Failed to get properties for connector",
-                dev: dev.dev_path(),
-                source,
+            let props = dev.get_properties(conn).map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Failed to get properties for connector",
+                    dev: dev.dev_path(),
+                    source,
+                })
             })?;
             let (handles, _) = props.as_props_and_values();
             // for every handle ...
             for handle in handles {
                 // get information of that property
-                let info = dev.get_property(*handle).map_err(|source| Error::Access {
-                    errmsg: "Failed to get property of connector",
-                    dev: dev.dev_path(),
-                    source,
+                let info = dev.get_property(*handle).map_err(|source| {
+                    Error::Access(AccessError {
+                        errmsg: "Failed to get property of connector",
+                        dev: dev.dev_path(),
+                        source,
+                    })
                 })?;
                 // to find out, if we got the handle of the "DPMS" property ...
                 if info.name().to_str().map(|x| x == "DPMS").unwrap_or(false) {
@@ -189,10 +207,12 @@ where
                             3 /*DRM_MODE_DPMS_OFF*/
                         },
                     )
-                    .map_err(|source| Error::Access {
-                        errmsg: "Failed to set property of connector",
-                        dev: dev.dev_path(),
-                        source,
+                    .map_err(|source| {
+                        Error::Access(AccessError {
+                            errmsg: "Failed to set property of connector",
+                            dev: dev.dev_path(),
+                            source,
+                        })
                     })?;
                 }
             }

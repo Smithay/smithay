@@ -16,6 +16,7 @@ pub use self::fd::DrmDeviceFd;
 pub(super) mod legacy;
 use crate::utils::{Buffer, DevPath, Size};
 
+use super::error::AccessError;
 use super::surface::{atomic::AtomicDrmSurface, legacy::LegacyDrmSurface, DrmSurface, DrmSurfaceInternal};
 use super::{error::Error, planes, Planes};
 use atomic::AtomicDrmDevice;
@@ -207,10 +208,12 @@ impl DrmDevice {
             .get_driver_capability(DriverCapability::CursorHeight)
             .unwrap_or(64);
         let cursor_size = Size::from((cursor_width as u32, cursor_height as u32));
-        let resources = fd.resource_handles().map_err(|source| Error::Access {
-            errmsg: "Error loading resource handles",
-            dev: fd.dev_path(),
-            source,
+        let resources = fd.resource_handles().map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error loading resource handles",
+                dev: fd.dev_path(),
+                source,
+            })
         })?;
 
         let internal = Arc::new(DrmDevice::create_internal(fd, active, disable_connectors)?);
@@ -321,13 +324,13 @@ impl DrmDevice {
         }
 
         let planes = self.planes(&crtc)?;
-        let info = self
-            .get_plane(planes.primary.handle)
-            .map_err(|source| Error::Access {
+        let info = self.get_plane(planes.primary.handle).map_err(|source| {
+            Error::Access(AccessError {
                 errmsg: "Failed to get plane info",
                 dev: self.dev_path(),
                 source,
-            })?;
+            })
+        })?;
         let filter = info.possible_crtcs();
         if !self.resources.filter_crtcs(filter).contains(&crtc) {
             return Err(Error::PlaneNotCompatible(crtc, planes.primary.handle));
@@ -497,11 +500,11 @@ impl EventSource for DrmDeviceNotifier {
             }
             Err(source) => {
                 callback(
-                    DrmEvent::Error(Error::Access {
+                    DrmEvent::Error(Error::Access(AccessError {
                         errmsg: "Error processing drm events",
                         dev: self.internal.dev_path(),
                         source,
-                    }),
+                    })),
                     &mut None,
                 );
             }

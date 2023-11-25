@@ -1,8 +1,6 @@
 //! Utilities to attach [`framebuffer::Handle`]s to gbm backed buffers
 
-use std::io;
 use std::os::unix::io::AsFd;
-use std::path::PathBuf;
 
 use thiserror::Error;
 
@@ -28,7 +26,7 @@ use crate::backend::{
 };
 use crate::utils::DevPath;
 
-use super::Framebuffer;
+use super::{error::AccessError, Framebuffer};
 
 /// A GBM backed framebuffer
 #[derive(Debug)]
@@ -175,39 +173,6 @@ pub fn framebuffer_from_dmabuf<A: AsFd + 'static>(
         format,
         drm: drm.clone(),
     })
-}
-
-/// Possible errors for attaching a [`framebuffer::Handle`] with [`framebuffer_from_bo`]
-#[derive(Debug, Error)]
-#[error("failed to add a framebuffer")]
-pub struct AccessError {
-    /// Error message associated to the access error
-    errmsg: &'static str,
-    /// Device on which the error was generated
-    dev: Option<PathBuf>,
-    /// Underlying device error
-    #[source]
-    pub source: io::Error,
-}
-
-impl From<AccessError> for super::DrmError {
-    fn from(err: AccessError) -> Self {
-        super::DrmError::Access {
-            errmsg: err.errmsg,
-            dev: err.dev,
-            source: err.source,
-        }
-    }
-}
-
-impl TryFrom<super::DrmError> for AccessError {
-    type Error = super::DrmError;
-    fn try_from(err: super::DrmError) -> Result<Self, super::DrmError> {
-        match err {
-            super::DrmError::Access { errmsg, dev, source } => Ok(AccessError { errmsg, dev, source }),
-            err => Err(err),
-        }
-    }
 }
 
 /// Attach a [`framebuffer::Handle`] to an [`BufferObject`]

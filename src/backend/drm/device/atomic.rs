@@ -11,6 +11,7 @@ use drm::control::{
 };
 
 use super::DrmDeviceFd;
+use crate::backend::drm::error::AccessError;
 use crate::{backend::drm::error::Error, utils::DevPath};
 
 use tracing::{debug, error, info_span, trace};
@@ -49,16 +50,20 @@ impl AtomicDrmDevice {
         let _guard = dev.span.enter();
 
         // Enumerate (and save) the current device state.
-        let res_handles = dev.fd.resource_handles().map_err(|source| Error::Access {
-            errmsg: "Error loading drm resources",
-            dev: dev.fd.dev_path(),
-            source,
+        let res_handles = dev.fd.resource_handles().map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error loading drm resources",
+                dev: dev.fd.dev_path(),
+                source,
+            })
         })?;
 
-        let planes = dev.fd.plane_handles().map_err(|source| Error::Access {
-            errmsg: "Error loading planes",
-            dev: dev.fd.dev_path(),
-            source,
+        let planes = dev.fd.plane_handles().map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error loading planes",
+                dev: dev.fd.dev_path(),
+                source,
+            })
         })?;
 
         let mut old_state = dev.old_state.clone();
@@ -110,15 +115,19 @@ impl AtomicDrmDevice {
         // on top of the state the previous compositor left the device in.
         // This is because we do commits per surface and not per device, so we do a global
         // commit here, to fix any conflicts.
-        let res_handles = self.fd.resource_handles().map_err(|source| Error::Access {
-            errmsg: "Error loading drm resources",
-            dev: self.fd.dev_path(),
-            source,
+        let res_handles = self.fd.resource_handles().map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error loading drm resources",
+                dev: self.fd.dev_path(),
+                source,
+            })
         })?;
-        let plane_handles = self.fd.plane_handles().map_err(|source| Error::Access {
-            errmsg: "Error loading drm plane resources",
-            dev: self.fd.dev_path(),
-            source,
+        let plane_handles = self.fd.plane_handles().map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error loading drm plane resources",
+                dev: self.fd.dev_path(),
+                source,
+            })
         })?;
 
         // Disable all connectors (otherwise we might run into conflicting commits when restarting the rendering loop)
@@ -175,10 +184,12 @@ impl AtomicDrmDevice {
         }
         self.fd
             .atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req)
-            .map_err(|source| Error::Access {
-                errmsg: "Failed to disable connectors",
-                dev: self.fd.dev_path(),
-                source,
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Failed to disable connectors",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
             })?;
 
         Ok(())
@@ -246,10 +257,12 @@ where
             }
             Err(err) => Err(err),
         })
-        .map_err(|source| Error::Access {
-            errmsg: "Error reading properties",
-            dev: fd.dev_path(),
-            source,
+        .map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error reading properties",
+                dev: fd.dev_path(),
+                source,
+            })
         })
 }
 
@@ -284,9 +297,11 @@ where
                 Err(err) => Err(err),
             }
         })
-        .map_err(|source| Error::Access {
-            errmsg: "Error reading properties on {:?}",
-            dev: fd.dev_path(),
-            source,
+        .map_err(|source| {
+            Error::Access(AccessError {
+                errmsg: "Error reading properties on {:?}",
+                dev: fd.dev_path(),
+                source,
+            })
         })
 }
