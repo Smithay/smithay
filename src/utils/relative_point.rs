@@ -21,11 +21,11 @@ impl<S: WaylandFocus> RelativePoint<S> {
     pub fn on_focused_surface(
         point: Point<f64, Logical>,
         focus: S,
-        focus_origin: Point<i32, Logical>,
+        focus_origin: impl Into<Point<i32, Logical>>,
     ) -> Self {
         Self {
             surface: focus,
-            loc: point - focus_origin.to_f64(),
+            loc: point - focus_origin.into().to_f64(),
         }
     }
 }
