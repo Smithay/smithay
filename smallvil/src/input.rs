@@ -52,7 +52,7 @@ impl Smallvil {
                     self,
                     focus,
                     &MotionEvent {
-                        location: pos,
+                        global_location: pos,
                         serial,
                         time: event.time_msec(),
                     },

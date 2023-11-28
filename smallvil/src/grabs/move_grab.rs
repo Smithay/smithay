@@ -28,7 +28,7 @@ impl PointerGrab<Smallvil> for MoveSurfaceGrab {
         // While the grab is active, no client has pointer focus
         handle.motion(data, None, event);
 
-        let delta = event.location - self.start_data.location;
+        let delta = event.global_location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
         data.space
             .map_element(self.window.clone(), new_location.to_i32_round(), true);

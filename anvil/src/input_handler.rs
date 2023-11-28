@@ -548,7 +548,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
             self,
             focus,
             &MotionEvent {
-                location: pos,
+                global_location: pos,
                 serial,
                 time: evt.time_msec(),
             },
@@ -586,7 +586,7 @@ impl AnvilState<UdevData> {
                             self,
                             focus,
                             &MotionEvent {
-                                location,
+                                global_location: location,
                                 serial: SCOUNTER.next_serial(),
                                 time: 0,
                             },
@@ -624,7 +624,7 @@ impl AnvilState<UdevData> {
                             self,
                             focus,
                             &MotionEvent {
-                                location: pointer_location,
+                                global_location: pointer_location,
                                 serial: SCOUNTER.next_serial(),
                                 time: 0,
                             },
@@ -663,7 +663,7 @@ impl AnvilState<UdevData> {
                             self,
                             focus,
                             &MotionEvent {
-                                location: pointer_location,
+                                global_location: pointer_location,
                                 serial: SCOUNTER.next_serial(),
                                 time: 0,
                             },
@@ -830,7 +830,7 @@ impl AnvilState<UdevData> {
             self,
             focus,
             &MotionEvent {
-                location: pointer_location,
+                global_location: pointer_location,
                 serial,
                 time: evt.time_msec(),
             },
@@ -886,7 +886,7 @@ impl AnvilState<UdevData> {
             self,
             focus,
             &MotionEvent {
-                location: pointer_location,
+                global_location: pointer_location,
                 serial,
                 time: evt.time_msec(),
             },
@@ -915,7 +915,7 @@ impl AnvilState<UdevData> {
                 self,
                 focus.clone(),
                 &MotionEvent {
-                    location: pointer_location,
+                    global_location: pointer_location,
                     serial: SCOUNTER.next_serial(),
                     time: 0,
                 },
@@ -986,7 +986,7 @@ impl AnvilState<UdevData> {
                 self,
                 focus.clone(),
                 &MotionEvent {
-                    location: pointer_location,
+                    global_location: pointer_location,
                     serial: SCOUNTER.next_serial(),
                     time: 0,
                 },

@@ -289,9 +289,9 @@ impl Window {
 
 impl<D: SeatHandler + 'static> PointerTarget<D> for Window {
     fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        if let Some((surface, loc)) = self.surface_under(event.location, WindowSurfaceType::ALL) {
+        if let Some((surface, loc)) = self.surface_under(event.global_location, WindowSurfaceType::ALL) {
             let mut new_event = event.clone();
-            new_event.location -= loc.to_f64();
+            new_event.global_location -= loc.to_f64();
             if let Some(old_surface) = self.0.focused_surface.lock().unwrap().replace(surface.clone()) {
                 if old_surface != surface {
                     PointerTarget::<D>::leave(&old_surface, seat, data, event.serial, event.time);

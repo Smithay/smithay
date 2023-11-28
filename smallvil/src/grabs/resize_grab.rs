@@ -82,7 +82,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
         // While the grab is active, no client has pointer focus
         handle.motion(data, None, event);
 
-        let mut delta = event.location - self.start_data.location;
+        let mut delta = event.global_location - self.start_data.location;
 
         let mut new_window_width = self.initial_rect.size.w;
         let mut new_window_height = self.initial_rect.size.h;

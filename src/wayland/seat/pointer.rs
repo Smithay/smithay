@@ -155,7 +155,12 @@ where
             *pointer.last_enter.lock().unwrap() = Some(serial);
         }
         for_each_focused_pointers(seat, self, |ptr| {
-            ptr.enter(serial.into(), self, event.location.x, event.location.y);
+            ptr.enter(
+                serial.into(),
+                self,
+                event.global_location.x,
+                event.global_location.y,
+            );
         })
     }
     fn leave(&self, seat: &Seat<D>, _data: &mut D, serial: Serial, time: u32) {
@@ -200,7 +205,7 @@ where
     }
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
         for_each_focused_pointers(seat, self, |ptr| {
-            ptr.motion(event.time, event.location.x, event.location.y);
+            ptr.motion(event.time, event.global_location.x, event.global_location.y);
         })
     }
     fn relative_motion(&self, seat: &Seat<D>, _data: &mut D, event: &RelativeMotionEvent) {

@@ -215,7 +215,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>, display_han
                 state,
                 focus,
                 &MotionEvent {
-                    location,
+                    global_location: location,
                     serial,
                     time,
                 },
@@ -233,7 +233,7 @@ fn handle_event(event: WlcsEvent, state: &mut AnvilState<TestState>, display_han
                 state,
                 focus.clone(),
                 &MotionEvent {
-                    location: pointer_location,
+                    global_location: pointer_location,
                     serial,
                     time,
                 },

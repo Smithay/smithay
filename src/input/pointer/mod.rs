@@ -683,7 +683,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 seat,
                 None,
                 &MotionEvent {
-                    location,
+                    global_location: location,
                     serial,
                     time: 0,
                 },
@@ -702,7 +702,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 seat,
                 focus,
                 &MotionEvent {
-                    location,
+                    global_location: location,
                     serial,
                     time,
                 },
@@ -719,7 +719,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
     ) {
         // do we leave a surface ?
         let mut leave = true;
-        self.location = event.location;
+        self.location = event.global_location;
         if let Some(ref current_focus) = self.focus {
             if let Some(ref new_focus) = focus {
                 if current_focus.surface == new_focus.surface {
@@ -742,7 +742,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
             // might have changed
             self.focus = Some(focus.clone());
             let event = MotionEvent {
-                location: focus.loc.to_f64(),
+                global_location: focus.loc.to_f64(),
                 serial: event.serial,
                 time: event.time,
             };
@@ -857,8 +857,8 @@ pub enum Focus {
 /// Pointer motion event
 #[derive(Debug, Clone)]
 pub struct MotionEvent {
-    /// Location of the pointer in compositor space
-    pub location: Point<f64, Logical>,
+    /// Location of the pointer in global compositor space
+    pub global_location: Point<f64, Logical>,
     /// Serial of the event
     pub serial: Serial,
     /// Timestamp of the event, with millisecond granularity
