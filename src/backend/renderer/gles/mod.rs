@@ -3220,6 +3220,17 @@ impl<'frame> GlesFrame<'frame> {
     pub fn projection(&self) -> &[f32; 9] {
         self.current_projection.as_ref()
     }
+
+    /// Get access to the underlying [`EGLContext`].
+    ///
+    /// *Note*: Modifying the context state, might result in rendering issues.
+    /// The context state is considerd an implementation detail
+    /// and no guarantee is made about what can or cannot be changed.
+    /// To make sure a certain modification does not interfere with
+    /// the renderer's behaviour, check the source.
+    pub fn egl_context(&self) -> &EGLContext {
+        self.renderer.egl_context()
+    }
 }
 
 impl<'frame> Drop for GlesFrame<'frame> {
