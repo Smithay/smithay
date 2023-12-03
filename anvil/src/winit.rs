@@ -70,8 +70,10 @@ impl DmabufHandler for AnvilState<WinitData> {
             .backend
             .renderer()
             .import_dmabuf(&dmabuf, None)
-            .is_err()
+            .is_ok()
         {
+            let _ = notifier.successful::<AnvilState<WinitData>>();
+        } else {
             notifier.failed();
         }
     }
