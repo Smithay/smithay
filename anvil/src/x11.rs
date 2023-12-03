@@ -74,7 +74,10 @@ impl DmabufHandler for AnvilState<X11Data> {
     }
 
     fn dmabuf_imported(&mut self, _global: &DmabufGlobal, dmabuf: Dmabuf, notifier: ImportNotifier) {
-        if self.backend_data.renderer.import_dmabuf(&dmabuf, None).is_err() {
+        if self.backend_data.renderer.import_dmabuf(&dmabuf, None).is_ok()
+        {
+            let _ = notifier.successful::<AnvilState<X11Data>>();
+        } else {
             notifier.failed();
         }
     }
