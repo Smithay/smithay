@@ -919,7 +919,7 @@ pub struct AxisFrame {
     /// Raw scroll value per axis of the event
     pub axis: (f64, f64),
     /// Discrete representation of scroll value per axis, if available
-    pub discrete: Option<(i32, i32)>,
+    pub v120: Option<(i32, i32)>,
     /// If the axis is considered having stoped movement
     ///
     /// Only useful in conjunction of AxisSource::Finger events
@@ -1021,7 +1021,7 @@ impl AxisFrame {
             source: None,
             time,
             axis: (0.0, 0.0),
-            discrete: None,
+            v120: None,
             stop: (false, false),
         }
     }
@@ -1043,14 +1043,14 @@ impl AxisFrame {
     /// This event is optional and gives the client additional information about
     /// the nature of the axis event. E.g. a scroll wheel might issue separate steps,
     /// while a touchpad may never issue this event as it has no steps.
-    pub fn discrete(mut self, axis: Axis, steps: i32) -> Self {
-        let discrete = self.discrete.get_or_insert_with(Default::default);
+    pub fn v120(mut self, axis: Axis, steps: i32) -> Self {
+        let v120 = self.v120.get_or_insert_with(Default::default);
         match axis {
             Axis::Horizontal => {
-                discrete.0 = steps;
+                v120.0 = steps;
             }
             Axis::Vertical => {
-                discrete.1 = steps;
+                v120.1 = steps;
             }
         };
         self

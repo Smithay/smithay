@@ -120,9 +120,9 @@ impl PointerAxisEvent<X11Input> for X11MouseWheelEvent {
         None
     }
 
-    fn amount_discrete(&self, axis: Axis) -> Option<f64> {
+    fn amount_v120(&self, axis: Axis) -> Option<f64> {
         if self.axis == axis {
-            Some(self.amount)
+            Some(self.amount * 120.)
         } else {
             Some(0.0)
         }

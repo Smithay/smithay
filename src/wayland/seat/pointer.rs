@@ -39,6 +39,13 @@ use crate::{
 
 use super::{SeatHandler, SeatState, WaylandFocus};
 
+// Use to accumulate discrete values for `wl_pointer` < 8
+#[derive(Default)]
+struct V120UserData {
+    x: i32,
+    y: i32,
+}
+
 impl<D: SeatHandler> PointerHandle<D> {
     pub(crate) fn new_pointer(&self, pointer: WlPointer) {
         let mut guard = self.known_pointers.lock().unwrap();
@@ -197,6 +204,11 @@ where
                 }
             });
         }
+        compositor::with_states(self, |states| {
+            if let Some(data) = states.data_map.get::<Mutex<V120UserData>>() {
+                *data.lock().unwrap() = Default::default();
+            }
+        });
     }
     fn motion(&self, seat: &Seat<D>, _data: &mut D, event: &MotionEvent) {
         for_each_focused_pointers(seat, self, |ptr| {
@@ -241,20 +253,54 @@ where
                     ptr.axis_source(source);
                 }
                 // axis discrete
-                if let Some((x, y)) = details.discrete {
-                    if x != 0 {
-                        ptr.axis_discrete(WlAxis::HorizontalScroll, x);
-                    }
-                    if y != 0 {
-                        ptr.axis_discrete(WlAxis::VerticalScroll, y);
+                if let Some((x, y)) = details.v120 {
+                    if ptr.version() >= 8 {
+                        if x != 0 {
+                            ptr.axis_value120(WlAxis::HorizontalScroll, x);
+                        }
+                        if y != 0 {
+                            ptr.axis_value120(WlAxis::HorizontalScroll, y);
+                        }
+                    } else {
+                        compositor::with_states(self, |states| {
+                            let mut data = states
+                                .data_map
+                                .get_or_insert_threadsafe(Mutex::<V120UserData>::default)
+                                .lock()
+                                .unwrap();
+
+                            data.x += x;
+                            if data.x >= 120 {
+                                ptr.axis_discrete(WlAxis::HorizontalScroll, data.x / 120);
+                                data.x %= 120;
+                            }
+
+                            data.y += y;
+                            if data.y >= 120 {
+                                ptr.axis_discrete(WlAxis::VerticalScroll, y / 120);
+                                data.y %= 120;
+                            }
+                        });
                     }
                 }
                 // stop
                 if details.stop.0 {
                     ptr.axis_stop(details.time, WlAxis::HorizontalScroll);
+
+                    compositor::with_states(self, |states| {
+                        if let Some(data) = states.data_map.get::<Mutex<V120UserData>>() {
+                            data.lock().unwrap().x = 0;
+                        }
+                    });
                 }
                 if details.stop.1 {
                     ptr.axis_stop(details.time, WlAxis::VerticalScroll);
+
+                    compositor::with_states(self, |states| {
+                        if let Some(data) = states.data_map.get::<Mutex<V120UserData>>() {
+                            data.lock().unwrap().y = 0;
+                        }
+                    });
                 }
             }
             // axis
