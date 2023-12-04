@@ -353,7 +353,7 @@ pub trait PointerAxisEvent<B: InputBackend>: Event<B> {
     /// Amount of scrolling in discrete steps on the given [`Axis`].
     ///
     /// Guaranteed to be `Some` when source returns either [`AxisSource::Wheel`] or [`AxisSource::WheelTilt`].
-    fn amount_discrete(&self, axis: Axis) -> Option<f64>;
+    fn amount_v120(&self, axis: Axis) -> Option<f64>;
 
     /// Source of the scroll event.
     fn source(&self) -> AxisSource;
@@ -364,7 +364,7 @@ impl<B: InputBackend> PointerAxisEvent<B> for UnusedEvent {
         match *self {}
     }
 
-    fn amount_discrete(&self, _axis: Axis) -> Option<f64> {
+    fn amount_v120(&self, _axis: Axis) -> Option<f64> {
         match *self {}
     }
 

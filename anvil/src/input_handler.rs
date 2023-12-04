@@ -384,25 +384,25 @@ impl<BackendData: Backend> AnvilState<BackendData> {
     fn on_pointer_axis<B: InputBackend>(&mut self, _dh: &DisplayHandle, evt: B::PointerAxisEvent) {
         let horizontal_amount = evt
             .amount(input::Axis::Horizontal)
-            .unwrap_or_else(|| evt.amount_discrete(input::Axis::Horizontal).unwrap_or(0.0) * 3.0);
+            .unwrap_or_else(|| evt.amount_v120(input::Axis::Horizontal).unwrap_or(0.0) * 3.0 / 120.);
         let vertical_amount = evt
             .amount(input::Axis::Vertical)
-            .unwrap_or_else(|| evt.amount_discrete(input::Axis::Vertical).unwrap_or(0.0) * 3.0);
-        let horizontal_amount_discrete = evt.amount_discrete(input::Axis::Horizontal);
-        let vertical_amount_discrete = evt.amount_discrete(input::Axis::Vertical);
+            .unwrap_or_else(|| evt.amount_v120(input::Axis::Vertical).unwrap_or(0.0) * 3.0 / 120.);
+        let horizontal_amount_discrete = evt.amount_v120(input::Axis::Horizontal);
+        let vertical_amount_discrete = evt.amount_v120(input::Axis::Vertical);
 
         {
             let mut frame = AxisFrame::new(evt.time_msec()).source(evt.source());
             if horizontal_amount != 0.0 {
                 frame = frame.value(Axis::Horizontal, horizontal_amount);
                 if let Some(discrete) = horizontal_amount_discrete {
-                    frame = frame.discrete(Axis::Horizontal, discrete as i32);
+                    frame = frame.v120(Axis::Horizontal, discrete as i32);
                 }
             }
             if vertical_amount != 0.0 {
                 frame = frame.value(Axis::Vertical, vertical_amount);
                 if let Some(discrete) = vertical_amount_discrete {
-                    frame = frame.discrete(Axis::Vertical, discrete as i32);
+                    frame = frame.v120(Axis::Vertical, discrete as i32);
                 }
             }
             if evt.source() == AxisSource::Finger {
