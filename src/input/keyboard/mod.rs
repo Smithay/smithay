@@ -607,7 +607,9 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         true
     }
 
-    fn update_xkb_state(&self, data: &mut D, internal: &mut KbdInternal<D>, keymap: xkb::Keymap) {
+    fn update_xkb_state(&self, data: &mut D, keymap: xkb::Keymap) {
+        let mut internal = self.arc.internal.lock().unwrap();
+
         let mut state = xkb::State::new(&keymap);
         for key in &internal.pressed_keys {
             state.update_key((key + 8).into(), xkb::KeyDirection::Down);
@@ -623,6 +625,9 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             focus.modifiers(&seat, data, mods, SERIAL_COUNTER.next_serial());
         };
 
+        // Release the lock.
+        drop(internal);
+
         #[cfg(feature = "wayland_frontend")]
         self.change_keymap(data, &keymap);
     }
@@ -631,7 +636,6 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ///
     /// The input is a keymap in XKB_KEYMAP_FORMAT_TEXT_V1 format.
     pub fn set_keymap_from_string(&self, data: &mut D, keymap: String) -> Result<(), Error> {
-        let mut internal = self.arc.internal.lock().unwrap();
         // Construct the Keymap internally instead of accepting one as input
         // because libxkbcommon is not thread-safe.
         let keymap = xkb::Keymap::new_from_string(
@@ -644,18 +648,19 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             debug!("Loading keymap from string failed");
             Error::BadKeymap
         })?;
-        self.update_xkb_state(data, &mut internal, keymap);
+        self.update_xkb_state(data, keymap);
         Ok(())
     }
 
     /// Change the [`XkbConfig`] used by the keyboard.
     pub fn set_xkb_config(&self, data: &mut D, xkb_config: XkbConfig<'_>) -> Result<(), Error> {
-        let mut internal = self.arc.internal.lock().unwrap();
-        let keymap = xkb_config.compile_keymap(&internal.context).map_err(|_| {
-            debug!("Loading keymap from XkbConfig failed");
-            Error::BadKeymap
-        })?;
-        self.update_xkb_state(data, &mut internal, keymap);
+        let keymap = xkb_config
+            .compile_keymap(&self.arc.internal.lock().unwrap().context)
+            .map_err(|_| {
+                debug!("Loading keymap from XkbConfig failed");
+                Error::BadKeymap
+            })?;
+        self.update_xkb_state(data, keymap);
         Ok(())
     }
 
