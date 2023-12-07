@@ -1042,6 +1042,7 @@ impl ImportMem for GlesRenderer {
             internal = match internal {
                 ffi::RGBA8 => ffi::RGBA,
                 ffi::RGB8 => ffi::RGB,
+                ffi::BGRA_EXT => ffi::BGRA_EXT,
                 _ => unreachable!(),
             };
         }
