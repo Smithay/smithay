@@ -2135,9 +2135,14 @@ fn handle_event<D: XwmHandler + 'static>(
                     }
                 }
                 x if x == xwm.atoms.WM_CHANGE_STATE => {
+                    let data = msg.data.as_data32();
                     if let Some(surface) = xwm.windows.iter().find(|x| x.window_id() == msg.window).cloned() {
                         drop(_guard);
-                        state.minimize_request(xwm_id, surface);
+                        match data[0] {
+                            1 => state.unminimize_request(xwm_id, surface),
+                            3 => state.minimize_request(xwm_id, surface),
+                            _ => {}
+                        }
                     }
                 }
                 x if x == xwm.atoms._NET_WM_STATE => {
