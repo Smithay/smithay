@@ -98,7 +98,7 @@ use rustix::fs::{Mode, OFlags};
 use std::{
     collections::HashMap,
     io,
-    os::unix::io::{FromRawFd, OwnedFd},
+    os::unix::io::OwnedFd,
     sync::{
         atomic::{AtomicU32, Ordering},
         mpsc, Arc, Mutex, Weak,
@@ -963,9 +963,7 @@ fn dri3_init(x11: &X11Inner) -> Result<(DrmNode, OwnedFd), X11Error> {
             });
         }
     };
-
-    // TODO: x11rb git makes `RawFdContainer` an alias for `OwnedFd`, so this isn't needed
-    let device_fd = unsafe { OwnedFd::from_raw_fd(dri3.device_fd.into_raw_fd()) };
+    let device_fd = dri3.device_fd;
 
     let dri_node = DrmNode::from_file(&device_fd).map_err(Into::<AllocateBuffersError>::into)?;
     if dri_node.ty() != NodeType::Render {

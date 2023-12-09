@@ -680,7 +680,7 @@ impl X11Wm {
 
         // Create an X11 connection. XWayland only uses screen 0.
         let screen = 0;
-        let stream = DefaultStream::from_unix_stream(connection)?;
+        let stream = DefaultStream::from_unix_stream(connection)?.0;
         let conn = RustConnection::connect_to_stream(stream, screen)?;
         let atoms = Atoms::new(&conn)?.reply()?;
 

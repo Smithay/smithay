@@ -27,7 +27,7 @@
 //! ensure you read the `presentproto.txt` file (link in the non-public comments of the
 //! x11 mod.rs).
 
-use std::{os::unix::io::IntoRawFd, sync::atomic::Ordering};
+use std::sync::atomic::Ordering;
 
 use super::{PresentError, Window, X11Error};
 use drm_fourcc::DrmFourcc;
@@ -38,25 +38,20 @@ use x11rb::{
         present::{self, ConnectionExt},
         xproto::PixmapWrapper,
     },
-    utils::RawFdContainer,
 };
 
 use crate::backend::allocator::{dmabuf::Dmabuf, Buffer};
 
 // Shm can be easily supported in the future using, xcb_shm_create_pixmap.
 
-pub trait PixmapWrapperExt<'c, C>
+pub trait PixmapWrapperExt<C>
 where
     C: Connection,
 {
     /// Creates a new Pixmap using the supplied Dmabuf.
     ///
     /// The returned Pixmap is freed when dropped.
-    fn with_dmabuf(
-        connection: &'c C,
-        window: &Window,
-        dmabuf: &Dmabuf,
-    ) -> Result<PixmapWrapper<'c, C>, X11Error>;
+    fn with_dmabuf(connection: C, window: &Window, dmabuf: &Dmabuf) -> Result<PixmapWrapper<C>, X11Error>;
 
     /// Presents the pixmap to the window.
     ///
@@ -65,19 +60,15 @@ where
     ///
     /// The pixmap will be automatically dropped when it bubbles up in the X11 event loop after the
     /// X server has finished presentation with the buffer behind the pixmap.
-    fn present(self, connection: &C, window: &Window) -> Result<u32, X11Error>;
+    fn present(self, connection: C, window: &Window) -> Result<u32, X11Error>;
 }
 
-impl<'c, C> PixmapWrapperExt<'c, C> for PixmapWrapper<'c, C>
+impl<C> PixmapWrapperExt<C> for PixmapWrapper<C>
 where
     C: Connection,
 {
     #[profiling::function]
-    fn with_dmabuf(
-        connection: &'c C,
-        window: &Window,
-        dmabuf: &Dmabuf,
-    ) -> Result<PixmapWrapper<'c, C>, X11Error> {
+    fn with_dmabuf(connection: C, window: &Window, dmabuf: &Dmabuf) -> Result<PixmapWrapper<C>, X11Error> {
         if dmabuf.format().code != window.format() {
             return Err(PresentError::IncorrectFormat(window.format()).into());
         }
@@ -91,7 +82,7 @@ where
             )
             .map_err(|e| PresentError::DupFailed(e.to_string()))?;
 
-            fds.push(RawFdContainer::new(fd.into_raw_fd()))
+            fds.push(fd);
         }
 
         // We need dri3 >= 1.2 in order to use the enhanced dri3_pixmap_from_buffers function.
@@ -164,7 +155,7 @@ where
     }
 
     #[profiling::function]
-    fn present(self, connection: &C, window: &Window) -> Result<u32, X11Error> {
+    fn present(self, connection: C, window: &Window) -> Result<u32, X11Error> {
         let next_serial = window.0.next_serial.fetch_add(1, Ordering::SeqCst);
         // We want to present as soon as possible, so wait 1ms so the X server will present when next convenient.
         let msc = window.0.last_msc.load(Ordering::SeqCst) + 1;
