@@ -194,8 +194,12 @@ where
     ) {
         match request {
             zwp_input_method_v2::Request::CommitString { text } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface| {
-                    ti.commit_string(Some(text.clone()));
+                data.text_input_handle.with_focused_text_input(|ti, ti_v2, _surface, _serial| {
+                    if let Some(ti) = ti {
+                        ti.commit_string(Some(text.clone()));
+                    } else if let Some(ti) = ti_v2 {
+                        ti.commit_string(text.clone());
+                    }
                 });
             }
             zwp_input_method_v2::Request::SetPreeditString {
@@ -203,16 +207,24 @@ where
                 cursor_begin,
                 cursor_end,
             } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface| {
-                    ti.preedit_string(Some(text.clone()), cursor_begin, cursor_end);
+                data.text_input_handle.with_focused_text_input(|ti, ti_v2, _surface, _serial| {
+                    if let Some(ti) = ti {
+                        ti.preedit_string(Some(text.clone()), cursor_begin, cursor_end);
+                    } else if let Some(ti) = ti_v2 {
+                        ti.preedit_string(text.clone(), text.clone());
+                    }
                 });
             }
             zwp_input_method_v2::Request::DeleteSurroundingText {
                 before_length,
                 after_length,
             } => {
-                data.text_input_handle.with_focused_text_input(|ti, _surface| {
-                    ti.delete_surrounding_text(before_length, after_length);
+                data.text_input_handle.with_focused_text_input(|ti, ti_v2, _surface, _serial| {
+                    if let Some(ti) = ti {
+                        ti.delete_surrounding_text(before_length, after_length);
+                    } else if let Some(ti) = ti_v2 {
+                        ti.delete_surrounding_text(before_length, after_length);
+                    }
                 });
             }
             zwp_input_method_v2::Request::Commit { serial } => {
@@ -303,8 +315,12 @@ where
         data: &InputMethodUserData<D>,
     ) {
         data.handle.inner.lock().unwrap().instance = None;
-        data.text_input_handle.with_focused_text_input(|ti, surface| {
-            ti.leave(surface);
+        data.text_input_handle.with_focused_text_input(|ti, ti_v2, surface, serial| {
+            if let Some(ti) = ti {
+                ti.leave(surface);
+            } else if let Some(ti) = ti_v2 {
+                ti.leave(serial, surface)
+            }
         });
     }
 }
