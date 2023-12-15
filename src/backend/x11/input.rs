@@ -3,9 +3,9 @@
 use super::{window_inner::WindowInner, Window, WindowTemporary};
 use crate::{
     backend::input::{
-        self, AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, InputBackend,
-        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionAbsoluteEvent,
-        UnusedEvent,
+        self, AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Device,
+        DeviceCapability, InputBackend, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+        PointerMotionAbsoluteEvent, UnusedEvent,
     },
     utils::{Logical, Size},
 };
@@ -131,6 +131,10 @@ impl PointerAxisEvent<X11Input> for X11MouseWheelEvent {
     fn source(&self) -> AxisSource {
         // X11 seems to act within the scope of individual rachets of a scroll wheel.
         AxisSource::Wheel
+    }
+
+    fn relative_direction(&self, _axis: Axis) -> AxisRelativeDirection {
+        AxisRelativeDirection::Identical
     }
 }
 

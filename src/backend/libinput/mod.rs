@@ -1,6 +1,8 @@
 //! Implementation of input backend trait for types provided by `libinput`
 
-use crate::backend::input::{self as backend, Axis, InputBackend, InputEvent};
+use crate::backend::input::{
+    self as backend, Axis, AxisRelativeDirection, AxisSource, InputBackend, InputEvent,
+};
 #[cfg(feature = "backend_session")]
 use crate::backend::session::{AsErrno, Session};
 use input as libinput;
@@ -191,11 +193,20 @@ impl backend::PointerAxisEvent<LibinputInputBackend> for PointerScrollAxis {
         }
     }
 
-    fn source(&self) -> backend::AxisSource {
+    fn source(&self) -> AxisSource {
         match self {
-            Self::Wheel(_) => backend::AxisSource::Wheel,
-            Self::Finger(_) => backend::AxisSource::Finger,
-            Self::Continuous(_) => backend::AxisSource::Continuous,
+            Self::Wheel(_) => AxisSource::Wheel,
+            Self::Finger(_) => AxisSource::Finger,
+            Self::Continuous(_) => AxisSource::Continuous,
+        }
+    }
+
+    fn relative_direction(&self, _axis: Axis) -> backend::AxisRelativeDirection {
+        let device = backend::Event::<LibinputInputBackend>::device(self);
+        if device.config_scroll_natural_scroll_enabled() {
+            AxisRelativeDirection::Inverted
+        } else {
+            AxisRelativeDirection::Identical
         }
     }
 }

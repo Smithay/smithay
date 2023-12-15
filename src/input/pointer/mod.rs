@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    backend::input::{Axis, AxisSource, ButtonState},
+    backend::input::{Axis, AxisRelativeDirection, AxisSource, ButtonState},
     input::{Seat, SeatHandler},
     utils::Serial,
     utils::{IsAlive, Logical, Point},
@@ -914,6 +914,8 @@ pub struct ButtonEvent {
 pub struct AxisFrame {
     /// Source of the axis event, if known
     pub source: Option<AxisSource>,
+    /// Direction of the physical motion that caused axis event
+    pub relative_direction: (AxisRelativeDirection, AxisRelativeDirection),
     /// Time of the axis event
     pub time: u32,
     /// Raw scroll value per axis of the event
@@ -1019,6 +1021,7 @@ impl AxisFrame {
     pub fn new(time: u32) -> Self {
         AxisFrame {
             source: None,
+            relative_direction: (AxisRelativeDirection::Identical, AxisRelativeDirection::Identical),
             time,
             axis: (0.0, 0.0),
             v120: None,
@@ -1035,6 +1038,19 @@ impl AxisFrame {
     /// when the user lifts off the finger (not necessarily in the same frame).
     pub fn source(mut self, source: AxisSource) -> Self {
         self.source = Some(source);
+        self
+    }
+
+    /// Specify the direction of the physical motion, relative to axis direction
+    pub fn relative_direction(mut self, axis: Axis, relative_direction: AxisRelativeDirection) -> Self {
+        match axis {
+            Axis::Horizontal => {
+                self.relative_direction.0 = relative_direction;
+            }
+            Axis::Vertical => {
+                self.relative_direction.1 = relative_direction;
+            }
+        };
         self
     }
 
