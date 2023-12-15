@@ -305,9 +305,18 @@ where
             }
             // axis
             if details.axis.0 != 0.0 {
+                if ptr.version() >= 9 {
+                    ptr.axis_relative_direction(
+                        WlAxis::HorizontalScroll,
+                        details.relative_direction.0.into(),
+                    );
+                }
                 ptr.axis(details.time, WlAxis::HorizontalScroll, details.axis.0);
             }
             if details.axis.1 != 0.0 {
+                if ptr.version() >= 9 {
+                    ptr.axis_relative_direction(WlAxis::VerticalScroll, details.relative_direction.1.into());
+                }
                 ptr.axis(details.time, WlAxis::VerticalScroll, details.axis.1);
             }
         })

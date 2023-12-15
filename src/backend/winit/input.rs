@@ -6,8 +6,8 @@ use winit::{
 };
 
 use crate::backend::input::{
-    self, AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
-    InputBackend, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+    self, AbsolutePositionEvent, Axis, AxisRelativeDirection, AxisSource, ButtonState, Device,
+    DeviceCapability, Event, InputBackend, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
     PointerMotionAbsoluteEvent, TouchCancelEvent, TouchDownEvent, TouchEvent, TouchMotionEvent, TouchSlot,
     TouchUpEvent, UnusedEvent,
 };
@@ -155,6 +155,11 @@ impl PointerAxisEvent<WinitInput> for WinitMouseWheelEvent {
             (Axis::Vertical, MouseScrollDelta::LineDelta(_, y)) => Some(y as f64 * 120.),
             (_, MouseScrollDelta::PixelDelta(_)) => None,
         }
+    }
+
+    // TODO: Implement with Wayland if `wl_pointer` version >= 9
+    fn relative_direction(&self, _axis: Axis) -> AxisRelativeDirection {
+        AxisRelativeDirection::Identical
     }
 }
 
