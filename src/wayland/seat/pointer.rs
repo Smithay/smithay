@@ -270,14 +270,14 @@ where
                                 .unwrap();
 
                             data.x += x;
-                            if data.x >= 120 {
+                            if data.x.abs() >= 120 {
                                 ptr.axis_discrete(WlAxis::HorizontalScroll, data.x / 120);
                                 data.x %= 120;
                             }
 
                             data.y += y;
-                            if data.y >= 120 {
-                                ptr.axis_discrete(WlAxis::VerticalScroll, y / 120);
+                            if data.y.abs() >= 120 {
+                                ptr.axis_discrete(WlAxis::VerticalScroll, data.y / 120);
                                 data.y %= 120;
                             }
                         });
