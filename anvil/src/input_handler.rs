@@ -683,9 +683,11 @@ impl AnvilState<UdevData> {
                 }
 
                 action => match action {
-                    KeyAction::None | KeyAction::Quit | KeyAction::Run(_) | KeyAction::TogglePreview => {
-                        self.process_common_key_action(action)
-                    }
+                    KeyAction::None
+                    | KeyAction::Quit
+                    | KeyAction::Run(_)
+                    | KeyAction::TogglePreview
+                    | KeyAction::ToggleDecorations => self.process_common_key_action(action),
 
                     _ => unreachable!(),
                 },
