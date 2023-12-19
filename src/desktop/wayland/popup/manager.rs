@@ -4,7 +4,9 @@ use crate::{
     wayland::{
         compositor::{get_role, with_states},
         seat::WaylandFocus,
-        shell::xdg::{XdgPopupSurfaceData, XDG_POPUP_ROLE},
+        shell::xdg::{
+            SurfaceCachedState, XdgPopupSurfaceData, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE,
+        },
     },
 };
 use std::sync::{Arc, Mutex};
@@ -230,6 +232,54 @@ pub fn find_popup_root_surface(popup: &PopupKind) -> Result<WlSurface, DeadResou
         });
     }
     Ok(parent)
+}
+
+/// Computes this popup's location relative to its toplevel wl_surface.
+///
+/// This function will go up the parent stack and add up the relative locations. Useful for
+/// transitive children popups.
+pub fn get_popup_toplevel_coords(popup: &PopupKind) -> Point<i32, Logical> {
+    let mut parent = match popup.parent() {
+        Some(parent) => parent,
+        None => return (0, 0).into(),
+    };
+
+    let mut offset = (0, 0).into();
+    while get_role(&parent) == Some(XDG_POPUP_ROLE) {
+        offset += with_states(&parent, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .current
+                .geometry
+                .loc
+        });
+        parent = with_states(&parent, |states| {
+            states
+                .data_map
+                .get::<Mutex<XdgPopupSurfaceRoleAttributes>>()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .parent
+                .as_ref()
+                .cloned()
+                .unwrap()
+        });
+    }
+    offset += with_states(&parent, |states| {
+        states
+            .cached_state
+            .current::<SurfaceCachedState>()
+            .geometry
+            .map(|x| x.loc)
+            .unwrap_or_else(|| (0, 0).into())
+    });
+
+    offset
 }
 
 #[derive(Debug, Default, Clone)]
