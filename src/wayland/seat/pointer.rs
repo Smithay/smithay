@@ -259,7 +259,7 @@ where
                             ptr.axis_value120(WlAxis::HorizontalScroll, x);
                         }
                         if y != 0 {
-                            ptr.axis_value120(WlAxis::HorizontalScroll, y);
+                            ptr.axis_value120(WlAxis::VerticalScroll, y);
                         }
                     } else {
                         compositor::with_states(self, |states| {
