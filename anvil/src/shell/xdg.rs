@@ -2,8 +2,8 @@ use std::cell::RefCell;
 
 use smithay::{
     desktop::{
-        find_popup_root_surface, layer_map_for_output, space::SpaceElement, PopupKeyboardGrab, PopupKind,
-        PopupPointerGrab, PopupUngrabStrategy, Window, WindowSurfaceType,
+        find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, space::SpaceElement,
+        PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window, WindowSurfaceType,
     },
     input::{pointer::Focus, Seat},
     output::Output,
@@ -50,19 +50,13 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         place_new_window(&mut self.space, self.pointer.current_location(), &window, true);
     }
 
-    fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
+    fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
         // Do not send a configure here, the initial configure
         // of a xdg_surface has to be sent during the commit if
         // the surface is not already configured
 
-        // TODO: properly recompute the geometry with the whole of positioner state
-        surface.with_pending_state(|state| {
-            // NOTE: This is not really necessary as the default geometry
-            // is already set the same way, but for demonstrating how
-            // to set the initial popup geometry this code is left as
-            // an example
-            state.geometry = positioner.get_geometry();
-        });
+        self.unconstrain_popup(&surface);
+
         if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
             warn!("Failed to track popup: {}", err);
         }
@@ -70,14 +64,11 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
 
     fn reposition_request(&mut self, surface: PopupSurface, positioner: PositionerState, token: u32) {
         surface.with_pending_state(|state| {
-            // NOTE: This is again a simplification, a proper compositor would
-            // calculate the geometry of the popup here. For simplicity we just
-            // use the default implementation here that does not take the
-            // window position and output constraints into account.
             let geometry = positioner.get_geometry();
             state.geometry = geometry;
             state.positioner = positioner;
         });
+        self.unconstrain_popup(&surface);
         surface.send_repositioned(token);
     }
 
@@ -444,5 +435,40 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         };
 
         pointer.set_grab(self, grab, serial, Focus::Clear);
+    }
+
+    fn unconstrain_popup(&self, popup: &PopupSurface) {
+        let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
+            return;
+        };
+        let Some(window) = self.window_for_surface(&root) else {
+            return;
+        };
+
+        let mut outputs_for_window = self.space.outputs_for_element(&window);
+        if outputs_for_window.is_empty() {
+            return;
+        }
+
+        // Get a union of all outputs' geometries.
+        let mut outputs_geo = self
+            .space
+            .output_geometry(&outputs_for_window.pop().unwrap())
+            .unwrap();
+        for output in outputs_for_window {
+            outputs_geo = outputs_geo.merge(self.space.output_geometry(&output).unwrap());
+        }
+
+        let window_geo = self.space.element_geometry(&window).unwrap();
+
+        // The target geometry for the positioner should be relative to its parent's geometry, so
+        // we will compute that here.
+        let mut target = outputs_geo;
+        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
+        target.loc -= window_geo.loc;
+
+        popup.with_pending_state(|state| {
+            state.geometry = state.positioner.get_unconstrained_geometry(target);
+        });
     }
 }
