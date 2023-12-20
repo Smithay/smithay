@@ -4,9 +4,7 @@ use crate::{
     wayland::{
         compositor::{get_role, with_states},
         seat::WaylandFocus,
-        shell::xdg::{
-            SurfaceCachedState, XdgPopupSurfaceData, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE,
-        },
+        shell::xdg::{XdgPopupSurfaceData, XdgPopupSurfaceRoleAttributes, XDG_POPUP_ROLE},
     },
 };
 use std::sync::{Arc, Mutex};
@@ -234,7 +232,7 @@ pub fn find_popup_root_surface(popup: &PopupKind) -> Result<WlSurface, DeadResou
     Ok(parent)
 }
 
-/// Computes this popup's location relative to its toplevel wl_surface.
+/// Computes this popup's location relative to its toplevel wl_surface's geometry.
 ///
 /// This function will go up the parent stack and add up the relative locations. Useful for
 /// transitive children popups.
@@ -270,14 +268,6 @@ pub fn get_popup_toplevel_coords(popup: &PopupKind) -> Point<i32, Logical> {
                 .unwrap()
         });
     }
-    offset += with_states(&parent, |states| {
-        states
-            .cached_state
-            .current::<SurfaceCachedState>()
-            .geometry
-            .map(|x| x.loc)
-            .unwrap_or_else(|| (0, 0).into())
-    });
 
     offset
 }
