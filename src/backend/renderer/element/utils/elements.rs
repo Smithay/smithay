@@ -11,9 +11,9 @@ use crate::{
 /// A element that allows to re-scale another element
 #[derive(Debug)]
 pub struct RescaleRenderElement<E> {
-    element: E,
-    origin: Point<i32, Physical>,
-    scale: Scale<f64>,
+    pub element: E,
+    pub origin: Point<i32, Physical>,
+    pub scale: Scale<f64>,
 }
 
 impl<E: Element> RescaleRenderElement<E> {
@@ -113,9 +113,9 @@ impl<R: Renderer, E: RenderElement<R>> RenderElement<R> for RescaleRenderElement
 /// A element that allows to crop another element
 #[derive(Debug)]
 pub struct CropRenderElement<E> {
-    element: E,
-    src: Rectangle<f64, Buffer>,
-    crop_rect: Rectangle<i32, Physical>,
+    pub element: E,
+    pub src: Rectangle<f64, Buffer>,
+    pub crop_rect: Rectangle<i32, Physical>,
 }
 
 impl<E: Element> CropRenderElement<E> {
@@ -304,9 +304,9 @@ pub enum Relocate {
 /// A element that allows to offset the location of an existing element
 #[derive(Debug)]
 pub struct RelocateRenderElement<E> {
-    element: E,
-    relocate: Relocate,
-    location: Point<i32, Physical>,
+    pub element: E,
+    pub relocate: Relocate,
+    pub location: Point<i32, Physical>,
 }
 
 impl<E: Element> RelocateRenderElement<E> {
