@@ -58,7 +58,7 @@
 //! to change the cursor icon.
 
 pub(crate) mod keyboard;
-mod pointer;
+pub(crate) mod pointer;
 mod touch;
 
 use std::{fmt, sync::Arc};
