@@ -2,9 +2,9 @@ use std::sync::atomic::Ordering;
 
 use crate::{
     input::SeatHandler,
-    utils::Serial,
+    utils::{Serial, SERIAL_COUNTER},
     wayland::{
-        compositor,
+        compositor, seat,
         shell::xdg::{SurfaceCachedState, XdgPopupSurfaceData, XdgPositionerUserData},
     },
 };
@@ -35,6 +35,18 @@ where
             xdg_popup::Request::Destroy => {
                 if let Some(surface_data) = data.xdg_surface.data::<XdgSurfaceUserData>() {
                     surface_data.has_active_role.store(false, Ordering::Release);
+
+                    // If a pointer has focus (entered the popup's surface), protocol states that a
+                    // leave event must be generated before the next enter.
+                    let seat_state = state.seat_state();
+                    for seat in &seat_state.seats {
+                        seat::pointer::for_each_focused_pointers(seat, &surface_data.wl_surface, |ptr| {
+                            ptr.leave(SERIAL_COUNTER.next_serial().into(), &surface_data.wl_surface);
+                            if ptr.version() >= 5 {
+                                ptr.frame()
+                            }
+                        });
+                    }
                 }
             }
             xdg_popup::Request::Grab { seat, serial } => {
