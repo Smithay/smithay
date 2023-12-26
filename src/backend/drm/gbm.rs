@@ -26,7 +26,7 @@ use crate::backend::{
 };
 use crate::utils::DevPath;
 
-use super::{error::AccessError, Framebuffer};
+use super::{error::AccessError, warn_legacy_fb_export, Framebuffer};
 
 /// A GBM backed framebuffer
 #[derive(Debug)]
@@ -315,6 +315,8 @@ where
     let (fb, format) = match ret {
         Ok(fb) => fb,
         Err(source) => {
+            warn_legacy_fb_export();
+
             // We only support this as a fallback of last resort like xf86-video-modesetting does.
             if bo.plane_count().unwrap() > 1 {
                 return Err(AccessError {
