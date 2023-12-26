@@ -21,7 +21,7 @@ use crate::{
     utils::{Buffer as BufferCoords, Size},
 };
 
-use super::{error::AccessError, Framebuffer};
+use super::{error::AccessError, warn_legacy_fb_export, Framebuffer};
 
 /// A GBM backed framebuffer
 #[derive(Debug)]
@@ -157,6 +157,8 @@ pub fn framebuffer_from_dumb_buffer(
     let (fb, format) = match ret {
         Ok(fb) => fb,
         Err(source) => {
+            warn_legacy_fb_export();
+
             let fourcc = format.code;
             let (depth, bpp) = get_depth(fourcc)
                 .and_then(|d| get_bpp(fourcc).map(|b| (d, b)))

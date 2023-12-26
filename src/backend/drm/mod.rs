@@ -83,6 +83,7 @@ pub mod node;
 mod surface;
 
 use std::collections::HashSet;
+use std::sync::Once;
 
 use crate::utils::DevPath;
 pub use device::{
@@ -104,6 +105,13 @@ use drm::{
 use tracing::trace;
 
 use self::error::AccessError;
+
+fn warn_legacy_fb_export() {
+    static WARN_LEGACY_FB_EXPORT: Once = Once::new();
+    WARN_LEGACY_FB_EXPORT.call_once(|| {
+        tracing::warn!("using legacy fbadd");
+    });
+}
 
 /// Common framebuffer operations
 pub trait Framebuffer: AsRef<framebuffer::Handle> {
