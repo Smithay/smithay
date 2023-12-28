@@ -77,7 +77,7 @@ use smithay::{
         },
         shm::{ShmHandler, ShmState},
         socket::ListeningSocketSource,
-        tablet_manager::TabletSeatTrait,
+        tablet_manager::{TabletManagerState, TabletSeatTrait},
         text_input::TextInputManagerState,
         viewporter::ViewporterState,
         virtual_keyboard::VirtualKeyboardManagerState,
@@ -575,6 +575,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         if BackendData::HAS_GESTURES {
             PointerGesturesState::new::<Self>(&dh);
         }
+        TabletManagerState::new::<Self>(&dh);
         SecurityContextState::new::<Self, _>(&dh, |client| {
             client
                 .get_data::<ClientState>()
