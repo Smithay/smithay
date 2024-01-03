@@ -26,11 +26,11 @@
 //! # extern crate wayland_server;
 //! #
 //! use smithay::delegate_xdg_shell;
-//! use smithay::reexports::wayland_server::protocol::wl_seat;
+//! use smithay::reexports::wayland_server::protocol::{wl_seat, wl_surface};
 //! use smithay::wayland::shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState};
 //! use smithay::utils::Serial;
 //!
-//! # struct State { xdg_shell_state: XdgShellState }
+//! # struct State { xdg_shell_state: XdgShellState, seat_state: SeatState<Self> }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! let xdg_shell_state = XdgShellState::new::<State>(
 //!     &display.handle(),
@@ -72,6 +72,25 @@
 //!         token: u32,
 //!     ) {
 //!         // ...
+//!     }
+//! }
+//!
+//! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//!
+//! type Target = wl_surface::WlSurface;
+//! impl SeatHandler for State {
+//!     type KeyboardFocus = Target;
+//!     type PointerFocus = Target;
+//!
+//!     fn seat_state(&mut self) -> &mut SeatState<Self> {
+//!         &mut self.seat_state
+//!     }
+//!
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) {
+//!         // handle focus changes, if you need to ...
+//!     }
+//!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {
+//!         // handle new images for the cursor ...
 //!     }
 //! }
 //! delegate_xdg_shell!(State);
