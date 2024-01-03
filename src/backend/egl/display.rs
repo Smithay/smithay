@@ -611,6 +611,7 @@ impl EGLDisplay {
         let mut dma = Dmabuf::builder(
             size,
             Fourcc::try_from(format as u32).expect("Unknown format"),
+            Modifier::from(modifier),
             if y_inverted {
                 DmabufFlags::Y_INVERT
             } else {
@@ -625,7 +626,6 @@ impl EGLDisplay {
                 i as u32,
                 offsets[i as usize] as u32,
                 strides[i as usize] as u32,
-                Modifier::from(modifier),
             );
         }
         dma.build().ok_or(Error::DmabufExportFailed(EGLError::BadAlloc))
