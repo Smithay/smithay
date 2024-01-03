@@ -1,6 +1,7 @@
 use std::sync::atomic::Ordering;
 
 use crate::{
+    input::SeatHandler,
     utils::Serial,
     wayland::{
         compositor,
@@ -18,6 +19,7 @@ impl<D> Dispatch<XdgPopup, XdgShellSurfaceUserData, D> for XdgShellState
 where
     D: Dispatch<XdgPopup, XdgShellSurfaceUserData>,
     D: XdgShellHandler,
+    D: SeatHandler,
     D: 'static,
 {
     fn request(

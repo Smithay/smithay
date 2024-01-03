@@ -12,11 +12,11 @@
 //! use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellHandler};
 //! # use smithay::utils::Serial;
 //! # use smithay::wayland::shell::xdg::{XdgShellState, PopupSurface, PositionerState};
-//! # use smithay::reexports::wayland_server::protocol::wl_seat;
+//! # use smithay::reexports::wayland_server::protocol::{wl_seat, wl_surface};
 //! use smithay::wayland::shell::xdg::decoration::{XdgDecorationState, XdgDecorationHandler};
 //! use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
 //!
-//! # struct State { decoration_state: XdgDecorationState }
+//! # struct State { decoration_state: XdgDecorationState, seat_state: SeatState<Self> }
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //!
 //! // Create a decoration state
@@ -60,6 +60,25 @@
 //!     }
 //!     fn request_mode(&mut self, toplevel: ToplevelSurface, mode: Mode) { /* ... */ }
 //!     fn unset_mode(&mut self, toplevel: ToplevelSurface) { /* ... */ }
+//! }
+//!
+//! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+//!
+//! type Target = wl_surface::WlSurface;
+//! impl SeatHandler for State {
+//!     type KeyboardFocus = Target;
+//!     type PointerFocus = Target;
+//!
+//!     fn seat_state(&mut self) -> &mut SeatState<Self> {
+//!         &mut self.seat_state
+//!     }
+//!
+//!     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) {
+//!         // handle focus changes, if you need to ...
+//!     }
+//!     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {
+//!         // handle new images for the cursor ...
+//!     }
 //! }
 //! delegate_xdg_shell!(State);
 //! delegate_xdg_decoration!(State);
