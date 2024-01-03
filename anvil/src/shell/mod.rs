@@ -51,9 +51,6 @@ mod xdg;
 
 pub use self::element::*;
 pub use self::grabs::*;
-#[cfg(feature = "xwayland")]
-pub use self::x11::*;
-pub use self::xdg::*;
 
 fn fullscreen_output_geometry(
     wl_surface: &WlSurface,
