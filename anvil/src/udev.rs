@@ -2,7 +2,6 @@
 use std::ffi::OsString;
 use std::{
     collections::{hash_map::HashMap, HashSet},
-    convert::TryInto,
     io,
     path::Path,
     sync::{atomic::Ordering, Mutex},
@@ -1404,7 +1403,7 @@ impl AnvilState<UdevData> {
         let frame = self
             .backend_data
             .pointer_image
-            .get_image(1 /*scale*/, self.clock.now().try_into().unwrap());
+            .get_image(1 /*scale*/, self.clock.now().into());
 
         let render_node = surface.render_node;
         let primary_gpu = self.backend_data.primary_gpu;
