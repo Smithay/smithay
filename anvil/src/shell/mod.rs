@@ -64,11 +64,11 @@ fn fullscreen_output_geometry(
         .or_else(|| {
             let w = space
                 .elements()
-                .find(|window| window.wl_surface().map(|s| s == *wl_surface).unwrap_or(false))
-                .cloned();
-            w.and_then(|w| space.outputs_for_element(&w).get(0).cloned())
+                .find(|window| window.wl_surface().map(|s| s == *wl_surface).unwrap_or(false));
+            w.and_then(|w| space.outputs_for_element(w).first().cloned())
         })
-        .and_then(|o| space.output_geometry(&o))
+        .as_ref()
+        .and_then(|o| space.output_geometry(o))
 }
 
 #[derive(Default)]
