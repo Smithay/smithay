@@ -34,6 +34,8 @@ pub(crate) struct DmabufInternal {
     pub size: Size<i32, BufferCoords>,
     /// The format in use
     pub format: Fourcc,
+    /// Format modifier
+    pub modifier: Modifier,
     /// The flags applied to it
     ///
     /// This is a bitflag, to be compared with the `Flags` enum re-exported by this module.
@@ -49,8 +51,6 @@ pub(crate) struct Plane {
     pub offset: u32,
     /// Stride for this plane
     pub stride: u32,
-    /// Modifier for this plane
-    pub modifier: Modifier,
 }
 
 impl From<Plane> for OwnedFd {
@@ -126,7 +126,7 @@ impl Buffer for Dmabuf {
     fn format(&self) -> Format {
         Format {
             code: self.0.format,
-            modifier: self.0.planes[0].modifier,
+            modifier: self.0.modifier,
         }
     }
 }
@@ -142,7 +142,7 @@ impl DmabufBuilder {
     ///
     /// *Note*: Each Dmabuf needs at least one plane.
     /// MAX_PLANES notes the maximum amount of planes any format may use with this implementation.
-    pub fn add_plane(&mut self, fd: OwnedFd, idx: u32, offset: u32, stride: u32, modifier: Modifier) -> bool {
+    pub fn add_plane(&mut self, fd: OwnedFd, idx: u32, offset: u32, stride: u32) -> bool {
         if self.internal.planes.len() == MAX_PLANES {
             return false;
         }
@@ -151,7 +151,6 @@ impl DmabufBuilder {
             plane_idx: idx,
             offset,
             stride,
-            modifier,
         });
 
         true
@@ -177,20 +176,14 @@ impl Dmabuf {
     // The contents are determined by the provided file descriptors, which
     // do not need to refer to the same buffer `src` does.
     pub fn builder_from_buffer(src: &impl Buffer, flags: DmabufFlags) -> DmabufBuilder {
-        DmabufBuilder {
-            internal: DmabufInternal {
-                planes: Vec::with_capacity(MAX_PLANES),
-                size: src.size(),
-                format: src.format().code,
-                flags,
-            },
-        }
+        Self::builder(src.size(), src.format().code, src.format().modifier, flags)
     }
 
     /// Create a new Dmabuf builder
     pub fn builder(
         size: impl Into<Size<i32, BufferCoords>>,
         format: Fourcc,
+        modifier: Modifier,
         flags: DmabufFlags,
     ) -> DmabufBuilder {
         DmabufBuilder {
@@ -198,6 +191,7 @@ impl Dmabuf {
                 planes: Vec::with_capacity(MAX_PLANES),
                 size: size.into(),
                 format,
+                modifier,
                 flags,
             },
         }
@@ -225,7 +219,7 @@ impl Dmabuf {
 
     /// Returns if this buffer format has any vendor-specific modifiers set or is implicit/linear
     pub fn has_modifier(&self) -> bool {
-        self.0.planes[0].modifier != Modifier::Invalid && self.0.planes[0].modifier != Modifier::Linear
+        self.0.modifier != Modifier::Invalid && self.0.modifier != Modifier::Linear
     }
 
     /// Returns if the buffer is stored inverted on the y-axis

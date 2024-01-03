@@ -67,6 +67,7 @@ where
                         id: data.id,
                         used: AtomicBool::new(false),
                         formats: data.formats.clone(),
+                        modifier: Mutex::new(None),
                         planes: Mutex::new(Vec::with_capacity(MAX_PLANES)),
                     },
                 );
@@ -264,14 +265,28 @@ where
                     return;
                 }
 
-                let modifier = ((modifier_hi as u64) << 32) + (modifier_lo as u64);
                 planes.push(Plane {
                     fd,
                     plane_idx,
                     offset,
                     stride,
-                    modifier: Modifier::from(modifier),
                 });
+
+                let modifier = Modifier::from(((modifier_hi as u64) << 32) + (modifier_lo as u64));
+                let mut data_modifier = data.modifier.lock().unwrap();
+                if let Some(data_modifier) = *data_modifier {
+                    if params.version() >= 5 && modifier != data_modifier {
+                        params.post_error(
+                            zwp_linux_buffer_params_v1::Error::InvalidFormat,
+                            format!(
+                                "Planes have non-matching modifiers: {:?} != {:?}",
+                                modifier, data_modifier
+                            ),
+                        );
+                    }
+                } else {
+                    *data_modifier = Some(modifier);
+                }
             }
 
             zwp_linux_buffer_params_v1::Request::Create {

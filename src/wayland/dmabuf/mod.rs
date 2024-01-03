@@ -710,7 +710,8 @@ impl DmabufState {
 
         let formats = Arc::new(formats);
         let version = if default_feedback.is_some() {
-            zwp_linux_dmabuf_v1::REQ_GET_DEFAULT_FEEDBACK_SINCE
+            // TODO: Update to 5 when wayland-protocols is updated
+            4
         } else {
             3
         };
@@ -830,6 +831,7 @@ pub struct DmabufParamsData {
     formats: Arc<HashMap<Fourcc, HashSet<Modifier>>>,
 
     /// Pending planes for the params.
+    modifier: Mutex<Option<Modifier>>,
     planes: Mutex<Vec<Plane>>,
 }
 
@@ -1187,17 +1189,18 @@ impl DmabufParamsData {
             }
         }
 
+        let modifier = self.modifier.lock().unwrap().unwrap_or(Modifier::Invalid);
         let mut buf = Dmabuf::builder(
             (width, height),
             format,
+            modifier,
             DmabufFlags::from_bits_truncate(flags.into()),
         );
 
         for (i, plane) in planes.drain(..).enumerate() {
             let offset = plane.offset;
             let stride = plane.stride;
-            let modi = plane.modifier;
-            buf.add_plane(plane.into(), i as u32, offset, stride, modi);
+            buf.add_plane(plane.into(), i as u32, offset, stride);
         }
 
         let dmabuf = match buf.build() {
