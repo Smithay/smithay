@@ -2668,7 +2668,7 @@ where
                 output_transform,
                 output_geometry,
             ) {
-                Ok(Ok(plane)) => {
+                Ok(plane) => {
                     trace!(
                         "assigned element {:?} to primary {:?}",
                         element.id(),
@@ -2676,8 +2676,7 @@ where
                     );
                     return Ok(plane);
                 }
-                Ok(Err(err)) => rendering_reason = rendering_reason.or(err),
-                Err(_) => {}
+                Err(err) => rendering_reason = rendering_reason.or(err),
             };
         }
 
@@ -2713,7 +2712,7 @@ where
             output_damage,
             output_transform,
             output_geometry,
-        )? {
+        ) {
             Ok(plane) => {
                 trace!("assigned element {:?} to overlay plane", element.id());
                 return Ok(plane);
@@ -2742,7 +2741,7 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-    ) -> Result<Result<PlaneAssignment, Option<RenderingReason>>, ExportBufferError>
+    ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer,
         E: RenderElement<R>,
@@ -2772,11 +2771,11 @@ where
                 element.id(),
                 self.planes.primary.handle
             );
-            return Ok(Err(None));
+            return Err(None);
         }
 
         if element_config.failed_planes.primary {
-            return Ok(Err(Some(RenderingReason::ScanoutFailed)));
+            return Err(Some(RenderingReason::ScanoutFailed));
         }
 
         let res = self.try_assign_plane(
@@ -2788,7 +2787,7 @@ where
             output_damage,
         );
 
-        if let Ok(Err(Some(RenderingReason::ScanoutFailed))) = res {
+        if let Err(Some(RenderingReason::ScanoutFailed)) = res {
             element_config.failed_planes.primary = true;
         }
 
@@ -3393,7 +3392,7 @@ where
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
-    ) -> Result<Result<PlaneAssignment, Option<RenderingReason>>, ExportBufferError>
+    ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer,
         E: RenderElement<R>,
@@ -3412,7 +3411,7 @@ where
                 "skipping overlay planes for element {:?}, no free planes",
                 element_id
             );
-            return Ok(Err(None));
+            return Err(None);
         }
 
         let element_config = self.element_config(
@@ -3483,7 +3482,7 @@ where
                     plane.zpos,
                     element_id,
                 );
-                return Ok(Err(None));
+                return Err(None);
             }
 
             // test if the plane represents an underlay
@@ -3496,7 +3495,7 @@ where
                     plane.zpos,
                     element_id
                 );
-                return Ok(Err(None));
+                return Err(None);
             }
 
             // if the element overlaps with an element on
@@ -3506,7 +3505,7 @@ where
                 trace!(
                     "skipping direct scan-out on {:?} with zpos {:?}, element {:?} overlaps with element on primary plane", plane.handle, plane.zpos, element_id,
                 );
-                return Ok(Err(None));
+                return Err(None);
             }
 
             let overlaps_with_plane_underneath = self
@@ -3528,7 +3527,7 @@ where
                 trace!(
                     "skipping direct scan-out on {:?} with zpos {:?}, element {:?} geometry {:?} overlaps with plane underneath", plane.handle, plane.zpos, element_id, element_config.geometry,
                 );
-                return Ok(Err(None));
+                return Err(None);
             }
 
             self.try_assign_plane(element, element_config, plane, scale, frame_state, output_damage)
@@ -3537,7 +3536,7 @@ where
         // First try to assign the element to a compatible plane, this can save us
         // from some atomic testing
         for plane in self.planes.overlay.iter().filter(is_plane_compatible) {
-            if let Ok(plane_assignment) = test_overlay_plane(plane, &element_config)? {
+            if let Ok(plane_assignment) = test_overlay_plane(plane, &element_config) {
                 trace!(
                     "assigned element {:?} geometry {:?} to compatible {:?} with zpos {:?}",
                     element_id,
@@ -3545,7 +3544,7 @@ where
                     plane.handle,
                     plane.zpos,
                 );
-                return Ok(Ok(plane_assignment));
+                return Ok(plane_assignment);
             }
         }
 
@@ -3561,8 +3560,8 @@ where
                 continue;
             }
 
-            match test_overlay_plane(plane, &element_config)? {
-                Ok(plane) => return Ok(Ok(plane)),
+            match test_overlay_plane(plane, &element_config) {
+                Ok(plane) => return Ok(plane),
                 Err(err) => {
                     // if the test failed save that in the tested element state
                     if let Some(RenderingReason::ScanoutFailed) = err {
@@ -3574,7 +3573,7 @@ where
             }
         }
 
-        Ok(Err(rendering_reason))
+        Err(rendering_reason)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3594,7 +3593,7 @@ where
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
         output_damage: &mut Vec<Rectangle<i32, Physical>>,
-    ) -> Result<Result<PlaneAssignment, Option<RenderingReason>>, ExportBufferError>
+    ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer,
         E: RenderElement<R>,
@@ -3605,7 +3604,7 @@ where
             Some(claim) => claim,
             None => {
                 trace!("failed to claim {:?} for element {:?}", plane.handle, element_id);
-                return Ok(Err(None));
+                return Err(None);
             }
         };
 
@@ -3620,7 +3619,7 @@ where
                 element_id,
                 element_config.properties.format,
             );
-            return Ok(Err(Some(RenderingReason::FormatUnsupported)));
+            return Err(Some(RenderingReason::FormatUnsupported));
         }
 
         let previous_state = self
@@ -3739,7 +3738,7 @@ where
                 plane.zpos,
             );
 
-            Ok(Ok(plane.into()))
+            Ok(plane.into())
         } else {
             trace!(
                 "skipping direct scan-out on {:?} with zpos {:?} for element {:?}, test failed",
@@ -3748,7 +3747,7 @@ where
                 element_id
             );
 
-            Ok(Err(Some(RenderingReason::ScanoutFailed)))
+            Err(Some(RenderingReason::ScanoutFailed))
         }
     }
 }
