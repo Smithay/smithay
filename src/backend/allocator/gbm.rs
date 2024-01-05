@@ -203,7 +203,6 @@ impl<T> AsDmabuf for GbmBuffer<T> {
                 idx as u32,
                 self.offset(idx)?,
                 self.stride_for_plane(idx)?,
-                self.modifier()?,
             );
         }
         Ok(builder.build().unwrap())
