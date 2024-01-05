@@ -3093,7 +3093,7 @@ where
                         &cursor_texture,
                         src,
                         dst,
-                        &[Rectangle::from_loc_and_size((0,0), dst.size)],
+                        &[Rectangle::from_loc_and_size((0, 0), dst.size)],
                         element.transform(),
                         element.alpha(),
                     )?;
