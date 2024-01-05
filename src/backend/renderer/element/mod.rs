@@ -102,7 +102,16 @@ pub enum UnderlyingStorage {
     #[cfg(feature = "wayland_frontend")]
     Wayland(Buffer),
     /// A memory backed buffer
-    Memory((*const u8, DrmFourcc, usize, usize)),
+    Memory {
+        /// Data of the underylying buffer
+        data: *const u8,
+        /// Format for the buffer
+        format: DrmFourcc,
+        /// Width of the buffer
+        width: usize,
+        /// Height of the buffer
+        height: usize,
+    },
 }
 
 /// Defines the (optional) reason why a [`Element`] was selected for

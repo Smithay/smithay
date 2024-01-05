@@ -697,11 +697,11 @@ where
 
     fn underlying_storage(&self, _renderer: &mut R) -> Option<UnderlyingStorage> {
         let buf = self.buffer.inner.borrow();
-        Some(UnderlyingStorage::Memory((
-            buf.mem.as_ptr(),
-            buf.format,
-            buf.size.w as usize,
-            buf.size.h as usize,
-        )))
+        Some(UnderlyingStorage::Memory {
+            data: buf.mem.as_ptr(),
+            format: buf.format,
+            width: buf.size.w as usize,
+            height: buf.size.h as usize,
+        })
     }
 }
