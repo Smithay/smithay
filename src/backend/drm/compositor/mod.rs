@@ -3093,7 +3093,7 @@ where
                         &cursor_texture,
                         src,
                         dst,
-                        element.damage_since(scale, None).as_slice(),
+                        &[Rectangle::from_loc_and_size((0,0), dst.size)],
                         element.transform(),
                         element.alpha(),
                     )?;
