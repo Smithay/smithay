@@ -3032,24 +3032,24 @@ where
             } => {
                 let stride =
                     width * (format::get_bpp(format).expect("Format with unknown bits per pixel") / 8);
-                let size = stride * height;
-
                 let Ok(pixman_format) = pixman::FormatCode::try_from(format) else {
                     debug!("No pixman format for {format}");
                     return None;
                 };
-                match pixman::Image::from_slice_mut(
-                    pixman_format,
-                    width,
-                    height,
-                    unsafe { slice::from_raw_parts_mut(data as *mut u32, size / 4) },
-                    stride,
-                    false,
-                ) {
-                    Ok(image) => Some(PixmanTexture::from(image)),
-                    Err(e) => {
-                        debug!("pixman cursor: {e}");
-                        None
+                unsafe {
+                    match pixman::Image::from_raw_mut(
+                        pixman_format,
+                        width,
+                        height,
+                        data as *mut u32,
+                        stride,
+                        false,
+                    ) {
+                        Ok(image) => Some(PixmanTexture::from(image)),
+                        Err(e) => {
+                            debug!("pixman cursor: {e}");
+                            None
+                        }
                     }
                 }
             }
@@ -3067,24 +3067,21 @@ where
                 cursor_buffer_size.h as u32,
                 |mbo| {
                     let plane_pixman_format = pixman::FormatCode::try_from(DrmFourcc::Argb8888).unwrap();
-                    let cursor_dst = pixman::Image::from_slice_mut(
-                        plane_pixman_format,
-                        mbo.width() as usize,
-                        mbo.height() as usize,
-                        unsafe {
-                            slice::from_raw_parts_mut(
-                                mbo.buffer_mut().as_mut_ptr() as *mut u32,
-                                mbo.buffer().len() / 4,
-                            )
-                        },
-                        mbo.stride() as usize,
-                        false,
-                    )
-                    .map_err(|_| PixmanError::ImportFailed)?;
+                    unsafe {
+                        let cursor_dst = pixman::Image::from_raw_mut(
+                            plane_pixman_format,
+                            mbo.width() as usize,
+                            mbo.height() as usize,
+                            mbo.buffer_mut().as_mut_ptr() as *mut u32,
+                            mbo.stride() as usize,
+                            false,
+                        )
+                        .map_err(|_| PixmanError::ImportFailed)?;
+                        cursor_state
+                            .pixman_renderer
+                            .bind(PixmanRenderBuffer::from(cursor_dst))?;
+                    };
 
-                    cursor_state
-                        .pixman_renderer
-                        .bind(PixmanRenderBuffer::from(cursor_dst))?;
                     let mut frame = cursor_state
                         .pixman_renderer
                         .render(self.cursor_size, output_transform)?;
