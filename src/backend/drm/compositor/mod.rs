@@ -2834,7 +2834,30 @@ where
 
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "trace", skip_all)]
+    #[cfg(not(feature = "pixman_renderer"))]
+    fn try_assign_cursor_plane<R, E>(
+        &mut self,
+        _renderer: &mut R,
+        _element: &E,
+        _element_zindex: usize,
+        _element_geometry: Rectangle<i32, Physical>,
+        _scale: Scale<f64>,
+        _frame_state: &mut Frame<A, F>,
+        _output_damage: &mut Vec<Rectangle<i32, Physical>>,
+        _output_transform: Transform,
+        _output_geometry: Rectangle<i32, Physical>,
+    ) -> Option<PlaneAssignment>
+    where
+        R: Renderer,
+        E: RenderElement<R>,
+    {
+        None
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[instrument(level = "trace", skip_all)]
     #[profiling::function]
+    #[cfg(feature = "pixman_renderer")]
     fn try_assign_cursor_plane<R, E>(
         &mut self,
         renderer: &mut R,
