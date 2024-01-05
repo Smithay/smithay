@@ -124,6 +124,7 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     fmt::Debug,
+    io::ErrorKind,
     os::unix::io::{AsFd, OwnedFd},
     rc::Rc,
     sync::{Arc, Mutex},
@@ -2442,9 +2443,37 @@ where
         } else {
             state.page_flip(&self.surface, self.supports_fencing, true)
         };
-        if flip.is_ok() {
-            self.pending_frame = Some((state, user_data));
-        }
+
+        match flip {
+            Ok(_) => {
+                self.pending_frame = Some((state, user_data));
+            }
+            Err(crate::backend::drm::error::Error::Access(ref access))
+                if access.source.kind() == ErrorKind::InvalidInput =>
+            {
+                // In case the commit/flip failed while we tried to directly scan-out
+                // something on the primary plane we can try to mark this as failed for
+                // the next call to render_frame
+                let primary_plane_element_state = state
+                    .plane_state(self.planes.primary.handle)
+                    .and_then(|plane_state| {
+                        plane_state
+                            .element_state
+                            .as_ref()
+                            .map(|element_state| &element_state.id)
+                    })
+                    .and_then(|primary_plane_element_id| {
+                        self.element_states.get_mut(primary_plane_element_id)
+                    });
+
+                if let Some(primary_plane_element_state) = primary_plane_element_state {
+                    for instance in primary_plane_element_state.instances.iter_mut() {
+                        instance.failed_planes.primary = true;
+                    }
+                }
+            }
+            Err(_) => {}
+        };
 
         flip.map_err(FrameError::DrmError)
     }
