@@ -1291,6 +1291,7 @@ struct CursorState<G: AsFd + 'static> {
     framebuffer_exporter: GbmDevice<G>,
     previous_output_transform: Option<Transform>,
     previous_output_scale: Option<Scale<f64>>,
+    pixman_renderer: PixmanRenderer,
 }
 
 #[derive(Debug, thiserror::Error, Copy, Clone)]
@@ -1417,7 +1418,6 @@ where
 
     swapchain: Swapchain<A>,
 
-    pixman_renderer: PixmanRenderer,
     cursor_size: Size<i32, Physical>,
     cursor_state: Option<CursorState<G>>,
 
@@ -1524,6 +1524,7 @@ where
                 *format,
             ) {
                 Ok((swapchain, current_frame, is_opaque)) => {
+                    let pixman_renderer = PixmanRenderer::new().map_err(FrameError::PixmanError)?;
                     let cursor_state = gbm.map(|gbm| {
                         let cursor_allocator = GbmAllocator::new(
                             gbm.clone(),
@@ -1534,10 +1535,9 @@ where
                             framebuffer_exporter: gbm,
                             previous_output_scale: None,
                             previous_output_transform: None,
+                            pixman_renderer,
                         }
                     });
-
-                    let pixman_renderer = PixmanRenderer::new().map_err(FrameError::PixmanError)?;
 
                     let overlay_plane_element_ids = OverlayPlaneElementIds::from_planes(&planes);
 
@@ -1552,7 +1552,6 @@ where
                         next_frame: None,
                         swapchain,
                         framebuffer_exporter,
-                        pixman_renderer,
                         cursor_size,
                         cursor_state,
                         surface,
@@ -3019,13 +3018,18 @@ where
         // Create a pixman image from the source cursor data. This will either be set by the
         // client, or the compositor's choice.
         let cursor_texture = match storage {
-            UnderlyingStorage::Wayland(buffer) => self
+            UnderlyingStorage::Wayland(buffer) => cursor_state
                 .pixman_renderer
                 .import_buffer(buffer.deref(), None, &[])
                 .transpose()
                 .ok()
                 .flatten(),
-            UnderlyingStorage::Memory((data, format, width, height)) => {
+            UnderlyingStorage::Memory {
+                data,
+                format,
+                width,
+                height,
+            } => {
                 let stride =
                     width * (format::get_bpp(format).expect("Format with unknown bits per pixel") / 8);
                 let size = stride * height;
@@ -3078,8 +3082,12 @@ where
                     )
                     .map_err(|_| PixmanError::ImportFailed)?;
 
-                    self.pixman_renderer.bind(PixmanRenderBuffer::from(cursor_dst))?;
-                    let mut frame = self.pixman_renderer.render(self.cursor_size, output_transform)?;
+                    cursor_state
+                        .pixman_renderer
+                        .bind(PixmanRenderBuffer::from(cursor_dst))?;
+                    let mut frame = cursor_state
+                        .pixman_renderer
+                        .render(self.cursor_size, output_transform)?;
                     frame.clear(
                         [0f32, 0f32, 0f32, 0f32],
                         &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
@@ -3098,7 +3106,7 @@ where
             )
             .expect("Lost track of cursor device");
 
-        _ = self.pixman_renderer.unbind();
+        _ = cursor_state.pixman_renderer.unbind();
 
         match ret {
             Err(err) => {
