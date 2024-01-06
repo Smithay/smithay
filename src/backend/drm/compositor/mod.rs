@@ -165,6 +165,7 @@ use crate::{
     },
     output::{OutputModeSource, OutputNoMode},
     utils::{Buffer as BufferCoords, DevPath, Physical, Point, Rectangle, Scale, Size, Transform},
+    wayland::shm,
 };
 
 use super::{error::AccessError, DrmDeviceFd, DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes};
@@ -3000,26 +3001,6 @@ where
             }
         };
 
-        let cursor_buffer_size = self.cursor_size.to_logical(1).to_buffer(1, Transform::Normal);
-        let offscreen_buffer = match renderer.create_buffer(DrmFourcc::Argb8888, cursor_buffer_size) {
-            Ok(buffer) => buffer,
-            Err(err) => {
-                debug!(
-                    "failed to create offscreen buffer for cursor {:?}: {}",
-                    plane_info.handle, err
-                );
-                return None;
-            }
-        };
-
-        if let Err(err) = renderer.bind(offscreen_buffer) {
-            debug!(
-                "failed to bind cursor buffer for cursor {:?}: {}",
-                plane_info.handle, err
-            );
-            return None;
-        };
-
         // Try to claim the plane, if this fails we can not use it
         let plane_claim = match self.surface.claim_plane(plane_info.handle) {
             Some(claim) => claim,
@@ -3029,62 +3010,96 @@ where
             }
         };
 
-        // save the renderer debug flags and disable all for the cursor plane
-        let renderer_debug_flags = renderer.debug_flags();
-        renderer.set_debug_flags(DebugFlags::empty());
+        let cursor_buffer_size = self.cursor_size.to_logical(1).to_buffer(1, Transform::Normal);
 
-        let mut render = || {
-            let mut frame = renderer.render(self.cursor_size, output_transform)?;
+        if !copy_element_to_cursor_bo(
+            renderer,
+            element,
+            element_size,
+            self.cursor_size,
+            output_transform,
+            &cursor_state.framebuffer_exporter,
+            &mut cursor_buffer,
+        ) {
+            profiling::scope!("render cursor plane");
+            tracing::trace!("cursor fast-path copy failed, falling back to rendering using offscreen buffer");
 
-            frame.clear(
-                [0f32, 0f32, 0f32, 0f32],
-                &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
-            )?;
+            let offscreen_buffer = match renderer.create_buffer(DrmFourcc::Argb8888, cursor_buffer_size) {
+                Ok(buffer) => buffer,
+                Err(err) => {
+                    debug!(
+                        "failed to create offscreen buffer for cursor {:?}: {}",
+                        plane_info.handle, err
+                    );
+                    return None;
+                }
+            };
 
-            let src = element.src();
-            let dst = Rectangle::from_loc_and_size((0, 0), element_geometry.size);
-            element.draw(&mut frame, src, dst, &[dst])?;
+            if let Err(err) = renderer.bind(offscreen_buffer) {
+                debug!(
+                    "failed to bind cursor buffer for cursor {:?}: {}",
+                    plane_info.handle, err
+                );
+                return None;
+            };
 
-            frame.finish()?.wait();
+            // save the renderer debug flags and disable all for the cursor plane
+            let renderer_debug_flags = renderer.debug_flags();
+            renderer.set_debug_flags(DebugFlags::empty());
 
-            Ok::<(), <R as Renderer>::Error>(())
-        };
+            let mut render = || {
+                let mut frame = renderer.render(self.cursor_size, output_transform)?;
 
-        let render_res = render();
+                frame.clear(
+                    [0f32, 0f32, 0f32, 0f32],
+                    &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
+                )?;
 
-        // restore the renderer debug flags
-        renderer.set_debug_flags(renderer_debug_flags);
+                let src = element.src();
+                let dst = Rectangle::from_loc_and_size((0, 0), element_geometry.size);
+                element.draw(&mut frame, src, dst, &[dst])?;
 
-        if let Err(err) = render_res {
-            debug!("failed to render cursor element: {}", err);
-            return None;
-        }
+                frame.finish()?.wait();
 
-        let copy_rect = Rectangle::from_loc_and_size((0, 0), cursor_buffer_size);
-        let mapping = match renderer.copy_framebuffer(copy_rect, DrmFourcc::Argb8888) {
-            Ok(mapping) => mapping,
-            Err(err) => {
-                info!("failed to export cursor offscreen buffer: {}", err);
+                Ok::<(), <R as Renderer>::Error>(())
+            };
+
+            let render_res = render();
+
+            // restore the renderer debug flags
+            renderer.set_debug_flags(renderer_debug_flags);
+
+            if let Err(err) = render_res {
+                debug!("failed to render cursor element: {}", err);
+                return None;
+            }
+
+            let copy_rect = Rectangle::from_loc_and_size((0, 0), cursor_buffer_size);
+            let mapping = match renderer.copy_framebuffer(copy_rect, DrmFourcc::Argb8888) {
+                Ok(mapping) => mapping,
+                Err(err) => {
+                    info!("failed to export cursor offscreen buffer: {}", err);
+                    return None;
+                }
+            };
+            let data = match renderer.map_texture(&mapping) {
+                Ok(data) => data,
+                Err(err) => {
+                    info!("failed to map exported cursor offscreen buffer: {}", err);
+                    return None;
+                }
+            };
+
+            let Ok(res) = cursor_buffer.write(data) else {
+                info!("failed to write cursor buffer, device destroyed");
+                return None;
+            };
+
+            if let Err(err) = res {
+                info!("failed to write cursor buffer; {}", err);
                 return None;
             }
         };
-        let data = match renderer.map_texture(&mapping) {
-            Ok(data) => data,
-            Err(err) => {
-                info!("failed to map exported cursor offscreen buffer: {}", err);
-                return None;
-            }
-        };
-
-        let Ok(res) = cursor_buffer.write(data) else {
-            info!("failed to write cursor buffer, device destroyed");
-            return None;
-        };
-
-        if let Err(err) = res {
-            info!("failed to write cursor buffer; {}", err);
-            return None;
-        }
 
         let src = Rectangle::from_loc_and_size(Point::default(), cursor_buffer_size).to_f64();
         let dst = Rectangle::from_loc_and_size(cursor_plane_location, self.cursor_size);
@@ -3878,6 +3893,85 @@ fn apply_output_transform(transform: Transform, output_transform: Transform) -> 
         (Transform::Flipped270, Transform::Flipped180) => Transform::_270,
         (Transform::Flipped270, Transform::Flipped270) => Transform::Normal,
     }
+}
+
+#[profiling::function]
+fn copy_element_to_cursor_bo<R, E, T>(
+    renderer: &mut R,
+    element: &E,
+    element_size: Size<i32, Physical>,
+    cursor_size: Size<i32, Physical>,
+    output_transform: Transform,
+    device: &GbmDevice<T>,
+    bo: &mut BufferObject<()>,
+) -> bool
+where
+    R: Renderer,
+    E: RenderElement<R>,
+    T: AsFd + 'static,
+{
+    // Without access to the underlying storage we can not copy anything
+    let Some(underlying_storage) = element.underlying_storage(renderer) else {
+        return false;
+    };
+
+    let element_src = element.src();
+    let element_scale = element_src.size / element_size.to_f64();
+
+    // We only copy if no crop, scale or transform is active
+    if element_src.loc != Point::default()
+        || element_scale != Scale::from(1f64)
+        || element.transform() != Transform::Normal
+        || output_transform != Transform::Normal
+    {
+        return false;
+    }
+
+    // At the moment only wayland buffers are supported
+    let UnderlyingStorage::Wayland(buffer) = underlying_storage;
+
+    let Ok(bo_format) = bo.format() else {
+        return false;
+    };
+    let Ok(bo_stride) = bo.stride() else {
+        return false;
+    };
+
+    // Only shm buffers are supported for copy
+    shm::with_buffer_contents(&buffer, |ptr, len, data| {
+        let Some(format) = shm::shm_format_to_fourcc(data.format) else {
+            return false;
+        };
+
+        if format != bo_format {
+            return false;
+        };
+
+        let expected_len = (data.stride * data.height) as usize;
+        if data.offset as usize + expected_len > len {
+            return false;
+        };
+
+        let src = unsafe { std::slice::from_raw_parts(ptr.offset(data.offset as isize), expected_len) };
+        if data.stride == bo_stride as i32 {
+            matches!(bo.write(src), Ok(Ok(_)))
+        } else {
+            let res = bo.map_mut(device, 0, 0, cursor_size.w as u32, cursor_size.h as u32, |mbo| {
+                let dst = mbo.buffer_mut();
+                for row in 0..data.height {
+                    let src_row_start = (row * data.stride) as usize;
+                    let src_row_end = src_row_start + data.stride as usize;
+                    let src_row = &src[src_row_start..src_row_end];
+                    let dst_row_start = (row * bo_stride as i32) as usize;
+                    let dst_row_end = dst_row_start + data.stride as usize;
+                    let dst_row = &mut dst[dst_row_start..dst_row_end];
+                    dst_row.copy_from_slice(src_row);
+                }
+            });
+            matches!(res, Ok(Ok(_)))
+        }
+    })
+    .unwrap_or(false)
 }
 
 struct OwnedFramebuffer<B: Framebuffer>(Arc<B>);
