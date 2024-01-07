@@ -76,7 +76,7 @@ impl<D: SeatHandler> PointerHandle<D> {
 /// WlSurface role of a cursor image icon
 pub const CURSOR_IMAGE_ROLE: &str = "cursor_image";
 
-pub fn for_each_focused_pointers<D: SeatHandler + 'static>(
+fn for_each_focused_pointers<D: SeatHandler + 'static>(
     seat: &Seat<D>,
     surface: &WlSurface,
     mut f: impl FnMut(WlPointer),
