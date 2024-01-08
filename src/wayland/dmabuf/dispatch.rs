@@ -74,6 +74,7 @@ where
                         formats: data.formats.clone(),
                         modifier: Mutex::new(None),
                         planes: Mutex::new(Vec::with_capacity(MAX_PLANES)),
+                        target_device: Mutex::new(None),
                     },
                 );
             }
@@ -345,6 +346,13 @@ where
                             "dmabuf global was destroyed on server",
                         );
                     }
+                }
+            }
+
+            zwp_linux_buffer_params_v1::Request::SetTargetDevice { device } => {
+                if let Ok(bytes) = device.try_into() {
+                    let dev = libc::dev_t::from_ne_bytes(bytes);
+                    *data.target_device.lock().unwrap() = Some(dev);
                 }
             }
 
