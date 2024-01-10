@@ -862,16 +862,7 @@ fn get_dmabuf_formats(
             }
         };
 
-        if num == 0 {
-            texture_formats.insert(DrmFormat {
-                code: fourcc,
-                modifier: Modifier::Invalid,
-            });
-            render_formats.insert(DrmFormat {
-                code: fourcc,
-                modifier: Modifier::Invalid,
-            });
-        } else {
+        if num != 0 {
             let mut mods: Vec<u64> = Vec::with_capacity(num as usize);
             let mut external: Vec<ffi::egl::types::EGLBoolean> = Vec::with_capacity(num as usize);
 
@@ -902,6 +893,15 @@ fn get_dmabuf_formats(
                 }
             }
         }
+
+        texture_formats.insert(DrmFormat {
+            code: fourcc,
+            modifier: Modifier::Invalid,
+        });
+        render_formats.insert(DrmFormat {
+            code: fourcc,
+            modifier: Modifier::Invalid,
+        });
     }
 
     trace!("Supported dmabuf import formats: {:?}", texture_formats);
