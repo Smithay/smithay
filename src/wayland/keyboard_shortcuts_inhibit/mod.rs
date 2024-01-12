@@ -236,20 +236,40 @@ pub trait KeyboardShortcutsInhibitHandler {
 }
 
 /// Macro to delegate implementation of the keyboard shortcuts inhibit protocol
+/// Delegate handling of `WpKeyboardShortcutsInhibitManager`, `WpKeyboardShortcutsInhibitorV1` requests to Smithay.
 ///
 /// You must also implement [`KeyboardShortcutsInhibitHandler`] to use this.
+/// ```ignore
+/// struct State {}
+///
+/// // impl needed required traits here
+///
+/// smithay::delegate_keyboard_shortcuts_inhibit!(State);
+/// ```
 #[macro_export]
-macro_rules! delegate_keyboard_shortcuts_inhibit {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1: ()
-        ] => $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1: ()
-        ] => $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibitor_v1::ZwpKeyboardShortcutsInhibitorV1: $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorUserData
-        ] => $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState);
+macro_rules! delegate_keyboard_shortcuts_inhibit   {
+    ($($params:tt)*) => {
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState,
+                globals: [
+                    Global {
+                        interface: $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibitor_v1::ZwpKeyboardShortcutsInhibitorV1,
+                        data: $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorUserData,
+                    },
+                ],
+            },
+        );
     };
 }

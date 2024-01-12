@@ -1997,28 +1997,47 @@ impl From<PopupConfigure> for Configure {
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the xdg shell protocol
+///
+/// You must also implement [`XdgShellHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_xdg_shell {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase: ()
-        ] => $crate::wayland::shell::xdg::XdgShellState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::xdg::shell::server as __xdg_shell;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase: $crate::wayland::shell::xdg::XdgWmBaseUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::XdgPositioner: $crate::wayland::shell::xdg::XdgPositionerUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_popup::XdgPopup: $crate::wayland::shell::xdg::XdgShellSurfaceUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_surface::XdgSurface: $crate::wayland::shell::xdg::XdgSurfaceUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel: $crate::wayland::shell::xdg::XdgShellSurfaceUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::shell::xdg::XdgShellState,
+                globals: [
+                    Global {
+                        interface: __xdg_shell::xdg_wm_base::XdgWmBase,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __xdg_shell::xdg_wm_base::XdgWmBase,
+                        data: $crate::wayland::shell::xdg::XdgWmBaseUserData,
+                    },
+                    Resource {
+                        interface: __xdg_shell::xdg_positioner::XdgPositioner,
+                        data: $crate::wayland::shell::xdg::XdgPositionerUserData,
+                    },
+                    Resource {
+                        interface: __xdg_shell::xdg_popup::XdgPopup,
+                        data: $crate::wayland::shell::xdg::XdgShellSurfaceUserData,
+                    },
+                    Resource {
+                        interface: __xdg_shell::xdg_surface::XdgSurface,
+                        data: $crate::wayland::shell::xdg::XdgSurfaceUserData,
+                    },
+                    Resource {
+                        interface: __xdg_shell::xdg_toplevel::XdgToplevel,
+                        data: $crate::wayland::shell::xdg::XdgShellSurfaceUserData,
+                    },
+                ],
+            },
+        );
     };
 }

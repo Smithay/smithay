@@ -394,19 +394,44 @@ impl Cacheable for ViewportCachedState {
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the viewporter protocol to [`ViewporterState`].
 #[macro_export]
 macro_rules! delegate_viewporter {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: ()
-        ] => $crate::wayland::viewporter::ViewporterState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::viewporter::server as __viewporter;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewporter::WpViewporter: ()
-        ] => $crate::wayland::viewporter::ViewporterState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::viewporter::server::wp_viewport::WpViewport: $crate::wayland::viewporter::ViewportState
-        ] => $crate::wayland::viewporter::ViewportState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::viewporter::ViewporterState,
+                globals: [
+                    Global {
+                        interface: __viewporter::wp_viewporter::WpViewporter,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __viewporter::wp_viewporter::WpViewporter,
+                        data: (),
+                    },
+                ],
+            },
+        );
+
+        // This is delegated to diferent type, not sure why
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::viewporter::ViewportState,
+                globals: [],
+                resources: [
+                    Resource {
+                        interface: __viewporter::wp_viewport::WpViewport,
+                        data: $crate::wayland::viewporter::ViewportState,
+                    },
+                ],
+            },
+        );
     };
 }

@@ -341,18 +341,33 @@ fn shape_to_cursor_icon(shape: Shape) -> CursorIcon {
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the cursor shape to [`CursorShapeManagerState`].
 #[macro_export]
 macro_rules! delegate_cursor_shape {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1: ()
-        ] => $crate::wayland::cursor_shape::CursorShapeManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1: ()
-        ] => $crate::wayland::cursor_shape::CursorShapeManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::cursor_shape::v1::server::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1: $crate::wayland::cursor_shape::CursorShapeDeviceUserData
-        ] => $crate::wayland::cursor_shape::CursorShapeManagerState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::cursor_shape::v1::server as __cursor_shape;
+
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::cursor_shape::CursorShapeManagerState,
+                globals: [
+                    Global {
+                        interface: __cursor_shape::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __cursor_shape::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __cursor_shape::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1,
+                        data: $crate::wayland::cursor_shape::CursorShapeDeviceUserData,
+                    },
+                ],
+            },
+        );
     };
 }

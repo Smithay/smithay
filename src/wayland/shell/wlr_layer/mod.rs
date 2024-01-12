@@ -513,21 +513,30 @@ pub struct LayerSurfaceConfigure {
 /// You must also implement [`WlrLayerShellHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_layer_shell {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __ZwlrLayerShellV1 =
-            $crate::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::ZwlrLayerShellV1;
-        type __ZwlrLayerShellSurfaceV1 =
-            $crate::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols_wlr::layer_shell::v1::server as __wlr_layer_shell;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwlrLayerShellV1: ()
-        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwlrLayerShellSurfaceV1: $crate::wayland::shell::wlr_layer::WlrLayerSurfaceUserData
-        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
-
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwlrLayerShellV1: $crate::wayland::shell::wlr_layer::WlrLayerShellGlobalData
-        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::shell::wlr_layer::WlrLayerShellState,
+                globals: [
+                    Global {
+                        interface: __wlr_layer_shell::zwlr_layer_shell_v1::ZwlrLayerShellV1,
+                        data: $crate::wayland::shell::wlr_layer::WlrLayerShellGlobalData,
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __wlr_layer_shell::zwlr_layer_shell_v1::ZwlrLayerShellV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __wlr_layer_shell::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+                        data: $crate::wayland::shell::wlr_layer::WlrLayerSurfaceUserData,
+                    },
+                ],
+            },
+        );
     };
 }

@@ -267,29 +267,6 @@ impl<D: SeatHandler> fmt::Debug for SeatUserData<D> {
     }
 }
 
-#[allow(missing_docs)] // TODO
-#[macro_export]
-macro_rules! delegate_seat {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatGlobalData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer: $crate::wayland::seat::PointerUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard: $crate::wayland::seat::KeyboardUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?$ty: [
-            $crate::reexports::wayland_server::protocol::wl_touch::WlTouch: $crate::wayland::seat::TouchUserData
-        ] => $crate::input::SeatState<$ty>);
-    };
-}
-
 impl<D> Dispatch<WlSeat, SeatUserData<D>, D> for SeatState<D>
 where
     D: Dispatch<WlSeat, SeatUserData<D>>,
@@ -408,4 +385,43 @@ where
         resource.capabilities(inner.compute_caps());
         inner.known_seats.push(resource.downgrade());
     }
+}
+
+/// Macro to delegate implementation of the seat protocol
+///
+/// You must also implement [`SeatHandler`] to use this.
+#[macro_export]
+macro_rules! delegate_seat {
+    ($($params:tt)*) => {
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::input::SeatState<Self>,
+                globals: [
+                    Global {
+                        interface: $crate::reexports::wayland_server::protocol::wl_seat::WlSeat,
+                        data: $crate::wayland::seat::SeatGlobalData<Self>
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_seat::WlSeat,
+                        data: $crate::wayland::seat::SeatUserData<Self>,
+                    },
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer,
+                        data: $crate::wayland::seat::PointerUserData<Self>,
+                    },
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard,
+                        data: $crate::wayland::seat::KeyboardUserData<Self>,
+                    },
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_touch::WlTouch,
+                        data: $crate::wayland::seat::TouchUserData,
+                    },
+                ],
+            },
+        );
+    };
 }

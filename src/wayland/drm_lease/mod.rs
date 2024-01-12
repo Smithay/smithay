@@ -971,32 +971,42 @@ where
 /// You must also implement [`DrmLeaseHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_drm_lease {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __WpDrmLeaseDeviceV1 =
-            $crate::reexports::wayland_protocols::wp::drm_lease::v1::server::wp_drm_lease_device_v1::WpDrmLeaseDeviceV1;
-        type __WpDrmLeaseConnectorV1 =
-            $crate::reexports::wayland_protocols::wp::drm_lease::v1::server::wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1;
-        type __WpDrmLeaseRequestV1 =
-            $crate::reexports::wayland_protocols::wp::drm_lease::v1::server::wp_drm_lease_request_v1::WpDrmLeaseRequestV1;
-        type __WpDrmLeaseV1 =
-            $crate::reexports::wayland_protocols::wp::drm_lease::v1::server::wp_drm_lease_v1::WpDrmLeaseV1;
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::drm_lease::v1::server as __drm_lease;
+        type __WpDrmLeaseDeviceV1 = __drm_lease::wp_drm_lease_device_v1::WpDrmLeaseDeviceV1;
+        type __WpDrmLeaseConnectorV1 = __drm_lease::wp_drm_lease_connector_v1::WpDrmLeaseConnectorV1;
+        type __WpDrmLeaseRequestV1 = __drm_lease::wp_drm_lease_request_v1::WpDrmLeaseRequestV1;
+        type __WpDrmLeaseV1 = __drm_lease::wp_drm_lease_v1::WpDrmLeaseV1;
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __WpDrmLeaseDeviceV1: $crate::wayland::drm_lease::DrmLeaseDeviceGlobalData
-        ] => $crate::wayland::drm_lease::DrmLeaseState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __WpDrmLeaseConnectorV1: $crate::backend::drm::DrmNode
-        ] => $crate::wayland::drm_lease::DrmLeaseState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __WpDrmLeaseDeviceV1: $crate::backend::drm::DrmNode
-        ] => $crate::wayland::drm_lease::DrmLeaseState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __WpDrmLeaseRequestV1: $crate::wayland::drm_lease::DrmLeaseRequestData
-        ] => $crate::wayland::drm_lease::DrmLeaseState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __WpDrmLeaseV1: $crate::wayland::drm_lease::DrmLeaseData
-        ] => $crate::wayland::drm_lease::DrmLeaseState);
-
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::drm_lease::DrmLeaseState,
+                globals: [
+                    Global {
+                        interface: __WpDrmLeaseDeviceV1,
+                        data: $crate::wayland::drm_lease::DrmLeaseDeviceGlobalData,
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __WpDrmLeaseDeviceV1,
+                        data: $crate::backend::drm::DrmNode,
+                    },
+                    Resource {
+                        interface: __WpDrmLeaseConnectorV1,
+                        data: $crate::backend::drm::DrmNode,
+                    },
+                    Resource {
+                        interface: __WpDrmLeaseRequestV1,
+                        data: $crate::wayland::drm_lease::DrmLeaseRequestData,
+                    },
+                    Resource {
+                        interface: __WpDrmLeaseV1,
+                        data: $crate::wayland::drm_lease::DrmLeaseData,
+                    },
+                ],
+            },
+        );
     };
 }

@@ -500,21 +500,37 @@ where
     }
 }
 
-#[allow(missing_docs)]
+/// Macro to delegate implementation of the pointer constraints protocols to [`PointerConstraintsState`].
 #[macro_export]
 macro_rules! delegate_pointer_constraints {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1: ()
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1: ()
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_confined_pointer_v1::ZwpConfinedPointerV1: $crate::wayland::pointer_constraints::PointerConstraintUserData<Self>
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_locked_pointer_v1::ZwpLockedPointerV1: $crate::wayland::pointer_constraints::PointerConstraintUserData<Self>
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server as __pointer_constraints;
+
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::pointer_constraints::PointerConstraintsState,
+                globals: [
+                    Global {
+                        interface: __pointer_constraints::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __pointer_constraints::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __pointer_constraints::zwp_confined_pointer_v1::ZwpConfinedPointerV1,
+                        data: $crate::wayland::pointer_constraints::PointerConstraintUserData<Self>,
+                    },
+                    Resource {
+                        interface: __pointer_constraints::zwp_locked_pointer_v1::ZwpLockedPointerV1,
+                        data: $crate::wayland::pointer_constraints::PointerConstraintUserData<Self>,
+                    },
+                ],
+            },
+        );
     };
 }

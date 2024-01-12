@@ -283,19 +283,35 @@ where
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the fractional_scale protocol to [`FractionalScaleManagerState`].
+///
+/// You must also implement [`FractionalScaleHandlerg`] to use this.
 #[macro_export]
 macro_rules! delegate_fractional_scale {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::fractional_scale::v1::server::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1: ()
-        ] => $crate::wayland::fractional_scale::FractionalScaleManagerState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::fractional_scale::v1::server as __fractional_scale;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::fractional_scale::v1::server::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1: ()
-        ] => $crate::wayland::fractional_scale::FractionalScaleManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::fractional_scale::v1::server::wp_fractional_scale_v1::WpFractionalScaleV1: $crate::reexports::wayland_server::Weak<$crate::reexports::wayland_server::protocol::wl_surface::WlSurface>
-        ] => $crate::wayland::fractional_scale::FractionalScaleManagerState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::fractional_scale::FractionalScaleManagerState,
+                globals: [
+                    Global {
+                        interface: __fractional_scale::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __fractional_scale::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __fractional_scale::wp_fractional_scale_v1::WpFractionalScaleV1,
+                        data: $crate::reexports::wayland_server::Weak<$crate::reexports::wayland_server::protocol::wl_surface::WlSurface>,
+                    },
+                ],
+            },
+        );
     };
 }

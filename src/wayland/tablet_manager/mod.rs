@@ -199,25 +199,41 @@ where
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the tablet protocol to [`TabletManagerState`].
 #[macro_export]
 macro_rules! delegate_tablet_manager {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::tablet::zv2::server::zwp_tablet_manager_v2::ZwpTabletManagerV2: ()
-        ] => $crate::wayland::tablet_manager::TabletManagerState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::tablet::zv2::server as __tablet;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::tablet::zv2::server::zwp_tablet_manager_v2::ZwpTabletManagerV2: ()
-        ] => $crate::wayland::tablet_manager::TabletManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::tablet::zv2::server::zwp_tablet_seat_v2::ZwpTabletSeatV2: $crate::wayland::tablet_manager::TabletSeatUserData
-        ] => $crate::wayland::tablet_manager::TabletManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::tablet::zv2::server::zwp_tablet_tool_v2::ZwpTabletToolV2: $crate::wayland::tablet_manager::TabletToolUserData
-        ] => $crate::wayland::tablet_manager::TabletManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::tablet::zv2::server::zwp_tablet_v2::ZwpTabletV2: $crate::wayland::tablet_manager::TabletUserData
-        ] => $crate::wayland::tablet_manager::TabletManagerState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::tablet_manager::TabletManagerState,
+                globals: [
+                    Global {
+                        interface: __tablet::zwp_tablet_manager_v2::ZwpTabletManagerV2,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __tablet::zwp_tablet_manager_v2::ZwpTabletManagerV2,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __tablet::zwp_tablet_seat_v2::ZwpTabletSeatV2,
+                        data: $crate::wayland::tablet_manager::TabletSeatUserData,
+                    },
+                    Resource {
+                        interface: __tablet::zwp_tablet_tool_v2::ZwpTabletToolV2,
+                        data: $crate::wayland::tablet_manager::TabletToolUserData,
+                    },
+                    Resource {
+                        interface: __tablet::zwp_tablet_v2::ZwpTabletV2,
+                        data: $crate::wayland::tablet_manager::TabletUserData,
+                    },
+                ],
+            },
+        );
     };
 }

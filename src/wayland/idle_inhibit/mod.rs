@@ -133,20 +133,35 @@ pub trait IdleInhibitHandler {
     fn uninhibit(&mut self, surface: WlSurface);
 }
 
-#[allow(missing_docs)]
+/// Macro to delegate implementation of the idle_inhibit protocol to [`IdleInhibitManagerState`].
+///
+/// You must also implement [`IdleInhibitHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_idle_inhibit {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        smithay::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1: ()
-        ] => $crate::wayland::idle_inhibit::IdleInhibitManagerState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::idle_inhibit::zv1::server as __idle_inhibit;
 
-        smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1: ()
-        ] => $crate::wayland::idle_inhibit::IdleInhibitManagerState);
-
-        smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1: $crate::wayland::idle_inhibit::inhibitor::IdleInhibitorState
-        ] => $crate::wayland::idle_inhibit::IdleInhibitManagerState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::idle_inhibit::IdleInhibitManagerState,
+                globals: [
+                    Global {
+                        interface: __idle_inhibit::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __idle_inhibit::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __idle_inhibit::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1,
+                        data: $crate::wayland::idle_inhibit::inhibitor::IdleInhibitorState,
+                    },
+                ],
+            },
+        );
     };
 }

@@ -107,20 +107,35 @@ impl KdeDecorationState {
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the kde server decoration to [`KdeDecorationState`].
+///
+/// You must also implement [`KdeDecorationHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_kde_decoration {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager: ()
-        ] => $crate::wayland::shell::kde::decoration::KdeDecorationState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols_misc::server_decoration::server as __kde_decoration;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager: ()
-        ] => $crate::wayland::shell::kde::decoration::KdeDecorationState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::OrgKdeKwinServerDecoration: $crate::reexports::wayland_server::protocol::wl_surface::WlSurface
-        ] => $crate::wayland::shell::kde::decoration::KdeDecorationState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::shell::kde::decoration::KdeDecorationState,
+                globals: [
+                    Global {
+                        interface: __kde_decoration::org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __kde_decoration::org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __kde_decoration::org_kde_kwin_server_decoration::OrgKdeKwinServerDecoration,
+                        data: $crate::reexports::wayland_server::protocol::wl_surface::WlSurface,
+                    },
+                ],
+            },
+        );
     };
 }

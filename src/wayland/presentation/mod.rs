@@ -299,19 +299,46 @@ impl Drop for PresentationFeedbackCachedState {
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the presentation_time protocol to [`PresentationState`] and
+/// [`PresentationFeedbackState`].
 #[macro_export]
 macro_rules! delegate_presentation {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation::WpPresentation: u32
-        ] => $crate::wayland::presentation::PresentationState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::presentation_time::server as __presentation_time;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation::WpPresentation: u32
-        ] => $crate::wayland::presentation::PresentationState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback::WpPresentationFeedback: ()
-        ] => $crate::wayland::presentation::PresentationFeedbackState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::presentation::PresentationState,
+                globals: [
+                    Global {
+                        interface: __presentation_time::wp_presentation::WpPresentation,
+                        data: u32,
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __presentation_time::wp_presentation::WpPresentation,
+                        data: u32,
+                    },
+                ],
+            },
+        );
+
+        // Not sure why this is delegated to diferent type, but I guess I'll keep it for now in
+        // case there is a reason for that
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::presentation::PresentationFeedbackState,
+                globals: [],
+                resources: [
+                    Resource {
+                        interface: __presentation_time::wp_presentation_feedback::WpPresentationFeedback,
+                        data: (),
+                    },
+                ],
+            },
+        );
     };
 }

@@ -162,21 +162,33 @@ where
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the text input protocol to [`TextInputManagerState`].
 #[macro_export]
-macro_rules! delegate_text_input_manager {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::text_input::zv3::server::zwp_text_input_manager_v3::ZwpTextInputManagerV3: ()
-        ] => $crate::wayland::text_input::TextInputManagerState);
+macro_rules! delegate_text_input_manager  {
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::text_input::zv3::server as __text_input;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::text_input::zv3::server::zwp_text_input_manager_v3::ZwpTextInputManagerV3: ()
-        ] => $crate::wayland::text_input::TextInputManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::text_input::zv3::server::zwp_text_input_v3::ZwpTextInputV3:
-            $crate::wayland::text_input::TextInputUserData
-        ] => $crate::wayland::text_input::TextInputManagerState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::text_input::TextInputManagerState,
+                globals: [
+                    Global {
+                        interface: __text_input::zwp_text_input_manager_v3::ZwpTextInputManagerV3,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __text_input::zwp_text_input_manager_v3::ZwpTextInputManagerV3,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __text_input::zwp_text_input_v3::ZwpTextInputV3,
+                        data: $crate::wayland::text_input::TextInputUserData,
+                    },
+                ],
+            },
+        );
     };
 }

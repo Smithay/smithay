@@ -233,21 +233,39 @@ mod handlers {
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the data control protocol
+///
+/// You must also implement [`DataControlHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_data_control {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1: $crate::wayland::selection::wlr_data_control::DataControlManagerGlobalData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1: $crate::wayland::selection::wlr_data_control::DataControlManagerUserData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1: $crate::wayland::selection::wlr_data_control::DataControlDeviceUserData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::ZwlrDataControlSourceV1: $crate::wayland::selection::wlr_data_control::DataControlSourceUserData
-        ] => $crate::wayland::selection::wlr_data_control::DataControlState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols_wlr::data_control::v1::server as __data_control;
+
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::selection::wlr_data_control::DataControlState,
+                globals: [
+                    Global {
+                        interface: __data_control::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1,
+                        data: $crate::wayland::selection::wlr_data_control::DataControlManagerGlobalData,
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __data_control::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1,
+                        data: $crate::wayland::selection::wlr_data_control::DataControlManagerUserData,
+                    },
+                    Resource {
+                        interface: __data_control::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1,
+                        data: $crate::wayland::selection::wlr_data_control::DataControlDeviceUserData,
+                    },
+                    Resource {
+                        interface: __data_control::zwlr_data_control_source_v1::ZwlrDataControlSourceV1,
+                        data: $crate::wayland::selection::wlr_data_control::DataControlSourceUserData,
+                    },
+                ],
+            },
+        );
     };
 }

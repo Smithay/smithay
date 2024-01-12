@@ -1022,39 +1022,6 @@ pub fn get_dmabuf(buffer: &wl_buffer::WlBuffer) -> Result<Dmabuf, UnmanagedResou
     buffer.data::<Dmabuf>().cloned().ok_or(UnmanagedResource)
 }
 
-/// Macro to delegate implementation of the linux dmabuf to [`DmabufState`].
-///
-/// You must also implement [`DmabufHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_dmabuf {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __ZwpLinuxDmabufV1 =
-            $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
-        type __ZwpLinuxBufferParamsV1 =
-            $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1;
-        type __ZwpLinuxDmabufFeedbackv1 =
-            $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1;
-
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwpLinuxDmabufV1: $crate::wayland::dmabuf::DmabufGlobalData
-        ] => $crate::wayland::dmabuf::DmabufState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwpLinuxDmabufV1: $crate::wayland::dmabuf::DmabufData
-        ] => $crate::wayland::dmabuf::DmabufState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwpLinuxBufferParamsV1: $crate::wayland::dmabuf::DmabufParamsData
-        ] => $crate::wayland::dmabuf::DmabufState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer: $crate::backend::allocator::dmabuf::Dmabuf
-        ] => $crate::wayland::dmabuf::DmabufState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwpLinuxDmabufFeedbackv1: $crate::wayland::dmabuf::DmabufFeedbackData
-        ] => $crate::wayland::dmabuf::DmabufState);
-
-    };
-}
-
 impl DmabufParamsData {
     /// Emits a protocol error if the params have already been used to create a dmabuf.
     ///
@@ -1220,3 +1187,45 @@ impl DmabufParamsData {
 }
 
 id_gen!(next_global_id, DMABUF_GLOBAL_ID, DMABUF_GLOBAL_IDS);
+
+/// Macro to delegate implementation of the linux dmabuf to [`DmabufState`].
+/// Delegate handling of `WpLinuxDmabuf`, `WpLinuxBufferParams`, `WpLinuxDmabufFeedback`, `WlBuffer` requests to Smithay.
+///
+/// You must also implement [`DmabufHandler`] to use this.
+#[macro_export]
+macro_rules! delegate_dmabuf {
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server as __linux_dmabuf;
+
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::dmabuf::DmabufState,
+                globals: [
+                    Global {
+                        interface: __linux_dmabuf::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
+                        data: $crate::wayland::dmabuf::DmabufGlobalData,
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __linux_dmabuf::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
+                        data: $crate::wayland::dmabuf::DmabufData,
+                    },
+                    Resource {
+                        interface: __linux_dmabuf::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
+                        data: $crate::wayland::dmabuf::DmabufParamsData,
+                    },
+                    Resource {
+                        interface: __linux_dmabuf::zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1,
+                        data: $crate::wayland::dmabuf::DmabufFeedbackData,
+                    },
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer,
+                        data: $crate::backend::allocator::dmabuf::Dmabuf,
+                    },
+                ],
+            },
+        );
+    };
+}

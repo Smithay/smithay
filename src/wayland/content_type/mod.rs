@@ -170,31 +170,40 @@ impl ContentTypeState {
     }
 }
 
-/// Macro to delegate implementation of the wp content type protocol
+/// Macro to delegate implementation of the wp content type protocol.
+/// Delegate handling of `WpContentTypeManagerV1`, `WpContentTypeV1` requests to Smithay.
+///
+/// ```
+/// struct State {}
+///
+/// smithay::delegate_content_type!(State);
+/// ```
 #[macro_export]
 macro_rules! delegate_content_type {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __WpContentTypeManagerV1 =
-            $crate::reexports::wayland_protocols::wp::content_type::v1::server::wp_content_type_manager_v1::WpContentTypeManagerV1;
-        type __WpContentTypeV1 =
-            $crate::reexports::wayland_protocols::wp::content_type::v1::server::wp_content_type_v1::WpContentTypeV1;
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::content_type::v1::server as __content_type;
 
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpContentTypeManagerV1: ()
-            ] => $crate::wayland::content_type::ContentTypeState
-        );
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpContentTypeManagerV1: ()
-            ] => $crate::wayland::content_type::ContentTypeState
-        );
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpContentTypeV1: $crate::wayland::content_type::ContentTypeUserData
-            ] => $crate::wayland::content_type::ContentTypeState
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::content_type::ContentTypeState,
+                globals: [
+                    Global {
+                        interface: __content_type::wp_content_type_manager_v1::WpContentTypeManagerV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __content_type::wp_content_type_manager_v1::WpContentTypeManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __content_type::wp_content_type_v1::WpContentTypeV1,
+                        data: $crate::wayland::content_type::ContentTypeUserData,
+                    },
+                ],
+            },
         );
     };
 }

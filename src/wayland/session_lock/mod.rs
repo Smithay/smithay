@@ -222,24 +222,39 @@ impl SessionLocker {
     }
 }
 
-#[allow(missing_docs)]
+/// Macro to delegate implementation of the session lock protocol
+///
+/// You must also implement [`SessionLockHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_session_lock {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_manager_v1::ExtSessionLockManagerV1: $crate::wayland::session_lock::SessionLockManagerGlobalData
-        ] => $crate::wayland::session_lock::SessionLockManagerState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::ext::session_lock::v1::server as __session_lock;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_manager_v1::ExtSessionLockManagerV1: ()
-        ] => $crate::wayland::session_lock::SessionLockManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1: $crate::wayland::session_lock::SessionLockState
-        ] => $crate::wayland::session_lock::SessionLockManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_surface_v1::ExtSessionLockSurfaceV1: $crate::wayland::session_lock::ExtLockSurfaceUserData
-        ] => $crate::wayland::session_lock::SessionLockManagerState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::session_lock::SessionLockManagerState,
+                globals: [
+                    Global {
+                        interface: __session_lock::ext_session_lock_manager_v1::ExtSessionLockManagerV1,
+                        data: $crate::wayland::session_lock::SessionLockManagerGlobalData,
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __session_lock::ext_session_lock_manager_v1::ExtSessionLockManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __session_lock::ext_session_lock_v1::ExtSessionLockV1,
+                        data: $crate::wayland::session_lock::SessionLockState,
+                    },
+                    Resource {
+                        interface: __session_lock::ext_session_lock_surface_v1::ExtSessionLockSurfaceV1,
+                        data: $crate::wayland::session_lock::ExtLockSurfaceUserData,
+                    },
+                ],
+            },
+        );
     };
 }

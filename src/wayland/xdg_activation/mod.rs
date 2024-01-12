@@ -257,35 +257,42 @@ pub struct ActivationTokenData {
     token: Mutex<Option<XdgActivationToken>>,
 }
 
-/// Macro to delegate implementation of the xdg activation to [`XdgActivationState`].
-///
-/// You must also implement [`XdgActivationHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_xdg_activation {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __XdgActivationV1 =
-            $crate::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_v1::XdgActivationV1;
-        type __XdgActivationTokenV1 =
-            $crate::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_token_v1::XdgActivationTokenV1;
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __XdgActivationV1: ()
-        ] => $crate::wayland::xdg_activation::XdgActivationState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __XdgActivationTokenV1: $crate::wayland::xdg_activation::ActivationTokenData
-        ] => $crate::wayland::xdg_activation::XdgActivationState);
-
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __XdgActivationV1: ()
-            ] => $crate::wayland::xdg_activation::XdgActivationState
-        );
-    };
-}
-
 #[derive(Debug)]
 struct TokenBuilder {
     serial: Option<(Serial, WlSeat)>,
     app_id: Option<String>,
     surface: Option<WlSurface>,
+}
+
+/// Macro to delegate implementation of the xdg activation to [`XdgActivationState`].
+///
+/// You must also implement [`XdgActivationHandler`] to use this.
+#[macro_export]
+macro_rules! delegate_xdg_activation {
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::xdg::activation::v1::server as __xdg_activation;
+
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::xdg_activation::XdgActivationState,
+                globals: [
+                    Global {
+                        interface: __xdg_activation::xdg_activation_v1::XdgActivationV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __xdg_activation::xdg_activation_v1::XdgActivationV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __xdg_activation::xdg_activation_token_v1::XdgActivationTokenV1,
+                        data: $crate::wayland::xdg_activation::ActivationTokenData,
+                    },
+                ],
+            },
+        );
+    };
 }

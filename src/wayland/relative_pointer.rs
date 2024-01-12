@@ -213,16 +213,31 @@ where
 
 /// Macro to delegate implementation of the relative pointer protocol
 #[macro_export]
-macro_rules! delegate_relative_pointer {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1: ()
-        ] => $crate::wayland::relative_pointer::RelativePointerManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1: ()
-        ] => $crate::wayland::relative_pointer::RelativePointerManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1: $crate::wayland::relative_pointer::RelativePointerUserData<Self>
-        ] => $crate::wayland::relative_pointer::RelativePointerManagerState);
+macro_rules! delegate_relative_pointer   {
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::relative_pointer::zv1::server as __relative_pointer;
+
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::relative_pointer::RelativePointerManagerState,
+                globals: [
+                    Global {
+                        interface: __relative_pointer::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __relative_pointer::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __relative_pointer::zwp_relative_pointer_v1::ZwpRelativePointerV1,
+                        data: $crate::wayland::relative_pointer::RelativePointerUserData<Self>,
+                    },
+                ],
+            },
+        );
     };
 }

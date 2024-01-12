@@ -347,22 +347,39 @@ mod handlers {
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the primary selection protocol
+///
+/// You must also implement [`DataDeviceHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_primary_selection {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1: ()
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server as __primary_selection;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1: ()
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1: $crate::wayland::selection::primary_selection::PrimaryDeviceUserData
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1: $crate::wayland::selection::primary_selection::PrimarySourceUserData
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::selection::primary_selection::PrimarySelectionState,
+                globals: [
+                    Global {
+                        interface: __primary_selection::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __primary_selection::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __primary_selection::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1,
+                        data: $crate::wayland::selection::primary_selection::PrimaryDeviceUserData,
+                    },
+                    Resource {
+                        interface: __primary_selection::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1,
+                        data: $crate::wayland::selection::primary_selection::PrimarySourceUserData,
+                    },
+                ],
+            },
+        );
     };
 }

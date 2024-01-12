@@ -229,17 +229,34 @@ where
 }
 
 /// Macro to delegate implementation of the security context protocol
+///
+/// You must also implement [`SecurityContextHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_security_context {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::security_context::v1::server::wp_security_context_manager_v1::WpSecurityContextManagerV1: $crate::wayland::security_context::SecurityContextGlobalData
-        ] => $crate::wayland::security_context::SecurityContextState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::security_context::v1::server::wp_security_context_manager_v1::WpSecurityContextManagerV1: ()
-        ] => $crate::wayland::security_context::SecurityContextState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::security_context::v1::server::wp_security_context_v1::WpSecurityContextV1: $crate::wayland::security_context::SecurityContextUserData
-        ] => $crate::wayland::security_context::SecurityContextState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::security_context::v1::server as __security_context;
+
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::security_context::SecurityContextState,
+                globals: [
+                    Global {
+                        interface: __security_context::wp_security_context_manager_v1::WpSecurityContextManagerV1,
+                        data: $crate::wayland::security_context::SecurityContextGlobalData,
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __security_context::wp_security_context_manager_v1::WpSecurityContextManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __security_context::wp_security_context_v1::WpSecurityContextV1,
+                        data: $crate::wayland::security_context::SecurityContextUserData,
+                    },
+                ],
+            },
+        );
     };
 }

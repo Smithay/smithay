@@ -484,22 +484,37 @@ mod handlers {
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the data device protocol
+///
+/// You must also implement [`DataDeviceHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_data_device {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager: ()
-        ] => $crate::wayland::selection::data_device::DataDeviceState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager: ()
-        ] => $crate::wayland::selection::data_device::DataDeviceState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_data_device::WlDataDevice: $crate::wayland::selection::data_device::DataDeviceUserData
-        ] => $crate::wayland::selection::data_device::DataDeviceState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_data_source::WlDataSource: $crate::wayland::selection::data_device::DataSourceUserData
-        ] => $crate::wayland::selection::data_device::DataDeviceState);
+    ($($params:tt)*) => {
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::selection::data_device::DataDeviceState,
+                globals: [
+                    Global {
+                        interface: $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_data_device_manager::WlDataDeviceManager,
+                        data: (),
+                    },
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_data_device::WlDataDevice,
+                        data: $crate::wayland::selection::data_device::DataDeviceUserData,
+                    },
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_data_source::WlDataSource,
+                        data: $crate::wayland::selection::data_device::DataSourceUserData,
+                    },
+                ],
+            },
+        );
     };
 }

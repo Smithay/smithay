@@ -221,29 +221,43 @@ where
     }
 }
 
-#[allow(missing_docs)] // TODO
+/// Macro to delegate implementation of the input_method protocol to [`InputMethodManagerState`].
+///
+/// You must also implement [`InputMethodHandler`] to use this.
 #[macro_export]
 macro_rules! delegate_input_method_manager {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_manager_v2::ZwpInputMethodManagerV2:
-            $crate::wayland::input_method::InputMethodManagerGlobalData
-        ] => $crate::wayland::input_method::InputMethodManagerState);
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server as __input_method;
 
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_manager_v2::ZwpInputMethodManagerV2: ()
-        ] => $crate::wayland::input_method::InputMethodManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_v2::ZwpInputMethodV2:
-            $crate::wayland::input_method::InputMethodUserData<Self>
-        ] => $crate::wayland::input_method::InputMethodManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2:
-            $crate::wayland::input_method::InputMethodKeyboardUserData<Self>
-        ] => $crate::wayland::input_method::InputMethodManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2:
-            $crate::wayland::input_method::InputMethodPopupSurfaceUserData
-        ] => $crate::wayland::input_method::InputMethodManagerState);
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::input_method::InputMethodManagerState,
+                globals: [
+                    Global {
+                        interface: __input_method::zwp_input_method_manager_v2::ZwpInputMethodManagerV2,
+                        data: $crate::wayland::input_method::InputMethodManagerGlobalData,
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __input_method::zwp_input_method_manager_v2::ZwpInputMethodManagerV2,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __input_method::zwp_input_method_v2::ZwpInputMethodV2,
+                        data: $crate::wayland::input_method::InputMethodUserData<Self>,
+                    },
+                    Resource {
+                        interface: __input_method::zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2,
+                        data: $crate::wayland::input_method::InputMethodKeyboardUserData<Self>,
+                    },
+                    Resource {
+                        interface: __input_method::zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2,
+                        data: $crate::wayland::input_method::InputMethodPopupSurfaceUserData,
+                    },
+                ],
+            },
+        );
     };
 }

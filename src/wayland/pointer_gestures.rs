@@ -330,22 +330,39 @@ where
 
 /// Macro to delegate implementation of the pointer gestures protocol
 #[macro_export]
-macro_rules! delegate_pointer_gestures {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gestures_v1::ZwpPointerGesturesV1: ()
-        ] => $crate::wayland::pointer_gestures::PointerGesturesState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gestures_v1::ZwpPointerGesturesV1: ()
-        ] => $crate::wayland::pointer_gestures::PointerGesturesState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gesture_swipe_v1::ZwpPointerGestureSwipeV1: $crate::wayland::pointer_gestures::PointerGestureUserData<Self>
-        ] => $crate::wayland::pointer_gestures::PointerGesturesState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gesture_pinch_v1::ZwpPointerGesturePinchV1: $crate::wayland::pointer_gestures::PointerGestureUserData<Self>
-        ] => $crate::wayland::pointer_gestures::PointerGesturesState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server::zwp_pointer_gesture_hold_v1::ZwpPointerGestureHoldV1: $crate::wayland::pointer_gestures::PointerGestureUserData<Self>
-        ] => $crate::wayland::pointer_gestures::PointerGesturesState);
+macro_rules! delegate_pointer_gestures  {
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::wp::pointer_gestures::zv1::server as __pointer_gestures;
+
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::pointer_gestures::PointerGesturesState,
+                globals: [
+                    Global {
+                        interface: __pointer_gestures::zwp_pointer_gestures_v1::ZwpPointerGesturesV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __pointer_gestures::zwp_pointer_gestures_v1::ZwpPointerGesturesV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __pointer_gestures::zwp_pointer_gesture_swipe_v1::ZwpPointerGestureSwipeV1,
+                        data: $crate::wayland::pointer_gestures::PointerGestureUserData<Self>,
+                    },
+                    Resource {
+                        interface: __pointer_gestures::zwp_pointer_gesture_pinch_v1::ZwpPointerGesturePinchV1,
+                        data: $crate::wayland::pointer_gestures::PointerGestureUserData<Self>,
+                    },
+                    Resource {
+                        interface: __pointer_gestures::zwp_pointer_gesture_hold_v1::ZwpPointerGestureHoldV1,
+                        data: $crate::wayland::pointer_gestures::PointerGestureUserData<Self>,
+                    },
+                ],
+            },
+        );
     };
 }

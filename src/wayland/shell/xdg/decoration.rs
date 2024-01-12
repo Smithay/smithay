@@ -137,25 +137,6 @@ pub trait XdgDecorationHandler {
     fn unset_mode(&mut self, toplevel: ToplevelSurface);
 }
 
-/// Macro to delegate implementation of the xdg decoration to [`XdgDecorationState`].
-///
-/// You must also implement [`XdgDecorationHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_xdg_decoration {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1: ()
-        ] => $crate::wayland::shell::xdg::decoration::XdgDecorationState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1: ()
-        ] => $crate::wayland::shell::xdg::decoration::XdgDecorationState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1: $crate::wayland::shell::xdg::ToplevelSurface
-        ] => $crate::wayland::shell::xdg::decoration::XdgDecorationState);
-    };
-}
-
 pub(super) fn send_decoration_configure(
     id: &zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
     mode: Mode,
@@ -272,4 +253,37 @@ where
             _ => unreachable!(),
         }
     }
+}
+
+/// Macro to delegate implementation of the xdg decoration to [`XdgDecorationState`].
+///
+/// You must also implement [`XdgDecorationHandler`] to use this.
+#[macro_export]
+macro_rules! delegate_xdg_decoration {
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::xdg::decoration::zv1::server as __xdg_decoration;
+
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::shell::xdg::decoration::XdgDecorationState,
+                globals: [
+                    Global {
+                        interface: __xdg_decoration::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __xdg_decoration::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __xdg_decoration::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
+                        data: $crate::wayland::shell::xdg::ToplevelSurface,
+                    },
+                ],
+            },
+        );
+    };
 }

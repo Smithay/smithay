@@ -227,16 +227,31 @@ where
 
 /// Macro to delegate implementation of the xwayland keyboard grab protocol
 #[macro_export]
-macro_rules! delegate_xwayland_keyboard_grab {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server::zwp_xwayland_keyboard_grab_manager_v1::ZwpXwaylandKeyboardGrabManagerV1: ()
-        ] => $crate::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server::zwp_xwayland_keyboard_grab_manager_v1::ZwpXwaylandKeyboardGrabManagerV1: ()
-        ] => $crate::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server::zwp_xwayland_keyboard_grab_v1::ZwpXwaylandKeyboardGrabV1: ()
-        ] => $crate::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState);
+macro_rules! delegate_xwayland_keyboard_grab    {
+    ($($params:tt)*) => {
+        use $crate::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server as __x_keyboard_grab;
+
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState,
+                globals: [
+                    Global {
+                        interface: __x_keyboard_grab::zwp_xwayland_keyboard_grab_manager_v1::ZwpXwaylandKeyboardGrabManagerV1,
+                        data: (),
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: __x_keyboard_grab::zwp_xwayland_keyboard_grab_manager_v1::ZwpXwaylandKeyboardGrabManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: __x_keyboard_grab::zwp_xwayland_keyboard_grab_v1::ZwpXwaylandKeyboardGrabV1,
+                        data: (),
+                    },
+                ],
+            },
+        );
     };
 }

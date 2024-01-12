@@ -469,22 +469,44 @@ pub struct ShmBufferUserData {
     pub(crate) data: BufferData,
 }
 
-#[allow(missing_docs)] // TODO
+/// Delegate handling of `WlShm`, `WlShmPool`, `WlBuffer` requests to Smithay.
+///
+/// Requires [`BufferHandler`] and [`ShmHandler`] to be implemented for `State`
+/// ```ignore
+/// use smithay::delegate_shm;
+///
+/// struct State {}
+///
+/// // impl needed required traits here
+///
+/// smithay::delegate_shm!(State);
+/// ```
 #[macro_export]
 macro_rules! delegate_shm {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: ()
-        ] => $crate::wayland::shm::ShmState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: ()
-        ] => $crate::wayland::shm::ShmState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool: $crate::wayland::shm::ShmPoolUserData
-        ] => $crate::wayland::shm::ShmState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer: $crate::wayland::shm::ShmBufferUserData
-        ] => $crate::wayland::shm::ShmState);
+    ($($params:tt)*) => {
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::shm::ShmState,
+                globals: [Global {
+                    interface: $crate::reexports::wayland_server::protocol::wl_shm::WlShm,
+                    data: (),
+                }],
+                resources: [
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_shm::WlShm,
+                        data: (),
+                    },
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool,
+                        data: $crate::wayland::shm::ShmPoolUserData,
+                    },
+                    Resource {
+                        interface: $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer,
+                        data: $crate::wayland::shm::ShmBufferUserData,
+                    },
+                ],
+            },
+        );
     };
 }
