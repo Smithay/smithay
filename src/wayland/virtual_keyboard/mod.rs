@@ -165,20 +165,41 @@ where
     }
 }
 
-#[allow(missing_docs)] //TODO
+/// Macro to delegate implementation of the virtual_keyboard protocol
+/// Delegate handling of `WpVirtualKeyboardManager`, `WpVirtualKeyboard` requests to Smithay.
+///
+/// You must also implement [`SeatHandler`] to use this.
+/// ```ignore
+/// struct State {}
+///
+/// // impl needed required traits here
+///
+/// smithay::delegate_virtual_keyboard_manager!(State);
+/// ```
 #[macro_export]
 macro_rules! delegate_virtual_keyboard_manager {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1: $crate::wayland::virtual_keyboard::VirtualKeyboardManagerGlobalData
-        ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1: ()
-        ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1: $crate::wayland::virtual_keyboard::VirtualKeyboardUserData<Self>
-        ] => $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState);
+    ($($params:tt)*) => {
+        $crate::reexports::smithay_macros::delegate_bundle!(
+            $($params)*,
+            Bundle {
+                dispatch_to: $crate::wayland::virtual_keyboard::VirtualKeyboardManagerState,
+                globals: [
+                    Global {
+                        interface: $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1,
+                        data: $crate::wayland::virtual_keyboard::VirtualKeyboardManagerGlobalData,
+                    },
+                ],
+                resources: [
+                    Resource {
+                        interface: $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1,
+                        data: (),
+                    },
+                    Resource {
+                        interface: $crate::reexports::wayland_protocols_misc::zwp_virtual_keyboard_v1::server::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
+                        data: $crate::wayland::virtual_keyboard::VirtualKeyboardUserData<Self>,
+                    },
+                ],
+            },
+        );
     };
 }

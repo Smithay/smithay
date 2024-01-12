@@ -168,7 +168,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub show_window_preview: bool,
 }
 
-delegate_compositor!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+delegate_compositor!(impl<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> DataDeviceHandler for AnvilState<BackendData> {
     fn data_device_state(&self) -> &DataDeviceState {
@@ -191,7 +191,7 @@ impl<BackendData: Backend> ServerDndGrabHandler for AnvilState<BackendData> {
 }
 delegate_data_device!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_output!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+delegate_output!(impl<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> SelectionHandler for AnvilState<BackendData> {
     type SelectionUserData = ();
@@ -242,7 +242,7 @@ impl<BackendData: Backend> ShmHandler for AnvilState<BackendData> {
         &self.shm_state
     }
 }
-delegate_shm!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+delegate_shm!(impl<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
     type KeyboardFocus = FocusTarget;
@@ -305,9 +305,9 @@ impl<BackendData: Backend> KeyboardShortcutsInhibitHandler for AnvilState<Backen
     }
 }
 
-delegate_keyboard_shortcuts_inhibit!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+delegate_keyboard_shortcuts_inhibit!(impl<BackendData: Backend + 'static> AnvilState<BackendData>);
 
-delegate_virtual_keyboard_manager!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+delegate_virtual_keyboard_manager!(impl<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 delegate_pointer_gestures!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 

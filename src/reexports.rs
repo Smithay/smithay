@@ -14,6 +14,7 @@ pub use input;
 #[cfg(feature = "renderer_pixman")]
 pub use pixman;
 pub use rustix;
+pub use smithay_macros;
 #[cfg(feature = "backend_udev")]
 pub use udev;
 #[cfg(feature = "wayland_frontend")]

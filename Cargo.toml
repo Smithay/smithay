@@ -19,6 +19,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [workspace]
 members = [
     "smithay-drm-extras",
+    "smithay-macros",
     "smallvil",
     "anvil",
     "wlcs_anvil"
@@ -69,6 +70,7 @@ profiling = "1.0"
 smallvec = "1.11"
 pixman = { version = "0.1.0", features = ["drm-fourcc"], optional = true }
 
+smithay-macros = { path = "./smithay-macros" }
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }

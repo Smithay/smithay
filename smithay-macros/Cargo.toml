@@ -1,0 +1,23 @@
+[package]
+name = "smithay-macros"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro-crate = "3"
+proc-macro2 = "1"
+quote = "1"
+
+[dependencies.syn]
+version = "2"
+default-features = false
+features = ["parsing", "full", "proc-macro", "printing"]
+
+[dev-dependencies]
+smithay = { path = "../" }
+
+[[example]]
+name = "simple"
