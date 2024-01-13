@@ -3076,7 +3076,12 @@ where
             }
         };
 
-        if let Err(err) = cursor_buffer.write(data) {
+        let Ok(res) = cursor_buffer.write(data) else {
+            info!("failed to write cursor buffer, device destroyed");
+            return None;
+        };
+
+        if let Err(err) = res {
             info!("failed to write cursor buffer; {}", err);
             return None;
         }
