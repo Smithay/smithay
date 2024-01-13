@@ -71,10 +71,19 @@ impl<A: AsFd + 'static> GbmAllocator<A> {
             modifiers.iter().copied(),
             flags,
         );
+
         #[cfg(not(feature = "backend_gbm_has_create_with_modifiers2"))]
-        let result =
+        let result = if (flags & !(GbmBufferFlags::SCANOUT | GbmBufferFlags::RENDERING)).is_empty() {
             self.device
-                .create_buffer_object_with_modifiers(width, height, fourcc, modifiers.iter().copied());
+                .create_buffer_object_with_modifiers(width, height, fourcc, modifiers.iter().copied())
+        } else if modifiers.contains(&Modifier::Invalid) || modifiers.contains(&Modifier::Linear) {
+            return self.device.create_buffer_object(width, height, fourcc, flags);
+        } else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "unsupported combination of flags and modifiers",
+            ));
+        };
 
         match result {
             Ok(bo) => Ok(bo),
