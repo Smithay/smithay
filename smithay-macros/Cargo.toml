@@ -8,7 +8,6 @@ license = "MIT"
 proc-macro = true
 
 [dependencies]
-proc-macro-crate = "3"
 proc-macro2 = "1"
 quote = "1"
 

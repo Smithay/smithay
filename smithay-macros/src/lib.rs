@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::{parse_macro_input, Token};
 
 mod bundle;
@@ -8,17 +8,9 @@ mod delegate_dispatch;
 mod item_impl;
 
 fn smithay() -> TokenStream2 {
-    match proc_macro_crate::crate_name("smithay").expect("smithay should be present in `Cargo.toml`") {
-        // Tehnically `Itself` should result in `quote!(crate)` but doc tests and examples are
-        // missreported as `Itself` so that would breake those,
-        // Smithay never uses those macros so this is fine, and if there is a need to use them
-        // somewhere we can always just do `use crate as smithay`
-        proc_macro_crate::FoundCrate::Itself => quote!(smithay),
-        proc_macro_crate::FoundCrate::Name(name) => {
-            let ident = syn::Ident::new(&name, proc_macro2::Span::call_site());
-            ident.to_token_stream()
-        }
-    }
+    // Could use proc_macro_crate here to detect proper name?
+    // But I don't want to bring to many deps in
+    quote!(smithay)
 }
 
 struct DelegateBundleInput {
