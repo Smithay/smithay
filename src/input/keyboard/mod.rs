@@ -726,6 +726,65 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         }
     }
 
+    /// TODO
+    pub fn intercept<T, F>(
+        &self,
+        data: &mut D,
+        keycode: u32,
+        state: KeyState,
+        filter: F,
+    ) -> (T, bool)
+        where F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> T,
+    {
+        trace!("Handling keystroke");
+
+        let mut guard = self.arc.internal.lock().unwrap();
+        let mods_changed = guard.key_input(keycode, state);
+        let key_handle = KeysymHandle {
+            // Offset the keycode by 8, as the evdev XKB rules reflect X's
+            // broken keycode system, which starts at 8.
+            keycode: (keycode + 8).into(),
+            state: &guard.state,
+            keymap: &guard.keymap,
+        };
+
+        trace!(mods_state = ?guard.mods_state, sym = xkb::keysym_get_name(key_handle.modified_sym()), "Calling input filter");
+        (filter(data, &guard.mods_state, key_handle), mods_changed)
+    }
+
+    /// TODO
+    pub fn forward(
+        &self,
+        data: &mut D,
+        keycode: u32,
+        state: KeyState,
+        serial: Serial,
+        time: u32,
+        mods_changed: bool,
+    ) {
+        let mut guard = self.arc.internal.lock().unwrap();
+        match state {
+            KeyState::Pressed => {
+                guard.forwarded_pressed_keys.insert(keycode);
+            }
+            KeyState::Released => {
+                guard.forwarded_pressed_keys.remove(&keycode);
+            }
+        };
+
+        // forward to client if no keybinding is triggered
+        let seat = self.get_seat(data);
+        let modifiers = mods_changed.then_some(guard.mods_state);
+        guard.with_grab(&seat, |handle, grab| {
+            grab.input(data, handle, keycode, state, modifiers, serial, time);
+        });
+        if guard.focus.is_some() {
+            trace!("Input forwarded to client");
+        } else {
+            trace!("No client currently focused");
+        }
+    }
+
     /// Handle a keystroke
     ///
     /// All keystrokes from the input backend should be fed _in order_ to this method of the
@@ -752,47 +811,14 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     where
         F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
     {
-        trace!("Handling keystroke");
-
-        let mut guard = self.arc.internal.lock().unwrap();
-        let mods_changed = guard.key_input(keycode, state);
-        let key_handle = KeysymHandle {
-            // Offset the keycode by 8, as the evdev XKB rules reflect X's
-            // broken keycode system, which starts at 8.
-            keycode: (keycode + 8).into(),
-            state: &guard.state,
-            keymap: &guard.keymap,
-        };
-
-        trace!(mods_state = ?guard.mods_state, sym = xkb::keysym_get_name(key_handle.modified_sym()), "Calling input filter");
-
-        if let FilterResult::Intercept(val) = filter(data, &guard.mods_state, key_handle) {
+        let (filter_result, mods_changed) = self.intercept(data, keycode, state, filter);
+        if let FilterResult::Intercept(val) = filter_result {
             // the filter returned false, we do not forward to client
             trace!("Input was intercepted by filter");
             return Some(val);
         }
 
-        match state {
-            KeyState::Pressed => {
-                guard.forwarded_pressed_keys.insert(keycode);
-            }
-            KeyState::Released => {
-                guard.forwarded_pressed_keys.remove(&keycode);
-            }
-        };
-
-        // forward to client if no keybinding is triggered
-        let seat = self.get_seat(data);
-        let modifiers = mods_changed.then_some(guard.mods_state);
-        guard.with_grab(&seat, |handle, grab| {
-            grab.input(data, handle, keycode, state, modifiers, serial, time);
-        });
-        if guard.focus.is_some() {
-            trace!("Input forwarded to client");
-        } else {
-            trace!("No client currently focused");
-        }
-
+        self.forward(data, keycode, state, serial, time, mods_changed);
         None
     }
 
