@@ -50,7 +50,7 @@ impl Parse for Global {
     fn parse(input: ParseStream) -> Result<Self> {
         let ident: Ident = input.parse()?;
         if ident != "Global" {
-            return Err(Error::new(ident.span(), "expected `Bundle`"));
+            return Err(Error::new(ident.span(), "expected `Global`"));
         }
 
         let (interface, data) = parse_interface_data(&input, ident.span())?;
@@ -67,7 +67,7 @@ impl Parse for Resource {
     fn parse(input: ParseStream) -> Result<Self> {
         let ident: Ident = input.parse()?;
         if ident != "Resource" {
-            return Err(Error::new(ident.span(), "expected `Bundle`"));
+            return Err(Error::new(ident.span(), "expected `Resource`"));
         }
 
         let (interface, data) = parse_interface_data(&input, ident.span())?;
