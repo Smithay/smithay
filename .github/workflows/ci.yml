@@ -419,7 +419,7 @@ jobs:
       - name: Build Documentation
         env: 
           RUSTDOCFLAGS: --cfg=docsrs
-        run: cargo doc --no-deps --features "test_all_features" -p smithay -p calloop -p drm -p gbm -p input -p udev:0.8.0 -p wayland-server -p wayland-backend -p wayland-protocols:0.31.0 -p winit -p x11rb:0.13.0
+        run: cargo doc --no-deps --features "test_all_features" -p smithay -p calloop -p drm -p gbm -p input -p udev:0.8.0 -p wayland-server -p wayland-backend -p wayland-protocols:0.31.0 -p winit -p x11rb:0.13.0 -p tracing
         
       - name: Setup index
         run: cp ./doc_index.html ./target/doc/index.html

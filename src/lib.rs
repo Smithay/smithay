@@ -48,7 +48,20 @@
 //!
 //! ### Logging
 //!
-//! TODO: docs about tracing
+//! Smithay makes extensive use of [`tracing`] for its internal logging.
+//!
+//! For release builds it is recommended to limit the log level during compile time.
+//! This can be done by adding a dependency to [`tracing`] and enabling the corresponding features.
+//! For example to enable `trace` messages for debug builds, but limit release builds to `debug` add
+//! the following in your binary crate `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_debug"] }
+//! ```
+//!
+//! If you do not want to use [`tracing`] for your compositor, refer to [`log compatibility`](tracing#log-compatibility)
+//! for how to forward smithays debug output to other `log` compatible frameworks.
 
 pub mod backend;
 #[cfg(feature = "desktop")]
