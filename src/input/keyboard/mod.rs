@@ -752,25 +752,25 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     where
         F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
     {
-        let (filter_result, mods_changed) = self.intercept(data, keycode, state, filter);
+        let (filter_result, mods_changed) = self.input_intercept(data, keycode, state, filter);
         if let FilterResult::Intercept(val) = filter_result {
-            // the filter returned false, we do not forward to client
+            // the filter returned `FilterResult::Intercept(T)`, we do not forward to client
             trace!("Input was intercepted by filter");
             return Some(val);
         }
 
-        self.forward(data, keycode, state, serial, time, mods_changed);
+        self.input_forward(data, keycode, state, serial, time, mods_changed);
         None
     }
 
     /// Update the state of the keyboard without forwarding the event to the focused client
     ///
-    /// Useful in conjunction with [`KeyboardHandle::forward`] in case you want
+    /// Useful in conjunction with [`KeyboardHandle::input_forward`] in case you want
     /// to asynchronously decide if the event should be forwarded to the focused client.
     ///
     /// Prefer using [`KeyboardHandle::input`] if this decision can be done synchronously
     /// in the `filter` closure.
-    pub fn intercept<T, F>(&self, data: &mut D, keycode: u32, state: KeyState, filter: F) -> (T, bool)
+    pub fn input_intercept<T, F>(&self, data: &mut D, keycode: u32, state: KeyState, filter: F) -> (T, bool)
     where
         F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> T,
     {
@@ -790,10 +790,10 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         (filter(data, &guard.mods_state, key_handle), mods_changed)
     }
 
-    /// Forward a key event to the focused client.
+    /// Forward a key event to the focused client
     ///
-    /// Useful in conjunction with [`KeyboardHandle::intercept`].
-    pub fn forward(
+    /// Useful in conjunction with [`KeyboardHandle::input_intercept`].
+    pub fn input_forward(
         &self,
         data: &mut D,
         keycode: u32,
