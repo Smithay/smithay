@@ -752,6 +752,28 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     where
         F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> FilterResult<T>,
     {
+        let (filter_result, mods_changed) = self.input_intercept(data, keycode, state, filter);
+        if let FilterResult::Intercept(val) = filter_result {
+            // the filter returned `FilterResult::Intercept(T)`, we do not forward to client
+            trace!("Input was intercepted by filter");
+            return Some(val);
+        }
+
+        self.input_forward(data, keycode, state, serial, time, mods_changed);
+        None
+    }
+
+    /// Update the state of the keyboard without forwarding the event to the focused client
+    ///
+    /// Useful in conjunction with [`KeyboardHandle::input_forward`] in case you want
+    /// to asynchronously decide if the event should be forwarded to the focused client.
+    ///
+    /// Prefer using [`KeyboardHandle::input`] if this decision can be done synchronously
+    /// in the `filter` closure.
+    pub fn input_intercept<T, F>(&self, data: &mut D, keycode: u32, state: KeyState, filter: F) -> (T, bool)
+    where
+        F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> T,
+    {
         trace!("Handling keystroke");
 
         let mut guard = self.arc.internal.lock().unwrap();
@@ -765,13 +787,22 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         };
 
         trace!(mods_state = ?guard.mods_state, sym = xkb::keysym_get_name(key_handle.modified_sym()), "Calling input filter");
+        (filter(data, &guard.mods_state, key_handle), mods_changed)
+    }
 
-        if let FilterResult::Intercept(val) = filter(data, &guard.mods_state, key_handle) {
-            // the filter returned false, we do not forward to client
-            trace!("Input was intercepted by filter");
-            return Some(val);
-        }
-
+    /// Forward a key event to the focused client
+    ///
+    /// Useful in conjunction with [`KeyboardHandle::input_intercept`].
+    pub fn input_forward(
+        &self,
+        data: &mut D,
+        keycode: u32,
+        state: KeyState,
+        serial: Serial,
+        time: u32,
+        mods_changed: bool,
+    ) {
+        let mut guard = self.arc.internal.lock().unwrap();
         match state {
             KeyState::Pressed => {
                 guard.forwarded_pressed_keys.insert(keycode);
@@ -792,8 +823,6 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         } else {
             trace!("No client currently focused");
         }
-
-        None
     }
 
     /// Set the current focus of this keyboard
