@@ -61,7 +61,7 @@ use super::SelectionHandler;
 
 /// Access the data control state.
 pub trait DataControlHandler: Sized + SelectionHandler {
-    /// [DataControlStat] getter.
+    /// [`DataControlState`] getter.
     fn data_control_state(&self) -> &DataControlState;
 }
 

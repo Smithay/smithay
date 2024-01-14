@@ -103,7 +103,7 @@
 //! // Rest of the compositor goes here...
 //! ```
 //!
-//! Accessing a [`Dmabuf`] associated with a [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)
+//! Accessing a [`Dmabuf`] associated with a [`WlBuffer`]
 //! may be achieved using [`get_dmabuf`].
 //!
 //! #### Notes on supporting per surface feedback

@@ -14,7 +14,7 @@
 //! module to be used on single-gpu systems as well avoiding supporting multiple code-paths.
 //! Doing so will not result in worse performance compared to rendering without the multi-gpu module.
 //!
-//! A [`MultiRenderer`] will support the [`Renderer`](super::Renderer)-trait as well
+//! A [`MultiRenderer`] will support the [`Renderer`]-trait as well
 //! as the other corresponding traits of the [`renderer`](crate::backend::renderer)-module,
 //! if the [`GraphicsApi`] allows it.
 //!
@@ -643,7 +643,7 @@ pub trait GraphicsApi {
 
 /// A device produced by a [`GraphicsApi`].
 pub trait ApiDevice: fmt::Debug {
-    /// The [`Renderer`](super::Renderer) this devices contains
+    /// The [`Renderer`] this devices contains
     type Renderer: Renderer;
 
     /// Returns a reference to the underlying renderer
@@ -691,7 +691,7 @@ impl<'render, 'target, 'alloc, R: GraphicsApi, T: GraphicsApi> AsMut<<R::Device 
     }
 }
 
-/// [`Frame`](super::Frame) implementation of a [`MultiRenderer`].
+/// [`Frame`] implementation of a [`MultiRenderer`].
 ///
 /// Leaking the frame will potentially keep it from doing necessary copies
 /// of the internal framebuffer for some multi-gpu configurations. The result would
@@ -1262,7 +1262,7 @@ where
     }
 }
 
-/// [`Texture`](super::Texture)s produced by a [`MultiRenderer`].
+/// [`Texture`]s produced by a [`MultiRenderer`].
 #[derive(Debug, Clone)]
 pub struct MultiTexture(Rc<RefCell<MultiTextureInternal>>);
 #[derive(Debug)]
@@ -2036,7 +2036,7 @@ where
     }
 }
 
-/// [`TextureMapping`](super::TextureMapping)s produced by [`ExportMem`]-implementations of
+/// [`TextureMapping`]s produced by [`ExportMem`]-implementations of
 /// [`MultiRenderer`]s.
 pub struct MultiTextureMapping<A: GraphicsApi, B: GraphicsApi>(TextureMappingInternal<A, B>)
 where

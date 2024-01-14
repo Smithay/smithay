@@ -10,11 +10,11 @@
 //! ## How to use
 //!
 //! To setup the drm_lease global, you will need to first provide the `DrmNode` you want to lease resources from.
-//! You can usually get that from your [`DrmDevice`](crate::backend::drm::DrmDevice). Once the global is up,
+//! You can usually get that from your [`DrmDevice`]. Once the global is up,
 //! you can advertise connectors as available through [`DrmLeaseState::add_connector`].
 //! Should a connector become unavailable or is used by the compositor, you may remove it again using [`DrmLeaseState::withdraw_connector`].
 //!
-//! Any client requests will be issued through [`DrmStateHandler::lease_request`], which
+//! Any client requests will be issued through [`DrmLeaseHandler::lease_request`], which
 //! allows you to add additional needed DRM resources to the lease and accept or decline the request.
 //!
 //! ```no_run
@@ -292,7 +292,7 @@ impl std::error::Error for LeaseRejected {
 }
 
 impl LeaseRejected {
-    /// Wrap any error type in a `LeaseRejected` error to be returned from [`DrmLeaseHandler::lease_requested`].
+    /// Wrap any error type in a `LeaseRejected` error to be returned from [`DrmLeaseHandler::lease_request`].
     pub fn with_cause<T: std::error::Error + 'static>(err: T) -> Self {
         LeaseRejected(Some(Box::new(err)))
     }

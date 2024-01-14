@@ -169,7 +169,7 @@ impl<D: SeatHandler + 'static> SeatState<D> {
 }
 
 impl<D: SeatHandler + 'static> Seat<D> {
-    /// Checks whether a given [`WlSeat`](wl_seat::WlSeat) is associated with this [`Seat`]
+    /// Checks whether a given [`WlSeat`] is associated with this [`Seat`]
     pub fn owns(&self, seat: &wl_seat::WlSeat) -> bool {
         let inner = self.arc.inner.lock().unwrap();
         inner.known_seats.iter().any(|s| s == seat)
@@ -182,7 +182,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
             .map(|arc| Self { arc })
     }
 
-    /// Retrieves [`WlSeat`](wl_seat::WlSeat) resources for a given client
+    /// Retrieves [`WlSeat`] resources for a given client
     pub fn client_seats(&self, client: &Client) -> Vec<WlSeat> {
         self.arc
             .inner

@@ -30,7 +30,7 @@
 //!
 //! Then, the [`seat`] module contains logic related to input handling. These helpers are used
 //! to forward input (such as pointer action or keystrokes) to clients, and manage the input
-//! focus of clients. Tightly coupled with it is the [`data_device`] module, which handles
+//! focus of clients. Tightly coupled with it is the [`selection`] module, which handles
 //! cross-client interactions such as accessing the clipboard, or drag'n'drop actions.
 //!
 //! The [`shm`] module provides the necessary logic for client to provide buffers defining the

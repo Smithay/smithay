@@ -62,7 +62,7 @@ pub struct ViewporterState {
 }
 
 impl ViewporterState {
-    /// Create new [`wp_viewporter`](wayland_protocols::wp::viewporter::server::wp_viewporter) global.
+    /// Create new [`wp_viewporter`] global.
     ///
     /// It returns the viewporter state, which you can drop to remove these global from
     /// the event loop in the future.

@@ -22,7 +22,7 @@
 //! # Why **not** to use this implementation
 //!
 //! For software rendering you may take a look at [`MemoryRenderBuffer`](super::memory::MemoryRenderBuffer)
-//! which provides proper damage tracking and is agnostic over the [`Renderer`](crate::backend::renderer::Renderer)
+//! which provides proper damage tracking and is agnostic over the [`Renderer`]
 //!
 //! # How to use it
 //!

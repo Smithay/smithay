@@ -8,10 +8,10 @@
 //! of the element.
 //!
 //! Out of the box smithay provides the following elements
-//! - [`memory`](crate::backend::renderer::element::memory) - Memory based render element
-//! - [`texture`](crate::backend::renderer::element::texture) - Texture based render element
-//! - [`surface`](crate::backend::renderer::element::surface) - Wayland surface render element
-//! - [`solid`](crate::backend::renderer::element::solid) - Solid color render element
+//! - [`memory`] - Memory based render element
+//! - [`texture`] - Texture based render element
+//! - [`surface`] - Wayland surface render element
+//! - [`solid`] - Solid color render element
 //!
 //! The [`render_elements!`] macro provides an easy way to aggregate multiple different [RenderElement]s
 //! into a single enum.

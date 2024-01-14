@@ -17,9 +17,9 @@ use crate::{
 /// Represents a popup surface
 #[derive(Debug, Clone, PartialEq)]
 pub enum PopupKind {
-    /// xdg-shell [`PopupSurface`]
+    /// xdg-shell [`PopupSurface`](xdg::PopupSurface)
     Xdg(xdg::PopupSurface),
-    /// input-method [`PopupSurface`]
+    /// input-method [`PopupSurface`](input_method::PopupSurface)
     InputMethod(input_method::PopupSurface),
 }
 

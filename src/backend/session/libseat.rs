@@ -1,5 +1,5 @@
 //!
-//! Implementation of the [`Session`](super::Session) trait through the libseat.
+//! Implementation of the [`Session`] trait through the libseat.
 //!
 //! This requires libseat to be available on the system.
 

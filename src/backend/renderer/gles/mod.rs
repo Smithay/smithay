@@ -562,7 +562,7 @@ impl GlesRenderer {
         Ok(capabilities)
     }
 
-    /// Creates a new OpenGL ES renderer from a given [`EGLContext`](crate::backend::egl::EGLContext)
+    /// Creates a new OpenGL ES renderer from a given [`EGLContext`]
     /// with all [`supported capabilities`](Self::supported_capabilities).
     ///
     /// # Safety
@@ -575,7 +575,7 @@ impl GlesRenderer {
         Self::with_capabilities(context, supported_capabilities)
     }
 
-    /// Creates a new OpenGL ES renderer from a given [`EGLContext`](crate::backend::egl::EGLContext)
+    /// Creates a new OpenGL ES renderer from a given [`EGLContext`]
     /// with the specified [`Capabilities`](Capability). If a requested [`Capability`] is not supported an
     /// error will be returned.
     ///

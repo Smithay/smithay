@@ -2509,28 +2509,28 @@ where
         self.swapchain.reset_buffer_ages();
     }
 
-    /// Returns the underlying [`crtc`](drm::control::crtc) of this surface
+    /// Returns the underlying [`crtc`] of this surface
     pub fn crtc(&self) -> crtc::Handle {
         self.surface.crtc()
     }
 
-    /// Returns the underlying [`plane`](drm::control::plane) of this surface
+    /// Returns the underlying [`plane`] of this surface
     pub fn plane(&self) -> plane::Handle {
         self.surface.plane()
     }
 
-    /// Currently used [`connector`](drm::control::connector)s of this `Surface`
+    /// Currently used [`connector`]s of this `Surface`
     pub fn current_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         self.surface.current_connectors()
     }
 
-    /// Returns the pending [`connector`](drm::control::connector)s
+    /// Returns the pending [`connector`]s
     /// used for the next frame queued via [`queue_frame`](DrmCompositor::queue_frame).
     pub fn pending_connectors(&self) -> impl IntoIterator<Item = connector::Handle> {
         self.surface.pending_connectors()
     }
 
-    /// Tries to add a new [`connector`](drm::control::connector)
+    /// Tries to add a new [`connector`]
     /// to be used after the next commit.
     ///
     /// **Warning**: You need to make sure, that the connector is not used with another surface
@@ -2538,17 +2538,17 @@ where
     /// Behavior if failing to do so is undefined, but might result in rendering errors or the connector
     /// getting removed from the other surface without updating it's internal state.
     ///
-    /// Fails if the `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
+    /// Fails if the `connector` is not compatible with the underlying [`crtc`]
     /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
-    /// [`Mode`](drm::control::Mode).
+    /// [`Mode`].
     pub fn add_connector(&self, connector: connector::Handle) -> FrameResult<(), A, F> {
         self.surface
             .add_connector(connector)
             .map_err(FrameError::DrmError)
     }
 
-    /// Tries to mark a [`connector`](drm::control::connector)
+    /// Tries to mark a [`connector`]
     /// for removal on the next commit.
     pub fn remove_connector(&self, connector: connector::Handle) -> FrameResult<(), A, F> {
         self.surface
@@ -2558,34 +2558,34 @@ where
 
     /// Tries to replace the current connector set with the newly provided one on the next commit.
     ///
-    /// Fails if one new `connector` is not compatible with the underlying [`crtc`](drm::control::crtc)
+    /// Fails if one new `connector` is not compatible with the underlying [`crtc`]
     /// (e.g. no suitable [`encoder`](drm::control::encoder) may be found)
     /// or is not compatible with the currently pending
-    /// [`Mode`](drm::control::Mode).
+    /// [`Mode`].
     pub fn set_connectors(&self, connectors: &[connector::Handle]) -> FrameResult<(), A, F> {
         self.surface
             .set_connectors(connectors)
             .map_err(FrameError::DrmError)
     }
 
-    /// Returns the currently active [`Mode`](drm::control::Mode)
-    /// of the underlying [`crtc`](drm::control::crtc)
+    /// Returns the currently active [`Mode`]
+    /// of the underlying [`crtc`]
     pub fn current_mode(&self) -> Mode {
         self.surface.current_mode()
     }
 
-    /// Returns the currently pending [`Mode`](drm::control::Mode)
+    /// Returns the currently pending [`Mode`]
     /// to be used after the next commit.
     pub fn pending_mode(&self) -> Mode {
         self.surface.pending_mode()
     }
 
-    /// Tries to set a new [`Mode`](drm::control::Mode)
+    /// Tries to set a new [`Mode`]
     /// to be used after the next commit.
     ///
     /// Fails if the mode is not compatible with the underlying
-    /// [`crtc`](drm::control::crtc) or any of the
-    /// pending [`connector`](drm::control::connector)s.
+    /// [`crtc`] or any of the
+    /// pending [`connector`]s.
     pub fn use_mode(&mut self, mode: Mode) -> FrameResult<(), A, F> {
         self.surface.use_mode(mode).map_err(FrameError::DrmError)?;
         let (w, h) = mode.size();
