@@ -770,14 +770,9 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     ///
     /// Prefer using [`KeyboardHandle::input`] if this decision can be done synchronously
     /// in the `filter` closure.
-    pub fn intercept<T, F>(
-        &self,
-        data: &mut D,
-        keycode: u32,
-        state: KeyState,
-        filter: F,
-    ) -> (T, bool)
-        where F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> T,
+    pub fn intercept<T, F>(&self, data: &mut D, keycode: u32, state: KeyState, filter: F) -> (T, bool)
+    where
+        F: FnOnce(&mut D, &ModifiersState, KeysymHandle<'_>) -> T,
     {
         trace!("Handling keystroke");
 
