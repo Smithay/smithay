@@ -57,7 +57,7 @@
 //!
 //! ## EGL
 //!
-//! When using [`EGL`](crate::backend::egl), an [`X11Surface`] may be used to create an [`EGLDisplay`](crate::backend::egl::EGLDisplay).
+//! When using [`EGL`](crate::backend::egl), an [`X11Surface`] may be used to create an [`EGLDisplay`].
 
 /*
 A note for future contributors and maintainers:

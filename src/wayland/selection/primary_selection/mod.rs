@@ -16,7 +16,7 @@
 //! - the freestanding function [`set_primary_selection`]
 //!   allows you to set the contents of the selection for your clients
 //! - the `PrimarySelectionHandle` gives you the option to inspect new selections
-//!   by overriding [`PrimarySelectionHandler::new_selection].
+//!   by overriding [`SelectionHandler::new_selection`].
 //!
 //! ## Initialization
 //!
@@ -136,7 +136,7 @@ where
 /// You need to provide the available mime types for this selection.
 ///
 /// Whenever a client requests to read the selection, your callback will
-/// receive a [`PrimarySelectionHandler::send_selection`] event.
+/// receive a [`SelectionHandler::send_selection`] event.
 #[instrument(name = "wayland_primary_selection", level = "debug", skip(dh, seat, user_data), fields(seat = seat.name()))]
 pub fn set_primary_selection<D>(
     dh: &DisplayHandle,

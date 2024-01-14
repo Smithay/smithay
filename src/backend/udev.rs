@@ -285,7 +285,7 @@ pub fn all_gpus<S: AsRef<str>>(seat: S) -> io::Result<Vec<PathBuf>> {
         .collect())
 }
 
-/// Returns the loaded driver for a device named by it's [`dev_t`](::nix::sys::stat::dev_t).
+/// Returns the loaded driver for a device named by it's [`dev_t`].
 pub fn driver(dev: dev_t) -> io::Result<Option<OsString>> {
     let mut enumerator = Enumerator::new()?;
     enumerator.match_subsystem("drm")?;

@@ -250,7 +250,7 @@ where
 /// You need to provide the available mime types for this selection.
 ///
 /// Whenever a client requests to read the selection, your callback will
-/// receive a [`DataDeviceHandler::send_selection`] event.
+/// receive a [`SelectionHandler::send_selection`](crate::wayland::selection::SelectionHandler::send_selection) event.
 #[instrument(name = "wayland_data_device", level = "debug", skip(dh, seat, user_data), fields(seat = seat.name()))]
 pub fn set_data_device_selection<D>(
     dh: &DisplayHandle,

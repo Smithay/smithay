@@ -632,7 +632,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         self.change_keymap(data, &keymap);
     }
 
-    /// Change the [`Keymap`] used by the keyboard.
+    /// Change the [`Keymap`](xkb::Keymap) used by the keyboard.
     ///
     /// The input is a keymap in XKB_KEYMAP_FORMAT_TEXT_V1 format.
     pub fn set_keymap_from_string(&self, data: &mut D, keymap: String) -> Result<(), Error> {

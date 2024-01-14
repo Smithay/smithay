@@ -178,7 +178,7 @@ impl XdgActivationState {
 
     /// Create a token without any client association, e.g. for spawning processes from the compositor.
     ///
-    /// This will not invoke [`XdgActivationHandler::created_token`] like client-created tokens,
+    /// This will not invoke [`XdgActivationHandler::token_created`] like client-created tokens,
     /// instead use the return arguments to handle any initialization of the data you might need and to copy the token.
     pub fn create_external_token(
         &mut self,

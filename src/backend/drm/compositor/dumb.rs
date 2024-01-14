@@ -12,7 +12,7 @@ use crate::backend::{
     },
 };
 
-/// Possible errors for attaching a [`framebuffer::Handle`]
+/// Possible errors for attaching a [`framebuffer::Handle`](::drm::control::framebuffer::Handle)
 #[derive(Error, Debug)]
 pub enum Error {
     /// The buffer is not supported

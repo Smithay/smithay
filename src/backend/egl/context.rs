@@ -35,7 +35,7 @@ pub struct EGLContext {
 
 /// Defines the priority for an [`EGLContext`]
 ///
-/// see: https://registry.khronos.org/EGL/extensions/IMG/EGL_IMG_context_priority.txt
+/// see: <https://registry.khronos.org/EGL/extensions/IMG/EGL_IMG_context_priority.txt>
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ContextPriority {
     /// High priority
