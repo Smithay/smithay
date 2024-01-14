@@ -39,7 +39,7 @@ use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decor
 };
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{Dispatch, DisplayHandle, GlobalDispatch, WEnum};
+use wayland_server::{Client, Dispatch, DisplayHandle, GlobalDispatch, WEnum};
 
 /// KDE server decoration handler.
 pub trait KdeDecorationHandler {
@@ -83,17 +83,42 @@ pub struct KdeDecorationState {
     kde_decoration_manager: GlobalId,
 }
 
+/// Data associated with a KdeDecorationManager global.
+#[allow(missing_debug_implementations)]
+pub struct KdeDecorationManagerGlobalData {
+    pub(crate) filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
+}
+
 impl KdeDecorationState {
     /// Create a new KDE server decoration global.
     pub fn new<D>(display: &DisplayHandle, default_mode: DefaultMode) -> Self
     where
-        D: GlobalDispatch<OrgKdeKwinServerDecorationManager, ()>
+        D: GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData>
             + Dispatch<OrgKdeKwinServerDecorationManager, ()>
             + Dispatch<OrgKdeKwinServerDecoration, WlSurface>
             + KdeDecorationHandler
             + 'static,
     {
-        let kde_decoration_manager = display.create_global::<D, OrgKdeKwinServerDecorationManager, _>(1, ());
+        Self::new_with_filter::<D, _>(display, default_mode, |_| true)
+    }
+
+    /// Create a new KDE server decoration global with a filter.
+    ///
+    /// Filters can be used to limit visibility of a global to certain clients.
+    pub fn new_with_filter<D, F>(display: &DisplayHandle, default_mode: DefaultMode, filter: F) -> Self
+    where
+        D: GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData>
+            + Dispatch<OrgKdeKwinServerDecorationManager, ()>
+            + Dispatch<OrgKdeKwinServerDecoration, WlSurface>
+            + KdeDecorationHandler
+            + 'static,
+        F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
+    {
+        let data = KdeDecorationManagerGlobalData {
+            filter: Box::new(filter),
+        };
+        let kde_decoration_manager =
+            display.create_global::<D, OrgKdeKwinServerDecorationManager, _>(1, data);
 
         Self {
             kde_decoration_manager,
@@ -112,7 +137,7 @@ impl KdeDecorationState {
 macro_rules! delegate_kde_decoration {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager: ()
+            $crate::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::OrgKdeKwinServerDecorationManager: $crate::wayland::shell::kde::decoration::KdeDecorationManagerGlobalData
         ] => $crate::wayland::shell::kde::decoration::KdeDecorationState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [

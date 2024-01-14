@@ -12,9 +12,12 @@ use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, 
 
 use crate::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 
-impl<D> GlobalDispatch<OrgKdeKwinServerDecorationManager, (), D> for KdeDecorationState
+use super::decoration::KdeDecorationManagerGlobalData;
+
+impl<D> GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData, D>
+    for KdeDecorationState
 where
-    D: GlobalDispatch<OrgKdeKwinServerDecorationManager, ()>
+    D: GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData>
         + Dispatch<OrgKdeKwinServerDecorationManager, ()>
         + Dispatch<OrgKdeKwinServerDecoration, WlSurface>
         + KdeDecorationHandler
@@ -25,7 +28,7 @@ where
         _dh: &DisplayHandle,
         _client: &Client,
         resource: New<OrgKdeKwinServerDecorationManager>,
-        _global_data: &(),
+        _global_data: &KdeDecorationManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
         let kde_decoration_manager = data_init.init(resource, ());
@@ -35,6 +38,10 @@ where
         kde_decoration_manager.default_mode(default_mode);
 
         trace!("Bound decoration manager global");
+    }
+
+    fn can_view(client: Client, global_data: &KdeDecorationManagerGlobalData) -> bool {
+        (global_data.filter)(&client)
     }
 }
 
