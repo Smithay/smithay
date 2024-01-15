@@ -1,10 +1,7 @@
-use std::{
-    cell::{RefCell, RefMut},
-    collections::{HashMap, HashSet},
-};
+use std::{cell::RefCell, collections::HashMap};
 
-use tracing::{instrument, trace};
-use wayland_server::{protocol::wl_surface::WlSurface, Resource, Weak as WlWeak};
+use tracing::instrument;
+use wayland_server::protocol::wl_surface::WlSurface;
 
 use crate::{
     backend::renderer::utils::RendererSurfaceStateUserData,
@@ -18,15 +15,6 @@ mod window;
 #[cfg(feature = "xwayland")]
 mod x11;
 
-type OutputSurfacesUserdata = RefCell<HashSet<WlWeak<WlSurface>>>;
-fn output_surfaces(o: &Output) -> RefMut<'_, HashSet<WlWeak<WlSurface>>> {
-    let userdata = o.user_data();
-    userdata.insert_if_missing(OutputSurfacesUserdata::default);
-    let mut surfaces = userdata.get::<OutputSurfacesUserdata>().unwrap().borrow_mut();
-    surfaces.retain(|s| s.upgrade().is_ok());
-    surfaces
-}
-
 /// Updates the output overlap for a surface tree.
 ///
 /// Surfaces in the tree will receive output enter and leave events as necessary according to their
@@ -34,8 +22,6 @@ fn output_surfaces(o: &Output) -> RefMut<'_, HashSet<WlWeak<WlSurface>>> {
 #[instrument(level = "trace", skip(output), fields(output = output.name()))]
 #[profiling::function]
 pub fn output_update(output: &Output, output_overlap: Option<Rectangle<i32, Logical>>, surface: &WlSurface) {
-    let mut surface_list = output_surfaces(output);
-
     with_surface_tree_downward(
         surface,
         (Point::from((0, 0)), false),
@@ -62,13 +48,13 @@ pub fn output_update(output: &Output, output_overlap: Option<Rectangle<i32, Logi
             if *parent_unmapped {
                 // The parent is unmapped, just send a leave event
                 // if we were previously mapped and exit early
-                output_leave(output, &mut surface_list, wl_surface);
+                output.leave(wl_surface);
                 return;
             }
 
             let Some(output_overlap) = output_overlap else {
                 // There's no overlap, send a leave event.
-                output_leave(output, &mut surface_list, wl_surface);
+                output.leave(wl_surface);
                 return;
             };
 
@@ -79,37 +65,19 @@ pub fn output_update(output: &Output, output_overlap: Option<Rectangle<i32, Logi
                 let surface_rectangle = Rectangle::from_loc_and_size(location, surface_view.dst);
                 if output_overlap.overlaps(surface_rectangle) {
                     // We found a matching output, check if we already sent enter
-                    output_enter(output, &mut surface_list, wl_surface);
+                    output.enter(wl_surface);
                 } else {
                     // Surface does not match output, if we sent enter earlier
                     // we should now send leave
-                    output_leave(output, &mut surface_list, wl_surface);
+                    output.leave(wl_surface);
                 }
             } else {
                 // Maybe the the surface got unmapped, send leave on output
-                output_leave(output, &mut surface_list, wl_surface);
+                output.leave(wl_surface);
             }
         },
         |_, _, _| true,
     );
-}
-
-fn output_enter(output: &Output, surface_list: &mut HashSet<WlWeak<WlSurface>>, surface: &WlSurface) {
-    let weak = surface.downgrade();
-    if !surface_list.contains(&weak) {
-        trace!("surface entering output",);
-        output.enter(surface);
-        surface_list.insert(weak);
-    }
-}
-
-fn output_leave(output: &Output, surface_list: &mut HashSet<WlWeak<WlSurface>>, surface: &WlSurface) {
-    let weak = surface.downgrade();
-    if surface_list.contains(&weak) {
-        trace!("surface leaving output",);
-        output.leave(surface);
-        surface_list.remove(&weak);
-    }
 }
 
 #[derive(Debug, Default)]

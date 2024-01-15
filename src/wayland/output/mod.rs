@@ -60,6 +60,7 @@
 
 mod handlers;
 pub(crate) mod xdg;
+
 use crate::output::{Inner, Mode, Output, OutputData, Scale, Subpixel};
 
 use tracing::info;
@@ -264,8 +265,16 @@ impl Output {
             .and_then(|handle| handle.upgrade())
             .and_then(|handle| handle.get_client(surface.id()).ok());
         if let Some(client) = client {
-            for output in self.client_outputs_internal(client) {
-                surface.enter(&output);
+            let weak = surface.downgrade();
+            let mut inner = self.inner.0.lock().unwrap();
+            inner.surfaces.retain(|s| s.upgrade().is_ok());
+            if !inner.surfaces.contains(&weak) {
+                inner.surfaces.insert(weak);
+                drop(inner);
+
+                for output in self.client_outputs_internal(client) {
+                    surface.enter(&output);
+                }
             }
         }
     }
@@ -283,8 +292,16 @@ impl Output {
             .and_then(|handle| handle.upgrade())
             .and_then(|handle| handle.get_client(surface.id()).ok());
         if let Some(client) = client {
-            for output in self.client_outputs_internal(client) {
-                surface.leave(&output);
+            let weak = surface.downgrade();
+            let mut inner = self.inner.0.lock().unwrap();
+            inner.surfaces.retain(|s| s.upgrade().is_ok());
+            if inner.surfaces.contains(&weak) {
+                inner.surfaces.remove(&weak);
+                drop(inner);
+
+                for output in self.client_outputs_internal(client) {
+                    surface.leave(&output);
+                }
             }
         }
     }

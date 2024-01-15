@@ -23,7 +23,7 @@ where
     fn bind(
         _state: &mut D,
         _dh: &DisplayHandle,
-        _client: &Client,
+        client: &Client,
         resource: New<WlOutput>,
         global_data: &WlOutputData,
         data_init: &mut DataInit<'_, D>,
@@ -73,6 +73,15 @@ where
         if output.version() >= 2 {
             output.scale(inner.scale.integer_scale());
             output.done();
+        }
+
+        // Send enter for surfaces already on this output.
+        for surface in &inner.surfaces {
+            if let Ok(surface) = surface.upgrade() {
+                if surface.client().as_ref() == Some(client) {
+                    surface.enter(&output);
+                }
+            }
         }
 
         inner.instances.push(output);
