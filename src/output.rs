@@ -61,7 +61,11 @@ use crate::wayland::output::xdg::XdgOutput;
 #[cfg(feature = "backend_drm")]
 use drm::control::{Mode as DrmMode, ModeFlags};
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::{backend::WeakHandle, protocol::wl_output::WlOutput};
+use std::collections::HashSet;
+#[cfg(feature = "wayland_frontend")]
+use wayland_server::{
+    backend::WeakHandle, protocol::wl_output::WlOutput, protocol::wl_surface::WlSurface, Weak as WlWeak,
+};
 
 use crate::utils::{self, user_data::UserDataMap, Logical, Physical, Point, Raw, Size, Transform};
 
@@ -208,6 +212,8 @@ pub(crate) struct Inner {
     pub(crate) handle: Option<WeakHandle>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) xdg_output: Option<XdgOutput>,
+    #[cfg(feature = "wayland_frontend")]
+    pub(crate) surfaces: HashSet<WlWeak<WlSurface>>,
 }
 
 /// An abstract output.
@@ -254,6 +260,8 @@ impl Output {
                 preferred_mode: None,
                 #[cfg(feature = "wayland_frontend")]
                 xdg_output: None,
+                #[cfg(feature = "wayland_frontend")]
+                surfaces: HashSet::new(),
             }),
             UserDataMap::default(),
         ));

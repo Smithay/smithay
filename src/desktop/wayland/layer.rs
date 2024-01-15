@@ -28,12 +28,11 @@ use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use wayland_server::{
     backend::ObjectId,
     protocol::wl_surface::{self, WlSurface},
-    Resource, Weak,
+    Resource,
 };
 
 use std::{
     cell::{RefCell, RefMut},
-    collections::HashSet,
     hash::{Hash, Hasher},
     sync::{Arc, Mutex},
     time::Duration,
@@ -49,8 +48,6 @@ pub struct LayerMap {
     layers: IndexSet<LayerSurface>,
     output: WeakOutput,
     zone: Rectangle<i32, Logical>,
-    // surfaces for tracking enter and leave events
-    surfaces: HashSet<Weak<WlSurface>>,
 }
 
 /// Retrieve a [`LayerMap`] for a given [`Output`].
@@ -81,7 +78,6 @@ pub fn layer_map_for_output(o: &Output) -> RefMut<'_, LayerMap> {
                     })
                     .unwrap_or_else(|| (0, 0).into()),
             ),
-            surfaces: HashSet::new(),
         })
     });
     userdata.get::<RefCell<LayerMap>>().unwrap().borrow_mut()
@@ -125,11 +121,7 @@ impl LayerMap {
                 (),
                 |_, _, _| TraversalAction::DoChildren(()),
                 |wl_surface, _, _| {
-                    let weak = wl_surface.downgrade();
-                    if self.surfaces.contains(&weak) {
-                        output.leave(wl_surface);
-                        self.surfaces.remove(&weak);
-                    }
+                    output.leave(wl_surface);
                 },
                 |_, _, _| true,
             );
@@ -140,11 +132,7 @@ impl LayerMap {
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        let weak = wl_surface.downgrade();
-                        if self.surfaces.contains(&weak) {
-                            output.leave(wl_surface);
-                            self.surfaces.remove(&weak);
-                        }
+                        output.leave(wl_surface);
                     },
                     |_, _, _| true,
                 )
@@ -276,17 +264,12 @@ impl LayerMap {
             for layer in self.layers.iter() {
                 let surface = layer.wl_surface();
 
-                let surfaces_ref = &mut self.surfaces;
                 with_surface_tree_downward(
                     surface,
                     (),
                     |_, _, _| TraversalAction::DoChildren(()),
                     |wl_surface, _, _| {
-                        let weak = wl_surface.downgrade();
-                        if !surfaces_ref.contains(&weak) {
-                            output.enter(wl_surface);
-                            surfaces_ref.insert(weak);
-                        }
+                        output.enter(wl_surface);
                     },
                     |_, _, _| true,
                 );
@@ -297,11 +280,7 @@ impl LayerMap {
                         (),
                         |_, _, _| TraversalAction::DoChildren(()),
                         |wl_surface, _, _| {
-                            let weak = wl_surface.downgrade();
-                            if !surfaces_ref.contains(&weak) {
-                                output.enter(wl_surface);
-                                surfaces_ref.insert(weak);
-                            }
+                            output.enter(wl_surface);
                         },
                         |_, _, _| true,
                     )
@@ -462,7 +441,6 @@ impl LayerMap {
             self.layers.retain(|layer| layer.alive());
             self.arrange();
         }
-        self.surfaces.retain(|weak| weak.upgrade().is_ok());
     }
 
     /// Returns layers count
