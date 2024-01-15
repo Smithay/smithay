@@ -103,18 +103,46 @@ pub struct XdgDecorationState {
     global: GlobalId,
 }
 
+/// Data associated with a XdgDecorationManager global.
+#[allow(missing_debug_implementations)]
+pub struct XdgDecorationManagerGlobalData {
+    filter: Box<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
+}
+
 impl XdgDecorationState {
     /// Creates a new delegate type for handling xdg decoration events.
     ///
     /// A global id is also returned to allow destroying the global in the future.
     pub fn new<D>(display: &DisplayHandle) -> XdgDecorationState
     where
-        D: GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
-            + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
+        D: GlobalDispatch<
+                zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+                XdgDecorationManagerGlobalData,
+            > + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
             + 'static,
     {
+        Self::new_with_filter::<D, _>(display, |_| true)
+    }
+
+    /// Creates a new delegate type for handling xdg decoration events with a filter.
+    ///
+    /// Filters can be used to limit visibility of a global to certain clients.
+    ///
+    /// A global id is also returned to allow destroying the global in the future.
+    pub fn new_with_filter<D, F>(display: &DisplayHandle, filter: F) -> XdgDecorationState
+    where
+        D: GlobalDispatch<
+                zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+                XdgDecorationManagerGlobalData,
+            > + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
+            + 'static,
+        F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
+    {
+        let data = XdgDecorationManagerGlobalData {
+            filter: Box::new(filter),
+        };
         let global =
-            display.create_global::<D, zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _>(1, ());
+            display.create_global::<D, zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _>(1, data);
 
         XdgDecorationState { global }
     }
@@ -144,7 +172,7 @@ pub trait XdgDecorationHandler {
 macro_rules! delegate_xdg_decoration {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1: ()
+            $crate::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1: $crate::wayland::shell::xdg::decoration::XdgDecorationManagerGlobalData
         ] => $crate::wayland::shell::xdg::decoration::XdgDecorationState);
 
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
@@ -163,9 +191,10 @@ pub(super) fn send_decoration_configure(
     id.configure(mode)
 }
 
-impl<D> GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, (), D> for XdgDecorationState
+impl<D> GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, XdgDecorationManagerGlobalData, D>
+    for XdgDecorationState
 where
-    D: GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
+    D: GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, XdgDecorationManagerGlobalData>
         + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
         + Dispatch<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ToplevelSurface>
         + XdgShellHandler
@@ -177,10 +206,14 @@ where
         _: &DisplayHandle,
         _: &Client,
         resource: New<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1>,
-        _: &(),
+        _: &XdgDecorationManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
         data_init.init(resource, ());
+    }
+
+    fn can_view(client: Client, global_data: &XdgDecorationManagerGlobalData) -> bool {
+        (global_data.filter)(&client)
     }
 }
 
