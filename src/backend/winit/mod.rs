@@ -123,7 +123,7 @@ where
     debug!("Window created");
 
     let (display, context, surface, is_x11) = {
-        let display = EGLDisplay::new(window.clone())?;
+        let display = unsafe { EGLDisplay::new(window.clone())? };
 
         let context = EGLContext::new_with_config(&display, attributes, PixelFormatRequirements::_10_bit())
             .or_else(|_| {

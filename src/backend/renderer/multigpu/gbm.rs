@@ -124,9 +124,8 @@ impl<R> GbmGlesBackend<R> {
             return Ok(());
         }
 
-        self.devices.insert(node, EGLDisplay::new(gbm)?);
+        self.devices.insert(node, unsafe { EGLDisplay::new(gbm)? });
         self.needs_enumeration.store(true, Ordering::SeqCst);
-
         Ok(())
     }
 

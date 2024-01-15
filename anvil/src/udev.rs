@@ -884,7 +884,7 @@ impl AnvilState<UdevData> {
             )
             .unwrap();
 
-        let render_node = EGLDevice::device_for_display(&EGLDisplay::new(gbm.clone()).unwrap())
+        let render_node = EGLDevice::device_for_display(&unsafe { EGLDisplay::new(gbm.clone()).unwrap() })
             .ok()
             .and_then(|x| x.try_get_render_node().ok().flatten())
             .unwrap_or(node);
