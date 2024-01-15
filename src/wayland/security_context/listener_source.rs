@@ -60,7 +60,7 @@ impl EventSource for SecurityContextListenerSource {
             Ok(PostAction::Continue)
         })?;
 
-        self.listen_fd
+        self.close_fd
             .process_events(readiness, token, |_, _fd| Ok(PostAction::Remove))
     }
 
