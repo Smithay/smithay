@@ -936,7 +936,7 @@ impl X11Inner {
 }
 
 fn egl_init(_: &X11Inner) -> Result<(DrmNode, OwnedFd), EGLInitError> {
-    let display = EGLDisplay::new(X11DefaultDisplay)?;
+    let display = unsafe { EGLDisplay::new(X11DefaultDisplay)? };
     let device = EGLDevice::device_for_display(&display)?;
     let path = path_to_type(device.drm_device_path()?, NodeType::Render)?;
     let node = DrmNode::from_path(&path)

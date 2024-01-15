@@ -127,7 +127,7 @@ fn format_test(render: Vec<String>, sample: Vec<String>) {
                         || device.render_device_path().ok().as_ref() == Some(&path)
                 })
                 .expect("Unable to find egl device");
-            let display = EGLDisplay::new(device).expect("Failed to create EGL display");
+            let display = unsafe { EGLDisplay::new(device).expect("Failed to create EGL display") };
             display.dmabuf_render_formats().clone()
         })
         .chain(sample.iter().map(|path| {
@@ -139,7 +139,7 @@ fn format_test(render: Vec<String>, sample: Vec<String>) {
                         || device.render_device_path().ok().as_ref() == Some(&path)
                 })
                 .expect("Unable to find egl device");
-            let display = EGLDisplay::new(device).expect("Failed to create EGL display");
+            let display = unsafe { EGLDisplay::new(device).expect("Failed to create EGL display") };
             display.dmabuf_texture_formats().clone()
         }))
         .fold(None, |set, formats| match set {
@@ -222,7 +222,7 @@ fn buffer_test(args: TestArgs) {
                         || device.render_device_path().ok().as_ref() == Some(&path)
                 })
                 .expect("Unable to find egl device");
-            let display = EGLDisplay::new(device).expect("Failed to create EGL display");
+            let display = unsafe { EGLDisplay::new(device).expect("Failed to create EGL display") };
 
             let context = EGLContext::new(&display).expect("Failed to create EGL context");
             let mut renderer = unsafe { GlesRenderer::new(context).expect("Failed to init GL ES renderer") };
@@ -248,7 +248,7 @@ fn buffer_test(args: TestArgs) {
                         || device.render_device_path().ok().as_ref() == Some(&path)
                 })
                 .expect("Unable to find egl device");
-            let display = EGLDisplay::new(device).expect("Failed to create EGL display");
+            let display = unsafe { EGLDisplay::new(device).expect("Failed to create EGL display") };
 
             display
                 .create_image_from_dmabuf(&buffer)
@@ -262,7 +262,7 @@ fn buffer_test(args: TestArgs) {
                         || device.render_device_path().ok().as_ref() == Some(&path)
                 })
                 .expect("Unable to find egl device");
-            let display = EGLDisplay::new(device).expect("Failed to create EGL display");
+            let display = unsafe { EGLDisplay::new(device).expect("Failed to create EGL display") };
 
             let context = EGLContext::new(&display).expect("Failed to create EGL context");
             let mut renderer = unsafe { GlesRenderer::new(context).expect("Failed to init GL ES renderer") };
