@@ -111,11 +111,12 @@ where
 
                 // Ensure virtual keyboard's keymap is active.
                 let keyboard_handle = data.seat.get_keyboard().unwrap();
-                keyboard_handle.send_keymap(user_data, &vk_state.keymap, vk_state.mods);
+                let mut internal = keyboard_handle.arc.internal.lock().unwrap();
+                let focus = internal.focus.as_mut().map(|(focus, _)| focus);
+                keyboard_handle.send_keymap(user_data, &focus, &vk_state.keymap, vk_state.mods);
 
-                let internal = keyboard_handle.arc.internal.lock().unwrap();
-                if let Some(focus) = internal.focus.as_ref().and_then(|f| f.0.wl_surface()) {
-                    for_each_focused_kbds(&data.seat, &focus, |kbd| {
+                if let Some(wl_surface) = focus.and_then(|f| f.wl_surface()) {
+                    for_each_focused_kbds(&data.seat, &wl_surface, |kbd| {
                         // This should be wl_keyboard::KeyState, but the protocol does not state
                         // the parameter is an enum.
                         let key_state = if state == 1 {
@@ -152,13 +153,14 @@ where
 
                 // Ensure virtual keyboard's keymap is active.
                 let keyboard_handle = data.seat.get_keyboard().unwrap();
-                let keymap_changed = keyboard_handle.send_keymap(user_data, &state.keymap, state.mods);
+                let mut internal = keyboard_handle.arc.internal.lock().unwrap();
+                let focus = internal.focus.as_mut().map(|(focus, _)| focus);
+                let keymap_changed =
+                    keyboard_handle.send_keymap(user_data, &focus, &state.keymap, state.mods);
 
-                // Skip sending mods if keymap change already reported it.
+                // Report modifiers change to all keyboards.
                 if !keymap_changed {
-                    // Report modifiers change to all keyboards.
-                    let internal = keyboard_handle.arc.internal.lock().unwrap();
-                    if let Some(focus) = internal.focus.as_ref().and_then(|f| f.0.wl_surface()) {
+                    if let Some(focus) = focus {
                         focus.modifiers(&data.seat, user_data, state.mods, SERIAL_COUNTER.next_serial());
                     }
                 }
