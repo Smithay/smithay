@@ -1,6 +1,9 @@
 use crate::backend::SwapBuffersError;
 use drm::control::{connector, crtc, plane, Mode, RawResourceHandle};
-use std::{io, path::PathBuf};
+use std::{
+    io::{self, ErrorKind},
+    path::PathBuf,
+};
 
 /// DRM access error
 #[derive(Debug, thiserror::Error)]
@@ -83,8 +86,8 @@ impl From<Error> for SwapBuffersError {
             Error::Access(AccessError {
                 errmsg, dev, source, ..
             }) if matches!(
-                source.raw_os_error(),
-                Some(libc::EPERM | libc::EBUSY | libc::EINTR)
+                source.kind(),
+                ErrorKind::PermissionDenied | ErrorKind::WouldBlock | ErrorKind::Interrupted
             ) =>
             {
                 SwapBuffersError::TemporaryFailure(Box::new(Error::Access(AccessError {
