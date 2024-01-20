@@ -313,14 +313,18 @@ pub fn run_udev() {
                     .iter_mut()
                     .map(|(handle, backend)| (*handle, backend))
                 {
-                    backend.drm.activate();
+                    // disable all connectors and reset the internal state of
+                    // the device and all known surfaces to prevent issues with
+                    // conflicting requirements after a tty switch where we can't be
+                    // sure another drm master left the state in a usable way
+                    backend
+                        .drm
+                        .activate(true)
+                        .expect("failed to activate drm backend");
                     if let Some(lease_global) = backend.leasing_global.as_mut() {
                         lease_global.resume::<AnvilState<UdevData>>();
                     }
                     for surface in backend.surfaces.values_mut() {
-                        if let Err(err) = surface.compositor.surface().reset_state() {
-                            warn!("Failed to reset drm surface state: {}", err);
-                        }
                         // reset the buffers after resume to trigger a full redraw
                         // this is important after a vt switch as the primary plane
                         // has no content and damage tracking may prevent a redraw

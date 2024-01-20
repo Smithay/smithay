@@ -116,6 +116,7 @@ pub struct DrmDevice {
     cursor_size: Size<u32, Buffer>,
     resources: ResourceHandles,
     plane_claim_storage: PlaneClaimStorage,
+    surfaces: Vec<Weak<DrmSurfaceInternal>>,
 }
 
 impl AsFd for DrmDevice {
@@ -226,6 +227,7 @@ impl DrmDevice {
                 cursor_size,
                 resources,
                 plane_claim_storage: Default::default(),
+                surfaces: Default::default(),
             },
             DrmDeviceNotifier {
                 internal,
@@ -310,11 +312,13 @@ impl DrmDevice {
     ///     attached to a crtc in smithay.
     #[instrument(skip(self), parent = self.internal.span(), err)]
     pub fn create_surface(
-        &self,
+        &mut self,
         crtc: crtc::Handle,
         mode: Mode,
         connectors: &[connector::Handle],
     ) -> Result<DrmSurface, Error> {
+        self.surfaces.retain(|surface| surface.upgrade().is_some());
+
         if connectors.is_empty() {
             return Err(Error::SurfaceWithoutConnectors(crtc));
         }
@@ -365,12 +369,14 @@ impl DrmDevice {
                 connectors,
             )?)
         };
+        let internal = Arc::new(internal);
+        self.surfaces.push(Arc::downgrade(&internal));
 
         Ok(DrmSurface {
             dev_id: self.dev_id,
             crtc,
             planes,
-            internal: Arc::new(internal),
+            internal,
             plane_claim_storage: self.plane_claim_storage.clone(),
         })
     }
@@ -390,8 +396,9 @@ impl DrmDevice {
     /// This will cause the `DrmDevice` to avoid making calls to the file descriptor e.g. on drop.
     /// Note that calls directly utilizing the underlying file descriptor, like the traits of the `drm-rs` crate,
     /// will ignore this state. Use [`DrmDevice::is_active`] to guard these calls.
-    pub fn pause(&self) {
+    pub fn pause(&mut self) {
         self.set_active(false);
+        self.surfaces.retain(|surface| surface.upgrade().is_some());
         if self.device_fd().is_privileged() {
             if let Err(err) = self.release_master_lock() {
                 error!("Failed to drop drm master state Error: {}", err);
@@ -399,14 +406,24 @@ impl DrmDevice {
         }
     }
 
-    /// Actives a previously paused device.
-    pub fn activate(&self) {
+    /// Activates a previously paused device.
+    ///
+    /// Specifying `true` for `disable_connectors` will call [`DrmDevice::reset_state`] if
+    /// the device was not active before. Otherwise you need to make sure there are no
+    /// conflicting requirements when enabling or creating surfaces or you are prepared
+    /// to handle errors caused by those.
+    pub fn activate(&mut self, disable_connectors: bool) -> Result<(), Error> {
         if self.device_fd().is_privileged() {
             if let Err(err) = self.acquire_master_lock() {
                 error!("Failed to acquire drm master again. Error: {}", err);
             }
         }
-        self.set_active(true);
+        if !self.set_active(true) && disable_connectors {
+            self.reset_state()
+        } else {
+            self.surfaces.retain(|surface| surface.upgrade().is_some());
+            Ok(())
+        }
     }
 
     /// Returns if the device is currently paused or not.
@@ -417,10 +434,39 @@ impl DrmDevice {
         }
     }
 
-    fn set_active(&self, active: bool) {
+    /// Reset the state of this device
+    ///
+    /// This will disable all connectors and reset all planes.
+    /// Additional this will also reset the state on all known surfaces.
+    pub fn reset_state(&mut self) -> Result<(), Error> {
+        if !self.is_active() {
+            return Err(Error::DeviceInactive);
+        }
+
         match &*self.internal {
-            DrmDeviceInternal::Atomic(internal) => internal.active.store(active, Ordering::SeqCst),
-            DrmDeviceInternal::Legacy(internal) => internal.active.store(active, Ordering::SeqCst),
+            DrmDeviceInternal::Atomic(internal) => internal.reset_state(),
+            DrmDeviceInternal::Legacy(internal) => internal.reset_state(),
+        }?;
+
+        let mut i = 0;
+        while i != self.surfaces.len() {
+            if let Some(surface) = self.surfaces[i].upgrade() {
+                match &*surface {
+                    DrmSurfaceInternal::Atomic(surf) => surf.reset_state::<Self>(None),
+                    DrmSurfaceInternal::Legacy(surf) => surf.reset_state::<Self>(None),
+                }?;
+                i += 1;
+            } else {
+                self.surfaces.remove(i);
+            }
+        }
+        Ok(())
+    }
+
+    fn set_active(&self, active: bool) -> bool {
+        match &*self.internal {
+            DrmDeviceInternal::Atomic(internal) => internal.active.swap(active, Ordering::SeqCst),
+            DrmDeviceInternal::Legacy(internal) => internal.active.swap(active, Ordering::SeqCst),
         }
     }
 }
