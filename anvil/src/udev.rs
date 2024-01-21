@@ -313,16 +313,23 @@ pub fn run_udev() {
                     .iter_mut()
                     .map(|(handle, backend)| (*handle, backend))
                 {
-                    // disable all connectors and reset the internal state of
-                    // the device and all known surfaces to prevent issues with
-                    // conflicting requirements after a tty switch where we can't be
-                    // sure another drm master left the state in a usable way
+                    // if we do not care about flicking (caused by modesetting) we could just
+                    // pass true for disable connectors here. this would make sure our drm
+                    // device is in a known state (all connectors and planes disabled).
+                    // but for demonstration we choose a more optimistic path by leaving the
+                    // state as is and assume it will just work. If this assumption fails
+                    // we will try to reset the state when trying to queue a frame.
                     backend
                         .drm
-                        .activate(true)
+                        .activate(false)
                         .expect("failed to activate drm backend");
                     if let Some(lease_global) = backend.leasing_global.as_mut() {
                         lease_global.resume::<AnvilState<UdevData>>();
+                    }
+                    for surface in backend.surfaces.values_mut() {
+                        if let Err(err) = surface.compositor.surface().reset_state() {
+                            warn!("Failed to reset drm surface state: {}", err);
+                        }
                     }
                     handle.insert_idle(move |data| data.state.render(node, None));
                 }
@@ -1488,7 +1495,16 @@ impl AnvilState<UdevData> {
                         }
                         _ => false,
                     },
-                    SwapBuffersError::ContextLost(err) => panic!("Rendering loop lost: {}", err),
+                    SwapBuffersError::ContextLost(err) => match err.downcast_ref::<DrmError>() {
+                        Some(DrmError::TestFailed(_)) => {
+                            // reset the complete state, disabling all connectors and planes in case we hit a test failed
+                            // most likely we hit this after a tty switch when a foreign master changed CRTC <-> connector bindings
+                            // and we run in a mismatch
+                            device.drm.reset_state().expect("failed to reset drm device");
+                            true
+                        }
+                        _ => panic!("Rendering loop lost: {}", err),
+                    },
                 }
             }
         };
