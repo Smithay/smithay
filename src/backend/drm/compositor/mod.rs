@@ -642,7 +642,7 @@ impl<B: Framebuffer> FrameState<B> {
         let backup = current_config.clone();
         *current_config = state;
 
-        let res = surface.test_state(self.build_planes(supports_fencing), allow_modeset);
+        let res = surface.test_state(self.build_planes(supports_fencing, true), allow_modeset);
 
         if res.is_err() {
             // test failed, restore previous state
@@ -664,6 +664,7 @@ impl<B: Framebuffer> FrameState<B> {
         supports_fencing: bool,
         allow_modeset: bool,
     ) -> Result<(), DrmError> {
+        let commit_pending = surface.commit_pending();
         let needs_test = self.planes.iter().any(|(_, state)| state.needs_test);
         let is_fully_compatible = self.planes.iter().all(|(handle, state)| {
             previous_frame
@@ -672,7 +673,7 @@ impl<B: Framebuffer> FrameState<B> {
                 .unwrap_or(false)
         });
 
-        if !needs_test || is_fully_compatible {
+        if !commit_pending && (!needs_test || is_fully_compatible) {
             trace!("skipping fully compatible state test");
             self.planes
                 .iter_mut()
@@ -680,7 +681,10 @@ impl<B: Framebuffer> FrameState<B> {
             return Ok(());
         }
 
-        let res = surface.test_state(self.build_planes(supports_fencing), allow_modeset);
+        let res = surface.test_state(
+            self.build_planes(supports_fencing, !commit_pending),
+            allow_modeset,
+        );
 
         if res.is_ok() {
             self.planes
@@ -699,7 +703,7 @@ impl<B: Framebuffer> FrameState<B> {
         event: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
-        surface.commit(self.build_planes(supports_fencing), event)
+        surface.commit(self.build_planes(supports_fencing, false), event)
     }
 
     #[profiling::function]
@@ -710,11 +714,15 @@ impl<B: Framebuffer> FrameState<B> {
         event: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
-        surface.page_flip(self.build_planes(supports_fencing), event)
+        surface.page_flip(self.build_planes(supports_fencing, true), event)
     }
 
     #[profiling::function]
-    fn build_planes(&mut self, supports_fencing: bool) -> impl IntoIterator<Item = super::PlaneState<'_>> {
+    fn build_planes(
+        &mut self,
+        supports_fencing: bool,
+        allow_partial_update: bool,
+    ) -> impl IntoIterator<Item = super::PlaneState<'_>> {
         for (_, state) in self.planes.iter_mut().filter(|(_, state)| !state.skip) {
             if let Some(config) = state.config.as_mut() {
                 // Try to extract a native fence out of the supplied sync point if any
@@ -730,8 +738,8 @@ impl<B: Framebuffer> FrameState<B> {
 
         self.planes
             .iter_mut()
-            // Filter out any skipped planes
-            .filter(|(_, state)| !state.skip)
+            // Filter out any skipped planes, but set the state if we have a config and disallow partial updates
+            .filter(move |(_, state)| !state.skip || (state.config.is_some() && !allow_partial_update))
             .map(move |(handle, state)| super::surface::PlaneState {
                 handle: *handle,
                 config: state.config.as_mut().map(|config| super::PlaneConfig {
@@ -2362,6 +2370,14 @@ where
             PrimaryPlaneElement::Element(primary_plane_scanout_element.unwrap())
         };
 
+        // If a commit is pending we may still be able to just use a previous
+        // state, but we want to queue a frame so we just fake the damage to
+        // make sure queue_frame won't be skipped because of no damage
+        let commit_pending = self.surface.commit_pending();
+        if commit_pending {
+            output_damage.push(output_geometry);
+        }
+
         let damage = if output_damage.is_empty() {
             None
         } else {
@@ -2377,10 +2393,10 @@ where
             supports_fencing: self.supports_fencing,
         };
 
-        // We only store the next frame if it acutaly contains any changes
+        // We only store the next frame if it acutaly contains any changes or if a commit is pending
         // Storing the (empty) frame could keep a reference to wayland buffers which
         // could otherwise be potentially released on `frame_submitted`
-        if !next_frame_state.is_empty() {
+        if commit_pending || !next_frame_state.is_empty() {
             self.next_frame = Some(next_frame_state);
         }
 
@@ -2411,7 +2427,9 @@ where
 
         let next_frame = self.next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
 
-        if next_frame.is_empty() {
+        // It can happen that we have no changes, but there is a pending commit in which
+        // case we just set the previous state again
+        if next_frame.is_empty() && !self.surface.commit_pending() {
             return Err(FrameErrorType::<A, F>::EmptyFrame);
         }
 

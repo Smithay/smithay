@@ -324,13 +324,6 @@ pub fn run_udev() {
                     if let Some(lease_global) = backend.leasing_global.as_mut() {
                         lease_global.resume::<AnvilState<UdevData>>();
                     }
-                    for surface in backend.surfaces.values_mut() {
-                        // reset the buffers after resume to trigger a full redraw
-                        // this is important after a vt switch as the primary plane
-                        // has no content and damage tracking may prevent a redraw
-                        // otherwise
-                        surface.compositor.reset_buffers();
-                    }
                     handle.insert_idle(move |data| data.state.render(node, None));
                 }
             }
