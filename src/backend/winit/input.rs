@@ -406,5 +406,7 @@ impl InputBackend for WinitInput {
     type TabletToolTipEvent = UnusedEvent;
     type TabletToolButtonEvent = UnusedEvent;
 
+    type SwitchToggleEvent = UnusedEvent;
+
     type SpecialEvent = UnusedEvent;
 }
