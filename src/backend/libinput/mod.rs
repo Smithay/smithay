@@ -125,6 +125,35 @@ impl backend::KeyboardKeyEvent<LibinputInputBackend> for event::keyboard::Keyboa
     }
 }
 
+impl backend::Event<LibinputInputBackend> for event::switch::SwitchToggleEvent {
+    fn time(&self) -> u64 {
+        event::switch::SwitchEventTrait::time_usec(self)
+    }
+
+    fn device(&self) -> <LibinputInputBackend as InputBackend>::Device {
+        event::EventTrait::device(self)
+    }
+}
+
+impl backend::SwitchToggleEvent<LibinputInputBackend> for event::switch::SwitchToggleEvent {
+    fn switch(&self) -> Option<backend::Switch> {
+        event::switch::SwitchToggleEvent::switch(self).and_then(|switch| {
+            Some(match switch {
+                event::switch::Switch::Lid => backend::Switch::Lid,
+                event::switch::Switch::TabletMode => backend::Switch::TabletMode,
+                _ => return None,
+            })
+        })
+    }
+
+    fn state(&self) -> backend::SwitchState {
+        match event::switch::SwitchToggleEvent::switch_state(self) {
+            event::switch::SwitchState::Off => backend::SwitchState::Off,
+            event::switch::SwitchState::On => backend::SwitchState::On,
+        }
+    }
+}
+
 /// Generic pointer scroll event from libinput
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum PointerScrollAxis {
@@ -577,6 +606,8 @@ impl InputBackend for LibinputInputBackend {
     type TabletToolTipEvent = event::tablet_tool::TabletToolTipEvent;
     type TabletToolButtonEvent = event::tablet_tool::TabletToolButtonEvent;
 
+    type SwitchToggleEvent = event::switch::SwitchToggleEvent;
+
     type SpecialEvent = backend::UnusedEvent;
 }
 
@@ -800,6 +831,14 @@ impl EventSource for LibinputInputBackend {
                         }
                         _ => {
                             trace!("Unknown libinput tablet event");
+                        }
+                    },
+                    libinput::Event::Switch(switch_event) => match switch_event {
+                        event::SwitchEvent::Toggle(event) => {
+                            callback(InputEvent::SwitchToggle { event }, &mut ());
+                        }
+                        _ => {
+                            trace!("Unknown libinput switch event");
                         }
                     },
                     _ => {} //FIXME: What to do with the rest.
