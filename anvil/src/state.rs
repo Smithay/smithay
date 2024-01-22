@@ -375,13 +375,8 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
         });
     }
     fn request_mode(&mut self, toplevel: ToplevelSurface, mode: DecorationMode) {
-        use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
-
         toplevel.with_pending_state(|state| {
-            state.decoration_mode = Some(match mode {
-                DecorationMode::ServerSide => Mode::ServerSide,
-                _ => Mode::ClientSide,
-            });
+            state.decoration_mode = Some(mode)
         });
 
         let initial_configure_sent = with_states(toplevel.wl_surface(), |states| {

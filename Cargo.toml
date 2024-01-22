@@ -135,3 +135,6 @@ harness = false
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[patch.crates-io]
+wayland-protocols = { path = "../wayland-rs/wayland-protocols" }
