@@ -107,7 +107,7 @@
 //!     .render_frame::<_, _>(&mut renderer, &elements, CLEAR_COLOR)
 //!     .expect("failed to render frame");
 //!
-//! if render_frame_result.damage.is_some() {
+//! if !render_frame_result.is_empty {
 //!     compositor.queue_frame(()).expect("failed to queue frame");
 //!
 //!     // ...wait for VBlank event
@@ -902,8 +902,8 @@ pub enum PrimaryPlaneElement<'a, B: Buffer, F: Framebuffer, E> {
 /// swapchain is an implementation detail, but should generally be expect to be
 /// large enough to hold onto at least one `RenderFrameResult`.
 pub struct RenderFrameResult<'a, B: Buffer, F: Framebuffer, E> {
-    /// Damage of this frame
-    pub damage: Option<Vec<Rectangle<i32, Physical>>>,
+    /// If this frame contains any changes and should be submitted
+    pub is_empty: bool,
     /// The render element states of this frame
     pub states: RenderElementStates,
     /// Element for the primary plane
@@ -1278,7 +1278,7 @@ impl<'a, B: Buffer + std::fmt::Debug, F: Framebuffer + std::fmt::Debug, E: std::
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RenderFrameResult")
-            .field("damage", &self.damage)
+            .field("is_empty", &self.is_empty)
             .field("states", &self.states)
             .field("primary_element", &self.primary_element)
             .field("overlay_elements", &self.overlay_elements)
@@ -1848,7 +1848,6 @@ where
             .unwrap()
             .clone();
 
-        let mut output_damage: Vec<Rectangle<i32, Physical>> = Vec::new();
         let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
         let mut element_states =
             IndexMap::with_capacity(std::cmp::min(elements.len(), self.planes.overlay.len()));
@@ -2032,7 +2031,6 @@ where
                 &primary_plane_elements,
                 output_scale,
                 &mut next_frame_state,
-                &mut output_damage,
                 output_transform,
                 output_geometry,
                 try_assign_primary_plane,
@@ -2157,38 +2155,15 @@ where
 
         // If a plane has been moved or no longer has a buffer we need to report that as damage
         for (handle, previous_plane_state) in previous_state.planes.iter() {
-            if let Some(previous_config) = previous_plane_state.config.as_ref() {
-                let next_state = next_frame_state
+            // plane has been removed, so remove the plane from the plane id cache
+            if previous_plane_state.config.is_some()
+                && next_frame_state
                     .plane_state(*handle)
                     .as_ref()
-                    .and_then(|state| state.config.as_ref());
-
-                // plane has been removed, so remove the plane from the plane id cache
-                if next_state.is_none() {
-                    self.overlay_plane_element_ids.remove_plane(handle);
-                }
-                if next_state
-                    .map(|next_config| next_config.properties.dst != previous_config.properties.dst)
-                    .unwrap_or(true)
-                {
-                    output_damage.push(previous_config.properties.dst);
-
-                    if let Some(next_config) = next_state {
-                        trace!(
-                            "damaging move {:?}: {:?} -> {:?}",
-                            handle,
-                            previous_config.properties.dst,
-                            next_config.properties.dst
-                        );
-                        output_damage.push(next_config.properties.dst);
-                    } else {
-                        trace!(
-                            "damaging removed {:?}: {:?}",
-                            handle,
-                            previous_config.properties.dst
-                        );
-                    }
-                }
+                    .and_then(|state| state.config.as_ref())
+                    .is_none()
+            {
+                self.overlay_plane_element_ids.remove_plane(handle);
             }
         }
 
@@ -2314,7 +2289,6 @@ where
                                     &output_geometry.size.to_logical(1),
                                 )
                             }));
-                            output_damage.extend(render_damage.clone());
                             config.damage_clips = PlaneDamageClips::from_damage(
                                 self.surface.device_fd(),
                                 config.properties.src,
@@ -2337,7 +2311,6 @@ where
                         trace!(
                             "clearing previous direct scan-out on primary plane, damaging complete output"
                         );
-                        output_damage.push(output_geometry);
                         self.primary_plane_damage_bag
                             .add([output_geometry.to_logical(1).to_buffer(
                                 1,
@@ -2385,18 +2358,9 @@ where
         // state, but we want to queue a frame so we just fake the damage to
         // make sure queue_frame won't be skipped because of no damage
         let commit_pending = self.surface.commit_pending();
-        if commit_pending {
-            output_damage.push(output_geometry);
-        }
-
-        let damage = if output_damage.is_empty() {
-            None
-        } else {
-            Some(output_damage)
-        };
         let frame_reference: RenderFrameResult<'a, A::Buffer, F::Framebuffer, E> = RenderFrameResult {
+            is_empty: next_frame_state.is_empty() && !commit_pending,
             primary_element: primary_plane_element,
-            damage,
             overlay_elements: overlay_plane_elements.into_values().collect(),
             cursor_element: cursor_plane_element,
             states: render_element_states,
@@ -2677,7 +2641,6 @@ where
         primary_plane_elements: &[&'a E],
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
-        output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
         try_assign_primary_plane: bool,
@@ -2724,7 +2687,6 @@ where
                 element_states,
                 scale,
                 frame_state,
-                output_damage,
                 output_transform,
                 output_geometry,
             ) {
@@ -2747,7 +2709,6 @@ where
             element_geometry,
             scale,
             frame_state,
-            output_damage,
             output_transform,
             output_geometry,
         ) {
@@ -2769,7 +2730,6 @@ where
             primary_plane_elements,
             scale,
             frame_state,
-            output_damage,
             output_transform,
             output_geometry,
         ) {
@@ -2798,7 +2758,6 @@ where
         >,
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
-        output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
@@ -2838,14 +2797,7 @@ where
             return Err(Some(RenderingReason::ScanoutFailed));
         }
 
-        let res = self.try_assign_plane(
-            element,
-            &element_config,
-            &self.planes.primary,
-            scale,
-            frame_state,
-            output_damage,
-        );
+        let res = self.try_assign_plane(element, &element_config, &self.planes.primary, scale, frame_state);
 
         if let Err(Some(RenderingReason::ScanoutFailed)) = res {
             element_config.failed_planes.primary = true;
@@ -2865,7 +2817,6 @@ where
         element_geometry: Rectangle<i32, Physical>,
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
-        output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
     ) -> Option<PlaneAssignment>
@@ -3241,7 +3192,6 @@ where
         if res {
             cursor_state.previous_output_scale = Some(scale);
             cursor_state.previous_output_transform = Some(output_transform);
-            output_damage.push(dst);
             Some(plane_info.into())
         } else {
             info!("failed to test cursor {:?} state", plane_info.handle);
@@ -3506,7 +3456,6 @@ where
         primary_plane_elements: &[&'a E],
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
-        output_damage: &mut Vec<Rectangle<i32, Physical>>,
         output_transform: Transform,
         output_geometry: Rectangle<i32, Physical>,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
@@ -3647,7 +3596,7 @@ where
                 return Err(None);
             }
 
-            self.try_assign_plane(element, element_config, plane, scale, frame_state, output_damage)
+            self.try_assign_plane(element, element_config, plane, scale, frame_state)
         };
 
         // First try to assign the element to a compatible plane, this can save us
@@ -3709,7 +3658,6 @@ where
         plane: &PlaneInfo,
         scale: Scale<f64>,
         frame_state: &mut Frame<A, F>,
-        output_damage: &mut Vec<Rectangle<i32, Physical>>,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
         R: Renderer,
@@ -3805,14 +3753,6 @@ where
                 })
                 .unwrap_or(false);
 
-        let element_output_damage = element_damage
-            .into_iter()
-            .map(|mut rect| {
-                rect.loc += element_config.geometry.loc;
-                rect
-            })
-            .collect::<Vec<_>>();
-
         let plane_state = PlaneState {
             skip,
             needs_test: true,
@@ -3846,8 +3786,6 @@ where
         };
 
         if res {
-            output_damage.extend(element_output_damage);
-
             trace!(
                 "successfully assigned element {:?} to {:?} with zpos {:?} for direct scan-out",
                 element_id,
