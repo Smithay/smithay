@@ -557,8 +557,54 @@ impl<B: InputBackend> TouchCancelEvent<B> for UnusedEvent {}
 
 /// Trait for touch frame events
 pub trait TouchFrameEvent<B: InputBackend>: Event<B> {}
-
 impl<B: InputBackend> TouchFrameEvent<B> for UnusedEvent {}
+
+/// Types of Switches
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Switch {
+    /// The laptop lid was closed when the [`SwitchState`] is
+    /// [`On`](SwitchState::On), or was opened when it is [`Off`](SwitchState::Off)
+    Lid,
+    /// This switch indicates whether the device is in normal laptop mode
+    /// or behaves like a tablet-like device where the primary
+    /// interaction is usually a touch screen. When in tablet mode, the
+    /// keyboard and touchpad are usually inaccessible.
+    ///
+    /// If the switch is in state [`SwitchState::Off`], the
+    /// device is in laptop mode. If the switch is in state
+    /// [`SwitchState::On`], the device is in tablet mode and the
+    /// keyboard or touchpad may not be  accessible.
+    ///
+    /// It is up to the caller to identify which devices are inaccessible
+    /// in tablet mode.
+    TabletMode,
+}
+
+/// State of a Switch
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SwitchState {
+    /// Switch is off
+    Off,
+    /// Switch is on
+    On,
+}
+
+/// Trait for switch toggle events
+pub trait SwitchToggleEvent<B: InputBackend>: Event<B> {
+    /// [`Switch`] which triggered the event
+    fn switch(&self) -> Option<Switch>;
+    /// [`State`](SwitchState) of the switch
+    fn state(&self) -> SwitchState;
+}
+impl<B: InputBackend> SwitchToggleEvent<B> for UnusedEvent {
+    fn switch(&self) -> Option<Switch> {
+        match *self {}
+    }
+    fn state(&self) -> SwitchState {
+        match *self {}
+    }
+}
 
 /// Trait that describes objects providing a source of input events. All input backends
 /// need to implement this and provide the same base guarantees about the precision of
@@ -610,6 +656,8 @@ pub trait InputBackend: Sized {
     type TabletToolTipEvent: TabletToolTipEvent<Self>;
     /// Type representing button events on tablet tool devices
     type TabletToolButtonEvent: TabletToolButtonEvent<Self>;
+    /// Type representing switch toggle events
+    type SwitchToggleEvent: SwitchToggleEvent<Self>;
 
     /// Special events that are custom to this backend
     type SpecialEvent;
@@ -744,6 +792,12 @@ pub enum InputEvent<B: InputBackend> {
     TabletToolButton {
         /// The pointer button event
         event: B::TabletToolButtonEvent,
+    },
+
+    /// A switch was toggled
+    SwitchToggle {
+        /// The switch toggle event
+        event: B::SwitchToggleEvent,
     },
 
     /// Special event specific of this backend

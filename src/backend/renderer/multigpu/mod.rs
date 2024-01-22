@@ -199,7 +199,7 @@ impl<A: GraphicsApi> GpuManager<A> {
         &'api mut self,
         device: &DrmNode,
     ) -> Result<MultiRenderer<'api, 'api, '_, A, A>, Error<A, A>> {
-        if !self.devices.iter().any(|dev| dev.node() == device) {
+        if !self.devices.iter().any(|dev| dev.node() == device) || self.api.needs_enumeration() {
             self.api
                 .enumerate(&mut self.devices)
                 .map_err(Error::RenderApiError)?;
@@ -245,6 +245,7 @@ impl<A: GraphicsApi> GpuManager<A> {
     {
         if !self.devices.iter().any(|device| device.node() == render_device)
             || !self.devices.iter().any(|device| device.node() == target_device)
+            || self.api.needs_enumeration()
         {
             self.api
                 .enumerate(&mut self.devices)
@@ -319,6 +320,7 @@ impl<A: GraphicsApi> GpuManager<A> {
             .devices
             .iter()
             .any(|device| device.node() == render_device)
+            || render_api.api.needs_enumeration()
         {
             render_api
                 .api
@@ -330,6 +332,7 @@ impl<A: GraphicsApi> GpuManager<A> {
             .devices
             .iter()
             .any(|device| device.node() == target_device)
+            || target_api.api.needs_enumeration()
         {
             target_api
                 .api
@@ -637,6 +640,10 @@ pub trait GraphicsApi {
     ///
     /// Existing devices are guranteed to be not recreated
     fn enumerate(&self, list: &mut Vec<Self::Device>) -> Result<(), Self::Error>;
+    /// Method to force a re-enumeration, e.g. to free resources
+    fn needs_enumeration(&self) -> bool {
+        false
+    }
     /// Unique name for representing the api type in log messages
     fn identifier() -> &'static str;
 }

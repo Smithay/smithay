@@ -579,21 +579,17 @@ impl AtomicDrmSurface {
         let req = {
             let req = self.build_request(&mut added, &mut removed, &*planes, Some(pending.blob))?;
 
-            if let Err(err) = self
-                .fd
-                .atomic_commit(
-                    AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
-                    req.clone(),
-                )
-                .map_err(|_| Error::TestFailed(self.crtc))
-            {
+            if let Err(err) = self.fd.atomic_commit(
+                AtomicCommitFlags::ALLOW_MODESET | AtomicCommitFlags::TEST_ONLY,
+                req.clone(),
+            ) {
                 warn!("New screen configuration invalid!:\n\t{:#?}\n\t{}\n", req, err);
 
-                return Err(err);
+                return Err(Error::TestFailed(self.crtc));
             } else {
                 if current.mode != pending.mode {
                     if let Err(err) = self.fd.destroy_property_blob(current.blob.into()) {
-                        warn!("Failed to destory old mode property blob: {}", err);
+                        warn!("Failed to destroy old mode property blob: {}", err);
                     }
                 }
 

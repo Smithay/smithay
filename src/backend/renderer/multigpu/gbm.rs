@@ -30,7 +30,11 @@ use crate::{
 use gbm::Device as GbmDevice;
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use std::borrow::BorrowMut;
-use std::{collections::HashMap, os::unix::prelude::AsFd};
+use std::{
+    collections::HashMap,
+    os::unix::prelude::AsFd,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 /// Errors raised by the [`GbmGlesBackend`]
 #[derive(Debug, thiserror::Error)]
@@ -62,6 +66,7 @@ pub struct GbmGlesBackend<R> {
     devices: HashMap<DrmNode, EGLDisplay>,
     factory: Option<Factory>,
     context_priority: Option<ContextPriority>,
+    needs_enumeration: AtomicBool,
     _renderer: std::marker::PhantomData<R>,
 }
 
@@ -79,6 +84,7 @@ impl<R> Default for GbmGlesBackend<R> {
             devices: HashMap::new(),
             factory: None,
             context_priority: None,
+            needs_enumeration: AtomicBool::new(true),
             _renderer: std::marker::PhantomData,
         }
     }
@@ -114,13 +120,21 @@ impl<R> GbmGlesBackend<R> {
         node: DrmNode,
         gbm: GbmDevice<T>,
     ) -> Result<(), EGLError> {
+        if self.devices.contains_key(&node) {
+            return Ok(());
+        }
+
         self.devices.insert(node, EGLDisplay::new(gbm)?);
+        self.needs_enumeration.store(true, Ordering::SeqCst);
+
         Ok(())
     }
 
     /// Remove a given node from the api
     pub fn remove_node(&mut self, node: &DrmNode) {
-        self.devices.remove(node);
+        if self.devices.remove(node).is_some() {
+            self.needs_enumeration.store(true, Ordering::SeqCst);
+        }
     }
 }
 
@@ -129,6 +143,8 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for GbmGle
     type Error = Error;
 
     fn enumerate(&self, list: &mut Vec<Self::Device>) -> Result<(), Self::Error> {
+        self.needs_enumeration.store(false, Ordering::SeqCst);
+
         // remove old stuff
         list.retain(|renderer| {
             self.devices
@@ -174,6 +190,10 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for GbmGle
         // but don't replace already initialized renderers
 
         Ok(())
+    }
+
+    fn needs_enumeration(&self) -> bool {
+        self.needs_enumeration.load(Ordering::Acquire)
     }
 
     fn identifier() -> &'static str {
