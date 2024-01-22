@@ -599,6 +599,19 @@ impl SpaceElement for WindowElement {
                         &(*point - Point::from((0.0, HEADER_BAR_HEIGHT as f64))),
                     ),
                 }
+        } else if self.decoration_state().ssd_mode == Mode::ServerSideOverlay {
+            (point.y < HEADER_BAR_HEIGHT as f64 && point.x > self.decoration_state().decorations.width as f64 - BUTTON_WIDTH as f64 * 2.)
+                || match self {
+                    WindowElement::Wayland(w) => SpaceElement::is_in_input_region(
+                        w,
+                        &(*point - Point::from((0.0, HEADER_BAR_HEIGHT as f64))),
+                    ),
+                    #[cfg(feature = "xwayland")]
+                    WindowElement::X11(w) => SpaceElement::is_in_input_region(
+                        w,
+                        &(*point - Point::from((0.0, HEADER_BAR_HEIGHT as f64))),
+                    ),
+                }
         } else {
             match self {
                 WindowElement::Wayland(w) => SpaceElement::is_in_input_region(w, point),
