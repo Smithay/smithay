@@ -737,7 +737,7 @@ impl SurfaceComposition {
                         element.sync.wait();
                     }
                     SurfaceCompositorRenderResult {
-                        rendered: render_frame_result.damage.is_some(),
+                        rendered: !render_frame_result.is_empty,
                         damage: None,
                         states: render_frame_result.states,
                         sync: None,
