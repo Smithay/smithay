@@ -639,7 +639,7 @@ impl<B: Framebuffer> FrameState<B> {
         let backup = current_config.clone();
         *current_config = state;
 
-        let res = surface.test_state(self.build_planes(supports_fencing, true), allow_modeset);
+        let res = surface.test_state(self.build_planes(surface, supports_fencing, true), allow_modeset);
 
         if res.is_err() {
             // test failed, restore previous state
@@ -679,7 +679,7 @@ impl<B: Framebuffer> FrameState<B> {
         }
 
         let res = surface.test_state(
-            self.build_planes(supports_fencing, !commit_pending),
+            self.build_planes(surface, supports_fencing, !commit_pending),
             allow_modeset,
         );
 
@@ -700,7 +700,7 @@ impl<B: Framebuffer> FrameState<B> {
         event: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
-        surface.commit(self.build_planes(supports_fencing, false), event)
+        surface.commit(self.build_planes(surface, supports_fencing, false), event)
     }
 
     #[profiling::function]
@@ -711,15 +711,16 @@ impl<B: Framebuffer> FrameState<B> {
         event: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
-        surface.page_flip(self.build_planes(supports_fencing, true), event)
+        surface.page_flip(self.build_planes(surface, supports_fencing, true), event)
     }
 
     #[profiling::function]
-    fn build_planes(
-        &mut self,
+    fn build_planes<'a>(
+        &'a mut self,
+        surface: &'a DrmSurface,
         supports_fencing: bool,
         allow_partial_update: bool,
-    ) -> impl IntoIterator<Item = super::PlaneState<'_>> {
+    ) -> impl IntoIterator<Item = super::PlaneState<'a>> {
         for (_, state) in self.planes.iter_mut().filter(|(_, state)| !state.skip) {
             if let Some(config) = state.config.as_mut() {
                 // Try to extract a native fence out of the supplied sync point if any
@@ -735,8 +736,17 @@ impl<B: Framebuffer> FrameState<B> {
 
         self.planes
             .iter_mut()
-            // Filter out any skipped planes, but set the state if we have a config and disallow partial updates
-            .filter(move |(_, state)| !state.skip || (state.config.is_some() && !allow_partial_update))
+            .filter(move |(handle, state)| {
+                // If we are not allowed to do an partial update we want to update all
+                // planes we can claim. This makes sure we also reset planes we never
+                // actually used. We can skip getting a claim here if we have a
+                // config as this means we already claimed the plane for us.
+                if allow_partial_update {
+                    !state.skip
+                } else {
+                    state.config.is_some() || surface.claim_plane(**handle).is_some()
+                }
+            })
             .map(move |(handle, state)| super::surface::PlaneState {
                 handle: *handle,
                 config: state.config.as_mut().map(|config| super::PlaneConfig {
