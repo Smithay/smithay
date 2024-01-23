@@ -852,8 +852,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     }
 
     /// Return the key codes of the currently pressed keys.
-    pub fn pressed_keys(&self) -> HashSet<Keycode>
-    {
+    pub fn pressed_keys(&self) -> HashSet<Keycode> {
         let guard = self.arc.internal.lock().unwrap();
         guard.pressed_keys.iter().map(|&code| code.into()).collect()
     }
