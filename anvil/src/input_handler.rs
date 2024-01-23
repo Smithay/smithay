@@ -545,7 +545,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
 
     pub fn release_all_keys(&mut self) {
         let keyboard = self.seat.get_keyboard().unwrap();
-        for keycode in keyboard.with_pressed_keys(std::convert::identity) {
+        for keycode in keyboard.pressed_keys() {
             keyboard.input(
                 self,
                 keycode.raw(),
