@@ -851,6 +851,23 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         });
     }
 
+    /// Iterate over the key codes of the currently pressed keys.
+    pub fn with_pressed_keys<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(HashSet<Keycode>) -> R,
+        R: 'static,
+    {
+        let guard = self.arc.internal.lock().unwrap();
+        {
+            let handles = guard
+                .pressed_keys
+                .iter()
+                .map(|&code| code.into())
+                .collect::<HashSet<Keycode>>();
+            f(handles)
+        }
+    }
+
     /// Iterate over the keysyms of the currently pressed keys.
     pub fn with_pressed_keysyms<F, R>(&self, f: F) -> R
     where
