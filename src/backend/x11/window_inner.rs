@@ -117,6 +117,7 @@ impl WindowInner {
             | EventMask::POINTER_MOTION // Mouse movement
             | EventMask::ENTER_WINDOW // Track whether the cursor enters of leaves the window.
             | EventMask::LEAVE_WINDOW
+            | EventMask::FOCUS_CHANGE
             | EventMask::EXPOSURE
             | EventMask::NO_EVENT,
             )

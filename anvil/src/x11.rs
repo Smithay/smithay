@@ -280,6 +280,10 @@ pub fn run_x11() {
                 data.state
                     .process_input_event_windowed(&data.display_handle, event, OUTPUT_NAME)
             }
+            X11Event::Focus(false) => {
+                data.state.release_all_keys();
+            }
+            _ => {}
         })
         .expect("Failed to insert X11 Backend into event loop");
 

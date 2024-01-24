@@ -134,6 +134,9 @@ pub enum X11Event {
         window_id: u32,
     },
 
+    /// The focus state of the window changed.
+    Focus(bool),
+
     /// An input event occurred.
     Input(InputEvent<X11Input>),
 
@@ -642,11 +645,19 @@ impl X11Inner {
             }
         }
 
-        use self::X11Event::Input;
+        use self::X11Event::{Focus, Input};
 
         // If X11 is deadlocking somewhere here, make sure you drop your mutex guards.
 
         match event {
+            x11::Event::FocusIn(_focus_in) => {
+                callback(Focus(true), &mut ());
+            }
+
+            x11::Event::FocusOut(_focus_out) => {
+                callback(Focus(false), &mut ());
+            }
+
             x11::Event::ButtonPress(button_press) => {
                 if let Some(window) = X11Inner::window_ref_from_id(inner, &button_press.event) {
                     // X11 decided to associate scroll wheel with a button, 4, 5, 6 and 7 for
