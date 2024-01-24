@@ -138,7 +138,7 @@ where
                             device.version(),
                             Arc::new(ServerDndData {
                                 metadata: self.metadata.clone(),
-                                ofer_data: offer_data.clone(),
+                                offer_data: offer_data.clone(),
                                 wl_seat,
                             }),
                         )
@@ -324,7 +324,7 @@ struct ServerDndOfferData {
 
 struct ServerDndData {
     metadata: SourceMetadata,
-    ofer_data: Arc<Mutex<ServerDndOfferData>>,
+    offer_data: Arc<Mutex<ServerDndOfferData>>,
     wl_seat: WlSeat,
 }
 
@@ -368,7 +368,7 @@ fn handle_server_dnd<D>(
     use self::wl_data_offer::Request;
 
     let metadata = &data.metadata;
-    let offer_data = &data.ofer_data;
+    let offer_data = &data.offer_data;
     let wl_seat = &data.wl_seat;
 
     if !wl_seat.is_alive() {
