@@ -867,6 +867,11 @@ enum Import {
 }
 
 impl ImportNotifier {
+    /// Returns the client trying to import this dmabuf, if not dead.
+    pub fn client(&self) -> Option<Client> {
+        self.inner.client()
+    }
+
     /// Dmabuf import was successful.
     ///
     /// This can return [`InvalidId`] if the client the buffer was imported from has died.
