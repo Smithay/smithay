@@ -34,6 +34,7 @@ use smithay::{
             DrmEvent, DrmEventMetadata, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
         },
         egl::{self, context::ContextPriority, EGLDevice, EGLDisplay},
+        input::InputEvent,
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
@@ -56,7 +57,10 @@ use smithay::{
         space::{Space, SurfaceTree},
         utils::OutputPresentationFeedback,
     },
-    input::pointer::{CursorImageAttributes, CursorImageStatus},
+    input::{
+        keyboard::LedState,
+        pointer::{CursorImageAttributes, CursorImageStatus},
+    },
     output::{Mode as WlMode, Output, PhysicalProperties, Subpixel},
     reexports::{
         ash::vk::ExtPhysicalDeviceDrmFn,
@@ -68,7 +72,7 @@ use smithay::{
             control::{connector, crtc, Device, ModeTypeFlags},
             Device as _,
         },
-        input::Libinput,
+        input::{DeviceCapability, Libinput},
         rustix::fs::OFlags,
         wayland_protocols::wp::{
             linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1,
@@ -130,6 +134,7 @@ pub struct UdevData {
     fps_texture: Option<MultiTexture>,
     pointer_image: crate::cursor::Cursor,
     debug_flags: DebugFlags,
+    keyboards: Vec<smithay::reexports::input::Device>,
 }
 
 impl UdevData {
@@ -197,6 +202,12 @@ impl Backend for UdevData {
             warn!("Early buffer import failed: {}", err);
         }
     }
+
+    fn update_led_state(&mut self, led_state: LedState) {
+        for keyboard in self.keyboards.iter_mut() {
+            keyboard.led_update(led_state.into());
+        }
+    }
 }
 
 pub fn run_udev() {
@@ -250,6 +261,7 @@ pub fn run_udev() {
         #[cfg(feature = "debug")]
         fps_texture: None,
         debug_flags: DebugFlags::empty(),
+        keyboards: Vec::new(),
     };
     let mut state = AnvilState::init(display, event_loop.handle(), data, true);
 
@@ -278,8 +290,26 @@ pub fn run_udev() {
      */
     event_loop
         .handle()
-        .insert_source(libinput_backend, move |event, _, data| {
+        .insert_source(libinput_backend, move |mut event, _, data| {
             let dh = data.state.backend_data.dh.clone();
+            if let InputEvent::DeviceAdded { device } = &mut event {
+                if device.has_capability(DeviceCapability::Keyboard) {
+                    if let Some(led_state) = data
+                        .state
+                        .seat
+                        .get_keyboard()
+                        .map(|keyboard| keyboard.led_state())
+                    {
+                        device.led_update(led_state.into());
+                    }
+                    data.state.backend_data.keyboards.push(device.clone());
+                }
+            } else if let InputEvent::DeviceRemoved { ref device } = event {
+                if device.has_capability(DeviceCapability::Keyboard) {
+                    data.state.backend_data.keyboards.retain(|item| item != device);
+                }
+            }
+
             data.state.process_input_event(&dh, event)
         })
         .unwrap();

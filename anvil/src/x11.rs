@@ -31,7 +31,10 @@ use smithay::{
         x11::{WindowBuilder, X11Backend, X11Event, X11Surface},
     },
     delegate_dmabuf,
-    input::pointer::{CursorImageAttributes, CursorImageStatus},
+    input::{
+        keyboard::LedState,
+        pointer::{CursorImageAttributes, CursorImageStatus},
+    },
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         ash::vk::ExtPhysicalDeviceDrmFn,
@@ -91,6 +94,7 @@ impl Backend for X11Data {
         self.surface.reset_buffers();
     }
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
+    fn update_led_state(&mut self, _led_state: LedState) {}
 }
 
 pub fn run_x11() {

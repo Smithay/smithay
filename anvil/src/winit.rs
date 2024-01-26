@@ -27,7 +27,10 @@ use smithay::{
         SwapBuffersError,
     },
     delegate_dmabuf,
-    input::pointer::{CursorImageAttributes, CursorImageStatus},
+    input::{
+        keyboard::LedState,
+        pointer::{CursorImageAttributes, CursorImageStatus},
+    },
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::EventLoop,
@@ -88,6 +91,7 @@ impl Backend for WinitData {
         self.full_redraw = 4;
     }
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
+    fn update_led_state(&mut self, _led_state: LedState) {}
 }
 
 pub fn run_winit() {

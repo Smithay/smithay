@@ -25,7 +25,7 @@ use smithay::{
         PopupKind, PopupManager, Space,
     },
     input::{
-        keyboard::{Keysym, XkbConfig},
+        keyboard::{Keysym, LedState, XkbConfig},
         pointer::{CursorImageStatus, PointerHandle},
         Seat, SeatHandler, SeatState,
     },
@@ -263,6 +263,10 @@ impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
     }
     fn cursor_image(&mut self, _seat: &Seat<Self>, image: CursorImageStatus) {
         *self.cursor_status.lock().unwrap() = image;
+    }
+
+    fn led_state_changed(&mut self, _seat: &Seat<Self>, led_state: LedState) {
+        self.backend_data.update_led_state(led_state)
     }
 }
 delegate_seat!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
@@ -793,4 +797,5 @@ pub trait Backend {
     fn seat_name(&self) -> String;
     fn reset_buffers(&mut self, output: &Output);
     fn early_import(&mut self, surface: &WlSurface);
+    fn update_led_state(&mut self, led_state: LedState);
 }
