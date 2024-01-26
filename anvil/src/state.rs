@@ -71,8 +71,8 @@ use smithay::{
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{
-                decoration::{XdgDecorationHandler, XdgDecorationState},
-                ToplevelSurface, XdgShellState, XdgToplevelSurfaceData,
+                decoration::{XdgDecorationHandler, XdgDecorationState}, DecorationOverlayArea, 
+                ToplevelSurface, XdgShellState, XdgToplevelSurfaceData
             },
         },
         shm::{ShmHandler, ShmState},
@@ -89,7 +89,7 @@ use smithay::{
 
 #[cfg(feature = "xwayland")]
 use crate::cursor::Cursor;
-use crate::{focus::FocusTarget, shell::WindowElement};
+use crate::{focus::FocusTarget, shell::{ssd::{BUTTON_WIDTH, HEADER_BAR_HEIGHT}, WindowElement}};
 #[cfg(feature = "xwayland")]
 use smithay::{
     delegate_xwayland_keyboard_grab,
@@ -372,6 +372,11 @@ impl<BackendData: Backend> XdgDecorationHandler for AnvilState<BackendData> {
         // Set the default to client side
         toplevel.with_pending_state(|state| {
             state.decoration_mode = Some(Mode::ClientSide);
+            state.decoration_overlay = Some(DecorationOverlayArea {
+                location: xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::OverlayLocation::Right,
+                width: BUTTON_WIDTH * 2,
+                height: HEADER_BAR_HEIGHT as u32
+            })
         });
     }
     fn request_mode(&mut self, toplevel: ToplevelSurface, mode: DecorationMode) {

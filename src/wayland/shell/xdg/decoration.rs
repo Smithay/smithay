@@ -94,7 +94,7 @@ use wayland_server::{
     backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
-use super::{ToplevelSurface, XdgShellHandler};
+use super::{DecorationOverlayArea, ToplevelSurface, XdgShellHandler};
 use crate::wayland::shell::xdg::XdgShellSurfaceUserData;
 
 /// Delegate type for handling xdg decoration events.
@@ -189,6 +189,13 @@ pub(super) fn send_decoration_configure(
     mode: Mode,
 ) {
     id.configure(mode)
+}
+
+pub(super) fn send_decoration_overlay_configure(
+    id: &zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
+    area: DecorationOverlayArea
+) {
+    id.configure_overlay(area.location, area.width, area.height)
 }
 
 impl<D> GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, XdgDecorationManagerGlobalData, D>

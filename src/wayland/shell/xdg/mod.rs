@@ -838,6 +838,9 @@ pub struct ToplevelState {
     /// The xdg decoration mode of the surface
     pub decoration_mode: Option<zxdg_toplevel_decoration_v1::Mode>,
 
+    /// The location of the decoration overlay
+    pub decoration_overlay: Option<DecorationOverlayArea>,
+
     /// The wm capabilities for this toplevel
     pub capabilities: WmCapabilitySet,
 }
@@ -850,6 +853,7 @@ impl Clone for ToplevelState {
             size: self.size,
             bounds: self.bounds,
             decoration_mode: self.decoration_mode,
+            decoration_overlay: self.decoration_overlay.clone(),
             capabilities: self.capabilities.clone(),
         }
     }
@@ -959,6 +963,28 @@ impl IntoIterator for ToplevelStateSet {
 impl From<ToplevelStateSet> for Vec<xdg_toplevel::State> {
     fn from(states: ToplevelStateSet) -> Self {
         states.states
+    }
+}
+
+/// Container holding the configuration of a decoration overlay for a
+/// toplevel
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct DecorationOverlayArea {
+    /// The location where the decoration overlay should be placed
+    pub location: zxdg_toplevel_decoration_v1::OverlayLocation,
+    /// The width of the decoration overlay
+    pub width: u32,
+    /// The height of the decoration overlay
+    pub height: u32
+}
+
+impl Default for DecorationOverlayArea {
+    fn default() -> Self {
+        Self {
+            location: zxdg_toplevel_decoration_v1::OverlayLocation::Right,
+            width: 0,
+            height: 0
+        }
     }
 }
 
@@ -1435,7 +1461,7 @@ impl ToplevelSurface {
         let shell_surface_data = self.shell_surface.data::<XdgShellSurfaceUserData>();
         let decoration =
             shell_surface_data.and_then(|data| data.decoration.lock().unwrap().as_ref().cloned());
-        let (configure, decoration_mode_changed, bounds_changed, capabilities_changed) =
+        let (configure, decoration_mode_changed, decoration_overlay_changed, bounds_changed, capabilities_changed) =
             compositor::with_states(&self.wl_surface, |states| {
                 let mut attributes = states
                     .data_map
@@ -1455,6 +1481,16 @@ impl ToplevelSurface {
                 // or we never sent it
                 let decoration_mode_changed = !attributes.initial_decoration_configure_sent
                     || (pending.decoration_mode != current.decoration_mode);
+                
+                // test if we should send the overlay decoration location, either because it,
+                // changed, we never sent it, or the decoration mode changed to overlay
+                let decoration_overlay_changed = 
+                    pending.decoration_mode == Some(zxdg_toplevel_decoration_v1::Mode::ServerSideOverlay) &&
+                    (
+                        !attributes.initial_decoration_configure_sent ||
+                        pending.decoration_overlay != current.decoration_overlay ||
+                        pending.decoration_mode != current.decoration_mode
+                    );
 
                 // test if we should send a bounds configure event, either because the
                 // bounds changed or we never sent one
@@ -1479,6 +1515,7 @@ impl ToplevelSurface {
                 (
                     configure,
                     decoration_mode_changed,
+                    decoration_overlay_changed,
                     bounds_changed,
                     capabilities_changed,
                 )
@@ -1486,12 +1523,27 @@ impl ToplevelSurface {
 
         if decoration_mode_changed {
             if let Some(decoration) = &decoration {
+                let mode = configure
+                    .state
+                    .decoration_mode
+                    .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide);
                 self::decoration::send_decoration_configure(
                     decoration,
-                    configure
-                        .state
-                        .decoration_mode
-                        .unwrap_or(zxdg_toplevel_decoration_v1::Mode::ClientSide),
+                    mode
+                );
+            }
+        }
+
+        if decoration_overlay_changed {
+            if let Some(decoration) = &decoration {
+                let overlay = configure
+                    .state
+                    .decoration_overlay
+                    .clone()
+                    .unwrap_or_default();
+                self::decoration::send_decoration_overlay_configure(
+                    decoration,
+                    overlay
                 );
             }
         }
