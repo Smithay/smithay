@@ -117,7 +117,7 @@ use std::{
 
 use tracing::{info_span, instrument};
 
-use self::keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardTarget};
+use self::keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardTarget, LedState};
 use self::pointer::{CursorImageStatus, PointerHandle, PointerTarget};
 use crate::utils::user_data::UserDataMap;
 
@@ -139,6 +139,9 @@ pub trait SeatHandler: Sized {
 
     /// Callback that will be notified whenever a client requests to set a custom cursor image.
     fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}
+
+    /// Callback that will be notified whenever the keyboard led state changes.
+    fn led_state_changed(&mut self, _seat: &Seat<Self>, _led_state: LedState) {}
 }
 /// Delegate type for all [Seat] globals.
 ///
