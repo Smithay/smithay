@@ -647,6 +647,22 @@ impl From<event::pointer::ButtonState> for backend::ButtonState {
     }
 }
 
+impl From<crate::input::keyboard::LedState> for libinput::Led {
+    fn from(value: crate::input::keyboard::LedState) -> Self {
+        let mut leds = libinput::Led::empty();
+        if value.num.unwrap_or_default() {
+            leds |= libinput::Led::NUMLOCK;
+        }
+        if value.caps.unwrap_or_default() {
+            leds |= libinput::Led::CAPSLOCK;
+        }
+        if value.scroll.unwrap_or_default() {
+            leds |= libinput::Led::SCROLLLOCK;
+        }
+        leds
+    }
+}
+
 /// Wrapper for types implementing the [`Session`] trait to provide
 /// a [`libinput::LibinputInterface`] implementation.
 #[cfg(feature = "backend_session")]

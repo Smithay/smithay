@@ -58,6 +58,68 @@ enum GrabStatus<D> {
     Borrowed,
 }
 
+/// Mapping of the led of a keymap
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LedMapping {
+    /// Index of the NUMLOCK led
+    pub num: Option<xkb::LedIndex>,
+    /// Index of the CAPSLOCK led
+    pub caps: Option<xkb::LedIndex>,
+    /// Index of the SCROLLLOCK led
+    pub scroll: Option<xkb::LedIndex>,
+}
+
+impl LedMapping {
+    /// Get the mapping from a keymap
+    pub fn from_keymap(keymap: &xkb::Keymap) -> Self {
+        Self {
+            num: match keymap.led_get_index(xkb::LED_NAME_NUM) {
+                xkb::LED_INVALID => None,
+                index => Some(index),
+            },
+            caps: match keymap.led_get_index(xkb::LED_NAME_CAPS) {
+                xkb::LED_INVALID => None,
+                index => Some(index),
+            },
+            scroll: match keymap.led_get_index(xkb::LED_NAME_SCROLL) {
+                xkb::LED_INVALID => None,
+                index => Some(index),
+            },
+        }
+    }
+}
+
+/// Current state of the led when available
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct LedState {
+    /// State of NUMLOCK led
+    pub num: Option<bool>,
+    /// State of CAPSLOCK led
+    pub caps: Option<bool>,
+    /// State of SCROLLLOCK led
+    pub scroll: Option<bool>,
+}
+
+impl LedState {
+    /// Update the led state from an xkb state and mapping
+    ///
+    /// Returns whether the led state changed
+    pub fn update_with(&mut self, state: &xkb::State, mapping: &LedMapping) -> bool {
+        let previous_state = *self;
+        self.num = mapping.num.map(|idx| state.led_index_is_active(idx));
+        self.caps = mapping.caps.map(|idx| state.led_index_is_active(idx));
+        self.scroll = mapping.scroll.map(|idx| state.led_index_is_active(idx));
+        *self != previous_state
+    }
+
+    /// Initialize the led state from an xkb state and mapping
+    pub fn from_state(state: &xkb::State, mapping: &LedMapping) -> Self {
+        let mut led_state = LedState::default();
+        led_state.update_with(state, mapping);
+        led_state
+    }
+}
+
 pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) focus: Option<(<D as SeatHandler>::KeyboardFocus, Serial)>,
     pending_focus: Option<<D as SeatHandler>::KeyboardFocus>,
@@ -69,6 +131,8 @@ pub(crate) struct KbdInternal<D: SeatHandler> {
     pub(crate) state: xkb::State,
     pub(crate) repeat_rate: i32,
     pub(crate) repeat_delay: i32,
+    led_mapping: LedMapping,
+    pub(crate) led_state: LedState,
     grab: GrabStatus<D>,
 }
 
@@ -104,6 +168,8 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
         let keymap = xkb_config.compile_keymap(&context)?;
         let state = xkb::State::new(&keymap);
+        let led_mapping = LedMapping::from_keymap(&keymap);
+        let led_state = LedState::from_state(&state, &led_mapping);
         Ok(KbdInternal {
             focus: None,
             pending_focus: None,
@@ -115,12 +181,14 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
             state,
             repeat_rate,
             repeat_delay,
+            led_mapping,
+            led_state,
             grab: GrabStatus::None,
         })
     }
 
-    // return true if modifier state has changed
-    fn key_input(&mut self, keycode: u32, state: KeyState) -> bool {
+    // returns whether the modifiers or led state has changed
+    fn key_input(&mut self, keycode: u32, state: KeyState) -> (bool, bool) {
         // track pressed keys as xkbcommon does not seem to expose it :(
         let direction = match state {
             KeyState::Pressed => {
@@ -137,13 +205,12 @@ impl<D: SeatHandler + 'static> KbdInternal<D> {
         // Offset the keycode by 8, as the evdev XKB rules reflect X's
         // broken keycode system, which starts at 8.
         let state_components = self.state.update_key((keycode + 8).into(), direction);
-
-        if state_components != 0 {
+        let modifiers_changed = state_components != 0;
+        if modifiers_changed {
             self.mods_state.update_with(&self.state);
-            true
-        } else {
-            false
         }
+        let leds_changed = self.led_state.update_with(&self.state, &self.led_mapping);
+        (modifiers_changed, leds_changed)
     }
 
     fn with_grab<F>(&mut self, seat: &Seat<D>, f: F)
@@ -305,6 +372,9 @@ pub struct XkbContext<'a> {
     keymap: &'a mut xkb::Keymap,
     mods_state: &'a mut ModifiersState,
     mods_changed: &'a mut bool,
+    leds_state: &'a mut LedState,
+    leds_changed: &'a mut bool,
+    leds_mapping: &'a LedMapping,
 }
 
 impl<'a> XkbContext<'a> {
@@ -323,6 +393,8 @@ impl<'a> XkbContext<'a> {
             self.mods_state.update_with(self.state);
             *self.mods_changed = true;
         }
+
+        *self.leds_changed = self.leds_state.update_with(self.state, self.leds_mapping);
     }
 
     /// Switches layout forward cycling when it reaches the end.
@@ -625,7 +697,10 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
             state.update_key((key + 8).into(), xkb::KeyDirection::Down);
         }
 
+        let led_mapping = LedMapping::from_keymap(&keymap);
+        internal.led_mapping = led_mapping;
         internal.mods_state.update_with(&state);
+        let leds_changed = internal.led_state.update_with(&state, &led_mapping);
         internal.keymap = keymap.clone();
         internal.state = state;
 
@@ -640,6 +715,13 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
 
         #[cfg(feature = "wayland_frontend")]
         self.change_keymap(data, &focus, &keymap, mods);
+
+        if leds_changed {
+            let led_state = internal.led_state;
+            std::mem::drop(internal);
+            let seat = self.get_seat(data);
+            data.led_state_changed(&seat, led_state);
+        }
     }
 
     /// Change the [`Keymap`](xkb::Keymap) used by the keyboard.
@@ -678,23 +760,39 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// changing layouts.
     ///
     /// The changes to the state are automatically broadcasted to the focused client on exit.
-    pub fn with_xkb_state<F: FnMut(XkbContext<'_>) -> T, T>(&self, data: &mut D, mut callback: F) -> T {
-        let internal = &mut *self.arc.internal.lock().unwrap();
-        let mut mods_changed = false;
-        let state = XkbContext {
-            mods_state: &mut internal.mods_state,
-            state: &mut internal.state,
-            keymap: &mut internal.keymap,
-            mods_changed: &mut mods_changed,
+    pub fn with_xkb_state<F, T>(&self, data: &mut D, mut callback: F) -> T
+    where
+        F: FnMut(XkbContext<'_>) -> T,
+    {
+        let (result, new_led_state) = {
+            let internal = &mut *self.arc.internal.lock().unwrap();
+            let mut mods_changed = false;
+            let mut leds_changed = false;
+            let state = XkbContext {
+                mods_state: &mut internal.mods_state,
+                state: &mut internal.state,
+                keymap: &mut internal.keymap,
+                mods_changed: &mut mods_changed,
+                leds_state: &mut internal.led_state,
+                leds_changed: &mut leds_changed,
+                leds_mapping: &internal.led_mapping,
+            };
+
+            let result = callback(state);
+
+            if mods_changed {
+                if let Some((focus, _)) = internal.focus.as_mut() {
+                    let seat = self.get_seat(data);
+                    focus.modifiers(&seat, data, internal.mods_state, SERIAL_COUNTER.next_serial());
+                };
+            }
+
+            (result, leds_changed.then_some(internal.led_state))
         };
 
-        let result = callback(state);
-
-        if mods_changed {
-            if let Some((focus, _)) = internal.focus.as_mut() {
-                let seat = self.get_seat(data);
-                focus.modifiers(&seat, data, internal.mods_state, SERIAL_COUNTER.next_serial());
-            };
+        if let Some(led_state) = new_led_state {
+            let seat = self.get_seat(data);
+            data.led_state_changed(&seat, led_state)
         }
 
         result
@@ -787,7 +885,7 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         trace!("Handling keystroke");
 
         let mut guard = self.arc.internal.lock().unwrap();
-        let mods_changed = guard.key_input(keycode, state);
+        let (mods_changed, leds_changed) = guard.key_input(keycode, state);
         let key_handle = KeysymHandle {
             // Offset the keycode by 8, as the evdev XKB rules reflect X's
             // broken keycode system, which starts at 8.
@@ -797,7 +895,16 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
         };
 
         trace!(mods_state = ?guard.mods_state, sym = xkb::keysym_get_name(key_handle.modified_sym()), "Calling input filter");
-        (filter(data, &guard.mods_state, key_handle), mods_changed)
+        let filter_result = filter(data, &guard.mods_state, key_handle);
+
+        if leds_changed {
+            let led_state = guard.led_state;
+            std::mem::drop(guard);
+            let seat = self.get_seat(data);
+            data.led_state_changed(&seat, led_state);
+        }
+
+        (filter_result, mods_changed)
     }
 
     /// Forward a key event to the focused client
@@ -881,6 +988,11 @@ impl<D: SeatHandler + 'static> KeyboardHandle<D> {
     /// Get the current modifiers state
     pub fn modifier_state(&self) -> ModifiersState {
         self.arc.internal.lock().unwrap().mods_state
+    }
+
+    /// Get the current led state
+    pub fn led_state(&self) -> LedState {
+        self.arc.internal.lock().unwrap().led_state
     }
 
     /// Check if keyboard has focus
