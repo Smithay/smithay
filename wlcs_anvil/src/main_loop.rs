@@ -41,6 +41,7 @@ impl Backend for TestState {
 
     fn reset_buffers(&mut self, _output: &Output) {}
     fn early_import(&mut self, _surface: &wl_surface::WlSurface) {}
+    fn update_led_state(&mut self, led_state: smithay::input::keyboard::LedState) {}
 }
 
 pub fn run(channel: Channel<WlcsEvent>) {
