@@ -9,8 +9,7 @@
 //! will be rendered on the primary plane using the provided [`Renderer`].
 //! Additionally it will try to assign the top most element that fit's into the cursor size (as specified
 //! by the [`DrmDevice`](crate::backend::drm::DrmDevice)) on the cursor plane. If the element can not be
-//! directly scanned out the renderer will be used to render the element into an [`Offscreen`] buffer that
-//! is copied over to the allocated gbm buffer for the cursor plane.
+//! directly scanned out, pixman will be used to render the element.
 //!
 //! Note: While the [`DrmCompositor`] also works on *legacy* drm the use of overlay and cursor planes is disabled in that case.
 //! Direct scan-out will only work with an atomic [`DrmSurface`].
@@ -105,7 +104,7 @@
 //!
 //! # let elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = Vec::new();
 //! let render_frame_result = compositor
-//!     .render_frame::<_, _, GlesTexture>(&mut renderer, &elements, CLEAR_COLOR)
+//!     .render_frame::<_, _>(&mut renderer, &elements, CLEAR_COLOR)
 //!     .expect("failed to render frame");
 //!
 //! if render_frame_result.damage.is_some() {
@@ -141,6 +140,11 @@ use smallvec::SmallVec;
 use tracing::{debug, error, info, info_span, instrument, trace, warn};
 use wayland_server::{protocol::wl_buffer::WlBuffer, Resource};
 
+#[cfg(feature = "renderer_pixman")]
+use crate::backend::renderer::{
+    pixman::{PixmanError, PixmanRenderBuffer, PixmanRenderer, PixmanTexture},
+    ImportAll, Unbind,
+};
 use crate::{
     backend::{
         allocator::{
@@ -159,7 +163,7 @@ use crate::{
             },
             sync::SyncPoint,
             utils::{CommitCounter, DamageBag, DamageSnapshot},
-            Bind, Blit, DebugFlags, ExportMem, Frame as RendererFrame, Offscreen, Renderer, Texture,
+            Bind, Blit, DebugFlags, Frame as RendererFrame, Renderer, Texture,
         },
         SwapBuffersError,
     },
@@ -199,10 +203,11 @@ enum ScanoutBuffer<B: Buffer> {
     Cursor(BufferObject<()>),
 }
 
-impl<B: Buffer> From<UnderlyingStorage> for ScanoutBuffer<B> {
-    fn from(storage: UnderlyingStorage) -> Self {
+impl<B: Buffer> ScanoutBuffer<B> {
+    fn from_underlying_storage(storage: UnderlyingStorage) -> Option<Self> {
         match storage {
-            UnderlyingStorage::Wayland(buffer) => Self::Wayland(buffer),
+            UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer)),
+            UnderlyingStorage::Memory { .. } => None,
         }
     }
 }
@@ -283,10 +288,11 @@ enum ElementFramebufferCacheBuffer {
     Wayland(wayland_server::Weak<WlBuffer>),
 }
 
-impl From<&UnderlyingStorage> for ElementFramebufferCacheBuffer {
-    fn from(storage: &UnderlyingStorage) -> Self {
+impl ElementFramebufferCacheBuffer {
+    fn from_underlying_storage(storage: &UnderlyingStorage) -> Option<Self> {
         match storage {
-            UnderlyingStorage::Wayland(buffer) => Self::Wayland(buffer.downgrade()),
+            UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer.downgrade())),
+            UnderlyingStorage::Memory { .. } => None,
         }
     }
 }
@@ -298,11 +304,12 @@ struct ElementFramebufferCacheKey {
 }
 
 impl ElementFramebufferCacheKey {
-    fn from_underlying_storage(storage: &UnderlyingStorage, allow_opaque_fallback: bool) -> Self {
-        Self {
+    fn from_underlying_storage(storage: &UnderlyingStorage, allow_opaque_fallback: bool) -> Option<Self> {
+        let buffer = ElementFramebufferCacheBuffer::from_underlying_storage(storage)?;
+        Some(Self {
             allow_opaque_fallback,
-            buffer: ElementFramebufferCacheBuffer::from(storage),
-        }
+            buffer,
+        })
     }
 }
 
@@ -349,27 +356,17 @@ where
 {
     fn get(
         &self,
-        buffer: &UnderlyingStorage,
-        allow_opaque_fallback: bool,
+        cache_key: &ElementFramebufferCacheKey,
     ) -> Option<Result<OwnedFramebuffer<B>, ExportBufferError>> {
-        self.fb_cache
-            .get(&ElementFramebufferCacheKey::from_underlying_storage(
-                buffer,
-                allow_opaque_fallback,
-            ))
-            .cloned()
+        self.fb_cache.get(cache_key).cloned()
     }
 
     fn insert(
         &mut self,
-        buffer: &UnderlyingStorage,
+        cache_key: ElementFramebufferCacheKey,
         fb: Result<OwnedFramebuffer<B>, ExportBufferError>,
-        allow_opaque_fallback: bool,
     ) {
-        self.fb_cache.insert(
-            ElementFramebufferCacheKey::from_underlying_storage(buffer, allow_opaque_fallback),
-            fb,
-        );
+        self.fb_cache.insert(cache_key, fb);
     }
 
     fn cleanup(&mut self) {
@@ -767,10 +764,11 @@ pub enum ExportBuffer<'a, B: Buffer> {
     Allocator(&'a B),
 }
 
-impl<'a, B: Buffer> From<&'a UnderlyingStorage> for ExportBuffer<'a, B> {
-    fn from(storage: &'a UnderlyingStorage) -> Self {
+impl<'a, B: Buffer> ExportBuffer<'a, B> {
+    fn from_underlying_storage(storage: &'a UnderlyingStorage) -> Option<Self> {
         match storage {
-            UnderlyingStorage::Wayland(buffer) => Self::Wayland(buffer),
+            UnderlyingStorage::Wayland(buffer) => Some(Self::Wayland(buffer)),
+            UnderlyingStorage::Memory { .. } => None,
         }
     }
 }
@@ -1295,6 +1293,8 @@ struct CursorState<G: AsFd + 'static> {
     framebuffer_exporter: GbmDevice<G>,
     previous_output_transform: Option<Transform>,
     previous_output_scale: Option<Scale<f64>>,
+    #[cfg(feature = "renderer_pixman")]
+    pixman_renderer: Option<PixmanRenderer>,
 }
 
 #[derive(Debug, thiserror::Error, Copy, Clone)]
@@ -1528,6 +1528,15 @@ where
             ) {
                 Ok((swapchain, current_frame, is_opaque)) => {
                     let cursor_state = gbm.map(|gbm| {
+                        #[cfg(feature = "renderer_pixman")]
+                        let pixman_renderer = match PixmanRenderer::new() {
+                            Ok(pixman_renderer) => Some(pixman_renderer),
+                            Err(err) => {
+                                tracing::warn!(?err, "failed to initialize pixman renderer for cursor plane");
+                                None
+                            }
+                        };
+
                         let cursor_allocator = GbmAllocator::new(
                             gbm.clone(),
                             BufferObjectFlags::CURSOR | BufferObjectFlags::WRITE,
@@ -1537,6 +1546,8 @@ where
                             framebuffer_exporter: gbm,
                             previous_output_scale: None,
                             previous_output_transform: None,
+                            #[cfg(feature = "renderer_pixman")]
+                            pixman_renderer,
                         }
                     });
 
@@ -1761,7 +1772,7 @@ where
     /// - `elements` for this frame in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip_all)]
     #[profiling::function]
-    pub fn render_frame<'a, R, E, Target>(
+    pub fn render_frame<'a, R, E>(
         &mut self,
         renderer: &mut R,
         elements: &'a [E],
@@ -1769,7 +1780,7 @@ where
     ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
-        R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
+        R: Renderer + Bind<Dmabuf>,
         <R as Renderer>::TextureId: Texture + 'static,
     {
         if !self.surface.is_active() {
@@ -2652,7 +2663,7 @@ where
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "trace", skip_all)]
     #[profiling::function]
-    fn try_assign_element<'a, R, E, Target>(
+    fn try_assign_element<'a, R, E>(
         &mut self,
         renderer: &mut R,
         element: &'a E,
@@ -2672,7 +2683,7 @@ where
         try_assign_primary_plane: bool,
     ) -> Result<PlaneAssignment, Option<RenderingReason>>
     where
-        R: Renderer + Bind<Dmabuf> + Offscreen<Target> + ExportMem,
+        R: Renderer + Bind<Dmabuf>,
         E: RenderElement<R>,
     {
         // Check if we have a free plane, otherwise we can exit early
@@ -2846,7 +2857,7 @@ where
     #[allow(clippy::too_many_arguments)]
     #[instrument(level = "trace", skip_all)]
     #[profiling::function]
-    fn try_assign_cursor_plane<R, E, Target>(
+    fn try_assign_cursor_plane<R, E>(
         &mut self,
         renderer: &mut R,
         element: &E,
@@ -2859,7 +2870,7 @@ where
         output_geometry: Rectangle<i32, Physical>,
     ) -> Option<PlaneAssignment>
     where
-        R: Renderer + Offscreen<Target> + ExportMem,
+        R: Renderer,
         E: RenderElement<R>,
     {
         // if we have no cursor plane we can exit early
@@ -3030,6 +3041,21 @@ where
 
         let cursor_buffer_size = self.cursor_size.to_logical(1).to_buffer(1, Transform::Normal);
 
+        #[cfg(not(feature = "renderer_pixman"))]
+        if !copy_element_to_cursor_bo(
+            renderer,
+            element,
+            element_size,
+            self.cursor_size,
+            output_transform,
+            &cursor_state.framebuffer_exporter,
+            &mut cursor_buffer,
+        ) {
+            tracing::trace!("failed to copy element to cursor bo, skipping element on cursor plane");
+            return None;
+        }
+
+        #[cfg(feature = "renderer_pixman")]
         if !copy_element_to_cursor_bo(
             renderer,
             element,
@@ -3042,81 +3068,105 @@ where
             profiling::scope!("render cursor plane");
             tracing::trace!("cursor fast-path copy failed, falling back to rendering using offscreen buffer");
 
-            let offscreen_buffer = match renderer.create_buffer(DrmFourcc::Argb8888, cursor_buffer_size) {
-                Ok(buffer) => buffer,
+            let Some(storage) = element.underlying_storage(renderer) else {
+                trace!("Can't obtain cursor's underlying storage");
+                return None;
+            };
+
+            let Some(pixman_renderer) = cursor_state.pixman_renderer.as_mut() else {
+                return None;
+            };
+
+            // Create a pixman image from the source cursor data. This will either be set by the
+            // client, or the compositor's choice.
+            let cursor_texture = match storage {
+                UnderlyingStorage::Wayland(buffer) => pixman_renderer
+                    .import_buffer(&buffer, None, &[element.src().to_i32_up()])
+                    .transpose()
+                    .ok()
+                    .flatten(),
+                UnderlyingStorage::Memory(memory) => {
+                    let format = memory.format();
+                    let size = memory.size();
+                    let Ok(pixman_format) = pixman::FormatCode::try_from(format) else {
+                        debug!("No pixman format for {format}");
+                        return None;
+                    };
+                    unsafe {
+                        match pixman::Image::from_raw_mut(
+                            pixman_format,
+                            size.w as usize,
+                            size.h as usize,
+                            memory.as_ptr() as *mut u32,
+                            memory.stride() as usize,
+                            false,
+                        ) {
+                            Ok(image) => Some(PixmanTexture::from(image)),
+                            Err(e) => {
+                                debug!("pixman cursor: {e}");
+                                None
+                            }
+                        }
+                    }
+                }
+            }?;
+
+            let ret = cursor_buffer
+                .map_mut::<_, _, Result<_, <PixmanRenderer as Renderer>::Error>>(
+                    &cursor_state.framebuffer_exporter,
+                    0,
+                    0,
+                    cursor_buffer_size.w as u32,
+                    cursor_buffer_size.h as u32,
+                    |mbo| {
+                        let plane_pixman_format = pixman::FormatCode::try_from(DrmFourcc::Argb8888).unwrap();
+                        let cursor_dst = unsafe {
+                            pixman::Image::from_raw_mut(
+                                plane_pixman_format,
+                                mbo.width() as usize,
+                                mbo.height() as usize,
+                                mbo.buffer_mut().as_mut_ptr() as *mut u32,
+                                mbo.stride() as usize,
+                                false,
+                            )
+                        }
+                        .map_err(|_| PixmanError::ImportFailed)?;
+                        pixman_renderer.bind(PixmanRenderBuffer::from(cursor_dst))?;
+
+                        let mut frame = pixman_renderer.render(self.cursor_size, output_transform)?;
+                        frame.clear(
+                            [0f32, 0f32, 0f32, 0f32],
+                            &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
+                        )?;
+                        let src = element.src();
+                        let dst = Rectangle::from_loc_and_size((0, 0), element_geometry.size);
+                        frame.render_texture_from_to(
+                            &cursor_texture,
+                            src,
+                            dst,
+                            &[dst],
+                            element.transform(),
+                            element.alpha(),
+                        )?;
+                        frame.finish()?.wait();
+                        Ok(())
+                    },
+                )
+                .expect("Lost track of cursor device");
+
+            _ = pixman_renderer.unbind();
+
+            match ret {
                 Err(err) => {
-                    debug!(
-                        "failed to create offscreen buffer for cursor {:?}: {}",
-                        plane_info.handle, err
-                    );
+                    debug!("{err}");
                     return None;
                 }
-            };
-
-            if let Err(err) = renderer.bind(offscreen_buffer) {
-                debug!(
-                    "failed to bind cursor buffer for cursor {:?}: {}",
-                    plane_info.handle, err
-                );
-                return None;
-            };
-
-            // save the renderer debug flags and disable all for the cursor plane
-            let renderer_debug_flags = renderer.debug_flags();
-            renderer.set_debug_flags(DebugFlags::empty());
-
-            let mut render = || {
-                let mut frame = renderer.render(self.cursor_size, output_transform)?;
-
-                frame.clear(
-                    [0f32, 0f32, 0f32, 0f32],
-                    &[Rectangle::from_loc_and_size((0, 0), self.cursor_size)],
-                )?;
-
-                let src = element.src();
-                let dst = Rectangle::from_loc_and_size((0, 0), element_geometry.size);
-                element.draw(&mut frame, src, dst, &[dst])?;
-
-                frame.finish()?.wait();
-
-                Ok::<(), <R as Renderer>::Error>(())
-            };
-
-            let render_res = render();
-
-            // restore the renderer debug flags
-            renderer.set_debug_flags(renderer_debug_flags);
-
-            if let Err(err) = render_res {
-                debug!("failed to render cursor element: {}", err);
-                return None;
-            }
-
-            let copy_rect = Rectangle::from_loc_and_size((0, 0), cursor_buffer_size);
-            let mapping = match renderer.copy_framebuffer(copy_rect, DrmFourcc::Argb8888) {
-                Ok(mapping) => mapping,
-                Err(err) => {
-                    info!("failed to export cursor offscreen buffer: {}", err);
+                Ok(Err(err)) => {
+                    debug!("{err}");
                     return None;
                 }
+                Ok(Ok(_)) => (),
             };
-            let data = match renderer.map_texture(&mapping) {
-                Ok(data) => data,
-                Err(err) => {
-                    info!("failed to map exported cursor offscreen buffer: {}", err);
-                    return None;
-                }
-            };
-
-            let Ok(res) = cursor_buffer.write(data) else {
-                info!("failed to write cursor buffer, device destroyed");
-                return None;
-            };
-
-            if let Err(err) = res {
-                info!("failed to write cursor buffer; {}", err);
-                return None;
-            }
         };
 
         let src = Rectangle::from_loc_and_size(Point::default(), cursor_buffer_size).to_f64();
@@ -3261,7 +3311,10 @@ where
             .map(|state| &mut state.fb_cache)
             .unwrap();
 
-        let cached_fb = element_fb_cache.get(&underlying_storage, allow_opaque_fallback);
+        let element_cache_key =
+            ElementFramebufferCacheKey::from_underlying_storage(&underlying_storage, allow_opaque_fallback)
+                .ok_or(ExportBufferError::Unsupported)?;
+        let cached_fb = element_fb_cache.get(&element_cache_key);
 
         if cached_fb.is_none() {
             trace!(
@@ -3270,20 +3323,19 @@ where
                 &underlying_storage
             );
 
-            let fb = self
-                .framebuffer_exporter
-                .add_framebuffer(
-                    self.surface.device_fd(),
-                    ExportBuffer::from(&underlying_storage),
-                    allow_opaque_fallback,
-                )
-                .map_err(|err| {
-                    trace!("failed to add framebuffer: {:?}", err);
-                    ExportBufferError::ExportFailed
-                })
-                .and_then(|fb| {
-                    fb.map(|fb| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb)))
-                        .ok_or(ExportBufferError::Unsupported)
+            let fb = ExportBuffer::from_underlying_storage(&underlying_storage)
+                .ok_or(ExportBufferError::Unsupported)
+                .and_then(|buffer| {
+                    self.framebuffer_exporter
+                        .add_framebuffer(self.surface.device_fd(), buffer, allow_opaque_fallback)
+                        .map_err(|err| {
+                            trace!("failed to add framebuffer: {:?}", err);
+                            ExportBufferError::ExportFailed
+                        })
+                        .and_then(|fb| {
+                            fb.map(|fb| OwnedFramebuffer::new(DrmFramebuffer::Exporter(fb)))
+                                .ok_or(ExportBufferError::Unsupported)
+                        })
                 });
 
             if fb.is_err() {
@@ -3294,7 +3346,7 @@ where
                 );
             }
 
-            element_fb_cache.insert(&underlying_storage, fb, allow_opaque_fallback);
+            element_fb_cache.insert(element_cache_key.clone(), fb);
         } else {
             trace!(
                 "using cached fb for element {:?} underlying storage {:?}",
@@ -3303,17 +3355,14 @@ where
             );
         }
 
-        let fb = element_fb_cache
-            .get(&underlying_storage, allow_opaque_fallback)
-            .unwrap()?;
+        let fb = element_fb_cache.get(&element_cache_key).unwrap()?;
 
+        let src = element.src();
+        let dst = output_transform.transform_rect_in(element_geometry, &output_geometry.size);
         let transform = apply_output_transform(
             apply_underlying_storage_transform(element.transform(), &underlying_storage),
             output_transform,
         );
-
-        let src = element.src();
-        let dst = output_transform.transform_rect_in(element_geometry, &output_geometry.size);
         let alpha = element.alpha();
         let properties = PlaneProperties {
             src,
@@ -3322,6 +3371,9 @@ where
             transform,
             format: fb.format(),
         };
+        let buffer = ScanoutBuffer::from_underlying_storage(underlying_storage)
+            .map(|buffer| Owned::from(DrmScanoutBuffer { fb, buffer }))
+            .ok_or(ExportBufferError::Unsupported)?;
 
         if !element_states
             .get(element_id)
@@ -3432,10 +3484,7 @@ where
             properties,
             z_index: element_zindex,
             geometry: element_geometry,
-            buffer: Owned::from(DrmScanoutBuffer {
-                fb,
-                buffer: ScanoutBuffer::from(underlying_storage.clone()),
-            }),
+            buffer,
             failed_planes,
         })
     }
@@ -3841,6 +3890,7 @@ fn apply_underlying_storage_transform(
                 element_transform
             }
         }
+        UnderlyingStorage::Memory { .. } => element_transform,
     }
 }
 
@@ -3945,9 +3995,6 @@ where
         return false;
     }
 
-    // At the moment only wayland buffers are supported
-    let UnderlyingStorage::Wayland(buffer) = underlying_storage;
-
     let Ok(bo_format) = bo.format() else {
         return false;
     };
@@ -3955,41 +4002,59 @@ where
         return false;
     };
 
-    // Only shm buffers are supported for copy
-    shm::with_buffer_contents(&buffer, |ptr, len, data| {
-        let Some(format) = shm::shm_format_to_fourcc(data.format) else {
-            return false;
-        };
-
-        if format != bo_format {
-            return false;
-        };
-
-        let expected_len = (data.stride * data.height) as usize;
-        if data.offset as usize + expected_len > len {
-            return false;
-        };
-
-        let src = unsafe { std::slice::from_raw_parts(ptr.offset(data.offset as isize), expected_len) };
-        if data.stride == bo_stride as i32 {
+    let mut copy_to_bo = |src, src_stride, src_height| {
+        if src_stride == bo_stride as i32 {
             matches!(bo.write(src), Ok(Ok(_)))
         } else {
             let res = bo.map_mut(device, 0, 0, cursor_size.w as u32, cursor_size.h as u32, |mbo| {
                 let dst = mbo.buffer_mut();
-                for row in 0..data.height {
-                    let src_row_start = (row * data.stride) as usize;
-                    let src_row_end = src_row_start + data.stride as usize;
+                for row in 0..src_height {
+                    let src_row_start = (row * src_stride) as usize;
+                    let src_row_end = src_row_start + src_stride as usize;
                     let src_row = &src[src_row_start..src_row_end];
                     let dst_row_start = (row * bo_stride as i32) as usize;
-                    let dst_row_end = dst_row_start + data.stride as usize;
+                    let dst_row_end = dst_row_start + src_stride as usize;
                     let dst_row = &mut dst[dst_row_start..dst_row_end];
                     dst_row.copy_from_slice(src_row);
                 }
             });
             matches!(res, Ok(Ok(_)))
         }
-    })
-    .unwrap_or(false)
+    };
+
+    match underlying_storage {
+        UnderlyingStorage::Wayland(buffer) => {
+            // Only shm buffers are supported for copy
+            shm::with_buffer_contents(&buffer, |ptr, len, data| {
+                let Some(format) = shm::shm_format_to_fourcc(data.format) else {
+                    return false;
+                };
+
+                if format != bo_format {
+                    return false;
+                };
+
+                let expected_len = (data.stride * data.height) as usize;
+                if data.offset as usize + expected_len > len {
+                    return false;
+                };
+
+                copy_to_bo(
+                    unsafe { std::slice::from_raw_parts(ptr.offset(data.offset as isize), expected_len) },
+                    data.stride,
+                    data.height,
+                )
+            })
+            .unwrap_or(false)
+        }
+        UnderlyingStorage::Memory(memory) => {
+            if memory.format() != bo_format {
+                return false;
+            };
+
+            copy_to_bo(&*memory, memory.stride(), memory.size().h)
+        }
+    }
 }
 
 struct OwnedFramebuffer<B: Framebuffer>(Arc<B>);

@@ -123,7 +123,7 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for EglGle
             .filter(|(_, node)| !list.iter().any(|renderer| &renderer.node == node))
             .map(|(device, node)| {
                 info!("Trying to initialize {:?} from {}", device, node);
-                let display = EGLDisplay::new(device).map_err(Error::Egl)?;
+                let display = unsafe { EGLDisplay::new(device).map_err(Error::Egl) }?;
                 let renderer = if let Some(factory) = self.factory.as_ref() {
                     factory(&display)?.into()
                 } else {

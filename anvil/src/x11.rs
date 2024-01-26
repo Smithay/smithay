@@ -109,7 +109,7 @@ pub fn run_x11() {
     // Create the gbm device for buffer allocation.
     let device = gbm::Device::new(DeviceFd::from(fd)).expect("Failed to create gbm device");
     // Initialize EGL using the GBM device.
-    let egl = EGLDisplay::new(device.clone()).expect("Failed to create EGLDisplay");
+    let egl = unsafe { EGLDisplay::new(device.clone()).expect("Failed to create EGLDisplay") };
     // Create the OpenGL context
     let context = EGLContext::new(&egl).expect("Failed to create EGLContext");
 
@@ -280,6 +280,10 @@ pub fn run_x11() {
                 data.state
                     .process_input_event_windowed(&data.display_handle, event, OUTPUT_NAME)
             }
+            X11Event::Focus(false) => {
+                data.state.release_all_keys();
+            }
+            _ => {}
         })
         .expect("Failed to insert X11 Backend into event loop");
 

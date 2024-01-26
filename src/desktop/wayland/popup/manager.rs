@@ -226,8 +226,8 @@ pub fn find_popup_root_surface(popup: &PopupKind) -> Result<WlSurface, DeadResou
                 .parent
                 .as_ref()
                 .cloned()
-                .unwrap()
-        });
+        })
+        .ok_or(DeadResource)?;
     }
     Ok(parent)
 }

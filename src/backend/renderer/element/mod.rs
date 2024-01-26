@@ -100,6 +100,8 @@ pub enum UnderlyingStorage {
     /// A wayland buffer
     #[cfg(feature = "wayland_frontend")]
     Wayland(Buffer),
+    /// A memory backed buffer
+    Memory(memory::MemoryBuffer),
 }
 
 /// Defines the (optional) reason why a [`Element`] was selected for
