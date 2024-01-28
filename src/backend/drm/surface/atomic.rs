@@ -33,6 +33,7 @@ use super::{PlaneConfig, PlaneState};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
+    pub active: bool,
     pub mode: Mode,
     pub blob: property::Value<'static>,
     pub connectors: HashSet<connector::Handle>,
@@ -110,7 +111,26 @@ impl State {
                 }
             }
         }
+
+        // Get the current active (dpms) state of the CRTC
+        //
+        // Changing a CRTC to active might require a modeset
+        let mut active = None;
+        if let Ok(props) = fd.get_properties(crtc) {
+            let active_prop = prop_mapping.1.get(&crtc).and_then(|m| m.get("ACTIVE"));
+            let (ids, vals) = props.as_props_and_values();
+            for (&id, &val) in ids.iter().zip(vals.iter()) {
+                if Some(&id) == active_prop {
+                    active = property::ValueType::Boolean.convert_value(val).as_boolean();
+                    break;
+                }
+            }
+        }
+
         Ok(State {
+            // If we don't know the active state we just assume off.
+            // This is highly unlikely, but having a false negative should do no harm.
+            active: active.unwrap_or(false),
             mode: current_mode,
             blob: current_blob,
             connectors: current_connectors,
@@ -158,6 +178,7 @@ impl AtomicDrmSurface {
             })
         })?;
         let pending = State {
+            active: true,
             mode,
             blob,
             connectors: connectors.iter().copied().collect(),

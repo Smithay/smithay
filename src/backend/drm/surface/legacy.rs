@@ -18,6 +18,7 @@ use tracing::{debug, info, info_span, instrument, trace};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct State {
+    pub active: bool,
     pub mode: Mode,
     pub connectors: HashSet<connector::Handle>,
 }
@@ -73,6 +74,9 @@ impl State {
         // we need to be sure, we require a mode to always be set without relying on the compiler.
         // So we cheat, because it works and is easier to handle later.
         Ok(State {
+            // On legacy there is not (reliable) way to read-back the dpms state.
+            // So we just always assume it is off.
+            active: false,
             mode: current_mode.unwrap_or_else(|| unsafe { std::mem::zeroed() }),
             connectors: current_connectors,
         })
@@ -103,6 +107,7 @@ impl LegacyDrmSurface {
 
         let state = State::current_state(&*fd, crtc)?;
         let pending = State {
+            active: true,
             mode,
             connectors: connectors.iter().copied().collect(),
         };
