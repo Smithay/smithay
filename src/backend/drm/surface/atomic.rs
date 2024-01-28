@@ -142,6 +142,13 @@ impl State {
             connectors: current_connectors,
         })
     }
+
+    fn clear(&mut self) {
+        self.mode = unsafe { std::mem::zeroed() };
+        self.blob = property::Value::Unknown(0);
+        self.connectors.clear();
+        self.active = false;
+    }
 }
 
 #[derive(Debug)]
@@ -886,82 +893,7 @@ impl AtomicDrmSurface {
                     });
                 }
             } else {
-                // disconnect the plane from the CRTC
-                req.add_property(
-                    *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "CRTC_ID")?,
-                    property::Value::CRTC(None),
-                );
-
-                // remove the fb from the plane
-                req.add_property(
-                    *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "FB_ID")?,
-                    property::Value::Framebuffer(None),
-                );
-
-                // reset the plane properties
-                req.add_property(
-                    *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "SRC_X")?,
-                    // these are 16.16. fixed point
-                    property::Value::UnsignedRange(0u64),
-                );
-                req.add_property(
-                    *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "SRC_Y")?,
-                    // these are 16.16. fixed point
-                    property::Value::UnsignedRange(0u64),
-                );
-                req.add_property(
-                    *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "SRC_W")?,
-                    // these are 16.16. fixed point
-                    property::Value::UnsignedRange(0u64),
-                );
-                req.add_property(
-                    *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "SRC_H")?,
-                    // these are 16.16. fixed point
-                    property::Value::UnsignedRange(0u64),
-                );
-
-                req.add_property(
-                    *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "CRTC_X")?,
-                    property::Value::SignedRange(0i64),
-                );
-                req.add_property(
-                    *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "CRTC_Y")?,
-                    property::Value::SignedRange(0i64),
-                );
-                req.add_property(
-                    *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "CRTC_W")?,
-                    property::Value::UnsignedRange(0u64),
-                );
-                req.add_property(
-                    *handle,
-                    plane_prop_handle(&prop_mapping, *handle, "CRTC_H")?,
-                    property::Value::UnsignedRange(0u64),
-                );
-                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "rotation") {
-                    req.add_property(
-                        *handle,
-                        prop,
-                        property::Value::Bitmask(DrmRotation::from(Transform::Normal).bits() as u64),
-                    );
-                }
-                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "alpha") {
-                    req.add_property(*handle, prop, property::Value::UnsignedRange(0xffff));
-                }
-                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "FB_DAMAGE_CLIPS") {
-                    req.add_property(*handle, prop, property::Value::Blob(0));
-                }
-                if let Ok(prop) = plane_prop_handle(&prop_mapping, *handle, "IN_FENCE_FD") {
-                    req.add_property(*handle, prop, property::Value::SignedRange(-1));
-                }
+                self.append_reset_plane_state(&mut req, *handle)?;
             }
         }
 
@@ -973,8 +905,94 @@ impl AtomicDrmSurface {
     // as other compositors might not make use of other planes,
     // leaving our e.g. cursor or overlays as a relict of a better time on the screen.
     pub fn clear_plane(&self, plane: plane::Handle) -> Result<(), Error> {
-        let prop_mapping = self.prop_mapping.read().unwrap();
+        if !self.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
         let mut req = AtomicModeReq::new();
+        self.append_reset_plane_state(&mut req, plane)?;
+
+        let result = self
+            .fd
+            .atomic_commit(AtomicCommitFlags::empty(), req)
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Failed to commit on clear_plane",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
+            });
+
+        if result.is_ok() {
+            self.used_planes.lock().unwrap().remove(&plane);
+        }
+
+        result
+    }
+
+    #[profiling::function]
+    fn clear_state(&self) -> Result<(), Error> {
+        if !self.active.load(Ordering::SeqCst) {
+            return Err(Error::DeviceInactive);
+        }
+
+        let _guard = self.span.enter();
+        let mut req = AtomicModeReq::new();
+        // reset all planes we used
+        for plane in self.used_planes.lock().unwrap().iter() {
+            self.append_reset_plane_state(&mut req, *plane)?;
+        }
+
+        // disable connectors again
+        let current = self.state.read().unwrap();
+        let prop_mapping = self.prop_mapping.read().unwrap();
+        for conn in current.connectors.iter() {
+            let prop = prop_mapping
+                .0
+                .get(conn)
+                .expect("Unknown Handle")
+                .get("CRTC_ID")
+                .expect("Unknown property CRTC_ID");
+            req.add_property(*conn, *prop, property::Value::CRTC(None));
+        }
+        let active_prop = prop_mapping
+            .1
+            .get(&self.crtc)
+            .expect("Unknown Handle")
+            .get("ACTIVE")
+            .expect("Unknown property ACTIVE");
+        let mode_prop = prop_mapping
+            .1
+            .get(&self.crtc)
+            .expect("Unknown Handle")
+            .get("MODE_ID")
+            .expect("Unknown property MODE_ID");
+
+        req.add_property(self.crtc, *active_prop, property::Value::Boolean(false));
+        req.add_property(self.crtc, *mode_prop, property::Value::Unknown(0));
+        std::mem::drop(current);
+
+        let res = self
+            .fd
+            .atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req)
+            .map_err(|source| {
+                Error::Access(AccessError {
+                    errmsg: "Failed to commit on clear_state",
+                    dev: self.fd.dev_path(),
+                    source,
+                })
+            });
+
+        if res.is_ok() {
+            self.used_planes.lock().unwrap().clear();
+            self.state.write().unwrap().clear();
+        }
+
+        res
+    }
+
+    fn append_reset_plane_state(&self, req: &mut AtomicModeReq, plane: plane::Handle) -> Result<(), Error> {
+        let prop_mapping = self.prop_mapping.read().unwrap();
 
         req.add_property(
             plane,
@@ -1051,22 +1069,7 @@ impl AtomicDrmSurface {
             req.add_property(plane, prop, property::Value::SignedRange(-1));
         }
 
-        let result = self
-            .fd
-            .atomic_commit(AtomicCommitFlags::NONBLOCK, req)
-            .map_err(|source| {
-                Error::Access(AccessError {
-                    errmsg: "Failed to commit on clear_plane",
-                    dev: self.fd.dev_path(),
-                    source,
-                })
-            });
-
-        if result.is_ok() {
-            self.used_planes.lock().unwrap().remove(&plane);
-        }
-
-        result
+        Ok(())
     }
 
     pub(crate) fn reset_state<B: DevPath + ControlDevice + 'static>(
@@ -1114,47 +1117,10 @@ impl Drop for AtomicDrmSurface {
             // by the device, when switching back
             return;
         }
+
         let _guard = self.span.enter();
-
-        // other ttys that use no cursor, might not clear it themselves.
-        // This makes sure our cursor won't stay visible.
-        let used_planes = std::mem::take(&mut *self.used_planes.lock().unwrap());
-        for plane in used_planes {
-            if let Err(err) = self.clear_plane(plane) {
-                warn!("Failed to clear plane {:?} on {:?}: {}", plane, self.crtc, err);
-            }
-        }
-
-        // disable connectors again
-        let current = self.state.read().unwrap();
-        let mut req = AtomicModeReq::new();
-        let prop_mapping = self.prop_mapping.read().unwrap();
-        for conn in current.connectors.iter() {
-            let prop = prop_mapping
-                .0
-                .get(conn)
-                .expect("Unknown Handle")
-                .get("CRTC_ID")
-                .expect("Unknown property CRTC_ID");
-            req.add_property(*conn, *prop, property::Value::CRTC(None));
-        }
-        let active_prop = prop_mapping
-            .1
-            .get(&self.crtc)
-            .expect("Unknown Handle")
-            .get("ACTIVE")
-            .expect("Unknown property ACTIVE");
-        let mode_prop = prop_mapping
-            .1
-            .get(&self.crtc)
-            .expect("Unknown Handle")
-            .get("MODE_ID")
-            .expect("Unknown property MODE_ID");
-
-        req.add_property(self.crtc, *active_prop, property::Value::Boolean(false));
-        req.add_property(self.crtc, *mode_prop, property::Value::Unknown(0));
-        if let Err(err) = self.fd.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req) {
-            warn!("Unable to disable connectors: {}", err);
+        if let Err(err) = self.clear_state() {
+            warn!("Unable to clear state: {}", err);
         }
     }
 }
