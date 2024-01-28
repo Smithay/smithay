@@ -31,12 +31,18 @@ use tracing::{debug, info, info_span, instrument, trace, warn};
 
 use super::{PlaneConfig, PlaneState};
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 pub struct State {
     pub active: bool,
     pub mode: Mode,
     pub blob: property::Value<'static>,
     pub connectors: HashSet<connector::Handle>,
+}
+
+impl PartialEq for State {
+    fn eq(&self, other: &Self) -> bool {
+        self.active == other.active && self.mode == other.mode && self.connectors == other.connectors
+    }
 }
 
 impl State {
