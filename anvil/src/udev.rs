@@ -357,7 +357,7 @@ pub fn run_udev() {
                         lease_global.resume::<AnvilState<UdevData>>();
                     }
                     for surface in backend.surfaces.values_mut() {
-                        if let Err(err) = surface.compositor.surface().reset_state() {
+                        if let Err(err) = surface.compositor.reset_state() {
                             warn!("Failed to reset drm surface state: {}", err);
                         }
                     }
@@ -666,6 +666,16 @@ impl SurfaceComposition {
         match self {
             SurfaceComposition::Compositor(c) => c.reset_buffers(),
             SurfaceComposition::Surface { surface, .. } => surface.reset_buffers(),
+        }
+    }
+
+    fn reset_state(&mut self) -> Result<(), SwapBuffersError> {
+        match self {
+            SurfaceComposition::Compositor(c) => c.reset_state().map_err(Into::<SwapBuffersError>::into),
+            SurfaceComposition::Surface { surface, .. } => surface
+                .surface()
+                .reset_state()
+                .map_err(Into::<SwapBuffersError>::into),
         }
     }
 
