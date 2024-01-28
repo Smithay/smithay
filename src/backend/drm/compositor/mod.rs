@@ -544,13 +544,6 @@ impl<B: AsRef<framebuffer::Handle>> FrameState<B> {
         self.plane_state(handle)
             .and_then(|state| state.config.as_ref().map(|config| &*config.buffer))
     }
-
-    fn is_empty(&self) -> bool {
-        if self.planes.is_empty() {
-            return true;
-        }
-        self.planes.iter().all(|p| p.1.skip)
-    }
 }
 
 #[derive(Debug)]
@@ -660,8 +653,8 @@ impl<B: Framebuffer> FrameState<B> {
         surface: &DrmSurface,
         supports_fencing: bool,
         allow_modeset: bool,
+        allow_partial_update: bool,
     ) -> Result<(), DrmError> {
-        let commit_pending = surface.commit_pending();
         let needs_test = self.planes.iter().any(|(_, state)| state.needs_test);
         let is_fully_compatible = self.planes.iter().all(|(handle, state)| {
             previous_frame
@@ -670,7 +663,7 @@ impl<B: Framebuffer> FrameState<B> {
                 .unwrap_or(false)
         });
 
-        if !commit_pending && (!needs_test || is_fully_compatible) {
+        if allow_partial_update && (!needs_test || is_fully_compatible) {
             trace!("skipping fully compatible state test");
             self.planes
                 .iter_mut()
@@ -679,7 +672,7 @@ impl<B: Framebuffer> FrameState<B> {
         }
 
         let res = surface.test_state(
-            self.build_planes(surface, supports_fencing, !commit_pending),
+            self.build_planes(surface, supports_fencing, allow_partial_update),
             allow_modeset,
         );
 
@@ -697,10 +690,14 @@ impl<B: Framebuffer> FrameState<B> {
         &mut self,
         surface: &DrmSurface,
         supports_fencing: bool,
+        allow_partial_update: bool,
         event: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
-        surface.commit(self.build_planes(surface, supports_fencing, false), event)
+        surface.commit(
+            self.build_planes(surface, supports_fencing, allow_partial_update),
+            event,
+        )
     }
 
     #[profiling::function]
@@ -708,10 +705,14 @@ impl<B: Framebuffer> FrameState<B> {
         &mut self,
         surface: &DrmSurface,
         supports_fencing: bool,
+        allow_partial_update: bool,
         event: bool,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
-        surface.page_flip(self.build_planes(surface, supports_fencing, true), event)
+        surface.page_flip(
+            self.build_planes(surface, supports_fencing, allow_partial_update),
+            event,
+        )
     }
 
     #[profiling::function]
@@ -1400,6 +1401,82 @@ impl From<&PlaneInfo> for PlaneAssignment {
     }
 }
 
+struct PendingFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>, U> {
+    frame: Frame<A, F>,
+    user_data: U,
+}
+
+impl<A, F, U> std::fmt::Debug for PendingFrame<A, F, U>
+where
+    A: Allocator,
+    <A as Allocator>::Buffer: std::fmt::Debug,
+    F: ExportFramebuffer<<A as Allocator>::Buffer>,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug,
+    U: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingFrame")
+            .field("frame", &self.frame)
+            .field("user_data", &self.user_data)
+            .finish()
+    }
+}
+
+struct QueuedFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>, U> {
+    prepared_frame: PreparedFrame<A, F>,
+    user_data: U,
+}
+
+impl<A, F, U> std::fmt::Debug for QueuedFrame<A, F, U>
+where
+    A: Allocator,
+    <A as Allocator>::Buffer: std::fmt::Debug,
+    F: ExportFramebuffer<<A as Allocator>::Buffer>,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug,
+    U: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QueuedFrame")
+            .field("prepared_frame", &self.prepared_frame)
+            .field("user_data", &self.user_data)
+            .finish()
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum PreparedFrameKind {
+    Full,
+    Partial,
+}
+
+struct PreparedFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>> {
+    frame: Frame<A, F>,
+    kind: PreparedFrameKind,
+}
+
+impl<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>> PreparedFrame<A, F> {
+    fn is_empty(&self) -> bool {
+        // It can happen that we have no changes, but there is a pending commit or
+        // we are forced to do a full update in which case we just set the previous state again
+        self.kind == PreparedFrameKind::Partial && self.frame.planes.iter().all(|p| p.1.skip)
+    }
+}
+
+impl<A, F> std::fmt::Debug for PreparedFrame<A, F>
+where
+    A: Allocator,
+    <A as Allocator>::Buffer: std::fmt::Debug,
+    F: ExportFramebuffer<<A as Allocator>::Buffer>,
+    <F as ExportFramebuffer<<A as Allocator>::Buffer>>::Framebuffer: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedFrame")
+            .field("frame", &self.frame)
+            .field("kind", &self.kind)
+            .finish()
+    }
+}
+
 /// Composite an output using a combination of planes and rendering
 ///
 /// see the [`module docs`](crate::backend::drm::compositor) for more information
@@ -1421,13 +1498,14 @@ where
     primary_plane_damage_bag: DamageBag<i32, BufferCoords>,
     supports_fencing: bool,
     direct_scanout: bool,
+    reset_pending: bool,
 
     framebuffer_exporter: F,
 
     current_frame: Frame<A, F>,
-    pending_frame: Option<(Frame<A, F>, U)>,
-    queued_frame: Option<(Frame<A, F>, U)>,
-    next_frame: Option<Frame<A, F>>,
+    pending_frame: Option<PendingFrame<A, F, U>>,
+    queued_frame: Option<QueuedFrame<A, F, U>>,
+    next_frame: Option<PreparedFrame<A, F>>,
 
     swapchain: Swapchain<A>,
 
@@ -1568,6 +1646,7 @@ where
                         primary_plane_damage_bag: DamageBag::new(4),
                         primary_is_opaque: is_opaque,
                         direct_scanout: true,
+                        reset_pending: true,
                         current_frame,
                         pending_frame: None,
                         queued_frame: None,
@@ -1803,6 +1882,11 @@ where
         // any already acquired slot back to the swapchain
         std::mem::drop(self.next_frame.take());
 
+        // If a commit is pending we may still be able to just use a previous
+        // state, but we want to queue a frame so we just fake the damage to
+        // make sure queue_frame won't be skipped because of no damage
+        let allow_partial_update = !self.reset_pending && !self.surface.commit_pending();
+
         let (current_size, output_scale, output_transform) = (&self.output_mode_source)
             .try_into()
             .map_err(OutputDamageTrackerError::OutputNoMode)?;
@@ -1871,7 +1955,7 @@ where
             let previous_state = self
                 .pending_frame
                 .as_ref()
-                .map(|(state, _)| state)
+                .map(|pending| &pending.frame)
                 .unwrap_or(&self.current_frame);
 
             // This will create an empty frame state, all planes are skipped by default
@@ -2088,7 +2172,7 @@ where
         let previous_state = self
             .pending_frame
             .as_ref()
-            .map(|(state, _)| state)
+            .map(|pending| &pending.frame)
             .unwrap_or(&self.current_frame);
 
         // Check if the next frame state is fully compatible with the previous frame state.
@@ -2096,7 +2180,13 @@ where
         // the test on the primary plane. This will also automatically correct any mistake we made
         // during plane assignment and start the full test cycle on the next frame.
         if next_frame_state
-            .test_state_complete(previous_state, &self.surface, self.supports_fencing, false)
+            .test_state_complete(
+                previous_state,
+                &self.surface,
+                self.supports_fencing,
+                false,
+                allow_partial_update,
+            )
             .is_err()
         {
             trace!("atomic test failed for frame, resetting frame");
@@ -2364,12 +2454,16 @@ where
             PrimaryPlaneElement::Element(primary_plane_scanout_element.unwrap())
         };
 
-        // If a commit is pending we may still be able to just use a previous
-        // state, but we want to queue a frame so we just fake the damage to
-        // make sure queue_frame won't be skipped because of no damage
-        let commit_pending = self.surface.commit_pending();
+        let next_frame = PreparedFrame {
+            kind: if allow_partial_update {
+                PreparedFrameKind::Partial
+            } else {
+                PreparedFrameKind::Full
+            },
+            frame: next_frame_state,
+        };
         let frame_reference: RenderFrameResult<'a, A::Buffer, F::Framebuffer, E> = RenderFrameResult {
-            is_empty: next_frame_state.is_empty() && !commit_pending,
+            is_empty: next_frame.is_empty(),
             primary_element: primary_plane_element,
             overlay_elements: overlay_plane_elements.into_values().collect(),
             cursor_element: cursor_plane_element,
@@ -2381,8 +2475,8 @@ where
         // We only store the next frame if it acutaly contains any changes or if a commit is pending
         // Storing the (empty) frame could keep a reference to wayland buffers which
         // could otherwise be potentially released on `frame_submitted`
-        if commit_pending || !next_frame_state.is_empty() {
-            self.next_frame = Some(next_frame_state);
+        if !next_frame.is_empty() {
+            self.next_frame = Some(next_frame);
         }
 
         Ok(frame_reference)
@@ -2410,15 +2504,12 @@ where
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
 
-        let next_frame = self.next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
-
-        // It can happen that we have no changes, but there is a pending commit in which
-        // case we just set the previous state again
-        if next_frame.is_empty() && !self.surface.commit_pending() {
+        let prepared_frame = self.next_frame.take().ok_or(FrameErrorType::<A, F>::EmptyFrame)?;
+        if prepared_frame.is_empty() {
             return Err(FrameErrorType::<A, F>::EmptyFrame);
         }
 
-        if let Some(plane_state) = next_frame.plane_state(self.planes.primary.handle) {
+        if let Some(plane_state) = prepared_frame.frame.plane_state(self.planes.primary.handle) {
             if !plane_state.skip {
                 let slot = plane_state.buffer().and_then(|config| match &config.buffer {
                     ScanoutBuffer::Swapchain(slot) => Some(slot),
@@ -2431,26 +2522,59 @@ where
             }
         }
 
-        self.queued_frame = Some((next_frame, user_data));
+        self.queued_frame = Some(QueuedFrame {
+            prepared_frame,
+            user_data,
+        });
         if self.pending_frame.is_none() {
             self.submit()?;
         }
         Ok(())
     }
 
+    /// Re-evaluates the current state of the crtc and forces calls to [`render_frame`](DrmCompositor::render_frame)
+    /// to return `false` for [`RenderFrameResult::is_empty`] until a frame is queued with [`queue_frame`](DrmCompositor::queue_frame).
+    ///
+    /// It is recommended to call this function after this used [`Session`](crate::backend::session::Session)
+    /// gets re-activated / VT switched to.
+    ///
+    /// Usually you do not need to call this in other circumstances, but if
+    /// the state of the crtc is modified elsewhere, you may call this function
+    /// to reset it's internal state.
+    pub fn reset_state(&mut self) -> Result<(), DrmError> {
+        self.surface.reset_state()?;
+        self.reset_pending = true;
+        Ok(())
+    }
+
     #[profiling::function]
     fn submit(&mut self) -> FrameResult<(), A, F> {
-        let (mut state, user_data) = self.queued_frame.take().unwrap();
+        let QueuedFrame {
+            mut prepared_frame,
+            user_data,
+        } = self.queued_frame.take().unwrap();
 
+        let allow_partial_update = prepared_frame.kind == PreparedFrameKind::Partial;
         let flip = if self.surface.commit_pending() {
-            state.commit(&self.surface, self.supports_fencing, true)
+            prepared_frame
+                .frame
+                .commit(&self.surface, self.supports_fencing, allow_partial_update, true)
         } else {
-            state.page_flip(&self.surface, self.supports_fencing, true)
+            prepared_frame
+                .frame
+                .page_flip(&self.surface, self.supports_fencing, allow_partial_update, true)
         };
 
         match flip {
             Ok(_) => {
-                self.pending_frame = Some((state, user_data));
+                if prepared_frame.kind == PreparedFrameKind::Full {
+                    self.reset_pending = false;
+                }
+
+                self.pending_frame = Some(PendingFrame {
+                    frame: prepared_frame.frame,
+                    user_data,
+                });
             }
             Err(crate::backend::drm::error::Error::Access(ref access))
                 if access.source.kind() == ErrorKind::InvalidInput =>
@@ -2458,7 +2582,8 @@ where
                 // In case the commit/flip failed while we tried to directly scan-out
                 // something on the primary plane we can try to mark this as failed for
                 // the next call to render_frame
-                let primary_plane_element_state = state
+                let primary_plane_element_state = prepared_frame
+                    .frame
                     .plane_state(self.planes.primary.handle)
                     .and_then(|plane_state| {
                         plane_state
@@ -2489,8 +2614,8 @@ where
     /// Otherwise the underlying swapchain will run out of buffers eventually.
     #[profiling::function]
     pub fn frame_submitted(&mut self) -> FrameResult<Option<U>, A, F> {
-        if let Some((mut pending, user_data)) = self.pending_frame.take() {
-            std::mem::swap(&mut pending, &mut self.current_frame);
+        if let Some(PendingFrame { mut frame, user_data }) = self.pending_frame.take() {
+            std::mem::swap(&mut frame, &mut self.current_frame);
             if self.queued_frame.is_some() {
                 self.submit()?;
             }
@@ -2885,7 +3010,7 @@ where
         let previous_state = self
             .pending_frame
             .as_ref()
-            .map(|(state, _)| state)
+            .map(|pending| &pending.frame)
             .unwrap_or(&self.current_frame);
 
         let previous_element_state = previous_state
@@ -3384,7 +3509,7 @@ where
                         let previous_frame_state = self
                             .pending_frame
                             .as_ref()
-                            .map(|(state, _)| state)
+                            .map(|pending| &pending.frame)
                             .unwrap_or(&self.current_frame);
 
                         // Note: we ignore the cursor plane here as this would result
@@ -3515,7 +3640,7 @@ where
         let previous_frame_state = self
             .pending_frame
             .as_ref()
-            .map(|(state, _)| state)
+            .map(|pending| &pending.frame)
             .unwrap_or(&self.current_frame);
 
         // We consider a plane compatible if the z-index of the previous assigned
@@ -3700,7 +3825,7 @@ where
         let previous_state = self
             .pending_frame
             .as_ref()
-            .map(|(state, _)| state)
+            .map(|pending| &pending.frame)
             .unwrap_or(&self.current_frame);
 
         let previous_commit = previous_state.planes.get(&plane.handle).and_then(|state| {
