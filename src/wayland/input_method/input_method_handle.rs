@@ -282,10 +282,19 @@ where
                 let res = keymap_file.with_fd(false, |fd, size| {
                     instance.keymap(KeymapFormat::XkbV1, fd, size as u32);
                 });
-                if let Err(e) = res {
-                    warn!(
-                        err = ?e,
-                        "Failed to send keymap to client"
+
+                if let Err(err) = res {
+                    warn!(err = ?err, "Failed to send keymap to client");
+                } else {
+                    // Modifiers can be latched when taking the grab, thus we must send them to keep
+                    // them in sync.
+                    let mods = guard.mods_state.serialized;
+                    instance.modifiers(
+                        SERIAL_COUNTER.next_serial().into(),
+                        mods.depressed,
+                        mods.latched,
+                        mods.locked,
+                        mods.layout_effective,
                     );
                 }
             }
