@@ -113,11 +113,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v3
       - name: Rust toolchain
-        # currently nightly has an ICE affecting bytemuck
-        # see: https://github.com/Lokathor/bytemuck/issues/197
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-06-17
+        uses: dtolnay/rust-toolchain@nightly
       - name: Get date for registry cache
         id: date
         run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
@@ -407,11 +403,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-registry-
 
       - name: Rust toolchain
-        # currently nightly has an ICE affecting bytemuck
-        # see: https://github.com/Lokathor/bytemuck/issues/197
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-06-17
+        uses: dtolnay/rust-toolchain@nightly
 
       - name: System dependencies
         run: sudo apt-get update; sudo apt-get install -y libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev
