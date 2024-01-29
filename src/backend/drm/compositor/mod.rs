@@ -196,6 +196,7 @@ impl RenderElementState {
     }
 }
 
+#[allow(dead_code)] // This structs purpose is to keep buffer objects alive, most variants won't be read
 #[derive(Debug)]
 enum ScanoutBuffer<B: Buffer> {
     Wayland(crate::backend::renderer::utils::Buffer),
