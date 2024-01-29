@@ -64,7 +64,7 @@ mod tests {
     fn test_parse_mesa_3_2() {
         let gl_version = "OpenGL ES 3.2 Mesa 20.3.5";
         let gl_version_str = unsafe { CStr::from_ptr(gl_version.as_ptr() as *const c_char) };
-        assert_eq!(GlVersion::try_from(gl_version_str), Ok(GlVersion::new(3, 2)))
+        assert_eq!(GlVersion::try_from(gl_version_str).unwrap(), GlVersion::new(3, 2))
     }
 
     #[test]
