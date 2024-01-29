@@ -1370,8 +1370,8 @@ impl OverlayPlaneElementIds {
     }
 
     fn remove_plane(&mut self, plane: &plane::Handle) {
-        if let Some(plane_id) = self.plane_plane_ids.remove(plane) {
-            self.plane_id_element_ids.remove(&plane_id);
+        if let Some(plane_id) = self.plane_plane_ids.swap_remove(plane) {
+            self.plane_id_element_ids.swap_remove(&plane_id);
         }
     }
 }
@@ -2119,7 +2119,7 @@ where
                 {
                     cursor_plane_element.take()
                 } else {
-                    overlay_plane_elements.remove(plane)
+                    overlay_plane_elements.shift_remove(plane)
                 };
 
                 // If we have no element on this plane skip the rest

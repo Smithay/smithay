@@ -66,7 +66,7 @@ where
                 data.known_surfaces
                     .lock()
                     .unwrap()
-                    .remove(&xdg_surface.downgrade());
+                    .swap_remove(&xdg_surface.downgrade());
 
                 if !data.wl_surface.alive() {
                     // the wl_surface is destroyed, this means the client is not
