@@ -3445,9 +3445,12 @@ where
 
         let src = element.src();
         let dst = output_transform.transform_rect_in(element_geometry, &output_geometry.size);
+        // the output transform we are passed is already inverted to represent CW rotation (this is done to match what the
+        // renderer is doing), but drm and the elements actually use/expect CCW rotation. to solve this we just invert
+        // the transform again here.
         let transform = apply_output_transform(
             apply_underlying_storage_transform(element.transform(), &underlying_storage),
-            output_transform,
+            output_transform.invert(),
         );
         let alpha = element.alpha();
         let properties = PlaneProperties {
