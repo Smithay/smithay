@@ -249,6 +249,7 @@ impl ElementState {
 
 #[derive(Debug, Default)]
 struct RendererState {
+    transform: Option<Transform>,
     size: Option<Size<i32, Physical>>,
     elements: IndexMap<Id, ElementState>,
     old_damage: VecDeque<Vec<Rectangle<i32, Physical>>>,
@@ -412,6 +413,11 @@ impl OutputDamageTracker {
         E: Element,
     {
         let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
+
+        // Output transform is specified in surface-rotation, so inversion gives us the
+        // render transform for the output itself.
+        let output_transform = output_transform.invert();
+
         // We have to apply to output transform to the output size so that the intersection
         // tests in damage_output_internal produces the correct results and do not crop
         // damage with the wrong size
@@ -425,6 +431,7 @@ impl OutputDamageTracker {
             age,
             elements,
             output_scale,
+            output_transform,
             output_geo,
             &mut damage,
             &mut render_elements,
@@ -445,6 +452,7 @@ impl OutputDamageTracker {
         age: usize,
         elements: &'a [E],
         output_scale: Scale<f64>,
+        output_transform: Transform,
         output_geo: Rectangle<i32, Physical>,
         damage: &mut Vec<Rectangle<i32, Physical>>,
         render_elements: &mut Vec<&'a E>,
@@ -594,14 +602,16 @@ impl OutputDamageTracker {
             opaque_regions.iter().flat_map(|(_, r)| r).copied(),
         ));
 
-        if self
-            .last_state
-            .size
-            .map(|geo| geo != output_geo.size)
-            .unwrap_or(true)
+        if self.last_state.size != Some(output_geo.size)
+            || self.last_state.transform != Some(output_transform)
         {
-            // The output geometry changed, so just damage everything
-            trace!("Output geometry changed, damaging whole output geometry. previous geometry: {:?}, current geometry: {:?}", self.last_state.size, output_geo);
+            // The output geometry or transform changed, so just damage everything
+            trace!(
+                previous_geometry = ?self.last_state.size,
+                current_geometry = ?output_geo.size,
+                previous_transform = ?self.last_state.transform,
+                current_transform = ?output_transform,
+                "Output geometry or transform changed, damaging whole output geometry");
             *damage = vec![output_geo];
         }
 
@@ -682,6 +692,7 @@ impl OutputDamageTracker {
         );
 
         self.last_state.size = Some(output_geo.size);
+        self.last_state.transform = Some(output_transform);
         self.last_state.elements = new_elements_state;
         self.last_state.old_damage.push_front(new_damage);
         self.last_state.opaque_regions.clear();
@@ -726,6 +737,7 @@ impl OutputDamageTracker {
             age,
             elements,
             output_scale,
+            output_transform,
             output_geo,
             &mut damage,
             &mut render_elements,
