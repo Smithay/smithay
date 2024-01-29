@@ -2,6 +2,8 @@
 name = "smithay-drm-extras"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+authors = ["Bartłomiej Maryńczak <marynczakbartlomiej@gmail.com>"]
 
 [dependencies]
 edid-rs = "0.1.0"
