@@ -159,7 +159,7 @@ impl PopupManager {
     pub fn find_popup(&self, surface: &WlSurface) -> Option<PopupKind> {
         self.unmapped_popups
             .iter()
-            .find(|p| p.wl_surface() == surface)
+            .find(|p| p.wl_surface() == surface && p.alive())
             .cloned()
             .or_else(|| {
                 self.popup_trees
@@ -287,6 +287,7 @@ impl PopupTree {
             .lock()
             .unwrap()
             .iter()
+            .filter(|node| node.surface.alive())
             .flat_map(|n| n.iter_popups_relative_to((0, 0)).map(|(p, l)| (p.clone(), l)))
             .collect::<Vec<_>>()
             .into_iter()
@@ -346,6 +347,7 @@ impl PopupNode {
         let relative_to = loc.into() + self.surface.location();
         self.children
             .iter()
+            .filter(|node| node.surface.alive())
             .flat_map(move |x| {
                 Box::new(x.iter_popups_relative_to(relative_to))
                     as Box<dyn Iterator<Item = (&PopupKind, Point<i32, Logical>)>>
