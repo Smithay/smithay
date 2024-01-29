@@ -106,7 +106,7 @@ use_bindgen = ["drm-ffi/use_bindgen", "gbm/use_bindgen", "input/use_bindgen"]
 wayland_frontend = ["wayland-server", "wayland-protocols", "wayland-protocols-wlr", "wayland-protocols-misc", "tempfile"]
 x11rb_event_source = ["x11rb"]
 xwayland = ["encoding_rs", "wayland_frontend", "x11rb/composite", "x11rb/xfixes", "x11rb_event_source", "scopeguard"]
-test_all_features = ["default", "use_system_lib", "renderer_glow", "renderer_test", "renderer_pixman"]
+test_all_features = ["default", "use_system_lib", "renderer_glow", "renderer_test"]
 
 [[example]]
 name = "minimal"
