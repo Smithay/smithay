@@ -8,7 +8,7 @@ use wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-use super::{xdg::XdgOutput, Output, OutputManagerState, OutputUserData, WlOutputData};
+use super::{xdg::XdgOutput, Output, OutputHandler, OutputManagerState, OutputUserData, WlOutputData};
 
 /*
  * Wl Output
@@ -18,10 +18,11 @@ impl<D> GlobalDispatch<WlOutput, WlOutputData, D> for OutputManagerState
 where
     D: GlobalDispatch<WlOutput, WlOutputData>,
     D: Dispatch<WlOutput, OutputUserData>,
+    D: OutputHandler,
     D: 'static,
 {
     fn bind(
-        _state: &mut D,
+        state: &mut D,
         _dh: &DisplayHandle,
         client: &Client,
         resource: New<WlOutput>,
@@ -84,7 +85,13 @@ where
             }
         }
 
-        inner.instances.push(output);
+        inner.instances.push(output.clone());
+
+        drop(inner);
+        let o = Output {
+            inner: global_data.inner.clone(),
+        };
+        state.output_bound(o, output);
     }
 }
 

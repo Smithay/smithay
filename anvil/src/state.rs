@@ -50,7 +50,7 @@ use smithay::{
         keyboard_shortcuts_inhibit::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
         },
-        output::OutputManagerState,
+        output::{OutputHandler, OutputManagerState},
         pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler, PointerConstraintsState},
         pointer_gestures::PointerGesturesState,
         presentation::PresentationState,
@@ -191,6 +191,7 @@ impl<BackendData: Backend> ServerDndGrabHandler for AnvilState<BackendData> {
 }
 delegate_data_device!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+impl<BackendData: Backend> OutputHandler for AnvilState<BackendData> {}
 delegate_output!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> SelectionHandler for AnvilState<BackendData> {

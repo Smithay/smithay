@@ -10,6 +10,7 @@ use crate::Smallvil;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
+use smithay::wayland::output::OutputHandler;
 use smithay::wayland::selection::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler,
 };
@@ -58,4 +59,5 @@ delegate_data_device!(Smallvil);
 // Wl Output & Xdg Output
 //
 
+impl OutputHandler for Smallvil {}
 delegate_output!(Smallvil);

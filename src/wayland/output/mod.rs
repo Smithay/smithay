@@ -24,6 +24,7 @@
 //! use smithay::delegate_output;
 //! use smithay::output::{Output, PhysicalProperties, Scale, Mode, Subpixel};
 //! use smithay::utils::Transform;
+//! use smithay::wayland::output::OutputHandler;
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -55,6 +56,7 @@
 //! output.add_mode(Mode { size: (800, 600).into(), refresh: 60000 });
 //! output.add_mode(Mode { size: (1024, 768).into(), refresh: 60000 });
 //!
+//! impl OutputHandler for State {}
 //! delegate_output!(State);
 //! ```
 
@@ -88,6 +90,12 @@ pub struct OutputManagerState {
 #[derive(Debug)]
 pub struct WlOutputData {
     inner: OutputData,
+}
+
+/// Events initiated by the clients interacting with outputs
+pub trait OutputHandler {
+    /// A client bound a new `wl_output` instance.
+    fn output_bound(&mut self, _output: Output, _wl_output: WlOutput) {}
 }
 
 impl OutputManagerState {
