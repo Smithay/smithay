@@ -2793,49 +2793,17 @@ impl<'frame> GlesFrame<'frame> {
         mat = mat * Matrix3::from_translation(Vector2::new(dest.loc.x as f32, dest.loc.y as f32));
 
         // src scale, position, tranform and y_inverted
-        let tex_size = texture.size().to_f64();
+        let tex_size = texture.size();
         let src_size = src.size;
-
-        let transform_mat = if transform.flipped() {
-            transform.invert().matrix()
-        } else {
-            transform.matrix()
-        };
 
         if src_size.is_empty() || tex_size.is_empty() {
             return Ok(());
         }
 
-        let mut tex_mat = Matrix3::<f32>::identity();
-        // first scale to meet the src size
-        tex_mat = tex_mat
-            * Matrix3::from_nonuniform_scale(
-                (src_size.w / tex_size.w) as f32,
-                (src_size.h / tex_size.h) as f32,
-            );
-        // now translate by the src location
-        tex_mat = tex_mat
-            * Matrix3::from_translation(Vector2::new(
-                (src.loc.x / src_size.w) as f32,
-                (src.loc.y / src_size.h) as f32,
-            ));
-        // then apply the transform and if necessary invert the y axis
-        tex_mat = tex_mat * Matrix3::from_translation(Vector2::new(0.5, 0.5));
-        if transform == Transform::Normal {
-            assert_eq!(tex_mat, tex_mat * transform.invert().matrix());
-            assert_eq!(transform.matrix(), Matrix3::<f32>::identity());
-        }
-        tex_mat = tex_mat * transform_mat;
+        let mut tex_mat = build_texture_mat(src, dest, tex_size, transform);
         if texture.0.y_inverted {
-            tex_mat = tex_mat * Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0);
+            tex_mat = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0) * tex_mat;
         }
-        tex_mat = tex_mat * Matrix3::from_translation(Vector2::new(-0.5, -0.5));
-        // at last scale back to tex space
-        tex_mat = tex_mat
-            * Matrix3::from_nonuniform_scale(
-                (1.0f64 / dest.size.w as f64) as f32,
-                (1.0f64 / dest.size.h as f64) as f32,
-            );
 
         let instances = damage
             .iter()
@@ -3244,5 +3212,269 @@ impl<'frame> Drop for GlesFrame<'frame> {
                 warn!("Ignored error finishing GlesFrame on drop: {}", err);
             }
         }
+    }
+}
+
+fn build_texture_mat(
+    src: Rectangle<f64, BufferCoord>,
+    dest: Rectangle<i32, Physical>,
+    texture: Size<i32, BufferCoord>,
+    transform: Transform,
+) -> Matrix3<f32> {
+    let dst_src_size = transform.transform_size(src.size);
+    let scale = dst_src_size.to_f64() / dest.size.to_f64();
+
+    let mut tex_mat = Matrix3::<f32>::identity();
+
+    // first bring the damage into src scale
+    tex_mat = Matrix3::from_nonuniform_scale(scale.x as f32, scale.y as f32) * tex_mat;
+
+    // then compensate for the texture transform
+    let transform_mat = transform.matrix();
+    let translation = match transform {
+        Transform::Normal => Matrix3::identity(),
+        Transform::_90 => Matrix3::from_translation(Vector2::new(0f32, dst_src_size.w as f32)),
+        Transform::_180 => {
+            Matrix3::from_translation(Vector2::new(dst_src_size.w as f32, dst_src_size.h as f32))
+        }
+        Transform::_270 => Matrix3::from_translation(Vector2::new(dst_src_size.h as f32, 0f32)),
+        Transform::Flipped => Matrix3::from_translation(Vector2::new(dst_src_size.w as f32, 0f32)),
+        Transform::Flipped90 => Matrix3::identity(),
+        Transform::Flipped180 => Matrix3::from_translation(Vector2::new(0f32, dst_src_size.h as f32)),
+        Transform::Flipped270 => {
+            Matrix3::from_translation(Vector2::new(dst_src_size.h as f32, dst_src_size.w as f32))
+        }
+    };
+    tex_mat = transform_mat * tex_mat;
+    tex_mat = translation * tex_mat;
+
+    // now we can add the src crop loc, the size already done implicit by the src size
+    tex_mat = Matrix3::from_translation(Vector2::new(src.loc.x as f32, src.loc.y as f32)) * tex_mat;
+
+    // at last we have to normalize the values for UV space
+    tex_mat = Matrix3::from_nonuniform_scale(
+        (1.0f64 / texture.w as f64) as f32,
+        (1.0f64 / texture.h as f64) as f32,
+    ) * tex_mat;
+
+    tex_mat
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_texture_mat;
+    use crate::utils::{Buffer, Physical, Rectangle, Size, Transform};
+    use cgmath::Vector3;
+
+    #[test]
+    fn texture_normal_double_size() {
+        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (1000f64, 500f64));
+        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let texture_size: Size<i32, Buffer> = Size::from((1000, 500));
+        let transform = Transform::Normal;
+
+        let tex_mat = build_texture_mat(src, dest, texture_size, transform);
+
+        let top_left = Vector3::new(0f32, 0f32, 1f32);
+        let top_right = Vector3::new(dest.size.w as f32, 0f32, 1f32);
+        let bottom_right = Vector3::new(dest.size.w as f32, dest.size.h as f32, 1f32);
+        let bottom_left = Vector3::new(0f32, dest.size.h as f32, 1f32);
+
+        assert_eq!(tex_mat * top_left, Vector3::new(0f32, 0f32, 1f32));
+        assert_eq!(tex_mat * top_right, Vector3::new(1f32, 0f32, 1f32));
+        assert_eq!(tex_mat * bottom_right, Vector3::new(1f32, 1f32, 1f32));
+        assert_eq!(tex_mat * bottom_left, Vector3::new(0f32, 1f32, 1f32));
+    }
+
+    #[test]
+    fn texture_scaler_crop() {
+        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((42.5f64, 50.5f64), (110f64, 154f64));
+        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((813, 214), (55, 77));
+        let texture_size: Size<i32, Buffer> = Size::from((842, 674));
+        let transform = Transform::Normal;
+
+        let tex_mat = build_texture_mat(src, dest, texture_size, transform);
+
+        let top_left = Vector3::new(0f32, 0f32, 1f32);
+        let top_right = Vector3::new(dest.size.w as f32, 0f32, 1f32);
+        let bottom_right = Vector3::new(dest.size.w as f32, dest.size.h as f32, 1f32);
+        let bottom_left = Vector3::new(0f32, dest.size.h as f32, 1f32);
+
+        assert_eq!(
+            tex_mat * top_left,
+            Vector3::new(0.05047506f32, 0.07492582f32, 1f32)
+        );
+        assert_eq!(
+            tex_mat * top_right,
+            Vector3::new(0.1811164f32, 0.07492582f32, 1f32)
+        );
+        assert_eq!(
+            tex_mat * bottom_right,
+            Vector3::new(0.1811164f32, 0.30341247f32, 1f32)
+        );
+        assert_eq!(
+            tex_mat * bottom_left,
+            Vector3::new(0.05047506f32, 0.30341247f32, 1f32)
+        );
+    }
+
+    #[test]
+    fn texture_normal() {
+        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (500f64, 250f64));
+        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let texture_size: Size<i32, Buffer> = Size::from((500, 250));
+        let transform = Transform::Normal;
+
+        let tex_mat = build_texture_mat(src, dest, texture_size, transform);
+
+        let top_left = Vector3::new(0f32, 0f32, 1f32);
+        let top_right = Vector3::new(dest.size.w as f32, 0f32, 1f32);
+        let bottom_right = Vector3::new(dest.size.w as f32, dest.size.h as f32, 1f32);
+        let bottom_left = Vector3::new(0f32, dest.size.h as f32, 1f32);
+
+        assert_eq!(tex_mat * top_left, Vector3::new(0f32, 0f32, 1f32));
+        assert_eq!(tex_mat * top_right, Vector3::new(1f32, 0f32, 1f32));
+        assert_eq!(tex_mat * bottom_right, Vector3::new(1f32, 1f32, 1f32));
+        assert_eq!(tex_mat * bottom_left, Vector3::new(0f32, 1f32, 1f32));
+    }
+
+    #[test]
+    fn texture_flipped() {
+        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (500f64, 250f64));
+        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let texture_size: Size<i32, Buffer> = Size::from((500, 250));
+        let transform = Transform::Flipped;
+
+        let tex_mat = build_texture_mat(src, dest, texture_size, transform);
+
+        let top_left = Vector3::new(0f32, 0f32, 1f32);
+        let top_right = Vector3::new(dest.size.w as f32, 0f32, 1f32);
+        let bottom_right = Vector3::new(dest.size.w as f32, dest.size.h as f32, 1f32);
+        let bottom_left = Vector3::new(0f32, dest.size.h as f32, 1f32);
+
+        assert_eq!(tex_mat * top_left, Vector3::new(1f32, 0f32, 1f32));
+        assert_eq!(tex_mat * top_right, Vector3::new(0f32, 0f32, 1f32));
+        assert_eq!(tex_mat * bottom_right, Vector3::new(0f32, 1f32, 1f32));
+        assert_eq!(tex_mat * bottom_left, Vector3::new(1f32, 1f32, 1f32));
+    }
+
+    #[test]
+    fn texture_90() {
+        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (250f64, 500f64));
+        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let texture_size: Size<i32, Buffer> = Size::from((250, 500));
+        let transform = Transform::_90;
+
+        let tex_mat = build_texture_mat(src, dest, texture_size, transform);
+
+        let top_left = Vector3::new(0f32, 0f32, 1f32);
+        let top_right = Vector3::new(dest.size.w as f32, 0f32, 1f32);
+        let bottom_right = Vector3::new(dest.size.w as f32, dest.size.h as f32, 1f32);
+        let bottom_left = Vector3::new(0f32, dest.size.h as f32, 1f32);
+
+        assert_eq!(tex_mat * top_left, Vector3::new(0f32, 1f32, 1f32));
+        assert_eq!(tex_mat * top_right, Vector3::new(0f32, 0f32, 1f32));
+        assert_eq!(tex_mat * bottom_right, Vector3::new(1f32, 0f32, 1f32));
+        assert_eq!(tex_mat * bottom_left, Vector3::new(1f32, 1f32, 1f32));
+    }
+
+    #[test]
+    fn texture_180() {
+        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (500f64, 250f64));
+        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let texture_size: Size<i32, Buffer> = Size::from((500, 250));
+        let transform = Transform::_180;
+
+        let tex_mat = build_texture_mat(src, dest, texture_size, transform);
+
+        let top_left = Vector3::new(0f32, 0f32, 1f32);
+        let top_right = Vector3::new(dest.size.w as f32, 0f32, 1f32);
+        let bottom_right = Vector3::new(dest.size.w as f32, dest.size.h as f32, 1f32);
+        let bottom_left = Vector3::new(0f32, dest.size.h as f32, 1f32);
+
+        assert_eq!(tex_mat * top_left, Vector3::new(1f32, 1f32, 1f32));
+        assert_eq!(tex_mat * top_right, Vector3::new(0f32, 1f32, 1f32));
+        assert_eq!(tex_mat * bottom_right, Vector3::new(0f32, 0f32, 1f32));
+        assert_eq!(tex_mat * bottom_left, Vector3::new(1f32, 0f32, 1f32));
+    }
+
+    #[test]
+    fn texture_270() {
+        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (250f64, 500f64));
+        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let texture_size: Size<i32, Buffer> = Size::from((250, 500));
+        let transform = Transform::_270;
+
+        let tex_mat = build_texture_mat(src, dest, texture_size, transform);
+
+        let top_left = Vector3::new(0f32, 0f32, 1f32);
+        let top_right = Vector3::new(dest.size.w as f32, 0f32, 1f32);
+        let bottom_right = Vector3::new(dest.size.w as f32, dest.size.h as f32, 1f32);
+        let bottom_left = Vector3::new(0f32, dest.size.h as f32, 1f32);
+
+        assert_eq!(tex_mat * top_left, Vector3::new(1f32, 0f32, 1f32));
+        assert_eq!(tex_mat * top_right, Vector3::new(1f32, 1f32, 1f32));
+        assert_eq!(tex_mat * bottom_right, Vector3::new(0f32, 1f32, 1f32));
+        assert_eq!(tex_mat * bottom_left, Vector3::new(0f32, 0f32, 1f32));
+    }
+
+    #[test]
+    fn texture_flipped_90() {
+        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (250f64, 500f64));
+        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let texture_size: Size<i32, Buffer> = Size::from((250, 500));
+        let transform = Transform::Flipped90;
+
+        let tex_mat = build_texture_mat(src, dest, texture_size, transform);
+
+        let top_left = Vector3::new(0f32, 0f32, 1f32);
+        let top_right = Vector3::new(dest.size.w as f32, 0f32, 1f32);
+        let bottom_right = Vector3::new(dest.size.w as f32, dest.size.h as f32, 1f32);
+        let bottom_left = Vector3::new(0f32, dest.size.h as f32, 1f32);
+
+        assert_eq!(tex_mat * top_left, Vector3::new(0f32, 0f32, 1f32));
+        assert_eq!(tex_mat * top_right, Vector3::new(0f32, 1f32, 1f32));
+        assert_eq!(tex_mat * bottom_right, Vector3::new(1f32, 1f32, 1f32));
+        assert_eq!(tex_mat * bottom_left, Vector3::new(1f32, 0f32, 1f32));
+    }
+
+    #[test]
+    fn texture_flipped_180() {
+        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (500f64, 250f64));
+        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let texture_size: Size<i32, Buffer> = Size::from((500, 250));
+        let transform = Transform::Flipped180;
+
+        let tex_mat = build_texture_mat(src, dest, texture_size, transform);
+
+        let top_left = Vector3::new(0f32, 0f32, 1f32);
+        let top_right = Vector3::new(dest.size.w as f32, 0f32, 1f32);
+        let bottom_right = Vector3::new(dest.size.w as f32, dest.size.h as f32, 1f32);
+        let bottom_left = Vector3::new(0f32, dest.size.h as f32, 1f32);
+
+        assert_eq!(tex_mat * top_left, Vector3::new(0f32, 1f32, 1f32));
+        assert_eq!(tex_mat * top_right, Vector3::new(1f32, 1f32, 1f32));
+        assert_eq!(tex_mat * bottom_right, Vector3::new(1f32, 0f32, 1f32));
+        assert_eq!(tex_mat * bottom_left, Vector3::new(0f32, 0f32, 1f32));
+    }
+
+    #[test]
+    fn texture_flipped_270() {
+        let src: Rectangle<f64, Buffer> = Rectangle::from_loc_and_size((0f64, 0f64), (250f64, 500f64));
+        let dest: Rectangle<i32, Physical> = Rectangle::from_loc_and_size((442, 144), (500, 250));
+        let texture_size: Size<i32, Buffer> = Size::from((250, 500));
+        let transform = Transform::Flipped270;
+
+        let tex_mat = build_texture_mat(src, dest, texture_size, transform);
+
+        let top_left = Vector3::new(0f32, 0f32, 1f32);
+        let top_right = Vector3::new(dest.size.w as f32, 0f32, 1f32);
+        let bottom_right = Vector3::new(dest.size.w as f32, dest.size.h as f32, 1f32);
+        let bottom_left = Vector3::new(0f32, dest.size.h as f32, 1f32);
+
+        assert_eq!(tex_mat * top_left, Vector3::new(1f32, 1f32, 1f32));
+        assert_eq!(tex_mat * top_right, Vector3::new(1f32, 0f32, 1f32));
+        assert_eq!(tex_mat * bottom_right, Vector3::new(0f32, 0f32, 1f32));
+        assert_eq!(tex_mat * bottom_left, Vector3::new(0f32, 1f32, 1f32));
     }
 }
