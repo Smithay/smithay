@@ -483,6 +483,7 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
                         Transform::Flipped180 => Transform::Flipped270,
                         Transform::Flipped270 => Transform::Normal,
                     };
+                    tracing::info!(?current_transform, ?new_transform, output = ?output.name(), "changing output transform");
                     output.change_current_state(None, Some(new_transform), None, None);
                     crate::shell::fixup_positions(&mut self.space, self.pointer.current_location());
                     self.backend_data.reset_buffers(&output);
