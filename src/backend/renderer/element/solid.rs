@@ -239,8 +239,12 @@ impl SolidColorRenderElement {
         kind: Kind,
     ) -> Self {
         let geo = Rectangle::from_loc_and_size(location, buffer.size.to_physical_precise_round(scale));
-        let mut color = buffer.color;
-        color[3] *= alpha;
+        let color = [
+            buffer.color[0] * alpha,
+            buffer.color[1] * alpha,
+            buffer.color[2] * alpha,
+            buffer.color[3] * alpha,
+        ];
         Self::new(buffer.id.clone(), geo, buffer.commit, color, kind)
     }
 
