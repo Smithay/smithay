@@ -119,11 +119,8 @@ impl<Kind> Ord for Time<Kind> {
 impl<Kind: NonNegativeClockSource> From<Duration> for Time<Kind> {
     fn from(tp: Duration) -> Self {
         let tp = Timespec {
-            tv_sec: tp.as_secs() as libc::time_t,
-            #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-            tv_nsec: tp.subsec_nanos() as i64,
-            #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-            tv_nsec: tp.subsec_nanos() as std::os::raw::c_long,
+            tv_sec: tp.as_secs() as std::os::raw::c_longlong,
+            tv_nsec: tp.subsec_nanos() as std::os::raw::c_longlong,
         };
         Time {
             tp,
@@ -141,11 +138,7 @@ impl<Kind> From<Timespec> for Time<Kind> {
     }
 }
 
-#[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
-const NANOS_PER_SEC: i64 = 1_000_000_000;
-
-#[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
-const NANOS_PER_SEC: std::os::raw::c_long = 1_000_000_000;
+const NANOS_PER_SEC: std::os::raw::c_longlong = 1_000_000_000;
 
 fn saturating_sub_timespec(lhs: Timespec, rhs: Timespec) -> Option<Duration> {
     if let Some(mut secs) = lhs.tv_sec.checked_sub(rhs.tv_sec) {
