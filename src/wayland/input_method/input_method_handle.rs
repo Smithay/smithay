@@ -142,9 +142,9 @@ impl InputMethodHandle {
 
         // Update activation state.
         match active {
-            Some(true) => self.activate_input_method(state, surface),
-            Some(false) => self.deactivate_input_method(state),
-            None => (),
+            Some(true) => self.activate_input_method(state, surface, true),
+            // Deactivate for automatic mode to wait for the next enable.
+            None | Some(false) => self.deactivate_input_method(state, true),
         }
 
         // Enable lock if necessary.
@@ -158,14 +158,19 @@ impl InputMethodHandle {
         &self,
         state: &mut D,
         surface: Option<&WlSurface>,
+        done: bool,
     ) {
         self.with_input_method(|im| {
-            let instance = match im.instance.as_ref() {
+            let instance = match im.instance.as_mut() {
                 Some(instance) if !im.activation_locked => instance,
                 _ => return,
             };
 
             instance.object.activate();
+
+            if done {
+                instance.done();
+            }
 
             let popup = im.popup_handle.surface.as_mut();
             if let Some((surface, popup)) = surface.zip(popup) {
@@ -186,19 +191,10 @@ impl InputMethodHandle {
     }
 
     /// Deactivate the active input method.
-    pub fn deactivate_input_method<D: SeatHandler + 'static>(&self, state: &mut D) {
-        self.deactivate_input_method_internal(state, true);
-    }
-
-    /// Deactivate the active input method.
     ///
     /// Set `done` to `false` if deactivation is done from text-input's `Disable` event.
     /// Otherwise prefer using [`Self::deactivate_input_method`] instead.
-    pub(crate) fn deactivate_input_method_internal<D: SeatHandler + 'static>(
-        &self,
-        state: &mut D,
-        done: bool,
-    ) {
+    pub(crate) fn deactivate_input_method<D: SeatHandler + 'static>(&self, state: &mut D, done: bool) {
         self.with_input_method(|im| {
             let instance = match im.instance.as_mut() {
                 Some(instance) if !im.activation_locked => instance,
