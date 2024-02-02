@@ -158,7 +158,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         let input_method = seat.input_method();
 
         if input_method.has_instance() {
-            input_method.deactivate_input_method(state, true);
+            input_method.deactivate_input_method(state);
         }
 
         // NOTE: Always set focus regardless whether the client actually has the
@@ -178,7 +178,7 @@ impl<D: SeatHandler + 'static> KeyboardTarget<D> for WlSurface {
         let input_method = seat.input_method();
 
         if input_method.has_instance() {
-            input_method.deactivate_input_method(state, true);
+            input_method.deactivate_input_method(state);
             text_input.leave();
         }
 

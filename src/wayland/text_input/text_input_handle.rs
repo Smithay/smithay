@@ -181,11 +181,12 @@ where
         };
 
         match request {
-            zwp_text_input_v3::Request::Enable => {
-                data.input_method_handle.activate_input_method(state, &focus)
-            }
+            zwp_text_input_v3::Request::Enable => data
+                .input_method_handle
+                .activate_input_method(state, Some(&focus)),
             zwp_text_input_v3::Request::Disable => {
-                data.input_method_handle.deactivate_input_method(state, false);
+                data.input_method_handle
+                    .deactivate_input_method_internal(state, false);
             }
             zwp_text_input_v3::Request::SetSurroundingText { text, cursor, anchor } => {
                 data.input_method_handle.with_instance(|input_method| {
@@ -245,7 +246,7 @@ where
         };
 
         if deactivate_im {
-            data.input_method_handle.deactivate_input_method(state, true);
+            data.input_method_handle.deactivate_input_method(state);
         }
     }
 }

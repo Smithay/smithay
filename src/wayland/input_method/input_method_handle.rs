@@ -32,6 +32,7 @@ pub(crate) struct InputMethod {
     pub instance: Option<Instance>,
     pub popup_handle: PopupHandle,
     pub keyboard_grab: InputMethodKeyboardGrab,
+    activation_locked: bool,
 }
 
 #[derive(Debug)]
@@ -124,46 +125,98 @@ impl InputMethodHandle {
         };
     }
 
-    /// Activate input method on the given surface.
-    pub(crate) fn activate_input_method<D: SeatHandler + 'static>(&self, state: &mut D, surface: &WlSurface) {
+    /// Forcibly override IME state.
+    ///
+    /// Set `active` to `None` to clear the force-override and go back to text-input's
+    /// enable/disable events.
+    pub fn set_active<D: SeatHandler + 'static>(
+        &self,
+        state: &mut D,
+        surface: Option<&WlSurface>,
+        active: Option<bool>,
+    ) {
+        // Clear lock.
         self.with_input_method(|im| {
-            if let Some(instance) = im.instance.as_ref() {
-                instance.object.activate();
-                if let Some(popup) = im.popup_handle.surface.as_mut() {
-                    let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
-                    let location = (data.popup_geometry_callback)(state, surface);
-                    // Remove old popup.
-                    (data.dismiss_popup)(state, popup.clone());
+            im.activation_locked = false;
+        });
 
-                    // Add a new one with updated parent.
-                    let parent = PopupParent {
-                        surface: surface.clone(),
-                        location,
-                    };
-                    popup.set_parent(Some(parent));
-                    (data.new_popup)(state, popup.clone());
-                }
+        // Update activation state.
+        match active {
+            Some(true) => self.activate_input_method(state, surface),
+            Some(false) => self.deactivate_input_method(state),
+            None => (),
+        }
+
+        // Enable lock if necessary.
+        self.with_input_method(|im| {
+            im.activation_locked = active.is_some();
+        });
+    }
+
+    /// Activate input method on the given surface.
+    pub(crate) fn activate_input_method<D: SeatHandler + 'static>(
+        &self,
+        state: &mut D,
+        surface: Option<&WlSurface>,
+    ) {
+        self.with_input_method(|im| {
+            let instance = match im.instance.as_ref() {
+                Some(instance) if !im.activation_locked => instance,
+                _ => return,
+            };
+
+            instance.object.activate();
+
+            let popup = im.popup_handle.surface.as_mut();
+            if let Some((surface, popup)) = surface.zip(popup) {
+                let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
+                let location = (data.popup_geometry_callback)(state, surface);
+                // Remove old popup.
+                (data.dismiss_popup)(state, popup.clone());
+
+                // Add a new one with updated parent.
+                let parent = PopupParent {
+                    surface: surface.clone(),
+                    location,
+                };
+                popup.set_parent(Some(parent));
+                (data.new_popup)(state, popup.clone());
             }
         });
     }
 
     /// Deactivate the active input method.
+    pub fn deactivate_input_method<D: SeatHandler + 'static>(&self, state: &mut D) {
+        self.deactivate_input_method_internal(state, true);
+    }
+
+    /// Deactivate the active input method.
     ///
-    /// The `done` is required in cases where the change in state is initiated not by text-input.
-    pub(crate) fn deactivate_input_method<D: SeatHandler + 'static>(&self, state: &mut D, done: bool) {
+    /// Set `done` to `false` if deactivation is done from text-input's `Disable` event.
+    /// Otherwise prefer using [`Self::deactivate_input_method`] instead.
+    pub(crate) fn deactivate_input_method_internal<D: SeatHandler + 'static>(
+        &self,
+        state: &mut D,
+        done: bool,
+    ) {
         self.with_input_method(|im| {
-            if let Some(instance) = im.instance.as_mut() {
-                instance.object.deactivate();
-                if done {
-                    instance.done();
+            let instance = match im.instance.as_mut() {
+                Some(instance) if !im.activation_locked => instance,
+                _ => return,
+            };
+
+            instance.object.deactivate();
+
+            if done {
+                instance.done();
+            }
+
+            if let Some(popup) = im.popup_handle.surface.as_mut() {
+                let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
+                if popup.get_parent().is_some() {
+                    (data.dismiss_popup)(state, popup.clone());
                 }
-                if let Some(popup) = im.popup_handle.surface.as_mut() {
-                    let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
-                    if popup.get_parent().is_some() {
-                        (data.dismiss_popup)(state, popup.clone());
-                    }
-                    popup.set_parent(None);
-                }
+                popup.set_parent(None);
             }
         });
     }
