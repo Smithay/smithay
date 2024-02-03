@@ -119,8 +119,8 @@ impl<Kind> Ord for Time<Kind> {
 impl<Kind: NonNegativeClockSource> From<Duration> for Time<Kind> {
     fn from(tp: Duration) -> Self {
         let tp = Timespec {
-            tv_sec: tp.as_secs() as std::os::raw::c_longlong,
-            tv_nsec: tp.subsec_nanos() as std::os::raw::c_longlong,
+            tv_sec: tp.as_secs() as rustix::time::Secs,
+            tv_nsec: tp.subsec_nanos() as rustix::time::Nsecs,
         };
         Time {
             tp,
@@ -138,7 +138,7 @@ impl<Kind> From<Timespec> for Time<Kind> {
     }
 }
 
-const NANOS_PER_SEC: std::os::raw::c_longlong = 1_000_000_000;
+const NANOS_PER_SEC: rustix::time::Nsecs = 1_000_000_000;
 
 fn saturating_sub_timespec(lhs: Timespec, rhs: Timespec) -> Option<Duration> {
     if let Some(mut secs) = lhs.tv_sec.checked_sub(rhs.tv_sec) {
