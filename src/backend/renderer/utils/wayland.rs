@@ -409,18 +409,16 @@ impl SurfaceView {
 
 /// Access the buffer related states associated to this surface
 ///
-/// Calls [`compositor::with_states`] internally
-pub fn with_renderer_surface_state<F, T>(surface: &WlSurface, cb: F) -> T
+/// Calls [`compositor::with_states`] internally.
+///
+/// Returns `None`, if there never was an commit processed through `on_commit_buffer_handler`.
+pub fn with_renderer_surface_state<F, T>(surface: &WlSurface, cb: F) -> Option<T>
 where
     F: FnOnce(&mut RendererSurfaceState) -> T,
 {
     compositor::with_states(surface, |states| {
-        let mut data = states
-            .data_map
-            .get::<RendererSurfaceStateUserData>()
-            .unwrap()
-            .borrow_mut();
-        cb(&mut data)
+        let data = states.data_map.get::<RendererSurfaceStateUserData>()?;
+        Some(cb(&mut data.borrow_mut()))
     })
 }
 
