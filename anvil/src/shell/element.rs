@@ -29,24 +29,12 @@ use smithay::{
     utils::{user_data::UserDataMap, IsAlive, Logical, Physical, Point, Rectangle, Scale, Serial},
     wayland::{compositor::SurfaceData as WlSurfaceData, dmabuf::DmabufFeedback, seat::WaylandFocus},
 };
-#[cfg(feature = "xwayland")]
-use smithay::{
-    desktop::utils::{
-        send_dmabuf_feedback_surface_tree, send_frames_surface_tree, take_presentation_feedback_surface_tree,
-        under_from_surface_tree, with_surfaces_surface_tree,
-    },
-    xwayland::X11Surface,
-};
 
 use super::ssd::HEADER_BAR_HEIGHT;
 use crate::AnvilState;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum WindowElement {
-    Wayland(Window),
-    #[cfg(feature = "xwayland")]
-    X11(X11Surface),
-}
+pub struct WindowElement(pub Window);
 
 impl WindowElement {
     pub fn surface_under(
@@ -54,28 +42,14 @@ impl WindowElement {
         location: Point<f64, Logical>,
         window_type: WindowSurfaceType,
     ) -> Option<(WlSurface, Point<i32, Logical>)> {
-        match self {
-            WindowElement::Wayland(w) => w.surface_under(location, window_type),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => w
-                .wl_surface()
-                .and_then(|s| under_from_surface_tree(&s, location, (0, 0), window_type)),
-        }
+        self.0.surface_under(location, window_type)
     }
 
     pub fn with_surfaces<F>(&self, processor: F)
     where
         F: FnMut(&WlSurface, &WlSurfaceData),
     {
-        match self {
-            WindowElement::Wayland(w) => w.with_surfaces(processor),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => {
-                if let Some(surface) = w.wl_surface() {
-                    with_surfaces_surface_tree(&surface, processor);
-                }
-            }
-        }
+        self.0.with_surfaces(processor);
     }
 
     pub fn send_frame<T, F>(
@@ -88,15 +62,7 @@ impl WindowElement {
         T: Into<Duration>,
         F: FnMut(&WlSurface, &WlSurfaceData) -> Option<Output> + Copy,
     {
-        match self {
-            WindowElement::Wayland(w) => w.send_frame(output, time, throttle, primary_scan_out_output),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => {
-                if let Some(surface) = w.wl_surface() {
-                    send_frames_surface_tree(&surface, output, time, throttle, primary_scan_out_output);
-                }
-            }
-        }
+        self.0.send_frame(output, time, throttle, primary_scan_out_output)
     }
 
     pub fn send_dmabuf_feedback<'a, P, F>(
@@ -108,22 +74,8 @@ impl WindowElement {
         P: FnMut(&WlSurface, &WlSurfaceData) -> Option<Output> + Copy,
         F: Fn(&WlSurface, &WlSurfaceData) -> &'a DmabufFeedback + Copy,
     {
-        match self {
-            WindowElement::Wayland(w) => {
-                w.send_dmabuf_feedback(output, primary_scan_out_output, select_dmabuf_feedback)
-            }
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => {
-                if let Some(surface) = w.wl_surface() {
-                    send_dmabuf_feedback_surface_tree(
-                        &surface,
-                        output,
-                        primary_scan_out_output,
-                        select_dmabuf_feedback,
-                    )
-                }
-            }
-        }
+        self.0
+            .send_dmabuf_feedback(output, primary_scan_out_output, select_dmabuf_feedback)
     }
 
     pub fn take_presentation_feedback<F1, F2>(
@@ -135,59 +87,34 @@ impl WindowElement {
         F1: FnMut(&WlSurface, &WlSurfaceData) -> Option<Output> + Copy,
         F2: FnMut(&WlSurface, &WlSurfaceData) -> wp_presentation_feedback::Kind + Copy,
     {
-        match self {
-            WindowElement::Wayland(w) => w.take_presentation_feedback(
-                output_feedback,
-                primary_scan_out_output,
-                presentation_feedback_flags,
-            ),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => {
-                if let Some(surface) = w.wl_surface() {
-                    take_presentation_feedback_surface_tree(
-                        &surface,
-                        output_feedback,
-                        primary_scan_out_output,
-                        presentation_feedback_flags,
-                    );
-                }
-            }
-        }
+        self.0.take_presentation_feedback(
+            output_feedback,
+            primary_scan_out_output,
+            presentation_feedback_flags,
+        )
     }
 
     #[cfg(feature = "xwayland")]
     pub fn is_x11(&self) -> bool {
-        matches!(self, WindowElement::X11(_))
+        self.0.is_x11()
     }
 
     pub fn is_wayland(&self) -> bool {
-        matches!(self, WindowElement::Wayland(_))
+        self.0.is_wayland()
     }
 
     pub fn wl_surface(&self) -> Option<WlSurface> {
-        match self {
-            WindowElement::Wayland(w) => w.wl_surface(),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => w.wl_surface(),
-        }
+        self.0.wl_surface()
     }
 
     pub fn user_data(&self) -> &UserDataMap {
-        match self {
-            WindowElement::Wayland(w) => w.user_data(),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => w.user_data(),
-        }
+        self.0.user_data()
     }
 }
 
 impl IsAlive for WindowElement {
     fn alive(&self) -> bool {
-        match self {
-            WindowElement::Wayland(w) => w.alive(),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => w.alive(),
-        }
+        self.0.alive()
     }
 }
 
@@ -201,33 +128,19 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
                 state.header_bar.pointer_leave();
                 let mut event = event.clone();
                 event.location.y -= HEADER_BAR_HEIGHT as f64;
-                match self {
-                    WindowElement::Wayland(w) => PointerTarget::enter(w, seat, data, &event),
-                    #[cfg(feature = "xwayland")]
-                    WindowElement::X11(w) => PointerTarget::enter(w, seat, data, &event),
-                };
+                PointerTarget::enter(&self.0, seat, data, &event);
                 state.ptr_entered_window = true;
             }
         } else {
             state.ptr_entered_window = true;
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::enter(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::enter(w, seat, data, event),
-            };
+            PointerTarget::enter(&self.0, seat, data, &event);
         }
     }
     fn motion(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &MotionEvent) {
         let mut state = self.decoration_state();
         if state.is_ssd {
             if event.location.y < HEADER_BAR_HEIGHT as f64 {
-                match self {
-                    WindowElement::Wayland(w) => {
-                        PointerTarget::leave(w, seat, data, event.serial, event.time)
-                    }
-                    #[cfg(feature = "xwayland")]
-                    WindowElement::X11(w) => PointerTarget::leave(w, seat, data, event.serial, event.time),
-                };
+                PointerTarget::leave(&self.0, seat, data, event.serial, event.time);
                 state.ptr_entered_window = false;
                 state.header_bar.pointer_enter(event.location);
             } else {
@@ -235,26 +148,14 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
                 let mut event = event.clone();
                 event.location.y -= HEADER_BAR_HEIGHT as f64;
                 if state.ptr_entered_window {
-                    match self {
-                        WindowElement::Wayland(w) => PointerTarget::motion(w, seat, data, &event),
-                        #[cfg(feature = "xwayland")]
-                        WindowElement::X11(w) => PointerTarget::motion(w, seat, data, &event),
-                    };
+                    PointerTarget::motion(&self.0, seat, data, &event);
                 } else {
                     state.ptr_entered_window = true;
-                    match self {
-                        WindowElement::Wayland(w) => PointerTarget::enter(w, seat, data, &event),
-                        #[cfg(feature = "xwayland")]
-                        WindowElement::X11(w) => PointerTarget::enter(w, seat, data, &event),
-                    };
+                    PointerTarget::enter(&self.0, seat, data, &event);
                 }
             }
         } else {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::motion(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::motion(w, seat, data, event),
-            };
+            PointerTarget::motion(&self.0, seat, data, &event);
         }
     }
     fn relative_motion(
@@ -265,51 +166,31 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     ) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::relative_motion(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::relative_motion(w, seat, data, event),
-            }
+            PointerTarget::relative_motion(&self.0, seat, data, &event);
         }
     }
     fn button(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &ButtonEvent) {
         let mut state = self.decoration_state();
         if state.is_ssd {
             if state.ptr_entered_window {
-                match self {
-                    WindowElement::Wayland(w) => PointerTarget::button(w, seat, data, event),
-                    #[cfg(feature = "xwayland")]
-                    WindowElement::X11(w) => PointerTarget::button(w, seat, data, event),
-                };
+                PointerTarget::button(&self.0, seat, data, &event);
             } else {
                 state.header_bar.clicked(seat, data, self, event.serial);
             }
         } else {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::button(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::button(w, seat, data, event),
-            };
+            PointerTarget::button(&self.0, seat, data, &event);
         }
     }
     fn axis(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, frame: AxisFrame) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::axis(w, seat, data, frame),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::axis(w, seat, data, frame),
-            }
+            PointerTarget::axis(&self.0, seat, data, frame);
         }
     }
     fn frame(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::frame(w, seat, data),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::frame(w, seat, data),
-            }
+            PointerTarget::frame(&self.0, seat, data);
         }
     }
     fn leave(
@@ -323,19 +204,12 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
         if state.is_ssd {
             state.header_bar.pointer_leave();
             if state.ptr_entered_window {
-                match self {
-                    WindowElement::Wayland(w) => PointerTarget::leave(w, seat, data, serial, time),
-                    #[cfg(feature = "xwayland")]
-                    WindowElement::X11(w) => PointerTarget::leave(w, seat, data, serial, time),
-                };
+                PointerTarget::leave(&self.0, seat, data, serial, time);
+
                 state.ptr_entered_window = false;
             }
         } else {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::leave(w, seat, data, serial, time),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::leave(w, seat, data, serial, time),
-            };
+            PointerTarget::leave(&self.0, seat, data, serial, time);
             state.ptr_entered_window = false;
         }
     }
@@ -347,11 +221,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     ) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::gesture_swipe_begin(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::gesture_swipe_begin(w, seat, data, event),
-            }
+            PointerTarget::gesture_swipe_begin(&self.0, seat, data, event);
         }
     }
     fn gesture_swipe_update(
@@ -362,11 +232,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     ) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::gesture_swipe_update(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::gesture_swipe_update(w, seat, data, event),
-            }
+            PointerTarget::gesture_swipe_update(&self.0, seat, data, event);
         }
     }
     fn gesture_swipe_end(
@@ -377,11 +243,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     ) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::gesture_swipe_end(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::gesture_swipe_end(w, seat, data, event),
-            }
+            PointerTarget::gesture_swipe_end(&self.0, seat, data, event);
         }
     }
     fn gesture_pinch_begin(
@@ -392,11 +254,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     ) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::gesture_pinch_begin(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::gesture_pinch_begin(w, seat, data, event),
-            }
+            PointerTarget::gesture_pinch_begin(&self.0, seat, data, event);
         }
     }
     fn gesture_pinch_update(
@@ -407,11 +265,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     ) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::gesture_pinch_update(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::gesture_pinch_update(w, seat, data, event),
-            }
+            PointerTarget::gesture_pinch_update(&self.0, seat, data, event);
         }
     }
     fn gesture_pinch_end(
@@ -422,11 +276,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     ) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::gesture_pinch_end(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::gesture_pinch_end(w, seat, data, event),
-            }
+            PointerTarget::gesture_pinch_end(&self.0, seat, data, event);
         }
     }
     fn gesture_hold_begin(
@@ -437,11 +287,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     ) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::gesture_hold_begin(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::gesture_hold_begin(w, seat, data, event),
-            }
+            PointerTarget::gesture_hold_begin(&self.0, seat, data, event);
         }
     }
     fn gesture_hold_end(
@@ -452,11 +298,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     ) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            match self {
-                WindowElement::Wayland(w) => PointerTarget::gesture_hold_end(w, seat, data, event),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => PointerTarget::gesture_hold_end(w, seat, data, event),
-            }
+            PointerTarget::gesture_hold_end(&self.0, seat, data, event);
         }
     }
 }
@@ -469,18 +311,10 @@ impl<Backend: crate::state::Backend> KeyboardTarget<AnvilState<Backend>> for Win
         keys: Vec<KeysymHandle<'_>>,
         serial: Serial,
     ) {
-        match self {
-            WindowElement::Wayland(w) => KeyboardTarget::enter(w, seat, data, keys, serial),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => KeyboardTarget::enter(w, seat, data, keys, serial),
-        }
+        KeyboardTarget::enter(&self.0, seat, data, keys, serial);
     }
     fn leave(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, serial: Serial) {
-        match self {
-            WindowElement::Wayland(w) => KeyboardTarget::leave(w, seat, data, serial),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => KeyboardTarget::leave(w, seat, data, serial),
-        }
+        KeyboardTarget::leave(&self.0, seat, data, serial);
     }
     fn key(
         &self,
@@ -491,11 +325,7 @@ impl<Backend: crate::state::Backend> KeyboardTarget<AnvilState<Backend>> for Win
         serial: Serial,
         time: u32,
     ) {
-        match self {
-            WindowElement::Wayland(w) => KeyboardTarget::key(w, seat, data, key, state, serial, time),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => KeyboardTarget::key(w, seat, data, key, state, serial, time),
-        }
+        KeyboardTarget::key(&self.0, seat, data, key, state, serial, time);
     }
     fn modifiers(
         &self,
@@ -504,32 +334,20 @@ impl<Backend: crate::state::Backend> KeyboardTarget<AnvilState<Backend>> for Win
         modifiers: ModifiersState,
         serial: Serial,
     ) {
-        match self {
-            WindowElement::Wayland(w) => KeyboardTarget::modifiers(w, seat, data, modifiers, serial),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => KeyboardTarget::modifiers(w, seat, data, modifiers, serial),
-        }
+        KeyboardTarget::modifiers(&self.0, seat, data, modifiers, serial);
     }
 }
 
 impl SpaceElement for WindowElement {
     fn geometry(&self) -> Rectangle<i32, Logical> {
-        let mut geo = match self {
-            WindowElement::Wayland(w) => SpaceElement::geometry(w),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => SpaceElement::geometry(w),
-        };
+        let mut geo = SpaceElement::geometry(&self.0);
         if self.decoration_state().is_ssd {
             geo.size.h += HEADER_BAR_HEIGHT;
         }
         geo
     }
     fn bbox(&self) -> Rectangle<i32, Logical> {
-        let mut bbox = match self {
-            WindowElement::Wayland(w) => SpaceElement::bbox(w),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => SpaceElement::bbox(w),
-        };
+        let mut bbox = SpaceElement::bbox(&self.0);
         if self.decoration_state().is_ssd {
             bbox.size.h += HEADER_BAR_HEIGHT;
         }
@@ -538,61 +356,30 @@ impl SpaceElement for WindowElement {
     fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
         if self.decoration_state().is_ssd {
             point.y < HEADER_BAR_HEIGHT as f64
-                || match self {
-                    WindowElement::Wayland(w) => SpaceElement::is_in_input_region(
-                        w,
-                        &(*point - Point::from((0.0, HEADER_BAR_HEIGHT as f64))),
-                    ),
-                    #[cfg(feature = "xwayland")]
-                    WindowElement::X11(w) => SpaceElement::is_in_input_region(
-                        w,
-                        &(*point - Point::from((0.0, HEADER_BAR_HEIGHT as f64))),
-                    ),
-                }
+                || SpaceElement::is_in_input_region(
+                    &self.0,
+                    &(*point - Point::from((0.0, HEADER_BAR_HEIGHT as f64))),
+                )
         } else {
-            match self {
-                WindowElement::Wayland(w) => SpaceElement::is_in_input_region(w, point),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => SpaceElement::is_in_input_region(w, point),
-            }
+            SpaceElement::is_in_input_region(&self.0, point)
         }
     }
     fn z_index(&self) -> u8 {
-        match self {
-            WindowElement::Wayland(w) => SpaceElement::z_index(w),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => SpaceElement::z_index(w),
-        }
+        SpaceElement::z_index(&self.0)
     }
 
     fn set_activate(&self, activated: bool) {
-        match self {
-            WindowElement::Wayland(w) => SpaceElement::set_activate(w, activated),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => SpaceElement::set_activate(w, activated),
-        }
+        SpaceElement::set_activate(&self.0, activated);
     }
     fn output_enter(&self, output: &Output, overlap: Rectangle<i32, Logical>) {
-        match self {
-            WindowElement::Wayland(w) => SpaceElement::output_enter(w, output, overlap),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => SpaceElement::output_enter(w, output, overlap),
-        }
+        SpaceElement::output_enter(&self.0, output, overlap);
     }
     fn output_leave(&self, output: &Output) {
-        match self {
-            WindowElement::Wayland(w) => SpaceElement::output_leave(w, output),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => SpaceElement::output_leave(w, output),
-        }
+        SpaceElement::output_leave(&self.0, output);
     }
     #[profiling::function]
     fn refresh(&self) {
-        match self {
-            WindowElement::Wayland(w) => SpaceElement::refresh(w),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => SpaceElement::refresh(w),
-        }
+        SpaceElement::refresh(&self.0);
     }
 }
 
@@ -626,18 +413,10 @@ where
         scale: Scale<f64>,
         alpha: f32,
     ) -> Vec<C> {
-        let window_bbox = match self {
-            WindowElement::Wayland(w) => SpaceElement::bbox(w),
-            #[cfg(feature = "xwayland")]
-            WindowElement::X11(w) => SpaceElement::bbox(w),
-        };
+        let window_bbox = SpaceElement::bbox(&self.0);
 
         if self.decoration_state().is_ssd && !window_bbox.is_empty() {
-            let window_geo = match self {
-                WindowElement::Wayland(w) => SpaceElement::geometry(w),
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(w) => SpaceElement::geometry(w),
-            };
+            let window_geo = SpaceElement::geometry(&self.0);
 
             let mut state = self.decoration_state();
             let width = window_geo.size.w;
@@ -652,34 +431,15 @@ where
 
             location.y += (scale.y * HEADER_BAR_HEIGHT as f64) as i32;
 
-            let window_elements = match self {
-                WindowElement::Wayland(xdg) => {
-                    AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
-                        xdg, renderer, location, scale, alpha,
-                    )
-                }
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(x11) => AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
-                    x11, renderer, location, scale, alpha,
-                ),
-            };
+            let window_elements =
+                AsRenderElements::render_elements(&self.0, renderer, location, scale, alpha);
             vec.extend(window_elements);
             vec.into_iter().map(C::from).collect()
         } else {
-            match self {
-                WindowElement::Wayland(xdg) => {
-                    AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
-                        xdg, renderer, location, scale, alpha,
-                    )
-                }
-                #[cfg(feature = "xwayland")]
-                WindowElement::X11(x11) => AsRenderElements::<R>::render_elements::<WindowRenderElement<R>>(
-                    x11, renderer, location, scale, alpha,
-                ),
-            }
-            .into_iter()
-            .map(C::from)
-            .collect()
+            AsRenderElements::render_elements(&self.0, renderer, location, scale, alpha)
+                .into_iter()
+                .map(C::from)
+                .collect()
         }
     }
 }

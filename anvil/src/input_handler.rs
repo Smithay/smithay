@@ -1,10 +1,6 @@
 use std::{convert::TryInto, process::Command, sync::atomic::Ordering};
 
-use crate::{
-    focus::FocusTarget,
-    shell::{FullscreenSurface, WindowElement},
-    AnvilState,
-};
+use crate::{focus::FocusTarget, shell::FullscreenSurface, AnvilState};
 
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
@@ -107,8 +103,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             KeyAction::ToggleDecorations => {
                 for element in self.space.elements() {
                     #[allow(irrefutable_let_patterns)]
-                    if let WindowElement::Wayland(window) = element {
-                        let toplevel = window.toplevel();
+                    if let Some(toplevel) = element.0.toplevel() {
                         let mode_changed = toplevel.with_pending_state(|state| {
                             if let Some(current_mode) = state.decoration_mode {
                                 let new_mode =
@@ -285,8 +280,8 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                         WindowSurfaceType::ALL,
                     ) {
                         #[cfg(feature = "xwayland")]
-                        if let WindowElement::X11(surf) = &window {
-                            self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
+                        if let Some(surface) = window.0.x11_surface() {
+                            self.xwm.as_mut().unwrap().raise_window(surface).unwrap();
                         }
                         keyboard.set_focus(self, Some(window.into()), serial);
                         return;
@@ -320,8 +315,8 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 self.space.raise_element(&window, true);
                 keyboard.set_focus(self, Some(window.clone().into()), serial);
                 #[cfg(feature = "xwayland")]
-                if let WindowElement::X11(surf) = &window {
-                    self.xwm.as_mut().unwrap().raise_window(surf).unwrap();
+                if let Some(surface) = window.0.x11_surface() {
+                    self.xwm.as_mut().unwrap().raise_window(surface).unwrap();
                 }
                 return;
             }

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use smithay::{
-    desktop::space::SpaceElement,
+    desktop::{space::SpaceElement, WindowSurface},
     input::pointer::{
         AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
         GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
@@ -309,9 +309,8 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
 
         self.last_window_size = (new_window_width, new_window_height).into();
 
-        match &self.window {
-            WindowElement::Wayland(w) => {
-                let xdg = w.toplevel();
+        match &self.window.0.underlying_surface() {
+            WindowSurface::Wayland(xdg) => {
                 xdg.with_pending_state(|state| {
                     state.states.set(xdg_toplevel::State::Resizing);
                     state.size = Some(self.last_window_size);
@@ -319,7 +318,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
                 xdg.send_pending_configure();
             }
             #[cfg(feature = "xwayland")]
-            WindowElement::X11(x11) => {
+            WindowSurface::X11(x11) => {
                 let location = data.space.element_location(&self.window).unwrap();
                 x11.configure(Rectangle::from_loc_and_size(location, self.last_window_size))
                     .unwrap();
@@ -353,9 +352,8 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
                 return;
             }
 
-            match &self.window {
-                WindowElement::Wayland(w) => {
-                    let xdg = w.toplevel();
+            match &self.window.0.underlying_surface() {
+                WindowSurface::Wayland(xdg) => {
                     xdg.with_pending_state(|state| {
                         state.states.unset(xdg_toplevel::State::Resizing);
                         state.size = Some(self.last_window_size);
@@ -391,7 +389,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
                     });
                 }
                 #[cfg(feature = "xwayland")]
-                WindowElement::X11(x11) => {
+                WindowSurface::X11(x11) => {
                     let mut location = data.space.element_location(&self.window).unwrap();
                     if self.edges.intersects(ResizeEdge::TOP_LEFT) {
                         let geometry = self.window.geometry();

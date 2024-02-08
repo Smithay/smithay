@@ -6,9 +6,10 @@ use crate::{
         },
         ImportAll, Renderer,
     },
-    desktop::{space::SpaceElement, PopupManager, Window, WindowSurfaceType},
+    desktop::{space::SpaceElement, PopupManager, Window, WindowSurface, WindowSurfaceType},
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale},
+    wayland::seat::WaylandFocus,
 };
 
 use super::{output_update, WindowOutputUserData};
@@ -55,10 +56,11 @@ impl SpaceElement for Window {
             state.borrow_mut().output_overlap.retain(|weak, _| weak != output);
         }
 
-        let surface = self.toplevel().wl_surface();
-        output_update(output, None, surface);
-        for (popup, _) in PopupManager::popups_for_surface(surface) {
-            output_update(output, None, popup.wl_surface());
+        if let Some(surface) = &self.wl_surface() {
+            output_update(output, None, surface);
+            for (popup, _) in PopupManager::popups_for_surface(surface) {
+                output_update(output, None, popup.wl_surface());
+            }
         }
     }
 
@@ -67,14 +69,15 @@ impl SpaceElement for Window {
         self.user_data().insert_if_missing(WindowOutputUserData::default);
         let state = self.user_data().get::<WindowOutputUserData>().unwrap().borrow();
 
-        let surface = self.toplevel().wl_surface();
-        for (weak, overlap) in state.output_overlap.iter() {
-            if let Some(output) = weak.upgrade() {
-                output_update(&output, Some(*overlap), surface);
-                for (popup, location) in PopupManager::popups_for_surface(surface) {
-                    let mut overlap = *overlap;
-                    overlap.loc -= location;
-                    output_update(&output, Some(overlap), popup.wl_surface());
+        if let Some(surface) = &self.wl_surface() {
+            for (weak, overlap) in state.output_overlap.iter() {
+                if let Some(output) = weak.upgrade() {
+                    output_update(&output, Some(*overlap), surface);
+                    for (popup, location) in PopupManager::popups_for_surface(surface) {
+                        let mut overlap = *overlap;
+                        overlap.loc -= location;
+                        output_update(&output, Some(overlap), popup.wl_surface());
+                    }
                 }
             }
         }
@@ -96,35 +99,40 @@ where
         scale: Scale<f64>,
         alpha: f32,
     ) -> Vec<C> {
-        let surface = self.toplevel().wl_surface();
+        match self.underlying_surface() {
+            WindowSurface::Wayland(s) => {
+                let mut render_elements: Vec<C> = Vec::new();
+                let surface = s.wl_surface();
+                let popup_render_elements =
+                    PopupManager::popups_for_surface(surface).flat_map(|(popup, popup_offset)| {
+                        let offset = (self.geometry().loc + popup_offset - popup.geometry().loc)
+                            .to_physical_precise_round(scale);
 
-        let mut render_elements: Vec<C> = Vec::new();
-        let popup_render_elements =
-            PopupManager::popups_for_surface(surface).flat_map(|(popup, popup_offset)| {
-                let offset = (self.geometry().loc + popup_offset - popup.geometry().loc)
-                    .to_physical_precise_round(scale);
+                        render_elements_from_surface_tree(
+                            renderer,
+                            popup.wl_surface(),
+                            location + offset,
+                            scale,
+                            alpha,
+                            Kind::Unspecified,
+                        )
+                    });
 
-                render_elements_from_surface_tree(
+                render_elements.extend(popup_render_elements);
+
+                render_elements.extend(render_elements_from_surface_tree(
                     renderer,
-                    popup.wl_surface(),
-                    location + offset,
+                    surface,
+                    location,
                     scale,
                     alpha,
                     Kind::Unspecified,
-                )
-            });
+                ));
 
-        render_elements.extend(popup_render_elements);
-
-        render_elements.extend(render_elements_from_surface_tree(
-            renderer,
-            surface,
-            location,
-            scale,
-            alpha,
-            Kind::Unspecified,
-        ));
-
-        render_elements
+                render_elements
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => AsRenderElements::render_elements(s, renderer, location, scale, alpha),
+        }
     }
 }

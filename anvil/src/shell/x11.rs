@@ -1,20 +1,22 @@
 use std::{cell::RefCell, os::unix::io::OwnedFd};
 
 use smithay::{
-    desktop::space::SpaceElement,
+    desktop::{space::SpaceElement, Window},
     input::pointer::Focus,
     utils::{Logical, Rectangle, SERIAL_COUNTER},
     wayland::{
         compositor::with_states,
-        selection::data_device::{
-            clear_data_device_selection, current_data_device_selection_userdata,
-            request_data_device_client_selection, set_data_device_selection,
+        selection::{
+            data_device::{
+                clear_data_device_selection, current_data_device_selection_userdata,
+                request_data_device_client_selection, set_data_device_selection,
+            },
+            primary_selection::{
+                clear_primary_selection, current_primary_selection_userdata,
+                request_primary_client_selection, set_primary_selection,
+            },
+            SelectionTarget,
         },
-        selection::primary_selection::{
-            clear_primary_selection, current_primary_selection_userdata, request_primary_client_selection,
-            set_primary_selection,
-        },
-        selection::SelectionTarget,
     },
     xwayland::{
         xwm::{Reorder, ResizeEdge as X11ResizeEdge, XwmId},
@@ -52,7 +54,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
 
     fn map_window_request(&mut self, _xwm: XwmId, window: X11Surface) {
         window.set_mapped(true).unwrap();
-        let window = WindowElement::X11(window);
+        let window = WindowElement(Window::new_x11_window(window));
         place_new_window(
             &mut self.state.space,
             self.state.pointer.current_location(),
@@ -60,7 +62,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             true,
         );
         let bbox = self.state.space.element_bbox(&window).unwrap();
-        let WindowElement::X11(xsurface) = &window else {
+        let Some(xsurface) = window.0.x11_surface() else {
             unreachable!()
         };
         xsurface.configure(Some(bbox)).unwrap();
@@ -69,7 +71,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
 
     fn mapped_override_redirect_window(&mut self, _xwm: XwmId, window: X11Surface) {
         let location = window.geometry().loc;
-        let window = WindowElement::X11(window);
+        let window = WindowElement(Window::new_x11_window(window));
         self.state.space.map_element(window, location, true);
     }
 
@@ -78,7 +80,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
+            .find(|e| matches!(e.0.x11_surface(), Some(w) if w == &window))
             .cloned();
         if let Some(elem) = maybe {
             self.state.space.unmap_elem(&elem)
@@ -122,7 +124,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
+            .find(|e| matches!(e.0.x11_surface(), Some(w) if w == &window))
             .cloned()
         else {
             return;
@@ -141,7 +143,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
+            .find(|e| matches!(e.0.x11_surface(), Some(w) if w == &window))
             .cloned()
         else {
             return;
@@ -163,7 +165,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
+            .find(|e| matches!(e.0.x11_surface(), Some(w) if w == &window))
         {
             let outputs_for_window = self.state.space.outputs_for_element(elem);
             let output = outputs_for_window
@@ -192,7 +194,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
+            .find(|e| matches!(e.0.x11_surface(), Some(w) if w == &window))
         {
             window.set_fullscreen(false).unwrap();
             elem.set_ssd(!window.is_decorated());
@@ -219,7 +221,7 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
             .state
             .space
             .elements()
-            .find(|e| matches!(e, WindowElement::X11(w) if w == &window))
+            .find(|e| matches!(e.0.x11_surface(), Some(w) if w == &window))
         else {
             return;
         };
@@ -261,9 +263,11 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
     fn allow_selection_access(&mut self, xwm: XwmId, _selection: SelectionTarget) -> bool {
         if let Some(keyboard) = self.state.seat.get_keyboard() {
             // check that an X11 window is focused
-            if let Some(FocusTarget::Window(WindowElement::X11(surface))) = keyboard.current_focus() {
-                if surface.xwm_id().unwrap() == xwm {
-                    return true;
+            if let Some(FocusTarget::Window(w)) = keyboard.current_focus() {
+                if let Some(surface) = w.0.x11_surface() {
+                    if surface.xwm_id().unwrap() == xwm {
+                        return true;
+                    }
                 }
             }
         }
@@ -322,7 +326,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let Some(elem) = self
             .space
             .elements()
-            .find(|e| matches!(e, WindowElement::X11(w) if w == window))
+            .find(|e| matches!(e.0.x11_surface(), Some(w) if w == window))
             .cloned()
         else {
             return;
@@ -354,7 +358,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let Some(element) = self
             .space
             .elements()
-            .find(|e| matches!(e, WindowElement::X11(w) if w == window))
+            .find(|e| matches!(e.0.x11_surface(), Some(w) if w == window))
         else {
             return;
         };
