@@ -133,7 +133,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
             }
         } else {
             state.ptr_entered_window = true;
-            PointerTarget::enter(&self.0, seat, data, &event);
+            PointerTarget::enter(&self.0, seat, data, event);
         }
     }
     fn motion(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &MotionEvent) {
@@ -155,7 +155,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
                 }
             }
         } else {
-            PointerTarget::motion(&self.0, seat, data, &event);
+            PointerTarget::motion(&self.0, seat, data, event);
         }
     }
     fn relative_motion(
@@ -166,19 +166,19 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     ) {
         let state = self.decoration_state();
         if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::relative_motion(&self.0, seat, data, &event);
+            PointerTarget::relative_motion(&self.0, seat, data, event);
         }
     }
     fn button(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &ButtonEvent) {
         let mut state = self.decoration_state();
         if state.is_ssd {
             if state.ptr_entered_window {
-                PointerTarget::button(&self.0, seat, data, &event);
+                PointerTarget::button(&self.0, seat, data, event);
             } else {
                 state.header_bar.clicked(seat, data, self, event.serial);
             }
         } else {
-            PointerTarget::button(&self.0, seat, data, &event);
+            PointerTarget::button(&self.0, seat, data, event);
         }
     }
     fn axis(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, frame: AxisFrame) {
