@@ -54,6 +54,7 @@ pub mod dmabuf;
 pub mod drm_lease;
 pub mod fractional_scale;
 pub mod idle_inhibit;
+pub mod idle_notify;
 pub mod input_method;
 pub mod keyboard_shortcuts_inhibit;
 pub mod output;
