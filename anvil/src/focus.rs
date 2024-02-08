@@ -290,9 +290,7 @@ impl WaylandFocus for FocusTarget {
     }
     fn same_client_as(&self, object_id: &ObjectId) -> bool {
         match self {
-            FocusTarget::Window(WindowElement::Wayland(w)) => w.same_client_as(object_id),
-            #[cfg(feature = "xwayland")]
-            FocusTarget::Window(WindowElement::X11(w)) => w.same_client_as(object_id),
+            FocusTarget::Window(w) => w.0.same_client_as(object_id),
             FocusTarget::LayerSurface(l) => l.wl_surface().id().same_client_as(object_id),
             FocusTarget::Popup(p) => p.wl_surface().id().same_client_as(object_id),
         }

@@ -6,6 +6,7 @@ use smithay::{
         },
         Renderer,
     },
+    desktop::WindowSurface,
     input::Seat,
     utils::{Logical, Point, Serial},
     wayland::shell::xdg::XdgShellHandler,
@@ -62,19 +63,19 @@ impl HeaderBar {
     ) {
         match self.pointer_loc.as_ref() {
             Some(loc) if loc.x >= (self.width - BUTTON_WIDTH) as f64 => {
-                match window {
-                    WindowElement::Wayland(w) => w.toplevel().send_close(),
+                match window.0.underlying_surface() {
+                    WindowSurface::Wayland(w) => w.send_close(),
                     #[cfg(feature = "xwayland")]
-                    WindowElement::X11(w) => {
+                    WindowSurface::X11(w) => {
                         let _ = w.close();
                     }
                 };
             }
             Some(loc) if loc.x >= (self.width - (BUTTON_WIDTH * 2)) as f64 => {
-                match window {
-                    WindowElement::Wayland(w) => state.maximize_request(w.toplevel().clone()),
+                match window.0.underlying_surface() {
+                    WindowSurface::Wayland(w) => state.maximize_request(w.clone()),
                     #[cfg(feature = "xwayland")]
-                    WindowElement::X11(w) => {
+                    WindowSurface::X11(w) => {
                         let surface = w.clone();
                         state
                             .handle
@@ -83,16 +84,16 @@ impl HeaderBar {
                 };
             }
             Some(_) => {
-                match window {
-                    WindowElement::Wayland(w) => {
+                match window.0.underlying_surface() {
+                    WindowSurface::Wayland(w) => {
                         let seat = seat.clone();
-                        let toplevel = w.toplevel().clone();
+                        let toplevel = w.clone();
                         state
                             .handle
                             .insert_idle(move |data| data.state.move_request_xdg(&toplevel, &seat, serial));
                     }
                     #[cfg(feature = "xwayland")]
-                    WindowElement::X11(w) => {
+                    WindowSurface::X11(w) => {
                         let window = w.clone();
                         state
                             .handle

@@ -57,7 +57,7 @@ impl ResizeSurfaceGrab {
     ) -> Self {
         let initial_rect = initial_window_rect;
 
-        ResizeSurfaceState::with(window.toplevel().wl_surface(), |state| {
+        ResizeSurfaceState::with(window.toplevel().unwrap().wl_surface(), |state| {
             *state = ResizeSurfaceState::Resizing { edges, initial_rect };
         });
 
@@ -103,10 +103,11 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
             new_window_height = (self.initial_rect.size.h as f64 + delta.y) as i32;
         }
 
-        let (min_size, max_size) = compositor::with_states(self.window.toplevel().wl_surface(), |states| {
-            let data = states.cached_state.current::<SurfaceCachedState>();
-            (data.min_size, data.max_size)
-        });
+        let (min_size, max_size) =
+            compositor::with_states(self.window.toplevel().unwrap().wl_surface(), |states| {
+                let data = states.cached_state.current::<SurfaceCachedState>();
+                (data.min_size, data.max_size)
+            });
 
         let min_width = min_size.w.max(1);
         let min_height = min_size.h.max(1);
@@ -119,7 +120,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
             new_window_height.max(min_height).min(max_height),
         ));
 
-        let xdg = self.window.toplevel();
+        let xdg = self.window.toplevel().unwrap();
         xdg.with_pending_state(|state| {
             state.states.set(xdg_toplevel::State::Resizing);
             state.size = Some(self.last_window_size);
@@ -154,7 +155,7 @@ impl PointerGrab<Smallvil> for ResizeSurfaceGrab {
             // No more buttons are pressed, release the grab.
             handle.unset_grab(data, event.serial, event.time, true);
 
-            let xdg = self.window.toplevel();
+            let xdg = self.window.toplevel().unwrap();
             xdg.with_pending_state(|state| {
                 state.states.unset(xdg_toplevel::State::Resizing);
                 state.size = Some(self.last_window_size);
@@ -313,7 +314,7 @@ impl ResizeSurfaceState {
 pub fn handle_commit(space: &mut Space<Window>, surface: &WlSurface) -> Option<()> {
     let window = space
         .elements()
-        .find(|w| w.toplevel().wl_surface() == surface)
+        .find(|w| w.toplevel().unwrap().wl_surface() == surface)
         .cloned()?;
 
     let mut window_loc = space.element_location(&window)?;

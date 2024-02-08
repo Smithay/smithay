@@ -149,8 +149,8 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            if let Some(WindowElement::Wayland(window)) = self.window_for_surface(&root) {
-                window.on_commit();
+            if let Some(window) = self.window_for_surface(&root) {
+                window.0.on_commit();
             }
         }
         self.popups.commit(surface);
@@ -228,7 +228,7 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
     {
         // send the initial configure if relevant
         #[cfg_attr(not(feature = "xwayland"), allow(irrefutable_let_patterns))]
-        if let WindowElement::Wayland(ref toplevel) = window {
+        if let Some(toplevel) = window.0.toplevel() {
             let initial_configure_sent = with_states(surface, |states| {
                 states
                     .data_map
@@ -239,7 +239,7 @@ fn ensure_initial_configure(surface: &WlSurface, space: &Space<WindowElement>, p
                     .initial_configure_sent
             });
             if !initial_configure_sent {
-                toplevel.toplevel().send_configure();
+                toplevel.send_configure();
             }
         }
 
@@ -343,8 +343,8 @@ fn place_new_window(
 
     // set the initial toplevel bounds
     #[allow(irrefutable_let_patterns)]
-    if let WindowElement::Wayland(window) = window {
-        window.toplevel().with_pending_state(|state| {
+    if let Some(toplevel) = window.0.toplevel() {
+        toplevel.with_pending_state(|state| {
             state.bounds = Some(output_geometry.size);
         });
     }
