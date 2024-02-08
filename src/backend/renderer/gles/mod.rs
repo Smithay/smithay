@@ -1371,7 +1371,13 @@ impl ExportMem for GlesRenderer {
             let size = (region.size.w * region.size.h * bpp as i32) as isize;
             self.gl
                 .BufferData(ffi::PIXEL_PACK_BUFFER, size, ptr::null(), ffi::STREAM_READ);
-            self.gl.ReadBuffer(ffi::COLOR_ATTACHMENT0);
+            self.gl.ReadBuffer(
+                if matches!(self.target.as_ref(), None | Some(GlesTarget::Surface { .. })) {
+                    ffi::BACK
+                } else {
+                    ffi::COLOR_ATTACHMENT0
+                },
+            );
             self.gl.ReadPixels(
                 region.loc.x,
                 region.loc.y,
