@@ -4170,10 +4170,7 @@ where
             if !async_format_might_supported {
                 trace!(
                     "skipping direct scan-out on {:?} with zpos {:?} for element {:?}, async format {:?} not supported",
-                    plane.handle,
-                    plane.zpos,
-                    element_id,
-                    element_config.properties.format,
+                    plane.handle, plane.zpos, element_id, element_config.properties.format,
                 );
                 return Err(Some(RenderingReason::AsyncFormatUnsupported));
             }
