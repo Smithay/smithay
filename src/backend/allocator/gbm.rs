@@ -8,6 +8,8 @@ use super::{
     dmabuf::{AsDmabuf, Dmabuf, DmabufFlags, MAX_PLANES},
     Allocator, Buffer, Format, Fourcc, Modifier,
 };
+#[cfg(feature = "backend_drm")]
+use crate::backend::drm::DrmNode;
 use crate::utils::{Buffer as BufferCoords, Size};
 pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
 use std::{
@@ -175,6 +177,11 @@ impl<T> AsDmabuf for GbmBuffer<T> {
             );
         }
 
+        #[cfg(feature = "backend_drm")]
+        if let Some(node) = self.device_fd().ok().and_then(|fd| DrmNode::from_file(fd).ok()) {
+            builder.set_node(node);
+        }
+
         Ok(builder.build().unwrap())
     }
 
@@ -214,6 +221,12 @@ impl<T> AsDmabuf for GbmBuffer<T> {
                 self.stride_for_plane(idx)?,
             );
         }
+
+        #[cfg(feature = "backend_drm")]
+        if let Some(node) = self.device_fd().ok().and_then(|fd| DrmNode::from_file(fd).ok()) {
+            builder.set_node(node);
+        }
+
         Ok(builder.build().unwrap())
     }
 }

@@ -214,6 +214,8 @@ use wayland_server::{
     Client, Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
 };
 
+#[cfg(feature = "backend_drm")]
+use crate::backend::drm::DrmNode;
 use crate::{
     backend::allocator::{
         dmabuf::{Dmabuf, DmabufFlags, Plane},
@@ -1090,6 +1092,7 @@ impl DmabufParamsData {
         height: i32,
         format: u32,
         flags: WEnum<zwp_linux_buffer_params_v1::Flags>,
+        _node: Option<libc::dev_t>,
     ) -> Option<Dmabuf> {
         // We cannot create a dmabuf if the parameters have already been used.
         if !self.ensure_unused(params) {
@@ -1206,6 +1209,11 @@ impl DmabufParamsData {
             let offset = plane.offset;
             let stride = plane.stride;
             buf.add_plane(plane.into(), i as u32, offset, stride);
+        }
+
+        #[cfg(feature = "backend_drm")]
+        if let Some(node) = _node.and_then(|node| DrmNode::from_dev_id(node).ok()) {
+            buf.set_node(node);
         }
 
         let dmabuf = match buf.build() {

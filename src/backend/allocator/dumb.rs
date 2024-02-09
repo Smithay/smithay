@@ -10,6 +10,7 @@ use tracing::instrument;
 use super::dmabuf::{AsDmabuf, Dmabuf, DmabufFlags};
 use super::{format::get_bpp, Allocator, Buffer, Format, Fourcc, Modifier};
 use crate::backend::drm::DrmDeviceFd;
+use crate::backend::drm::DrmNode;
 use crate::utils::{Buffer as BufferCoords, Size};
 
 /// Wrapper around raw DumbBuffer handles.
@@ -115,6 +116,9 @@ impl AsDmabuf for DumbBuffer {
             DmabufFlags::empty(),
         );
         builder.add_plane(fd, 0, 0, self.handle.pitch());
+        if let Ok(node) = DrmNode::from_file(&self.fd) {
+            builder.set_node(node);
+        }
         builder.build().ok_or(rustix::io::Errno::INVAL.into())
     }
 }

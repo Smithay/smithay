@@ -296,7 +296,7 @@ where
                 flags,
             } => {
                 // create_dmabuf performs an implicit ensure_unused function call.
-                if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags) {
+                if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags, None) {
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
                         let notifier = ImportNotifier::new(
                             params.clone(),
@@ -321,7 +321,7 @@ where
             } => {
                 // Client is killed if the if statement is not taken.
                 // create_dmabuf performs an implicit ensure_unused function call.
-                if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags) {
+                if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags, None) {
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
                         // The buffer isn't technically valid during data_init, but the client is not allowed to use the buffer until ready.
                         let buffer = data_init.init(buffer_id, dmabuf.clone());
