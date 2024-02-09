@@ -1,3 +1,5 @@
+<img align="right" width="25%" src="https://github.com/Smithay/smithay/assets/20758186/7a84ab10-e229-4823-bad8-9c647546407b">
+
 # Smithay
 
 [![Crates.io](https://img.shields.io/crates/v/smithay.svg)](https://crates.io/crates/smithay)
