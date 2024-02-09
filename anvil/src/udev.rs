@@ -24,10 +24,9 @@ use smithay::backend::renderer::{multigpu::MultiTexture, ImportMem};
 use smithay::{
     backend::{
         allocator::{
-            dmabuf::{AnyError, Dmabuf, DmabufAllocator},
+            dmabuf::Dmabuf,
             gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
-            vulkan::{ImageUsageFlags, VulkanAllocator},
-            Allocator, Fourcc,
+            Fourcc,
         },
         drm::{
             compositor::DrmCompositor, CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError,
@@ -49,7 +48,6 @@ use smithay::{
             Event as SessionEvent, Session,
         },
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
-        vulkan::{version::Version, Instance, PhysicalDevice},
         SwapBuffersError,
     },
     delegate_dmabuf, delegate_drm_lease,
@@ -63,7 +61,6 @@ use smithay::{
     },
     output::{Mode as WlMode, Output, PhysicalProperties, Subpixel},
     reexports::{
-        ash::vk::ExtPhysicalDeviceDrmFn,
         calloop::{
             timer::{TimeoutAction, Timer},
             EventLoop, LoopHandle, RegistrationToken,
@@ -111,8 +108,12 @@ const SUPPORTED_FORMATS: &[Fourcc] = &[
 ];
 const SUPPORTED_FORMATS_8BIT_ONLY: &[Fourcc] = &[Fourcc::Abgr8888, Fourcc::Argb8888];
 
-type UdevRenderer<'a, 'b> =
-    MultiRenderer<'a, 'a, 'b, GbmGlesBackend<GlesRenderer>, GbmGlesBackend<GlesRenderer>>;
+type UdevRenderer<'a> = MultiRenderer<
+    'a,
+    'a,
+    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
+    GbmGlesBackend<GlesRenderer, DrmDeviceFd>,
+>;
 
 #[derive(Debug, PartialEq)]
 struct UdevOutputId {
@@ -125,8 +126,7 @@ pub struct UdevData {
     dh: DisplayHandle,
     dmabuf_state: Option<(DmabufState, DmabufGlobal)>,
     primary_gpu: DrmNode,
-    allocator: Option<Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>>,
-    gpus: GpuManager<GbmGlesBackend<GlesRenderer>>,
+    gpus: GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
     backends: HashMap<DrmNode, BackendData>,
     pointer_images: Vec<(xcursor::parser::Image, MemoryRenderBuffer)>,
     pointer_element: PointerElement,
@@ -195,10 +195,7 @@ impl Backend for UdevData {
     }
 
     fn early_import(&mut self, surface: &wl_surface::WlSurface) {
-        if let Err(err) = self
-            .gpus
-            .early_import(Some(self.primary_gpu), self.primary_gpu, surface)
-        {
+        if let Err(err) = self.gpus.early_import(self.primary_gpu, surface) {
             warn!("Early buffer import failed: {}", err);
         }
     }
@@ -253,7 +250,6 @@ pub fn run_udev() {
         session,
         primary_gpu,
         gpus,
-        allocator: None,
         backends: HashMap::new(),
         pointer_image: crate::cursor::Cursor::load(),
         pointer_images: Vec::new(),
@@ -383,53 +379,6 @@ pub fn run_udev() {
             .unwrap()
             .shm_formats(),
     );
-
-    let skip_vulkan = std::env::var("ANVIL_NO_VULKAN")
-        .map(|x| {
-            x == "1" || x.to_lowercase() == "true" || x.to_lowercase() == "yes" || x.to_lowercase() == "y"
-        })
-        .unwrap_or(false);
-
-    if !skip_vulkan {
-        if let Ok(instance) = Instance::new(Version::VERSION_1_2, None) {
-            if let Some(physical_device) = PhysicalDevice::enumerate(&instance).ok().and_then(|devices| {
-                devices
-                    .filter(|phd| phd.has_device_extension(ExtPhysicalDeviceDrmFn::name()))
-                    .find(|phd| {
-                        phd.primary_node().unwrap() == Some(primary_gpu)
-                            || phd.render_node().unwrap() == Some(primary_gpu)
-                    })
-            }) {
-                match VulkanAllocator::new(
-                    &physical_device,
-                    ImageUsageFlags::COLOR_ATTACHMENT | ImageUsageFlags::SAMPLED,
-                ) {
-                    Ok(allocator) => {
-                        state.backend_data.allocator = Some(Box::new(DmabufAllocator(allocator))
-                            as Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>);
-                    }
-                    Err(err) => {
-                        warn!("Failed to create vulkan allocator: {}", err);
-                    }
-                }
-            }
-        }
-    }
-
-    if state.backend_data.allocator.is_none() {
-        info!("No vulkan allocator found, using GBM.");
-        let gbm = state
-            .backend_data
-            .backends
-            .get(&primary_gpu)
-            // If the primary_gpu failed to initialize, we likely have a kmsro device
-            .or_else(|| state.backend_data.backends.values().next())
-            // Don't fail, if there is no allocator. There is a chance, that this a single gpu system and we don't need one.
-            .map(|backend| backend.gbm.clone());
-        state.backend_data.allocator = gbm.map(|gbm| {
-            Box::new(DmabufAllocator(GbmAllocator::new(gbm, GbmBufferFlags::RENDERING))) as Box<_>
-        });
-    }
 
     #[cfg_attr(not(feature = "egl"), allow(unused_mut))]
     let mut renderer = state.backend_data.gpus.single_renderer(&primary_gpu).unwrap();
@@ -831,7 +780,7 @@ enum DeviceAddError {
 fn get_surface_dmabuf_feedback(
     primary_gpu: DrmNode,
     render_node: DrmNode,
-    gpus: &mut GpuManager<GbmGlesBackend<GlesRenderer>>,
+    gpus: &mut GpuManager<GbmGlesBackend<GlesRenderer, DrmDeviceFd>>,
     composition: &SurfaceComposition,
 ) -> Option<DrmSurfaceDmabufFeedback> {
     let primary_formats = gpus
@@ -1455,18 +1404,9 @@ impl AnvilState<UdevData> {
             self.backend_data.gpus.single_renderer(&render_node)
         } else {
             let format = surface.compositor.format();
-            self.backend_data.gpus.renderer(
-                &primary_gpu,
-                &render_node,
-                self.backend_data
-                    .allocator
-                    .as_mut()
-                    // TODO: We could build some kind of `GLAllocator` using Renderbuffers in theory for this case.
-                    //  That would work for memcpy's of offscreen contents.
-                    .expect("We need an allocator for multigpu systems")
-                    .as_mut(),
-                format,
-            )
+            self.backend_data
+                .gpus
+                .renderer(&primary_gpu, &render_node, format)
         }
         .unwrap();
 
@@ -1617,9 +1557,9 @@ impl AnvilState<UdevData> {
 
 #[allow(clippy::too_many_arguments)]
 #[profiling::function]
-fn render_surface<'a, 'b>(
+fn render_surface<'a>(
     surface: &'a mut SurfaceData,
-    renderer: &mut UdevRenderer<'a, 'b>,
+    renderer: &mut UdevRenderer<'a>,
     space: &Space<WindowElement>,
     output: &Output,
     pointer_location: Point<f64, Logical>,
@@ -1675,7 +1615,7 @@ fn render_surface<'a, 'b>(
         {
             if let Some(wl_surface) = dnd_icon.as_ref() {
                 if wl_surface.alive() {
-                    custom_elements.extend(AsRenderElements::<UdevRenderer<'a, 'b>>::render_elements(
+                    custom_elements.extend(AsRenderElements::<UdevRenderer<'a>>::render_elements(
                         &SurfaceTree::from_surface(wl_surface),
                         renderer,
                         cursor_pos_scaled,
@@ -1727,7 +1667,7 @@ fn render_surface<'a, 'b>(
 
 fn initial_render(
     surface: &mut SurfaceData,
-    renderer: &mut UdevRenderer<'_, '_>,
+    renderer: &mut UdevRenderer<'_>,
 ) -> Result<(), SwapBuffersError> {
     surface
         .compositor

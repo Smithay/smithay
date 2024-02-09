@@ -6,6 +6,11 @@ use tracing::warn;
 use wayland_server::protocol::wl_buffer;
 
 use crate::backend::{
+    allocator::{
+        dmabuf::{AnyError, DmabufAllocator},
+        gbm::GbmAllocator,
+        Allocator,
+    },
     drm::{CreateDrmNodeError, DrmNode},
     egl::{context::ContextPriority, EGLContext, EGLDisplay, Error as EGLError},
     renderer::{
@@ -27,11 +32,12 @@ use crate::{
     },
     utils::{Buffer as BufferCoords, Rectangle},
 };
-use gbm::Device as GbmDevice;
+use gbm::{BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use std::borrow::BorrowMut;
 use std::{
     collections::HashMap,
+    fmt,
     os::unix::prelude::AsFd,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -62,23 +68,23 @@ impl From<Error> for SwapBuffersError {
 type Factory = Box<dyn Fn(&EGLDisplay) -> Result<GlesRenderer, Error>>;
 
 /// A [`GraphicsApi`] utilizing user-provided GBM Devices and OpenGL ES for rendering.
-pub struct GbmGlesBackend<R> {
-    devices: HashMap<DrmNode, EGLDisplay>,
+pub struct GbmGlesBackend<R, A: AsFd + 'static> {
+    devices: HashMap<DrmNode, (EGLDisplay, GbmAllocator<A>)>,
     factory: Option<Factory>,
     context_priority: Option<ContextPriority>,
     needs_enumeration: AtomicBool,
     _renderer: std::marker::PhantomData<R>,
 }
 
-impl<R> std::fmt::Debug for GbmGlesBackend<R> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<R, A: AsFd + fmt::Debug + 'static> fmt::Debug for GbmGlesBackend<R, A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GbmGlesBackend")
             .field("devices", &self.devices)
             .finish()
     }
 }
 
-impl<R> Default for GbmGlesBackend<R> {
+impl<R, A: AsFd + 'static> Default for GbmGlesBackend<R, A> {
     fn default() -> Self {
         GbmGlesBackend {
             devices: HashMap::new(),
@@ -90,7 +96,7 @@ impl<R> Default for GbmGlesBackend<R> {
     }
 }
 
-impl<R> GbmGlesBackend<R> {
+impl<R, A: AsFd + Clone + Send + 'static> GbmGlesBackend<R, A> {
     /// Initialize a new [`GbmGlesBackend`] with a factory for instantiating [`GlesRenderer`]s
     pub fn with_factory<F>(factory: F) -> Self
     where
@@ -115,16 +121,14 @@ impl<R> GbmGlesBackend<R> {
     }
 
     /// Add a new GBM device for a given node to the api
-    pub fn add_node<T: AsFd + Send + 'static>(
-        &mut self,
-        node: DrmNode,
-        gbm: GbmDevice<T>,
-    ) -> Result<(), EGLError> {
+    pub fn add_node(&mut self, node: DrmNode, gbm: GbmDevice<A>) -> Result<(), EGLError> {
         if self.devices.contains_key(&node) {
             return Ok(());
         }
 
-        self.devices.insert(node, unsafe { EGLDisplay::new(gbm)? });
+        let allocator = GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING);
+        self.devices
+            .insert(node, (unsafe { EGLDisplay::new(gbm)? }, allocator));
         self.needs_enumeration.store(true, Ordering::SeqCst);
         Ok(())
     }
@@ -137,7 +141,9 @@ impl<R> GbmGlesBackend<R> {
     }
 }
 
-impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for GbmGlesBackend<R> {
+impl<R: From<GlesRenderer> + Renderer<Error = GlesError>, A: AsFd + Clone + 'static> GraphicsApi
+    for GbmGlesBackend<R, A>
+{
     type Device = GbmGlesDevice<R>;
     type Error = Error;
 
@@ -160,7 +166,7 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for GbmGle
                     .iter()
                     .any(|renderer| renderer.node.dev_id() == node.dev_id())
             })
-            .map(|(node, display)| {
+            .map(|(node, (display, gbm))| {
                 let renderer = if let Some(factory) = self.factory.as_ref() {
                     factory(display)?.into()
                 } else {
@@ -174,6 +180,7 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for GbmGle
                     node: *node,
                     _display: display.clone(),
                     renderer,
+                    allocator: Box::new(DmabufAllocator(gbm.clone())),
                 })
             })
             .flat_map(|x: Result<GbmGlesDevice<R>, Error>| match x {
@@ -201,23 +208,32 @@ impl<R: From<GlesRenderer> + Renderer<Error = GlesError>> GraphicsApi for GbmGle
 }
 
 // TODO: Replace with specialization impl in multigpu/mod once possible
-impl<T: GraphicsApi, R: From<GlesRenderer> + Renderer<Error = GlesError>> std::convert::From<GlesError>
-    for MultiError<GbmGlesBackend<R>, T>
+impl<T: GraphicsApi, R: From<GlesRenderer> + Renderer<Error = GlesError>, A: AsFd + Clone + 'static>
+    std::convert::From<GlesError> for MultiError<GbmGlesBackend<R, A>, T>
 where
     T::Error: 'static,
     <<T::Device as ApiDevice>::Renderer as Renderer>::Error: 'static,
 {
-    fn from(err: GlesError) -> MultiError<GbmGlesBackend<R>, T> {
+    fn from(err: GlesError) -> MultiError<GbmGlesBackend<R, A>, T> {
         MultiError::Render(err)
     }
 }
 
 /// [`ApiDevice`] of the [`GbmGlesBackend`]
-#[derive(Debug)]
 pub struct GbmGlesDevice<R> {
     node: DrmNode,
     renderer: R,
+    allocator: Box<dyn Allocator<Buffer = Dmabuf, Error = AnyError>>,
     _display: EGLDisplay,
+}
+
+impl<R: Renderer> fmt::Debug for GbmGlesDevice<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GbmGlesDevice")
+            .field("node", &self.node)
+            .field("renderer", &self.renderer)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<R: Renderer> ApiDevice for GbmGlesDevice<R> {
@@ -229,14 +245,18 @@ impl<R: Renderer> ApiDevice for GbmGlesDevice<R> {
     fn renderer_mut(&mut self) -> &mut Self::Renderer {
         &mut self.renderer
     }
+    fn allocator(&mut self) -> &mut dyn Allocator<Buffer = Dmabuf, Error = AnyError> {
+        self.allocator.as_mut()
+    }
     fn node(&self) -> &DrmNode {
         &self.node
     }
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, 'c, R> ImportEgl for MultiRenderer<'a, 'b, 'c, GbmGlesBackend<R>, GbmGlesBackend<R>>
+impl<'a, 'b, R, A> ImportEgl for MultiRenderer<'a, 'b, GbmGlesBackend<R, A>, GbmGlesBackend<R, A>>
 where
+    A: AsFd + Clone + 'static,
     R: From<GlesRenderer>
         + BorrowMut<GlesRenderer>
         + Renderer<Error = GlesError>
@@ -264,41 +284,38 @@ where
         surface: Option<&crate::wayland::compositor::SurfaceData>,
         damage: &[Rectangle<i32, BufferCoords>],
     ) -> Result<<Self as Renderer>::TextureId, <Self as Renderer>::Error> {
-        if let Some(ref mut renderer) = self.target.as_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(renderer.device.renderer_mut(), buffer) {
-                let node = *renderer.device.node();
-                let texture = MultiTexture::from_surface(surface, dmabuf.size());
-                let texture_ref = texture.0.clone();
-                let res = self.import_dmabuf_internal(Some(node), &dmabuf, texture, Some(damage));
-                if res.is_ok() {
-                    if let Some(surface) = surface {
-                        surface.data_map.insert_if_missing(|| texture_ref);
-                    }
+        if let Some(dmabuf) = Self::try_import_egl(self.render.renderer_mut(), buffer)
+            .ok()
+            .or_else(|| {
+                self.target
+                    .as_mut()
+                    .and_then(|renderer| Self::try_import_egl(renderer.device.renderer_mut(), buffer).ok())
+            })
+            .or_else(|| {
+                self.other_renderers
+                    .iter_mut()
+                    .find_map(|renderer| Self::try_import_egl(renderer.renderer_mut(), buffer).ok())
+            })
+        {
+            let texture = MultiTexture::from_surface(surface, dmabuf.size());
+            let texture_ref = texture.0.clone();
+            let res = self.import_dmabuf_internal(&dmabuf, texture, Some(damage));
+            if res.is_ok() {
+                if let Some(surface) = surface {
+                    surface.data_map.insert_if_missing(|| texture_ref);
                 }
-                return res;
             }
+            return res;
         }
-        for renderer in self.other_renderers.iter_mut() {
-            if let Ok(dmabuf) = Self::try_import_egl(renderer.renderer_mut(), buffer) {
-                let node = *renderer.node();
-                let texture = MultiTexture::from_surface(surface, dmabuf.size());
-                let texture_ref = texture.0.clone();
-                let res = self.import_dmabuf_internal(Some(node), &dmabuf, texture, Some(damage));
-                if res.is_ok() {
-                    if let Some(surface) = surface {
-                        surface.data_map.insert_if_missing(|| texture_ref);
-                    }
-                }
-                return res;
-            }
-        }
+
         Err(MultigpuError::DeviceMissing)
     }
 }
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
-impl<'a, 'b, 'c, R> MultiRenderer<'a, 'b, 'c, GbmGlesBackend<R>, GbmGlesBackend<R>>
+impl<'a, 'b, R, A> MultiRenderer<'a, 'b, GbmGlesBackend<R, A>, GbmGlesBackend<R, A>>
 where
+    A: AsFd + Clone + 'static,
     R: From<GlesRenderer>
         + BorrowMut<GlesRenderer>
         + Renderer<Error = GlesError>
@@ -312,7 +329,7 @@ where
     fn try_import_egl(
         renderer: &mut R,
         buffer: &wl_buffer::WlBuffer,
-    ) -> Result<Dmabuf, MultigpuError<GbmGlesBackend<R>, GbmGlesBackend<R>>> {
+    ) -> Result<Dmabuf, MultigpuError<GbmGlesBackend<R, A>, GbmGlesBackend<R, A>>> {
         if !renderer
             .borrow_mut()
             .extensions
