@@ -17,6 +17,8 @@ use wayland_server::{protocol::wl_buffer::WlBuffer, DisplayHandle, Resource};
 #[cfg(feature = "use_system_lib")]
 use wayland_sys::server::wl_display;
 
+#[cfg(feature = "backend_drm")]
+use crate::backend::egl::EGLDevice;
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::backend::egl::{BufferAccessError, EGLBuffer, Format};
 use crate::{
@@ -702,6 +704,15 @@ impl EGLDisplay {
                 strides[i as usize] as u32,
             );
         }
+
+        #[cfg(feature = "backend_drm")]
+        if let Some(node) = EGLDevice::device_for_display(self)
+            .ok()
+            .and_then(|device| device.try_get_render_node().ok().flatten())
+        {
+            dma.set_node(node);
+        }
+
         dma.build().ok_or(Error::DmabufExportFailed(EGLError::BadAlloc))
     }
 

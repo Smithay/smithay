@@ -15,12 +15,16 @@ use calloop::{EventSource, Interest, Mode, PostAction};
 use rustix::ioctl::{Setter, WriteOpcode};
 
 use super::{Allocator, Buffer, Format, Fourcc, Modifier};
+#[cfg(feature = "backend_drm")]
+use crate::backend::drm::DrmNode;
 use crate::utils::{Buffer as BufferCoords, Size};
 #[cfg(feature = "wayland_frontend")]
 use crate::wayland::compositor::{Blocker, BlockerState};
 use std::hash::{Hash, Hasher};
 use std::os::unix::io::{AsFd, BorrowedFd, OwnedFd};
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "backend_drm")]
+use std::sync::Mutex;
 use std::sync::{Arc, Weak};
 use std::{error, fmt};
 
@@ -41,6 +45,11 @@ pub(crate) struct DmabufInternal {
     ///
     /// This is a bitflag, to be compared with the `Flags` enum re-exported by this module.
     pub flags: DmabufFlags,
+    /// Presumably compatible device for buffer import
+    ///
+    /// This is inferred from client apis, however there is no kernel api or guarantee this is correct
+    #[cfg(feature = "backend_drm")]
+    node: Mutex<Option<DrmNode>>,
 }
 
 #[derive(Debug)]
@@ -157,6 +166,15 @@ impl DmabufBuilder {
         true
     }
 
+    /// Sets a known good node to import the dmabuf with.
+    ///
+    /// While this is only a strong hint and no guarantee, implementations
+    /// should avoid setting this at all, if they can't be reasonably certain.
+    #[cfg(feature = "backend_drm")]
+    pub fn set_node(&mut self, node: DrmNode) {
+        self.internal.node = Mutex::new(Some(node));
+    }
+
     /// Build a `Dmabuf` out of the provided parameters and planes
     ///
     /// Returns `None` if the builder has no planes attached.
@@ -194,6 +212,8 @@ impl Dmabuf {
                 format,
                 modifier,
                 flags,
+                #[cfg(feature = "backend_drm")]
+                node: Mutex::new(None),
             },
         }
     }
@@ -231,6 +251,23 @@ impl Dmabuf {
     /// Create a weak reference to this dmabuf
     pub fn weak(&self) -> WeakDmabuf {
         WeakDmabuf(Arc::downgrade(&self.0))
+    }
+
+    /// Presumably compatible device for buffer import
+    ///
+    /// This is inferred from client apis, as there is no kernel api or other guarantee this is correct,
+    /// so it should only be treated as a hint.
+    #[cfg(feature = "backend_drm")]
+    pub fn node(&self) -> Option<DrmNode> {
+        *self.0.node.lock().unwrap()
+    }
+
+    /// Sets or unsets any node set for this dmabuf (see [`Dmabuf::node`]).
+    ///
+    /// May alter behavior of other parts of smithay using this as a hint.
+    #[cfg(feature = "backend_drm")]
+    pub fn set_node(&self, node: impl Into<Option<DrmNode>>) {
+        *self.0.node.lock().unwrap() = node.into();
     }
 
     /// Create an [`calloop::EventSource`] and [`crate::wayland::compositor::Blocker`] for this [`Dmabuf`].
