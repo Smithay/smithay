@@ -1903,7 +1903,8 @@ fn handle_event<D: XwmHandler + 'static>(
                         }
 
                         let requestor = n.requestor;
-                        let token = match loop_handle.insert_source(
+
+                        let token = loop_handle.insert_source(
                             Generic::new(recv_fd, Interest::READ, Mode::Level),
                             move |_, fd, data| {
                                 let xwm = data.xwm_state(xwm_id);
@@ -1932,7 +1933,9 @@ fn handle_event<D: XwmHandler + 'static>(
 
                                 Ok(PostAction::Remove)
                             },
-                        ) {
+                        );
+
+                        let token = match token {
                             Ok(token) => token,
                             Err(err) => {
                                 warn!(
