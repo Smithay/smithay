@@ -8,8 +8,8 @@ use std::{
 use crate::{
     backend::input::{Axis, AxisRelativeDirection, AxisSource, ButtonState},
     input::{Seat, SeatHandler},
-    utils::Serial,
     utils::{IsAlive, Logical, Point},
+    utils::{RelativePoint, Serial},
 };
 
 mod cursor_image;
@@ -216,19 +216,13 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// You provide the new location of the pointer, in the form of:
     ///
     /// - The coordinates of the pointer in the global compositor space
-    /// - The surface on top of which the cursor is, and the coordinates of its
-    ///   origin in the global compositor space (or `None` of the pointer is not
-    ///   on top of a client surface).
+    /// - The surface the cursor is on top of, and the relative location of the
+    ///   cursor within that surface.
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
-    #[instrument(level = "trace", parent = &self.span, skip(self, data, focus), fields(focus = ?focus.as_ref().map(|(_, loc)| ("...", loc))))]
-    pub fn motion(
-        &self,
-        data: &mut D,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
-        event: &MotionEvent,
-    ) {
+    #[instrument(level = "trace", parent = &self.span, skip(self, data, focus), fields(focus = ?focus.as_ref().map(|focus| ("...", focus.loc))))]
+    pub fn motion(&self, data: &mut D, focus: Option<RelativePoint<D::PointerFocus>>, event: &MotionEvent) {
         let mut inner = self.inner.lock().unwrap();
         inner.pending_focus = focus.clone();
         let seat = self.get_seat(data);
@@ -242,11 +236,11 @@ impl<D: SeatHandler + 'static> PointerHandle<D> {
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface, if the client uses
     /// the relative pointer protocol.
-    #[instrument(level = "trace", parent = &self.span, skip(self, data, focus), fields(focus = ?focus.as_ref().map(|(_, loc)| ("...", loc))))]
+    #[instrument(level = "trace", parent = &self.span, skip(self, data, focus), fields(focus = ?focus.as_ref().map(|focus| ("...", focus.loc))))]
     pub fn relative_motion(
         &self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &RelativeMotionEvent,
     ) {
         let mut inner = self.inner.lock().unwrap();
@@ -435,7 +429,12 @@ where
 {
     /// Retrieve the current pointer focus
     pub fn current_focus(&self) -> Option<<D as SeatHandler>::PointerFocus> {
-        self.inner.lock().unwrap().focus.clone().map(|(focus, _)| focus)
+        self.inner
+            .lock()
+            .unwrap()
+            .focus
+            .clone()
+            .map(|focus| focus.surface)
     }
 }
 
@@ -479,7 +478,7 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     }
 
     /// Access the current focus of this pointer
-    pub fn current_focus(&self) -> Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)> {
+    pub fn current_focus(&self) -> Option<RelativePoint<D::PointerFocus>> {
         self.inner.focus.clone()
     }
 
@@ -501,16 +500,17 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     /// You provide the new location of the pointer, in the form of:
     ///
     /// - The coordinates of the pointer in the global compositor space
-    /// - The surface on top of which the cursor is, and the coordinates of its
-    ///   origin in the global compositor space (or `None` of the pointer is not
-    ///   on top of a client surface).
+    /// - The surface on top of which the cursor is, and the coordinates of the
+    ///   pointer relative to the surface.
+    ///
+    /// A value of None indicates that no surface is focused.
     ///
     /// This will internally take care of notifying the appropriate client objects
     /// of enter/motion/leave events.
     pub fn motion(
         &mut self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &MotionEvent,
     ) {
         self.inner.motion(data, self.seat, focus, event);
@@ -524,7 +524,7 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     pub fn relative_motion(
         &mut self,
         data: &mut D,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &RelativeMotionEvent,
     ) {
         self.inner.relative_motion(data, self.seat, focus, event);
@@ -535,8 +535,8 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     /// This will internally send the appropriate button event to the client
     /// objects matching with the currently focused surface.
     pub fn button(&mut self, data: &mut D, event: &ButtonEvent) {
-        if let Some((focused, _)) = self.inner.focus.as_mut() {
-            focused.button(self.seat, data, event);
+        if let Some(RelativePoint { surface, .. }) = self.inner.focus.as_mut() {
+            surface.button(self.seat, data, event);
         }
     }
 
@@ -545,8 +545,8 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     /// This will internally send the appropriate axis events to the client
     /// objects matching with the currently focused surface.
     pub fn axis(&mut self, data: &mut D, details: AxisFrame) {
-        if let Some((focused, _)) = self.inner.focus.as_mut() {
-            focused.axis(self.seat, data, details);
+        if let Some(RelativePoint { surface, .. }) = self.inner.focus.as_mut() {
+            surface.axis(self.seat, data, details);
         }
     }
 
@@ -555,8 +555,8 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
     /// This will internally send the appropriate frame event to the client
     /// objects matching with the currently focused surface.
     pub fn frame(&mut self, data: &mut D) {
-        if let Some((focused, _)) = self.inner.focus.as_mut() {
-            focused.frame(self.seat, data);
+        if let Some(RelativePoint { surface, .. }) = self.inner.focus.as_mut() {
+            surface.frame(self.seat, data);
         }
     }
 
@@ -634,8 +634,8 @@ impl<'a, D: SeatHandler + 'static> PointerInnerHandle<'a, D> {
 }
 
 pub(crate) struct PointerInternal<D: SeatHandler> {
-    pub(crate) focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
-    pending_focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+    pub(crate) focus: Option<RelativePoint<D::PointerFocus>>,
+    pending_focus: Option<RelativePoint<D::PointerFocus>>,
     location: Point<f64, Logical>,
     grab: GrabStatus<D>,
     pressed_buttons: Vec<u32>,
@@ -683,7 +683,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 seat,
                 None,
                 &MotionEvent {
-                    location,
+                    global_location: location,
                     serial,
                     time: 0,
                 },
@@ -702,7 +702,7 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
                 seat,
                 focus,
                 &MotionEvent {
-                    location,
+                    global_location: location,
                     serial,
                     time,
                 },
@@ -714,44 +714,43 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &MotionEvent,
     ) {
         // do we leave a surface ?
         let mut leave = true;
-        self.location = event.location;
-        if let Some((ref current_focus, _)) = self.focus {
-            if let Some((ref new_focus, _)) = focus {
-                if current_focus == new_focus {
+        self.location = event.global_location;
+        if let Some(ref current_focus) = self.focus {
+            if let Some(ref new_focus) = focus {
+                if current_focus.surface == new_focus.surface {
                     leave = false;
                 }
             }
         }
         if leave {
-            if let Some((focused, _)) = self.focus.as_mut() {
-                focused.leave(seat, data, event.serial, event.time);
+            if let Some(focus) = self.focus.as_mut() {
+                focus.surface.leave(seat, data, event.serial, event.time);
             }
             self.focus = None;
             data.cursor_image(seat, CursorImageStatus::default_named());
         }
 
         // do we enter one ?
-        if let Some((surface, surface_location)) = focus {
+        if let Some(focus) = focus {
             let entered = self.focus.is_none();
             // in all cases, update the focus, the coordinates of the surface
             // might have changed
-            self.focus = Some((surface, surface_location));
+            self.focus = Some(focus.clone());
             let event = MotionEvent {
-                location: event.location - surface_location.to_f64(),
+                global_location: focus.loc.to_f64(),
                 serial: event.serial,
                 time: event.time,
             };
-            let (focused, _) = self.focus.as_mut().unwrap();
             if entered {
-                focused.enter(seat, data, &event);
+                focus.surface.enter(seat, data, &event);
             } else {
                 // we were on top of a surface and remained on it
-                focused.motion(seat, data, &event);
+                focus.surface.motion(seat, data, &event);
             }
         }
     }
@@ -760,59 +759,59 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
-        _focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        _focus: Option<RelativePoint<D::PointerFocus>>,
         event: &RelativeMotionEvent,
     ) {
-        if let Some((focused, _)) = self.focus.as_mut() {
-            focused.relative_motion(seat, data, event);
+        if let Some(focus) = self.focus.as_mut() {
+            focus.surface.relative_motion(seat, data, event);
         }
     }
 
     fn gesture_swipe_begin(&mut self, data: &mut D, seat: &Seat<D>, event: &GestureSwipeBeginEvent) {
-        if let Some((focused, _)) = self.focus.as_mut() {
-            focused.gesture_swipe_begin(seat, data, event);
+        if let Some(focus) = self.focus.as_mut() {
+            focus.surface.gesture_swipe_begin(seat, data, event);
         }
     }
 
     fn gesture_swipe_update(&mut self, data: &mut D, seat: &Seat<D>, event: &GestureSwipeUpdateEvent) {
-        if let Some((focused, _)) = self.focus.as_mut() {
-            focused.gesture_swipe_update(seat, data, event);
+        if let Some(focus) = self.focus.as_mut() {
+            focus.surface.gesture_swipe_update(seat, data, event);
         }
     }
 
     fn gesture_swipe_end(&mut self, data: &mut D, seat: &Seat<D>, event: &GestureSwipeEndEvent) {
-        if let Some((focused, _)) = self.focus.as_mut() {
-            focused.gesture_swipe_end(seat, data, event);
+        if let Some(focus) = self.focus.as_mut() {
+            focus.surface.gesture_swipe_end(seat, data, event);
         }
     }
 
     fn gesture_pinch_begin(&mut self, data: &mut D, seat: &Seat<D>, event: &GesturePinchBeginEvent) {
-        if let Some((focused, _)) = self.focus.as_mut() {
-            focused.gesture_pinch_begin(seat, data, event);
+        if let Some(focus) = self.focus.as_mut() {
+            focus.surface.gesture_pinch_begin(seat, data, event);
         }
     }
 
     fn gesture_pinch_update(&mut self, data: &mut D, seat: &Seat<D>, event: &GesturePinchUpdateEvent) {
-        if let Some((focused, _)) = self.focus.as_mut() {
-            focused.gesture_pinch_update(seat, data, event);
+        if let Some(focus) = self.focus.as_mut() {
+            focus.surface.gesture_pinch_update(seat, data, event);
         }
     }
 
     fn gesture_pinch_end(&mut self, data: &mut D, seat: &Seat<D>, event: &GesturePinchEndEvent) {
-        if let Some((focused, _)) = self.focus.as_mut() {
-            focused.gesture_pinch_end(seat, data, event);
+        if let Some(focus) = self.focus.as_mut() {
+            focus.surface.gesture_pinch_end(seat, data, event);
         }
     }
 
     fn gesture_hold_begin(&mut self, data: &mut D, seat: &Seat<D>, event: &GestureHoldBeginEvent) {
-        if let Some((focused, _)) = self.focus.as_mut() {
-            focused.gesture_hold_begin(seat, data, event);
+        if let Some(focus) = self.focus.as_mut() {
+            focus.surface.gesture_hold_begin(seat, data, event);
         }
     }
 
     fn gesture_hold_end(&mut self, data: &mut D, seat: &Seat<D>, event: &GestureHoldEndEvent) {
-        if let Some((focused, _)) = self.focus.as_mut() {
-            focused.gesture_hold_end(seat, data, event);
+        if let Some(focus) = self.focus.as_mut() {
+            focus.surface.gesture_hold_end(seat, data, event);
         }
     }
 
@@ -825,8 +824,8 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
             GrabStatus::Borrowed => panic!("Accessed a pointer grab from within a pointer grab access."),
             GrabStatus::Active(_, ref mut handler) => {
                 // If this grab is associated with a surface that is no longer alive, discard it
-                if let Some((ref focus, _)) = handler.start_data().focus {
-                    if !focus.alive() {
+                if let Some(ref focus) = handler.start_data().focus {
+                    if !focus.surface.alive() {
                         self.grab = GrabStatus::None;
                         f(&mut PointerInnerHandle { inner: self, seat }, &mut DefaultGrab);
                         return;
@@ -858,8 +857,8 @@ pub enum Focus {
 /// Pointer motion event
 #[derive(Debug, Clone)]
 pub struct MotionEvent {
-    /// Location of the pointer in compositor space
-    pub location: Point<f64, Logical>,
+    /// Location of the pointer in global compositor space
+    pub global_location: Point<f64, Logical>,
     /// Serial of the event
     pub serial: Serial,
     /// Timestamp of the event, with millisecond granularity

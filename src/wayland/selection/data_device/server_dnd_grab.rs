@@ -15,8 +15,6 @@ use wayland_server::{
     DisplayHandle, Resource,
 };
 
-use crate::utils::{Logical, Point};
-use crate::wayland::seat::WaylandFocus;
 use crate::{
     input::{
         pointer::{
@@ -29,6 +27,7 @@ use crate::{
     },
     wayland::selection::seat_data::SeatData,
 };
+use crate::{utils::RelativePoint, wayland::seat::WaylandFocus};
 
 use super::{DataDeviceHandler, DataDeviceUserData, ServerDndGrabHandler, SourceMetadata};
 
@@ -72,10 +71,9 @@ where
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &MotionEvent,
     ) {
-        let location = event.location;
         let serial = event.serial;
         let time = event.time;
 
@@ -88,7 +86,7 @@ where
             .get::<RefCell<SeatData<D::SelectionUserData>>>()
             .unwrap()
             .borrow_mut();
-        if focus.as_ref().and_then(|(s, _)| s.wl_surface()) != self.current_focus.clone() {
+        if focus.as_ref().and_then(|focus| focus.surface.wl_surface()) != self.current_focus.clone() {
             // focus changed, we need to make a leave if appropriate
             if let Some(surface) = self.current_focus.take() {
                 for device in seat_data.known_data_devices() {
@@ -103,16 +101,16 @@ where
                 }
             }
         }
-        if let Some((surface, surface_location)) = focus
+        if let Some((surface, srel_loc)) = focus
             .as_ref()
-            .and_then(|(h, loc)| h.wl_surface().map(|s| (s, loc)))
+            .and_then(|focus| focus.surface.wl_surface().map(|s| (s, focus.loc)))
         {
             // early return if the surface is no longer valid
             let client = match self.dh.get_client(surface.id()) {
                 Ok(c) => c,
                 _ => return,
             };
-            let (x, y) = (location - surface_location.to_f64()).into();
+            let (x, y) = srel_loc.into();
             if self.current_focus.is_none() {
                 // We entered a new surface, send the data offer
                 let offer_data = Arc::new(Mutex::new(ServerDndOfferData {
@@ -171,7 +169,7 @@ where
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);

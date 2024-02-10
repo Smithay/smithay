@@ -26,7 +26,7 @@ use smithay::{
         wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1,
         wayland_server::{protocol::wl_pointer, DisplayHandle},
     },
-    utils::{Logical, Point, Serial, Transform, SERIAL_COUNTER as SCOUNTER},
+    utils::{Logical, Point, RelativePoint, Serial, Transform, SERIAL_COUNTER as SCOUNTER},
     wayland::{
         compositor::with_states,
         input_method::InputMethodSeat,
@@ -348,7 +348,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         }
     }
 
-    pub fn surface_under(&self, pos: Point<f64, Logical>) -> Option<(FocusTarget, Point<i32, Logical>)> {
+    pub fn focused_surface(&self, pos: Point<f64, Logical>) -> Option<RelativePoint<FocusTarget>> {
         let output = self.space.outputs().find(|o| {
             let geometry = self.space.output_geometry(o).unwrap();
             geometry.contains(pos.to_i32_round())
@@ -356,29 +356,46 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let output_geo = self.space.output_geometry(output).unwrap();
         let layers = layer_map_for_output(output);
 
-        let mut under = None;
+        let mut focus: Option<RelativePoint<FocusTarget>> = None;
         if let Some(window) = output
             .user_data()
             .get::<FullscreenSurface>()
             .and_then(|f| f.get())
         {
-            under = Some((window.into(), output_geo.loc));
+            focus = Some(RelativePoint::on_focused_surface(
+                pos,
+                window.into(),
+                output_geo.loc,
+            ));
         } else if let Some(layer) = layers
             .layer_under(WlrLayer::Overlay, pos)
             .or_else(|| layers.layer_under(WlrLayer::Top, pos))
         {
             let layer_loc = layers.layer_geometry(layer).unwrap().loc;
-            under = Some((layer.clone().into(), output_geo.loc + layer_loc))
+            focus = Some(RelativePoint::on_focused_surface(
+                pos,
+                layer.clone().into(),
+                output_geo.loc + layer_loc,
+            ));
         } else if let Some((window, location)) = self.space.element_under(pos) {
-            under = Some((window.clone().into(), location));
+            focus = Some(RelativePoint::on_focused_surface(
+                pos,
+                window.clone().into(),
+                location,
+            ));
         } else if let Some(layer) = layers
             .layer_under(WlrLayer::Bottom, pos)
             .or_else(|| layers.layer_under(WlrLayer::Background, pos))
         {
             let layer_loc = layers.layer_geometry(layer).unwrap().loc;
-            under = Some((layer.clone().into(), output_geo.loc + layer_loc));
+            focus = Some(RelativePoint::on_focused_surface(
+                pos,
+                layer.clone().into(),
+                output_geo.loc + layer_loc,
+            ));
         };
-        under
+
+        focus
     }
 
     fn on_pointer_axis<B: InputBackend>(&mut self, _dh: &DisplayHandle, evt: B::PointerAxisEvent) {
@@ -531,12 +548,13 @@ impl<Backend: crate::state::Backend> AnvilState<Backend> {
         let serial = SCOUNTER.next_serial();
 
         let pointer = self.pointer.clone();
-        let under = self.surface_under(pos);
+        let focus = self.focused_surface(pos);
+
         pointer.motion(
             self,
-            under,
+            focus,
             &MotionEvent {
-                location: pos,
+                global_location: pos,
                 serial,
                 time: evt.time_msec(),
             },
@@ -583,12 +601,12 @@ impl AnvilState<UdevData> {
                         let y = geometry.size.h as f64 / 2.0;
                         let location = (x, y).into();
                         let pointer = self.pointer.clone();
-                        let under = self.surface_under(location);
+                        let focus = self.focused_surface(location);
                         pointer.motion(
                             self,
-                            under,
+                            focus,
                             &MotionEvent {
-                                location,
+                                global_location: location,
                                 serial: SCOUNTER.next_serial(),
                                 time: 0,
                             },
@@ -621,12 +639,12 @@ impl AnvilState<UdevData> {
 
                         crate::shell::fixup_positions(&mut self.space, pointer_location);
                         let pointer = self.pointer.clone();
-                        let under = self.surface_under(pointer_location);
+                        let focus = self.focused_surface(pointer_location);
                         pointer.motion(
                             self,
-                            under,
+                            focus,
                             &MotionEvent {
-                                location: pointer_location,
+                                global_location: pointer_location,
                                 serial: SCOUNTER.next_serial(),
                                 time: 0,
                             },
@@ -660,12 +678,12 @@ impl AnvilState<UdevData> {
 
                         crate::shell::fixup_positions(&mut self.space, pointer_location);
                         let pointer = self.pointer.clone();
-                        let under = self.surface_under(pointer_location);
+                        let focus = self.focused_surface(pointer_location);
                         pointer.motion(
                             self,
-                            under,
+                            focus,
                             &MotionEvent {
-                                location: pointer_location,
+                                global_location: pointer_location,
                                 serial: SCOUNTER.next_serial(),
                                 time: 0,
                             },
@@ -761,21 +779,22 @@ impl AnvilState<UdevData> {
         let serial = SCOUNTER.next_serial();
 
         let pointer = self.pointer.clone();
-        let under = self.surface_under(pointer_location);
+        let focus = self.focused_surface(pointer_location);
 
         let mut pointer_locked = false;
         let mut pointer_confined = false;
         let mut confine_region = None;
-        if let Some((surface, surface_loc)) = under
+        if let Some((surface, loc)) = focus
             .as_ref()
-            .and_then(|(target, l)| Some((target.wl_surface()?, l)))
+            .and_then(|focused| Some((focused.surface.wl_surface()?, focused.loc)))
         {
             with_pointer_constraint(&surface, &pointer, |constraint| match constraint {
                 Some(constraint) if constraint.is_active() => {
                     // Constraint does not apply if not within region
-                    if !constraint.region().map_or(true, |x| {
-                        x.contains(pointer_location.to_i32_round() - *surface_loc)
-                    }) {
+                    if !constraint
+                        .region()
+                        .map_or(true, |x| x.contains(loc.to_i32_round()))
+                    {
                         return;
                     }
                     match &*constraint {
@@ -794,7 +813,7 @@ impl AnvilState<UdevData> {
 
         pointer.relative_motion(
             self,
-            under.clone(),
+            focus.clone(),
             &RelativeMotionEvent {
                 delta: evt.delta(),
                 delta_unaccel: evt.delta_unaccel(),
@@ -814,17 +833,17 @@ impl AnvilState<UdevData> {
         // this event is never generated by winit
         pointer_location = self.clamp_coords(pointer_location);
 
-        let new_under = self.surface_under(pointer_location);
+        let new_focus = self.focused_surface(pointer_location);
 
         // If confined, don't move pointer if it would go outside surface or region
         if pointer_confined {
-            if let Some((surface, surface_loc)) = &under {
-                if new_under.as_ref().and_then(|(under, _)| under.wl_surface()) != surface.wl_surface() {
+            if let Some(focused) = &focus {
+                if new_focus.as_ref().and_then(|nf| nf.surface.wl_surface()) != focused.surface.wl_surface() {
                     pointer.frame(self);
                     return;
                 }
                 if let Some(region) = confine_region {
-                    if !region.contains(pointer_location.to_i32_round() - *surface_loc) {
+                    if !region.contains(focused.loc.to_i32_round()) {
                         pointer.frame(self);
                         return;
                     }
@@ -834,9 +853,9 @@ impl AnvilState<UdevData> {
 
         pointer.motion(
             self,
-            under,
+            focus,
             &MotionEvent {
-                location: pointer_location,
+                global_location: pointer_location,
                 serial,
                 time: evt.time_msec(),
             },
@@ -845,12 +864,12 @@ impl AnvilState<UdevData> {
 
         // If pointer is now in a constraint region, activate it
         // TODO Anywhere else pointer is moved needs to do this
-        if let Some((under, surface_location)) =
-            new_under.and_then(|(target, loc)| Some((target.wl_surface()?, loc)))
+        if let Some((under, loc)) =
+            new_focus.and_then(|focused| Some((focused.surface.wl_surface()?, focused.loc)))
         {
             with_pointer_constraint(&under, &pointer, |constraint| match constraint {
                 Some(constraint) if !constraint.is_active() => {
-                    let point = pointer_location.to_i32_round() - surface_location;
+                    let point = loc.to_i32_round();
                     if constraint.region().map_or(true, |region| region.contains(point)) {
                         constraint.activate();
                     }
@@ -886,13 +905,13 @@ impl AnvilState<UdevData> {
         pointer_location = self.clamp_coords(pointer_location);
 
         let pointer = self.pointer.clone();
-        let under = self.surface_under(pointer_location);
+        let focus = self.focused_surface(pointer_location);
 
         pointer.motion(
             self,
-            under,
+            focus,
             &MotionEvent {
-                location: pointer_location,
+                global_location: pointer_location,
                 serial,
                 time: evt.time_msec(),
             },
@@ -913,15 +932,15 @@ impl AnvilState<UdevData> {
             let pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
 
             let pointer = self.pointer.clone();
-            let under = self.surface_under(pointer_location);
+            let focus = self.focused_surface(pointer_location);
             let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
             let tool = tablet_seat.get_tool(&evt.tool());
 
             pointer.motion(
                 self,
-                under.clone(),
+                focus.clone(),
                 &MotionEvent {
-                    location: pointer_location,
+                    global_location: pointer_location,
                     serial: SCOUNTER.next_serial(),
                     time: 0,
                 },
@@ -949,7 +968,11 @@ impl AnvilState<UdevData> {
 
                 tool.motion(
                     pointer_location,
-                    under.and_then(|(f, loc)| f.wl_surface().map(|s| (s, loc))),
+                    focus.and_then(|f| {
+                        f.surface
+                            .wl_surface()
+                            .map(|surface| RelativePoint { surface, loc: f.loc })
+                    }),
                     &tablet,
                     SCOUNTER.next_serial(),
                     evt.time_msec(),
@@ -980,30 +1003,34 @@ impl AnvilState<UdevData> {
             let pointer_location = evt.position_transformed(rect.size) + rect.loc.to_f64();
 
             let pointer = self.pointer.clone();
-            let under = self.surface_under(pointer_location);
+            let focus = self.focused_surface(pointer_location);
             let tablet = tablet_seat.get_tablet(&TabletDescriptor::from(&evt.device()));
             let tool = tablet_seat.get_tool(&tool);
 
             pointer.motion(
                 self,
-                under.clone(),
+                focus.clone(),
                 &MotionEvent {
-                    location: pointer_location,
+                    global_location: pointer_location,
                     serial: SCOUNTER.next_serial(),
                     time: 0,
                 },
             );
             pointer.frame(self);
 
-            if let (Some(under), Some(tablet), Some(tool)) = (
-                under.and_then(|(f, loc)| f.wl_surface().map(|s| (s, loc))),
+            if let (Some(focus), Some(tablet), Some(tool)) = (
+                focus.and_then(|f| {
+                    f.surface
+                        .wl_surface()
+                        .map(|surface| RelativePoint { surface, loc: f.loc })
+                }),
                 tablet,
                 tool,
             ) {
                 match evt.state() {
                     ProximityState::In => tool.proximity_in(
                         pointer_location,
-                        under,
+                        focus,
                         &tablet,
                         SCOUNTER.next_serial(),
                         evt.time_msec(),

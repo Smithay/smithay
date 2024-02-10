@@ -195,12 +195,12 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     fn enter(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &MotionEvent) {
         let mut state = self.decoration_state();
         if state.is_ssd {
-            if event.location.y < HEADER_BAR_HEIGHT as f64 {
-                state.header_bar.pointer_enter(event.location);
+            if event.global_location.y < HEADER_BAR_HEIGHT as f64 {
+                state.header_bar.pointer_enter(event.global_location);
             } else {
                 state.header_bar.pointer_leave();
                 let mut event = event.clone();
-                event.location.y -= HEADER_BAR_HEIGHT as f64;
+                event.global_location.y -= HEADER_BAR_HEIGHT as f64;
                 match self {
                     WindowElement::Wayland(w) => PointerTarget::enter(w, seat, data, &event),
                     #[cfg(feature = "xwayland")]
@@ -220,7 +220,7 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
     fn motion(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &MotionEvent) {
         let mut state = self.decoration_state();
         if state.is_ssd {
-            if event.location.y < HEADER_BAR_HEIGHT as f64 {
+            if event.global_location.y < HEADER_BAR_HEIGHT as f64 {
                 match self {
                     WindowElement::Wayland(w) => {
                         PointerTarget::leave(w, seat, data, event.serial, event.time)
@@ -229,11 +229,11 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for Wind
                     WindowElement::X11(w) => PointerTarget::leave(w, seat, data, event.serial, event.time),
                 };
                 state.ptr_entered_window = false;
-                state.header_bar.pointer_enter(event.location);
+                state.header_bar.pointer_enter(event.global_location);
             } else {
                 state.header_bar.pointer_leave();
                 let mut event = event.clone();
-                event.location.y -= HEADER_BAR_HEIGHT as f64;
+                event.global_location.y -= HEADER_BAR_HEIGHT as f64;
                 if state.ptr_entered_window {
                     match self {
                         WindowElement::Wayland(w) => PointerTarget::motion(w, seat, data, &event),

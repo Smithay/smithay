@@ -3,8 +3,8 @@ use std::fmt;
 use crate::{
     backend::input::ButtonState,
     input::SeatHandler,
-    utils::Serial,
     utils::{Logical, Point},
+    utils::{RelativePoint, Serial},
 };
 
 use super::{
@@ -46,7 +46,7 @@ pub trait PointerGrab<D: SeatHandler>: Send {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &MotionEvent,
     );
     /// Relative motion was reported
@@ -58,7 +58,7 @@ pub trait PointerGrab<D: SeatHandler>: Send {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &RelativeMotionEvent,
     );
     /// A button press was reported
@@ -171,10 +171,9 @@ pub trait PointerGrab<D: SeatHandler>: Send {
 
 /// Data about the event that started the grab.
 pub struct GrabStartData<D: SeatHandler> {
-    /// The focused surface and its location, if any, at the start of the grab.
-    ///
-    /// The location coordinates are in the global compositor space.
-    pub focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+    /// The focused surface and the pointer's relative location, if any, at the
+    /// start of the grab.
+    pub focus: Option<RelativePoint<D::PointerFocus>>,
     /// The button that initiated the grab.
     pub button: u32,
     /// The location of the click that initiated the grab, in the global compositor space.
@@ -226,7 +225,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &MotionEvent,
     ) {
         handle.motion(data, focus, event);
@@ -236,7 +235,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for DefaultGrab {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);
@@ -359,7 +358,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        _focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        _focus: Option<RelativePoint<D::PointerFocus>>,
         event: &MotionEvent,
     ) {
         handle.motion(data, self.start_data.focus.clone(), event);
@@ -369,7 +368,7 @@ impl<D: SeatHandler + 'static> PointerGrab<D> for ClickGrab<D> {
         &mut self,
         data: &mut D,
         handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<D::PointerFocus>>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);

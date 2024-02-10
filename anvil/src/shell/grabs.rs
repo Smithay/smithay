@@ -9,7 +9,7 @@ use smithay::{
         PointerInnerHandle, RelativeMotionEvent,
     },
     reexports::wayland_protocols::xdg::shell::server::xdg_toplevel,
-    utils::{IsAlive, Logical, Point, Serial, Size},
+    utils::{IsAlive, Logical, Point, RelativePoint, Serial, Size},
     wayland::{compositor::with_states, shell::xdg::SurfaceCachedState},
 };
 #[cfg(feature = "xwayland")]
@@ -32,13 +32,13 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for MoveSurfaceG
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
+        _focus: Option<RelativePoint<FocusTarget>>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
         handle.motion(data, None, event);
 
-        let delta = event.location - self.start_data.location;
+        let delta = event.global_location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
 
         data.space
@@ -49,7 +49,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for MoveSurfaceG
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        focus: Option<(FocusTarget, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<FocusTarget>>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);
@@ -246,7 +246,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        _focus: Option<(FocusTarget, Point<i32, Logical>)>,
+        _focus: Option<RelativePoint<FocusTarget>>,
         event: &MotionEvent,
     ) {
         // While the grab is active, no client has pointer focus
@@ -258,7 +258,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
             return;
         }
 
-        let (mut dx, mut dy) = (event.location - self.start_data.location).into();
+        let (mut dx, mut dy) = (event.global_location - self.start_data.location).into();
 
         let mut new_window_width = self.initial_window_size.w;
         let mut new_window_height = self.initial_window_size.h;
@@ -331,7 +331,7 @@ impl<BackendData: Backend> PointerGrab<AnvilState<BackendData>> for ResizeSurfac
         &mut self,
         data: &mut AnvilState<BackendData>,
         handle: &mut PointerInnerHandle<'_, AnvilState<BackendData>>,
-        focus: Option<(FocusTarget, Point<i32, Logical>)>,
+        focus: Option<RelativePoint<FocusTarget>>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);

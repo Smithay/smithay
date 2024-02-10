@@ -28,6 +28,9 @@ pub use serial::*;
 mod clock;
 pub use clock::*;
 
+mod relative_point;
+pub use relative_point::*;
+
 /// This resource is not managed by Smithay
 #[derive(Debug)]
 pub struct UnmanagedResource;

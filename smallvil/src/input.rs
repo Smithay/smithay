@@ -8,6 +8,7 @@ use smithay::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     reexports::wayland_server::protocol::wl_surface::WlSurface,
+    utils::RelativePoint,
     utils::SERIAL_COUNTER,
 };
 
@@ -41,13 +42,17 @@ impl Smallvil {
 
                 let pointer = self.seat.get_pointer().unwrap();
 
-                let under = self.surface_under(pos);
+                let focus = if let Some((surface, sloc)) = self.surface_under(pos) {
+                    Some(RelativePoint::on_focused_surface(pos, surface, sloc))
+                } else {
+                    None
+                };
 
                 pointer.motion(
                     self,
-                    under,
+                    focus,
                     &MotionEvent {
-                        location: pos,
+                        global_location: pos,
                         serial,
                         time: event.time_msec(),
                     },
