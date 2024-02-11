@@ -116,9 +116,7 @@ impl<D: SeatHandler> fmt::Debug for TouchUserData<D> {
 
 impl<D> Dispatch<WlTouch, TouchUserData<D>, D> for SeatState<D>
 where
-    D: Dispatch<WlTouch, TouchUserData<D>>,
     D: SeatHandler,
-    D: 'static,
 {
     fn request(
         _state: &mut D,

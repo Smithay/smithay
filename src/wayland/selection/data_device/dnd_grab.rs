@@ -94,8 +94,6 @@ impl<D: SeatHandler> DnDGrab<D> {
 impl<D> DnDGrab<D>
 where
     D: DataDeviceHandler,
-    D: SeatHandler,
-    D: 'static,
 {
     fn update_focus<F: WaylandFocus>(
         &mut self,
@@ -261,9 +259,7 @@ where
 impl<D> PointerGrab<D> for DnDGrab<D>
 where
     D: DataDeviceHandler,
-    D: SeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
-    D: 'static,
 {
     fn motion(
         &mut self,
@@ -385,9 +381,7 @@ where
 impl<D> TouchGrab<D> for DnDGrab<D>
 where
     D: DataDeviceHandler,
-    D: SeatHandler,
     <D as SeatHandler>::TouchFocus: WaylandFocus,
-    D: 'static,
 {
     fn down(
         &mut self,
@@ -470,7 +464,6 @@ struct DndDataOffer {
 impl<D> ObjectData<D> for DndDataOffer
 where
     D: DataDeviceHandler,
-    D: 'static,
 {
     fn request(
         self: Arc<Self>,
@@ -500,7 +493,6 @@ where
 fn handle_dnd<D>(handler: &mut D, offer: &WlDataOffer, request: wl_data_offer::Request, data: &DndDataOffer)
 where
     D: DataDeviceHandler,
-    D: 'static,
 {
     use self::wl_data_offer::Request;
     let source = &data.source;

@@ -19,9 +19,7 @@ pub struct ExtLockSurfaceUserData {
 
 impl<D> Dispatch<ExtSessionLockSurfaceV1, ExtLockSurfaceUserData, D> for SessionLockManagerState
 where
-    D: Dispatch<ExtSessionLockSurfaceV1, ExtLockSurfaceUserData>,
     D: SessionLockHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,

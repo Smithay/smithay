@@ -8,11 +8,10 @@ use wayland_server::protocol::wl_data_device::WlDataDevice;
 use wayland_server::protocol::wl_seat::WlSeat;
 use wayland_server::Resource;
 
-use super::data_device::DataDeviceUserData;
+use crate::utils::user_data::UserdataGetter;
+
 use super::offer::SelectionOffer;
-use super::primary_selection::PrimaryDeviceUserData;
 use super::private::selection_dispatch;
-use super::wlr_data_control::DataControlDeviceUserData;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionDevice {
@@ -43,15 +42,15 @@ impl SelectionDevice {
     pub fn seat(&self) -> WlSeat {
         match self {
             SelectionDevice::DataDevice(device) => {
-                let data: &DataDeviceUserData = device.data().unwrap();
+                let data = device.user_data().unwrap();
                 data.wl_seat.clone()
             }
             SelectionDevice::Primary(device) => {
-                let data: &PrimaryDeviceUserData = device.data().unwrap();
+                let data = device.user_data().unwrap();
                 data.wl_seat.clone()
             }
             SelectionDevice::DataControl(device) => {
-                let data: &DataControlDeviceUserData = device.data().unwrap();
+                let data = device.user_data().unwrap();
                 data.wl_seat.clone()
             }
         }

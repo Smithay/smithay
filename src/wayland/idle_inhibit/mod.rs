@@ -8,7 +8,6 @@
 //! implement the [`IdleInhibitHandler`], as shown in this example:
 //!
 //! ```
-//! use smithay::delegate_idle_inhibit;
 //! use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 //! use smithay::wayland::idle_inhibit::{IdleInhibitManagerState, IdleInhibitHandler};
 //!
@@ -27,13 +26,11 @@
 //!        // …
 //!    }
 //! }
-//! delegate_idle_inhibit!(State);
 //!
 //! // You're now ready to go!
 //! ```
 
 use _idle_inhibit::zwp_idle_inhibit_manager_v1::{Request, ZwpIdleInhibitManagerV1};
-use _idle_inhibit::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1;
 use wayland_protocols::wp::idle_inhibit::zv1::server as _idle_inhibit;
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_surface::WlSurface;
@@ -55,13 +52,10 @@ impl IdleInhibitManagerState {
     /// Create new [`zwp_idle_inhibit_manager`](ZwpIdleInhibitManagerV1) global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpIdleInhibitManagerV1, ()>,
-        D: Dispatch<ZwpIdleInhibitManagerV1, ()>,
-        D: Dispatch<ZwpIdleInhibitorV1, IdleInhibitorState>,
         D: IdleInhibitHandler,
-        D: 'static,
     {
-        let global = display.create_global::<D, ZwpIdleInhibitManagerV1, _>(MANAGER_VERSION, ());
+        let global =
+            display.create_delegated_global::<D, ZwpIdleInhibitManagerV1, _, Self>(MANAGER_VERSION, ());
 
         Self { global }
     }
@@ -74,11 +68,7 @@ impl IdleInhibitManagerState {
 
 impl<D> GlobalDispatch<ZwpIdleInhibitManagerV1, (), D> for IdleInhibitManagerState
 where
-    D: GlobalDispatch<ZwpIdleInhibitManagerV1, ()>,
-    D: Dispatch<ZwpIdleInhibitManagerV1, ()>,
-    D: Dispatch<ZwpIdleInhibitorV1, IdleInhibitorState>,
     D: IdleInhibitHandler,
-    D: 'static,
 {
     fn bind(
         _state: &mut D,
@@ -88,17 +78,13 @@ where
         _manager_state: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(manager, ());
+        data_init.init_delegated::<_, _, Self>(manager, ());
     }
 }
 
 impl<D> Dispatch<ZwpIdleInhibitManagerV1, (), D> for IdleInhibitManagerState
 where
-    D: GlobalDispatch<ZwpIdleInhibitManagerV1, ()>,
-    D: Dispatch<ZwpIdleInhibitManagerV1, ()>,
-    D: Dispatch<ZwpIdleInhibitorV1, IdleInhibitorState>,
     D: IdleInhibitHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -112,7 +98,7 @@ where
         match request {
             Request::CreateInhibitor { id, surface } => {
                 state.inhibit(surface.clone());
-                data_init.init(id, IdleInhibitorState::new(surface));
+                data_init.init_delegated::<_, _, Self>(id, IdleInhibitorState::new(surface));
             }
             Request::Destroy => (),
             _ => unreachable!(),
@@ -121,7 +107,7 @@ where
 }
 
 /// Handler trait for idle-inhibit.
-pub trait IdleInhibitHandler {
+pub trait IdleInhibitHandler: 'static {
     /// Enable idle inhibition for the output of the provided surface.
     fn inhibit(&mut self, surface: WlSurface);
 
@@ -133,20 +119,9 @@ pub trait IdleInhibitHandler {
     fn uninhibit(&mut self, surface: WlSurface);
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! delegate_idle_inhibit {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        smithay::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1: ()
-        ] => $crate::wayland::idle_inhibit::IdleInhibitManagerState);
-
-        smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1: ()
-        ] => $crate::wayland::idle_inhibit::IdleInhibitManagerState);
-
-        smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            smithay::reexports::wayland_protocols::wp::idle_inhibit::zv1::server::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1: $crate::wayland::idle_inhibit::inhibitor::IdleInhibitorState
-        ] => $crate::wayland::idle_inhibit::IdleInhibitManagerState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

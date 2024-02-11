@@ -3,10 +3,11 @@ use std::sync::{Arc, Mutex};
 use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_popup_surface_v2::{
     self, ZwpInputPopupSurfaceV2,
 };
-use wayland_server::{backend::ClientId, protocol::wl_surface::WlSurface, Dispatch, Resource};
+use wayland_server::{backend::ClientId, protocol::wl_surface::WlSurface, Dispatch};
 
 use crate::utils::{
     alive_tracker::{AliveTracker, IsAlive},
+    user_data::UserdataGetter,
     Logical, Point, Rectangle,
 };
 
@@ -51,7 +52,7 @@ impl PopupSurface {
     /// Is the input method popup surface referred by this handle still alive?
     pub fn alive(&self) -> bool {
         // TODO other things to check? This may not sufice.
-        let role_data: &InputMethodPopupSurfaceUserData = self.surface_role.data().unwrap();
+        let role_data = self.surface_role.user_data().unwrap();
         self.surface.alive() && role_data.alive_tracker.alive()
     }
 
@@ -109,6 +110,8 @@ pub struct PopupParent {
 pub struct InputMethodPopupSurfaceUserData {
     pub(super) alive_tracker: AliveTracker,
 }
+
+impl UserdataGetter<InputMethodPopupSurfaceUserData, InputMethodManagerState> for ZwpInputPopupSurfaceV2 {}
 
 impl<D> Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData, D> for InputMethodManagerState {
     fn request(

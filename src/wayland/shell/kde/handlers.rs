@@ -8,8 +8,9 @@ use wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decor
     OrgKdeKwinServerDecorationManager, Request as ManagerRequest,
 };
 use wayland_server::protocol::wl_surface::WlSurface;
-use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource};
+use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
+use crate::utils::user_data::UserdataGetter;
 use crate::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 
 use super::decoration::KdeDecorationManagerGlobalData;
@@ -17,11 +18,7 @@ use super::decoration::KdeDecorationManagerGlobalData;
 impl<D> GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData, D>
     for KdeDecorationState
 where
-    D: GlobalDispatch<OrgKdeKwinServerDecorationManager, KdeDecorationManagerGlobalData>
-        + Dispatch<OrgKdeKwinServerDecorationManager, ()>
-        + Dispatch<OrgKdeKwinServerDecoration, WlSurface>
-        + KdeDecorationHandler
-        + 'static,
+    D: KdeDecorationHandler + 'static,
 {
     fn bind(
         state: &mut D,
@@ -31,7 +28,7 @@ where
         _global_data: &KdeDecorationManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let kde_decoration_manager = data_init.init(resource, ());
+        let kde_decoration_manager = data_init.init_delegated::<_, _, Self>(resource, ());
 
         // Set default decoration mode.
         let default_mode = state.kde_decoration_state().default_mode;
@@ -47,11 +44,7 @@ where
 
 impl<D> Dispatch<OrgKdeKwinServerDecorationManager, (), D> for KdeDecorationState
 where
-    D: Dispatch<OrgKdeKwinServerDecorationManager, ()>
-        + Dispatch<OrgKdeKwinServerDecorationManager, ()>
-        + Dispatch<OrgKdeKwinServerDecoration, WlSurface>
-        + KdeDecorationHandler
-        + 'static,
+    D: KdeDecorationHandler + 'static,
 {
     fn request(
         state: &mut D,
@@ -67,18 +60,20 @@ where
             _ => unreachable!(),
         };
 
-        let kde_decoration = data_init.init(id, surface);
+        let kde_decoration = data_init.init_delegated::<_, _, Self>(id, surface);
 
-        let surface = kde_decoration.data().unwrap();
+        let surface = kde_decoration.user_data().unwrap();
         state.new_decoration(surface, &kde_decoration);
 
         trace!(surface = ?surface, "Created decoration object for surface");
     }
 }
 
+impl UserdataGetter<WlSurface, KdeDecorationState> for OrgKdeKwinServerDecoration {}
+
 impl<D> Dispatch<OrgKdeKwinServerDecoration, WlSurface, D> for KdeDecorationState
 where
-    D: Dispatch<OrgKdeKwinServerDecoration, WlSurface> + KdeDecorationHandler + 'static,
+    D: KdeDecorationHandler,
 {
     fn request(
         state: &mut D,

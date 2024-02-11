@@ -7,7 +7,6 @@
 //! #
 //! use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 //! use smithay::{
-//!     delegate_xdg_activation,
 //!     wayland::xdg_activation::{XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData}
 //! };
 //!
@@ -32,9 +31,6 @@
 //!     }
 //! }
 //!
-//! // Delegate xdg activation handling for State to XdgActivationState.
-//! delegate_xdg_activation!(State);
-//!
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
 //! # let display_handle = display.handle();
 //! let state = State {
@@ -55,7 +51,7 @@ use wayland_protocols::xdg::activation::v1::server::xdg_activation_v1;
 use wayland_server::{
     backend::{ClientId, GlobalId},
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
-    Dispatch, DisplayHandle, GlobalDispatch,
+    DisplayHandle,
 };
 
 use rand::distributions::{Alphanumeric, DistString};
@@ -163,12 +159,9 @@ impl XdgActivationState {
     /// In order to use this abstraction, your `D` type needs to implement [`XdgActivationHandler`].
     pub fn new<D>(display: &DisplayHandle) -> XdgActivationState
     where
-        D: GlobalDispatch<xdg_activation_v1::XdgActivationV1, ()>
-            + Dispatch<xdg_activation_v1::XdgActivationV1, ()>
-            + XdgActivationHandler
-            + 'static,
+        D: XdgActivationHandler,
     {
-        let global = display.create_global::<D, xdg_activation_v1::XdgActivationV1, _>(1, ());
+        let global = display.create_delegated_global::<D, xdg_activation_v1::XdgActivationV1, _, Self>(1, ());
 
         XdgActivationState {
             global,
@@ -219,7 +212,7 @@ impl XdgActivationState {
 }
 
 /// A trait implemented to be notified of activation requests using the xdg activation protocol.
-pub trait XdgActivationHandler {
+pub trait XdgActivationHandler: 'static {
     /// Returns the activation state.
     fn activation_state(&mut self) -> &mut XdgActivationState;
 
@@ -260,27 +253,10 @@ pub struct ActivationTokenData {
 /// Macro to delegate implementation of the xdg activation to [`XdgActivationState`].
 ///
 /// You must also implement [`XdgActivationHandler`] to use this.
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[macro_export]
 macro_rules! delegate_xdg_activation {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __XdgActivationV1 =
-            $crate::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_v1::XdgActivationV1;
-        type __XdgActivationTokenV1 =
-            $crate::reexports::wayland_protocols::xdg::activation::v1::server::xdg_activation_token_v1::XdgActivationTokenV1;
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __XdgActivationV1: ()
-        ] => $crate::wayland::xdg_activation::XdgActivationState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __XdgActivationTokenV1: $crate::wayland::xdg_activation::ActivationTokenData
-        ] => $crate::wayland::xdg_activation::XdgActivationState);
-
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __XdgActivationV1: ()
-            ] => $crate::wayland::xdg_activation::XdgActivationState
-        );
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }
 
 #[derive(Debug)]

@@ -7,7 +7,6 @@
 //! #
 //! use wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle};
 //! use smithay::{
-//!     delegate_content_type, delegate_compositor,
 //!     wayland::compositor::{self, CompositorState, CompositorClientState, CompositorHandler},
 //!     wayland::content_type::{ContentTypeSurfaceCachedState, ContentTypeState},
 //! };
@@ -17,9 +16,6 @@
 //! };
 //! struct ClientState { compositor_state: CompositorClientState }
 //! impl wayland_server::backend::ClientData for ClientState {}
-//!
-//! delegate_content_type!(State);
-//! delegate_compositor!(State);
 //!
 //! impl CompositorHandler for State {
 //!    fn compositor_state(&mut self) -> &mut CompositorState {
@@ -54,13 +50,9 @@ use std::sync::{
 };
 
 use wayland_protocols::wp::content_type::v1::server::{
-    wp_content_type_manager_v1::WpContentTypeManagerV1,
-    wp_content_type_v1::{self, WpContentTypeV1},
+    wp_content_type_manager_v1::WpContentTypeManagerV1, wp_content_type_v1,
 };
-use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, Dispatch, DisplayHandle, GlobalDispatch, Resource,
-    Weak,
-};
+use wayland_server::{backend::GlobalId, protocol::wl_surface::WlSurface, DisplayHandle, Resource, Weak};
 
 use super::compositor::Cacheable;
 
@@ -155,12 +147,9 @@ impl ContentTypeState {
     /// Regiseter new [WpContentTypeManagerV1] global
     pub fn new<D>(display: &DisplayHandle) -> ContentTypeState
     where
-        D: GlobalDispatch<WpContentTypeManagerV1, ()>
-            + Dispatch<WpContentTypeManagerV1, ()>
-            + Dispatch<WpContentTypeV1, ContentTypeUserData>
-            + 'static,
+        D: 'static,
     {
-        let global = display.create_global::<D, WpContentTypeManagerV1, _>(1, ());
+        let global = display.create_delegated_global::<D, WpContentTypeManagerV1, _, Self>(1, ());
 
         ContentTypeState { global }
     }
@@ -172,30 +161,8 @@ impl ContentTypeState {
 }
 
 /// Macro to delegate implementation of the wp content type protocol
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[macro_export]
 macro_rules! delegate_content_type {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __WpContentTypeManagerV1 =
-            $crate::reexports::wayland_protocols::wp::content_type::v1::server::wp_content_type_manager_v1::WpContentTypeManagerV1;
-        type __WpContentTypeV1 =
-            $crate::reexports::wayland_protocols::wp::content_type::v1::server::wp_content_type_v1::WpContentTypeV1;
-
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpContentTypeManagerV1: ()
-            ] => $crate::wayland::content_type::ContentTypeState
-        );
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpContentTypeManagerV1: ()
-            ] => $crate::wayland::content_type::ContentTypeState
-        );
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __WpContentTypeV1: $crate::wayland::content_type::ContentTypeUserData
-            ] => $crate::wayland::content_type::ContentTypeState
-        );
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

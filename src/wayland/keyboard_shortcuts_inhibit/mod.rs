@@ -12,13 +12,16 @@ use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::{
 use wayland_server::{
     backend::{GlobalId, ObjectId},
     protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
-    Dispatch, DisplayHandle, GlobalDispatch, Resource,
+    DisplayHandle, Resource,
 };
 
 mod dispatch;
 pub use dispatch::KeyboardShortcutsInhibitorUserData;
 
-use crate::input::{Seat, SeatHandler};
+use crate::{
+    input::{Seat, SeatHandler},
+    utils::user_data::UserdataGetter,
+};
 
 type SeatId = ObjectId;
 
@@ -68,12 +71,12 @@ impl KeyboardShortcutsInhibitState {
     /// Regiseter new [ZwpKeyboardShortcutsInhibitManagerV1] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpKeyboardShortcutsInhibitManagerV1, ()>,
-        D: Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, ()>,
-        D: Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData>,
+        D: KeyboardShortcutsInhibitHandler,
+        D: SeatHandler,
         D: 'static,
     {
-        let manager_global = display.create_global::<D, ZwpKeyboardShortcutsInhibitManagerV1, _>(1, ());
+        let manager_global =
+            display.create_delegated_global::<D, ZwpKeyboardShortcutsInhibitManagerV1, _, Self>(1, ());
         Self {
             manager_global,
             inhibitors: HashMap::new(),
@@ -94,7 +97,7 @@ pub struct KeyboardShortcutsInhibitor {
 
 impl KeyboardShortcutsInhibitor {
     fn data(&self) -> &KeyboardShortcutsInhibitorUserData {
-        self.inhibitor.data().unwrap()
+        self.inhibitor.user_data().unwrap()
     }
 
     fn set_is_active(&self, v: bool) {
@@ -239,18 +242,8 @@ pub trait KeyboardShortcutsInhibitHandler {
 /// Macro to delegate implementation of the keyboard shortcuts inhibit protocol
 ///
 /// You must also implement [`KeyboardShortcutsInhibitHandler`] to use this.
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[macro_export]
 macro_rules! delegate_keyboard_shortcuts_inhibit {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1: ()
-        ] => $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1: ()
-        ] => $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::server::zwp_keyboard_shortcuts_inhibitor_v1::ZwpKeyboardShortcutsInhibitorV1: $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorUserData
-        ] => $crate::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

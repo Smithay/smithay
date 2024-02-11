@@ -81,8 +81,7 @@ impl<D: SeatHandler> fmt::Debug for VirtualKeyboardUserData<D> {
 
 impl<D> Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>, D> for VirtualKeyboardManagerState
 where
-    D: Dispatch<ZwpVirtualKeyboardV1, VirtualKeyboardUserData<D>>,
-    D: SeatHandler + 'static,
+    D: SeatHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     fn request(
@@ -186,7 +185,7 @@ where
 /// The `true` returns when keymap was properly loaded.
 fn update_keymap<D>(data: &VirtualKeyboardUserData<D>, format: u32, fd: OwnedFd, size: usize)
 where
-    D: SeatHandler + 'static,
+    D: SeatHandler,
 {
     // Only libxkbcommon compatible keymaps are supported.
     if format != KeymapFormat::XkbV1 as u32 {

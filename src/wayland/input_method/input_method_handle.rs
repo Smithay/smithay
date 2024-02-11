@@ -4,11 +4,7 @@ use std::{
 };
 
 use tracing::warn;
-use wayland_protocols_misc::zwp_input_method_v2::server::{
-    zwp_input_method_keyboard_grab_v2::ZwpInputMethodKeyboardGrabV2,
-    zwp_input_method_v2::{self, ZwpInputMethodV2},
-    zwp_input_popup_surface_v2::ZwpInputPopupSurfaceV2,
-};
+use wayland_protocols_misc::zwp_input_method_v2::server::zwp_input_method_v2::{self, ZwpInputMethodV2};
 use wayland_server::{backend::ClientId, protocol::wl_surface::WlSurface};
 use wayland_server::{
     protocol::wl_keyboard::KeymapFormat, Client, DataInit, Dispatch, DisplayHandle, Resource,
@@ -16,7 +12,7 @@ use wayland_server::{
 
 use crate::{
     input::{keyboard::KeyboardHandle, SeatHandler},
-    utils::{alive_tracker::AliveTracker, Logical, Rectangle, SERIAL_COUNTER},
+    utils::{alive_tracker::AliveTracker, user_data::UserdataGetter, Logical, Rectangle, SERIAL_COUNTER},
     wayland::{compositor, seat::WaylandFocus, text_input::TextInputHandle},
 };
 
@@ -114,7 +110,7 @@ impl InputMethodHandle {
             if let Some(instance) = im.instance.as_ref() {
                 instance.object.activate();
                 if let Some(popup) = im.popup_handle.surface.as_mut() {
-                    let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
+                    let data: &InputMethodUserData<D> = instance.object.user_data().unwrap();
                     let location = (data.popup_geometry_callback)(state, surface);
                     // Remove old popup.
                     (data.dismiss_popup)(state, popup.clone());
@@ -142,7 +138,7 @@ impl InputMethodHandle {
                     instance.done();
                 }
                 if let Some(popup) = im.popup_handle.surface.as_mut() {
-                    let data = instance.object.data::<InputMethodUserData<D>>().unwrap();
+                    let data: &InputMethodUserData<D> = instance.object.user_data().unwrap();
                     if popup.get_parent().is_some() {
                         (data.dismiss_popup)(state, popup.clone());
                     }
@@ -173,15 +169,12 @@ impl<D: SeatHandler> fmt::Debug for InputMethodUserData<D> {
     }
 }
 
+impl<D: SeatHandler> UserdataGetter<InputMethodUserData<D>, InputMethodManagerState> for ZwpInputMethodV2 {}
+
 impl<D> Dispatch<ZwpInputMethodV2, InputMethodUserData<D>, D> for InputMethodManagerState
 where
-    D: Dispatch<ZwpInputMethodV2, InputMethodUserData<D>>,
-    D: Dispatch<ZwpInputPopupSurfaceV2, InputMethodPopupSurfaceUserData>,
-    D: Dispatch<ZwpInputMethodKeyboardGrabV2, InputMethodKeyboardUserData<D>>,
-    D: SeatHandler,
     D: InputMethodHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -249,7 +242,7 @@ where
                 };
                 let mut input_method = data.handle.inner.lock().unwrap();
 
-                let instance = data_init.init(
+                let instance = data_init.init_delegated::<_, _, Self>(
                     id,
                     InputMethodPopupSurfaceUserData {
                         alive_tracker: AliveTracker::default(),
@@ -266,7 +259,7 @@ where
                 let input_method = data.handle.inner.lock().unwrap();
                 data.keyboard_handle
                     .set_grab(input_method.keyboard_grab.clone(), SERIAL_COUNTER.next_serial());
-                let instance = data_init.init(
+                let instance = data_init.init_delegated::<_, _, Self>(
                     keyboard,
                     InputMethodKeyboardUserData {
                         handle: input_method.keyboard_grab.clone(),

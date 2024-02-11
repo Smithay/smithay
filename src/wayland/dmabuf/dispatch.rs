@@ -1,15 +1,18 @@
 use std::sync::{atomic::AtomicBool, Mutex};
 
 use wayland_protocols::wp::linux_dmabuf::zv1::server::{
-    zwp_linux_buffer_params_v1, zwp_linux_dmabuf_feedback_v1, zwp_linux_dmabuf_v1,
+    zwp_linux_buffer_params_v1::{self, ZwpLinuxBufferParamsV1},
+    zwp_linux_dmabuf_feedback_v1::{self, ZwpLinuxDmabufFeedbackV1},
+    zwp_linux_dmabuf_v1::{self, ZwpLinuxDmabufV1},
 };
 use wayland_server::{
-    protocol::wl_buffer, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+    protocol::wl_buffer::{self, WlBuffer},
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use crate::{
     backend::allocator::dmabuf::{Dmabuf, Plane, MAX_PLANES},
-    wayland::{buffer::BufferHandler, compositor},
+    wayland::compositor,
 };
 
 use super::{
@@ -17,14 +20,14 @@ use super::{
     DmabufState, Import, ImportNotifier, Modifier, SurfaceDmabufFeedbackState,
 };
 
-impl<D> Dispatch<wl_buffer::WlBuffer, Dmabuf, D> for DmabufState
+impl<D> Dispatch<WlBuffer, Dmabuf, D> for DmabufState
 where
-    D: Dispatch<wl_buffer::WlBuffer, Dmabuf> + BufferHandler,
+    D: DmabufHandler,
 {
     fn request(
         data: &mut D,
         _client: &Client,
-        buffer: &wl_buffer::WlBuffer,
+        buffer: &WlBuffer,
         request: wl_buffer::Request,
         _udata: &Dmabuf,
         _dh: &DisplayHandle,
@@ -40,18 +43,14 @@ where
     }
 }
 
-impl<D> Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData, D> for DmabufState
+impl<D> Dispatch<ZwpLinuxDmabufV1, DmabufData, D> for DmabufState
 where
-    D: Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData>
-        + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-        + Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, DmabufFeedbackData>
-        + DmabufHandler
-        + 'static,
+    D: DmabufHandler,
 {
     fn request(
         state: &mut D,
         _client: &Client,
-        _resource: &zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
+        _resource: &ZwpLinuxDmabufV1,
         request: zwp_linux_dmabuf_v1::Request,
         data: &DmabufData,
         _dh: &DisplayHandle,
@@ -61,7 +60,7 @@ where
             zwp_linux_dmabuf_v1::Request::Destroy => {}
 
             zwp_linux_dmabuf_v1::Request::CreateParams { params_id } => {
-                data_init.init(
+                data_init.init_delegated::<_, _, Self>(
                     params_id,
                     DmabufParamsData {
                         id: data.id,
@@ -74,7 +73,7 @@ where
             }
 
             zwp_linux_dmabuf_v1::Request::GetDefaultFeedback { id } => {
-                let feedback = data_init.init(
+                let feedback = data_init.init_delegated::<_, _, Self>(
                     id,
                     DmabufFeedbackData {
                         known_default_feedbacks: data.known_default_feedbacks.clone(),
@@ -96,7 +95,7 @@ where
             }
 
             zwp_linux_dmabuf_v1::Request::GetSurfaceFeedback { id, surface } => {
-                let feedback = data_init.init(
+                let feedback = data_init.init_delegated::<_, _, Self>(
                     id,
                     DmabufFeedbackData {
                         known_default_feedbacks: data.known_default_feedbacks.clone(),
@@ -126,19 +125,15 @@ where
     }
 }
 
-impl<D> Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, DmabufFeedbackData, D>
-    for DmabufState
+impl<D> Dispatch<ZwpLinuxDmabufFeedbackV1, DmabufFeedbackData, D> for DmabufState
 where
-    D: Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData>
-        + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-        + Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, DmabufFeedbackData>
-        + 'static,
+    D: DmabufHandler,
 {
     fn request(
         _state: &mut D,
         _client: &Client,
-        resource: &zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1,
-        request: <zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1 as Resource>::Request,
+        resource: &ZwpLinuxDmabufFeedbackV1,
+        request: zwp_linux_dmabuf_feedback_v1::Request,
         data: &DmabufFeedbackData,
         _dhandle: &DisplayHandle,
         _data_init: &mut DataInit<'_, D>,
@@ -163,18 +158,15 @@ where
     }
 }
 
-impl<D> GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData, D> for DmabufState
+impl<D> GlobalDispatch<ZwpLinuxDmabufV1, DmabufGlobalData, D> for DmabufState
 where
-    D: GlobalDispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufGlobalData>
-        + Dispatch<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, DmabufData>
-        + Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-        + 'static,
+    D: DmabufHandler,
 {
     fn bind(
         _state: &mut D,
         _dh: &DisplayHandle,
         _client: &Client,
-        resource: New<zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1>,
+        resource: New<ZwpLinuxDmabufV1>,
         global_data: &DmabufGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
@@ -185,7 +177,7 @@ where
             known_default_feedbacks: global_data.known_default_feedbacks.clone(),
         };
 
-        let zwp_dmabuf = data_init.init(resource, data);
+        let zwp_dmabuf = data_init.init_delegated::<_, _, Self>(resource, data);
 
         // Immediately send format info to the client if we are the correct version.
         //
@@ -214,17 +206,14 @@ where
     }
 }
 
-impl<D> Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData, D> for DmabufState
+impl<D> Dispatch<ZwpLinuxBufferParamsV1, DmabufParamsData, D> for DmabufState
 where
-    D: Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, DmabufParamsData>
-        + Dispatch<wl_buffer::WlBuffer, Dmabuf>
-        + BufferHandler
-        + DmabufHandler,
+    D: DmabufHandler,
 {
     fn request(
         state: &mut D,
         _client: &Client,
-        params: &zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
+        params: &ZwpLinuxBufferParamsV1,
         request: zwp_linux_buffer_params_v1::Request,
         data: &DmabufParamsData,
         dh: &DisplayHandle,
@@ -324,7 +313,7 @@ where
                 if let Some(dmabuf) = data.create_dmabuf(params, width, height, format, flags, None) {
                     if state.dmabuf_state().globals.get(&data.id).is_some() {
                         // The buffer isn't technically valid during data_init, but the client is not allowed to use the buffer until ready.
-                        let buffer = data_init.init(buffer_id, dmabuf.clone());
+                        let buffer = data_init.init_delegated::<_, _, Self>(buffer_id, dmabuf.clone());
                         let notifier = ImportNotifier::new(
                             params.clone(),
                             dh.clone(),

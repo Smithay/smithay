@@ -35,7 +35,7 @@ pub struct InputMethodKeyboardGrab {
 
 impl<D> KeyboardGrab<D> for InputMethodKeyboardGrab
 where
-    D: SeatHandler + 'static,
+    D: SeatHandler,
 {
     fn input(
         &mut self,

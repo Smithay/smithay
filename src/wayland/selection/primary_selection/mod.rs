@@ -26,7 +26,6 @@
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
-//! use smithay::delegate_primary_selection;
 //! use smithay::wayland::selection::SelectionHandler;
 //! use smithay::wayland::selection::primary_selection::{PrimarySelectionState, PrimarySelectionHandler};
 //! # use smithay::input::{Seat, SeatHandler, SeatState, pointer::CursorImageStatus};
@@ -58,7 +57,6 @@
 //!     fn primary_selection_state(&self) -> &PrimarySelectionState { &self.primary_selection_state }
 //!     // ... override default implementations here to customize handling ...
 //! }
-//! delegate_primary_selection!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -70,11 +68,11 @@ use std::{
 
 use tracing::instrument;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager;
-use wayland_server::{backend::GlobalId, Client, DisplayHandle, GlobalDispatch};
+use wayland_server::{backend::GlobalId, Client, DisplayHandle};
 
 use crate::{
     input::{Seat, SeatHandler},
-    wayland::selection::SelectionTarget,
+    wayland::{seat::WaylandFocus, selection::SelectionTarget},
 };
 
 mod device;
@@ -88,7 +86,7 @@ use super::SelectionHandler;
 use super::{offer::OfferReplySource, seat_data::SeatData};
 
 /// Access the primary selection state.
-pub trait PrimarySelectionHandler: Sized + SeatHandler + SelectionHandler {
+pub trait PrimarySelectionHandler: Sized + SeatHandler + SelectionHandler + 'static {
     /// [PrimarySelectionState] getter.
     fn primary_selection_state(&self) -> &PrimarySelectionState;
 }
@@ -103,10 +101,10 @@ impl PrimarySelectionState {
     /// Register new [`PrimaryDeviceManager`] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<PrimaryDeviceManager, ()> + 'static,
         D: PrimarySelectionHandler,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     {
-        let manager_global = display.create_global::<D, PrimaryDeviceManager, _>(1, ());
+        let manager_global = display.create_delegated_global::<D, PrimaryDeviceManager, _, Self>(1, ());
 
         Self { manager_global }
     }
@@ -121,7 +119,7 @@ impl PrimarySelectionState {
 #[instrument(name = "wayland_primary_selection", level = "debug", skip(dh, seat, client), fields(seat = seat.name(), client = ?client.as_ref().map(|c| c.id())))]
 pub fn set_primary_focus<D>(dh: &DisplayHandle, seat: &Seat<D>, client: Option<Client>)
 where
-    D: SeatHandler + PrimarySelectionHandler + 'static,
+    D: PrimarySelectionHandler,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
@@ -145,7 +143,7 @@ pub fn set_primary_selection<D>(
     mime_types: Vec<String>,
     user_data: D::SelectionUserData,
 ) where
-    D: SeatHandler + PrimarySelectionHandler + 'static,
+    D: PrimarySelectionHandler,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
@@ -187,7 +185,7 @@ pub fn request_primary_client_selection<D>(
     fd: OwnedFd,
 ) -> Result<(), SelectionRequestError>
 where
-    D: SeatHandler + PrimarySelectionHandler + 'static,
+    D: PrimarySelectionHandler,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
@@ -219,7 +217,7 @@ where
 #[instrument(name = "wayland_primary_selection", level = "debug", skip_all, fields(seat = seat.name()))]
 pub fn current_primary_selection_userdata<D>(seat: &Seat<D>) -> Option<Ref<'_, D::SelectionUserData>>
 where
-    D: SeatHandler + PrimarySelectionHandler + 'static,
+    D: PrimarySelectionHandler,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
@@ -240,7 +238,7 @@ where
 #[instrument(name = "wayland_primary_selection", level = "debug", skip_all, fields(seat = seat.name()))]
 pub fn clear_primary_selection<D>(dh: &DisplayHandle, seat: &Seat<D>)
 where
-    D: SeatHandler + PrimarySelectionHandler + 'static,
+    D: PrimarySelectionHandler,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
@@ -255,18 +253,17 @@ mod handlers {
     use std::cell::RefCell;
 
     use tracing::error;
-    use wayland_protocols::wp::primary_selection::zv1::server::{
-        zwp_primary_selection_device_manager_v1::{
-            self as primary_device_manager, ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager,
-        },
-        zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1 as PrimaryDevice,
-        zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1 as PrimarySource,
+    use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::{
+        self as primary_device_manager, ZwpPrimarySelectionDeviceManagerV1 as PrimaryDeviceManager,
     };
     use wayland_server::{Dispatch, DisplayHandle, GlobalDispatch};
 
     use crate::{
         input::{Seat, SeatHandler},
-        wayland::selection::{device::SelectionDevice, seat_data::SeatData},
+        wayland::{
+            seat::WaylandFocus,
+            selection::{device::SelectionDevice, seat_data::SeatData},
+        },
     };
 
     use super::{device::PrimaryDeviceUserData, source::PrimarySourceUserData};
@@ -274,12 +271,8 @@ mod handlers {
 
     impl<D> GlobalDispatch<PrimaryDeviceManager, (), D> for PrimarySelectionState
     where
-        D: GlobalDispatch<PrimaryDeviceManager, ()>,
-        D: Dispatch<PrimaryDeviceManager, ()>,
-        D: Dispatch<PrimarySource, PrimarySourceUserData>,
-        D: Dispatch<PrimaryDevice, PrimaryDeviceUserData>,
         D: PrimarySelectionHandler,
-        D: 'static,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     {
         fn bind(
             _state: &mut D,
@@ -289,18 +282,14 @@ mod handlers {
             _global_data: &(),
             data_init: &mut wayland_server::DataInit<'_, D>,
         ) {
-            data_init.init(resource, ());
+            data_init.init_delegated::<_, _, Self>(resource, ());
         }
     }
 
     impl<D> Dispatch<PrimaryDeviceManager, (), D> for PrimarySelectionState
     where
-        D: Dispatch<PrimaryDeviceManager, ()>,
-        D: Dispatch<PrimarySource, PrimarySourceUserData>,
-        D: Dispatch<PrimaryDevice, PrimaryDeviceUserData>,
         D: PrimarySelectionHandler,
-        D: SeatHandler,
-        D: 'static,
+        <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     {
         fn request(
             _state: &mut D,
@@ -313,7 +302,7 @@ mod handlers {
         ) {
             match request {
                 primary_device_manager::Request::CreateSource { id } => {
-                    data_init.init(id, PrimarySourceUserData::new());
+                    data_init.init_delegated::<_, _, Self>(id, PrimarySourceUserData::new());
                 }
                 primary_device_manager::Request::GetDevice { id, seat: wl_seat } => {
                     match Seat::<D>::from_resource(&wl_seat) {
@@ -322,7 +311,7 @@ mod handlers {
                                 .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
 
                             let device = SelectionDevice::Primary(
-                                data_init.init(id, PrimaryDeviceUserData { wl_seat }),
+                                data_init.init_delegated::<_, _, Self>(id, PrimaryDeviceUserData { wl_seat }),
                             );
 
                             let seat_data = seat
@@ -348,22 +337,9 @@ mod handlers {
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_primary_selection {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1: ()
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_manager_v1::ZwpPrimarySelectionDeviceManagerV1: ()
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_device_v1::ZwpPrimarySelectionDeviceV1: $crate::wayland::selection::primary_selection::PrimaryDeviceUserData
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1: $crate::wayland::selection::primary_selection::PrimarySourceUserData
-        ] => $crate::wayland::selection::primary_selection::PrimarySelectionState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

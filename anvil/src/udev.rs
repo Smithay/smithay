@@ -50,7 +50,6 @@ use smithay::{
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
         SwapBuffersError,
     },
-    delegate_dmabuf, delegate_drm_lease,
     desktop::{
         space::{Space, SurfaceTree},
         utils::OutputPresentationFeedback,
@@ -175,7 +174,6 @@ impl DmabufHandler for AnvilState<UdevData> {
         }
     }
 }
-delegate_dmabuf!(AnvilState<UdevData>);
 
 impl Backend for UdevData {
     const HAS_RELATIVE_MOTION: bool = true;
@@ -559,8 +557,6 @@ impl DrmLeaseHandler for AnvilState<UdevData> {
         backend.active_leases.retain(|l| l.id() != lease);
     }
 }
-
-delegate_drm_lease!(AnvilState<UdevData>);
 
 pub type RenderSurface = GbmBufferedSurface<GbmAllocator<DrmDeviceFd>, Option<OutputPresentationFeedback>>;
 

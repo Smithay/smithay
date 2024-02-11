@@ -23,7 +23,7 @@ use crate::{
 
 impl<D: SeatHandler + 'static> KeyboardHandle<D>
 where
-    D: SeatHandler + 'static,
+    D: SeatHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
 {
     /// Check if client of given resource currently has keyboard focus
@@ -97,7 +97,6 @@ impl<D: SeatHandler> fmt::Debug for KeyboardUserData<D> {
 
 impl<D> Dispatch<WlKeyboard, KeyboardUserData<D>, D> for SeatState<D>
 where
-    D: 'static + Dispatch<WlKeyboard, KeyboardUserData<D>>,
     D: SeatHandler,
 {
     fn request(

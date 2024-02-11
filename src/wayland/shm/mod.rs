@@ -21,7 +21,6 @@
 //!
 //! use smithay::wayland::buffer::BufferHandler;
 //! use smithay::wayland::shm::{ShmState, ShmHandler};
-//! use smithay::delegate_shm;
 //! use wayland_server::protocol::wl_shm::Format;
 //!
 //! # struct State { shm_state: ShmState };
@@ -49,7 +48,6 @@
 //!         &self.shm_state
 //!     }
 //! }
-//! delegate_shm!(State);
 //! ```
 //!
 //! Then, when you have a [`WlBuffer`](wayland_server::protocol::wl_buffer::WlBuffer)
@@ -100,11 +98,10 @@ use std::{collections::HashSet, sync::Arc};
 use wayland_server::{
     backend::GlobalId,
     protocol::{
-        wl_buffer,
+        wl_buffer::{self, WlBuffer},
         wl_shm::{self, WlShm},
-        wl_shm_pool::WlShmPool,
     },
-    Dispatch, DisplayHandle, GlobalDispatch, Resource, WEnum,
+    DisplayHandle, Resource, WEnum,
 };
 
 mod handlers;
@@ -134,12 +131,7 @@ impl ShmState {
     /// remove this global in the future.
     pub fn new<D>(display: &DisplayHandle, formats: impl IntoIterator<Item = wl_shm::Format>) -> ShmState
     where
-        D: GlobalDispatch<WlShm, ()>
-            + Dispatch<WlShm, ()>
-            + Dispatch<WlShmPool, ShmPoolUserData>
-            + BufferHandler
-            + ShmHandler
-            + 'static,
+        D: ShmHandler + 'static,
     {
         let mut formats = formats.into_iter().collect::<HashSet<_>>();
 
@@ -147,7 +139,7 @@ impl ShmState {
         formats.insert(wl_shm::Format::Argb8888);
         formats.insert(wl_shm::Format::Xrgb8888);
 
-        let shm = display.create_global::<D, WlShm, _>(1, ());
+        let shm = display.create_delegated_global::<D, WlShm, _, Self>(1, ());
 
         ShmState { formats, shm }
     }
@@ -171,10 +163,14 @@ impl ShmState {
         self.formats.insert(wl_shm::Format::Argb8888);
         self.formats.insert(wl_shm::Format::Xrgb8888);
     }
+
+    fn buffer_user_data(buffer: &WlBuffer) -> Option<&ShmBufferUserData> {
+        buffer.delegated_data::<_, Self>()
+    }
 }
 
 /// Shm global handler
-pub trait ShmHandler {
+pub trait ShmHandler: BufferHandler {
     /// Return the Shm global state
     fn shm_state(&self) -> &ShmState;
 }
@@ -234,9 +230,7 @@ pub fn with_buffer_contents<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Result<
 where
     F: FnOnce(*const u8, usize, BufferData) -> T,
 {
-    let data = buffer
-        .data::<ShmBufferUserData>()
-        .ok_or(BufferAccessError::NotManaged)?;
+    let data = ShmState::buffer_user_data(buffer).ok_or(BufferAccessError::NotManaged)?;
 
     match data.pool.with_data(|ptr, len| f(ptr, len, data.data)) {
         Ok(t) => Ok(t),
@@ -272,9 +266,7 @@ pub fn with_buffer_contents_mut<F, T>(buffer: &wl_buffer::WlBuffer, f: F) -> Res
 where
     F: FnOnce(*mut u8, usize, BufferData) -> T,
 {
-    let data = buffer
-        .data::<ShmBufferUserData>()
-        .ok_or(BufferAccessError::NotManaged)?;
+    let data = ShmState::buffer_user_data(buffer).ok_or(BufferAccessError::NotManaged)?;
 
     match data.pool.with_data_mut(|ptr, len| f(ptr, len, data.data)) {
         Ok(t) => Ok(t),
@@ -469,22 +461,9 @@ pub struct ShmBufferUserData {
     pub(crate) data: BufferData,
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_shm {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: ()
-        ] => $crate::wayland::shm::ShmState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm::WlShm: ()
-        ] => $crate::wayland::shm::ShmState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_shm_pool::WlShmPool: $crate::wayland::shm::ShmPoolUserData
-        ] => $crate::wayland::shm::ShmState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_buffer::WlBuffer: $crate::wayland::shm::ShmBufferUserData
-        ] => $crate::wayland::shm::ShmState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

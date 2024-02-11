@@ -14,13 +14,7 @@ use super::{xdg::XdgOutput, Output, OutputHandler, OutputManagerState, OutputUse
  * Wl Output
  */
 
-impl<D> GlobalDispatch<WlOutput, WlOutputData, D> for OutputManagerState
-where
-    D: GlobalDispatch<WlOutput, WlOutputData>,
-    D: Dispatch<WlOutput, OutputUserData>,
-    D: OutputHandler,
-    D: 'static,
-{
+impl<D: OutputHandler> GlobalDispatch<WlOutput, WlOutputData, D> for OutputManagerState {
     fn bind(
         state: &mut D,
         _dh: &DisplayHandle,
@@ -29,7 +23,7 @@ where
         global_data: &WlOutputData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        let output = data_init.init(
+        let output = data_init.init_delegated::<_, _, Self>(
             resource,
             OutputUserData {
                 global_data: global_data.inner.clone(),
@@ -95,10 +89,7 @@ where
     }
 }
 
-impl<D> Dispatch<WlOutput, OutputUserData, D> for OutputManagerState
-where
-    D: Dispatch<WlOutput, OutputUserData>,
-{
+impl<D> Dispatch<WlOutput, OutputUserData, D> for OutputManagerState {
     fn request(
         _state: &mut D,
         _client: &Client,
@@ -129,13 +120,7 @@ where
  * XDG Output
  */
 
-impl<D> GlobalDispatch<ZxdgOutputManagerV1, (), D> for OutputManagerState
-where
-    D: GlobalDispatch<ZxdgOutputManagerV1, ()>,
-    D: Dispatch<ZxdgOutputManagerV1, ()>,
-    D: Dispatch<ZxdgOutputV1, XdgOutputUserData>,
-    D: 'static,
-{
+impl<D> GlobalDispatch<ZxdgOutputManagerV1, (), D> for OutputManagerState {
     fn bind(
         _state: &mut D,
         _handle: &DisplayHandle,
@@ -144,16 +129,11 @@ where
         _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
-impl<D> Dispatch<ZxdgOutputManagerV1, (), D> for OutputManagerState
-where
-    D: Dispatch<ZxdgOutputManagerV1, ()>,
-    D: Dispatch<ZxdgOutputV1, XdgOutputUserData>,
-    D: 'static,
-{
+impl<D> Dispatch<ZxdgOutputManagerV1, (), D> for OutputManagerState {
     fn request(
         _state: &mut D,
         _client: &Client,
@@ -177,7 +157,7 @@ where
                     inner.xdg_output = Some(xdg_output.clone());
                 }
 
-                let id = data_init.init(id, XdgOutputUserData { xdg_output });
+                let id = data_init.init_delegated::<_, _, Self>(id, XdgOutputUserData { xdg_output });
 
                 inner.xdg_output.as_ref().unwrap().add_instance(&id, &wl_output);
             }
@@ -193,10 +173,7 @@ pub struct XdgOutputUserData {
     xdg_output: XdgOutput,
 }
 
-impl<D> Dispatch<ZxdgOutputV1, XdgOutputUserData, D> for OutputManagerState
-where
-    D: Dispatch<ZxdgOutputV1, XdgOutputUserData>,
-{
+impl<D> Dispatch<ZxdgOutputV1, XdgOutputUserData, D> for OutputManagerState {
     fn request(
         _state: &mut D,
         _client: &Client,

@@ -8,7 +8,6 @@
 //! extern crate smithay;
 //!
 //! use smithay::wayland::relative_pointer::RelativePointerManagerState;
-//! use smithay::delegate_relative_pointer;
 //! # use smithay::backend::input::KeyState;
 //! # use smithay::input::{
 //! #   pointer::{PointerTarget, AxisFrame, MotionEvent, ButtonEvent, RelativeMotionEvent,
@@ -80,8 +79,6 @@
 //! #     }
 //! # }
 //! let state = RelativePointerManagerState::new::<State>(&display.handle());
-//!
-//! delegate_relative_pointer!(State);
 //! ```
 
 use wayland_protocols::wp::relative_pointer::zv1::server::{
@@ -94,7 +91,7 @@ use wayland_server::{
 };
 
 use crate::{
-    input::{pointer::PointerHandle, SeatHandler},
+    input::{pointer::PointerHandle, SeatHandler, SeatState},
     wayland::seat::PointerUserData,
 };
 
@@ -116,13 +113,10 @@ impl RelativePointerManagerState {
     /// Register new [ZwpRelativePointerV1] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpRelativePointerManagerV1, ()>,
-        D: Dispatch<ZwpRelativePointerManagerV1, ()>,
-        D: Dispatch<ZwpRelativePointerV1, RelativePointerUserData<D>>,
         D: SeatHandler,
-        D: 'static,
     {
-        let global = display.create_global::<D, ZwpRelativePointerManagerV1, _>(MANAGER_VERSION, ());
+        let global =
+            display.create_delegated_global::<D, ZwpRelativePointerManagerV1, _, Self>(MANAGER_VERSION, ());
 
         Self { global }
     }
@@ -135,10 +129,7 @@ impl RelativePointerManagerState {
 
 impl<D> Dispatch<ZwpRelativePointerManagerV1, (), D> for RelativePointerManagerState
 where
-    D: Dispatch<ZwpRelativePointerManagerV1, ()>,
-    D: Dispatch<ZwpRelativePointerV1, RelativePointerUserData<D>>,
     D: SeatHandler,
-    D: 'static,
 {
     fn request(
         _state: &mut D,
@@ -151,11 +142,14 @@ where
     ) {
         match request {
             zwp_relative_pointer_manager_v1::Request::GetRelativePointer { id, pointer } => {
-                let handle = &pointer.data::<PointerUserData<D>>().unwrap().handle;
+                let handle = &pointer
+                    .delegated_data::<PointerUserData<D>, SeatState<D>>()
+                    .unwrap()
+                    .handle;
                 let user_data = RelativePointerUserData {
                     handle: handle.clone(),
                 };
-                let pointer = data_init.init(id, user_data);
+                let pointer = data_init.init_delegated::<_, _, Self>(id, user_data);
                 if let Some(handle) = handle {
                     handle.new_relative_pointer(pointer);
                 }
@@ -168,10 +162,7 @@ where
 
 impl<D> GlobalDispatch<ZwpRelativePointerManagerV1, (), D> for RelativePointerManagerState
 where
-    D: GlobalDispatch<ZwpRelativePointerManagerV1, ()>
-        + Dispatch<ZwpRelativePointerManagerV1, ()>
-        + SeatHandler
-        + 'static,
+    D: SeatHandler,
 {
     fn bind(
         _state: &mut D,
@@ -181,15 +172,13 @@ where
         _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
 impl<D> Dispatch<ZwpRelativePointerV1, RelativePointerUserData<D>, D> for RelativePointerManagerState
 where
-    D: Dispatch<ZwpRelativePointerV1, RelativePointerUserData<D>>,
     D: SeatHandler,
-    D: 'static,
 {
     fn request(
         _state: &mut D,
@@ -223,17 +212,8 @@ where
 }
 
 /// Macro to delegate implementation of the relative pointer protocol
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[macro_export]
 macro_rules! delegate_relative_pointer {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1: ()
-        ] => $crate::wayland::relative_pointer::RelativePointerManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1: ()
-        ] => $crate::wayland::relative_pointer::RelativePointerManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::relative_pointer::zv1::server::zwp_relative_pointer_v1::ZwpRelativePointerV1: $crate::wayland::relative_pointer::RelativePointerUserData<Self>
-        ] => $crate::wayland::relative_pointer::RelativePointerManagerState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

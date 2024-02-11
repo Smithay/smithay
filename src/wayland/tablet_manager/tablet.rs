@@ -57,11 +57,14 @@ impl TabletHandle {
         seat: &ZwpTabletSeatV2,
         tablet: &TabletDescriptor,
     ) where
-        D: Dispatch<ZwpTabletV2, TabletUserData>,
         D: 'static,
     {
         let wl_tablet = client
-            .create_resource::<ZwpTabletV2, _, D>(dh, seat.version(), TabletUserData { handle: self.clone() })
+            .create_delegated_resource::<ZwpTabletV2, _, D, TabletManagerState>(
+                dh,
+                seat.version(),
+                TabletUserData { handle: self.clone() },
+            )
             .unwrap();
 
         seat.tablet_added(&wl_tablet);
@@ -106,7 +109,6 @@ pub struct TabletUserData {
 
 impl<D> Dispatch<ZwpTabletV2, TabletUserData, D> for TabletManagerState
 where
-    D: Dispatch<ZwpTabletV2, TabletUserData>,
     D: 'static,
 {
     fn request(

@@ -15,7 +15,7 @@ use wayland_server::{
     DisplayHandle, Resource,
 };
 
-use crate::utils::{Logical, Point, Serial, SERIAL_COUNTER};
+use crate::utils::{user_data::UserdataGetter, Logical, Point, Serial, SERIAL_COUNTER};
 use crate::wayland::seat::WaylandFocus;
 use crate::{
     input::{
@@ -31,7 +31,7 @@ use crate::{
     wayland::selection::seat_data::SeatData,
 };
 
-use super::{DataDeviceHandler, DataDeviceUserData, ServerDndGrabHandler, SourceMetadata};
+use super::{DataDeviceHandler, ServerDndGrabHandler, SourceMetadata};
 
 pub(crate) struct ServerDnDGrab<D: SeatHandler> {
     dh: DisplayHandle,
@@ -85,8 +85,6 @@ impl<D: SeatHandler> ServerDnDGrab<D> {
 impl<D> ServerDnDGrab<D>
 where
     D: DataDeviceHandler,
-    D: SeatHandler,
-    D: 'static,
 {
     fn update_focus<F: WaylandFocus>(
         &mut self,
@@ -139,7 +137,7 @@ where
                     .filter(|d| d.id().same_client_as(&surface.id()))
                 {
                     let handle = self.dh.backend_handle();
-                    let wl_seat = match device.data::<DataDeviceUserData>() {
+                    let wl_seat = match device.user_data() {
                         Some(data) => data.wl_seat.clone(),
                         None => continue,
                     };
@@ -229,9 +227,7 @@ where
 impl<D> PointerGrab<D> for ServerDnDGrab<D>
 where
     D: DataDeviceHandler,
-    D: SeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
-    D: 'static,
 {
     fn motion(
         &mut self,
@@ -360,9 +356,7 @@ where
 impl<D> TouchGrab<D> for ServerDnDGrab<D>
 where
     D: DataDeviceHandler,
-    D: SeatHandler,
     <D as SeatHandler>::TouchFocus: WaylandFocus,
-    D: 'static,
 {
     fn down(
         &mut self,
@@ -448,7 +442,7 @@ struct ServerDndData {
 
 impl<D> ObjectData<D> for ServerDndData
 where
-    D: DataDeviceHandler + SeatHandler + 'static,
+    D: DataDeviceHandler,
 {
     fn request(
         self: Arc<Self>,
@@ -481,7 +475,7 @@ fn handle_server_dnd<D>(
     request: wl_data_offer::Request,
     data: &ServerDndData,
 ) where
-    D: DataDeviceHandler + SeatHandler + 'static,
+    D: DataDeviceHandler,
 {
     use self::wl_data_offer::Request;
 

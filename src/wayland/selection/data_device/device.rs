@@ -11,7 +11,7 @@ use wayland_server::{
 
 use crate::{
     input::{pointer::Focus, Seat, SeatHandler},
-    utils::Serial,
+    utils::{user_data::UserdataGetter, Serial},
     wayland::{
         compositor,
         seat::WaylandFocus,
@@ -36,15 +36,14 @@ pub struct DataDeviceUserData {
     pub(crate) wl_seat: WlSeat,
 }
 
+impl UserdataGetter<DataDeviceUserData, DataDeviceState> for WlDataDevice {}
+
 impl<D> Dispatch<WlDataDevice, DataDeviceUserData, D> for DataDeviceState
 where
-    D: Dispatch<WlDataDevice, DataDeviceUserData>,
     D: DataDeviceHandler,
-    D: SeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
     <D as SeatHandler>::TouchFocus: WaylandFocus,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
-    D: 'static,
 {
     fn request(
         handler: &mut D,

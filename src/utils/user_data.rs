@@ -8,6 +8,18 @@ use std::thread::{self, ThreadId};
 
 use self::list::AppendList;
 
+// TODO: Perhaps make this public
+#[cfg(feature = "wayland_frontend")]
+pub(crate) trait UserdataGetter<U, DelegatedTo>: wayland_server::Resource
+where
+    U: 'static,
+    DelegatedTo: 'static,
+{
+    fn user_data(&self) -> Option<&U> {
+        self.delegated_data::<_, DelegatedTo>()
+    }
+}
+
 // `UserData.get()` is called frequently, and unfortunately
 // `thread::current().id()` is not very efficient to be calling every time.
 #[inline]

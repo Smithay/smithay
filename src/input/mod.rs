@@ -142,7 +142,7 @@ pub mod pointer;
 pub mod touch;
 
 /// Handler trait for Seats
-pub trait SeatHandler: Sized {
+pub trait SeatHandler: Sized + 'static {
     /// Type used to represent the target currently holding the keyboard focus
     type KeyboardFocus: KeyboardTarget<Self> + 'static;
     /// Type used to represent the target currently holding the pointer focus
@@ -307,7 +307,7 @@ impl<D: SeatHandler> SeatState<D> {
     }
 }
 
-impl<D: SeatHandler + 'static> Seat<D> {
+impl<D: SeatHandler> Seat<D> {
     /// Access the `UserDataMap` associated with this `Seat`
     pub fn user_data(&self) -> &UserDataMap {
         &self.arc.user_data_map

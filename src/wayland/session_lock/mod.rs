@@ -8,7 +8,6 @@
 //! implement the [`SessionLockHandler`], as shown in this example:
 //!
 //! ```
-//! use smithay::delegate_session_lock;
 //! use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 //! use smithay::wayland::session_lock::{
 //!     LockSurface, SessionLockManagerState, SessionLockHandler, SessionLocker,
@@ -43,7 +42,6 @@
 //!         // Display `LockSurface` on `WlOutput`.
 //!     }
 //! }
-//! delegate_session_lock!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -78,17 +76,13 @@ impl SessionLockManagerState {
     /// Create new [`ExtSessionLockManagerV1`] global.
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<ExtSessionLockManagerV1, SessionLockManagerGlobalData>,
-        D: Dispatch<ExtSessionLockManagerV1, ()>,
-        D: Dispatch<ExtSessionLockV1, SessionLockState>,
         D: SessionLockHandler,
-        D: 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = SessionLockManagerGlobalData {
             filter: Box::new(filter),
         };
-        display.create_global::<D, ExtSessionLockManagerV1, _>(MANAGER_VERSION, data);
+        display.create_delegated_global::<D, ExtSessionLockManagerV1, _, Self>(MANAGER_VERSION, data);
 
         Self {
             locked_outputs: Vec::new(),
@@ -105,11 +99,7 @@ pub struct SessionLockManagerGlobalData {
 
 impl<D> GlobalDispatch<ExtSessionLockManagerV1, SessionLockManagerGlobalData, D> for SessionLockManagerState
 where
-    D: GlobalDispatch<ExtSessionLockManagerV1, SessionLockManagerGlobalData>,
-    D: Dispatch<ExtSessionLockManagerV1, ()>,
-    D: Dispatch<ExtSessionLockV1, SessionLockState>,
     D: SessionLockHandler,
-    D: 'static,
 {
     fn bind(
         _state: &mut D,
@@ -119,7 +109,7 @@ where
         _global_data: &SessionLockManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(manager, ());
+        data_init.init_delegated::<_, _, Self>(manager, ());
     }
 
     fn can_view(client: Client, global_data: &SessionLockManagerGlobalData) -> bool {
@@ -129,11 +119,7 @@ where
 
 impl<D> Dispatch<ExtSessionLockManagerV1, (), D> for SessionLockManagerState
 where
-    D: GlobalDispatch<ExtSessionLockManagerV1, SessionLockManagerGlobalData>,
-    D: Dispatch<ExtSessionLockManagerV1, ()>,
-    D: Dispatch<ExtSessionLockV1, SessionLockState>,
     D: SessionLockHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -148,7 +134,7 @@ where
             Request::Lock { id } => {
                 let lock_state = SessionLockState::new();
                 let lock_status = lock_state.lock_status.clone();
-                let lock = data_init.init(id, lock_state);
+                let lock = data_init.init_delegated::<_, _, Self>(id, lock_state);
                 state.lock(SessionLocker::new(lock, lock_status));
             }
             Request::Destroy => (),
@@ -158,7 +144,7 @@ where
 }
 
 /// Handler trait for ext-session-lock.
-pub trait SessionLockHandler {
+pub trait SessionLockHandler: 'static {
     /// Session lock state.
     fn lock_state(&mut self) -> &mut SessionLockManagerState;
 
@@ -222,24 +208,9 @@ impl SessionLocker {
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! delegate_session_lock {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_manager_v1::ExtSessionLockManagerV1: $crate::wayland::session_lock::SessionLockManagerGlobalData
-        ] => $crate::wayland::session_lock::SessionLockManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_manager_v1::ExtSessionLockManagerV1: ()
-        ] => $crate::wayland::session_lock::SessionLockManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1: $crate::wayland::session_lock::SessionLockState
-        ] => $crate::wayland::session_lock::SessionLockManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_surface_v1::ExtSessionLockSurfaceV1: $crate::wayland::session_lock::ExtLockSurfaceUserData
-        ] => $crate::wayland::session_lock::SessionLockManagerState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

@@ -8,7 +8,6 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::{delegate_xdg_decoration, delegate_xdg_shell};
 //! use smithay::wayland::shell::xdg::{ToplevelSurface, XdgShellHandler};
 //! # use smithay::utils::Serial;
 //! # use smithay::wayland::shell::xdg::{XdgShellState, PopupSurface, PositionerState};
@@ -81,22 +80,20 @@
 //!         // handle new images for the cursor ...
 //!     }
 //! }
-//! delegate_xdg_shell!(State);
-//! delegate_xdg_decoration!(State);
 //!
 //! // You are ready to go!  
 // TODO: Describe how to change decoration mode.
 
 use wayland_protocols::xdg::decoration::zv1::server::{
-    zxdg_decoration_manager_v1,
-    zxdg_toplevel_decoration_v1::{self, Mode},
+    zxdg_decoration_manager_v1::{self, ZxdgDecorationManagerV1},
+    zxdg_toplevel_decoration_v1::{self, Mode, ZxdgToplevelDecorationV1},
 };
 use wayland_server::{
     backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
 };
 
 use super::{ToplevelSurface, XdgShellHandler};
-use crate::wayland::shell::xdg::XdgShellSurfaceUserData;
+use crate::utils::user_data::UserdataGetter;
 
 /// Delegate type for handling xdg decoration events.
 #[derive(Debug)]
@@ -116,11 +113,7 @@ impl XdgDecorationState {
     /// A global id is also returned to allow destroying the global in the future.
     pub fn new<D>(display: &DisplayHandle) -> XdgDecorationState
     where
-        D: GlobalDispatch<
-                zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
-                XdgDecorationManagerGlobalData,
-            > + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
-            + 'static,
+        D: XdgDecorationHandler,
     {
         Self::new_with_filter::<D, _>(display, |_| true)
     }
@@ -132,18 +125,16 @@ impl XdgDecorationState {
     /// A global id is also returned to allow destroying the global in the future.
     pub fn new_with_filter<D, F>(display: &DisplayHandle, filter: F) -> XdgDecorationState
     where
-        D: GlobalDispatch<
-                zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
-                XdgDecorationManagerGlobalData,
-            > + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
-            + 'static,
+        D: XdgDecorationHandler,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let data = XdgDecorationManagerGlobalData {
             filter: Box::new(filter),
         };
-        let global =
-            display.create_global::<D, zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _>(1, data);
+        let global = display
+            .create_delegated_global::<D, zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _, Self>(
+                1, data,
+            );
 
         XdgDecorationState { global }
     }
@@ -155,7 +146,7 @@ impl XdgDecorationState {
 }
 
 /// Handler trait for xdg decoration events.
-pub trait XdgDecorationHandler {
+pub trait XdgDecorationHandler: XdgShellHandler + 'static {
     /// Notification the client supports server side decoration on the toplevel.
     fn new_decoration(&mut self, toplevel: ToplevelSurface);
 
@@ -169,48 +160,29 @@ pub trait XdgDecorationHandler {
 /// Macro to delegate implementation of the xdg decoration to [`XdgDecorationState`].
 ///
 /// You must also implement [`XdgDecorationHandler`] to use this.
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[macro_export]
 macro_rules! delegate_xdg_decoration {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1: $crate::wayland::shell::xdg::decoration::XdgDecorationManagerGlobalData
-        ] => $crate::wayland::shell::xdg::decoration::XdgDecorationState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1: ()
-        ] => $crate::wayland::shell::xdg::decoration::XdgDecorationState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1: $crate::wayland::shell::xdg::ToplevelSurface
-        ] => $crate::wayland::shell::xdg::decoration::XdgDecorationState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }
 
-pub(super) fn send_decoration_configure(
-    id: &zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
-    mode: Mode,
-) {
+pub(super) fn send_decoration_configure(id: &ZxdgToplevelDecorationV1, mode: Mode) {
     id.configure(mode)
 }
 
-impl<D> GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, XdgDecorationManagerGlobalData, D>
-    for XdgDecorationState
+impl<D> GlobalDispatch<ZxdgDecorationManagerV1, XdgDecorationManagerGlobalData, D> for XdgDecorationState
 where
-    D: GlobalDispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, XdgDecorationManagerGlobalData>
-        + Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
-        + Dispatch<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ToplevelSurface>
-        + XdgShellHandler
-        + XdgDecorationHandler
-        + 'static,
+    D: XdgDecorationHandler,
 {
     fn bind(
         _: &mut D,
         _: &DisplayHandle,
         _: &Client,
-        resource: New<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1>,
+        resource: New<ZxdgDecorationManagerV1>,
         _: &XdgDecorationManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 
     fn can_view(client: Client, global_data: &XdgDecorationManagerGlobalData) -> bool {
@@ -218,28 +190,24 @@ where
     }
 }
 
-impl<D> Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, (), D> for XdgDecorationState
+impl<D> Dispatch<ZxdgDecorationManagerV1, (), D> for XdgDecorationState
 where
-    D: Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()>
-        + Dispatch<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ToplevelSurface>
-        + XdgShellHandler
-        + XdgDecorationHandler
-        + 'static,
+    D: XdgDecorationHandler,
 {
     fn request(
         state: &mut D,
         _: &Client,
-        resource: &zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+        resource: &ZxdgDecorationManagerV1,
         request: zxdg_decoration_manager_v1::Request,
         _: &(),
         _dh: &DisplayHandle,
         data_init: &mut DataInit<'_, D>,
     ) {
-        use self::zxdg_decoration_manager_v1::Request;
+        use zxdg_decoration_manager_v1::Request;
 
         match request {
             Request::GetToplevelDecoration { id, toplevel } => {
-                let data = toplevel.data::<XdgShellSurfaceUserData>().unwrap();
+                let data = toplevel.user_data().unwrap();
 
                 let mut decoration_guard = data.decoration.lock().unwrap();
 
@@ -252,7 +220,7 @@ where
                 }
 
                 let toplevel = state.xdg_shell_state().get_toplevel(&toplevel).unwrap();
-                let toplevel_decoration = data_init.init(id, toplevel.clone());
+                let toplevel_decoration = data_init.init_delegated::<_, _, Self>(id, toplevel.clone());
 
                 *decoration_guard = Some(toplevel_decoration);
                 drop(decoration_guard);
@@ -269,22 +237,20 @@ where
 
 // zxdg_toplevel_decoration_v1
 
-impl<D> Dispatch<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ToplevelSurface, D>
-    for XdgDecorationState
+impl<D> Dispatch<ZxdgToplevelDecorationV1, ToplevelSurface, D> for XdgDecorationState
 where
-    D: Dispatch<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ToplevelSurface>
-        + XdgDecorationHandler,
+    D: XdgDecorationHandler,
 {
     fn request(
         state: &mut D,
         _: &Client,
-        _: &zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
+        _: &ZxdgToplevelDecorationV1,
         request: zxdg_toplevel_decoration_v1::Request,
         data: &ToplevelSurface,
         _dh: &DisplayHandle,
         _: &mut DataInit<'_, D>,
     ) {
-        use self::zxdg_toplevel_decoration_v1::Request;
+        use zxdg_toplevel_decoration_v1::Request;
 
         match request {
             Request::SetMode { mode } => {
@@ -298,7 +264,7 @@ where
             }
 
             Request::Destroy => {
-                if let Some(data) = data.xdg_toplevel().data::<XdgShellSurfaceUserData>() {
+                if let Some(data) = data.xdg_toplevel().user_data() {
                     data.decoration.lock().unwrap().take();
                 }
             }

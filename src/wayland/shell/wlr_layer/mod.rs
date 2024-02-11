@@ -11,7 +11,6 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::delegate_layer_shell;
 //! use smithay::wayland::shell::wlr_layer::{WlrLayerShellState, WlrLayerShellHandler, LayerSurface, Layer};
 //! use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 //!
@@ -39,8 +38,6 @@
 //!         // your implementation
 //!     }
 //! }
-//! // let smithay implement wayland_server::DelegateDispatch
-//! delegate_layer_shell!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -54,7 +51,7 @@ use wayland_protocols_wlr::layer_shell::v1::server::{
 use wayland_server::{
     backend::GlobalId,
     protocol::{wl_output::WlOutput, wl_surface},
-    Client, DisplayHandle, GlobalDispatch, Resource,
+    Client, DisplayHandle, Resource,
 };
 
 use crate::{
@@ -226,8 +223,7 @@ impl WlrLayerShellState {
     /// Create a new `wlr_layer_shell` global
     pub fn new<D>(display: &DisplayHandle) -> WlrLayerShellState
     where
-        D: GlobalDispatch<ZwlrLayerShellV1, WlrLayerShellGlobalData>,
-        D: 'static,
+        D: WlrLayerShellHandler,
     {
         Self::new_with_filter::<D, _>(display, |_| true)
     }
@@ -235,11 +231,10 @@ impl WlrLayerShellState {
     /// Create a new `wlr_layer_shell` global with a client filter
     pub fn new_with_filter<D, F>(display: &DisplayHandle, filter: F) -> WlrLayerShellState
     where
-        D: GlobalDispatch<ZwlrLayerShellV1, WlrLayerShellGlobalData>,
-        D: 'static,
+        D: WlrLayerShellHandler,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
-        let shell_global = display.create_global::<D, ZwlrLayerShellV1, WlrLayerShellGlobalData>(
+        let shell_global = display.create_delegated_global::<D, ZwlrLayerShellV1, _, Self>(
             4,
             WlrLayerShellGlobalData {
                 filter: Box::new(filter),
@@ -265,7 +260,7 @@ impl WlrLayerShellState {
 
 /// Handler for wlr layer shell
 #[allow(unused_variables)]
-pub trait WlrLayerShellHandler {
+pub trait WlrLayerShellHandler: 'static {
     /// [WlrLayerShellState] getter
     fn shell_state(&mut self) -> &mut WlrLayerShellState;
 
@@ -511,23 +506,8 @@ pub struct LayerSurfaceConfigure {
 /// Macro to delegate implementation of wlr layer shell to [`WlrLayerShellState`].
 ///
 /// You must also implement [`WlrLayerShellHandler`] to use this.
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[macro_export]
 macro_rules! delegate_layer_shell {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __ZwlrLayerShellV1 =
-            $crate::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::ZwlrLayerShellV1;
-        type __ZwlrLayerShellSurfaceV1 =
-            $crate::reexports::wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1;
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwlrLayerShellV1: ()
-        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwlrLayerShellSurfaceV1: $crate::wayland::shell::wlr_layer::WlrLayerSurfaceUserData
-        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
-
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            __ZwlrLayerShellV1: $crate::wayland::shell::wlr_layer::WlrLayerShellGlobalData
-        ] => $crate::wayland::shell::wlr_layer::WlrLayerShellState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

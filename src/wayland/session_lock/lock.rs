@@ -7,7 +7,6 @@ use crate::backend::renderer::buffer_dimensions;
 use crate::utils::Size;
 use crate::wayland::compositor::SurfaceAttributes;
 use crate::wayland::compositor::{self, BufferAssignment};
-use _session_lock::ext_session_lock_surface_v1::ExtSessionLockSurfaceV1;
 use _session_lock::ext_session_lock_v1::{Error, ExtSessionLockV1, Request};
 use wayland_protocols::ext::session_lock::v1::server::{self as _session_lock, ext_session_lock_surface_v1};
 use wayland_server::{Client, DataInit, Dispatch, DisplayHandle, Resource};
@@ -34,10 +33,7 @@ impl SessionLockState {
 
 impl<D> Dispatch<ExtSessionLockV1, SessionLockState, D> for SessionLockManagerState
 where
-    D: Dispatch<ExtSessionLockV1, SessionLockState>,
-    D: Dispatch<ExtSessionLockSurfaceV1, ExtLockSurfaceUserData>,
     D: SessionLockHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -79,7 +75,7 @@ where
                 let data = ExtLockSurfaceUserData {
                     surface: surface.clone(),
                 };
-                let lock_surface = data_init.init(id, data);
+                let lock_surface = data_init.init_delegated::<_, _, Self>(id, data);
 
                 // Initialize surface data.
                 compositor::with_states(&surface, |states| {

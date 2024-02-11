@@ -4,12 +4,10 @@ use indexmap::IndexSet;
 
 use crate::{
     utils::{alive_tracker::AliveTracker, IsAlive, Serial},
-    wayland::shell::xdg::XdgShellState,
+    wayland::shell::xdg::{UserdataGetter, XdgShellState},
 };
 
-use wayland_protocols::xdg::shell::server::{
-    xdg_positioner::XdgPositioner, xdg_surface, xdg_surface::XdgSurface, xdg_wm_base, xdg_wm_base::XdgWmBase,
-};
+use wayland_protocols::xdg::shell::server::{xdg_surface, xdg_wm_base, xdg_wm_base::XdgWmBase};
 
 use wayland_server::{
     backend::ClientId, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
@@ -19,12 +17,7 @@ use super::{ShellClient, ShellClientData, XdgPositionerUserData, XdgShellHandler
 
 impl<D> GlobalDispatch<XdgWmBase, (), D> for XdgShellState
 where
-    D: GlobalDispatch<XdgWmBase, ()>,
-    D: Dispatch<XdgWmBase, XdgWmBaseUserData>,
-    D: Dispatch<XdgSurface, XdgSurfaceUserData>,
-    D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,
-    D: 'static,
 {
     fn bind(
         state: &mut D,
@@ -34,19 +27,17 @@ where
         _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        let shell = data_init.init(resource, XdgWmBaseUserData::default());
+        let shell = data_init.init_delegated::<_, _, Self>(resource, XdgWmBaseUserData::default());
 
         XdgShellHandler::new_client(state, ShellClient::new(&shell));
     }
 }
 
+impl UserdataGetter<XdgWmBaseUserData, XdgShellState> for XdgWmBase {}
+
 impl<D> Dispatch<XdgWmBase, XdgWmBaseUserData, D> for XdgShellState
 where
-    D: Dispatch<XdgWmBase, XdgWmBaseUserData>,
-    D: Dispatch<XdgSurface, XdgSurfaceUserData>,
-    D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -59,13 +50,13 @@ where
     ) {
         match request {
             xdg_wm_base::Request::CreatePositioner { id } => {
-                data_init.init(id, XdgPositionerUserData::default());
+                data_init.init_delegated::<_, _, Self>(id, XdgPositionerUserData::default());
             }
             xdg_wm_base::Request::GetXdgSurface { id, surface } => {
                 // Do not assign a role to the surface here
                 // xdg_surface is not role, only xdg_toplevel and
                 // xdg_popup are defined as roles
-                let xdg_surface = data_init.init(
+                let xdg_surface = data_init.init_delegated::<_, _, Self>(
                     id,
                     XdgSurfaceUserData {
                         known_surfaces: data.known_surfaces.clone(),
@@ -114,7 +105,7 @@ where
 
 impl IsAlive for XdgWmBase {
     fn alive(&self) -> bool {
-        let data: &XdgWmBaseUserData = self.data().unwrap();
+        let data: &XdgWmBaseUserData = self.user_data().unwrap();
         data.alive_tracker.alive()
     }
 }
