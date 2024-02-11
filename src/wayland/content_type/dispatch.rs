@@ -11,9 +11,6 @@ use crate::wayland::compositor;
 
 impl<D> GlobalDispatch<WpContentTypeManagerV1, (), D> for ContentTypeState
 where
-    D: GlobalDispatch<WpContentTypeManagerV1, ()>,
-    D: Dispatch<WpContentTypeManagerV1, ()>,
-    D: Dispatch<WpContentTypeV1, ContentTypeUserData>,
     D: 'static,
 {
     fn bind(
@@ -24,20 +21,18 @@ where
         _: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
 impl<D> Dispatch<WpContentTypeManagerV1, (), D> for ContentTypeState
 where
-    D: Dispatch<WpContentTypeManagerV1, ()>,
-    D: Dispatch<WpContentTypeV1, ContentTypeUserData>,
     D: 'static,
 {
     fn request(
         _state: &mut D,
         _: &Client,
-        manager: &wp_content_type_manager_v1::WpContentTypeManagerV1,
+        manager: &WpContentTypeManagerV1,
         request: wp_content_type_manager_v1::Request,
         _data: &(),
         _dh: &DisplayHandle,
@@ -66,7 +61,7 @@ where
                         "WlSurface already has WpSurfaceContentType attached",
                     )
                 } else {
-                    data_init.init(id, ContentTypeUserData::new(surface));
+                    data_init.init_delegated::<_, _, Self>(id, ContentTypeUserData::new(surface));
                 }
             }
 
@@ -76,10 +71,7 @@ where
     }
 }
 
-impl<D> Dispatch<WpContentTypeV1, ContentTypeUserData, D> for ContentTypeState
-where
-    D: Dispatch<WpContentTypeV1, ContentTypeUserData>,
-{
+impl<D> Dispatch<WpContentTypeV1, ContentTypeUserData, D> for ContentTypeState {
     fn request(
         _state: &mut D,
         _: &Client,

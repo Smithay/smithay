@@ -22,9 +22,7 @@ impl IdleInhibitorState {
 
 impl<D> Dispatch<ZwpIdleInhibitorV1, IdleInhibitorState, D> for IdleInhibitManagerState
 where
-    D: Dispatch<ZwpIdleInhibitorV1, IdleInhibitorState>,
     D: IdleInhibitHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,

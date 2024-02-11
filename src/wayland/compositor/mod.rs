@@ -30,7 +30,6 @@
 //! ```
 //! # extern crate wayland_server;
 //! # #[macro_use] extern crate smithay;
-//! use smithay::delegate_compositor;
 //! use smithay::wayland::compositor::{CompositorState, CompositorClientState, CompositorHandler};
 //!
 //! # struct State { compositor_state: CompositorState }
@@ -60,7 +59,6 @@
 //!        // .. your implementation ..
 //!    }
 //! }
-//! delegate_compositor!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -121,13 +119,14 @@ use self::transaction::TransactionQueue;
 pub use self::transaction::{Blocker, BlockerState};
 pub use self::tree::{AlreadyHasRole, TraversalAction};
 use self::tree::{PrivateSurfaceData, SuggestedSurfaceState};
+use crate::utils::user_data::UserdataGetter;
 use crate::utils::Transform;
 use crate::utils::{user_data::UserDataMap, Buffer, Logical, Point, Rectangle};
 use wayland_server::backend::GlobalId;
 use wayland_server::protocol::wl_compositor::WlCompositor;
 use wayland_server::protocol::wl_subcompositor::WlSubcompositor;
 use wayland_server::protocol::{wl_buffer, wl_callback, wl_output, wl_region, wl_surface::WlSurface};
-use wayland_server::{Client, DisplayHandle, GlobalDispatch, Resource};
+use wayland_server::{Client, DisplayHandle, Resource};
 
 /// The role of a subsurface surface.
 pub const SUBSURFACE_ROLE: &str = "subsurface";
@@ -434,7 +433,7 @@ pub fn send_surface_state(surface: &WlSurface, data: &SurfaceData, scale: i32, t
 /// If the region is not managed by the `CompositorGlobal` that provided this token, this
 /// will panic (having more than one compositor is not supported).
 pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
-    match region.data::<RegionUserData>() {
+    match region.user_data() {
         Some(data) => data.inner.lock().unwrap().clone(),
         None => panic!("Accessing the data of foreign regions is not supported."),
     }
@@ -448,7 +447,7 @@ where
     F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
     D: 'static,
 {
-    let (user_state_type_id, user_state_type) = surface.data::<SurfaceUserData>().unwrap().user_state_type;
+    let (user_state_type_id, user_state_type) = surface.user_data().unwrap().user_state_type;
     assert_eq!(
         std::any::TypeId::of::<D>(),
         user_state_type_id,
@@ -472,7 +471,7 @@ where
     F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
     D: 'static,
 {
-    let (user_state_type_id, user_state_type) = surface.data::<SurfaceUserData>().unwrap().user_state_type;
+    let (user_state_type_id, user_state_type) = surface.user_data().unwrap().user_state_type;
     assert_eq!(
         std::any::TypeId::of::<D>(),
         user_state_type_id,
@@ -499,7 +498,7 @@ where
     F: Fn(&mut D, &WlSurface) + Send + Sync + 'static,
     D: 'static,
 {
-    let (user_state_type_id, user_state_type) = surface.data::<SurfaceUserData>().unwrap().user_state_type;
+    let (user_state_type_id, user_state_type) = surface.user_data().unwrap().user_state_type;
     assert_eq!(
         std::any::TypeId::of::<D>(),
         user_state_type_id,
@@ -544,7 +543,7 @@ pub fn add_blocker(surface: &WlSurface, blocker: impl Blocker + Send + 'static) 
 }
 
 /// Handler trait for compositor
-pub trait CompositorHandler {
+pub trait CompositorHandler: 'static {
     /// [CompositorState] getter
     fn compositor_state(&mut self) -> &mut CompositorState;
     /// [CompositorClientState] getter
@@ -633,7 +632,7 @@ impl CompositorState {
     /// [`wl_subcompositor`]: wayland_server::protocol::wl_subcompositor
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
+        D: CompositorHandler,
     {
         Self::new_with_version::<D>(display, 5)
     }
@@ -647,17 +646,17 @@ impl CompositorState {
     /// [`wl_compositor`]: wayland_server::protocol::wl_compositor
     pub fn new_v6<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
+        D: CompositorHandler,
     {
         Self::new_with_version::<D>(display, 6)
     }
 
     fn new_with_version<D>(display: &DisplayHandle, version: u32) -> Self
     where
-        D: GlobalDispatch<WlCompositor, ()> + GlobalDispatch<WlSubcompositor, ()> + 'static,
+        D: CompositorHandler,
     {
-        let compositor = display.create_global::<D, WlCompositor, ()>(version, ());
-        let subcompositor = display.create_global::<D, WlSubcompositor, ()>(1, ());
+        let compositor = display.create_delegated_global::<D, WlCompositor, (), Self>(version, ());
+        let subcompositor = display.create_delegated_global::<D, WlSubcompositor, (), Self>(1, ());
 
         CompositorState {
             compositor,
@@ -677,37 +676,11 @@ impl CompositorState {
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_compositor {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor: ()
-        ] => $crate::wayland::compositor::CompositorState);
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor: ()
-        ] => $crate::wayland::compositor::CompositorState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_compositor::WlCompositor: ()
-        ] => $crate::wayland::compositor::CompositorState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_surface::WlSurface: $crate::wayland::compositor::SurfaceUserData
-        ] => $crate::wayland::compositor::CompositorState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_region::WlRegion: $crate::wayland::compositor::RegionUserData
-        ] => $crate::wayland::compositor::CompositorState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_callback::WlCallback: ()
-        ] => $crate::wayland::compositor::CompositorState);
-            // WlSubcompositor
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_subcompositor::WlSubcompositor: ()
-        ] => $crate::wayland::compositor::CompositorState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_subsurface::WlSubsurface: $crate::wayland::compositor::SubsurfaceUserData
-        ] => $crate::wayland::compositor::CompositorState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }
 
 #[cfg(test)]

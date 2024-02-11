@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::backend::input::{ButtonState, TabletToolCapabilities, TabletToolDescriptor, TabletToolType};
 use crate::input::pointer::{CursorImageAttributes, CursorImageStatus};
+use crate::utils::user_data::UserdataGetter;
 use crate::utils::{Logical, Point};
 use crate::wayland::seat::CURSOR_IMAGE_ROLE;
 use wayland_protocols::wp::tablet::zv2::server::{
@@ -223,14 +224,13 @@ impl TabletToolHandle {
         tool: &TabletToolDescriptor,
         cb: F,
     ) where
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
         D: 'static,
         F: FnMut(&TabletToolDescriptor, CursorImageStatus) + Send + 'static,
     {
         let desc = tool.clone();
 
         let wl_tool = client
-            .create_resource::<ZwpTabletToolV2, _, D>(
+            .create_delegated_resource::<ZwpTabletToolV2, _, D, TabletManagerState>(
                 dh,
                 seat.version(),
                 TabletToolUserData {
@@ -432,9 +432,10 @@ impl fmt::Debug for TabletToolUserData {
     }
 }
 
+impl UserdataGetter<TabletToolUserData, TabletManagerState> for ZwpTabletToolV2 {}
+
 impl<D> Dispatch<ZwpTabletToolV2, TabletToolUserData, D> for TabletManagerState
 where
-    D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
     D: 'static,
 {
     fn request(

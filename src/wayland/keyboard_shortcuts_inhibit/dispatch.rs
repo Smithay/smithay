@@ -13,7 +13,10 @@ use wayland_server::{
     Dispatch, GlobalDispatch, Resource,
 };
 
-use crate::input::{Seat, SeatHandler};
+use crate::{
+    input::{Seat, SeatHandler},
+    utils::user_data::UserdataGetter,
+};
 
 use super::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState};
 
@@ -30,8 +33,7 @@ pub struct KeyboardShortcutsInhibitorUserData {
 impl<D> GlobalDispatch<ZwpKeyboardShortcutsInhibitManagerV1, (), D> for KeyboardShortcutsInhibitState
 where
     D: KeyboardShortcutsInhibitHandler,
-    D: Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, ()>,
-    D: Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData>,
+    D: SeatHandler,
 {
     fn bind(
         _state: &mut D,
@@ -41,7 +43,7 @@ where
         _global_data: &(),
         data_init: &mut wayland_server::DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
@@ -49,8 +51,6 @@ impl<D> Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, (), D> for KeyboardShortc
 where
     D: KeyboardShortcutsInhibitHandler,
     D: SeatHandler,
-    D: Dispatch<ZwpKeyboardShortcutsInhibitManagerV1, ()>,
-    D: Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData>,
 {
     fn request(
         handler: &mut D,
@@ -82,7 +82,7 @@ where
                 let seat = Seat::<D>::from_resource(&seat).unwrap();
                 let seat_data = super::SeatData::get(&seat);
 
-                let inhibitor = data_init.init(
+                let inhibitor = data_init.init_delegated::<_, _, Self>(
                     id,
                     KeyboardShortcutsInhibitorUserData {
                         seat: seat_id.clone(),
@@ -107,6 +107,11 @@ where
             _ => unreachable!(),
         }
     }
+}
+
+impl UserdataGetter<KeyboardShortcutsInhibitorUserData, KeyboardShortcutsInhibitState>
+    for ZwpKeyboardShortcutsInhibitorV1
+{
 }
 
 impl<D> Dispatch<ZwpKeyboardShortcutsInhibitorV1, KeyboardShortcutsInhibitorUserData, D>

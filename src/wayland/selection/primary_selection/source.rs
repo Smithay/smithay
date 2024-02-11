@@ -3,9 +3,9 @@ use std::sync::Mutex;
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::{
     self as primary_source, ZwpPrimarySelectionSourceV1 as PrimarySource,
 };
-use wayland_server::{backend::ClientId, Dispatch, DisplayHandle, Resource};
+use wayland_server::{backend::ClientId, Dispatch, DisplayHandle};
 
-use crate::utils::{alive_tracker::AliveTracker, IsAlive};
+use crate::utils::{alive_tracker::AliveTracker, user_data::UserdataGetter, IsAlive};
 
 use super::{PrimarySelectionHandler, PrimarySelectionState};
 
@@ -32,11 +32,11 @@ impl PrimarySourceUserData {
     }
 }
 
+impl UserdataGetter<PrimarySourceUserData, PrimarySelectionState> for PrimarySource {}
+
 impl<D> Dispatch<PrimarySource, PrimarySourceUserData, D> for PrimarySelectionState
 where
-    D: Dispatch<PrimarySource, PrimarySourceUserData>,
     D: PrimarySelectionHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -66,7 +66,7 @@ where
 
 impl IsAlive for PrimarySource {
     fn alive(&self) -> bool {
-        let data: &PrimarySourceUserData = self.data().unwrap();
+        let data = self.user_data().unwrap();
         data.alive_tracker.alive()
     }
 }

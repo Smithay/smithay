@@ -38,7 +38,7 @@ use rand::distributions::{Alphanumeric, DistString};
 use wayland_protocols::xdg::foreign::zv2::server::{
     zxdg_exporter_v2::ZxdgExporterV2, zxdg_imported_v2::ZxdgImportedV2, zxdg_importer_v2::ZxdgImporterV2,
 };
-use wayland_server::{backend::GlobalId, protocol::wl_surface::WlSurface, DisplayHandle, GlobalDispatch};
+use wayland_server::{backend::GlobalId, protocol::wl_surface::WlSurface, DisplayHandle};
 
 mod handlers;
 
@@ -102,13 +102,9 @@ impl XdgForeignState {
     /// Creates a new xdg activation global.
     ///
     /// In order to use this abstraction, your `D` type needs to implement [`XdgForeignHandler`].
-    pub fn new<D: XdgForeignHandler>(display: &DisplayHandle) -> Self
-    where
-        D: GlobalDispatch<ZxdgExporterV2, ()>,
-        D: GlobalDispatch<ZxdgImporterV2, ()>,
-    {
-        let exporter = display.create_global::<D, ZxdgExporterV2, _>(1, ());
-        let importer = display.create_global::<D, ZxdgImporterV2, _>(1, ());
+    pub fn new<D: XdgForeignHandler>(display: &DisplayHandle) -> Self {
+        let exporter = display.create_delegated_global::<D, ZxdgExporterV2, _, Self>(1, ());
+        let importer = display.create_delegated_global::<D, ZxdgImporterV2, _, Self>(1, ());
 
         Self {
             exported: HashMap::new(),
@@ -126,55 +122,4 @@ impl XdgForeignState {
     pub fn importer_global(&self) -> GlobalId {
         self.importer.clone()
     }
-}
-
-/// Macro to delegate implementation of the xdg foreign to [`XdgForeignState`].
-///
-/// You must also implement [`XdgForeignHandler`] to use this.
-#[macro_export]
-macro_rules! delegate_xdg_foreign {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        type __ZxdgExporterV2 =
-            $crate::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_exporter_v2::ZxdgExporterV2;
-        type __ZxdgImporterV2 =
-            $crate::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_importer_v2::ZxdgImporterV2;
-
-        type __ZxdgExportedV2 =
-            $crate::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_exported_v2::ZxdgExportedV2;
-        type __ZxdgImportedV2 =
-            $crate::reexports::wayland_protocols::xdg::foreign::zv2::server::zxdg_imported_v2::ZxdgImportedV2;
-
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgExporterV2: ()
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgImporterV2: ()
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgExporterV2: ()
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgImporterV2: ()
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgExportedV2: $crate::wayland::xdg_foreign::XdgExportedUserData
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty:
-            [
-                __ZxdgImportedV2: $crate::wayland::xdg_foreign::XdgImportedUserData
-            ] => $crate::wayland::xdg_foreign::XdgForeignState
-        );
-    };
 }

@@ -1,6 +1,9 @@
 use std::sync::Mutex;
 
-use crate::{utils::Rectangle, utils::Serial};
+use crate::{
+    utils::Rectangle,
+    utils::{user_data::UserdataGetter, Serial},
+};
 
 use wayland_protocols::xdg::shell::server::{xdg_positioner, xdg_positioner::XdgPositioner};
 
@@ -18,11 +21,11 @@ pub struct XdgPositionerUserData {
     pub(crate) inner: Mutex<PositionerState>,
 }
 
+impl UserdataGetter<XdgPositionerUserData, XdgShellState> for XdgPositioner {}
+
 impl<D> Dispatch<XdgPositioner, XdgPositionerUserData, D> for XdgShellState
 where
-    D: Dispatch<XdgPositioner, XdgPositionerUserData>,
     D: XdgShellHandler,
-    D: 'static,
 {
     fn request(
         _state: &mut D,

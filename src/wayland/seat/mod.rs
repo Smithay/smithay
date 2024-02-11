@@ -8,7 +8,6 @@
 //! ### Initialization
 //!
 //! ```
-//! use smithay::delegate_seat;
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
 //!
@@ -41,7 +40,6 @@
 //!         // ...
 //!     }
 //! }
-//! delegate_seat!(State);
 //! ```
 //!
 //! ### Run usage
@@ -73,11 +71,8 @@ pub use self::{
 use wayland_server::{
     backend::{ClientId, GlobalId, ObjectId},
     protocol::{
-        wl_keyboard::WlKeyboard,
-        wl_pointer::WlPointer,
         wl_seat::{self, WlSeat},
-        wl_surface,
-        wl_touch::WlTouch,
+        wl_surface::{self, WlSurface},
     },
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
@@ -88,7 +83,7 @@ pub trait WaylandFocus {
     ///
     /// *Note*: This has to return `Some`, if `same_client_as` can return true
     /// for any provided `ObjectId`
-    fn wl_surface(&self) -> Option<wl_surface::WlSurface>;
+    fn wl_surface(&self) -> Option<WlSurface>;
     /// Returns true, if the underlying wayland object originates from
     /// the same client connection as the provided `ObjectId`.
     ///
@@ -100,8 +95,8 @@ pub trait WaylandFocus {
     }
 }
 
-impl WaylandFocus for wl_surface::WlSurface {
-    fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
+impl WaylandFocus for WlSurface {
+    fn wl_surface(&self) -> Option<WlSurface> {
         Some(self.clone())
     }
 }
@@ -153,14 +148,15 @@ impl<D: SeatHandler + 'static> SeatState<D> {
     /// in case you want to remove it.
     pub fn new_wl_seat<N>(&mut self, display: &DisplayHandle, name: N) -> Seat<D>
     where
-        D: GlobalDispatch<WlSeat, SeatGlobalData<D>> + SeatHandler + 'static,
+        D: SeatHandler,
         <D as SeatHandler>::PointerFocus: WaylandFocus,
         <D as SeatHandler>::KeyboardFocus: WaylandFocus,
         N: Into<String>,
     {
         let Seat { arc } = self.new_seat(name);
 
-        let global_id = display.create_global::<D, _, _>(9, SeatGlobalData { arc: arc.clone() });
+        let global_id =
+            display.create_delegated_global::<D, _, _, Self>(9, SeatGlobalData { arc: arc.clone() });
         arc.inner.lock().unwrap().global = Some(global_id);
 
         Seat { arc }
@@ -176,7 +172,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
 
     /// Attempt to retrieve a [`Seat`] from an existing resource
     pub fn from_resource(seat: &WlSeat) -> Option<Self> {
-        seat.data::<SeatUserData<D>>()
+        seat.delegated_data::<SeatUserData<D>, SeatState<D>>()
             .map(|d| d.arc.clone())
             .map(|arc| Self { arc })
     }
@@ -211,38 +207,18 @@ impl<D: SeatHandler> fmt::Debug for SeatUserData<D> {
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_seat {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatGlobalData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_seat::WlSeat: $crate::wayland::seat::SeatUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_pointer::WlPointer: $crate::wayland::seat::PointerUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard: $crate::wayland::seat::KeyboardUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?$ty: [
-            $crate::reexports::wayland_server::protocol::wl_touch::WlTouch: $crate::wayland::seat::TouchUserData<$ty>
-        ] => $crate::input::SeatState<$ty>);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }
 
 impl<D> Dispatch<WlSeat, SeatUserData<D>, D> for SeatState<D>
 where
-    D: Dispatch<WlSeat, SeatUserData<D>>,
-    D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
-    D: Dispatch<WlPointer, PointerUserData<D>>,
-    D: Dispatch<WlTouch, TouchUserData<D>>,
     D: SeatHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
-    D: 'static,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
 {
     fn request(
         _state: &mut D,
@@ -257,7 +233,7 @@ where
             wl_seat::Request::GetPointer { id } => {
                 let inner = data.arc.inner.lock().unwrap();
 
-                let pointer = data_init.init(
+                let pointer = data_init.init_delegated::<_, _, Self>(
                     id,
                     PointerUserData {
                         handle: inner.pointer.clone(),
@@ -274,7 +250,7 @@ where
             wl_seat::Request::GetKeyboard { id } => {
                 let inner = data.arc.inner.lock().unwrap();
 
-                let keyboard = data_init.init(
+                let keyboard = data_init.init_delegated::<_, _, Self>(
                     id,
                     KeyboardUserData {
                         handle: inner.keyboard.clone(),
@@ -290,7 +266,7 @@ where
             wl_seat::Request::GetTouch { id } => {
                 let inner = data.arc.inner.lock().unwrap();
 
-                let touch = data_init.init(
+                let touch = data_init.init_delegated::<_, _, Self>(
                     id,
                     TouchUserData {
                         handle: inner.touch.clone(),
@@ -322,13 +298,9 @@ where
 
 impl<D> GlobalDispatch<WlSeat, SeatGlobalData<D>, D> for SeatState<D>
 where
-    D: GlobalDispatch<WlSeat, SeatGlobalData<D>>,
-    D: Dispatch<WlSeat, SeatUserData<D>>,
-    D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
-    D: Dispatch<WlPointer, PointerUserData<D>>,
-    D: Dispatch<WlTouch, TouchUserData<D>>,
     D: SeatHandler,
-    D: 'static,
+    <D as SeatHandler>::KeyboardFocus: WaylandFocus,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
 {
     fn bind(
         _state: &mut D,
@@ -342,7 +314,7 @@ where
             arc: global_data.arc.clone(),
         };
 
-        let resource = data_init.init(resource, data);
+        let resource = data_init.init_delegated::<_, _, Self>(resource, data);
 
         if resource.version() >= 2 {
             resource.name(global_data.arc.name.clone());

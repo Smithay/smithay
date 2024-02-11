@@ -17,6 +17,7 @@ use wayland_server::{
 
 use crate::utils::{
     alive_tracker::{AliveTracker, IsAlive},
+    user_data::UserdataGetter,
     Logical, Point,
 };
 
@@ -35,12 +36,7 @@ use tracing::trace;
 
 impl<D> GlobalDispatch<WlCompositor, (), D> for CompositorState
 where
-    D: GlobalDispatch<WlCompositor, ()>,
-    D: Dispatch<WlCompositor, ()>,
-    D: Dispatch<WlSurface, SurfaceUserData>,
-    D: Dispatch<WlRegion, RegionUserData>,
     D: CompositorHandler,
-    D: 'static,
 {
     fn bind(
         _state: &mut D,
@@ -50,17 +46,13 @@ where
         _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
 impl<D> Dispatch<WlCompositor, (), D> for CompositorState
 where
-    D: Dispatch<WlCompositor, ()>,
-    D: Dispatch<WlSurface, SurfaceUserData>,
-    D: Dispatch<WlRegion, RegionUserData>,
     D: CompositorHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -75,7 +67,7 @@ where
             wl_compositor::Request::CreateSurface { id } => {
                 trace!(id = ?id, "Creating a new wl_surface");
 
-                let surface = data_init.init(
+                let surface = data_init.init_delegated::<_, _, Self>(
                     id,
                     SurfaceUserData {
                         inner: PrivateSurfaceData::new(),
@@ -92,7 +84,7 @@ where
             wl_compositor::Request::CreateRegion { id } => {
                 trace!(id = ?id, "Creating a new wl_region");
 
-                data_init.init(
+                data_init.init_delegated::<_, _, Self>(
                     id,
                     RegionUserData {
                         inner: Default::default(),
@@ -154,12 +146,11 @@ pub struct SurfaceUserData {
     pub(super) user_state_type: (std::any::TypeId, &'static str),
 }
 
+impl UserdataGetter<SurfaceUserData, CompositorState> for WlSurface {}
+
 impl<D> Dispatch<WlSurface, SurfaceUserData, D> for CompositorState
 where
-    D: Dispatch<WlSurface, SurfaceUserData>,
-    D: Dispatch<WlCallback, ()>,
     D: CompositorHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -217,7 +208,7 @@ where
                 });
             }
             wl_surface::Request::Frame { callback } => {
-                let callback = data_init.init(callback, ());
+                let callback = data_init.init_delegated::<_, _, Self>(callback, ());
 
                 PrivateSurfaceData::with_states(surface, |states| {
                     states
@@ -229,7 +220,7 @@ where
             }
             wl_surface::Request::SetOpaqueRegion { region } => {
                 let attributes = region.map(|r| {
-                    let attributes_mutex = &r.data::<RegionUserData>().unwrap().inner;
+                    let attributes_mutex = &r.user_data().unwrap().inner;
                     attributes_mutex.lock().unwrap().clone()
                 });
                 PrivateSurfaceData::with_states(surface, |states| {
@@ -238,7 +229,7 @@ where
             }
             wl_surface::Request::SetInputRegion { region } => {
                 let attributes = region.map(|r| {
-                    let attributes_mutex = &r.data::<RegionUserData>().unwrap().inner;
+                    let attributes_mutex = &r.user_data().unwrap().inner;
                     attributes_mutex.lock().unwrap().clone()
                 });
                 PrivateSurfaceData::with_states(surface, |states| {
@@ -315,7 +306,7 @@ where
 
 impl IsAlive for WlSurface {
     fn alive(&self) -> bool {
-        let data: &SurfaceUserData = self.data().unwrap();
+        let data: &SurfaceUserData = self.user_data().unwrap();
         data.alive_tracker.alive()
     }
 }
@@ -330,9 +321,10 @@ pub struct RegionUserData {
     pub(crate) inner: Mutex<RegionAttributes>,
 }
 
+impl UserdataGetter<RegionUserData, CompositorState> for WlRegion {}
+
 impl<D> Dispatch<WlRegion, RegionUserData, D> for CompositorState
 where
-    D: Dispatch<WlRegion, RegionUserData>,
     D: CompositorHandler,
 {
     fn request(
@@ -368,11 +360,7 @@ where
 
 impl<D> GlobalDispatch<WlSubcompositor, (), D> for CompositorState
 where
-    D: GlobalDispatch<WlSubcompositor, ()>,
-    D: Dispatch<WlSubcompositor, ()>,
-    D: Dispatch<WlSubsurface, SubsurfaceUserData>,
     D: CompositorHandler,
-    D: 'static,
 {
     fn bind(
         _state: &mut D,
@@ -382,16 +370,13 @@ where
         _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
 impl<D> Dispatch<WlSubcompositor, (), D> for CompositorState
 where
-    D: Dispatch<WlSubcompositor, ()>,
-    D: Dispatch<WlSubsurface, SubsurfaceUserData>,
     D: CompositorHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -410,7 +395,7 @@ where
                     return;
                 }
 
-                data_init.init(
+                data_init.init_delegated::<_, _, Self>(
                     id,
                     SubsurfaceUserData {
                         surface: surface.clone(),
@@ -504,11 +489,11 @@ pub fn is_effectively_sync(surface: &wl_surface::WlSurface) -> bool {
     }
 }
 
+impl UserdataGetter<SubsurfaceUserData, CompositorState> for WlSubsurface {}
+
 impl<D> Dispatch<WlSubsurface, SubsurfaceUserData, D> for CompositorState
 where
-    D: Dispatch<WlSubsurface, SubsurfaceUserData>,
     D: CompositorHandler,
-    D: 'static,
 {
     fn request(
         _state: &mut D,
@@ -586,9 +571,7 @@ where
 
 impl<D> Dispatch<WlCallback, (), D> for CompositorState
 where
-    D: Dispatch<WlCallback, ()>,
     D: CompositorHandler,
-    D: 'static,
 {
     fn request(
         _state: &mut D,

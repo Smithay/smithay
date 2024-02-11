@@ -3,7 +3,6 @@
 //! This module provides helpers to handle graphics tablets.
 //!
 //! ```
-//! use smithay::{delegate_seat, delegate_tablet_manager};
 //! use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
 //! use smithay::wayland::tablet_manager::{TabletManagerState, TabletDescriptor};
 //! use smithay::reexports::wayland_server::{Display, protocol::wl_surface::WlSurface};
@@ -51,8 +50,6 @@
 //!         // ...
 //!     }
 //! }
-//! delegate_seat!(State);
-//! delegate_tablet_manager!(State);
 //! ```
 //! ```ignore
 //! // Init the manager global
@@ -80,12 +77,7 @@
 //! ```
 
 use crate::input::{Seat, SeatHandler};
-use wayland_protocols::wp::tablet::zv2::server::{
-    zwp_tablet_manager_v2::{self, ZwpTabletManagerV2},
-    zwp_tablet_seat_v2::ZwpTabletSeatV2,
-    zwp_tablet_tool_v2::ZwpTabletToolV2,
-    zwp_tablet_v2::ZwpTabletV2,
-};
+use wayland_protocols::wp::tablet::zv2::server::zwp_tablet_manager_v2::{self, ZwpTabletManagerV2};
 use wayland_server::{backend::GlobalId, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New};
 
 const MANAGER_VERSION: u32 = 1;
@@ -122,13 +114,9 @@ impl TabletManagerState {
     /// Initialize a tablet manager global.
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpTabletManagerV2, ()>,
-        D: Dispatch<ZwpTabletManagerV2, ()>,
-        D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
-        D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
-        D: 'static,
+        D: SeatHandler + 'static,
     {
-        let global = display.create_global::<D, ZwpTabletManagerV2, _>(MANAGER_VERSION, ());
+        let global = display.create_delegated_global::<D, ZwpTabletManagerV2, _, Self>(MANAGER_VERSION, ());
 
         Self { global }
     }
@@ -141,10 +129,7 @@ impl TabletManagerState {
 
 impl<D> GlobalDispatch<ZwpTabletManagerV2, (), D> for TabletManagerState
 where
-    D: GlobalDispatch<ZwpTabletManagerV2, ()>,
-    D: Dispatch<ZwpTabletManagerV2, ()>,
-    D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
-    D: 'static,
+    D: SeatHandler + 'static,
 {
     fn bind(
         _: &mut D,
@@ -154,16 +139,12 @@ where
         _: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
 impl<D> Dispatch<ZwpTabletManagerV2, (), D> for TabletManagerState
 where
-    D: Dispatch<ZwpTabletManagerV2, ()>,
-    D: Dispatch<ZwpTabletSeatV2, TabletSeatUserData>,
-    D: Dispatch<ZwpTabletV2, TabletUserData>,
-    D: Dispatch<ZwpTabletToolV2, TabletToolUserData>,
     D: SeatHandler + 'static,
 {
     fn request(
@@ -183,7 +164,7 @@ where
                 user_data.insert_if_missing(TabletSeatHandle::default);
 
                 let handle = user_data.get::<TabletSeatHandle>().unwrap();
-                let instance = data_init.init(
+                let instance = data_init.init_delegated::<_, _, Self>(
                     tablet_seat,
                     TabletSeatUserData {
                         handle: handle.clone(),
@@ -200,25 +181,9 @@ where
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_tablet_manager {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::tablet::zv2::server::zwp_tablet_manager_v2::ZwpTabletManagerV2: ()
-        ] => $crate::wayland::tablet_manager::TabletManagerState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::tablet::zv2::server::zwp_tablet_manager_v2::ZwpTabletManagerV2: ()
-        ] => $crate::wayland::tablet_manager::TabletManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::tablet::zv2::server::zwp_tablet_seat_v2::ZwpTabletSeatV2: $crate::wayland::tablet_manager::TabletSeatUserData
-        ] => $crate::wayland::tablet_manager::TabletManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::tablet::zv2::server::zwp_tablet_tool_v2::ZwpTabletToolV2: $crate::wayland::tablet_manager::TabletToolUserData
-        ] => $crate::wayland::tablet_manager::TabletManagerState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::tablet::zv2::server::zwp_tablet_v2::ZwpTabletV2: $crate::wayland::tablet_manager::TabletUserData
-        ] => $crate::wayland::tablet_manager::TabletManagerState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

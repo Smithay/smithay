@@ -5,7 +5,6 @@
 //!     XWaylandKeyboardGrabHandler,
 //!     XWaylandKeyboardGrabState
 //! };
-//! use smithay::delegate_xwayland_keyboard_grab;
 //!
 //! # struct State;
 //! # let mut display = wayland_server::Display::<State>::new().unwrap();
@@ -32,9 +31,6 @@
 //!         todo!()
 //!     }
 //! }
-//!
-//! // implement Dispatch for the keyboard grab types
-//! delegate_xwayland_keyboard_grab!(State);
 //! ```
 
 use wayland_protocols::xwayland::keyboard_grab::zv1::server::{
@@ -135,12 +131,10 @@ impl XWaylandKeyboardGrabState {
     /// Register new [ZwpXwaylandKeyboardGrabManagerV1] global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpXwaylandKeyboardGrabManagerV1, ()>,
-        D: Dispatch<ZwpXwaylandKeyboardGrabManagerV1, ()>,
-        D: Dispatch<ZwpXwaylandKeyboardGrabV1, ()>,
-        D: 'static,
+        D: XWaylandKeyboardGrabHandler,
     {
-        let global = display.create_global::<D, ZwpXwaylandKeyboardGrabManagerV1, _>(MANAGER_VERSION, ());
+        let global = display
+            .create_delegated_global::<D, ZwpXwaylandKeyboardGrabManagerV1, _, Self>(MANAGER_VERSION, ());
 
         Self { global }
     }
@@ -153,9 +147,7 @@ impl XWaylandKeyboardGrabState {
 
 impl<D> GlobalDispatch<ZwpXwaylandKeyboardGrabManagerV1, (), D> for XWaylandKeyboardGrabState
 where
-    D: GlobalDispatch<ZwpXwaylandKeyboardGrabManagerV1, ()>
-        + Dispatch<ZwpXwaylandKeyboardGrabManagerV1, ()>
-        + 'static,
+    D: XWaylandKeyboardGrabHandler,
 {
     fn bind(
         _state: &mut D,
@@ -165,7 +157,7 @@ where
         _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 
     fn can_view(client: Client, _global_data: &()) -> bool {
@@ -175,8 +167,6 @@ where
 
 impl<D> Dispatch<ZwpXwaylandKeyboardGrabManagerV1, (), D> for XWaylandKeyboardGrabState
 where
-    D: Dispatch<ZwpXwaylandKeyboardGrabManagerV1, ()> + 'static,
-    D: Dispatch<ZwpXwaylandKeyboardGrabV1, ()> + 'static,
     D: XWaylandKeyboardGrabHandler,
 {
     fn request(
@@ -190,7 +180,7 @@ where
     ) {
         match request {
             zwp_xwayland_keyboard_grab_manager_v1::Request::GrabKeyboard { id, surface, seat } => {
-                let grab = data_init.init(id, ());
+                let grab = data_init.init_delegated::<_, _, Self>(id, ());
                 if let Some(focus) = state.keyboard_focus_for_xsurface(&surface) {
                     let grab = XWaylandKeyboardGrab {
                         grab,
@@ -208,7 +198,7 @@ where
 
 impl<D> Dispatch<ZwpXwaylandKeyboardGrabV1, (), D> for XWaylandKeyboardGrabState
 where
-    D: Dispatch<ZwpXwaylandKeyboardGrabV1, ()> + 'static,
+    D: XWaylandKeyboardGrabHandler,
 {
     fn request(
         _state: &mut D,
@@ -227,17 +217,8 @@ where
 }
 
 /// Macro to delegate implementation of the xwayland keyboard grab protocol
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[macro_export]
 macro_rules! delegate_xwayland_keyboard_grab {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server::zwp_xwayland_keyboard_grab_manager_v1::ZwpXwaylandKeyboardGrabManagerV1: ()
-        ] => $crate::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server::zwp_xwayland_keyboard_grab_manager_v1::ZwpXwaylandKeyboardGrabManagerV1: ()
-        ] => $crate::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xwayland::keyboard_grab::zv1::server::zwp_xwayland_keyboard_grab_v1::ZwpXwaylandKeyboardGrabV1: ()
-        ] => $crate::wayland::xwayland_keyboard_grab::XWaylandKeyboardGrabState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

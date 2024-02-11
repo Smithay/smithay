@@ -23,7 +23,7 @@ use wayland_server::{
 
 use super::compositor::{self, RegionAttributes};
 use crate::{
-    input::{pointer::PointerHandle, SeatHandler},
+    input::{pointer::PointerHandle, SeatHandler, SeatState},
     utils::{Logical, Point},
     wayland::seat::PointerUserData,
 };
@@ -104,7 +104,7 @@ impl<'a, D: SeatHandler + 'static> ops::Deref for PointerConstraintRef<'a, D> {
     }
 }
 
-impl<'a, D: SeatHandler + 'static> PointerConstraintRef<'a, D> {
+impl<'a, D: SeatHandler> PointerConstraintRef<'a, D> {
     /// Send `locked`/`unlocked`
     ///
     /// This is not sent automatically since compositors may have different
@@ -194,14 +194,9 @@ impl PointerConstraintsState {
     /// Create a new pointer constraints global
     pub fn new<D>(display: &DisplayHandle) -> Self
     where
-        D: GlobalDispatch<ZwpPointerConstraintsV1, ()>,
-        D: Dispatch<ZwpPointerConstraintsV1, ()>,
-        D: Dispatch<ZwpConfinedPointerV1, PointerConstraintUserData<D>>,
-        D: Dispatch<ZwpLockedPointerV1, PointerConstraintUserData<D>>,
-        D: SeatHandler,
-        D: 'static,
+        D: PointerConstraintsHandler,
     {
-        let global = display.create_global::<D, ZwpPointerConstraintsV1, _>(VERSION, ());
+        let global = display.create_delegated_global::<D, ZwpPointerConstraintsV1, _, Self>(VERSION, ());
 
         Self { global }
     }
@@ -313,12 +308,7 @@ fn remove_constraint<D: SeatHandler + 'static>(surface: &WlSurface, pointer: &Po
 
 impl<D> Dispatch<ZwpPointerConstraintsV1, (), D> for PointerConstraintsState
 where
-    D: Dispatch<ZwpPointerConstraintsV1, ()>,
-    D: Dispatch<ZwpConfinedPointerV1, PointerConstraintUserData<D>>,
-    D: Dispatch<ZwpLockedPointerV1, PointerConstraintUserData<D>>,
-    D: SeatHandler,
     D: PointerConstraintsHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,
@@ -338,8 +328,12 @@ where
                 lifetime,
             } => {
                 let region = region.as_ref().map(compositor::get_region_attributes);
-                let pointer = pointer.data::<PointerUserData<D>>().unwrap().handle.clone();
-                let handle = data_init.init(
+                let pointer = pointer
+                    .delegated_data::<PointerUserData<D>, SeatState<D>>()
+                    .unwrap()
+                    .handle
+                    .clone();
+                let handle = data_init.init_delegated::<_, _, Self>(
                     id,
                     PointerConstraintUserData {
                         surface: surface.clone(),
@@ -372,8 +366,12 @@ where
                 lifetime,
             } => {
                 let region = region.as_ref().map(compositor::get_region_attributes);
-                let pointer = pointer.data::<PointerUserData<D>>().unwrap().handle.clone();
-                let handle = data_init.init(
+                let pointer = pointer
+                    .delegated_data::<PointerUserData<D>, SeatState<D>>()
+                    .unwrap()
+                    .handle
+                    .clone();
+                let handle = data_init.init_delegated::<_, _, Self>(
                     id,
                     PointerConstraintUserData {
                         surface: surface.clone(),
@@ -404,10 +402,7 @@ where
 
 impl<D> GlobalDispatch<ZwpPointerConstraintsV1, (), D> for PointerConstraintsState
 where
-    D: GlobalDispatch<ZwpPointerConstraintsV1, ()>
-        + Dispatch<ZwpPointerConstraintsV1, ()>
-        + SeatHandler
-        + 'static,
+    D: PointerConstraintsHandler,
 {
     fn bind(
         _state: &mut D,
@@ -417,15 +412,13 @@ where
         _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
 impl<D> Dispatch<ZwpConfinedPointerV1, PointerConstraintUserData<D>, D> for PointerConstraintsState
 where
-    D: Dispatch<ZwpConfinedPointerV1, PointerConstraintUserData<D>>,
-    D: SeatHandler,
-    D: 'static,
+    D: PointerConstraintsHandler,
 {
     fn request(
         _state: &mut D,
@@ -460,9 +453,7 @@ where
 
 impl<D> Dispatch<ZwpLockedPointerV1, PointerConstraintUserData<D>, D> for PointerConstraintsState
 where
-    D: Dispatch<ZwpLockedPointerV1, PointerConstraintUserData<D>>,
-    D: SeatHandler,
-    D: 'static,
+    D: PointerConstraintsHandler,
 {
     fn request(
         _state: &mut D,
@@ -500,21 +491,9 @@ where
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)]
 #[macro_export]
 macro_rules! delegate_pointer_constraints {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1: ()
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_pointer_constraints_v1::ZwpPointerConstraintsV1: ()
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_confined_pointer_v1::ZwpConfinedPointerV1: $crate::wayland::pointer_constraints::PointerConstraintUserData<Self>
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::pointer_constraints::zv1::server::zwp_locked_pointer_v1::ZwpLockedPointerV1: $crate::wayland::pointer_constraints::PointerConstraintUserData<Self>
-        ] => $crate::wayland::pointer_constraints::PointerConstraintsState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

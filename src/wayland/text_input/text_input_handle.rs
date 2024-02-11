@@ -148,9 +148,7 @@ pub struct TextInputUserData {
 
 impl<D> Dispatch<ZwpTextInputV3, TextInputUserData, D> for TextInputManagerState
 where
-    D: Dispatch<ZwpTextInputV3, TextInputUserData>,
     D: SeatHandler,
-    D: 'static,
 {
     fn request(
         state: &mut D,

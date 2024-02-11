@@ -19,10 +19,7 @@ use super::{
 // Export
 //
 
-impl<D> GlobalDispatch<ZxdgExporterV2, (), D> for XdgForeignState
-where
-    D: Dispatch<ZxdgExporterV2, ()>,
-{
+impl<D: XdgForeignHandler> GlobalDispatch<ZxdgExporterV2, (), D> for XdgForeignState {
     fn bind(
         _state: &mut D,
         _handle: &DisplayHandle,
@@ -31,15 +28,11 @@ where
         _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
-impl<D> Dispatch<ZxdgExporterV2, (), D> for XdgForeignState
-where
-    D: Dispatch<ZxdgExportedV2, XdgExportedUserData>,
-    D: XdgForeignHandler,
-{
+impl<D: XdgForeignHandler> Dispatch<ZxdgExporterV2, (), D> for XdgForeignState {
     fn request(
         state: &mut D,
         _client: &Client,
@@ -52,7 +45,7 @@ where
         match request {
             zxdg_exporter_v2::Request::ExportToplevel { id, surface } => {
                 let handle = XdgForeignHandle::new();
-                let exported = data_init.init(
+                let exported = data_init.init_delegated::<_, _, Self>(
                     id,
                     XdgExportedUserData {
                         handle: handle.clone(),
@@ -100,10 +93,7 @@ impl<D: XdgForeignHandler> Dispatch<ZxdgExportedV2, XdgExportedUserData, D> for 
 // Import
 //
 
-impl<D> GlobalDispatch<ZxdgImporterV2, (), D> for XdgForeignState
-where
-    D: Dispatch<ZxdgImporterV2, ()>,
-{
+impl<D: XdgForeignHandler> GlobalDispatch<ZxdgImporterV2, (), D> for XdgForeignState {
     fn bind(
         _state: &mut D,
         _handle: &DisplayHandle,
@@ -112,14 +102,11 @@ where
         _global_data: &(),
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 }
 
-impl<D: XdgForeignHandler> Dispatch<ZxdgImporterV2, (), D> for XdgForeignState
-where
-    D: Dispatch<ZxdgImportedV2, XdgImportedUserData>,
-{
+impl<D: XdgForeignHandler> Dispatch<ZxdgImporterV2, (), D> for XdgForeignState {
     fn request(
         state: &mut D,
         _client: &Client,
@@ -137,7 +124,7 @@ where
                     .iter_mut()
                     .find(|(key, _)| key.as_str() == handle.as_str());
 
-                let imported = data_init.init(
+                let imported = data_init.init_delegated::<_, _, Self>(
                     id,
                     XdgImportedUserData {
                         handle: XdgForeignHandle(handle),

@@ -5,10 +5,10 @@ use wayland_server::{
     backend::ClientId,
     protocol::wl_data_source::{self},
     protocol::{wl_data_device_manager::DndAction, wl_data_source::WlDataSource},
-    Dispatch, DisplayHandle, Resource,
+    Dispatch, DisplayHandle,
 };
 
-use crate::utils::{alive_tracker::AliveTracker, IsAlive};
+use crate::utils::{alive_tracker::AliveTracker, user_data::UserdataGetter, IsAlive};
 
 use super::{DataDeviceHandler, DataDeviceState};
 
@@ -46,11 +46,11 @@ impl DataSourceUserData {
     }
 }
 
+impl UserdataGetter<DataSourceUserData, DataDeviceState> for WlDataSource {}
+
 impl<D> Dispatch<WlDataSource, DataSourceUserData, D> for DataDeviceState
 where
-    D: Dispatch<WlDataSource, DataSourceUserData>,
     D: DataDeviceHandler,
-    D: 'static,
 {
     fn request(
         _state: &mut D,
@@ -87,7 +87,7 @@ where
 
 impl IsAlive for WlDataSource {
     fn alive(&self) -> bool {
-        let data: &DataSourceUserData = self.data().unwrap();
+        let data = self.user_data().unwrap();
         data.alive_tracker.alive()
     }
 }
@@ -97,7 +97,7 @@ pub fn with_source_metadata<T, F: FnOnce(&SourceMetadata) -> T>(
     source: &WlDataSource,
     f: F,
 ) -> Result<T, crate::utils::UnmanagedResource> {
-    match source.data::<DataSourceUserData>() {
+    match source.user_data() {
         Some(data) => Ok(f(&data.inner.lock().unwrap())),
         None => Err(crate::utils::UnmanagedResource),
     }

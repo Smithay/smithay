@@ -2,14 +2,12 @@ use std::os::unix::io::{AsFd, OwnedFd};
 
 use wayland_protocols::wp::primary_selection::zv1::server::zwp_primary_selection_source_v1::ZwpPrimarySelectionSourceV1 as PrimarySource;
 use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_source_v1::ZwlrDataControlSourceV1 as DataControlSource;
-use wayland_server::{protocol::wl_data_source::WlDataSource, Resource};
+use wayland_server::protocol::wl_data_source::WlDataSource;
 
+use crate::utils::user_data::UserdataGetter;
 use crate::utils::IsAlive;
-use crate::wayland::selection::primary_selection::PrimarySourceUserData;
 
-use super::data_device::DataSourceUserData;
 use super::private::selection_dispatch;
-use super::wlr_data_control::DataControlSourceUserData;
 use super::SelectionTarget;
 
 /// The source of the selection data.
@@ -52,15 +50,15 @@ impl SelectionSourceProvider {
     pub fn contains_mime_type(&self, mime_type: &String) -> bool {
         match self {
             Self::DataDevice(source) => {
-                let data: &DataSourceUserData = source.data().unwrap();
+                let data = source.user_data().unwrap();
                 data.inner.lock().unwrap().mime_types.contains(mime_type)
             }
             Self::Primary(source) => {
-                let data: &PrimarySourceUserData = source.data().unwrap();
+                let data = source.user_data().unwrap();
                 data.inner.lock().unwrap().mime_types.contains(mime_type)
             }
             Self::DataControl(source) => {
-                let data: &DataControlSourceUserData = source.data().unwrap();
+                let data = source.user_data().unwrap();
                 data.inner.lock().unwrap().mime_types.contains(mime_type)
             }
         }
@@ -70,15 +68,15 @@ impl SelectionSourceProvider {
     pub fn mime_types(&self) -> Vec<String> {
         match self {
             Self::DataDevice(source) => {
-                let data: &DataSourceUserData = source.data().unwrap();
+                let data = source.user_data().unwrap();
                 data.inner.lock().unwrap().mime_types.clone()
             }
             Self::Primary(source) => {
-                let data: &PrimarySourceUserData = source.data().unwrap();
+                let data = source.user_data().unwrap();
                 data.inner.lock().unwrap().mime_types.clone()
             }
             Self::DataControl(source) => {
-                let data: &DataControlSourceUserData = source.data().unwrap();
+                let data = source.user_data().unwrap();
                 data.inner.lock().unwrap().mime_types.clone()
             }
         }

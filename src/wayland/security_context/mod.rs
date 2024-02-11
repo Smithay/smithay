@@ -20,7 +20,7 @@ pub use listener_source::SecurityContextListenerSource;
 const MANAGER_VERSION: u32 = 1;
 
 /// Handler for security context protocol
-pub trait SecurityContextHandler {
+pub trait SecurityContextHandler: 'static {
     /// A client has created a security context. `source` is a callop `EventSource` that listens on
     /// the socket and produces streams when clients connect. `context` has the metadata associated
     /// with the security context.
@@ -67,16 +67,14 @@ impl SecurityContextState {
     /// created through a security context for the protcol to be correct and secure.
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<WpSecurityContextManagerV1, SecurityContextGlobalData>,
-        D: Dispatch<WpSecurityContextManagerV1, ()>,
-        D: Dispatch<WpSecurityContextV1, SecurityContextUserData>,
-        D: 'static,
+        D: SecurityContextHandler,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
         let global_data = SecurityContextGlobalData {
             filter: Box::new(filter),
         };
-        let global = display.create_global::<D, WpSecurityContextManagerV1, _>(MANAGER_VERSION, global_data);
+        let global = display
+            .create_delegated_global::<D, WpSecurityContextManagerV1, _, Self>(MANAGER_VERSION, global_data);
 
         Self { global }
     }
@@ -95,9 +93,7 @@ pub struct SecurityContextGlobalData {
 
 impl<D> GlobalDispatch<WpSecurityContextManagerV1, SecurityContextGlobalData, D> for SecurityContextState
 where
-    D: GlobalDispatch<WpSecurityContextManagerV1, SecurityContextGlobalData>,
-    D: Dispatch<WpSecurityContextManagerV1, ()>,
-    D: 'static,
+    D: SecurityContextHandler,
 {
     fn bind(
         _state: &mut D,
@@ -107,7 +103,7 @@ where
         _global_data: &SecurityContextGlobalData,
         data_init: &mut DataInit<'_, D>,
     ) {
-        data_init.init(resource, ());
+        data_init.init_delegated::<_, _, Self>(resource, ());
     }
 
     fn can_view(client: Client, global_data: &SecurityContextGlobalData) -> bool {
@@ -117,9 +113,7 @@ where
 
 impl<D> Dispatch<WpSecurityContextManagerV1, (), D> for SecurityContextState
 where
-    D: Dispatch<WpSecurityContextManagerV1, ()>,
-    D: Dispatch<WpSecurityContextV1, SecurityContextUserData>,
-    D: 'static,
+    D: SecurityContextHandler,
 {
     fn request(
         _state: &mut D,
@@ -143,7 +137,7 @@ where
                     app_id: None,
                     instance_id: None,
                 })));
-                data_init.init(id, data);
+                data_init.init_delegated::<_, _, Self>(id, data);
             }
             wp_security_context_manager_v1::Request::Destroy => {}
             _ => unreachable!(),
@@ -153,7 +147,6 @@ where
 
 impl<D> Dispatch<WpSecurityContextV1, SecurityContextUserData, D> for SecurityContextState
 where
-    D: Dispatch<WpSecurityContextV1, SecurityContextUserData> + 'static,
     D: SecurityContextHandler,
 {
     fn request(
@@ -229,17 +222,8 @@ where
 }
 
 /// Macro to delegate implementation of the security context protocol
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[macro_export]
 macro_rules! delegate_security_context {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::security_context::v1::server::wp_security_context_manager_v1::WpSecurityContextManagerV1: $crate::wayland::security_context::SecurityContextGlobalData
-        ] => $crate::wayland::security_context::SecurityContextState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::security_context::v1::server::wp_security_context_manager_v1::WpSecurityContextManagerV1: ()
-        ] => $crate::wayland::security_context::SecurityContextState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::wp::security_context::v1::server::wp_security_context_v1::WpSecurityContextV1: $crate::wayland::security_context::SecurityContextUserData
-        ] => $crate::wayland::security_context::SecurityContextState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }

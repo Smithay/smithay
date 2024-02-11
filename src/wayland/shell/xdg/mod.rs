@@ -25,7 +25,6 @@
 //! ```no_run
 //! # extern crate wayland_server;
 //! #
-//! use smithay::delegate_xdg_shell;
 //! use smithay::reexports::wayland_server::protocol::{wl_seat, wl_surface};
 //! use smithay::wayland::shell::xdg::{XdgShellState, XdgShellHandler, ToplevelSurface, PopupSurface, PositionerState};
 //! use smithay::utils::Serial;
@@ -94,7 +93,6 @@
 //!         // handle new images for the cursor ...
 //!     }
 //! }
-//! delegate_xdg_shell!(State);
 //!
 //! // You're now ready to go!
 //! ```
@@ -119,6 +117,7 @@
 //! the [`XdgShellHandler`], or via methods on the [`XdgShellState`].
 
 use crate::utils::alive_tracker::IsAlive;
+use crate::utils::user_data::UserdataGetter;
 use crate::utils::{user_data::UserDataMap, Logical, Point, Rectangle, Size};
 use crate::utils::{Serial, SERIAL_COUNTER};
 use crate::wayland::compositor;
@@ -135,7 +134,7 @@ use wayland_protocols::xdg::shell::server::{xdg_popup, xdg_positioner, xdg_tople
 use wayland_server::backend::GlobalId;
 use wayland_server::{
     protocol::{wl_output, wl_seat, wl_surface},
-    DisplayHandle, GlobalDispatch, Resource,
+    DisplayHandle, Resource,
 };
 
 use super::PingError;
@@ -1045,7 +1044,7 @@ impl Cacheable for SurfaceCachedState {
 
 /// Xdg Shell handler type
 #[allow(unused_variables)]
-pub trait XdgShellHandler {
+pub trait XdgShellHandler: 'static {
     /// [XdgShellState] getter
     fn xdg_shell_state(&mut self) -> &mut XdgShellState;
 
@@ -1182,7 +1181,7 @@ impl XdgShellState {
     /// Create a new `xdg_shell` global with all [`WmCapabilities`](xdg_toplevel::WmCapabilities)
     pub fn new<D>(display: &DisplayHandle) -> XdgShellState
     where
-        D: GlobalDispatch<XdgWmBase, ()> + 'static,
+        D: XdgShellHandler,
     {
         Self::new_with_capabilities::<D>(
             display,
@@ -1201,9 +1200,9 @@ impl XdgShellState {
         capabilities: impl Into<WmCapabilitySet>,
     ) -> XdgShellState
     where
-        D: GlobalDispatch<XdgWmBase, ()> + 'static,
+        D: XdgShellHandler,
     {
-        let global = display.create_global::<D, XdgWmBase, _>(6, ());
+        let global = display.create_delegated_global::<D, XdgWmBase, _, Self>(6, ());
 
         XdgShellState {
             known_toplevels: Vec::new(),
@@ -1306,7 +1305,7 @@ impl ShellClient {
         if !self.alive() {
             return Err(PingError::DeadSurface);
         }
-        let user_data = self.kind.data::<self::handlers::XdgWmBaseUserData>().unwrap();
+        let user_data = self.kind.user_data().unwrap();
         let mut guard = user_data.client_data.lock().unwrap();
         if let Some(pending_ping) = guard.pending_ping {
             return Err(PingError::PingAlreadyPending(pending_ping));
@@ -1340,7 +1339,7 @@ impl ShellClient {
         if !self.alive() {
             return Err(crate::utils::DeadResource);
         }
-        let data = self.kind.data::<self::handlers::XdgWmBaseUserData>().unwrap();
+        let data = self.kind.user_data().unwrap();
         let mut guard = data.client_data.lock().unwrap();
         Ok(f(&mut guard.data))
     }
@@ -1374,10 +1373,7 @@ impl ToplevelSurface {
     /// Retrieve the shell client owning this toplevel surface
     pub fn client(&self) -> ShellClient {
         let shell = {
-            let data = self
-                .shell_surface
-                .data::<self::handlers::XdgShellSurfaceUserData>()
-                .unwrap();
+            let data = self.shell_surface.user_data().unwrap();
             data.wm_base.clone()
         };
 
@@ -1439,7 +1435,7 @@ impl ToplevelSurface {
     /// Note: This will always send a configure event, if you intend to only send a configure event on changes take a look at
     /// [`send_pending_configure`](ToplevelSurface::send_pending_configure)
     pub fn send_configure(&self) -> Serial {
-        let shell_surface_data = self.shell_surface.data::<XdgShellSurfaceUserData>();
+        let shell_surface_data = &self.shell_surface.user_data();
         let decoration =
             shell_surface_data.and_then(|data| data.decoration.lock().unwrap().as_ref().cloned());
         let (configure, decoration_mode_changed, bounds_changed, capabilities_changed) =
@@ -1555,10 +1551,7 @@ impl ToplevelSurface {
                 .configured
         });
         if !configured {
-            let data = self
-                .shell_surface
-                .data::<self::handlers::XdgShellSurfaceUserData>()
-                .unwrap();
+            let data = self.shell_surface.user_data().unwrap();
             data.xdg_surface.post_error(
                 xdg_surface::Error::NotConstructed,
                 "Surface has not been configured yet.",
@@ -1720,10 +1713,7 @@ impl PopupSurface {
     /// Retrieve the shell client owning this popup surface
     pub fn client(&self) -> ShellClient {
         let shell = {
-            let data = self
-                .shell_surface
-                .data::<self::handlers::XdgShellSurfaceUserData>()
-                .unwrap();
+            let data = self.shell_surface.user_data().unwrap();
             data.wm_base.clone()
         };
 
@@ -1858,7 +1848,7 @@ impl PopupSurface {
             }
         });
         if let Some(handle) = send_error_to {
-            let data = handle.data::<self::handlers::XdgShellSurfaceUserData>().unwrap();
+            let data = handle.user_data().unwrap();
             data.xdg_surface.post_error(
                 xdg_surface::Error::NotConstructed,
                 "Surface has not been configured yet.",
@@ -1904,10 +1894,7 @@ impl PopupSurface {
                 .configured
         });
         if !configured {
-            let data = self
-                .shell_surface
-                .data::<self::handlers::XdgShellSurfaceUserData>()
-                .unwrap();
+            let data = self.shell_surface.user_data().unwrap();
             data.xdg_surface.post_error(
                 xdg_surface::Error::NotConstructed,
                 "Surface has not been configured yet.",
@@ -2004,28 +1991,9 @@ impl From<PopupConfigure> for Configure {
     }
 }
 
+#[deprecated(note = "No longer needed, this is now NOP")]
 #[allow(missing_docs)] // TODO
 #[macro_export]
 macro_rules! delegate_xdg_shell {
-    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
-        $crate::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase: ()
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase: $crate::wayland::shell::xdg::XdgWmBaseUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::XdgPositioner: $crate::wayland::shell::xdg::XdgPositionerUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_popup::XdgPopup: $crate::wayland::shell::xdg::XdgShellSurfaceUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_surface::XdgSurface: $crate::wayland::shell::xdg::XdgSurfaceUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-        $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel: $crate::wayland::shell::xdg::XdgShellSurfaceUserData
-        ] => $crate::wayland::shell::xdg::XdgShellState);
-    };
+    ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {};
 }
