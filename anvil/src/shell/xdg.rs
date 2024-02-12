@@ -193,12 +193,21 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .find(|element| element.wl_surface().as_ref() == Some(&surface));
             if let Some(window) = window {
                 use xdg_decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
-                let is_ssd = configure
+                match configure
                     .state
                     .decoration_mode
-                    .map(|mode| mode == Mode::ServerSide)
-                    .unwrap_or(false);
-                window.set_ssd(is_ssd);
+                    .unwrap_or(Mode::ClientSide) {
+                        Mode::ServerSide => {
+                            window.set_ssd();
+                        }
+                        Mode::ClientSide => {
+                            window.set_no_ssd();
+                        }
+                        Mode::ServerSideOverlay => {
+                            window.set_ssd_overlay();
+                        }
+                        _ => { panic!() }
+                    }
             }
         }
     }
