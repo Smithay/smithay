@@ -168,6 +168,7 @@ impl DmabufHandler for AnvilState<UdevData> {
             .and_then(|mut renderer| renderer.import_dmabuf(&dmabuf, None))
             .is_ok()
         {
+            dmabuf.set_node(self.backend_data.primary_gpu);
             let _ = notifier.successful::<AnvilState<UdevData>>();
         } else {
             notifier.failed();
