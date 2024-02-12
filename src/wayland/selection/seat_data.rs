@@ -1,3 +1,4 @@
+use wayland_protocols_wlr::data_control::v1::server::zwlr_data_control_device_v1::EVT_PRIMARY_SELECTION_SINCE;
 use wayland_server::protocol::wl_data_device::WlDataDevice;
 use wayland_server::{Client, DisplayHandle, Resource};
 
@@ -157,7 +158,12 @@ impl<U: Clone + Send + Sync + 'static> SeatData<U> {
                 // later on.
                 SelectionDevice::DataDevice(_) => ty == SelectionTarget::Clipboard,
                 SelectionDevice::Primary(_) => ty == SelectionTarget::Primary,
-                SelectionDevice::DataControl(_) => update_data_control,
+                SelectionDevice::DataControl(data_control) => {
+                    // Primary selection is available for data control only since v2.
+                    update_data_control
+                        && (data_control.version() >= EVT_PRIMARY_SELECTION_SINCE
+                            || ty != SelectionTarget::Primary)
+                }
             })
         {
             // Data control doesn't require focus and should always get selection updates, unless
