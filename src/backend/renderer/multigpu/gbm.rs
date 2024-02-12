@@ -7,7 +7,7 @@ use wayland_server::protocol::wl_buffer;
 
 use crate::backend::{
     allocator::{
-        dmabuf::{AnyError, DmabufAllocator},
+        dmabuf::{AnyError, DmabufAllocator, Dmabuf},
         gbm::GbmAllocator,
         Allocator,
     },
@@ -23,7 +23,7 @@ use crate::backend::{
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::{
     backend::{
-        allocator::{dmabuf::Dmabuf, Buffer as BufferTrait},
+        allocator::{Buffer as BufferTrait},
         egl::display::EGLBufferReader,
         renderer::{
             multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
