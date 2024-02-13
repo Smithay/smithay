@@ -79,6 +79,10 @@
 //! #         unimplemented!()
 //! #     }
 //! #     fn finish(self) -> Result<SyncPoint, Self::Error> { unimplemented!() }
+//! #     fn set_downscale_filter(&mut self, _filter: TextureFilter) {}
+//! #     fn set_upscale_filter(&mut self, _filter: TextureFilter) {}
+//! #     fn downscale_filter(&self) -> TextureFilter { unimplemented!() }
+//! #     fn upscale_filter(&self) -> TextureFilter { unimplemented!() }
 //! # }
 //! #
 //! # #[derive(Debug)]

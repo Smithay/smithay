@@ -2529,6 +2529,22 @@ impl<'frame> Frame for GlesFrame<'frame> {
     fn wait(&mut self, sync: &SyncPoint) -> Result<(), Self::Error> {
         self.renderer.wait(sync)
     }
+
+    fn set_downscale_filter(&mut self, filter: TextureFilter) {
+        self.renderer.min_filter = filter;
+    }
+
+    fn set_upscale_filter(&mut self, filter: TextureFilter) {
+        self.renderer.max_filter = filter;
+    }
+
+    fn downscale_filter(&self) -> TextureFilter {
+        self.renderer.min_filter
+    }
+
+    fn upscale_filter(&self) -> TextureFilter {
+        self.renderer.max_filter
+    }
 }
 
 impl<'frame> GlesFrame<'frame> {
