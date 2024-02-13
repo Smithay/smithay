@@ -7,6 +7,7 @@ use crate::{
             GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
             GestureSwipeUpdateEvent, MotionEvent, PointerTarget, RelativeMotionEvent,
         },
+        touch::TouchTarget,
         Seat, SeatHandler,
     },
     utils::{user_data::UserDataMap, IsAlive, Logical, Rectangle, Serial, Size},
@@ -993,6 +994,56 @@ impl<D: SeatHandler + 'static> PointerTarget<D> for X11Surface {
     fn gesture_hold_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldEndEvent) {
         if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
             PointerTarget::gesture_hold_end(surface, seat, data, event)
+        }
+    }
+}
+
+impl<D: SeatHandler + 'static> TouchTarget<D> for X11Surface {
+    fn down(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::DownEvent, seq: Serial) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TouchTarget::down(surface, seat, data, event, seq)
+        }
+    }
+
+    fn up(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::UpEvent, seq: Serial) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TouchTarget::up(surface, seat, data, event, seq)
+        }
+    }
+
+    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::MotionEvent, seq: Serial) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TouchTarget::motion(surface, seat, data, event, seq)
+        }
+    }
+
+    fn frame(&self, seat: &Seat<D>, data: &mut D, seq: Serial) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TouchTarget::frame(surface, seat, data, seq)
+        }
+    }
+
+    fn cancel(&self, seat: &Seat<D>, data: &mut D, seq: Serial) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TouchTarget::cancel(surface, seat, data, seq)
+        }
+    }
+
+    fn shape(&self, seat: &Seat<D>, data: &mut D, event: &crate::input::touch::ShapeEvent, seq: Serial) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TouchTarget::shape(surface, seat, data, event, seq)
+        }
+    }
+
+    fn orientation(
+        &self,
+        seat: &Seat<D>,
+        data: &mut D,
+        event: &crate::input::touch::OrientationEvent,
+        seq: Serial,
+    ) {
+        if let Some(surface) = self.state.lock().unwrap().wl_surface.as_ref() {
+            TouchTarget::orientation(surface, seat, data, event, seq)
         }
     }
 }

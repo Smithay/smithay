@@ -251,6 +251,7 @@ delegate_shm!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
     type KeyboardFocus = KeyboardFocusTarget;
     type PointerFocus = PointerFocusTarget;
+    type TouchFocus = PointerFocusTarget;
 
     fn seat_state(&mut self) -> &mut SeatState<AnvilState<BackendData>> {
         &mut self.seat_state

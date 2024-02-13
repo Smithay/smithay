@@ -14,9 +14,12 @@ pub use smithay::{
 };
 use smithay::{
     desktop::{Window, WindowSurface},
-    input::pointer::{
-        GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
-        GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
+    input::{
+        pointer::{
+            GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
+            GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
+        },
+        touch::TouchTarget,
     },
 };
 
@@ -343,6 +346,101 @@ impl<BackendData: Backend> KeyboardTarget<AnvilState<BackendData>> for KeyboardF
             KeyboardFocusTarget::Popup(p) => {
                 KeyboardTarget::modifiers(p.wl_surface(), seat, data, modifiers, serial)
             }
+        }
+    }
+}
+
+impl<BackendData: Backend> TouchTarget<AnvilState<BackendData>> for PointerFocusTarget {
+    fn down(
+        &self,
+        seat: &Seat<AnvilState<BackendData>>,
+        data: &mut AnvilState<BackendData>,
+        event: &smithay::input::touch::DownEvent,
+        seq: Serial,
+    ) {
+        match self {
+            PointerFocusTarget::WlSurface(w) => TouchTarget::down(w, seat, data, event, seq),
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(w) => TouchTarget::down(w, seat, data, event, seq),
+            PointerFocusTarget::SSD(w) => TouchTarget::down(w, seat, data, event, seq),
+        }
+    }
+
+    fn up(
+        &self,
+        seat: &Seat<AnvilState<BackendData>>,
+        data: &mut AnvilState<BackendData>,
+        event: &smithay::input::touch::UpEvent,
+        seq: Serial,
+    ) {
+        match self {
+            PointerFocusTarget::WlSurface(w) => TouchTarget::up(w, seat, data, event, seq),
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(w) => TouchTarget::up(w, seat, data, event, seq),
+            PointerFocusTarget::SSD(w) => TouchTarget::up(w, seat, data, event, seq),
+        }
+    }
+
+    fn motion(
+        &self,
+        seat: &Seat<AnvilState<BackendData>>,
+        data: &mut AnvilState<BackendData>,
+        event: &smithay::input::touch::MotionEvent,
+        seq: Serial,
+    ) {
+        match self {
+            PointerFocusTarget::WlSurface(w) => TouchTarget::motion(w, seat, data, event, seq),
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(w) => TouchTarget::motion(w, seat, data, event, seq),
+            PointerFocusTarget::SSD(w) => TouchTarget::motion(w, seat, data, event, seq),
+        }
+    }
+
+    fn frame(&self, seat: &Seat<AnvilState<BackendData>>, data: &mut AnvilState<BackendData>, seq: Serial) {
+        match self {
+            PointerFocusTarget::WlSurface(w) => TouchTarget::frame(w, seat, data, seq),
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(w) => TouchTarget::frame(w, seat, data, seq),
+            PointerFocusTarget::SSD(w) => TouchTarget::frame(w, seat, data, seq),
+        }
+    }
+
+    fn cancel(&self, seat: &Seat<AnvilState<BackendData>>, data: &mut AnvilState<BackendData>, seq: Serial) {
+        match self {
+            PointerFocusTarget::WlSurface(w) => TouchTarget::cancel(w, seat, data, seq),
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(w) => TouchTarget::cancel(w, seat, data, seq),
+            PointerFocusTarget::SSD(w) => TouchTarget::cancel(w, seat, data, seq),
+        }
+    }
+
+    fn shape(
+        &self,
+        seat: &Seat<AnvilState<BackendData>>,
+        data: &mut AnvilState<BackendData>,
+        event: &smithay::input::touch::ShapeEvent,
+        seq: Serial,
+    ) {
+        match self {
+            PointerFocusTarget::WlSurface(w) => TouchTarget::shape(w, seat, data, event, seq),
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(w) => TouchTarget::shape(w, seat, data, event, seq),
+            PointerFocusTarget::SSD(w) => TouchTarget::shape(w, seat, data, event, seq),
+        }
+    }
+
+    fn orientation(
+        &self,
+        seat: &Seat<AnvilState<BackendData>>,
+        data: &mut AnvilState<BackendData>,
+        event: &smithay::input::touch::OrientationEvent,
+        seq: Serial,
+    ) {
+        match self {
+            PointerFocusTarget::WlSurface(w) => TouchTarget::orientation(w, seat, data, event, seq),
+            #[cfg(feature = "xwayland")]
+            PointerFocusTarget::X11Surface(w) => TouchTarget::orientation(w, seat, data, event, seq),
+            PointerFocusTarget::SSD(w) => TouchTarget::orientation(w, seat, data, event, seq),
         }
     }
 }

@@ -20,6 +20,7 @@ use smithay::{delegate_data_device, delegate_output, delegate_seat};
 impl SeatHandler for Smallvil {
     type KeyboardFocus = WlSurface;
     type PointerFocus = WlSurface;
+    type TouchFocus = WlSurface;
 
     fn seat_state(&mut self) -> &mut SeatState<Smallvil> {
         &mut self.seat_state

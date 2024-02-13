@@ -81,6 +81,7 @@
 //! impl SeatHandler for State {
 //!     type KeyboardFocus = Target;
 //!     type PointerFocus = Target;
+//!     type TouchFocus = Target;
 //!
 //!     fn seat_state(&mut self) -> &mut SeatState<Self> {
 //!         &mut self.seat_state

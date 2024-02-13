@@ -1,7 +1,7 @@
 //!
 //! Input abstractions
 //!
-//! This module provides some types loosely resembling instances of wayland seats, pointers and keyboards.
+//! This module provides some types loosely resembling instances of wayland seats, pointers, touch and keyboards.
 //! It is however not directly tied to wayland and can be used to multiplex various input operations
 //! between different handlers.
 //!
@@ -24,6 +24,7 @@
 //! #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
 //! #             GestureHoldBeginEvent, GestureHoldEndEvent},
 //! #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+//! #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
 //! # };
 //! # use smithay::utils::{IsAlive, Serial};
 //!
@@ -75,11 +76,21 @@
 //! #   ) {}
 //! #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
 //! # }
+//! # impl TouchTarget<State> for Target {
+//! #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
+//! #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
+//! #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
+//! #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
+//! #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
+//! #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
+//! #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
+//! # }
 //!
 //! // implement the required traits
 //! impl SeatHandler for State {
 //!     type KeyboardFocus = Target;
 //!     type PointerFocus = Target;
+//!     type TouchFocus = Target;
 //!
 //!     fn seat_state(&mut self) -> &mut SeatState<Self> {
 //!         &mut self.seat_state
@@ -98,13 +109,11 @@
 //!
 //! Once the seat is initialized, you can add capabilities to it.
 //!
-//! Currently, pointer and keyboard capabilities are supported by this module.
-//! [`seat`](crate::wayland::seat) also provides an abstraction to send touch-events to client,
-//! further helpers are not provided at this point.
+//! Currently, pointer, touch and keyboard capabilities are supported by this module.
 //! [`tablet_manager`](crate::wayland::tablet_manager) also provides client interaction for drawing tablets.
 //!
 //! You can add these capabilities via methods of the [`Seat`] struct:
-//! [`Seat::add_keyboard`] and [`Seat::add_pointer`].
+//! [`Seat::add_keyboard`], [`Seat::add_pointer`] and [`Seat::add_touch`].
 //! These methods return handles that can be cloned and sent across thread, so you can keep one around
 //! in your event-handling code to forward inputs to your clients.
 //!
@@ -117,12 +126,17 @@ use std::{
 
 use tracing::{info_span, instrument};
 
-use self::keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardTarget, LedState};
 use self::pointer::{CursorImageStatus, PointerHandle, PointerTarget};
+use self::touch::TouchTarget;
+use self::{
+    keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardTarget, LedState},
+    touch::TouchHandle,
+};
 use crate::utils::user_data::UserDataMap;
 
 pub mod keyboard;
 pub mod pointer;
+pub mod touch;
 
 /// Handler trait for Seats
 pub trait SeatHandler: Sized {
@@ -130,6 +144,8 @@ pub trait SeatHandler: Sized {
     type KeyboardFocus: KeyboardTarget<Self> + 'static;
     /// Type used to represent the target currently holding the pointer focus
     type PointerFocus: PointerTarget<Self> + 'static;
+    /// Type used to represent the target currently holding the touch focus
+    type TouchFocus: TouchTarget<Self> + 'static;
 
     /// [SeatState] getter
     fn seat_state(&mut self) -> &mut SeatState<Self>;
@@ -190,9 +206,8 @@ impl<D: SeatHandler> Hash for Seat<D> {
 pub(crate) struct Inner<D: SeatHandler> {
     pub(crate) pointer: Option<PointerHandle<D>>,
     pub(crate) keyboard: Option<KeyboardHandle<D>>,
+    pub(crate) touch: Option<TouchHandle<D>>,
 
-    #[cfg(feature = "wayland_frontend")]
-    pub(crate) touch: Option<crate::wayland::seat::TouchHandle>,
     #[cfg(feature = "wayland_frontend")]
     pub(crate) global: Option<wayland_server::backend::GlobalId>,
     #[cfg(feature = "wayland_frontend")]
@@ -273,9 +288,8 @@ impl<D: SeatHandler> SeatState<D> {
             inner: Mutex::new(Inner {
                 pointer: None,
                 keyboard: None,
-
-                #[cfg(feature = "wayland_frontend")]
                 touch: None,
+
                 #[cfg(feature = "wayland_frontend")]
                 global: None,
                 #[cfg(feature = "wayland_frontend")]
@@ -316,6 +330,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
     /// #             GestureHoldBeginEvent, GestureHoldEndEvent},
     /// #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+    /// #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
     /// # };
     /// # use smithay::utils::{IsAlive, Serial};
     /// #
@@ -355,10 +370,20 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #   ) {}
     /// #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
     /// # }
+    /// # impl TouchTarget<State> for Target {
+    /// #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
+    /// #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
+    /// #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
+    /// #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
+    /// #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
+    /// #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
+    /// #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
+    /// # }
     /// # struct State;
     /// # impl SeatHandler for State {
     /// #     type KeyboardFocus = Target;
     /// #     type PointerFocus = Target;
+    /// #     type TouchFocus = Target;
     /// #
     /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
     /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) { unimplemented!() }
@@ -426,6 +451,7 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #             GesturePinchBeginEvent, GesturePinchUpdateEvent, GesturePinchEndEvent,
     /// #             GestureHoldBeginEvent, GestureHoldEndEvent},
     /// #   keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
+    /// #   touch::{DownEvent, UpEvent, MotionEvent as TouchMotionEvent, ShapeEvent, OrientationEvent, TouchTarget},
     /// # };
     /// # use smithay::utils::{IsAlive, Serial};
     /// #
@@ -465,11 +491,21 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// #   ) {}
     /// #   fn modifiers(&self, seat: &Seat<State>, data: &mut State, modifiers: ModifiersState, serial: Serial) {}
     /// # }
+    /// # impl TouchTarget<State> for Target {
+    /// #   fn down(&self, seat: &Seat<State>, data: &mut State, event: &DownEvent, seq: Serial) {}
+    /// #   fn up(&self, seat: &Seat<State>, data: &mut State, event: &UpEvent, seq: Serial) {}
+    /// #   fn motion(&self, seat: &Seat<State>, data: &mut State, event: &TouchMotionEvent, seq: Serial) {}
+    /// #   fn frame(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
+    /// #   fn cancel(&self, seat: &Seat<State>, data: &mut State, seq: Serial) {}
+    /// #   fn shape(&self, seat: &Seat<State>, data: &mut State, event: &ShapeEvent, seq: Serial) {}
+    /// #   fn orientation(&self, seat: &Seat<State>, data: &mut State, event: &OrientationEvent, seq: Serial) {}
+    /// # }
     /// #
     /// # struct State;
     /// # impl SeatHandler for State {
     /// #     type KeyboardFocus = Target;
     /// #     type PointerFocus = Target;
+    /// #     type TouchFocus = Target;
     /// #
     /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
     /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&Target>) { unimplemented!() }
@@ -523,6 +559,65 @@ impl<D: SeatHandler + 'static> Seat<D> {
         let mut inner = self.arc.inner.lock().unwrap();
         if inner.keyboard.is_some() {
             inner.keyboard = None;
+            #[cfg(feature = "wayland_frontend")]
+            inner.send_all_caps();
+        }
+    }
+
+    /// Adds the touch capability to this seat
+    ///
+    /// You are provided a [`TouchHandle`], which allows you to send input events
+    /// to this pointer. This handle can be cloned.
+    ///
+    /// Calling this method on a seat that already has a touch capability
+    /// will overwrite it, and will be seen by the clients as if the
+    /// touchscreen was unplugged and a new one was plugged in.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
+    /// # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+    /// #
+    /// # struct State;
+    /// # impl SeatHandler for State {
+    /// #     type KeyboardFocus = WlSurface;
+    /// #     type PointerFocus = WlSurface;
+    /// #     type TouchFocus = WlSurface;
+    /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
+    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
+    /// #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
+    /// # }
+    /// # let mut seat: Seat<State> = unimplemented!();
+    /// let touch_handle = seat.add_touch();
+    /// ```
+    pub fn add_touch(&mut self) -> TouchHandle<D> {
+        let mut inner = self.arc.inner.lock().unwrap();
+        let touch = TouchHandle::new();
+        if inner.touch.is_some() {
+            // If there's already a tocuh device, remove it notify the clients about the change.
+            inner.touch = None;
+            #[cfg(feature = "wayland_frontend")]
+            inner.send_all_caps();
+        }
+        inner.touch = Some(touch.clone());
+        #[cfg(feature = "wayland_frontend")]
+        inner.send_all_caps();
+        touch
+    }
+
+    /// Access the touch device of this seat, if any.
+    pub fn get_touch(&self) -> Option<TouchHandle<D>> {
+        self.arc.inner.lock().unwrap().touch.clone()
+    }
+
+    /// Remove the touch capability from this seat
+    ///
+    /// Clients will be appropriately notified.
+    pub fn remove_touch(&mut self) {
+        let mut inner = self.arc.inner.lock().unwrap();
+        if inner.touch.is_some() {
+            inner.touch = None;
             #[cfg(feature = "wayland_frontend")]
             inner.send_all_caps();
         }

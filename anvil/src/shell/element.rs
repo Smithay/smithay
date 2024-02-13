@@ -14,6 +14,7 @@ use smithay::{
             GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
             GestureSwipeUpdateEvent, MotionEvent, PointerTarget, RelativeMotionEvent,
         },
+        touch::TouchTarget,
         Seat,
     },
     output::Output,
@@ -248,6 +249,70 @@ impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for SSD 
         _seat: &Seat<AnvilState<Backend>>,
         _data: &mut AnvilState<Backend>,
         _event: &GestureHoldEndEvent,
+    ) {
+    }
+}
+
+impl<Backend: crate::state::Backend> TouchTarget<AnvilState<Backend>> for SSD {
+    fn down(
+        &self,
+        seat: &Seat<AnvilState<Backend>>,
+        data: &mut AnvilState<Backend>,
+        event: &smithay::input::touch::DownEvent,
+        _seq: Serial,
+    ) {
+        let mut state = self.0.decoration_state();
+        if state.is_ssd {
+            state.header_bar.pointer_enter(event.location);
+            state.header_bar.touch_down(seat, data, &self.0, event.serial);
+        }
+    }
+
+    fn up(
+        &self,
+        seat: &Seat<AnvilState<Backend>>,
+        data: &mut AnvilState<Backend>,
+        event: &smithay::input::touch::UpEvent,
+        _seq: Serial,
+    ) {
+        let mut state = self.0.decoration_state();
+        if state.is_ssd {
+            state.header_bar.touch_up(seat, data, &self.0, event.serial);
+        }
+    }
+
+    fn motion(
+        &self,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        event: &smithay::input::touch::MotionEvent,
+        _seq: Serial,
+    ) {
+        let mut state = self.0.decoration_state();
+        if state.is_ssd {
+            state.header_bar.pointer_enter(event.location);
+        }
+    }
+
+    fn frame(&self, _seat: &Seat<AnvilState<Backend>>, _data: &mut AnvilState<Backend>, _seq: Serial) {}
+
+    fn cancel(&self, _seat: &Seat<AnvilState<Backend>>, _data: &mut AnvilState<Backend>, _seq: Serial) {}
+
+    fn shape(
+        &self,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &smithay::input::touch::ShapeEvent,
+        _seq: Serial,
+    ) {
+    }
+
+    fn orientation(
+        &self,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &smithay::input::touch::OrientationEvent,
+        _seq: Serial,
     ) {
     }
 }
