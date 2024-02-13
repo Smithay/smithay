@@ -1,6 +1,6 @@
 use std::{convert::TryInto, process::Command, sync::atomic::Ordering};
 
-use crate::{focus::FocusTarget, shell::FullscreenSurface, AnvilState};
+use crate::{focus::PointerFocusTarget, shell::FullscreenSurface, AnvilState};
 
 #[cfg(feature = "udev")]
 use crate::udev::UdevData;
@@ -235,7 +235,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let state = wl_pointer::ButtonState::from(evt.state());
 
         if wl_pointer::ButtonState::Pressed == state {
-            self.update_keyboard_focus(serial);
+            self.update_keyboard_focus(self.pointer.current_location(), serial);
         };
         let pointer = self.pointer.clone();
         pointer.button(
@@ -250,7 +250,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         pointer.frame(self);
     }
 
-    fn update_keyboard_focus(&mut self, serial: Serial) {
+    fn update_keyboard_focus(&mut self, location: Point<f64, Logical>, serial: Serial) {
         let keyboard = self.seat.get_keyboard().unwrap();
         let input_method = self.seat.input_method();
         // change the keyboard focus unless the pointer or keyboard is grabbed
@@ -263,11 +263,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         // see here for a discussion about that issue:
         // https://gitlab.freedesktop.org/wayland/wayland/-/issues/294
         if !self.pointer.is_grabbed() && (!keyboard.is_grabbed() || input_method.keyboard_grabbed()) {
-            let output = self
-                .space
-                .output_under(self.pointer.current_location())
-                .next()
-                .cloned();
+            let output = self.space.output_under(location).next().cloned();
             if let Some(output) = output.as_ref() {
                 let output_geo = self.space.output_geometry(output).unwrap();
                 if let Some(window) = output
@@ -275,10 +271,9 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                     .get::<FullscreenSurface>()
                     .and_then(|f| f.get())
                 {
-                    if let Some((_, _)) = window.surface_under(
-                        self.pointer.current_location() - output_geo.loc.to_f64(),
-                        WindowSurfaceType::ALL,
-                    ) {
+                    if let Some((_, _)) =
+                        window.surface_under(location - output_geo.loc.to_f64(), WindowSurfaceType::ALL)
+                    {
                         #[cfg(feature = "xwayland")]
                         if let Some(surface) = window.0.x11_surface() {
                             self.xwm.as_mut().unwrap().raise_window(surface).unwrap();
@@ -290,12 +285,12 @@ impl<BackendData: Backend> AnvilState<BackendData> {
 
                 let layers = layer_map_for_output(output);
                 if let Some(layer) = layers
-                    .layer_under(WlrLayer::Overlay, self.pointer.current_location())
-                    .or_else(|| layers.layer_under(WlrLayer::Top, self.pointer.current_location()))
+                    .layer_under(WlrLayer::Overlay, location)
+                    .or_else(|| layers.layer_under(WlrLayer::Top, location))
                 {
                     if layer.can_receive_keyboard_focus() {
                         if let Some((_, _)) = layer.surface_under(
-                            self.pointer.current_location()
+                            location
                                 - output_geo.loc.to_f64()
                                 - layers.layer_geometry(layer).unwrap().loc.to_f64(),
                             WindowSurfaceType::ALL,
@@ -307,17 +302,13 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 }
             }
 
-            if let Some((window, _)) = self
-                .space
-                .element_under(self.pointer.current_location())
-                .map(|(w, p)| (w.clone(), p))
-            {
+            if let Some((window, _)) = self.space.element_under(location).map(|(w, p)| (w.clone(), p)) {
                 self.space.raise_element(&window, true);
-                keyboard.set_focus(self, Some(window.clone().into()), serial);
                 #[cfg(feature = "xwayland")]
                 if let Some(surface) = window.0.x11_surface() {
                     self.xwm.as_mut().unwrap().raise_window(surface).unwrap();
                 }
+                keyboard.set_focus(self, Some(window.into()), serial);
                 return;
             }
 
@@ -325,12 +316,12 @@ impl<BackendData: Backend> AnvilState<BackendData> {
                 let output_geo = self.space.output_geometry(output).unwrap();
                 let layers = layer_map_for_output(output);
                 if let Some(layer) = layers
-                    .layer_under(WlrLayer::Bottom, self.pointer.current_location())
-                    .or_else(|| layers.layer_under(WlrLayer::Background, self.pointer.current_location()))
+                    .layer_under(WlrLayer::Bottom, location)
+                    .or_else(|| layers.layer_under(WlrLayer::Background, location))
                 {
                     if layer.can_receive_keyboard_focus() {
                         if let Some((_, _)) = layer.surface_under(
-                            self.pointer.current_location()
+                            location
                                 - output_geo.loc.to_f64()
                                 - layers.layer_geometry(layer).unwrap().loc.to_f64(),
                             WindowSurfaceType::ALL,
@@ -343,7 +334,10 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         }
     }
 
-    pub fn surface_under(&self, pos: Point<f64, Logical>) -> Option<(FocusTarget, Point<i32, Logical>)> {
+    pub fn surface_under(
+        &self,
+        pos: Point<f64, Logical>,
+    ) -> Option<(PointerFocusTarget, Point<i32, Logical>)> {
         let output = self.space.outputs().find(|o| {
             let geometry = self.space.output_geometry(o).unwrap();
             geometry.contains(pos.to_i32_round())
@@ -352,26 +346,57 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         let layers = layer_map_for_output(output);
 
         let mut under = None;
-        if let Some(window) = output
+        if let Some((surface, loc)) = output
             .user_data()
             .get::<FullscreenSurface>()
             .and_then(|f| f.get())
+            .and_then(|w| w.surface_under(pos - output_geo.loc.to_f64(), WindowSurfaceType::ALL))
         {
-            under = Some((window.into(), output_geo.loc));
-        } else if let Some(layer) = layers
+            under = Some((surface, loc + output_geo.loc));
+        } else if let Some(focus) = layers
             .layer_under(WlrLayer::Overlay, pos)
             .or_else(|| layers.layer_under(WlrLayer::Top, pos))
+            .and_then(|layer| {
+                let layer_loc = layers.layer_geometry(layer).unwrap().loc;
+                layer
+                    .surface_under(
+                        pos - output_geo.loc.to_f64() - layer_loc.to_f64(),
+                        WindowSurfaceType::ALL,
+                    )
+                    .map(|(surface, loc)| {
+                        (
+                            PointerFocusTarget::from(surface),
+                            loc + layer_loc + output_geo.loc,
+                        )
+                    })
+            })
         {
-            let layer_loc = layers.layer_geometry(layer).unwrap().loc;
-            under = Some((layer.clone().into(), output_geo.loc + layer_loc))
-        } else if let Some((window, location)) = self.space.element_under(pos) {
-            under = Some((window.clone().into(), location));
-        } else if let Some(layer) = layers
+            under = Some(focus)
+        } else if let Some(focus) = self.space.element_under(pos).and_then(|(window, loc)| {
+            window
+                .surface_under(pos - loc.to_f64(), WindowSurfaceType::ALL)
+                .map(|(surface, surf_loc)| (surface, surf_loc + loc))
+        }) {
+            under = Some(focus);
+        } else if let Some(focus) = layers
             .layer_under(WlrLayer::Bottom, pos)
             .or_else(|| layers.layer_under(WlrLayer::Background, pos))
+            .and_then(|layer| {
+                let layer_loc = layers.layer_geometry(layer).unwrap().loc;
+                layer
+                    .surface_under(
+                        pos - output_geo.loc.to_f64() - layer_loc.to_f64(),
+                        WindowSurfaceType::ALL,
+                    )
+                    .map(|(surface, loc)| {
+                        (
+                            PointerFocusTarget::from(surface),
+                            loc + layer_loc + output_geo.loc,
+                        )
+                    })
+            })
         {
-            let layer_loc = layers.layer_geometry(layer).unwrap().loc;
-            under = Some((layer.clone().into(), output_geo.loc + layer_loc));
+            under = Some(focus)
         };
         under
     }
@@ -1019,7 +1044,7 @@ impl AnvilState<UdevData> {
                     tool.tip_down(serial, evt.time_msec());
 
                     // change the keyboard focus
-                    self.update_keyboard_focus(serial);
+                    self.update_keyboard_focus(self.pointer.current_location(), serial);
                 }
                 TabletToolTipState::Up => {
                     tool.tip_up(evt.time_msec());

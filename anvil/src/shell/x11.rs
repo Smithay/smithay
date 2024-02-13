@@ -25,7 +25,7 @@ use smithay::{
 };
 use tracing::{error, trace};
 
-use crate::{focus::FocusTarget, state::Backend, AnvilState, CalloopData};
+use crate::{focus::KeyboardFocusTarget, state::Backend, AnvilState, CalloopData};
 
 use super::{
     place_new_window, FullscreenSurface, MoveSurfaceGrab, ResizeData, ResizeState, ResizeSurfaceGrab,
@@ -263,8 +263,8 @@ impl<BackendData: Backend> XwmHandler for CalloopData<BackendData> {
     fn allow_selection_access(&mut self, xwm: XwmId, _selection: SelectionTarget) -> bool {
         if let Some(keyboard) = self.state.seat.get_keyboard() {
             // check that an X11 window is focused
-            if let Some(FocusTarget::Window(w)) = keyboard.current_focus() {
-                if let Some(surface) = w.0.x11_surface() {
+            if let Some(KeyboardFocusTarget::Window(w)) = keyboard.current_focus() {
+                if let Some(surface) = w.x11_surface() {
                     if surface.xwm_id().unwrap() == xwm {
                         return true;
                     }

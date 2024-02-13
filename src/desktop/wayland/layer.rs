@@ -1,17 +1,7 @@
 use crate::{
-    backend::input::KeyState,
     desktop::{utils::*, PopupManager},
-    input::{
-        keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
-        pointer::{
-            AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
-            GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
-            GestureSwipeUpdateEvent, MotionEvent, PointerTarget, RelativeMotionEvent,
-        },
-        Seat, SeatHandler,
-    },
     output::{Output, WeakOutput},
-    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle, Serial},
+    utils::{user_data::UserDataMap, IsAlive, Logical, Point, Rectangle},
     wayland::{
         compositor::{with_states, with_surface_tree_downward, SurfaceData, TraversalAction},
         dmabuf::DmabufFeedback,
@@ -25,16 +15,12 @@ use crate::{
 use indexmap::IndexSet;
 use tracing::{debug_span, trace};
 use wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
-use wayland_server::{
-    backend::ObjectId,
-    protocol::wl_surface::{self, WlSurface},
-    Resource,
-};
+use wayland_server::protocol::wl_surface::{self, WlSurface};
 
 use std::{
     cell::{RefCell, RefMut},
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 
@@ -491,7 +477,6 @@ pub(crate) struct LayerSurfaceInner {
     pub(crate) id: usize,
     surface: WlrLayerSurface,
     namespace: String,
-    focused_surface: Mutex<Option<wl_surface::WlSurface>>,
     userdata: UserDataMap,
 }
 
@@ -514,7 +499,6 @@ impl LayerSurface {
             id: next_layer_id(),
             surface,
             namespace,
-            focused_surface: Mutex::new(None),
             userdata: UserDataMap::new(),
         }))
     }
@@ -700,130 +684,8 @@ impl LayerSurface {
     }
 }
 
-impl<D: SeatHandler + 'static> PointerTarget<D> for LayerSurface {
-    fn enter(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        if let Some((surface, loc)) = self.surface_under(event.location, WindowSurfaceType::ALL) {
-            let mut new_event = event.clone();
-            new_event.location -= loc.to_f64();
-            if let Some(old_surface) = self.0.focused_surface.lock().unwrap().replace(surface.clone()) {
-                if old_surface != surface {
-                    PointerTarget::<D>::leave(&old_surface, seat, data, event.serial, event.time);
-                    PointerTarget::<D>::enter(&surface, seat, data, &new_event);
-                } else {
-                    PointerTarget::<D>::motion(&surface, seat, data, &new_event)
-                }
-            } else {
-                PointerTarget::<D>::enter(&surface, seat, data, &new_event)
-            }
-        }
-    }
-    fn motion(&self, seat: &Seat<D>, data: &mut D, event: &MotionEvent) {
-        PointerTarget::<D>::enter(self, seat, data, event)
-    }
-    fn relative_motion(&self, seat: &Seat<D>, data: &mut D, event: &RelativeMotionEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::relative_motion(surface, seat, data, event)
-        }
-    }
-    fn button(&self, seat: &Seat<D>, data: &mut D, event: &ButtonEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::button(surface, seat, data, event)
-        }
-    }
-    fn axis(&self, seat: &Seat<D>, data: &mut D, frame: AxisFrame) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::axis(surface, seat, data, frame)
-        }
-    }
-    fn frame(&self, seat: &Seat<D>, data: &mut D) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::frame(surface, seat, data)
-        }
-    }
-    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().take() {
-            PointerTarget::<D>::leave(&surface, seat, data, serial, time)
-        }
-    }
-
-    fn gesture_swipe_begin(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeBeginEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::gesture_swipe_begin(surface, seat, data, event)
-        }
-    }
-
-    fn gesture_swipe_update(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeUpdateEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::gesture_swipe_update(surface, seat, data, event)
-        }
-    }
-
-    fn gesture_swipe_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureSwipeEndEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::gesture_swipe_end(surface, seat, data, event)
-        }
-    }
-
-    fn gesture_pinch_begin(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchBeginEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::gesture_pinch_begin(surface, seat, data, event)
-        }
-    }
-
-    fn gesture_pinch_update(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchUpdateEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::gesture_pinch_update(surface, seat, data, event)
-        }
-    }
-
-    fn gesture_pinch_end(&self, seat: &Seat<D>, data: &mut D, event: &GesturePinchEndEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::gesture_pinch_end(surface, seat, data, event)
-        }
-    }
-
-    fn gesture_hold_begin(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldBeginEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::gesture_hold_begin(surface, seat, data, event)
-        }
-    }
-
-    fn gesture_hold_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldEndEvent) {
-        if let Some(surface) = self.0.focused_surface.lock().unwrap().as_ref() {
-            PointerTarget::<D>::gesture_hold_end(surface, seat, data, event)
-        }
-    }
-}
-
-impl<D: SeatHandler + 'static> KeyboardTarget<D> for LayerSurface {
-    fn enter(&self, seat: &Seat<D>, data: &mut D, keys: Vec<KeysymHandle<'_>>, serial: Serial) {
-        KeyboardTarget::<D>::enter(self.0.surface.wl_surface(), seat, data, keys, serial)
-    }
-    fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial) {
-        KeyboardTarget::<D>::leave(self.0.surface.wl_surface(), seat, data, serial)
-    }
-    fn key(
-        &self,
-        seat: &Seat<D>,
-        data: &mut D,
-        key: KeysymHandle<'_>,
-        state: KeyState,
-        serial: Serial,
-        time: u32,
-    ) {
-        KeyboardTarget::<D>::key(self.0.surface.wl_surface(), seat, data, key, state, serial, time)
-    }
-    fn modifiers(&self, seat: &Seat<D>, data: &mut D, modifiers: ModifiersState, serial: Serial) {
-        KeyboardTarget::<D>::modifiers(self.0.surface.wl_surface(), seat, data, modifiers, serial)
-    }
-}
-
 impl WaylandFocus for LayerSurface {
     fn wl_surface(&self) -> Option<wl_surface::WlSurface> {
         Some(self.0.surface.wl_surface().clone())
-    }
-
-    fn same_client_as(&self, object_id: &ObjectId) -> bool {
-        self.0.surface.wl_surface().id().same_client_as(object_id)
     }
 }

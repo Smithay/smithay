@@ -1,18 +1,14 @@
 use std::time::Duration;
 
 use smithay::{
-    backend::{
-        input::KeyState,
-        renderer::{
-            element::{
-                solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement, AsRenderElements,
-            },
-            ImportAll, ImportMem, Renderer, Texture,
-        },
+    backend::renderer::{
+        element::{solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement, AsRenderElements},
+        ImportAll, ImportMem, Renderer, Texture,
     },
-    desktop::{space::SpaceElement, utils::OutputPresentationFeedback, Window, WindowSurfaceType},
+    desktop::{
+        space::SpaceElement, utils::OutputPresentationFeedback, Window, WindowSurface, WindowSurfaceType,
+    },
     input::{
-        keyboard::{KeyboardTarget, KeysymHandle, ModifiersState},
         pointer::{
             AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
             GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
@@ -31,7 +27,7 @@ use smithay::{
 };
 
 use super::ssd::HEADER_BAR_HEIGHT;
-use crate::AnvilState;
+use crate::{focus::PointerFocusTarget, AnvilState};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowElement(pub Window);
@@ -41,8 +37,28 @@ impl WindowElement {
         &self,
         location: Point<f64, Logical>,
         window_type: WindowSurfaceType,
-    ) -> Option<(WlSurface, Point<i32, Logical>)> {
-        self.0.surface_under(location, window_type)
+    ) -> Option<(PointerFocusTarget, Point<i32, Logical>)> {
+        let state = self.decoration_state();
+        if state.is_ssd && location.y < HEADER_BAR_HEIGHT as f64 {
+            return Some((PointerFocusTarget::SSD(SSD(self.clone())), Point::default()));
+        }
+        let offset = if state.is_ssd {
+            Point::from((0, HEADER_BAR_HEIGHT))
+        } else {
+            Point::default()
+        };
+
+        let surface_under = self.0.surface_under(location - offset.to_f64(), window_type);
+        let (under, loc) = match self.0.underlying_surface() {
+            WindowSurface::Wayland(_) => {
+                surface_under.map(|(surface, loc)| (PointerFocusTarget::WlSurface(surface), loc))
+            }
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => {
+                surface_under.map(|(_, loc)| (PointerFocusTarget::X11Surface(s.clone()), loc))
+            }
+        }?;
+        Some((under, loc + offset))
     }
 
     pub fn with_surfaces<F>(&self, processor: F)
@@ -118,223 +134,121 @@ impl IsAlive for WindowElement {
     }
 }
 
-impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for WindowElement {
-    fn enter(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &MotionEvent) {
-        let mut state = self.decoration_state();
+#[derive(Debug, Clone, PartialEq)]
+pub struct SSD(WindowElement);
+
+impl IsAlive for SSD {
+    fn alive(&self) -> bool {
+        self.0.alive()
+    }
+}
+
+impl WaylandFocus for SSD {
+    fn wl_surface(&self) -> Option<WlSurface> {
+        self.0.wl_surface()
+    }
+}
+
+impl<Backend: crate::state::Backend> PointerTarget<AnvilState<Backend>> for SSD {
+    fn enter(&self, _seat: &Seat<AnvilState<Backend>>, _data: &mut AnvilState<Backend>, event: &MotionEvent) {
+        let mut state = self.0.decoration_state();
         if state.is_ssd {
-            if event.location.y < HEADER_BAR_HEIGHT as f64 {
-                state.header_bar.pointer_enter(event.location);
-            } else {
-                state.header_bar.pointer_leave();
-                let mut event = event.clone();
-                event.location.y -= HEADER_BAR_HEIGHT as f64;
-                PointerTarget::enter(&self.0, seat, data, &event);
-                state.ptr_entered_window = true;
-            }
-        } else {
-            state.ptr_entered_window = true;
-            PointerTarget::enter(&self.0, seat, data, event);
+            state.header_bar.pointer_enter(event.location);
         }
     }
-    fn motion(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &MotionEvent) {
-        let mut state = self.decoration_state();
+    fn motion(
+        &self,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        event: &MotionEvent,
+    ) {
+        let mut state = self.0.decoration_state();
         if state.is_ssd {
-            if event.location.y < HEADER_BAR_HEIGHT as f64 {
-                PointerTarget::leave(&self.0, seat, data, event.serial, event.time);
-                state.ptr_entered_window = false;
-                state.header_bar.pointer_enter(event.location);
-            } else {
-                state.header_bar.pointer_leave();
-                let mut event = event.clone();
-                event.location.y -= HEADER_BAR_HEIGHT as f64;
-                if state.ptr_entered_window {
-                    PointerTarget::motion(&self.0, seat, data, &event);
-                } else {
-                    state.ptr_entered_window = true;
-                    PointerTarget::enter(&self.0, seat, data, &event);
-                }
-            }
-        } else {
-            PointerTarget::motion(&self.0, seat, data, event);
+            state.header_bar.pointer_enter(event.location);
         }
     }
     fn relative_motion(
         &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        event: &RelativeMotionEvent,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &RelativeMotionEvent,
     ) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::relative_motion(&self.0, seat, data, event);
-        }
     }
     fn button(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, event: &ButtonEvent) {
-        let mut state = self.decoration_state();
+        let mut state = self.0.decoration_state();
         if state.is_ssd {
-            if state.ptr_entered_window {
-                PointerTarget::button(&self.0, seat, data, event);
-            } else {
-                state.header_bar.clicked(seat, data, self, event.serial);
-            }
-        } else {
-            PointerTarget::button(&self.0, seat, data, event);
+            state.header_bar.clicked(seat, data, &self.0, event.serial);
         }
     }
-    fn axis(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, frame: AxisFrame) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::axis(&self.0, seat, data, frame);
-        }
-    }
-    fn frame(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::frame(&self.0, seat, data);
-        }
-    }
+    fn axis(&self, _seat: &Seat<AnvilState<Backend>>, _data: &mut AnvilState<Backend>, _frame: AxisFrame) {}
+    fn frame(&self, _seat: &Seat<AnvilState<Backend>>, _data: &mut AnvilState<Backend>) {}
     fn leave(
         &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        serial: Serial,
-        time: u32,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _serial: Serial,
+        _time: u32,
     ) {
-        let mut state = self.decoration_state();
+        let mut state = self.0.decoration_state();
         if state.is_ssd {
             state.header_bar.pointer_leave();
-            if state.ptr_entered_window {
-                PointerTarget::leave(&self.0, seat, data, serial, time);
-
-                state.ptr_entered_window = false;
-            }
-        } else {
-            PointerTarget::leave(&self.0, seat, data, serial, time);
-            state.ptr_entered_window = false;
         }
     }
     fn gesture_swipe_begin(
         &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        event: &GestureSwipeBeginEvent,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &GestureSwipeBeginEvent,
     ) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::gesture_swipe_begin(&self.0, seat, data, event);
-        }
     }
     fn gesture_swipe_update(
         &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        event: &GestureSwipeUpdateEvent,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &GestureSwipeUpdateEvent,
     ) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::gesture_swipe_update(&self.0, seat, data, event);
-        }
     }
     fn gesture_swipe_end(
         &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        event: &GestureSwipeEndEvent,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &GestureSwipeEndEvent,
     ) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::gesture_swipe_end(&self.0, seat, data, event);
-        }
     }
     fn gesture_pinch_begin(
         &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        event: &GesturePinchBeginEvent,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &GesturePinchBeginEvent,
     ) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::gesture_pinch_begin(&self.0, seat, data, event);
-        }
     }
     fn gesture_pinch_update(
         &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        event: &GesturePinchUpdateEvent,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &GesturePinchUpdateEvent,
     ) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::gesture_pinch_update(&self.0, seat, data, event);
-        }
     }
     fn gesture_pinch_end(
         &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        event: &GesturePinchEndEvent,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &GesturePinchEndEvent,
     ) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::gesture_pinch_end(&self.0, seat, data, event);
-        }
     }
     fn gesture_hold_begin(
         &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        event: &GestureHoldBeginEvent,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &GestureHoldBeginEvent,
     ) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::gesture_hold_begin(&self.0, seat, data, event);
-        }
     }
     fn gesture_hold_end(
         &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        event: &GestureHoldEndEvent,
+        _seat: &Seat<AnvilState<Backend>>,
+        _data: &mut AnvilState<Backend>,
+        _event: &GestureHoldEndEvent,
     ) {
-        let state = self.decoration_state();
-        if !state.is_ssd || state.ptr_entered_window {
-            PointerTarget::gesture_hold_end(&self.0, seat, data, event);
-        }
-    }
-}
-
-impl<Backend: crate::state::Backend> KeyboardTarget<AnvilState<Backend>> for WindowElement {
-    fn enter(
-        &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        keys: Vec<KeysymHandle<'_>>,
-        serial: Serial,
-    ) {
-        KeyboardTarget::enter(&self.0, seat, data, keys, serial);
-    }
-    fn leave(&self, seat: &Seat<AnvilState<Backend>>, data: &mut AnvilState<Backend>, serial: Serial) {
-        KeyboardTarget::leave(&self.0, seat, data, serial);
-    }
-    fn key(
-        &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        key: KeysymHandle<'_>,
-        state: KeyState,
-        serial: Serial,
-        time: u32,
-    ) {
-        KeyboardTarget::key(&self.0, seat, data, key, state, serial, time);
-    }
-    fn modifiers(
-        &self,
-        seat: &Seat<AnvilState<Backend>>,
-        data: &mut AnvilState<Backend>,
-        modifiers: ModifiersState,
-        serial: Serial,
-    ) {
-        KeyboardTarget::modifiers(&self.0, seat, data, modifiers, serial);
     }
 }
 

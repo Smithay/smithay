@@ -89,7 +89,10 @@ use smithay::{
 
 #[cfg(feature = "xwayland")]
 use crate::cursor::Cursor;
-use crate::{focus::FocusTarget, shell::WindowElement};
+use crate::{
+    focus::{KeyboardFocusTarget, PointerFocusTarget},
+    shell::WindowElement,
+};
 #[cfg(feature = "xwayland")]
 use smithay::{
     delegate_xwayland_keyboard_grab,
@@ -246,14 +249,14 @@ impl<BackendData: Backend> ShmHandler for AnvilState<BackendData> {
 delegate_shm!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
 impl<BackendData: Backend> SeatHandler for AnvilState<BackendData> {
-    type KeyboardFocus = FocusTarget;
-    type PointerFocus = FocusTarget;
+    type KeyboardFocus = KeyboardFocusTarget;
+    type PointerFocus = PointerFocusTarget;
 
     fn seat_state(&mut self) -> &mut SeatState<AnvilState<BackendData>> {
         &mut self.seat_state
     }
 
-    fn focus_changed(&mut self, seat: &Seat<Self>, target: Option<&FocusTarget>) {
+    fn focus_changed(&mut self, seat: &Seat<Self>, target: Option<&KeyboardFocusTarget>) {
         let dh = &self.display_handle;
 
         let wl_surface = target.and_then(WaylandFocus::wl_surface);
@@ -498,12 +501,12 @@ delegate_security_context!(@<BackendData: Backend + 'static> AnvilState<BackendD
 
 #[cfg(feature = "xwayland")]
 impl<BackendData: Backend + 'static> XWaylandKeyboardGrabHandler for AnvilState<BackendData> {
-    fn keyboard_focus_for_xsurface(&self, surface: &WlSurface) -> Option<FocusTarget> {
+    fn keyboard_focus_for_xsurface(&self, surface: &WlSurface) -> Option<KeyboardFocusTarget> {
         let elem = self
             .space
             .elements()
             .find(|elem| elem.wl_surface().as_ref() == Some(surface))?;
-        Some(FocusTarget::Window(elem.clone()))
+        Some(KeyboardFocusTarget::Window(elem.0.clone()))
     }
 }
 #[cfg(feature = "xwayland")]
