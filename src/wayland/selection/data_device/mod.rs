@@ -49,6 +49,7 @@
 //! # impl SeatHandler for State {
 //! #     type KeyboardFocus = WlSurface;
 //! #     type PointerFocus = WlSurface;
+//! #     type TouchFocus = WlSurface;
 //! #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
 //! #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
 //! #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
@@ -86,6 +87,7 @@ use wayland_server::{
 use crate::{
     input::{
         pointer::{Focus, GrabStartData as PointerGrabStartData},
+        touch::GrabStartData as TouchGrabStartData,
         Seat, SeatHandler,
     },
     utils::Serial,
@@ -376,20 +378,28 @@ pub fn start_dnd<D>(
     seat: &Seat<D>,
     data: &mut D,
     serial: Serial,
-    start_data: PointerGrabStartData<D>,
+    pointer_start_data: Option<PointerGrabStartData<D>>,
+    touch_start_data: Option<TouchGrabStartData<D>>,
     metadata: SourceMetadata,
 ) where
     D: SeatHandler + DataDeviceHandler + 'static,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
+    <D as SeatHandler>::TouchFocus: WaylandFocus,
 {
     seat.user_data()
         .insert_if_missing(|| RefCell::new(SeatData::<D::SelectionUserData>::new()));
-    if let Some(pointer) = seat.get_pointer() {
+    if let (Some(pointer_start_data), Some(pointer)) = (pointer_start_data, seat.get_pointer()) {
         pointer.set_grab(
             data,
-            server_dnd_grab::ServerDnDGrab::new(dh, start_data, metadata, seat.clone()),
+            server_dnd_grab::ServerDnDGrab::new_pointer(dh, pointer_start_data, metadata, seat.clone()),
             serial,
             Focus::Keep,
+        );
+    } else if let (Some(touch_start_data), Some(touch)) = (touch_start_data, seat.get_touch()) {
+        touch.set_grab(
+            data,
+            server_dnd_grab::ServerDnDGrab::new_touch(dh, touch_start_data, metadata, seat.clone()),
+            serial,
         );
     }
 }

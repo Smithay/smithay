@@ -16,6 +16,7 @@ struct App {
 impl SeatHandler for App {
     type KeyboardFocus = WlSurface;
     type PointerFocus = WlSurface;
+    type TouchFocus = WlSurface;
 
     fn seat_state(&mut self) -> &mut SeatState<Self> {
         &mut self.seat_state

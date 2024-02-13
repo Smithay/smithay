@@ -23,9 +23,10 @@ use crate::{
             GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab,
             PointerInnerHandle, RelativeMotionEvent,
         },
+        touch::{GrabStartData as TouchGrabStartData, TouchGrab},
         Seat, SeatHandler,
     },
-    utils::{IsAlive, Logical, Point},
+    utils::{IsAlive, Logical, Point, Serial, SERIAL_COUNTER},
     wayland::{seat::WaylandFocus, selection::seat_data::SeatData},
 };
 
@@ -33,7 +34,8 @@ use super::{with_source_metadata, ClientDndGrabHandler, DataDeviceHandler};
 
 pub(crate) struct DnDGrab<D: SeatHandler> {
     dh: DisplayHandle,
-    start_data: PointerGrabStartData<D>,
+    pointer_start_data: Option<PointerGrabStartData<D>>,
+    touch_start_data: Option<TouchGrabStartData<D>>,
     data_source: Option<wl_data_source::WlDataSource>,
     current_focus: Option<WlSurface>,
     pending_offers: Vec<wl_data_offer::WlDataOffer>,
@@ -44,7 +46,7 @@ pub(crate) struct DnDGrab<D: SeatHandler> {
 }
 
 impl<D: SeatHandler> DnDGrab<D> {
-    pub(crate) fn new(
+    pub(crate) fn new_pointer(
         dh: &DisplayHandle,
         start_data: PointerGrabStartData<D>,
         source: Option<wl_data_source::WlDataSource>,
@@ -54,7 +56,30 @@ impl<D: SeatHandler> DnDGrab<D> {
     ) -> Self {
         Self {
             dh: dh.clone(),
-            start_data,
+            pointer_start_data: Some(start_data),
+            touch_start_data: None,
+            data_source: source,
+            current_focus: None,
+            pending_offers: Vec::with_capacity(1),
+            offer_data: None,
+            origin,
+            icon,
+            seat,
+        }
+    }
+
+    pub(crate) fn new_touch(
+        dh: &DisplayHandle,
+        start_data: TouchGrabStartData<D>,
+        source: Option<wl_data_source::WlDataSource>,
+        origin: WlSurface,
+        seat: Seat<D>,
+        icon: Option<WlSurface>,
+    ) -> Self {
+        Self {
+            dh: dh.clone(),
+            pointer_start_data: None,
+            touch_start_data: Some(start_data),
             data_source: source,
             current_focus: None,
             pending_offers: Vec::with_capacity(1),
@@ -66,23 +91,19 @@ impl<D: SeatHandler> DnDGrab<D> {
     }
 }
 
-impl<D> PointerGrab<D> for DnDGrab<D>
+impl<D> DnDGrab<D>
 where
     D: DataDeviceHandler,
     D: SeatHandler,
-    <D as SeatHandler>::PointerFocus: WaylandFocus,
     D: 'static,
 {
-    fn motion(
+    fn update_focus<F: WaylandFocus>(
         &mut self,
-        data: &mut D,
-        handle: &mut PointerInnerHandle<'_, D>,
-        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
-        event: &MotionEvent,
+        focus: Option<(F, Point<i32, Logical>)>,
+        location: Point<f64, Logical>,
+        serial: Serial,
+        time: u32,
     ) {
-        // While the grab is active, no client has pointer focus
-        handle.motion(data, None, event);
-
         let seat_data = self
             .seat
             .user_data()
@@ -116,7 +137,7 @@ where
                 Ok(c) => c,
                 Err(_) => return,
             };
-            let (x, y) = (event.location - surface_location.to_f64()).into();
+            let (x, y) = (location - surface_location.to_f64()).into();
             if self.current_focus.is_none() {
                 // We entered a new surface, send the data offer if appropriate
                 if let Some(ref source) = self.data_source {
@@ -155,7 +176,7 @@ where
                             offer.source_actions(meta.dnd_action);
                         })
                         .unwrap();
-                        device.enter(event.serial.into(), &surface, x, y, Some(&offer));
+                        device.enter(serial.into(), &surface, x, y, Some(&offer));
                         self.pending_offers.push(offer);
                     }
                     self.offer_data = Some(offer_data);
@@ -164,7 +185,7 @@ where
                     if self.origin.id().same_client_as(&surface.id()) {
                         for device in seat_data.known_data_devices() {
                             if device.id().same_client_as(&surface.id()) {
-                                device.enter(event.serial.into(), &surface, x, y, None);
+                                device.enter(serial.into(), &surface, x, y, None);
                             }
                         }
                     }
@@ -175,12 +196,86 @@ where
                 if self.data_source.is_some() || self.origin.id().same_client_as(&surface.id()) {
                     for device in seat_data.known_data_devices() {
                         if device.id().same_client_as(&surface.id()) {
-                            device.motion(event.time, x, y);
+                            device.motion(time, x, y);
                         }
                     }
                 }
             }
         }
+    }
+
+    fn drop(&mut self, data: &mut D) {
+        // the user dropped, proceed to the drop
+        let seat_data = self
+            .seat
+            .user_data()
+            .get::<RefCell<SeatData<D::SelectionUserData>>>()
+            .unwrap()
+            .borrow_mut();
+        let validated = if let Some(ref data) = self.offer_data {
+            let data = data.lock().unwrap();
+            data.accepted && (!data.chosen_action.is_empty())
+        } else {
+            false
+        };
+        if let Some(ref surface) = self.current_focus {
+            if self.data_source.is_some() || self.origin.id().same_client_as(&surface.id()) {
+                for device in seat_data.known_data_devices() {
+                    if device.id().same_client_as(&surface.id()) && validated {
+                        device.drop();
+                    }
+                }
+            }
+        }
+        if let Some(ref offer_data) = self.offer_data {
+            let mut data = offer_data.lock().unwrap();
+            if validated {
+                data.dropped = true;
+            } else {
+                data.active = false;
+            }
+        }
+        if let Some(ref source) = self.data_source {
+            if source.version() >= 3 {
+                source.dnd_drop_performed();
+            }
+            if !validated {
+                source.cancelled();
+            }
+        }
+
+        ClientDndGrabHandler::dropped(data, self.seat.clone());
+        self.icon = None;
+        // in all cases abandon the drop
+        // no more buttons are pressed, release the grab
+        if let Some(ref surface) = self.current_focus {
+            for device in seat_data.known_data_devices() {
+                if device.id().same_client_as(&surface.id()) {
+                    device.leave();
+                }
+            }
+        }
+    }
+}
+
+impl<D> PointerGrab<D> for DnDGrab<D>
+where
+    D: DataDeviceHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::PointerFocus: WaylandFocus,
+    D: 'static,
+{
+    fn motion(
+        &mut self,
+        data: &mut D,
+        handle: &mut PointerInnerHandle<'_, D>,
+        focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
+        event: &MotionEvent,
+    ) {
+        // While the grab is active, no client has pointer focus
+        handle.motion(data, None, event);
+
+        self.update_focus(focus, event.location, event.serial, event.time);
     }
 
     fn relative_motion(
@@ -196,55 +291,7 @@ where
     fn button(&mut self, data: &mut D, handle: &mut PointerInnerHandle<'_, D>, event: &ButtonEvent) {
         if handle.current_pressed().is_empty() {
             // the user dropped, proceed to the drop
-            let seat_data = self
-                .seat
-                .user_data()
-                .get::<RefCell<SeatData<D::SelectionUserData>>>()
-                .unwrap()
-                .borrow_mut();
-            let validated = if let Some(ref data) = self.offer_data {
-                let data = data.lock().unwrap();
-                data.accepted && (!data.chosen_action.is_empty())
-            } else {
-                false
-            };
-            if let Some(ref surface) = self.current_focus {
-                if self.data_source.is_some() || self.origin.id().same_client_as(&surface.id()) {
-                    for device in seat_data.known_data_devices() {
-                        if device.id().same_client_as(&surface.id()) && validated {
-                            device.drop();
-                        }
-                    }
-                }
-            }
-            if let Some(ref offer_data) = self.offer_data {
-                let mut data = offer_data.lock().unwrap();
-                if validated {
-                    data.dropped = true;
-                } else {
-                    data.active = false;
-                }
-            }
-            if let Some(ref source) = self.data_source {
-                if source.version() >= 3 {
-                    source.dnd_drop_performed();
-                }
-                if !validated {
-                    source.cancelled();
-                }
-            }
-
-            ClientDndGrabHandler::dropped(data, self.seat.clone());
-            self.icon = None;
-            // in all cases abandon the drop
-            // no more buttons are pressed, release the grab
-            if let Some(ref surface) = self.current_focus {
-                for device in seat_data.known_data_devices() {
-                    if device.id().same_client_as(&surface.id()) {
-                        device.leave();
-                    }
-                }
-            }
+            self.drop(data);
             handle.unset_grab(data, event.serial, event.time, true);
         }
     }
@@ -331,7 +378,78 @@ where
     }
 
     fn start_data(&self) -> &PointerGrabStartData<D> {
-        &self.start_data
+        self.pointer_start_data.as_ref().unwrap()
+    }
+}
+
+impl<D> TouchGrab<D> for DnDGrab<D>
+where
+    D: DataDeviceHandler,
+    D: SeatHandler,
+    <D as SeatHandler>::TouchFocus: WaylandFocus,
+    D: 'static,
+{
+    fn down(
+        &mut self,
+        _data: &mut D,
+        _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        _event: &crate::input::touch::DownEvent,
+        _seq: crate::utils::Serial,
+    ) {
+        // Ignore
+    }
+
+    fn up(
+        &mut self,
+        data: &mut D,
+        handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        event: &crate::input::touch::UpEvent,
+        _seq: crate::utils::Serial,
+    ) {
+        if event.slot != self.start_data().slot {
+            return;
+        }
+
+        self.drop(data);
+        handle.unset_grab(data);
+    }
+
+    fn motion(
+        &mut self,
+        _data: &mut D,
+        _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<i32, Logical>)>,
+        event: &crate::input::touch::MotionEvent,
+        _seq: crate::utils::Serial,
+    ) {
+        if event.slot != self.start_data().slot {
+            return;
+        }
+
+        self.update_focus(focus, event.location, SERIAL_COUNTER.next_serial(), event.time);
+    }
+
+    fn frame(
+        &mut self,
+        _data: &mut D,
+        _handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        _seq: crate::utils::Serial,
+    ) {
+    }
+
+    fn cancel(
+        &mut self,
+        data: &mut D,
+        handle: &mut crate::input::touch::TouchInnerHandle<'_, D>,
+        _seq: crate::utils::Serial,
+    ) {
+        // TODO: should we cancel something here?
+        handle.unset_grab(data);
+    }
+
+    fn start_data(&self) -> &TouchGrabStartData<D> {
+        self.touch_start_data.as_ref().unwrap()
     }
 }
 

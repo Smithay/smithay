@@ -30,6 +30,7 @@
 //! impl SeatHandler for State {
 //!     type KeyboardFocus = WlSurface;
 //!     type PointerFocus = WlSurface;
+//!     type TouchFocus = WlSurface;
 //!     fn seat_state(&mut self) -> &mut SeatState<Self> {
 //!         &mut self.seat_state
 //!     }
@@ -47,10 +48,8 @@
 //!
 //! Once the seat is initialized, you can add capabilities to it.
 //!
-//! Currently, only pointer and keyboard capabilities are supported by smithay.
-//!
 //! You can add these capabilities via methods of the [`Seat`] struct:
-//! [`Seat::add_keyboard`] and [`Seat::add_pointer`].
+//! [`Seat::add_keyboard`], [`Seat::add_pointer`] and [`Seat::add_touch`].
 //! These methods return handles that can be cloned and sent across thread, so you can keep one around
 //! in your event-handling code to forward inputs to your clients.
 //!
@@ -68,7 +67,7 @@ use crate::input::{Inner, Seat, SeatHandler, SeatRc, SeatState};
 pub use self::{
     keyboard::KeyboardUserData,
     pointer::{PointerUserData, CURSOR_IMAGE_ROLE},
-    touch::{TouchHandle, TouchUserData},
+    touch::TouchUserData,
 };
 
 use wayland_server::{
@@ -199,61 +198,6 @@ impl<D: SeatHandler + 'static> Seat<D> {
     pub fn global(&self) -> Option<GlobalId> {
         self.arc.inner.lock().unwrap().global.as_ref().cloned()
     }
-
-    /// Adds the touch capability to this seat
-    ///
-    /// You are provided a [`TouchHandle`], which allows you to send input events
-    /// to this pointer. This handle can be cloned.
-    ///
-    /// Calling this method on a seat that already has a touch capability
-    /// will overwrite it, and will be seen by the clients as if the
-    /// touchscreen was unplugged and a new one was plugged in.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use smithay::input::{Seat, SeatState, SeatHandler, pointer::CursorImageStatus};
-    /// # use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-    /// #
-    /// # struct State;
-    /// # impl SeatHandler for State {
-    /// #     type KeyboardFocus = WlSurface;
-    /// #     type PointerFocus = WlSurface;
-    /// #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
-    /// #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
-    /// #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
-    /// # }
-    /// # let mut seat: Seat<State> = unimplemented!();
-    /// let touch_handle = seat.add_touch();
-    /// ```
-    pub fn add_touch(&mut self) -> TouchHandle {
-        let mut inner = self.arc.inner.lock().unwrap();
-        let touch = TouchHandle::new();
-        if inner.touch.is_some() {
-            // If there's already a tocuh device, remove it notify the clients about the change.
-            inner.touch = None;
-            inner.send_all_caps();
-        }
-        inner.touch = Some(touch.clone());
-        inner.send_all_caps();
-        touch
-    }
-
-    /// Access the touch device of this seat, if any.
-    pub fn get_touch(&self) -> Option<TouchHandle> {
-        self.arc.inner.lock().unwrap().touch.clone()
-    }
-
-    /// Remove the touch capability from this seat
-    ///
-    /// Clients will be appropriately notified.
-    pub fn remove_touch(&mut self) {
-        let mut inner = self.arc.inner.lock().unwrap();
-        if inner.touch.is_some() {
-            inner.touch = None;
-            inner.send_all_caps();
-        }
-    }
 }
 
 /// User data for seat
@@ -285,7 +229,7 @@ macro_rules! delegate_seat {
             $crate::reexports::wayland_server::protocol::wl_keyboard::WlKeyboard: $crate::wayland::seat::KeyboardUserData<$ty>
         ] => $crate::input::SeatState<$ty>);
         $crate::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)?$ty: [
-            $crate::reexports::wayland_server::protocol::wl_touch::WlTouch: $crate::wayland::seat::TouchUserData
+            $crate::reexports::wayland_server::protocol::wl_touch::WlTouch: $crate::wayland::seat::TouchUserData<$ty>
         ] => $crate::input::SeatState<$ty>);
     };
 }
@@ -295,7 +239,7 @@ where
     D: Dispatch<WlSeat, SeatUserData<D>>,
     D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
     D: Dispatch<WlPointer, PointerUserData<D>>,
-    D: Dispatch<WlTouch, TouchUserData>,
+    D: Dispatch<WlTouch, TouchUserData<D>>,
     D: SeatHandler,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
@@ -382,7 +326,7 @@ where
     D: Dispatch<WlSeat, SeatUserData<D>>,
     D: Dispatch<WlKeyboard, KeyboardUserData<D>>,
     D: Dispatch<WlPointer, PointerUserData<D>>,
-    D: Dispatch<WlTouch, TouchUserData>,
+    D: Dispatch<WlTouch, TouchUserData<D>>,
     D: SeatHandler,
     D: 'static,
 {

@@ -3,9 +3,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// A global [`SerialCounter`] for use in your compositor.
 ///
 /// Is is also used internally by some parts of Smithay.
-pub static SERIAL_COUNTER: SerialCounter = SerialCounter {
-    serial: AtomicU32::new(1),
-};
+pub static SERIAL_COUNTER: SerialCounter = SerialCounter::new();
 
 /// A serial type, whose comparison takes into account the wrapping-around behavior of the
 /// underlying counter.
@@ -69,6 +67,13 @@ pub struct SerialCounter {
 }
 
 impl SerialCounter {
+    /// Create a new counter starting at `1`
+    pub const fn new() -> Self {
+        Self {
+            serial: AtomicU32::new(1),
+        }
+    }
+
     /// Retrieve the next serial from the counter
     pub fn next_serial(&self) -> Serial {
         let _ = self

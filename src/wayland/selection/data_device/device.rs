@@ -42,6 +42,7 @@ where
     D: DataDeviceHandler,
     D: SeatHandler,
     <D as SeatHandler>::PointerFocus: WaylandFocus,
+    <D as SeatHandler>::TouchFocus: WaylandFocus,
     <D as SeatHandler>::KeyboardFocus: WaylandFocus,
     D: 'static,
 {
@@ -83,9 +84,31 @@ where
                         let start_data = pointer.grab_start_data().unwrap();
                         pointer.set_grab(
                             handler,
-                            dnd_grab::DnDGrab::new(dh, start_data, source, origin, seat, icon),
+                            dnd_grab::DnDGrab::new_pointer(dh, start_data, source, origin, seat, icon),
                             serial,
                             Focus::Clear,
+                        );
+                        return;
+                    }
+                }
+                if let Some(touch) = seat.get_touch() {
+                    if touch.has_grab(serial) {
+                        if let Some(ref icon) = icon {
+                            if compositor::give_role(icon, DND_ICON_ROLE).is_err() {
+                                resource.post_error(
+                                    wl_data_device::Error::Role,
+                                    "Given surface already has an other role",
+                                );
+                                return;
+                            }
+                        }
+                        // The StartDrag is in response to a touch implicit grab, all is good
+                        handler.started(source.clone(), icon.clone(), seat.clone());
+                        let start_data = touch.grab_start_data().unwrap();
+                        touch.set_grab(
+                            handler,
+                            dnd_grab::DnDGrab::new_touch(dh, start_data, source, origin, seat, icon),
+                            serial,
                         );
                         return;
                     }

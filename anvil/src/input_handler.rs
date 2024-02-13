@@ -48,14 +48,17 @@ use smithay::{
         input::{
             Device, DeviceCapability, GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _,
             GestureSwipeUpdateEvent as _, PointerMotionEvent, ProximityState, TabletToolButtonEvent,
-            TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+            TabletToolEvent, TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState, TouchEvent,
         },
         session::Session,
     },
-    input::pointer::{
-        GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
-        GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
-        RelativeMotionEvent,
+    input::{
+        pointer::{
+            GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent,
+            GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
+            RelativeMotionEvent,
+        },
+        touch::{DownEvent, UpEvent},
     },
     wayland::{
         pointer_constraints::{with_pointer_constraint, PointerConstraint},
@@ -252,6 +255,7 @@ impl<BackendData: Backend> AnvilState<BackendData> {
 
     fn update_keyboard_focus(&mut self, location: Point<f64, Logical>, serial: Serial) {
         let keyboard = self.seat.get_keyboard().unwrap();
+        let touch = self.seat.get_touch();
         let input_method = self.seat.input_method();
         // change the keyboard focus unless the pointer or keyboard is grabbed
         // We test for any matching surface type here but always use the root
@@ -262,7 +266,10 @@ impl<BackendData: Backend> AnvilState<BackendData> {
         // subsurface menus (for example firefox-wayland).
         // see here for a discussion about that issue:
         // https://gitlab.freedesktop.org/wayland/wayland/-/issues/294
-        if !self.pointer.is_grabbed() && (!keyboard.is_grabbed() || input_method.keyboard_grabbed()) {
+        if !self.pointer.is_grabbed()
+            && (!keyboard.is_grabbed() || input_method.keyboard_grabbed())
+            && !touch.map(|touch| touch.is_grabbed()).unwrap_or(false)
+        {
             let output = self.space.output_under(location).next().cloned();
             if let Some(output) = output.as_ref() {
                 let output_geo = self.space.output_geometry(output).unwrap();
@@ -751,11 +758,21 @@ impl AnvilState<UdevData> {
             InputEvent::GesturePinchEnd { event, .. } => self.on_gesture_pinch_end::<B>(event),
             InputEvent::GestureHoldBegin { event, .. } => self.on_gesture_hold_begin::<B>(event),
             InputEvent::GestureHoldEnd { event, .. } => self.on_gesture_hold_end::<B>(event),
+
+            InputEvent::TouchDown { event } => self.on_touch_down::<B>(event),
+            InputEvent::TouchUp { event } => self.on_touch_up::<B>(event),
+            InputEvent::TouchMotion { event } => self.on_touch_motion::<B>(event),
+            InputEvent::TouchFrame { event } => self.on_touch_frame::<B>(event),
+            InputEvent::TouchCancel { event } => self.on_touch_cancel::<B>(event),
+
             InputEvent::DeviceAdded { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
                     self.seat
                         .tablet_seat()
                         .add_tablet::<Self>(dh, &TabletDescriptor::from(&device));
+                }
+                if device.has_capability(DeviceCapability::Touch) && self.seat.get_touch().is_none() {
+                    self.seat.add_touch();
                 }
             }
             InputEvent::DeviceRemoved { device } => {
@@ -1166,6 +1183,102 @@ impl AnvilState<UdevData> {
                 cancelled: evt.cancelled(),
             },
         );
+    }
+
+    fn touch_location_transformed<B: InputBackend, E: AbsolutePositionEvent<B>>(
+        &self,
+        evt: &E,
+    ) -> Option<Point<f64, Logical>> {
+        let output = self
+            .space
+            .outputs()
+            .find(|output| output.name().starts_with("eDP"))
+            .or_else(|| self.space.outputs().next());
+
+        let Some(output) = output else {
+            return None;
+        };
+
+        let Some(output_geometry) = self.space.output_geometry(output) else {
+            return None;
+        };
+
+        let transform = output.current_transform();
+        let size = transform.invert().transform_size(output_geometry.size);
+        Some(
+            transform.transform_point_in(evt.position_transformed(size), &size.to_f64())
+                + output_geometry.loc.to_f64(),
+        )
+    }
+
+    fn on_touch_down<B: InputBackend>(&mut self, evt: B::TouchDownEvent) {
+        let Some(handle) = self.seat.get_touch() else {
+            return;
+        };
+
+        let Some(touch_location) = self.touch_location_transformed(&evt) else {
+            return;
+        };
+
+        let serial = SCOUNTER.next_serial();
+        self.update_keyboard_focus(touch_location, serial);
+
+        let under = self.surface_under(touch_location);
+        handle.down(
+            self,
+            under,
+            &DownEvent {
+                slot: evt.slot(),
+                location: touch_location,
+                serial,
+                time: evt.time_msec(),
+            },
+        );
+    }
+    fn on_touch_up<B: InputBackend>(&mut self, evt: B::TouchUpEvent) {
+        let Some(handle) = self.seat.get_touch() else {
+            return;
+        };
+        let serial = SCOUNTER.next_serial();
+        handle.up(
+            self,
+            &UpEvent {
+                slot: evt.slot(),
+                serial,
+                time: evt.time_msec(),
+            },
+        )
+    }
+    fn on_touch_motion<B: InputBackend>(&mut self, evt: B::TouchMotionEvent) {
+        let Some(handle) = self.seat.get_touch() else {
+            return;
+        };
+        let Some(touch_location) = self.touch_location_transformed(&evt) else {
+            return;
+        };
+
+        let under = self.surface_under(touch_location);
+        handle.motion(
+            self,
+            under,
+            &smithay::input::touch::MotionEvent {
+                slot: evt.slot(),
+                location: touch_location,
+                time: evt.time_msec(),
+            },
+        );
+    }
+    fn on_touch_frame<B: InputBackend>(&mut self, _evt: B::TouchFrameEvent) {
+        let Some(handle) = self.seat.get_touch() else {
+            return;
+        };
+        handle.frame(self);
+    }
+    fn on_touch_cancel<B: InputBackend>(&mut self, _evt: B::TouchCancelEvent) {
+        let Some(handle) = self.seat.get_touch() else {
+            return;
+        };
+        handle.cancel(self);
     }
 
     fn clamp_coords(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {

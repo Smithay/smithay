@@ -46,6 +46,7 @@
 //! # impl SeatHandler for State {
 //! #     type KeyboardFocus = WlSurface;
 //! #     type PointerFocus = WlSurface;
+//! #     type TouchFocus = WlSurface;
 //! #     fn seat_state(&mut self) -> &mut SeatState<Self> { unimplemented!() }
 //! #     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) { unimplemented!() }
 //! #     fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) { unimplemented!() }
