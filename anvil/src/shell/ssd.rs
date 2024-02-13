@@ -20,7 +20,6 @@ use super::WindowElement;
 
 pub struct WindowState {
     pub is_ssd: bool,
-    pub ptr_entered_window: bool,
     pub header_bar: HeaderBar,
 }
 
@@ -207,7 +206,6 @@ impl WindowElement {
         self.user_data().insert_if_missing(|| {
             RefCell::new(WindowState {
                 is_ssd: false,
-                ptr_entered_window: false,
                 header_bar: HeaderBar {
                     pointer_loc: None,
                     width: 0,

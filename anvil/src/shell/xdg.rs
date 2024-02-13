@@ -28,7 +28,7 @@ use smithay::{
 use tracing::{trace, warn};
 
 use crate::{
-    focus::FocusTarget,
+    focus::KeyboardFocusTarget,
     state::{AnvilState, Backend},
 };
 
@@ -331,7 +331,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                 .elements()
                 .find(|w| w.wl_surface().map(|s| s == root).unwrap_or(false))
                 .cloned()
-                .map(FocusTarget::Window)
+                .map(KeyboardFocusTarget::from)
                 .or_else(|| {
                     self.space
                         .outputs()
@@ -339,7 +339,7 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
                             let map = layer_map_for_output(o);
                             map.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL).cloned()
                         })
-                        .map(FocusTarget::LayerSurface)
+                        .map(KeyboardFocusTarget::LayerSurface)
                 })
         }) {
             let ret = self.popups.grab_popup(root, kind, &seat, serial);
