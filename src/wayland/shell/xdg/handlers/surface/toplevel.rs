@@ -51,15 +51,35 @@ where
             }
             xdg_toplevel::Request::SetTitle { title } => {
                 // Title is not double buffered, we can set it directly
-                with_surface_toplevel_role_data(toplevel, |data| {
-                    data.title = Some(title);
+                let changed = with_surface_toplevel_role_data(toplevel, |role| {
+                    if role.title.as_ref() != Some(&title) {
+                        role.title = Some(title);
+                        true
+                    } else {
+                        false
+                    }
                 });
+
+                if changed {
+                    let handle = make_toplevel_handle(toplevel);
+                    XdgShellHandler::title_changed(state, handle);
+                }
             }
             xdg_toplevel::Request::SetAppId { app_id } => {
                 // AppId is not double buffered, we can set it directly
-                with_surface_toplevel_role_data(toplevel, |role| {
-                    role.app_id = Some(app_id);
+                let changed = with_surface_toplevel_role_data(toplevel, |role| {
+                    if role.app_id.as_ref() != Some(&app_id) {
+                        role.app_id = Some(app_id);
+                        true
+                    } else {
+                        false
+                    }
                 });
+
+                if changed {
+                    let handle = make_toplevel_handle(toplevel);
+                    XdgShellHandler::app_id_changed(state, handle);
+                }
             }
             xdg_toplevel::Request::ShowWindowMenu { seat, serial, x, y } => {
                 // This has to be handled by the compositor
