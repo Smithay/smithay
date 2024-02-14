@@ -1157,6 +1157,12 @@ pub trait XdgShellHandler {
 
     /// A popup surface was destroyed.
     fn popup_destroyed(&mut self, surface: PopupSurface) {}
+
+    /// The toplevel surface set a different app id.
+    fn app_id_changed(&mut self, surface: ToplevelSurface) {}
+
+    /// The toplevel surface set a different title.
+    fn title_changed(&mut self, surface: ToplevelSurface) {}
 }
 
 /// Shell global state
