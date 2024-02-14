@@ -7,8 +7,8 @@ use wayland_server::protocol::wl_buffer;
 
 use crate::backend::{
     allocator::{
-        dmabuf::{AnyError, DmabufAllocator, Dmabuf},
-        gbm::GbmAllocator,
+        dmabuf::{AnyError, Dmabuf, DmabufAllocator},
+        gbm::{GbmAllocator, GbmBufferFlags, GbmDevice},
         Allocator,
     },
     drm::{CreateDrmNodeError, DrmNode},
@@ -23,7 +23,7 @@ use crate::backend::{
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use crate::{
     backend::{
-        allocator::{Buffer as BufferTrait},
+        allocator::Buffer as BufferTrait,
         egl::display::EGLBufferReader,
         renderer::{
             multigpu::{Error as MultigpuError, MultiRenderer, MultiTexture},
@@ -32,7 +32,6 @@ use crate::{
     },
     utils::{Buffer as BufferCoords, Rectangle},
 };
-use gbm::{BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use std::borrow::BorrowMut;
 use std::{
@@ -72,6 +71,7 @@ pub struct GbmGlesBackend<R, A: AsFd + 'static> {
     devices: HashMap<DrmNode, (EGLDisplay, GbmAllocator<A>)>,
     factory: Option<Factory>,
     context_priority: Option<ContextPriority>,
+    allocator_flags: GbmBufferFlags,
     needs_enumeration: AtomicBool,
     _renderer: std::marker::PhantomData<R>,
 }
@@ -90,6 +90,7 @@ impl<R, A: AsFd + 'static> Default for GbmGlesBackend<R, A> {
             devices: HashMap::new(),
             factory: None,
             context_priority: None,
+            allocator_flags: GbmBufferFlags::RENDERING,
             needs_enumeration: AtomicBool::new(true),
             _renderer: std::marker::PhantomData,
         }
@@ -120,13 +121,21 @@ impl<R, A: AsFd + Clone + Send + 'static> GbmGlesBackend<R, A> {
         }
     }
 
+    /// Sets the default flags to use for allocating buffers via the [`GbmAllocator`]
+    /// provided by these backends devices.
+    ///
+    /// Only affects nodes added via [`add_node`] *after* calling this method.
+    pub fn set_allocator_flags(&mut self, flags: GbmBufferFlags) {
+        self.allocator_flags = flags;
+    }
+
     /// Add a new GBM device for a given node to the api
     pub fn add_node(&mut self, node: DrmNode, gbm: GbmDevice<A>) -> Result<(), EGLError> {
         if self.devices.contains_key(&node) {
             return Ok(());
         }
 
-        let allocator = GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING);
+        let allocator = GbmAllocator::new(gbm.clone(), self.allocator_flags);
         self.devices
             .insert(node, (unsafe { EGLDisplay::new(gbm)? }, allocator));
         self.needs_enumeration.store(true, Ordering::SeqCst);
