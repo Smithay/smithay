@@ -2961,9 +2961,7 @@ where
         E: RenderElement<R>,
     {
         // if we have no cursor plane we can exit early
-        let Some(plane_info) = self.planes.cursor.as_ref() else {
-            return None;
-        };
+        let plane_info = self.planes.cursor.as_ref()?;
 
         // something is already assigned to our cursor plane
         if frame_state.is_assigned(plane_info.handle) {
@@ -3160,9 +3158,7 @@ where
                 return None;
             };
 
-            let Some(pixman_renderer) = cursor_state.pixman_renderer.as_mut() else {
-                return None;
-            };
+            let pixman_renderer = cursor_state.pixman_renderer.as_mut()?;
 
             // Create a pixman image from the source cursor data. This will either be set by the
             // client, or the compositor's choice.

@@ -100,7 +100,7 @@ impl State {
                     handle: (*conn).into(),
                     name: "CRTC_ID",
                 })
-                .map(|x| *x)?;
+                .copied()?;
             if let (Ok(crtc_prop_info), Ok(props)) = (fd.get_property(crtc_prop), fd.get_properties(*conn)) {
                 let (ids, vals) = props.as_props_and_values();
                 for (&id, &val) in ids.iter().zip(vals.iter()) {
@@ -1139,7 +1139,7 @@ pub(crate) fn conn_prop_handle(
             handle: handle.into(),
             name,
         })
-        .map(|x| *x)
+        .copied()
 }
 
 pub(crate) fn crtc_prop_handle(
@@ -1156,7 +1156,7 @@ pub(crate) fn crtc_prop_handle(
             handle: handle.into(),
             name,
         })
-        .map(|x| *x)
+        .copied()
 }
 
 pub(crate) fn plane_prop_handle(
@@ -1173,7 +1173,7 @@ pub(crate) fn plane_prop_handle(
             handle: handle.into(),
             name,
         })
-        .map(|x| *x)
+        .copied()
 }
 
 #[inline]
