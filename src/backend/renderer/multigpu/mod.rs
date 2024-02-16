@@ -2459,6 +2459,16 @@ where
             .map_err(Error::Render)
     }
 
+    fn can_read_texture(&mut self, texture: &Self::TextureId) -> Result<bool, Self::Error> {
+        let tex = texture
+            .get::<R>(self.render.node())
+            .ok_or_else(|| Error::MismatchedDevice(*self.render.node()))?;
+        self.render
+            .renderer_mut()
+            .can_read_texture(&tex)
+            .map_err(Error::Render)
+    }
+
     #[instrument(level = "trace", parent = &self.span, skip(self, texture_mapping))]
     #[profiling::function]
     fn map_texture<'c>(

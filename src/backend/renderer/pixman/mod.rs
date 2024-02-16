@@ -988,6 +988,10 @@ impl ExportMem for PixmanRenderer {
         Ok(PixmanMapping(copy_image))
     }
 
+    fn can_read_texture(&mut self, _texture: &Self::TextureId) -> Result<bool, Self::Error> {
+        Ok(true)
+    }
+
     #[profiling::function]
     fn map_texture<'a>(
         &mut self,

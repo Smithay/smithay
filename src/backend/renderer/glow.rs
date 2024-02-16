@@ -454,6 +454,10 @@ impl ExportMem for GlowRenderer {
         self.gl.copy_texture(texture, region, format)
     }
 
+    fn can_read_texture(&mut self, texture: &Self::TextureId) -> Result<bool, Self::Error> {
+        self.gl.can_read_texture(texture)
+    }
+
     #[profiling::function]
     fn map_texture<'a>(
         &mut self,

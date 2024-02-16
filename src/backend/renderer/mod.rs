@@ -623,6 +623,17 @@ pub trait ExportMem: Renderer {
         format: Fourcc,
     ) -> Result<Self::TextureMapping, Self::Error>;
 
+    /// Returns whether the renderer should be able to read-back from the given texture.
+    ///
+    /// No actual copying shall be performed by this function nor is a format specified,
+    /// so it is still legal for [`ExportMem::copy_texture`] to return an error, if this
+    /// method returns `true`.
+    ///
+    /// This function *may* fail, if:
+    /// - A readability test did successfully complete (not that it returned `unreadble`!)
+    /// - Any of the state of the renderer is irrevesibly changed
+    fn can_read_texture(&mut self, texture: &Self::TextureId) -> Result<bool, Self::Error>;
+
     /// Returns a read-only pointer to a previously created texture mapping.
     ///
     /// The format of the returned slice is given by [`Texture::format`] of the texture mapping.
