@@ -711,12 +711,7 @@ impl DmabufState {
             );
 
         let formats = Arc::new(formats);
-        let version = if default_feedback.is_some() {
-            // TODO: Update to 5 when wayland-protocols is updated
-            4
-        } else {
-            3
-        };
+        let version = if default_feedback.is_some() { 5 } else { 3 };
 
         let known_default_feedbacks = Arc::new(Mutex::new(Vec::new()));
         let default_feedback = default_feedback.map(|f| Arc::new(Mutex::new(f.clone())));
