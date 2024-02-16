@@ -48,7 +48,7 @@ use crate::backend::egl::{
 use crate::backend::{
     allocator::{
         dmabuf::{Dmabuf, WeakDmabuf},
-        format::{get_bpp, get_opaque, get_transparent, has_alpha},
+        format::{get_bpp, get_opaque, has_alpha},
         Format, Fourcc,
     },
     egl::fence::EGLFence,
@@ -198,11 +198,7 @@ impl GlesTarget {
             GlesTarget::Image { dmabuf, .. } => {
                 let format = crate::backend::allocator::Buffer::format(dmabuf).code;
                 let has_alpha = has_alpha(format);
-                let (format, _, _) = fourcc_to_gl_formats(if has_alpha {
-                    format
-                } else {
-                    get_transparent(format)?
-                })?;
+                let (format, _, _) = fourcc_to_gl_formats(format)?;
 
                 Some((format, has_alpha))
             }
@@ -866,12 +862,8 @@ impl ImportMemWl for GlesRenderer {
             }
 
             let has_alpha = has_alpha(fourcc);
-            let (mut internal_format, read_format, type_) = fourcc_to_gl_formats(if has_alpha {
-                fourcc
-            } else {
-                get_transparent(fourcc).ok_or(GlesError::UnsupportedWlPixelFormat(data.format))?
-            })
-            .ok_or(GlesError::UnsupportedWlPixelFormat(data.format))?;
+            let (mut internal_format, read_format, type_) =
+                fourcc_to_gl_formats(fourcc).ok_or(GlesError::UnsupportedWlPixelFormat(data.format))?;
             if self.gl_version.major == 2 {
                 // es 2.0 doesn't define sized variants
                 internal_format = match internal_format {
@@ -1031,12 +1023,8 @@ impl ImportMem for GlesRenderer {
         }
 
         let has_alpha = has_alpha(format);
-        let (mut internal, format, layout) = fourcc_to_gl_formats(if has_alpha {
-            format
-        } else {
-            get_transparent(format).expect("We check the format before")
-        })
-        .expect("We check the format before");
+        let (mut internal, format, layout) =
+            fourcc_to_gl_formats(format).expect("We check the format before");
         if self.gl_version.major == 2 {
             // es 2.0 doesn't define sized variants
             internal = match internal {
@@ -1740,12 +1728,8 @@ impl Offscreen<GlesTexture> for GlesRenderer {
         self.make_current()?;
 
         let has_alpha = has_alpha(format);
-        let (internal, format, layout) = fourcc_to_gl_formats(if has_alpha {
-            format
-        } else {
-            get_transparent(format).ok_or(GlesError::UnsupportedPixelFormat(format))?
-        })
-        .ok_or(GlesError::UnsupportedPixelFormat(format))?;
+        let (internal, format, layout) =
+            fourcc_to_gl_formats(format).ok_or(GlesError::UnsupportedPixelFormat(format))?;
         if (internal != ffi::RGBA8 && internal != ffi::BGRA_EXT)
             && !self.capabilities.contains(&Capability::ColorTransformations)
         {
@@ -1828,12 +1812,8 @@ impl Offscreen<GlesRenderbuffer> for GlesRenderer {
         self.make_current()?;
 
         let has_alpha = has_alpha(format);
-        let (internal, _, _) = fourcc_to_gl_formats(if has_alpha {
-            format
-        } else {
-            get_transparent(format).ok_or(GlesError::UnsupportedPixelFormat(format))?
-        })
-        .ok_or(GlesError::UnsupportedPixelFormat(format))?;
+        let (internal, _, _) =
+            fourcc_to_gl_formats(format).ok_or(GlesError::UnsupportedPixelFormat(format))?;
 
         if internal != ffi::RGBA8 && !self.capabilities.contains(&Capability::ColorTransformations) {
             return Err(GlesError::UnsupportedPixelLayout);

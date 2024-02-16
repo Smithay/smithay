@@ -1,10 +1,21 @@
 //! GL color format conversion helpers
 
 use super::ffi::{self, types::GLenum};
-use crate::backend::allocator::Fourcc;
+use crate::backend::allocator::{
+    format::{get_transparent, has_alpha},
+    Fourcc,
+};
 
 /// Returns (internal_format, read_format, type)
 pub const fn fourcc_to_gl_formats(value: Fourcc) -> Option<(GLenum, GLenum, GLenum)> {
+    let Some(value) = (if has_alpha(value) {
+        Some(value)
+    } else {
+        get_transparent(value)
+    }) else {
+        return None; // ? not allowed in const fn
+    };
+
     match value {
         Fourcc::Abgr8888 => Some((ffi::RGBA8, ffi::RGBA, ffi::UNSIGNED_BYTE)),
         Fourcc::Argb8888 => Some((ffi::BGRA_EXT, ffi::BGRA_EXT, ffi::UNSIGNED_BYTE)),
