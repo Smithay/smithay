@@ -1395,6 +1395,20 @@ impl ExportMem for GlesRenderer {
         }
     }
 
+    fn can_read_texture(&mut self, texture: &Self::TextureId) -> Result<bool, GlesError> {
+        let old_target = self.target.take();
+
+        // if we can't bind the texture, we can't read it
+        let res = self.bind(texture.clone()).is_ok();
+
+        // restore
+        self.unbind()?;
+        self.target = old_target;
+        self.make_current()?;
+
+        Ok(res)
+    }
+
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
     fn copy_texture(
