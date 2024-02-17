@@ -12,14 +12,14 @@ use crate::{
             element::{Element, Id, RenderElement, RenderElementStates},
             sync::SyncPoint,
             utils::{CommitCounter, DamageSet, DamageSnapshot, OpaqueRegions},
-            Bind, Blit, Color32F, Frame, Renderer,
+            Bind, Blit, Color32F, Frame, PresentationMode, Renderer,
         },
     },
     output::OutputNoMode,
     utils::{Buffer as BufferCoords, Physical, Point, Rectangle, Scale, Size, Transform},
 };
 
-use super::{DrmScanoutBuffer, ScanoutBuffer};
+use super::{combine_modes, DrmScanoutBuffer, ScanoutBuffer};
 
 /// Result for [`DrmCompositor::render_frame`][super::DrmCompositor::render_frame]
 ///
@@ -55,7 +55,7 @@ pub struct RenderFrameResult<'a, B: Buffer, F: Framebuffer, E> {
     pub(super) supports_fencing: bool,
 }
 
-impl<B: Buffer, F: Framebuffer, E> RenderFrameResult<'_, B, F, E> {
+impl<B: Buffer, F: Framebuffer, E: Element> RenderFrameResult<'_, B, F, E> {
     /// Returns if synchronization with kms submission can't be guaranteed through the available apis.
     pub fn needs_sync(&self) -> bool {
         if let PrimaryPlaneElement::Swapchain(ref element) = self.primary_element {
@@ -63,6 +63,24 @@ impl<B: Buffer, F: Framebuffer, E> RenderFrameResult<'_, B, F, E> {
         } else {
             false
         }
+    }
+
+    /// Hint for DRM backend on how the surface should be presented
+    pub fn presentation_mode(&self) -> PresentationMode {
+        let mut res = None;
+
+        res = match &self.primary_element {
+            PrimaryPlaneElement::Swapchain(e) => combine_modes(res, e.presentation_mode),
+            PrimaryPlaneElement::Element(e) => combine_modes(res, e.presentation_mode()),
+        };
+
+        for e in self.overlay_elements.iter() {
+            res = combine_modes(res, e.presentation_mode());
+        }
+
+        // Let's assume that cursor element does not care about tearing
+
+        res.unwrap_or(PresentationMode::VSync)
     }
 }
 
@@ -442,6 +460,9 @@ pub struct PrimarySwapchainElement<B: Buffer, F: Framebuffer> {
     pub transform: Transform,
     /// The damage on the primary plane
     pub damage: DamageSnapshot<i32, BufferCoords>,
+    /// Presentation preference for this swapchain element, created by combining mode of all elements
+    /// rendered on this buffer
+    pub presentation_mode: Option<PresentationMode>,
 }
 
 impl<B: Buffer, F: Framebuffer> PrimarySwapchainElement<B, F> {
