@@ -91,6 +91,7 @@ pub struct LegacyDrmSurface {
     state: RwLock<State>,
     pending: RwLock<State>,
     pub(super) span: tracing::Span,
+    supports_async_page_flips: bool,
 }
 
 impl LegacyDrmSurface {
@@ -100,6 +101,7 @@ impl LegacyDrmSurface {
         crtc: crtc::Handle,
         mode: Mode,
         connectors: &[connector::Handle],
+        supports_tearing_page_flips: bool,
     ) -> Result<Self, Error> {
         let span = info_span!("drm_legacy", crtc = ?crtc);
         let _guard = span.enter();
@@ -120,6 +122,7 @@ impl LegacyDrmSurface {
             state: RwLock::new(state),
             pending: RwLock::new(pending),
             span,
+            supports_async_page_flips: supports_tearing_page_flips,
         };
 
         Ok(surface)
@@ -229,9 +232,18 @@ impl LegacyDrmSurface {
         *self.pending.read().unwrap() != *self.state.read().unwrap()
     }
 
+    fn flip_flags(&self, mut flip_flags: PageFlipFlags) -> PageFlipFlags {
+        if !self.supports_async_page_flips {
+            flip_flags.remove(PageFlipFlags::ASYNC);
+        }
+        flip_flags
+    }
+
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
-    pub fn commit(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
+    pub fn commit(&self, framebuffer: framebuffer::Handle, flip_flags: PageFlipFlags) -> Result<(), Error> {
+        let flip_flags = self.flip_flags(flip_flags);
+
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
@@ -307,13 +319,13 @@ impl LegacyDrmSurface {
 
         *current = pending.clone();
 
-        if event {
+        if flip_flags.contains(PageFlipFlags::EVENT) {
             // set crtc does not trigger page_flip events, so we immediately queue a flip
             // with the same framebuffer.
             // this will result in wasting a frame, because this flip will need to wait
             // for `set_crtc`, but is necessary to drive the event loop and thus provide
             // a more consistent api.
-            ControlDevice::page_flip(&*self.fd, self.crtc, framebuffer, PageFlipFlags::EVENT, None).map_err(
+            ControlDevice::page_flip(&*self.fd, self.crtc, framebuffer, flip_flags, None).map_err(
                 |source| {
                     Error::Access(AccessError {
                         errmsg: "Failed to queue page flip",
@@ -329,25 +341,20 @@ impl LegacyDrmSurface {
 
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
-    pub fn page_flip(&self, framebuffer: framebuffer::Handle, event: bool) -> Result<(), Error> {
+    pub fn page_flip(
+        &self,
+        framebuffer: framebuffer::Handle,
+        flip_flags: PageFlipFlags,
+    ) -> Result<(), Error> {
+        let flip_flags = self.flip_flags(flip_flags);
+
         trace!("Queueing Page flip");
 
         if !self.active.load(Ordering::SeqCst) {
             return Err(Error::DeviceInactive);
         }
 
-        ControlDevice::page_flip(
-            &*self.fd,
-            self.crtc,
-            framebuffer,
-            if event {
-                PageFlipFlags::EVENT
-            } else {
-                PageFlipFlags::empty()
-            },
-            None,
-        )
-        .map_err(|source| {
+        ControlDevice::page_flip(&*self.fd, self.crtc, framebuffer, flip_flags, None).map_err(|source| {
             Error::Access(AccessError {
                 errmsg: "Failed to page flip",
                 dev: self.fd.dev_path(),

@@ -69,6 +69,8 @@ profiling = "1.0"
 smallvec = "1.11"
 pixman = { version = "0.1.0", features = ["drm-fourcc"], optional = true }
 
+[patch.crates-io]
+drm = { git="https://github.com/PolyMeilex/drm-rs.git", branch="update-drm-sys-to-get-new-caps" }
 
 [dev-dependencies]
 clap = { version = "4", features = ["derive"] }

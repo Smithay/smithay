@@ -58,7 +58,7 @@
 //! # use std::{collections::HashSet, mem::MaybeUninit};
 //! #
 //! use smithay::{
-//!     backend::drm::{compositor::DrmCompositor, DrmSurface},
+//!     backend::drm::{compositor::DrmCompositor, DrmSurface, PresentationMode},
 //!     output::{Output, PhysicalProperties, Subpixel},
 //!     utils::Size,
 //! };
@@ -108,7 +108,7 @@
 //!     .expect("failed to render frame");
 //!
 //! if !render_frame_result.is_empty {
-//!     compositor.queue_frame(()).expect("failed to queue frame");
+//!     compositor.queue_frame((), PresentationMode::VSync).expect("failed to queue frame");
 //!
 //!     // ...wait for VBlank event
 //!
@@ -131,7 +131,7 @@ use std::{
 
 use ::gbm::{BufferObject, BufferObjectFlags};
 use drm::{
-    control::{connector, crtc, framebuffer, plane, Mode, PlaneType},
+    control::{connector, crtc, framebuffer, plane, Mode, PageFlipFlags, PlaneType},
     Device, DriverCapability,
 };
 use drm_fourcc::{DrmFormat, DrmFourcc, DrmModifier};
@@ -172,7 +172,9 @@ use crate::{
     wayland::shm,
 };
 
-use super::{error::AccessError, DrmDeviceFd, DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes};
+use super::{
+    error::AccessError, DrmDeviceFd, DrmSurface, Framebuffer, PlaneClaim, PlaneInfo, Planes, PresentationMode,
+};
 
 pub mod dumb;
 mod elements;
@@ -692,12 +694,12 @@ impl<B: Framebuffer> FrameState<B> {
         surface: &DrmSurface,
         supports_fencing: bool,
         allow_partial_update: bool,
-        event: bool,
+        flip_flags: PageFlipFlags,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
         surface.commit(
             self.build_planes(surface, supports_fencing, allow_partial_update),
-            event,
+            flip_flags,
         )
     }
 
@@ -707,12 +709,12 @@ impl<B: Framebuffer> FrameState<B> {
         surface: &DrmSurface,
         supports_fencing: bool,
         allow_partial_update: bool,
-        event: bool,
+        flip_flags: PageFlipFlags,
     ) -> Result<(), crate::backend::drm::error::Error> {
         debug_assert!(!self.planes.iter().any(|(_, state)| state.needs_test));
         surface.page_flip(
             self.build_planes(surface, supports_fencing, allow_partial_update),
-            event,
+            flip_flags,
         )
     }
 
@@ -1426,6 +1428,7 @@ where
 struct QueuedFrame<A: Allocator, F: ExportFramebuffer<<A as Allocator>::Buffer>, U> {
     prepared_frame: PreparedFrame<A, F>,
     user_data: U,
+    presentation_mode: PresentationMode,
 }
 
 impl<A, F, U> std::fmt::Debug for QueuedFrame<A, F, U>
@@ -2500,7 +2503,11 @@ where
     ///
     /// `user_data` can be used to attach some data to a specific buffer and later retrieved with [`DrmCompositor::frame_submitted`]
     #[profiling::function]
-    pub fn queue_frame(&mut self, user_data: U) -> FrameResult<(), A, F> {
+    pub fn queue_frame(
+        &mut self,
+        user_data: U,
+        presentation_mode: PresentationMode,
+    ) -> FrameResult<(), A, F> {
         if !self.surface.is_active() {
             return Err(FrameErrorType::<A, F>::DrmError(DrmError::DeviceInactive));
         }
@@ -2526,6 +2533,7 @@ where
         self.queued_frame = Some(QueuedFrame {
             prepared_frame,
             user_data,
+            presentation_mode,
         });
         if self.pending_frame.is_none() {
             self.submit()?;
@@ -2553,17 +2561,29 @@ where
         let QueuedFrame {
             mut prepared_frame,
             user_data,
+            presentation_mode,
         } = self.queued_frame.take().unwrap();
+
+        let mut flip_flags = PageFlipFlags::EVENT;
+        if presentation_mode == PresentationMode::ASync {
+            flip_flags |= PageFlipFlags::ASYNC;
+        }
 
         let allow_partial_update = prepared_frame.kind == PreparedFrameKind::Partial;
         let flip = if self.surface.commit_pending() {
-            prepared_frame
-                .frame
-                .commit(&self.surface, self.supports_fencing, allow_partial_update, true)
+            prepared_frame.frame.commit(
+                &self.surface,
+                self.supports_fencing,
+                allow_partial_update,
+                flip_flags,
+            )
         } else {
-            prepared_frame
-                .frame
-                .page_flip(&self.surface, self.supports_fencing, allow_partial_update, true)
+            prepared_frame.frame.page_flip(
+                &self.surface,
+                self.supports_fencing,
+                allow_partial_update,
+                flip_flags,
+            )
         };
 
         match flip {

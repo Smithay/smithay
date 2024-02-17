@@ -113,6 +113,16 @@ fn warn_legacy_fb_export() {
     });
 }
 
+/// Hint for DRM backend on how the surface should be presented
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresentationMode {
+    /// Vertical synchronization
+    VSync,
+    /// Thearing presentationres
+    ASync,
+    // NOTE: Auto for detecting when thearing is desired would probably go here
+}
+
 /// Common framebuffer operations
 pub trait Framebuffer: AsRef<framebuffer::Handle> {
     /// Retrieve the format of the framebuffer

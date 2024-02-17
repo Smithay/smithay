@@ -31,7 +31,7 @@ use smithay::{
         },
         drm::{
             compositor::DrmCompositor, CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError,
-            DrmEvent, DrmEventMetadata, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
+            DrmEvent, DrmEventMetadata, DrmNode, DrmSurface, GbmBufferedSurface, NodeType, PresentationMode,
         },
         egl::{self, context::ContextPriority, EGLDevice, EGLDisplay},
         input::InputEvent,
@@ -685,14 +685,15 @@ impl SurfaceComposition {
         sync: Option<SyncPoint>,
         damage: Option<Vec<Rectangle<i32, Physical>>>,
         user_data: Option<OutputPresentationFeedback>,
+        presentation_mode: PresentationMode,
     ) -> Result<(), SwapBuffersError> {
         match self {
             SurfaceComposition::Surface { surface, .. } => surface
-                .queue_buffer(sync, damage, user_data)
+                .queue_buffer(sync, damage, user_data, presentation_mode)
                 .map_err(Into::<SwapBuffersError>::into),
-            SurfaceComposition::Compositor(c) => {
-                c.queue_frame(user_data).map_err(Into::<SwapBuffersError>::into)
-            }
+            SurfaceComposition::Compositor(c) => c
+                .queue_frame(user_data, presentation_mode)
+                .map_err(Into::<SwapBuffersError>::into),
         }
     }
 
@@ -1714,11 +1715,19 @@ fn render_surface<'a, 'b>(
         clock.now(),
     );
 
+    // TODO: Plug this in, either in DRM compositor or directly here
+    let presentation_mode = PresentationMode::VSync;
+
     if res.rendered {
         let output_presentation_feedback = take_presentation_feedback(output, space, &res.states);
         surface
             .compositor
-            .queue_frame(res.sync, res.damage, Some(output_presentation_feedback))
+            .queue_frame(
+                res.sync,
+                res.damage,
+                Some(output_presentation_feedback),
+                presentation_mode,
+            )
             .map_err(Into::<SwapBuffersError>::into)?;
     }
 
@@ -1732,7 +1741,9 @@ fn initial_render(
     surface
         .compositor
         .render_frame::<_, CustomRenderElements<_>, GlesTexture>(renderer, &[], CLEAR_COLOR)?;
-    surface.compositor.queue_frame(None, None, None)?;
+    surface
+        .compositor
+        .queue_frame(None, None, None, PresentationMode::VSync)?;
     surface.compositor.reset_buffers();
 
     Ok(())
