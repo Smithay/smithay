@@ -66,6 +66,15 @@ use sync::SyncPoint;
 #[cfg(any(feature = "renderer_test", test, doctest))]
 pub mod test;
 
+/// Hint for DRM backend on how the surface should be presented
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresentationMode {
+    /// Vertical synchronization
+    VSync,
+    /// Tearing presentationres
+    Async,
+}
+
 /// Identifies a renderer context for a specific texture type.
 ///
 /// Renderers with the same `ContextId` are assumed to be texture-compatible,

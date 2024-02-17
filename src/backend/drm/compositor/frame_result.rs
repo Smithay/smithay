@@ -55,7 +55,7 @@ pub struct RenderFrameResult<'a, B: Buffer, F: Framebuffer, E> {
     pub(super) supports_fencing: bool,
 }
 
-impl<B: Buffer, F: Framebuffer, E> RenderFrameResult<'_, B, F, E> {
+impl<B: Buffer, F: Framebuffer, E: Element> RenderFrameResult<'_, B, F, E> {
     /// Returns if synchronization with kms submission can't be guaranteed through the available apis.
     pub fn needs_sync(&self) -> bool {
         if let PrimaryPlaneElement::Swapchain(ref element) = self.primary_element {

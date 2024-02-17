@@ -18,7 +18,11 @@ use crate::{
             gbm::GbmDevice,
             Allocator,
         },
-        renderer::{element::RenderElement, Bind, Color32F, DebugFlags, Renderer, RendererSuper, Texture},
+        drm::compositor::FrameRef,
+        renderer::{
+            element::RenderElement, Bind, Color32F, DebugFlags, PresentationMode, Renderer, RendererSuper,
+            Texture,
+        },
     },
     output::OutputModeSource,
 };
@@ -711,6 +715,7 @@ where
         elements: &'a [E],
         clear_color: impl Into<Color32F>,
         frame_mode: FrameFlags,
+        presentation_mode: PresentationMode,
     ) -> Result<RenderFrameResult<'a, A::Buffer, F::Framebuffer, E>, RenderFrameErrorType<A, F, R>>
     where
         E: RenderElement<R>,
@@ -719,7 +724,7 @@ where
         R::Error: Send + Sync + 'static,
     {
         self.with_compositor(|compositor| {
-            compositor.render_frame(renderer, elements, clear_color, frame_mode)
+            compositor.render_frame(renderer, elements, clear_color, frame_mode, presentation_mode)
         })
     }
 
@@ -1033,7 +1038,13 @@ where
             .map(|(ref elements, ref color)| (&**elements, color))
             .unwrap_or((&[], &Color32F::BLACK));
         let frame_result = compositor
-            .render_frame(renderer, elements, *clear_color, FrameFlags::empty())
+            .render_frame(
+                renderer,
+                elements,
+                *clear_color,
+                FrameFlags::empty(),
+                PresentationMode::VSync,
+            )
             .map_err(DrmOutputManagerError::RenderFrame)?;
         if frame_result.needs_sync() {
             if let PrimaryPlaneElement::Swapchain(primary_swapchain_element) = frame_result.primary_element {
