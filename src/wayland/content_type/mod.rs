@@ -58,7 +58,8 @@ use wayland_protocols::wp::content_type::v1::server::{
     wp_content_type_v1::{self, WpContentTypeV1},
 };
 use wayland_server::{
-    backend::GlobalId, protocol::wl_surface::WlSurface, Dispatch, DisplayHandle, GlobalDispatch,
+    backend::GlobalId, protocol::wl_surface::WlSurface, Dispatch, DisplayHandle, GlobalDispatch, Resource,
+    Weak,
 };
 
 use super::compositor::Cacheable;
@@ -132,15 +133,15 @@ impl ContentTypeSurfaceData {
 
 /// User data of `WpContentTypeV1` object
 #[derive(Debug)]
-pub struct ContentTypeUserData(Mutex<Option<WlSurface>>);
+pub struct ContentTypeUserData(Mutex<Weak<WlSurface>>);
 
 impl ContentTypeUserData {
     fn new(surface: WlSurface) -> Self {
-        Self(Mutex::new(Some(surface)))
+        Self(Mutex::new(surface.downgrade()))
     }
 
     fn wl_surface(&self) -> Option<WlSurface> {
-        self.0.lock().unwrap().clone()
+        self.0.lock().unwrap().upgrade().ok()
     }
 }
 
