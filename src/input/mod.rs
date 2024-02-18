@@ -126,11 +126,14 @@ use std::{
 
 use tracing::{info_span, instrument};
 
-use self::pointer::{CursorImageStatus, PointerHandle, PointerTarget};
 use self::touch::TouchTarget;
 use self::{
     keyboard::{Error as KeyboardError, KeyboardHandle, KeyboardTarget, LedState},
     touch::TouchHandle,
+};
+use self::{
+    pointer::{CursorImageStatus, PointerHandle, PointerTarget},
+    touch::TouchGrab,
 };
 use crate::utils::user_data::UserDataMap;
 
@@ -592,8 +595,23 @@ impl<D: SeatHandler + 'static> Seat<D> {
     /// let touch_handle = seat.add_touch();
     /// ```
     pub fn add_touch(&mut self) -> TouchHandle<D> {
+        Self::add_touch_with_default_grab(self, || Box::new(touch::DefaultGrab))
+    }
+
+    /// Adds the touch capability to this seat and allows the use of a custom default [`TouchGrab`]
+    ///
+    /// The default grab is used in case no other grab is currently active. When using [`Seat::add_touch`]
+    /// it will use [`touch::DefaultGrab`] which will install [`touch::TouchDownGrab`] on the first touch point.
+    /// [`touch::TouchDownGrab`] makes sure all further touch points will use the same target until all touch
+    /// points are released again.
+    ///
+    /// See [`Seat::add_touch`] for more information
+    pub fn add_touch_with_default_grab<F>(&mut self, defaut_grab: F) -> TouchHandle<D>
+    where
+        F: Fn() -> Box<dyn TouchGrab<D>> + Send + 'static,
+    {
         let mut inner = self.arc.inner.lock().unwrap();
-        let touch = TouchHandle::new();
+        let touch = TouchHandle::new(defaut_grab);
         if inner.touch.is_some() {
             // If there's already a tocuh device, remove it notify the clients about the change.
             inner.touch = None;

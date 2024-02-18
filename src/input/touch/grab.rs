@@ -144,8 +144,9 @@ impl<D> fmt::Debug for GrabStatus<D> {
     }
 }
 
-// The default grab, the behavior when no particular grab is in progress
-pub(super) struct DefaultGrab;
+/// The default grab, the behavior when no particular grab is in progress
+#[derive(Debug)]
+pub struct DefaultGrab;
 
 impl<D: SeatHandler + 'static> TouchGrab<D> for DefaultGrab {
     fn down(
@@ -160,7 +161,7 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for DefaultGrab {
         handle.set_grab(
             data,
             event.serial,
-            ClickGrab {
+            TouchDownGrab {
                 start_data: GrabStartData {
                     focus,
                     slot: event.slot,
@@ -199,17 +200,28 @@ impl<D: SeatHandler + 'static> TouchGrab<D> for DefaultGrab {
     }
 }
 
-// A click grab, basic grab started when an user clicks a surface
-// to maintain it focused until the user releases the click.
-//
-// In case the user maintains several simultaneous clicks, release
-// the grab once all are released.
-struct ClickGrab<D: SeatHandler> {
-    start_data: GrabStartData<D>,
-    touch_points: usize,
+/// A touch down grab, basic grab started when an user touches a surface
+/// to maintain it focused until the user releases the touch.
+///
+/// In case the user maintains several simultaneous touch points, release
+/// the grab once all are released.
+pub struct TouchDownGrab<D: SeatHandler> {
+    /// Start date for this grab
+    pub start_data: GrabStartData<D>,
+    /// Currently active touch points
+    pub touch_points: usize,
 }
 
-impl<D: SeatHandler + 'static> TouchGrab<D> for ClickGrab<D> {
+impl<D: SeatHandler + 'static> fmt::Debug for TouchDownGrab<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TouchDownGrab")
+            .field("start_data", &self.start_data)
+            .field("touch_points", &self.touch_points)
+            .finish()
+    }
+}
+
+impl<D: SeatHandler + 'static> TouchGrab<D> for TouchDownGrab<D> {
     fn down(
         &mut self,
         data: &mut D,
