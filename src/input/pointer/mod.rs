@@ -141,6 +141,17 @@ where
     fn gesture_hold_end(&self, seat: &Seat<D>, data: &mut D, event: &GestureHoldEndEvent);
     /// A pointer of a given seat left this handler
     fn leave(&self, seat: &Seat<D>, data: &mut D, serial: Serial, time: u32);
+    /// A pointer of a given seat moved from another handler to this handler
+    fn replace(
+        &self,
+        replaced: <D as SeatHandler>::PointerFocus,
+        seat: &Seat<D>,
+        data: &mut D,
+        event: &MotionEvent,
+    ) {
+        PointerTarget::<D>::leave(&replaced, seat, data, event.serial, event.time);
+        PointerTarget::<D>::enter(self, seat, data, event);
+    }
 }
 
 impl<D: SeatHandler + 'static> PointerHandle<D> {
@@ -717,42 +728,30 @@ impl<D: SeatHandler + 'static> PointerInternal<D> {
         focus: Option<(<D as SeatHandler>::PointerFocus, Point<i32, Logical>)>,
         event: &MotionEvent,
     ) {
-        // do we leave a surface ?
-        let mut leave = true;
         self.location = event.location;
-        if let Some((ref current_focus, _)) = self.focus {
-            if let Some((ref new_focus, _)) = focus {
-                if current_focus == new_focus {
-                    leave = false;
-                }
-            }
-        }
-        if leave {
-            if let Some((focused, _)) = self.focus.as_mut() {
-                focused.leave(seat, data, event.serial, event.time);
-            }
-            self.focus = None;
-            data.cursor_image(seat, CursorImageStatus::default_named());
-        }
-
-        // do we enter one ?
-        if let Some((surface, surface_location)) = focus {
-            let entered = self.focus.is_none();
-            // in all cases, update the focus, the coordinates of the surface
-            // might have changed
-            self.focus = Some((surface, surface_location));
+        if let Some((focus, loc)) = focus {
             let event = MotionEvent {
-                location: event.location - surface_location.to_f64(),
+                location: event.location - loc.to_f64(),
                 serial: event.serial,
                 time: event.time,
             };
-            let (focused, _) = self.focus.as_mut().unwrap();
-            if entered {
-                focused.enter(seat, data, &event);
-            } else {
-                // we were on top of a surface and remained on it
-                focused.motion(seat, data, &event);
-            }
+            let old_focus = self.focus.replace((focus.clone(), loc));
+            match (focus, old_focus) {
+                (focus, Some((old_focus, _))) if focus == old_focus => {
+                    // we were on top of a target and remained on it
+                    focus.motion(seat, data, &event);
+                }
+                (focus, Some((old_focus, _))) => {
+                    // the target has been replaced
+                    focus.replace(old_focus, seat, data, &event);
+                }
+                (focus, None) => {
+                    // we entered a new target
+                    focus.enter(seat, data, &event);
+                }
+            };
+        } else if let Some((old_focus, _)) = self.focus.take() {
+            old_focus.leave(seat, data, event.serial, event.time);
         }
     }
 
