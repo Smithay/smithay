@@ -9,8 +9,8 @@ use tracing::{info_span, instrument};
 use crate::backend::input::TouchSlot;
 use crate::utils::{IsAlive, Logical, Point, Serial, SerialCounter};
 
-use self::grab::{DefaultGrab, GrabStatus};
-pub use grab::{GrabStartData, TouchGrab};
+use self::grab::GrabStatus;
+pub use grab::{DefaultGrab, GrabStartData, TouchDownGrab, TouchGrab};
 
 use super::{Seat, SeatHandler};
 
@@ -78,6 +78,7 @@ impl<D: SeatHandler> std::cmp::Eq for TouchHandle<D> {}
 pub(crate) struct TouchInternal<D: SeatHandler> {
     focus: HashMap<TouchSlot, TouchSlotState<D>>,
     seq_counter: SerialCounter,
+    default_grab: Box<dyn Fn() -> Box<dyn TouchGrab<D>> + Send + 'static>,
     grab: GrabStatus<D>,
 }
 
@@ -210,9 +211,12 @@ where
 }
 
 impl<D: SeatHandler + 'static> TouchHandle<D> {
-    pub(crate) fn new() -> TouchHandle<D> {
+    pub(crate) fn new<F>(default_grab: F) -> TouchHandle<D>
+    where
+        F: Fn() -> Box<dyn TouchGrab<D>> + Send + 'static,
+    {
         TouchHandle {
-            inner: Arc::new(Mutex::new(TouchInternal::new())),
+            inner: Arc::new(Mutex::new(TouchInternal::new(default_grab))),
             #[cfg(feature = "wayland_frontend")]
             known_instances: Arc::new(Mutex::new(Vec::new())),
             span: info_span!("input_touch"),
@@ -449,10 +453,14 @@ impl<'a, D: SeatHandler + 'static> TouchInnerHandle<'a, D> {
 }
 
 impl<D: SeatHandler + 'static> TouchInternal<D> {
-    fn new() -> Self {
+    fn new<F>(default_grab: F) -> Self
+    where
+        F: Fn() -> Box<dyn TouchGrab<D>> + Send + 'static,
+    {
         Self {
             focus: Default::default(),
             seq_counter: SerialCounter::new(),
+            default_grab: Box::new(default_grab),
             grab: GrabStatus::None,
         }
     }
@@ -563,14 +571,16 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
                 if let Some((ref focus, _)) = handler.start_data().focus {
                     if !focus.alive() {
                         self.grab = GrabStatus::None;
-                        f(&mut TouchInnerHandle { inner: self, seat }, &mut DefaultGrab);
+                        let mut default_grab = (self.default_grab)();
+                        f(&mut TouchInnerHandle { inner: self, seat }, &mut *default_grab);
                         return;
                     }
                 }
                 f(&mut TouchInnerHandle { inner: self, seat }, &mut **handler);
             }
             GrabStatus::None => {
-                f(&mut TouchInnerHandle { inner: self, seat }, &mut DefaultGrab);
+                let mut default_grab = (self.default_grab)();
+                f(&mut TouchInnerHandle { inner: self, seat }, &mut *default_grab);
             }
         }
 
