@@ -12,8 +12,8 @@ use crate::backend::allocator::gbm::GbmConvertError;
 use crate::backend::allocator::{Allocator, Format, Fourcc, Modifier, Slot, Swapchain};
 use crate::backend::drm::error::AccessError;
 use crate::backend::drm::gbm::{framebuffer_from_bo, GbmFramebuffer};
-use crate::backend::drm::{plane_has_property, DrmError, DrmSurface, PresentationMode};
-use crate::backend::renderer::sync::SyncPoint;
+use crate::backend::drm::{plane_has_property, DrmError, DrmSurface};
+use crate::backend::renderer::{sync::SyncPoint, PresentationMode};
 use crate::backend::SwapBuffersError;
 use crate::utils::{DevPath, Physical, Point, Rectangle, Transform};
 

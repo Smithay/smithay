@@ -31,7 +31,7 @@ use smithay::{
         },
         drm::{
             compositor::DrmCompositor, CreateDrmNodeError, DrmAccessError, DrmDevice, DrmDeviceFd, DrmError,
-            DrmEvent, DrmEventMetadata, DrmNode, DrmSurface, GbmBufferedSurface, NodeType, PresentationMode,
+            DrmEvent, DrmEventMetadata, DrmNode, DrmSurface, GbmBufferedSurface, NodeType,
         },
         egl::{self, context::ContextPriority, EGLDevice, EGLDisplay},
         input::InputEvent,
@@ -42,7 +42,7 @@ use smithay::{
             gles::{GlesRenderer, GlesTexture},
             multigpu::{gbm::GbmGlesBackend, GpuManager, MultiRenderer},
             sync::SyncPoint,
-            Bind, DebugFlags, ExportMem, ImportDma, ImportMemWl, Offscreen, Renderer,
+            Bind, DebugFlags, ExportMem, ImportDma, ImportMemWl, Offscreen, PresentationMode, Renderer,
         },
         session::{
             libseat::{self, LibSeatSession},
@@ -635,6 +635,7 @@ struct SurfaceCompositorRenderResult {
     states: RenderElementStates,
     sync: Option<SyncPoint>,
     damage: Option<Vec<Rectangle<i32, Physical>>>,
+    presentation_mode: PresentationMode,
 }
 
 impl SurfaceComposition {
@@ -731,6 +732,7 @@ impl SurfaceComposition {
                             damage: res.damage,
                             states: res.states,
                             sync: rendered.then_some(res.sync),
+                            presentation_mode: PresentationMode::VSync,
                         }
                     })
                     .map_err(|err| match err {
@@ -747,11 +749,13 @@ impl SurfaceComposition {
                     if let PrimaryPlaneElement::Swapchain(element) = render_frame_result.primary_element {
                         element.sync.wait();
                     }
+                    let presentation_mode = render_frame_result.presentation_mode();
                     SurfaceCompositorRenderResult {
                         rendered: !render_frame_result.is_empty,
                         damage: None,
                         states: render_frame_result.states,
                         sync: None,
+                        presentation_mode,
                     }
                 })
                 .map_err(|err| match err {
@@ -1715,9 +1719,6 @@ fn render_surface<'a, 'b>(
         clock.now(),
     );
 
-    // TODO: Plug this in, either in DRM compositor or directly here
-    let presentation_mode = PresentationMode::VSync;
-
     if res.rendered {
         let output_presentation_feedback = take_presentation_feedback(output, space, &res.states);
         surface
@@ -1726,7 +1727,7 @@ fn render_surface<'a, 'b>(
                 res.sync,
                 res.damage,
                 Some(output_presentation_feedback),
-                presentation_mode,
+                res.presentation_mode,
             )
             .map_err(Into::<SwapBuffersError>::into)?;
     }
