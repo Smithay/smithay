@@ -118,9 +118,8 @@ fn warn_legacy_fb_export() {
 pub enum PresentationMode {
     /// Vertical synchronization
     VSync,
-    /// Thearing presentationres
-    ASync,
-    // NOTE: Auto for detecting when thearing is desired would probably go here
+    /// Tearing presentationres
+    Async,
 }
 
 /// Common framebuffer operations

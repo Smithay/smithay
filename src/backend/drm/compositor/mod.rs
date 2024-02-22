@@ -2565,7 +2565,7 @@ where
         } = self.queued_frame.take().unwrap();
 
         let mut flip_flags = PageFlipFlags::EVENT;
-        if presentation_mode == PresentationMode::ASync {
+        if presentation_mode == PresentationMode::Async {
             flip_flags |= PageFlipFlags::ASYNC;
         }
 
