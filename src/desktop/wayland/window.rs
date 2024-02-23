@@ -1,5 +1,3 @@
-#[cfg(feature = "xwayland")]
-use crate::xwayland::X11Surface;
 use crate::{
     backend::input::KeyState,
     desktop::{space::RenderZindex, utils::*, PopupManager},
@@ -21,6 +19,8 @@ use crate::{
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
 };
+#[cfg(feature = "xwayland")]
+use crate::{desktop::space::SpaceElement, xwayland::X11Surface};
 use std::{
     hash::{Hash, Hasher},
     sync::{
@@ -170,7 +170,11 @@ impl Window {
 
     /// Returns a bounding box over this window and its children.
     pub fn bbox(&self) -> Rectangle<i32, Logical> {
-        *self.0.bbox.lock().unwrap()
+        match &self.0.surface {
+            WindowSurface::Wayland(_) => *self.0.bbox.lock().unwrap(),
+            #[cfg(feature = "xwayland")]
+            WindowSurface::X11(s) => s.bbox(),
+        }
     }
 
     /// Returns a bounding box over this window and children including popups.
