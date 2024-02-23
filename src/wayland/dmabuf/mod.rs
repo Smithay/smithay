@@ -189,7 +189,6 @@ mod dispatch;
 
 use std::{
     collections::{HashMap, HashSet},
-    convert::TryFrom,
     ffi::CString,
     ops::Sub,
     os::unix::io::AsFd,

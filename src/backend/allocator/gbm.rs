@@ -12,10 +12,7 @@ use super::{
 use crate::backend::drm::DrmNode;
 use crate::utils::{Buffer as BufferCoords, Size};
 pub use gbm::{BufferObject as GbmBuffer, BufferObjectFlags as GbmBufferFlags, Device as GbmDevice};
-use std::{
-    convert::{AsMut, AsRef},
-    os::unix::io::{AsFd, BorrowedFd},
-};
+use std::os::unix::io::{AsFd, BorrowedFd};
 use tracing::instrument;
 
 /// Light wrapper around an [`GbmDevice`] to implement the [`Allocator`]-trait

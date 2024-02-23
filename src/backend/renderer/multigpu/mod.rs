@@ -39,31 +39,41 @@
 //! and desired target-gpu are up to be implemented by the compositor. The module only
 //! reduces the amount of necessary setup operations.
 //!
-
-use super::{sync::SyncPoint, *};
 use std::{
     any::{Any, TypeId},
     cell::{Ref, RefCell},
-    collections::HashMap,
-    convert::{AsMut, AsRef},
+    collections::{HashMap, HashSet},
     fmt,
     rc::Rc,
 };
 
+use super::{
+    sync::SyncPoint, Bind, Blit, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
+    Texture, TextureFilter, TextureMapping, Unbind,
+};
 #[cfg(feature = "wayland_frontend")]
-use crate::wayland::{dmabuf::get_dmabuf, shm};
+use super::{ImportDmaWl, ImportMemWl};
+
+#[cfg(feature = "wayland_frontend")]
+use crate::{
+    backend::renderer::{buffer_type, BufferType},
+    wayland::{compositor::SurfaceData, dmabuf::get_dmabuf, shm},
+};
 use crate::{
     backend::{
-        allocator::{dmabuf::AnyError, Allocator, Buffer as BufferTrait, Format, Fourcc, Modifier},
+        allocator::{
+            dmabuf::{AnyError, Dmabuf},
+            Allocator, Buffer as BufferTrait, Format, Fourcc, Modifier,
+        },
         drm::DrmNode,
         renderer::sync,
         SwapBuffersError,
     },
-    utils::{Buffer as BufferCoords, Physical, Size},
+    utils::{Buffer as BufferCoords, Physical, Rectangle, Size, Transform},
 };
 use tracing::{debug, info, info_span, instrument, trace, warn};
 #[cfg(feature = "wayland_frontend")]
-use wayland_server::protocol::{wl_buffer, wl_surface::WlSurface};
+use wayland_server::protocol::{wl_buffer, wl_shm, wl_surface::WlSurface};
 
 #[cfg(all(feature = "backend_gbm", feature = "backend_egl", feature = "renderer_gl"))]
 pub mod gbm;

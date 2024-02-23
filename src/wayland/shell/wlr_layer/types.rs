@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, convert::TryFrom};
+use std::cmp::Ordering;
 
 use wayland_protocols_wlr::layer_shell::v1::server::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 use wayland_server::WEnum;

@@ -1,6 +1,5 @@
 use wayland_server::protocol::wl_surface::WlSurface;
 
-use super::*;
 use crate::{
     backend::renderer::{
         element::{
@@ -14,6 +13,8 @@ use crate::{
     wayland::seat::WaylandFocus,
     xwayland::X11Surface,
 };
+
+use super::{output_update, WindowOutputUserData};
 
 impl WaylandFocus for X11Surface {
     fn wl_surface(&self) -> Option<WlSurface> {

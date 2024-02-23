@@ -1,4 +1,4 @@
-use std::{convert::TryFrom, sync::Mutex};
+use std::sync::Mutex;
 
 use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_shell_v1::{self, ZwlrLayerShellV1};
 use wayland_protocols_wlr::layer_shell::v1::server::zwlr_layer_surface_v1;
