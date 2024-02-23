@@ -1,10 +1,19 @@
-use crate::{
-    backend::renderer::{element::Wrap, Renderer},
-    desktop::space::*,
-    output::Output,
-    utils::{Logical, Physical, Point, Rectangle, Scale},
-};
 use std::hash::Hash;
+
+#[cfg(feature = "wayland_frontend")]
+use crate::{
+    backend::renderer::{element::surface::WaylandSurfaceRenderElement, ImportAll},
+    desktop::LayerSurface,
+    wayland::shell::wlr_layer::Layer,
+};
+use crate::{
+    backend::renderer::{
+        element::{AsRenderElements, Wrap},
+        Renderer, Texture,
+    },
+    output::Output,
+    utils::{IsAlive, Logical, Physical, Point, Rectangle, Scale},
+};
 
 #[cfg(feature = "wayland_frontend")]
 mod wayland;
@@ -465,6 +474,8 @@ macro_rules! space_elements {
 }
 
 pub use space_elements;
+
+use super::{InnerElement, SpaceRenderElements};
 
 #[cfg(test)]
 #[allow(dead_code)]

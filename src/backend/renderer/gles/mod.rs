@@ -5,7 +5,6 @@ use core::slice;
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
-    convert::TryFrom,
     ffi::{CStr, CString},
     fmt, mem,
     os::raw::c_char,

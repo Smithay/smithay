@@ -1,4 +1,4 @@
-use std::{convert::TryFrom, ffi::CStr, os::raw::c_char};
+use std::{ffi::CStr, os::raw::c_char};
 
 use scan_fmt::scan_fmt;
 

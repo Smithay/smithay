@@ -1,7 +1,9 @@
 use crate::{
-    backend::renderer::{element::Kind, Renderer},
-    desktop::space::*,
-    utils::{Physical, Point, Scale},
+    backend::renderer::{
+        element::{surface::WaylandSurfaceRenderElement, AsRenderElements, Kind},
+        ImportAll, Renderer,
+    },
+    utils::{IsAlive, Physical, Point, Scale},
 };
 use wayland_server::protocol::wl_surface::WlSurface;
 
