@@ -3,7 +3,8 @@ use std::cell::RefCell;
 use smithay::{
     desktop::{
         find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output, space::SpaceElement,
-        PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window, WindowSurfaceType,
+        PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Space, Window,
+        WindowSurfaceType,
     },
     input::{pointer::Focus, Seat},
     output::Output,
@@ -14,9 +15,9 @@ use smithay::{
             Resource,
         },
     },
-    utils::Serial,
+    utils::{Logical, Point, Serial},
     wayland::{
-        compositor::with_states,
+        compositor::{self, with_states},
         seat::WaylandFocus,
         shell::xdg::{
             Configure, PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
@@ -34,7 +35,7 @@ use crate::{
 
 use super::{
     fullscreen_output_geometry, place_new_window, FullscreenSurface, PointerMoveSurfaceGrab,
-    PointerResizeSurfaceGrab, ResizeData, ResizeState, SurfaceData, WindowElement,
+    PointerResizeSurfaceGrab, ResizeData, ResizeEdge, ResizeState, SurfaceData, WindowElement,
 };
 
 impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
@@ -46,8 +47,12 @@ impl<BackendData: Backend> XdgShellHandler for AnvilState<BackendData> {
         // Do not send a configure here, the initial configure
         // of a xdg_surface has to be sent during the commit if
         // the surface is not already configured
-        let window = WindowElement(Window::new_wayland_window(surface));
+        let window = WindowElement(Window::new_wayland_window(surface.clone()));
         place_new_window(&mut self.space, self.pointer.current_location(), &window, true);
+
+        compositor::add_post_commit_hook(surface.wl_surface(), |state: &mut Self, _, surface| {
+            handle_toplevel_commit(&mut state.space, surface);
+        });
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
@@ -584,4 +589,55 @@ impl<BackendData: Backend> AnvilState<BackendData> {
             state.geometry = state.positioner.get_unconstrained_geometry(target);
         });
     }
+}
+
+/// Should be called on `WlSurface::commit` of xdg toplevel
+fn handle_toplevel_commit(space: &mut Space<WindowElement>, surface: &WlSurface) -> Option<()> {
+    let window = space
+        .elements()
+        .find(|w| w.wl_surface().as_ref() == Some(surface))
+        .cloned()?;
+
+    let mut window_loc = space.element_location(&window)?;
+    let geometry = window.geometry();
+
+    let new_loc: Point<Option<i32>, Logical> = with_states(&window.wl_surface()?, |states| {
+        let data = states.data_map.get::<RefCell<SurfaceData>>()?.borrow_mut();
+
+        if let ResizeState::Resizing(resize_data) = data.resize_state {
+            let edges = resize_data.edges;
+            let loc = resize_data.initial_window_location;
+            let size = resize_data.initial_window_size;
+
+            // If the window is being resized by top or left, its location must be adjusted
+            // accordingly.
+            edges.intersects(ResizeEdge::TOP_LEFT).then(|| {
+                let new_x = edges
+                    .intersects(ResizeEdge::LEFT)
+                    .then_some(loc.x + (size.w - geometry.size.w));
+
+                let new_y = edges
+                    .intersects(ResizeEdge::TOP)
+                    .then_some(loc.y + (size.h - geometry.size.h));
+
+                (new_x, new_y).into()
+            })
+        } else {
+            None
+        }
+    })?;
+
+    if let Some(new_x) = new_loc.x {
+        window_loc.x = new_x;
+    }
+    if let Some(new_y) = new_loc.y {
+        window_loc.y = new_y;
+    }
+
+    if new_loc.x.is_some() || new_loc.y.is_some() {
+        // If TOP or LEFT side of the window got resized, we have to move it
+        space.map_element(window, window_loc, false);
+    }
+
+    Some(())
 }
