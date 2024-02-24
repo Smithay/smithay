@@ -1,3 +1,5 @@
+#[cfg(feature = "xwayland")]
+use crate::{desktop::space::SpaceElement, xwayland::X11Surface};
 use crate::{
     desktop::{space::RenderZindex, utils::*, PopupManager},
     output::Output,
@@ -9,8 +11,6 @@ use crate::{
         shell::xdg::{SurfaceCachedState, ToplevelSurface},
     },
 };
-#[cfg(feature = "xwayland")]
-use crate::{desktop::space::SpaceElement, xwayland::X11Surface};
 use std::{
     hash::{Hash, Hasher},
     sync::{
