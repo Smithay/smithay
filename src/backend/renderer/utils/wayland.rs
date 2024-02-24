@@ -37,7 +37,6 @@ pub struct RendererSurfaceState {
     pub(crate) buffer_dimensions: Option<Size<i32, BufferCoord>>,
     pub(crate) buffer_scale: i32,
     pub(crate) buffer_transform: Transform,
-    pub(crate) buffer_delta: Option<Point<i32, Logical>>,
     pub(crate) buffer_has_alpha: Option<bool>,
     pub(crate) buffer: Option<Buffer>,
     pub(crate) damage: DamageBag<i32, BufferCoord>,
@@ -45,8 +44,6 @@ pub struct RendererSurfaceState {
     pub(crate) textures: HashMap<(TypeId, usize), Box<dyn std::any::Any>>,
     pub(crate) surface_view: Option<SurfaceView>,
     pub(crate) opaque_regions: Vec<Rectangle<i32, Logical>>,
-
-    accumulated_buffer_delta: Point<i32, Logical>,
 }
 
 #[derive(Debug)]
@@ -96,12 +93,6 @@ impl RendererSurfaceState {
     #[profiling::function]
     pub(crate) fn update_buffer(&mut self, states: &SurfaceData) {
         let mut attrs = states.cached_state.current::<SurfaceAttributes>();
-        self.buffer_delta = attrs.buffer_delta.take();
-
-        if let Some(delta) = self.buffer_delta {
-            self.accumulated_buffer_delta += delta;
-        }
-
         match attrs.buffer.take() {
             Some(BufferAssignment::NewBuffer(buffer)) => {
                 // new contents
@@ -126,8 +117,7 @@ impl RendererSurfaceState {
                     .buffer_dimensions
                     .unwrap()
                     .to_logical(self.buffer_scale, self.buffer_transform);
-                let surface_view =
-                    SurfaceView::from_states(states, surface_size, self.accumulated_buffer_delta);
+                let surface_view = SurfaceView::from_states(states, surface_size);
                 self.surface_view = Some(surface_view);
 
                 let mut buffer_damage = attrs
@@ -266,16 +256,6 @@ impl RendererSurfaceState {
         self.textures.get(&texture_id).and_then(|e| e.downcast_ref())
     }
 
-    /// Location of the buffer relative to the previous call of take_accumulated_buffer_delta
-    ///
-    /// In other words, the x and y, combined with the new surface size define in which directions
-    /// the surface's size changed since last call to this method.
-    ///
-    /// Once delta is taken this method returns `None` to avoid processing it several times.
-    pub fn take_accumulated_buffer_delta(&mut self) -> Point<i32, Logical> {
-        std::mem::take(&mut self.accumulated_buffer_delta)
-    }
-
     /// Gets the opaque regions of this surface
     pub fn opaque_regions(&self) -> Option<&[Rectangle<i32, Logical>]> {
         // If the surface is unmapped there can be no opaque regions
@@ -359,23 +339,18 @@ pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
 }
 
 impl SurfaceView {
-    fn from_states(
-        states: &SurfaceData,
-        surface_size: Size<i32, Logical>,
-        buffer_delta: Point<i32, Logical>,
-    ) -> SurfaceView {
+    fn from_states(states: &SurfaceData, surface_size: Size<i32, Logical>) -> SurfaceView {
         viewporter::ensure_viewport_valid(states, surface_size);
         let viewport = states.cached_state.current::<viewporter::ViewportCachedState>();
         let src = viewport
             .src
             .unwrap_or_else(|| Rectangle::from_loc_and_size((0.0, 0.0), surface_size.to_f64()));
         let dst = viewport.size().unwrap_or(surface_size);
-        let mut offset = if states.role == Some("subsurface") {
+        let offset = if states.role == Some("subsurface") {
             states.cached_state.current::<SubsurfaceCachedState>().location
         } else {
             Default::default()
         };
-        offset += buffer_delta;
         SurfaceView { src, dst, offset }
     }
 
