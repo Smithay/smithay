@@ -528,8 +528,8 @@ where
                             return;
                         }
 
-                        compositor::with_states(&surface, |states| {
-                            states.data_map.insert_if_missing_threadsafe(|| {
+                        let initial = compositor::with_states(&surface, |states| {
+                            let initial = states.data_map.insert_if_missing_threadsafe(|| {
                                 Mutex::new(CursorImageAttributes {
                                     hotspot: (0, 0).into(),
                                 })
@@ -541,7 +541,31 @@ where
                                 .lock()
                                 .unwrap()
                                 .hotspot = (hotspot_x, hotspot_y).into();
+                            initial
                         });
+
+                        if initial {
+                            compositor::add_post_commit_hook::<D, _>(&surface, |_, _, surface| {
+                                compositor::with_states(surface, |states| {
+                                    let cursor_image_attributes =
+                                        states.data_map.get::<Mutex<CursorImageAttributes>>();
+
+                                    if let Some(mut cursor_image_attributes) =
+                                        cursor_image_attributes.map(|attrs| attrs.lock().unwrap())
+                                    {
+                                        let buffer_delta = states
+                                            .cached_state
+                                            .current::<compositor::SurfaceAttributes>()
+                                            .buffer_delta
+                                            .take();
+                                        if let Some(buffer_delta) = buffer_delta {
+                                            tracing::trace!(hotspot = ?cursor_image_attributes.hotspot, ?buffer_delta, "decrementing cursor hotspot");
+                                            cursor_image_attributes.hotspot -= buffer_delta;
+                                        }
+                                    }
+                                });
+                            });
+                        }
 
                         CursorImageStatus::Surface(surface)
                     }

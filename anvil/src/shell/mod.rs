@@ -151,9 +151,43 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
             }
             if let Some(window) = self.window_for_surface(&root) {
                 window.0.on_commit();
+
+                if &root == surface {
+                    let buffer_offset = with_states(surface, |states| {
+                        states
+                            .cached_state
+                            .current::<SurfaceAttributes>()
+                            .buffer_delta
+                            .take()
+                    });
+
+                    if let Some(buffer_offset) = buffer_offset {
+                        let current_loc = self.space.element_location(&window).unwrap();
+                        self.space.map_element(window, current_loc + buffer_offset, false);
+                    }
+                }
             }
         }
         self.popups.commit(surface);
+
+        if let Some(dnd_icon) = self.dnd_icon.as_mut().and_then(|icon| {
+            if &icon.surface == surface {
+                Some(icon)
+            } else {
+                None
+            }
+        }) {
+            with_states(surface, |states| {
+                let buffer_delta = states
+                    .cached_state
+                    .current::<SurfaceAttributes>()
+                    .buffer_delta
+                    .take()
+                    .unwrap_or_default();
+                tracing::trace!(offset = ?dnd_icon.offset, ?buffer_delta, "moving dnd offset");
+                dnd_icon.offset += buffer_delta;
+            });
+        }
 
         ensure_initial_configure(surface, &self.space, &mut self.popups)
     }
