@@ -261,9 +261,13 @@ where
                 }
             }
             wl_surface::Request::SetBufferScale { scale } => {
-                PrivateSurfaceData::with_states(surface, |states| {
-                    states.cached_state.pending::<SurfaceAttributes>().buffer_scale = scale;
-                });
+                if scale >= 1 {
+                    PrivateSurfaceData::with_states(surface, |states| {
+                        states.cached_state.pending::<SurfaceAttributes>().buffer_scale = scale;
+                    });
+                } else {
+                    surface.post_error(wl_surface::Error::InvalidScale, "Scale must be positive");
+                }
             }
             wl_surface::Request::DamageBuffer { x, y, width, height } => {
                 PrivateSurfaceData::with_states(surface, |states| {
