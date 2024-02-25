@@ -309,7 +309,7 @@ where
             .compositor_state()
             .surfaces
             .retain(|s| s.id() != surface.id());
-        PrivateSurfaceData::cleanup(state, data, surface.id());
+        PrivateSurfaceData::cleanup(state, data, surface);
     }
 }
 

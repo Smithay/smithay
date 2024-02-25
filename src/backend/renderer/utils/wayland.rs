@@ -341,18 +341,20 @@ pub fn on_commit_buffer_handler<D: 'static>(surface: &WlSurface) {
             |_, _, _| true,
         );
         for surf in &new_surfaces {
-            add_destruction_hook(surf, |_: &mut D, data| {
+            add_destruction_hook(surf, |_: &mut D, surface| {
                 // We reset the state on destruction before the user_data is dropped
                 // to prevent a deadlock which can happen if we try to send a buffer
                 // release during drop. This also enables us to free resources earlier
                 // like the stored textures
-                if let Some(mut state) = data
-                    .data_map
-                    .get::<RendererSurfaceStateUserData>()
-                    .map(|s| s.borrow_mut())
-                {
-                    state.reset();
-                }
+                compositor::with_states(surface, |data| {
+                    if let Some(mut state) = data
+                        .data_map
+                        .get::<RendererSurfaceStateUserData>()
+                        .map(|s| s.borrow_mut())
+                    {
+                        state.reset();
+                    }
+                });
             });
         }
     }

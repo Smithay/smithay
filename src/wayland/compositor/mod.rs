@@ -107,6 +107,7 @@
 
 mod cache;
 mod handlers;
+mod hook;
 mod transaction;
 mod tree;
 
@@ -115,6 +116,7 @@ use std::{any::Any, sync::Mutex};
 
 pub use self::cache::{Cacheable, MultiCache};
 pub use self::handlers::{RegionUserData, SubsurfaceCachedState, SubsurfaceUserData, SurfaceUserData};
+pub use self::hook::HookId;
 use self::transaction::TransactionQueue;
 pub use self::transaction::{Blocker, BlockerState};
 pub use self::tree::{AlreadyHasRole, TraversalAction};
@@ -441,7 +443,7 @@ pub fn get_region_attributes(region: &wl_region::WlRegion) -> RegionAttributes {
 /// Register a pre-commit hook to be invoked on surface commit
 ///
 /// It'll be invoked on surface commit, *before* the new state is merged into the current state.
-pub fn add_pre_commit_hook<D, F>(surface: &WlSurface, hook: F)
+pub fn add_pre_commit_hook<D, F>(surface: &WlSurface, hook: F) -> HookId
 where
     F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
     D: 'static,
@@ -465,7 +467,7 @@ where
 /// Register a post-commit hook to be invoked on surface commit
 ///
 /// It'll be invoked on surface commit, *after* the new state is merged into the current state.
-pub fn add_post_commit_hook<D, F>(surface: &WlSurface, hook: F)
+pub fn add_post_commit_hook<D, F>(surface: &WlSurface, hook: F) -> HookId
 where
     F: Fn(&mut D, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
     D: 'static,
@@ -492,9 +494,9 @@ where
 /// client disconnect).
 ///
 /// D generic is the compositor state, same as used in `CompositorState::new<D>()`
-pub fn add_destruction_hook<D, F>(surface: &WlSurface, hook: F)
+pub fn add_destruction_hook<D, F>(surface: &WlSurface, hook: F) -> HookId
 where
-    F: Fn(&mut D, &SurfaceData) + Send + 'static,
+    F: Fn(&mut D, &WlSurface) + Send + Sync + 'static,
     D: 'static,
 {
     let (user_state_type_id, user_state_type) = surface.data::<SurfaceUserData>().unwrap().user_state_type;
@@ -506,11 +508,26 @@ where
         user_state_type,
     );
 
-    let hook = move |state: &mut dyn Any, data: &SurfaceData| {
+    let hook = move |state: &mut dyn Any, surface: &WlSurface| {
         let state = state.downcast_mut::<D>().unwrap();
-        hook(state, data);
+        hook(state, surface);
     };
     PrivateSurfaceData::add_destruction_hook(surface, hook)
+}
+
+/// Unregister a pre-commit hook
+pub fn remove_pre_commit_hook(surface: &WlSurface, hook_id: HookId) {
+    PrivateSurfaceData::remove_pre_commit_hook(surface, hook_id)
+}
+
+/// Unregister a post-commit hook
+pub fn remove_post_commit_hook(surface: &WlSurface, hook_id: HookId) {
+    PrivateSurfaceData::remove_post_commit_hook(surface, hook_id)
+}
+
+/// Unregister a destruction hook
+pub fn remove_destruction_hook(surface: &WlSurface, hook_id: HookId) {
+    PrivateSurfaceData::remove_destruction_hook(surface, hook_id)
 }
 
 /// Adds a blocker for the currently queued up state changes of the given surface.
