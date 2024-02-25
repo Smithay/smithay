@@ -3,7 +3,6 @@
 use cgmath::{prelude::*, Matrix3, Vector2};
 use core::slice;
 use std::{
-    borrow::Cow,
     collections::{HashMap, HashSet},
     ffi::{CStr, CString},
     fmt, mem,
@@ -40,10 +39,6 @@ use super::{
     sync::SyncPoint, Bind, Blit, DebugFlags, ExportMem, Frame, ImportDma, ImportMem, Offscreen, Renderer,
     Texture, TextureFilter, TextureMapping, Unbind,
 };
-use crate::backend::egl::{
-    ffi::egl::{self as ffi_egl, types::EGLImage},
-    EGLContext, EGLSurface, MakeCurrentError,
-};
 use crate::backend::{
     allocator::{
         dmabuf::{Dmabuf, WeakDmabuf},
@@ -53,6 +48,13 @@ use crate::backend::{
     egl::fence::EGLFence,
 };
 use crate::utils::{Buffer as BufferCoord, Physical, Rectangle, Size, Transform};
+use crate::{
+    backend::egl::{
+        ffi::egl::{self as ffi_egl, types::EGLImage},
+        EGLContext, EGLSurface, MakeCurrentError,
+    },
+    utils::Point,
+};
 
 #[cfg(all(feature = "wayland_frontend", feature = "use_system_lib"))]
 use super::ImportEgl;
@@ -400,6 +402,7 @@ pub struct GlesRenderer {
     buffers: Vec<GlesBuffer>,
     dmabuf_cache: std::collections::HashMap<WeakDmabuf, GlesTexture>,
     vbos: [ffi::types::GLuint; 3],
+    vertices: Vec<f32>,
 
     // cleanup
     destruction_callback: Receiver<CleanupResource>,
@@ -426,6 +429,7 @@ pub struct GlesFrame<'frame> {
     size: Size<i32, Physical>,
     tex_program_override: Option<(GlesTexProgram, Vec<Uniform<'static>>)>,
     finished: AtomicBool,
+
     span: EnteredSpan,
 }
 
@@ -725,8 +729,8 @@ impl GlesRenderer {
         context
             .user_data()
             .insert_if_missing(|| RendererId(next_renderer_id()));
-
         drop(_guard);
+
         let renderer = GlesRenderer {
             gl,
             egl: context,
@@ -747,6 +751,7 @@ impl GlesRenderer {
             target: None,
             buffers: Vec::new(),
             dmabuf_cache: std::collections::HashMap::new(),
+            vertices: Vec::with_capacity(6 * 16),
 
             destruction_callback: rx,
             destruction_callback_sender: tx,
@@ -2333,6 +2338,7 @@ impl Renderer for GlesRenderer {
             size: output_size,
             tex_program_override: None,
             finished: AtomicBool::new(false),
+
             span,
         })
     }
@@ -2633,7 +2639,7 @@ impl<'frame> GlesFrame<'frame> {
     }
 
     /// Draw a solid color to the current target at the specified destination with the specified color.
-    #[instrument(skip(self), parent = &self.span)]
+    #[instrument(level = "trace", skip(self), parent = &self.span)]
     #[profiling::function]
     pub fn draw_solid(
         &mut self,
@@ -2648,9 +2654,10 @@ impl<'frame> GlesFrame<'frame> {
         let mut mat = Matrix3::<f32>::identity();
         mat = self.current_projection * mat;
 
-        let instances = damage
-            .iter()
-            .flat_map(|rect| {
+        // prepare the vertices
+        self.renderer.vertices.clear();
+        if self.renderer.capabilities.contains(&Capability::Instancing) {
+            self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
                 let dest_size = dest.size;
 
                 let rect_constrained_loc = rect
@@ -2667,8 +2674,30 @@ impl<'frame> GlesFrame<'frame> {
                     rect.size.w as f32,
                     rect.size.h as f32,
                 ]
-            })
-            .collect::<Vec<_>>();
+            }))
+        } else {
+            self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
+                let dest_size = dest.size;
+
+                let rect_constrained_loc = rect
+                    .loc
+                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                let rect_clamped_size = rect
+                    .size
+                    .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+
+                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                // Add the 4 f32s per damage rectangle for each of the 6 vertices.
+                (0..6).flat_map(move |_| {
+                    [
+                        (dest.loc.x + rect.loc.x) as f32,
+                        (dest.loc.y + rect.loc.y) as f32,
+                        rect.size.w as f32,
+                        rect.size.h as f32,
+                    ]
+                })
+            }));
+        }
 
         let gl = &self.renderer.gl;
         unsafe {
@@ -2698,26 +2727,12 @@ impl<'frame> GlesFrame<'frame> {
                 std::ptr::null(),
             );
 
-            // Damage vertices.
-            let vertices = if self.renderer.capabilities.contains(&Capability::Instancing) {
-                instances
-            } else {
-                // Add the 4 f32s per damage rectangle for each of the 6 vertices.
-                let mut vertices = Vec::with_capacity(instances.len() * 6);
-                for chunk in instances.chunks(4) {
-                    for _ in 0..6 {
-                        vertices.extend_from_slice(chunk);
-                    }
-                }
-                vertices
-            };
-
             gl.EnableVertexAttribArray(self.renderer.solid_program.attrib_position as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[1]);
             gl.BufferData(
                 ffi::ARRAY_BUFFER,
-                (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
-                vertices.as_ptr() as *const _,
+                (std::mem::size_of::<ffi::types::GLfloat>() * self.renderer.vertices.len()) as isize,
+                self.renderer.vertices.as_ptr() as *const _,
                 ffi::STREAM_DRAW,
             );
 
@@ -2804,33 +2819,30 @@ impl<'frame> GlesFrame<'frame> {
             tex_mat = Matrix3::new(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0) * tex_mat;
         }
 
-        let instances = damage
-            .iter()
-            .flat_map(|rect| {
-                let dest_size = dest.size;
+        let instances = damage.iter().flat_map(|rect| {
+            let dest_size = dest.size;
 
-                let rect_constrained_loc = rect
-                    .loc
-                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
-                let rect_clamped_size = rect
-                    .size
-                    .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+            let rect_constrained_loc = rect
+                .loc
+                .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+            let rect_clamped_size = rect
+                .size
+                .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
-                [
-                    rect.loc.x as f32,
-                    rect.loc.y as f32,
-                    rect.size.w as f32,
-                    rect.size.h as f32,
-                ]
-            })
-            .collect::<Vec<_>>();
+            let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+            [
+                rect.loc.x as f32,
+                rect.loc.y as f32,
+                rect.size.w as f32,
+                rect.size.h as f32,
+            ]
+        });
 
         self.render_texture(
             texture,
             tex_mat,
             mat,
-            Some(&instances),
+            Some(instances),
             alpha,
             program,
             additional_uniforms,
@@ -2851,7 +2863,7 @@ impl<'frame> GlesFrame<'frame> {
     /// Additionally the matrix can be used to crop the texture.
     ///
     /// Optionally allows a custom texture program and matching additional uniforms to be passed in.
-    #[instrument(level = "trace", skip(self), parent = &self.span)]
+    #[instrument(level = "trace", skip(self, instances), parent = &self.span)]
     #[profiling::function]
     #[allow(clippy::too_many_arguments)]
     pub fn render_texture(
@@ -2859,13 +2871,47 @@ impl<'frame> GlesFrame<'frame> {
         tex: &GlesTexture,
         tex_matrix: Matrix3<f32>,
         mut matrix: Matrix3<f32>,
-        instances: Option<&[ffi::types::GLfloat]>,
+        instances: Option<impl IntoIterator<Item = ffi::types::GLfloat>>,
         alpha: f32,
         program: Option<&GlesTexProgram>,
         additional_uniforms: &[Uniform<'_>],
     ) -> Result<(), GlesError> {
-        let damage = instances.unwrap_or(&[0.0, 0.0, 1.0, 1.0]);
-        if damage.is_empty() {
+        // prepare the vertices
+        self.renderer.vertices.clear();
+        let damage_len = if let Some(instances) = instances {
+            if self.renderer.capabilities.contains(&Capability::Instancing) {
+                self.renderer.vertices.extend(instances);
+                self.renderer.vertices.len() / 4
+            } else {
+                let mut damage = 0;
+                let mut instances = instances.into_iter();
+                while let Some(first) = instances.next() {
+                    damage += 1;
+                    let vertices = [
+                        first,
+                        instances.next().unwrap(),
+                        instances.next().unwrap(),
+                        instances.next().unwrap(),
+                    ];
+                    // Add the 4 f32s per damage rectangle for each of the 6 vertices.
+                    for _ in 0..6 {
+                        self.renderer.vertices.extend_from_slice(&vertices);
+                    }
+                }
+                damage
+            }
+        } else if self.renderer.capabilities.contains(&Capability::Instancing) {
+            self.renderer.vertices.extend_from_slice(&[0.0, 0.0, 1.0, 1.0]);
+            1
+        } else {
+            // Add the 4 f32s per damage rectangle for each of the 6 vertices.
+            for _ in 0..6 {
+                self.renderer.vertices.extend_from_slice(&[0.0, 0.0, 1.0, 1.0]);
+            }
+            1
+        };
+
+        if self.renderer.vertices.is_empty() {
             return Ok(());
         }
 
@@ -2947,27 +2993,13 @@ impl<'frame> GlesFrame<'frame> {
                 std::ptr::null(),
             );
 
-            // Damage vertices.
-            let vertices = if self.renderer.capabilities.contains(&Capability::Instancing) {
-                Cow::Borrowed(damage)
-            } else {
-                let mut vertices = Vec::with_capacity(damage.len() * 6);
-                // Add the 4 f32s per damage rectangle for each of the 6 vertices.
-                for chunk in damage.chunks(4) {
-                    for _ in 0..6 {
-                        vertices.extend_from_slice(chunk);
-                    }
-                }
-                Cow::Owned(vertices)
-            };
-
             // vert_position
             gl.EnableVertexAttribArray(program.attrib_vert_position as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[1]);
             gl.BufferData(
                 ffi::ARRAY_BUFFER,
-                (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
-                vertices.as_ptr() as *const _,
+                (std::mem::size_of::<ffi::types::GLfloat>() * self.renderer.vertices.len()) as isize,
+                self.renderer.vertices.as_ptr() as *const _,
                 ffi::STREAM_DRAW,
             );
 
@@ -2980,19 +3012,18 @@ impl<'frame> GlesFrame<'frame> {
                 std::ptr::null(),
             );
 
-            let damage_len = (damage.len() / 4) as i32;
             if self.renderer.capabilities.contains(&Capability::Instancing) {
                 gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
                 gl.VertexAttribDivisor(program.attrib_vert_position as u32, 1);
 
-                gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len);
+                gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len as i32);
             } else {
                 // When we have more than 10 rectangles, draw them in batches of 10.
                 for i in 0..(damage_len - 1) / 10 {
                     gl.DrawArrays(ffi::TRIANGLES, 0, 6);
 
                     // Set damage pointer to the next 10 rectangles.
-                    let offset = (i + 1) as usize * 6 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
+                    let offset = (i + 1) * 6 * 4 * std::mem::size_of::<ffi::types::GLfloat>();
                     gl.VertexAttribPointer(
                         program.attrib_vert_position as u32,
                         4,
@@ -3005,7 +3036,7 @@ impl<'frame> GlesFrame<'frame> {
 
                 // Draw the up to 10 remaining rectangles.
                 let count = ((damage_len - 1) % 10 + 1) * 6;
-                gl.DrawArrays(ffi::TRIANGLES, 0, count);
+                gl.DrawArrays(ffi::TRIANGLES, 0, count as i32);
             }
 
             gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
@@ -3027,33 +3058,55 @@ impl<'frame> GlesFrame<'frame> {
         alpha: f32,
         additional_uniforms: &[Uniform<'_>],
     ) -> Result<(), GlesError> {
-        let damage = damage
-            .map(|damage| {
-                damage
-                    .iter()
-                    .flat_map(|rect| {
-                        let dest_size = dest.size;
+        let fallback_damage = &[Rectangle::from_loc_and_size(Point::default(), dest.size)];
+        let damage = damage.unwrap_or(fallback_damage);
 
-                        let rect_constrained_loc = rect
-                            .loc
-                            .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
-                        let rect_clamped_size = rect
-                            .size
-                            .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+        // prepare the vertices
+        self.renderer.vertices.clear();
+        if self.renderer.capabilities.contains(&Capability::Instancing) {
+            self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
+                let dest_size = dest.size;
 
-                        let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
-                        [
-                            rect.loc.x as f32,
-                            rect.loc.y as f32,
-                            rect.size.w as f32,
-                            rect.size.h as f32,
-                        ]
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_else(|| vec![0.0, 0.0, 1.0, 1.0]);
+                let rect_constrained_loc = rect
+                    .loc
+                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                let rect_clamped_size = rect
+                    .size
+                    .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
 
-        if damage.is_empty() {
+                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                [
+                    rect.loc.x as f32,
+                    rect.loc.y as f32,
+                    rect.size.w as f32,
+                    rect.size.h as f32,
+                ]
+            }));
+        } else {
+            self.renderer.vertices.extend(damage.iter().flat_map(|rect| {
+                let dest_size = dest.size;
+
+                let rect_constrained_loc = rect
+                    .loc
+                    .constrain(Rectangle::from_extemities((0, 0), dest_size.to_point()));
+                let rect_clamped_size = rect
+                    .size
+                    .clamp((0, 0), (dest_size.to_point() - rect_constrained_loc).to_size());
+
+                let rect = Rectangle::from_loc_and_size(rect_constrained_loc, rect_clamped_size);
+                // Add the 4 f32s per damage rectangle for each of the 6 vertices.
+                (0..6).flat_map(move |_| {
+                    [
+                        rect.loc.x as f32,
+                        rect.loc.y as f32,
+                        rect.size.w as f32,
+                        rect.size.h as f32,
+                    ]
+                })
+            }));
+        }
+
+        if self.renderer.vertices.is_empty() {
             return Ok(());
         }
 
@@ -3115,27 +3168,13 @@ impl<'frame> GlesFrame<'frame> {
                 std::ptr::null(),
             );
 
-            // Damage vertices.
-            let vertices = if self.renderer.capabilities.contains(&Capability::Instancing) {
-                Cow::Borrowed(&damage)
-            } else {
-                let mut vertices = Vec::with_capacity(damage.len() * 6);
-                // Add the 4 f32s per damage rectangle for each of the 6 vertices.
-                for chunk in damage.chunks(4) {
-                    for _ in 0..6 {
-                        vertices.extend_from_slice(chunk);
-                    }
-                }
-                Cow::Owned(vertices)
-            };
-
             // vert_position
             gl.EnableVertexAttribArray(program.attrib_position as u32);
             gl.BindBuffer(ffi::ARRAY_BUFFER, self.renderer.vbos[1]);
             gl.BufferData(
                 ffi::ARRAY_BUFFER,
-                (std::mem::size_of::<ffi::types::GLfloat>() * vertices.len()) as isize,
-                vertices.as_ptr() as *const _,
+                (std::mem::size_of::<ffi::types::GLfloat>() * self.renderer.vertices.len()) as isize,
+                self.renderer.vertices.as_ptr() as *const _,
                 ffi::STREAM_DRAW,
             );
 
@@ -3148,7 +3187,7 @@ impl<'frame> GlesFrame<'frame> {
                 std::ptr::null(),
             );
 
-            let damage_len = (damage.len() / 4) as i32;
+            let damage_len = damage.len() as i32;
             if self.renderer.capabilities.contains(&Capability::Instancing) {
                 gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
                 gl.VertexAttribDivisor(program.attrib_position as u32, 1);
