@@ -591,6 +591,7 @@ impl<B> Clone for Owned<B> {
 impl<B: Framebuffer> FrameState<B> {
     fn from_planes(planes: &Planes) -> Self {
         let cursor_plane_count = usize::from(planes.cursor.is_some());
+        // FIXME: We can cache that somewhere and get rid of this allocation in the hot path
         let mut tmp = HashMap::with_capacity(planes.overlay.len() + cursor_plane_count + 1);
         tmp.insert(planes.primary.handle, PlaneState::default());
         if let Some(info) = planes.cursor.as_ref() {
@@ -1081,12 +1082,12 @@ where
     F: Framebuffer,
 {
     /// Get the damage of this frame for the specified dtr and age
-    pub fn damage_from_age(
+    pub fn damage_from_age<'d>(
         &self,
-        damage_tracker: &mut OutputDamageTracker,
+        damage_tracker: &'d mut OutputDamageTracker,
         age: usize,
         filter: impl IntoIterator<Item = Id>,
-    ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputNoMode>
+    ) -> Result<(Option<&'d Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputNoMode>
     where
         E: Element,
     {
@@ -2394,7 +2395,7 @@ where
                                 self.surface.device_fd(),
                                 config.properties.src,
                                 config.properties.dst,
-                                render_damage,
+                                render_damage.iter().copied(),
                             )
                             .ok()
                             .flatten();

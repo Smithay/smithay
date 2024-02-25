@@ -284,6 +284,9 @@ pub struct OutputDamageTracker {
     mode: OutputModeSource,
     last_state: RendererState,
     damage_shaper: DamageShaper,
+    damage: Vec<Rectangle<i32, Physical>>,
+    element_damage: Vec<Rectangle<i32, Physical>>,
+    opaque_regions: Vec<(usize, Vec<Rectangle<i32, Physical>>)>,
     span: tracing::Span,
 }
 
@@ -300,16 +303,16 @@ pub enum Error<R: Renderer> {
 
 /// Represents the result from rendering the output
 #[derive(Debug)]
-pub struct RenderOutputResult {
+pub struct RenderOutputResult<'a> {
     /// Holds the sync point of the rendering operation
     pub sync: SyncPoint,
     /// Holds the damage from the rendering operation
-    pub damage: Option<Vec<Rectangle<i32, Physical>>>,
+    pub damage: Option<&'a Vec<Rectangle<i32, Physical>>>,
     /// Holds the render element states
     pub states: RenderElementStates,
 }
 
-impl RenderOutputResult {
+impl<'a> RenderOutputResult<'a> {
     fn skipped(states: RenderElementStates) -> Self {
         Self {
             sync: SyncPoint::signaled(),
@@ -343,6 +346,9 @@ impl OutputDamageTracker {
             },
             last_state: Default::default(),
             damage_shaper: Default::default(),
+            damage: Default::default(),
+            element_damage: Default::default(),
+            opaque_regions: Default::default(),
             span: info_span!("renderer_damage"),
         }
     }
@@ -356,6 +362,9 @@ impl OutputDamageTracker {
         Self {
             mode: OutputModeSource::Auto(output.clone()),
             damage_shaper: Default::default(),
+            damage: Default::default(),
+            element_damage: Default::default(),
+            opaque_regions: Default::default(),
             last_state: Default::default(),
             span: info_span!("renderer_damage", output = output.name()),
         }
@@ -371,6 +380,9 @@ impl OutputDamageTracker {
             mode: output_mode_source.into(),
             span: info_span!("render_damage"),
             damage_shaper: Default::default(),
+            damage: Default::default(),
+            element_damage: Default::default(),
+            opaque_regions: Default::default(),
             last_state: Default::default(),
         }
     }
@@ -392,7 +404,7 @@ impl OutputDamageTracker {
         age: usize,
         elements: &[E],
         clear_color: [f32; 4],
-    ) -> Result<RenderOutputResult, Error<R>>
+    ) -> Result<RenderOutputResult<'_>, Error<R>>
     where
         E: RenderElement<R>,
         R: Renderer + Bind<B>,
@@ -412,7 +424,7 @@ impl OutputDamageTracker {
         age: usize,
         elements: &[E],
         clear_color: [f32; 4],
-    ) -> Result<RenderOutputResult, Error<R>>
+    ) -> Result<RenderOutputResult<'_>, Error<R>>
     where
         E: RenderElement<R>,
         R: Renderer,
@@ -426,11 +438,11 @@ impl OutputDamageTracker {
     /// - `elements` for this output in front-to-back order
     #[instrument(level = "trace", parent = &self.span, skip(elements))]
     #[profiling::function]
-    pub fn damage_output<E>(
-        &mut self,
+    pub fn damage_output<'a, 'e, E>(
+        &'a mut self,
         age: usize,
-        elements: &[E],
-    ) -> Result<(Option<Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputNoMode>
+        elements: &'e [E],
+    ) -> Result<(Option<&'a Vec<Rectangle<i32, Physical>>>, RenderElementStates), OutputNoMode>
     where
         E: Element,
     {
@@ -445,25 +457,20 @@ impl OutputDamageTracker {
         // damage with the wrong size
         let output_geo = Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(output_size));
 
-        // This will hold all the damage we need for this rendering step
-        let mut damage: Vec<Rectangle<i32, Physical>> = Vec::new();
         let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
-        let mut opaque_regions: Vec<(usize, Vec<Rectangle<i32, Physical>>)> = Vec::new();
         let states = self.damage_output_internal(
             age,
             elements,
             output_scale,
             output_transform,
             output_geo,
-            &mut damage,
             &mut render_elements,
-            &mut opaque_regions,
         );
 
-        if damage.is_empty() {
+        if self.damage.is_empty() {
             Ok((None, states))
         } else {
-            Ok((Some(damage), states))
+            Ok((Some(&self.damage), states))
         }
     }
 
@@ -476,16 +483,21 @@ impl OutputDamageTracker {
         output_scale: Scale<f64>,
         output_transform: Transform,
         output_geo: Rectangle<i32, Physical>,
-        damage: &mut Vec<Rectangle<i32, Physical>>,
         render_elements: &mut Vec<&'a E>,
-        opaque_regions: &mut Vec<(usize, Vec<Rectangle<i32, Physical>>)>,
     ) -> RenderElementStates
     where
         E: Element,
     {
+        self.damage.clear();
+        self.element_damage.clear();
+        self.opaque_regions.clear();
+
         let mut element_render_states = RenderElementStates {
             states: HashMap::with_capacity(elements.len()),
         };
+
+        // we have to take the element damage to be able to move it around
+        let mut element_damage = std::mem::take(&mut self.element_damage);
 
         // We use an explicit z-index because the following loop can skip
         // elements that are completely hidden and we want the z-index to
@@ -503,8 +515,9 @@ impl OutputDamageTracker {
             };
 
             // Then test if the element is completely hidden behind opaque regions
+            // FIXME: We should be able to calculate that without allocating a temp vec
             let element_visible_area = element_output_geometry
-                .subtract_rects(opaque_regions.iter().flat_map(|(_, r)| r).copied())
+                .subtract_rects(self.opaque_regions.iter().flat_map(|(_, r)| r).copied())
                 .into_iter()
                 .fold(0usize, |acc, item| acc + (item.size.w * item.size.h) as usize);
 
@@ -520,6 +533,8 @@ impl OutputDamageTracker {
                 continue;
             }
 
+            // FIXME: Getting rid of this allocation requires to return a reference and
+            // this needs changes in the element trait
             let element_output_damage = element
                 .damage_since(
                     output_scale,
@@ -530,10 +545,12 @@ impl OutputDamageTracker {
                     d.loc += element_loc;
                     d
                 })
-                .filter_map(|geo| geo.intersection(output_geo))
-                .collect::<Vec<_>>();
-            damage.extend(element_output_damage);
+                .filter_map(|geo| geo.intersection(output_geo));
+            self.damage.extend(element_output_damage);
 
+            // FIXME: This will be a bit more tricky, but should be doable.
+            // It is necessary that we can sort/filter the opaque regions, but having
+            // a vec in a vec...
             let element_opaque_regions = element
                 .opaque_regions(output_scale)
                 .into_iter()
@@ -543,7 +560,7 @@ impl OutputDamageTracker {
                 })
                 .filter_map(|geo| geo.intersection(output_geo))
                 .collect::<Vec<_>>();
-            opaque_regions.push((z_index, element_opaque_regions));
+            self.opaque_regions.push((z_index, element_opaque_regions));
             render_elements.push(element);
 
             if let Some(state) = element_render_states.states.get_mut(element_id) {
@@ -566,22 +583,26 @@ impl OutputDamageTracker {
             .last_state
             .elements
             .iter()
-            .filter(|(id, _)| !render_elements.iter().any(|e| e.id() == *id))
-            .flat_map(|(_, state)| {
-                Rectangle::subtract_rects_many(
-                    state
-                        .last_instances
-                        .iter()
-                        .filter_map(|i| i.last_geometry.intersection(output_geo)),
-                    opaque_regions
-                        .iter()
-                        .filter(|(z_index, _)| state.last_instances.iter().any(|i| *z_index < i.last_z_index))
-                        .flat_map(|(_, opaque_regions)| opaque_regions)
-                        .copied(),
-                )
-            })
-            .collect::<Vec<_>>();
-        damage.extend(elements_gone);
+            .filter(|(id, _)| !render_elements.iter().any(|e| e.id() == *id));
+
+        for (_, state) in elements_gone {
+            element_damage.clear();
+            element_damage.extend(
+                state
+                    .last_instances
+                    .iter()
+                    .filter_map(|i| i.last_geometry.intersection(output_geo)),
+            );
+            element_damage = Rectangle::subtract_rects_many_in_place(
+                element_damage,
+                self.opaque_regions
+                    .iter()
+                    .filter(|(z_index, _)| state.last_instances.iter().any(|i| *z_index < i.last_z_index))
+                    .flat_map(|(_, opaque_regions)| opaque_regions)
+                    .copied(),
+            );
+            self.damage.extend_from_slice(&element_damage);
+        }
 
         // if the element has been moved or it's alpha or z index changed, damage it
         for (z_index, element) in render_elements.iter().enumerate() {
@@ -603,11 +624,10 @@ impl OutputDamageTracker {
                 })
                 .unwrap_or(true)
             {
-                let mut element_damage = if let Some(damage) = element_geometry.intersection(output_geo) {
-                    vec![damage]
-                } else {
-                    vec![]
-                };
+                element_damage.clear();
+                if let Some(damage) = element_geometry.intersection(output_geo) {
+                    element_damage.push(damage);
+                }
                 if let Some(state) = element_last_state {
                     element_damage.extend(
                         state
@@ -617,22 +637,30 @@ impl OutputDamageTracker {
                     );
                 }
 
-                damage.extend(Rectangle::subtract_rects_many_in_place(
+                element_damage = Rectangle::subtract_rects_many_in_place(
                     element_damage,
-                    opaque_regions
+                    self.opaque_regions
                         .iter()
                         .filter(|(index, _)| *index < z_index)
                         .flat_map(|(_, opaque_regions)| opaque_regions)
                         .copied(),
-                ));
+                );
+                self.damage.extend_from_slice(&element_damage);
             }
         }
 
         // damage regions no longer covered by opaque regions
-        damage.extend(Rectangle::subtract_rects_many_in_place(
-            self.last_state.opaque_regions.clone(),
-            opaque_regions.iter().flat_map(|(_, r)| r).copied(),
-        ));
+        element_damage.clear();
+        element_damage.extend_from_slice(&self.last_state.opaque_regions);
+        element_damage = Rectangle::subtract_rects_many_in_place(
+            element_damage,
+            self.opaque_regions.iter().flat_map(|(_, r)| r).copied(),
+        );
+        self.damage.extend_from_slice(&element_damage);
+
+        // we no longer need the element damage, return it so that we can
+        // re-use its allocation next time
+        std::mem::swap(&mut self.element_damage, &mut element_damage);
 
         if self.last_state.size != Some(output_geo.size)
             || self.last_state.transform != Some(output_transform)
@@ -644,18 +672,21 @@ impl OutputDamageTracker {
                 previous_transform = ?self.last_state.transform,
                 current_transform = ?output_transform,
                 "Output geometry or transform changed, damaging whole output geometry");
-            *damage = vec![output_geo];
+            self.damage.clear();
+            self.damage.push(output_geo);
         }
 
         // That is all completely new damage, which we need to store for subsequent renders
-        let new_damage = damage.clone();
+        let mut new_damage = self.damage.clone();
+        new_damage.shrink_to_fit();
 
         // We now add old damage states, if we have an age value
         if age > 0 && self.last_state.old_damage.len() >= age {
             trace!("age of {} recent enough, using old damage", age);
             // We do not need even older states anymore
             self.last_state.old_damage.truncate(age);
-            damage.extend(self.last_state.old_damage.iter().take(age - 1).flatten().copied());
+            self.damage
+                .extend(self.last_state.old_damage.iter().take(age - 1).flatten().copied());
         } else {
             trace!(
                 "no old damage available, re-render everything. age: {} old_damage len: {}",
@@ -667,13 +698,14 @@ impl OutputDamageTracker {
             // an age of 0
             self.last_state.old_damage.truncate(MAX_AGE);
             // just damage everything, if we have no damage
-            *damage = vec![output_geo];
+            self.damage.clear();
+            self.damage.push(output_geo);
         };
 
         // Optimize the damage for rendering
 
         // Clamp all rectangles to the bounds removing the ones without intersection.
-        damage.retain_mut(|rect| {
+        self.damage.retain_mut(|rect| {
             if let Some(intersected) = rect.intersection(output_geo) {
                 *rect = intersected;
                 true
@@ -682,52 +714,54 @@ impl OutputDamageTracker {
             }
         });
 
-        self.damage_shaper.shape_damage(damage);
+        self.damage_shaper.shape_damage(&mut self.damage);
 
-        if damage.is_empty() {
+        if self.damage.is_empty() {
             trace!("nothing damaged, exiting early");
             return element_render_states;
         }
 
-        trace!("damage to be rendered: {:#?}", &damage);
+        let mut new_elements_state = std::mem::take(&mut self.last_state.elements);
+        new_elements_state.clear();
+        new_elements_state.reserve(render_elements.len());
+        let new_elements_state =
+            render_elements
+                .iter()
+                .enumerate()
+                .fold(new_elements_state, |mut map, (z_index, elem)| {
+                    let id = elem.id();
+                    let elem_src = elem.src();
+                    let elem_alpha = elem.alpha();
+                    let elem_geometry = elem.geometry(output_scale);
+                    let elem_transform = elem.transform();
 
-        let new_elements_state = render_elements.iter().enumerate().fold(
-            IndexMap::<Id, ElementState>::with_capacity(render_elements.len()),
-            |mut map, (z_index, elem)| {
-                let id = elem.id();
-                let elem_src = elem.src();
-                let elem_alpha = elem.alpha();
-                let elem_geometry = elem.geometry(output_scale);
-                let elem_transform = elem.transform();
+                    if let Some(state) = map.get_mut(id) {
+                        state.last_instances.push(ElementInstanceState {
+                            last_src: elem_src,
+                            last_geometry: elem_geometry,
+                            last_transform: elem_transform,
+                            last_alpha: elem_alpha,
+                            last_z_index: z_index,
+                        });
+                    } else {
+                        let current_commit = elem.current_commit();
+                        map.insert(
+                            id.clone(),
+                            ElementState {
+                                last_commit: current_commit,
+                                last_instances: smallvec![ElementInstanceState {
+                                    last_src: elem_src,
+                                    last_geometry: elem_geometry,
+                                    last_transform: elem_transform,
+                                    last_alpha: elem_alpha,
+                                    last_z_index: z_index,
+                                }],
+                            },
+                        );
+                    }
 
-                if let Some(state) = map.get_mut(id) {
-                    state.last_instances.push(ElementInstanceState {
-                        last_src: elem_src,
-                        last_geometry: elem_geometry,
-                        last_transform: elem_transform,
-                        last_alpha: elem_alpha,
-                        last_z_index: z_index,
-                    });
-                } else {
-                    let current_commit = elem.current_commit();
-                    map.insert(
-                        id.clone(),
-                        ElementState {
-                            last_commit: current_commit,
-                            last_instances: smallvec![ElementInstanceState {
-                                last_src: elem_src,
-                                last_geometry: elem_geometry,
-                                last_transform: elem_transform,
-                                last_alpha: elem_alpha,
-                                last_z_index: z_index,
-                            }],
-                        },
-                    );
-                }
-
-                map
-            },
-        );
+                    map
+                });
 
         self.last_state.size = Some(output_geo.size);
         self.last_state.transform = Some(output_transform);
@@ -736,20 +770,21 @@ impl OutputDamageTracker {
         self.last_state.opaque_regions.clear();
         self.last_state
             .opaque_regions
-            .extend(opaque_regions.iter().flat_map(|(_, r)| r.iter().copied()));
+            .extend(self.opaque_regions.iter().flat_map(|(_, r)| r.iter().copied()));
         self.last_state.opaque_regions.shrink_to_fit();
 
         element_render_states
     }
 
-    fn render_output_internal<E, R, F>(
-        &mut self,
+    #[profiling::function]
+    fn render_output_internal<'a, 'e, E, R, F>(
+        &'a mut self,
         renderer: &mut R,
         age: usize,
-        elements: &[E],
+        elements: &'e [E],
         clear_color: [f32; 4],
         pre_render: F,
-    ) -> Result<RenderOutputResult, Error<R>>
+    ) -> Result<RenderOutputResult<'a>, Error<R>>
     where
         E: RenderElement<R>,
         R: Renderer,
@@ -768,43 +803,46 @@ impl OutputDamageTracker {
         let output_geo = Rectangle::from_loc_and_size((0, 0), output_transform.transform_size(output_size));
 
         // This will hold all the damage we need for this rendering step
-        let mut damage: Vec<Rectangle<i32, Physical>> = Vec::new();
         let mut render_elements: Vec<&E> = Vec::with_capacity(elements.len());
-        let mut opaque_regions: Vec<(usize, Vec<Rectangle<i32, Physical>>)> = Vec::new();
         let states = self.damage_output_internal(
             age,
             elements,
             output_scale,
             output_transform,
             output_geo,
-            &mut damage,
             &mut render_elements,
-            &mut opaque_regions,
         );
 
-        if damage.is_empty() {
+        if self.damage.is_empty() {
             trace!("no damage, skipping rendering");
             return Ok(RenderOutputResult::skipped(states));
         }
 
         trace!(
             "rendering with damage {:?} and opaque regions {:?}",
-            damage,
-            opaque_regions
+            self.damage,
+            self.opaque_regions
         );
 
         pre_render(renderer).map_err(Error::Rendering)?;
 
         let render_res = (|| {
+            // we have to take the element damage to be able to move it around
+            let mut element_damage = std::mem::take(&mut self.element_damage);
             let mut frame = renderer.render(output_size, output_transform)?;
 
-            let clear_damage = Rectangle::subtract_rects_many_in_place(
-                damage.clone(),
-                opaque_regions.iter().flat_map(|(_, regions)| regions).copied(),
+            element_damage.clear();
+            element_damage.extend_from_slice(&self.damage);
+            element_damage = Rectangle::subtract_rects_many_in_place(
+                element_damage,
+                self.opaque_regions
+                    .iter()
+                    .flat_map(|(_, regions)| regions)
+                    .copied(),
             );
 
-            trace!("clearing damage {:?}", clear_damage);
-            frame.clear(clear_color, &clear_damage)?;
+            trace!("clearing damage {:?}", element_damage);
+            frame.clear(clear_color, &element_damage)?;
 
             for (mut z_index, element) in render_elements.iter().rev().enumerate() {
                 // This is necessary because we reversed the render elements to draw
@@ -815,20 +853,23 @@ impl OutputDamageTracker {
                 let element_id = element.id();
                 let element_geometry = element.geometry(output_scale);
 
-                let element_damage = Rectangle::subtract_rects_many(
-                    damage.iter().filter_map(|d| d.intersection(element_geometry)),
-                    opaque_regions
+                element_damage.clear();
+                element_damage.extend(
+                    self.damage
+                        .iter()
+                        .filter_map(|d| d.intersection(element_geometry)),
+                );
+                element_damage = Rectangle::subtract_rects_many_in_place(
+                    element_damage,
+                    self.opaque_regions
                         .iter()
                         .filter(|(index, _)| *index < z_index)
                         .flat_map(|(_, regions)| regions)
                         .copied(),
-                )
-                .into_iter()
-                .map(|mut d| {
+                );
+                element_damage.iter_mut().for_each(|d| {
                     d.loc -= element_geometry.loc;
-                    d
-                })
-                .collect::<Vec<_>>();
+                });
 
                 if element_damage.is_empty() {
                     trace!(
@@ -849,13 +890,15 @@ impl OutputDamageTracker {
                 element.draw(&mut frame, element.src(), element_geometry, &element_damage)?;
             }
 
+            // return the element damage so that we can re-use the allocation
+            std::mem::swap(&mut self.element_damage, &mut element_damage);
             frame.finish()
         })();
 
         match render_res {
             Ok(sync) => Ok(RenderOutputResult {
                 sync,
-                damage: Some(damage),
+                damage: Some(&self.damage),
                 states,
             }),
             Err(err) => {
