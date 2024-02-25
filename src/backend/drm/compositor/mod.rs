@@ -1516,6 +1516,9 @@ where
 
     element_states:
         IndexMap<Id, ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>>,
+    previous_element_states:
+        IndexMap<Id, ElementState<DrmFramebuffer<<F as ExportFramebuffer<A::Buffer>>::Framebuffer>>>,
+    opaque_regions: Vec<Rectangle<i32, Physical>>,
 
     debug_flags: DebugFlags,
     span: tracing::Span,
@@ -1663,6 +1666,8 @@ where
                         planes,
                         overlay_plane_element_ids,
                         element_states: IndexMap::new(),
+                        previous_element_states: IndexMap::new(),
+                        opaque_regions: Vec::new(),
                         supports_fencing,
                         debug_flags: DebugFlags::empty(),
                         span,
@@ -1944,9 +1949,10 @@ where
             .unwrap()
             .clone();
 
-        let mut opaque_regions: Vec<Rectangle<i32, Physical>> = Vec::new();
-        let mut element_states =
-            IndexMap::with_capacity(std::cmp::min(elements.len(), self.planes.overlay.len()));
+        let mut opaque_regions: Vec<Rectangle<i32, Physical>> = std::mem::take(&mut self.opaque_regions);
+        std::mem::swap(&mut self.previous_element_states, &mut self.element_states);
+        let mut element_states = std::mem::take(&mut self.element_states);
+        element_states.reserve(std::cmp::min(elements.len(), self.planes.overlay.len()));
         let mut render_element_states = RenderElementStates {
             states: HashMap::with_capacity(elements.len()),
         };
@@ -2034,6 +2040,7 @@ where
             };
 
             // Then test if the element is completely hidden behind opaque regions
+            // FIXME: This should be possible to calculate without allocating
             let element_visible_area = element_output_geometry
                 .subtract_rects(opaque_regions.iter().copied())
                 .into_iter()
@@ -2054,6 +2061,7 @@ where
             }
 
             let element_opaque_regions = element.opaque_regions(output_scale);
+            // FIXME: This should be possible to calculate without allocating
             let element_is_opaque = Rectangle::from_loc_and_size(Point::default(), element_geometry.size)
                 .subtract_rects(element_opaque_regions.iter().copied())
                 .is_empty();
@@ -2170,6 +2178,9 @@ where
             element_state.fb_cache.cleanup();
         }
         self.element_states = element_states;
+        self.previous_element_states.clear();
+        opaque_regions.clear();
+        self.opaque_regions = opaque_regions;
 
         let previous_state = self
             .pending_frame
@@ -2313,30 +2324,28 @@ where
             // on that plane.
             let overlay_plane_lookup: HashMap<plane::Handle, &PlaneInfo> =
                 self.planes.overlay.iter().map(|p| (p.handle, p)).collect();
-            let mut elements = overlay_plane_elements
-                .iter()
-                .filter_map(|(p, element)| {
-                    let id = self
-                        .overlay_plane_element_ids
-                        .plane_id_for_element_id(p, element.id());
+            let overlay_plane_elements = overlay_plane_elements.iter().filter_map(|(p, element)| {
+                let id = self
+                    .overlay_plane_element_ids
+                    .plane_id_for_element_id(p, element.id());
 
-                    let is_underlay = overlay_plane_lookup.get(p).unwrap().zpos.unwrap_or_default()
-                        < self.planes.primary.zpos.unwrap_or_default();
-                    if is_underlay {
-                        Some(HolepunchRenderElement::from_render_element(id, element, output_scale).into())
-                    } else {
-                        OverlayPlaneElement::from_render_element(id, *element, output_scale)
-                            .map(DrmRenderElements::from)
-                    }
-                })
-                .collect::<Vec<_>>();
-
+                let is_underlay = overlay_plane_lookup.get(p).unwrap().zpos.unwrap_or_default()
+                    < self.planes.primary.zpos.unwrap_or_default();
+                if is_underlay {
+                    Some(HolepunchRenderElement::from_render_element(id, element, output_scale).into())
+                } else {
+                    OverlayPlaneElement::from_render_element(id, *element, output_scale)
+                        .map(DrmRenderElements::from)
+                }
+            });
             // Then render all remaining elements assigned to the primary plane
-            elements.extend(
-                primary_plane_elements
-                    .iter()
-                    .map(|e| DrmRenderElements::Other(*e)),
-            );
+            let elements = overlay_plane_elements
+                .chain(
+                    primary_plane_elements
+                        .into_iter()
+                        .map(|e| DrmRenderElements::Other(e)),
+                )
+                .collect::<Vec<_>>();
 
             let render_res =
                 self.damage_tracker
@@ -3375,7 +3384,7 @@ where
         // state if available
         if !element_states.contains_key(element_id) {
             let previous_fb_cache = self
-                .element_states
+                .previous_element_states
                 .get_mut(element_id)
                 // Note: We can mem::take the old fb_cache here here as we guarante that
                 // the element state will always overwrite the current state at the end of render_frame
@@ -3497,7 +3506,7 @@ where
                 failed_planes: Default::default(),
             });
 
-            if let Some(previous_state) = self.element_states.get(element_id) {
+            if let Some(previous_state) = self.previous_element_states.get(element_id) {
                 // lets look if we find a previous instance with exactly the same properties.
                 // if we find one we can test if nothing changed and re-use the failed tests
                 let matching_instance = previous_state
@@ -3840,18 +3849,19 @@ where
         });
 
         let element_damage = element.damage_since(scale, previous_commit);
+        let has_element_damage = !element_damage.is_empty();
 
-        let damage_clips = if element_damage.is_empty() {
-            None
-        } else {
+        let damage_clips = if has_element_damage {
             PlaneDamageClips::from_damage(
                 self.surface.device_fd(),
                 element_config.properties.src,
                 element_config.geometry,
-                element_damage.clone(),
+                element_damage,
             )
             .ok()
             .flatten()
+        } else {
+            None
         };
 
         let config = PlaneConfig {
@@ -3877,7 +3887,7 @@ where
         // the src/dst/alpha properties are unchanged. Also we can not skip if
         // the fb did change (this includes the case where we previously
         // had not assigned anything to the plane)
-        let skip = element_damage.is_empty()
+        let skip = !has_element_damage
             && previous_state
                 .plane_state(plane.handle)
                 .map(|state| {
