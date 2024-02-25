@@ -663,6 +663,7 @@ where
 #[profiling::function]
 pub fn render_output<
     'a,
+    'd,
     #[cfg(feature = "wayland_frontend")] R: Renderer + ImportAll,
     #[cfg(not(feature = "wayland_frontend"))] R: Renderer,
     C: RenderElement<R>,
@@ -675,9 +676,9 @@ pub fn render_output<
     age: usize,
     spaces: S,
     custom_elements: &'a [C],
-    damage_tracker: &mut OutputDamageTracker,
+    damage_tracker: &'d mut OutputDamageTracker,
     clear_color: [f32; 4],
-) -> Result<RenderOutputResult, OutputDamageTrackerError<R>>
+) -> Result<RenderOutputResult<'d>, OutputDamageTrackerError<R>>
 where
     <R as Renderer>::TextureId: Texture + 'static,
     <E as AsRenderElements<R>>::RenderElement: 'a,

@@ -44,6 +44,7 @@ impl<const MIN_TILE_SIDE: i32> DamageShaper<MIN_TILE_SIDE> {
     // _tile_ based shaper, where the damage bounding box is split into tiles and damage is being
     // computed for each tile individually by walking all the current damage rectangles.
     #[inline(never)]
+    #[profiling::function]
     fn shape_damage_impl(
         &mut self,
         in_damage: &mut [Rectangle<i32, Physical>],
@@ -181,6 +182,7 @@ impl<const MIN_TILE_SIDE: i32> DamageShaper<MIN_TILE_SIDE> {
     }
 
     #[inline]
+    #[profiling::function]
     fn shape_damage_tiled(
         &mut self,
         in_damage: &[Rectangle<i32, Physical>],

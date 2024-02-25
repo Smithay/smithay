@@ -397,27 +397,13 @@ pub fn run_x11() {
             match render_res {
                 Ok(render_output_result) => {
                     trace!("Finished rendering");
-                    if let Err(err) = backend_data.surface.submit() {
+                    let submitted = if let Err(err) = backend_data.surface.submit() {
                         backend_data.surface.reset_buffers();
                         warn!("Failed to submit buffer: {}. Retrying", err);
+                        false
                     } else {
-                        state.backend_data.render = false;
+                        true
                     };
-
-                    #[cfg(feature = "debug")]
-                    if render_output_result.damage.is_some() {
-                        if let Some(renderdoc) = state.renderdoc.as_mut() {
-                            renderdoc.end_frame_capture(
-                                state.backend_data.renderer.egl_context().get_context_handle(),
-                                std::ptr::null(),
-                            );
-                        }
-                    } else if let Some(renderdoc) = state.renderdoc.as_mut() {
-                        renderdoc.discard_frame_capture(
-                            state.backend_data.renderer.egl_context().get_context_handle(),
-                            std::ptr::null(),
-                        );
-                    }
 
                     // Send frame events so that client start drawing their next frame
                     let time = state.clock.now();
@@ -436,6 +422,23 @@ pub fn run_x11() {
                             wp_presentation_feedback::Kind::Vsync,
                         )
                     }
+
+                    #[cfg(feature = "debug")]
+                    if render_output_result.damage.is_some() {
+                        if let Some(renderdoc) = state.renderdoc.as_mut() {
+                            renderdoc.end_frame_capture(
+                                state.backend_data.renderer.egl_context().get_context_handle(),
+                                std::ptr::null(),
+                            );
+                        }
+                    } else if let Some(renderdoc) = state.renderdoc.as_mut() {
+                        renderdoc.discard_frame_capture(
+                            state.backend_data.renderer.egl_context().get_context_handle(),
+                            std::ptr::null(),
+                        );
+                    }
+
+                    state.backend_data.render = !submitted;
                 }
                 Err(err) => {
                     #[cfg(feature = "debug")]
