@@ -3,22 +3,22 @@ use crate::{utils::Serial, wayland::compositor::SUBSURFACE_ROLE};
 use super::{
     cache::MultiCache,
     handlers::{is_effectively_sync, SurfaceUserData},
+    hook::{Hook, HookId},
     transaction::{Blocker, PendingTransaction, TransactionQueue},
     BufferAssignment, CompositorHandler, SurfaceAttributes, SurfaceData,
 };
 use std::{
     any::Any,
     fmt,
-    sync::{atomic::Ordering, Arc, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex, MutexGuard},
 };
 use wayland_server::{
-    backend::ObjectId,
     protocol::{wl_output::Transform, wl_surface::WlSurface},
     DisplayHandle, Resource,
 };
 
 type CommitHook = dyn Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync;
-type DestructionHook = dyn Fn(&mut dyn Any, &SurfaceData) + Send;
+type DestructionHook = dyn Fn(&mut dyn Any, &WlSurface) + Send + Sync;
 
 /// Node of a subsurface tree, holding some user specified data type U
 /// at each node
@@ -39,9 +39,9 @@ pub struct PrivateSurfaceData {
     public_data: SurfaceData,
     pending_transaction: PendingTransaction,
     current_txid: Serial,
-    pre_commit_hooks: Vec<Arc<Box<CommitHook>>>,
-    post_commit_hooks: Vec<Arc<Box<CommitHook>>>,
-    destruction_hooks: Vec<Box<DestructionHook>>,
+    pre_commit_hooks: Vec<Hook<CommitHook>>,
+    post_commit_hooks: Vec<Hook<CommitHook>>,
+    destruction_hooks: Vec<Hook<DestructionHook>>,
 }
 
 impl fmt::Debug for PrivateSurfaceData {
@@ -119,14 +119,14 @@ impl PrivateSurfaceData {
     }
 
     /// Cleans the `as_ref().user_data` of that surface, must be called when it is destroyed
-    pub fn cleanup<D: 'static>(state: &mut D, surface_data: &SurfaceUserData, surface_id: ObjectId) {
+    pub fn cleanup<D: 'static>(state: &mut D, surface_data: &SurfaceUserData, surface: &WlSurface) {
         let my_data_mutex = &surface_data.inner;
         let mut my_data = my_data_mutex.lock().unwrap();
         if let Some(old_parent) = my_data.parent.take() {
             // We had a parent, lets unregister ourselves from it
             let old_parent_mutex = &old_parent.data::<SurfaceUserData>().unwrap().inner;
             let mut old_parent_guard = old_parent_mutex.lock().unwrap();
-            old_parent_guard.children.retain(|c| c.id() != surface_id);
+            old_parent_guard.children.retain(|c| c.id() != surface.id());
         }
         // orphan all our children
         for child in my_data.children.drain(..) {
@@ -158,9 +158,16 @@ impl PrivateSurfaceData {
             buffer.release();
         };
 
-        for hook in &my_data.destruction_hooks {
-            hook(state, &my_data.public_data)
+        let hooks = my_data.destruction_hooks.clone();
+        // don't hold the mutex while the hooks are invoked
+        drop(my_data);
+        for hook in hooks {
+            (hook.cb)(state, surface)
         }
+    }
+
+    pub fn lock_user_data(surface: &WlSurface) -> MutexGuard<'_, PrivateSurfaceData> {
+        surface.data::<SurfaceUserData>().unwrap().inner.lock().unwrap()
     }
 
     pub fn set_role(surface: &WlSurface, role: &'static str) -> Result<(), AlreadyHasRole> {
@@ -191,54 +198,67 @@ impl PrivateSurfaceData {
         my_data.pending_transaction.add_blocker(blocker)
     }
 
+    pub fn remove_pre_commit_hook(surface: &WlSurface, hook_id: HookId) {
+        Self::lock_user_data(surface)
+            .pre_commit_hooks
+            .retain(|hook| hook.id != hook_id);
+    }
+
+    pub fn remove_post_commit_hook(surface: &WlSurface, hook_id: HookId) {
+        Self::lock_user_data(surface)
+            .post_commit_hooks
+            .retain(|hook| hook.id != hook_id);
+    }
+
+    pub fn remove_destruction_hook(surface: &WlSurface, hook_id: HookId) {
+        Self::lock_user_data(surface)
+            .destruction_hooks
+            .retain(|hook| hook.id != hook_id);
+    }
+
     pub fn add_pre_commit_hook(
         surface: &WlSurface,
         hook: impl Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
-    ) {
-        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
-        let mut my_data = my_data_mutex.lock().unwrap();
-        my_data.pre_commit_hooks.push(Arc::new(Box::new(hook)));
+    ) -> HookId {
+        let hook: Hook<CommitHook> = Hook::new(Arc::new(hook));
+        let id = hook.id;
+        Self::lock_user_data(surface).pre_commit_hooks.push(hook);
+        id
     }
 
     pub fn add_post_commit_hook(
         surface: &WlSurface,
         hook: impl Fn(&mut dyn Any, &DisplayHandle, &WlSurface) + Send + Sync + 'static,
-    ) {
-        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
-        let mut my_data = my_data_mutex.lock().unwrap();
-        my_data.post_commit_hooks.push(Arc::new(Box::new(hook)));
+    ) -> HookId {
+        let hook: Hook<CommitHook> = Hook::new(Arc::new(hook));
+        let id = hook.id;
+        Self::lock_user_data(surface).post_commit_hooks.push(hook);
+        id
     }
 
     pub fn add_destruction_hook(
         surface: &WlSurface,
-        hook: impl Fn(&mut dyn Any, &SurfaceData) + Send + 'static,
-    ) {
-        let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
-        let mut my_data = my_data_mutex.lock().unwrap();
-        my_data.destruction_hooks.push(Box::new(hook));
+        hook: impl Fn(&mut dyn Any, &WlSurface) + Send + Sync + 'static,
+    ) -> HookId {
+        let hook: Hook<DestructionHook> = Hook::new(Arc::new(hook));
+        let id = hook.id;
+        Self::lock_user_data(surface).destruction_hooks.push(hook);
+        id
     }
 
     pub fn invoke_pre_commit_hooks<D: 'static>(state: &mut D, dh: &DisplayHandle, surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
-        let hooks = {
-            let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
-            let my_data = my_data_mutex.lock().unwrap();
-            my_data.pre_commit_hooks.clone()
-        };
+        let hooks = Self::lock_user_data(surface).pre_commit_hooks.clone();
         for hook in hooks {
-            hook(state, dh, surface);
+            (hook.cb)(state, dh, surface);
         }
     }
 
     pub fn invoke_post_commit_hooks<D: 'static>(state: &mut D, dh: &DisplayHandle, surface: &WlSurface) {
         // don't hold the mutex while the hooks are invoked
-        let hooks = {
-            let my_data_mutex = &surface.data::<SurfaceUserData>().unwrap().inner;
-            let my_data = my_data_mutex.lock().unwrap();
-            my_data.post_commit_hooks.clone()
-        };
+        let hooks = Self::lock_user_data(surface).post_commit_hooks.clone();
         for hook in hooks {
-            hook(state, dh, surface);
+            (hook.cb)(state, dh, surface);
         }
     }
 

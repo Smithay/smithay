@@ -134,7 +134,7 @@ impl<BackendData: Backend> CompositorHandler for AnvilState<BackendData> {
                     }
                 }
             }
-        })
+        });
     }
 
     fn commit(&mut self, surface: &WlSurface) {
