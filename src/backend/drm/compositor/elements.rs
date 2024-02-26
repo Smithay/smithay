@@ -1,7 +1,7 @@
 use crate::{
     backend::renderer::{
         element::{Element, Id, RenderElement},
-        utils::CommitCounter,
+        utils::{CommitCounter, DamageSet},
         Frame, Renderer,
     },
     render_elements,
@@ -154,12 +154,8 @@ impl Element for OverlayPlaneElement {
         Transform::Normal
     }
 
-    fn damage_since(
-        &self,
-        _scale: Scale<f64>,
-        _commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
-        vec![]
+    fn damage_since(&self, _scale: Scale<f64>, _commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
+        DamageSet::default()
     }
 
     fn opaque_regions(&self, _scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
