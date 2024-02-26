@@ -224,7 +224,10 @@ use tracing::{instrument, warn};
 use wayland_server::protocol::wl_surface;
 
 use crate::{
-    backend::renderer::{utils::RendererSurfaceStateUserData, Frame, ImportAll, Renderer, Texture},
+    backend::renderer::{
+        utils::{DamageSet, RendererSurfaceStateUserData},
+        Frame, ImportAll, Renderer, Texture,
+    },
     utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::compositor::{self, SurfaceData, TraversalAction},
 };
@@ -408,11 +411,7 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
         .unwrap_or_default()
     }
 
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         let dst_size = self.size(scale);
 
         compositor::with_states(&self.surface, |states| {
@@ -450,7 +449,7 @@ impl<R: Renderer + ImportAll> Element for WaylandSurfaceRenderElement<R> {
                                     rect.to_physical_precise_up(surface_scale * scale)
                                 })
                         })
-                        .collect::<Vec<_>>();
+                        .collect::<DamageSet<_, _>>();
 
                     Some(damage)
                 } else {

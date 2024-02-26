@@ -31,7 +31,10 @@ use crate::{
 
 #[cfg(feature = "wayland_frontend")]
 use super::utils::Buffer;
-use super::{utils::CommitCounter, Renderer};
+use super::{
+    utils::{CommitCounter, DamageSet},
+    Renderer,
+};
 
 pub mod memory;
 pub mod solid;
@@ -354,15 +357,11 @@ pub trait Element {
     /// Get the geometry relative to the output
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical>;
     /// Get the damage since the provided commit relative to the element
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         if commit != Some(self.current_commit()) {
-            vec![Rectangle::from_loc_and_size((0, 0), self.geometry(scale).size)]
+            DamageSet::from_slice(&[Rectangle::from_loc_and_size((0, 0), self.geometry(scale).size)])
         } else {
-            vec![]
+            DamageSet::default()
         }
     }
     /// Get the opaque regions of the element relative to the element
@@ -443,11 +442,7 @@ where
         (*self).geometry(scale)
     }
 
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         (*self).damage_since(scale, commit)
     }
 
@@ -703,7 +698,7 @@ macro_rules! render_elements_internal {
             }
         }
 
-        fn damage_since(&self, scale: $crate::utils::Scale<f64>, commit: Option<$crate::backend::renderer::utils::CommitCounter>) -> Vec<$crate::utils::Rectangle<i32, $crate::utils::Physical>> {
+        fn damage_since(&self, scale: $crate::utils::Scale<f64>, commit: Option<$crate::backend::renderer::utils::CommitCounter>) -> $crate::backend::renderer::utils::DamageSet<i32, $crate::utils::Physical> {
             match self {
                 $(
                     #[allow(unused_doc_comments)]
@@ -1438,11 +1433,7 @@ where
         self.0.geometry(scale)
     }
 
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         self.0.damage_since(scale, commit)
     }
 

@@ -3,6 +3,7 @@
 use crate::{
     backend::renderer::{
         element::{AsRenderElements, Element, Id, Kind, RenderElement, UnderlyingStorage},
+        utils::DamageSet,
         Renderer,
     },
     utils::{Buffer, Physical, Point, Rectangle, Scale},
@@ -66,12 +67,12 @@ impl<E: Element> Element for RescaleRenderElement<E> {
         &self,
         scale: crate::utils::Scale<f64>,
         commit: Option<crate::backend::renderer::utils::CommitCounter>,
-    ) -> Vec<crate::utils::Rectangle<i32, crate::utils::Physical>> {
+    ) -> DamageSet<i32, Physical> {
         self.element
             .damage_since(scale, commit)
             .into_iter()
             .map(|rect| rect.to_f64().upscale(self.scale).to_i32_up())
-            .collect::<Vec<_>>()
+            .collect::<DamageSet<_, _>>()
     }
 
     fn opaque_regions(
@@ -233,7 +234,7 @@ impl<E: Element> Element for CropRenderElement<E> {
         &self,
         scale: Scale<f64>,
         commit: Option<crate::backend::renderer::utils::CommitCounter>,
-    ) -> Vec<crate::utils::Rectangle<i32, Physical>> {
+    ) -> DamageSet<i32, Physical> {
         if let Some(element_crop_rect) = self.element_crop_rect(scale) {
             self.element
                 .damage_since(scale, commit)
@@ -244,7 +245,7 @@ impl<E: Element> Element for CropRenderElement<E> {
                         rect
                     })
                 })
-                .collect::<Vec<_>>()
+                .collect::<DamageSet<_, _>>()
         } else {
             Default::default()
         }
@@ -359,7 +360,7 @@ impl<E: Element> Element for RelocateRenderElement<E> {
         &self,
         scale: Scale<f64>,
         commit: Option<crate::backend::renderer::utils::CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    ) -> DamageSet<i32, Physical> {
         self.element.damage_since(scale, commit)
     }
 

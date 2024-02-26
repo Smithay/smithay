@@ -222,7 +222,7 @@ use crate::{
     backend::{
         allocator::{format::get_bpp, Fourcc},
         renderer::{
-            utils::{CommitCounter, DamageBag},
+            utils::{CommitCounter, DamageBag, DamageSet},
             Frame, ImportMem, Renderer,
         },
     },
@@ -637,11 +637,7 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
         .to_size()
     }
 
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         let src = self.src();
         let logical_size = self.logical_size();
         let physical_size = self.physical_size(scale);
@@ -668,9 +664,11 @@ impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
                                 rect.to_physical_precise_up(surface_scale * scale)
                             })
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<DamageSet<_, _>>()
             })
-            .unwrap_or_else(|| vec![Rectangle::from_loc_and_size(Point::default(), physical_size)])
+            .unwrap_or_else(|| {
+                DamageSet::from_slice(&[Rectangle::from_loc_and_size(Point::default(), physical_size)])
+            })
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
@@ -746,11 +744,7 @@ impl<R: Renderer> Element for MemoryRenderBufferRenderElement<R> {
         Rectangle::from_loc_and_size(self.location.to_i32_round(), self.physical_size(scale))
     }
 
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         self.damage_since(scale, commit)
     }
 

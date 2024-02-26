@@ -162,7 +162,7 @@ use crate::{
                 RenderElementStates, RenderingReason, UnderlyingStorage,
             },
             sync::SyncPoint,
-            utils::{CommitCounter, DamageBag, DamageSnapshot},
+            utils::{CommitCounter, DamageBag, DamageSet, DamageSnapshot},
             Bind, Blit, DebugFlags, Frame as RendererFrame, Renderer, Texture,
         },
         SwapBuffersError,
@@ -974,11 +974,7 @@ impl<'a, 'b, B: Buffer> Element for SwapchainElement<'a, 'b, B> {
         self.transform
     }
 
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         self.damage
             .damage_since(commit)
             .map(|d| {
@@ -986,7 +982,7 @@ impl<'a, 'b, B: Buffer> Element for SwapchainElement<'a, 'b, B> {
                     .map(|d| d.to_logical(1, self.transform, &self.slot.size()).to_physical(1))
                     .collect()
             })
-            .unwrap_or_else(|| vec![self.geometry(scale)])
+            .unwrap_or_else(|| DamageSet::from_slice(&[self.geometry(scale)]))
     }
 
     fn opaque_regions(&self, scale: Scale<f64>) -> Vec<Rectangle<i32, Physical>> {
@@ -1046,11 +1042,7 @@ where
         }
     }
 
-    fn damage_since(
-        &self,
-        scale: Scale<f64>,
-        commit: Option<CommitCounter>,
-    ) -> Vec<Rectangle<i32, Physical>> {
+    fn damage_since(&self, scale: Scale<f64>, commit: Option<CommitCounter>) -> DamageSet<i32, Physical> {
         match self {
             FrameResultDamageElement::Element(e) => e.damage_since(scale, commit),
             FrameResultDamageElement::Swapchain(e) => e.damage_since(scale, commit),
