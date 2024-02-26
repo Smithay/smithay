@@ -84,6 +84,7 @@ use smithay::{
         xdg_activation::{
             XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
         },
+        xdg_foreign::{XdgForeignHandler, XdgForeignState},
     },
 };
 
@@ -147,6 +148,7 @@ pub struct AnvilState<BackendData: Backend + 'static> {
     pub xdg_shell_state: XdgShellState,
     pub presentation_state: PresentationState,
     pub fractional_scale_manager_state: FractionalScaleManagerState,
+    pub xdg_foreign_state: XdgForeignState,
 
     pub dnd_icon: Option<WlSurface>,
 
@@ -513,6 +515,13 @@ impl<BackendData: Backend + 'static> XWaylandKeyboardGrabHandler for AnvilState<
 #[cfg(feature = "xwayland")]
 delegate_xwayland_keyboard_grab!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
 
+impl<BackendData: Backend> XdgForeignHandler for AnvilState<BackendData> {
+    fn xdg_foreign_state(&mut self) -> &mut XdgForeignState {
+        &mut self.xdg_foreign_state
+    }
+}
+smithay::delegate_xdg_foreign!(@<BackendData: Backend + 'static> AnvilState<BackendData>);
+
 impl<BackendData: Backend + 'static> AnvilState<BackendData> {
     pub fn init(
         display: Display<AnvilState<BackendData>>,
@@ -573,6 +582,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
         let presentation_state = PresentationState::new::<Self>(&dh, clock.id() as u32);
         let fractional_scale_manager_state = FractionalScaleManagerState::new::<Self>(&dh);
+        let xdg_foreign_state = XdgForeignState::new::<Self>(&dh);
         TextInputManagerState::new::<Self>(&dh);
         InputMethodManagerState::new::<Self, _>(&dh, |_client| true);
         VirtualKeyboardManagerState::new::<Self, _>(&dh, |_client| true);
@@ -667,6 +677,7 @@ impl<BackendData: Backend + 'static> AnvilState<BackendData> {
             xdg_shell_state,
             presentation_state,
             fractional_scale_manager_state,
+            xdg_foreign_state,
             dnd_icon: None,
             suppressed_keys: Vec::new(),
             cursor_status,
