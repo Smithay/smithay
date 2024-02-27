@@ -1596,25 +1596,36 @@ impl Bind<Rc<EGLSurface>> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
     fn bind(&mut self, surface: Rc<EGLSurface>) -> Result<(), GlesError> {
-        self.unbind()?;
-        self.target = Some(GlesTarget::Surface {
-            surface: surface.clone(),
-            shadow: None,
-        });
-        self.make_current()?;
+        unsafe {
+            self.egl.make_current()?;
+        }
 
-        let size = surface
-            .get_size()
-            .ok_or(GlesError::UnknownSize)?
-            .to_logical(1)
-            .to_buffer(1, Transform::Normal);
-        if let Some(shadow) = self.create_shadow_buffer(size)? {
+        let bind = || {
             self.target = Some(GlesTarget::Surface {
-                surface,
-                shadow: Some(shadow),
+                surface: surface.clone(),
+                shadow: None,
             });
             self.make_current()?;
+
+            let size = surface
+                .get_size()
+                .ok_or(GlesError::UnknownSize)?
+                .to_logical(1)
+                .to_buffer(1, Transform::Normal);
+            if let Some(shadow) = self.create_shadow_buffer(size)? {
+                self.target = Some(GlesTarget::Surface {
+                    surface,
+                    shadow: Some(shadow),
+                });
+                self.make_current()?;
+            }
+            std::result::Result::<(), GlesError>::Ok(())
+        };
+        let res = bind();
+        if res.is_err() {
+            let _ = self.unbind();
         }
+        res?;
         Ok(())
     }
 }
@@ -1623,69 +1634,78 @@ impl Bind<Dmabuf> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
     fn bind(&mut self, dmabuf: Dmabuf) -> Result<(), GlesError> {
-        self.unbind()?;
-        self.make_current()?;
+        unsafe {
+            self.egl.make_current()?;
+        }
 
-        let (buf, dmabuf) = self
-            .buffers
-            .iter_mut()
-            .find(|buffer| {
-                if let Some(dma) = buffer.dmabuf.upgrade() {
-                    dma == dmabuf
-                } else {
-                    false
-                }
-            })
-            .map(|buf| Ok((buf.clone(), buf.dmabuf.upgrade().unwrap())))
-            .unwrap_or_else(|| {
-                trace!("Creating EGLImage for Dmabuf: {:?}", dmabuf);
-                let image = self
-                    .egl
-                    .display()
-                    .create_image_from_dmabuf(&dmabuf)
-                    .map_err(GlesError::BindBufferEGLError)?;
-
-                unsafe {
-                    let mut rbo = 0;
-                    self.gl.GenRenderbuffers(1, &mut rbo as *mut _);
-                    self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
-                    self.gl
-                        .EGLImageTargetRenderbufferStorageOES(ffi::RENDERBUFFER, image);
-                    self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
-
-                    let mut fbo = 0;
-                    self.gl.GenFramebuffers(1, &mut fbo as *mut _);
-                    self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-                    self.gl.FramebufferRenderbuffer(
-                        ffi::FRAMEBUFFER,
-                        ffi::COLOR_ATTACHMENT0,
-                        ffi::RENDERBUFFER,
-                        rbo,
-                    );
-                    let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-                    self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-
-                    if status != ffi::FRAMEBUFFER_COMPLETE {
-                        //TODO wrap image and drop here
-                        return Err(GlesError::FramebufferBindingError);
+        let bind = || {
+            let (buf, dmabuf) = self
+                .buffers
+                .iter_mut()
+                .find(|buffer| {
+                    if let Some(dma) = buffer.dmabuf.upgrade() {
+                        dma == dmabuf
+                    } else {
+                        false
                     }
-                    let shadow = self.create_shadow_buffer(dmabuf.0.size)?;
+                })
+                .map(|buf| Ok((buf.clone(), buf.dmabuf.upgrade().unwrap())))
+                .unwrap_or_else(|| {
+                    trace!("Creating EGLImage for Dmabuf: {:?}", dmabuf);
+                    let image = self
+                        .egl
+                        .display()
+                        .create_image_from_dmabuf(&dmabuf)
+                        .map_err(GlesError::BindBufferEGLError)?;
 
-                    let buf = GlesBuffer {
-                        dmabuf: dmabuf.weak(),
-                        image,
-                        rbo,
-                        fbo,
-                        shadow: shadow.map(Rc::new),
-                    };
+                    unsafe {
+                        let mut rbo = 0;
+                        self.gl.GenRenderbuffers(1, &mut rbo as *mut _);
+                        self.gl.BindRenderbuffer(ffi::RENDERBUFFER, rbo);
+                        self.gl
+                            .EGLImageTargetRenderbufferStorageOES(ffi::RENDERBUFFER, image);
+                        self.gl.BindRenderbuffer(ffi::RENDERBUFFER, 0);
 
-                    self.buffers.push(buf.clone());
+                        let mut fbo = 0;
+                        self.gl.GenFramebuffers(1, &mut fbo as *mut _);
+                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                        self.gl.FramebufferRenderbuffer(
+                            ffi::FRAMEBUFFER,
+                            ffi::COLOR_ATTACHMENT0,
+                            ffi::RENDERBUFFER,
+                            rbo,
+                        );
+                        let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                        self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
 
-                    Ok((buf, dmabuf))
-                }
-            })?;
+                        if status != ffi::FRAMEBUFFER_COMPLETE {
+                            //TODO wrap image and drop here
+                            return Err(GlesError::FramebufferBindingError);
+                        }
+                        let shadow = self.create_shadow_buffer(dmabuf.0.size)?;
 
-        self.target = Some(GlesTarget::Image { buf, dmabuf });
+                        let buf = GlesBuffer {
+                            dmabuf: dmabuf.weak(),
+                            image,
+                            rbo,
+                            fbo,
+                            shadow: shadow.map(Rc::new),
+                        };
+
+                        self.buffers.push(buf.clone());
+
+                        Ok((buf, dmabuf))
+                    }
+                })?;
+
+            self.target = Some(GlesTarget::Image { buf, dmabuf });
+            std::result::Result::<(), GlesError>::Ok(())
+        };
+        let res = bind();
+        if res.is_err() {
+            let _ = self.unbind();
+        }
+        res?;
         self.make_current()?;
         Ok(())
     }
@@ -1699,36 +1719,45 @@ impl Bind<GlesTexture> for GlesRenderer {
     #[instrument(level = "trace", parent = &self.span, skip(self))]
     #[profiling::function]
     fn bind(&mut self, texture: GlesTexture) -> Result<(), GlesError> {
-        self.unbind()?;
-        self.make_current()?;
-
-        let mut fbo = 0;
         unsafe {
-            self.gl.GenFramebuffers(1, &mut fbo as *mut _);
-            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
-            self.gl.FramebufferTexture2D(
-                ffi::FRAMEBUFFER,
-                ffi::COLOR_ATTACHMENT0,
-                ffi::TEXTURE_2D,
-                texture.0.texture,
-                0,
-            );
-            let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
-            self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
-
-            if status != ffi::FRAMEBUFFER_COMPLETE {
-                self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
-                return Err(GlesError::FramebufferBindingError);
-            }
+            self.egl.make_current()?;
         }
 
-        let shadow = self.create_shadow_buffer(texture.size())?;
-        self.target = Some(GlesTarget::Texture {
-            texture,
-            shadow,
-            destruction_callback_sender: self.destruction_callback_sender.clone(),
-            fbo,
-        });
+        let bind = || {
+            let mut fbo = 0;
+            unsafe {
+                self.gl.GenFramebuffers(1, &mut fbo as *mut _);
+                self.gl.BindFramebuffer(ffi::FRAMEBUFFER, fbo);
+                self.gl.FramebufferTexture2D(
+                    ffi::FRAMEBUFFER,
+                    ffi::COLOR_ATTACHMENT0,
+                    ffi::TEXTURE_2D,
+                    texture.0.texture,
+                    0,
+                );
+                let status = self.gl.CheckFramebufferStatus(ffi::FRAMEBUFFER);
+                self.gl.BindFramebuffer(ffi::FRAMEBUFFER, 0);
+
+                if status != ffi::FRAMEBUFFER_COMPLETE {
+                    self.gl.DeleteFramebuffers(1, &mut fbo as *mut _);
+                    return Err(GlesError::FramebufferBindingError);
+                }
+            }
+
+            let shadow = self.create_shadow_buffer(texture.size())?;
+            self.target = Some(GlesTarget::Texture {
+                texture,
+                shadow,
+                destruction_callback_sender: self.destruction_callback_sender.clone(),
+                fbo,
+            });
+            Ok(())
+        };
+        let res = bind();
+        if res.is_err() {
+            let _ = self.unbind();
+        }
+        res?;
         self.make_current()?;
 
         Ok(())
