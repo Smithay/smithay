@@ -124,6 +124,9 @@ impl<T> Buffer for GbmBuffer<T> {
 
     fn format(&self) -> Format {
         Format {
+            // FIXME: self.format() calls drm_fourcc::Format::try_from which would be a good candidate for inline, but it is not. Fix in drm_fourcc
+            // Also we should think about caching the format and modifier, it should probably not change during runtime...same for all fields actually
+            // as those upgrade a weak each time
             code: self.format().unwrap_or(Fourcc::Argb8888), // we got to return something, but this should never happen anyway
             modifier: self.modifier().unwrap_or(Modifier::Invalid),
         }
