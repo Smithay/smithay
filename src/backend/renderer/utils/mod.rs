@@ -215,6 +215,7 @@ impl<N: Coordinate, Kind> DamageSnapshot<N, Kind> {
     }
 
     fn add(&mut self, damage: impl IntoIterator<Item = Rectangle<N, Kind>>) {
+        // FIXME: Get rid of this allocation here
         let mut damage = damage.into_iter().filter(|d| !d.is_empty()).collect::<Vec<_>>();
 
         if damage.is_empty() {
