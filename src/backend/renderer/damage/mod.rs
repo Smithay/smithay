@@ -791,7 +791,8 @@ impl OutputDamageTracker {
         <R as Renderer>::TextureId: Texture,
         F: FnOnce(&mut R) -> Result<(), <R as Renderer>::Error>,
     {
-        let (output_size, output_scale, output_transform) = self.mode.clone().try_into()?;
+        let (output_size, output_scale, output_transform) =
+            std::convert::TryInto::<(Size<i32, Physical>, Scale<f64>, Transform)>::try_into(&self.mode)?;
 
         // Output transform is specified in surface-rotation, so inversion gives us the
         // render transform for the output itself.
