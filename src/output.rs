@@ -419,6 +419,7 @@ impl Output {
 }
 
 impl PartialEq for Output {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
@@ -427,6 +428,7 @@ impl PartialEq for Output {
 impl Eq for Output {}
 
 impl Hash for Output {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.inner).hash(state);
     }
@@ -434,12 +436,14 @@ impl Hash for Output {
 
 impl WeakOutput {
     /// Try to retrieve the original `Output`, if it still exists
+    #[inline]
     pub fn upgrade(&self) -> Option<Output> {
         self.inner.upgrade().map(|inner| Output { inner })
     }
 }
 
 impl PartialEq for WeakOutput {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         Weak::ptr_eq(&self.inner, &other.inner)
     }
@@ -448,18 +452,21 @@ impl PartialEq for WeakOutput {
 impl Eq for WeakOutput {}
 
 impl Hash for WeakOutput {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         Weak::as_ptr(&self.inner).hash(state);
     }
 }
 
 impl PartialEq<WeakOutput> for Output {
+    #[inline]
     fn eq(&self, other: &WeakOutput) -> bool {
         other.upgrade().map(|o| &o == self).unwrap_or(false)
     }
 }
 
 impl PartialEq<Output> for WeakOutput {
+    #[inline]
     fn eq(&self, other: &Output) -> bool {
         self.upgrade().map(|o| &o == other).unwrap_or(false)
     }
@@ -482,6 +489,7 @@ pub enum OutputModeSource {
 }
 
 impl From<&Output> for OutputModeSource {
+    #[inline]
     fn from(output: &Output) -> Self {
         Self::Auto(output.clone())
     }
@@ -490,13 +498,17 @@ impl From<&Output> for OutputModeSource {
 impl TryFrom<&OutputModeSource> for (Size<i32, Physical>, utils::Scale<f64>, Transform) {
     type Error = OutputNoMode;
 
+    #[inline]
     fn try_from(mode: &OutputModeSource) -> Result<Self, Self::Error> {
         match mode {
-            OutputModeSource::Auto(output) => Ok((
-                output.current_mode().ok_or(OutputNoMode)?.size,
-                output.current_scale().fractional_scale().into(),
-                output.current_transform(),
-            )),
+            OutputModeSource::Auto(output) => {
+                let guard = output.inner.0.lock().unwrap();
+                Ok((
+                    guard.current_mode.as_ref().ok_or(OutputNoMode)?.size,
+                    guard.scale.fractional_scale().into(),
+                    guard.transform,
+                ))
+            }
             OutputModeSource::Static {
                 size,
                 scale,
@@ -509,6 +521,7 @@ impl TryFrom<&OutputModeSource> for (Size<i32, Physical>, utils::Scale<f64>, Tra
 impl TryFrom<OutputModeSource> for (Size<i32, Physical>, utils::Scale<f64>, Transform) {
     type Error = OutputNoMode;
 
+    #[inline]
     fn try_from(mode: OutputModeSource) -> Result<Self, Self::Error> {
         Self::try_from(&mode)
     }
