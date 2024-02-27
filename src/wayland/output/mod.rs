@@ -263,23 +263,18 @@ impl Output {
     /// Sends `wl_surface.enter` for the provided surface
     /// with the matching client output
     pub fn enter(&self, surface: &wl_surface::WlSurface) {
-        let client = self
-            .inner
-            .0
-            .lock()
-            .unwrap()
-            .handle
-            .as_ref()
-            .and_then(|handle| handle.upgrade())
-            .and_then(|handle| handle.get_client(surface.id()).ok());
-        if let Some(client) = client {
-            let weak = surface.downgrade();
-            let mut inner = self.inner.0.lock().unwrap();
-            inner.surfaces.retain(|s| s.upgrade().is_ok());
-            if !inner.surfaces.contains(&weak) {
-                inner.surfaces.insert(weak);
-                drop(inner);
+        let mut inner = self.inner.0.lock().unwrap();
+        // FIXME: Get this out of the hot path
+        inner.surfaces.retain(|s| s.upgrade().is_ok());
+        if inner.surfaces.insert(surface.downgrade()) {
+            let client = inner
+                .handle
+                .as_ref()
+                .and_then(|handle| handle.upgrade())
+                .and_then(|handle| handle.get_client(surface.id()).ok());
+            drop(inner);
 
+            if let Some(client) = client {
                 for output in self.client_outputs_internal(client) {
                     surface.enter(&output);
                 }
@@ -290,23 +285,18 @@ impl Output {
     /// Sends `wl_surface.leave` for the provided surface
     /// with the matching client output
     pub fn leave(&self, surface: &wl_surface::WlSurface) {
-        let client = self
-            .inner
-            .0
-            .lock()
-            .unwrap()
-            .handle
-            .as_ref()
-            .and_then(|handle| handle.upgrade())
-            .and_then(|handle| handle.get_client(surface.id()).ok());
-        if let Some(client) = client {
-            let weak = surface.downgrade();
-            let mut inner = self.inner.0.lock().unwrap();
-            inner.surfaces.retain(|s| s.upgrade().is_ok());
-            if inner.surfaces.contains(&weak) {
-                inner.surfaces.remove(&weak);
-                drop(inner);
+        let mut inner = self.inner.0.lock().unwrap();
+        // FIXME: Get this out of the hot path
+        inner.surfaces.retain(|s| s.upgrade().is_ok());
+        if inner.surfaces.remove(&surface.downgrade()) {
+            let client = inner
+                .handle
+                .as_ref()
+                .and_then(|handle| handle.upgrade())
+                .and_then(|handle| handle.get_client(surface.id()).ok());
+            drop(inner);
 
+            if let Some(client) = client {
                 for output in self.client_outputs_internal(client) {
                     surface.leave(&output);
                 }
